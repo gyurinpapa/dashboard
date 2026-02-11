@@ -14,6 +14,7 @@ import {
   CartesianGrid,
 } from "recharts";
 
+type TabKey = "summary" | "structure" | "keyword";
 
 type Row = {
   date: string;
@@ -53,6 +54,7 @@ const TrendCell = ({ v, digits = 1 }: { v: number | null; digits?: number }) => 
 
 export default function Page() {
   const [rows, setRows] = useState<Row[]>([]);
+  const [tab, setTab] = useState<TabKey>("summary");
 
   useEffect(() => {
     fetch("/data/acc_001.csv")
@@ -90,6 +92,7 @@ export default function Page() {
       roas: safeDiv(revenue, cost),
     };
   }, [rows]);
+
   const bySource = useMemo(() => {
   // group key: platform 우선, 없으면 soucrce/source도 fallback
   const keyOf = (r: any) =>
@@ -363,7 +366,35 @@ const byMonth = useMemo(() => {
         <div className="mt-1 border-t border-gray-300"></div>
       </div>
 
-
+<div className="mt-6 flex gap-2">
+  <button
+    onClick={() => setTab("summary")}
+    className={`px-4 py-2 rounded-lg border text-sm font-semibold ${
+      tab === "summary" ? "bg-black text-white" : "bg-white"
+    }`}
+  >
+    요약
+  </button>
+  <button
+    onClick={() => setTab("structure")}
+    className={`px-4 py-2 rounded-lg border text-sm font-semibold ${
+      tab === "structure" ? "bg-black text-white" : "bg-white"
+    }`}
+  >
+    구조
+  </button>
+  <button
+    onClick={() => setTab("keyword")}
+    className={`px-4 py-2 rounded-lg border text-sm font-semibold ${
+      tab === "keyword" ? "bg-black text-white" : "bg-white"
+    }`}
+  >
+    키워드
+  </button>
+</div>
+{tab === "summary" && (
+<>
+ {/* KPI 그리드 */}
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
       <KPI title="노출" value={totals.impressions.toLocaleString()} />
       <KPI title="클릭" value={totals.clicks.toLocaleString()} />
@@ -378,6 +409,7 @@ const byMonth = useMemo(() => {
       <KPI title="ROAS" value={(totals.roas * 100).toFixed(1) + "%"} />
     </div>
 
+ {/* 월별 표 */}
     <section className="mt-10">
   <h2 className="text-lg font-semibold mb-3">월별 성과 (최근 3개월)</h2>
 
@@ -459,6 +491,7 @@ const byMonth = useMemo(() => {
   </div>
 </section>
 
+ {/* 주간 표 */}
 <section className="mt-10">
   <h2 className="text-lg font-semibold mb-3">
     주차별 성과 (최근 5주)
@@ -541,7 +574,7 @@ const byMonth = useMemo(() => {
   </div>
 </section>
 
-
+  {/* 주간 차트 */}
     <section className="mt-10">
   <h2 className="text-lg font-semibold mb-3">최근 5주 주간 성과</h2>
 
@@ -622,6 +655,7 @@ const byMonth = useMemo(() => {
   </div>
 </section>
 
+  {/* 소스별 표 */}
     <section className="mt-10">
   <h2 className="text-lg font-semibold mb-3">소스별 요약</h2>
 
@@ -663,6 +697,9 @@ const byMonth = useMemo(() => {
     </table>
   </div>
 </section>
+</>
+)}
+
 </div>
   </main>
 );
