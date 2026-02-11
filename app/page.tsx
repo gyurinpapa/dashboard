@@ -244,6 +244,67 @@ const byWeek = useMemo(() => {
   }));
 }, [rows]);
 
+const byMonth = useMemo(() => {
+  const map = new Map<
+    string,
+    {
+      month: string; // YYYY-MM
+      impressions: number;
+      clicks: number;
+      cost: number;
+      conversions: number;
+      revenue: number;
+    }
+  >();
+
+  for (const r of rows as any[]) {
+    const d = parseDateLoose(r.date);
+    if (!d) continue;
+
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+
+    if (!map.has(key)) {
+      map.set(key, {
+        month: key,
+        impressions: 0,
+        clicks: 0,
+        cost: 0,
+        conversions: 0,
+        revenue: 0,
+      });
+    }
+
+    const cur = map.get(key)!;
+    const imp = Number((r.impressions ?? r.impression ?? 0));
+    const clk = Number((r.clicks ?? r.click ?? 0));
+    const cst = Number((r.cost ?? 0));
+    const cv  = Number((r.conversions ?? r.conversion ?? 0));
+    const rev = Number((r.revenue ?? 0));
+
+    cur.impressions += isFinite(imp) ? imp : 0;
+    cur.clicks += isFinite(clk) ? clk : 0;
+    cur.cost += isFinite(cst) ? cst : 0;
+    cur.conversions += isFinite(cv) ? cv : 0;
+    cur.revenue += isFinite(rev) ? rev : 0;
+
+  }
+
+  // 최신 월이 위로 오게 정렬 후 최근 3개월만
+  const arr = Array.from(map.values())
+    .sort((a, b) => b.month.localeCompare(a.month))
+    .slice(0, 3);
+
+  return arr.map((m) => ({
+    ...m,
+    ctr: safeDiv(m.clicks, m.impressions),
+    cpc: safeDiv(m.cost, m.clicks),
+    cvr: safeDiv(m.conversions, m.clicks),
+    cpa: safeDiv(m.cost, m.conversions),
+    roas: safeDiv(m.revenue, m.cost),
+  }));
+}, [rows]);
+
+
   return (
   <main className="p-8">
     <div className="mx-auto w-full max-w-[1400px]">
@@ -272,6 +333,81 @@ const byWeek = useMemo(() => {
       <KPI title="CPA" value={KRW(totals.cpa)} />
       <KPI title="ROAS" value={(totals.roas * 100).toFixed(1) + "%"} />
     </div>
+
+    <section className="mt-10">
+  <h2 className="text-lg font-semibold mb-3">월별 성과 (최근 3개월)</h2>
+
+  <div className="overflow-auto border rounded-xl">
+    <table className="w-full text-sm">
+      <thead className="bg-gray-50 text-gray-600">
+        <tr>
+          <th className="text-left p-3">Month</th>
+          <th className="text-right p-3">Impr</th>
+          <th className="text-right p-3">Clicks</th>
+          <th className="text-right p-3">CTR</th>
+          <th className="text-right p-3">CPC</th>
+          <th className="text-right p-3">Cost</th>
+          <th className="text-right p-3">Conv</th>
+          <th className="text-right p-3">CVR</th>
+          <th className="text-right p-3">CPA</th>
+          <th className="text-right p-3">Revenue</th>
+          <th className="text-right p-3">ROAS</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {/* ✅ 1행: 증감 (최근월 vs 전월) */}
+        {byMonth.length >= 2 && (() => {
+          const last = byMonth[0];   // 최근월
+          const prev = byMonth[1];   // 전월
+
+          const diff = (a: number, b: number) => a - b;
+          const diffPct = (a: number, b: number) => (b === 0 ? null : (a - b) / b);
+
+          const fmtPct = (x: number | null, digits = 1) =>
+            x === null ? "-" : `${(x * 100).toFixed(digits)}%`;
+
+          const fmtNum = (x: number) => Math.round(x).toLocaleString();
+          const fmtKRW = (x: number) => `${Math.round(x).toLocaleString()}원`;
+
+          return (
+            <tr className="border-t bg-gray-100 font-semibold">
+              <td className="p-3">증감 (최근월-전월)</td>
+              <td className="p-3 text-right">{fmtPct(diffPct(last.impressions, prev.impressions))}</td>
+              <td className="p-3 text-right">{fmtPct(diffPct(last.clicks, prev.clicks))}</td>
+              <td className="p-3 text-right">{fmtPct(diffPct(last.ctr, prev.ctr), 2)}</td>
+              <td className="p-3 text-right">{fmtPct(diffPct(last.cpc, prev.cpc), 2)}</td>
+              <td className="p-3 text-right">{fmtPct(diffPct(last.cost, prev.cost))}</td>
+              <td className="p-3 text-right">{fmtPct(diffPct(last.conversions, prev.conversions))}</td>
+              <td className="p-3 text-right">{fmtPct(diffPct(last.cvr, prev.cvr), 2)}</td>
+              <td className="p-3 text-right">{fmtPct(diffPct(last.cpa, prev.cpa), 2)}</td>
+              <td className="p-3 text-right">{fmtPct(diffPct(last.revenue, prev.revenue))}</td>
+              <td className="p-3 text-right">{fmtPct(diffPct(last.roas, prev.roas), 2)}</td>
+            </tr>
+          );
+        })()}
+
+        {/* ✅ 2~4행: 최근 3개월 */}
+        {byMonth.map((m) => (
+          <tr key={m.month} className="border-t">
+            <td className="p-3 font-medium">{m.month}</td>
+            <td className="p-3 text-right">{m.impressions.toLocaleString()}</td>
+            <td className="p-3 text-right">{m.clicks.toLocaleString()}</td>
+            <td className="p-3 text-right">{(m.ctr * 100).toFixed(2)}%</td>
+            <td className="p-3 text-right">{KRW(m.cpc)}</td>
+            <td className="p-3 text-right">{KRW(m.cost)}</td>
+            <td className="p-3 text-right">{m.conversions.toLocaleString()}</td>
+            <td className="p-3 text-right">{(m.cvr * 100).toFixed(2)}%</td>
+            <td className="p-3 text-right">{KRW(m.cpa)}</td>
+            <td className="p-3 text-right">{KRW(m.revenue)}</td>
+            <td className="p-3 text-right">{(m.roas * 100).toFixed(1)}%</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+</section>
+
     <section className="mt-10">
   <h2 className="text-lg font-semibold mb-3">최근 5주 주간 성과</h2>
 
