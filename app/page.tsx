@@ -34,6 +34,23 @@ function KRW(n: number) {
   return Math.round(n).toLocaleString() + "원";
 }
 
+const TrendCell = ({ v, digits = 1 }: { v: number | null; digits?: number }) => {
+  if (v === null || !isFinite(v)) return <span className="text-gray-400">-</span>;
+
+  const up = v > 0;
+  const down = v < 0;
+
+  const arrow = up ? "▲" : down ? "▼" : "•";
+  const color = up ? "text-red-600" : down ? "text-blue-600" : "text-gray-500";
+
+  return (
+    <span className={`inline-flex items-center gap-1 font-semibold ${color}`}>
+      <span className="text-xs">{arrow}</span>
+      <span>{(v * 100).toFixed(digits)}%</span>
+    </span>
+  );
+};
+
 export default function Page() {
   const [rows, setRows] = useState<Row[]>([]);
 
@@ -222,7 +239,16 @@ const byWeek = useMemo(() => {
   // 3) 5주 바스켓 미리 만들어 두기(누락 주도 0으로 표시)
   for (const ws of weekStarts) {
     const k = ws.toISOString().slice(0, 10);
-    map.set(k, { weekKey: k, label: monthWeekLabelRule(ws), cost: 0, revenue: 0, roas: 0 });
+    map.set(k, {
+  weekKey: k,
+  label: monthWeekLabelRule(ws),
+  impressions: 0,
+  clicks: 0,
+  cost: 0,
+  conversions: 0,
+  revenue: 0,
+});
+
   }
 
   // 4) 집계
@@ -231,18 +257,36 @@ const byWeek = useMemo(() => {
     if (!map.has(k)) continue; // 최근 5주 밖이면 무시
 
     const cur = map.get(k)!;
+    cur.impressions += Number(r.impressions ?? 0) || 0;
+    cur.clicks += Number(r.clicks ?? 0) || 0;
     cur.cost += Number(r.cost ?? 0) || 0;
+    cur.conversions += Number(r.conversions ?? 0) || 0;
     cur.revenue += Number(r.revenue ?? 0) || 0;
     map.set(k, cur);
   }
 
   // 5) ROAS 계산 + 배열로 정렬
-  const arr = Array.from(map.values()).sort((a, b) => a.weekKey.localeCompare(b.weekKey));
-  return arr.map((w) => ({
-    ...w,
-    roas: w.cost > 0 ? w.revenue / w.cost : 0, // 배수
-  }));
+  const arr = Array.from(map.values()).sort((a, b) => b.weekKey.localeCompare(a.weekKey)); // 내림차순(최근 먼저)
+
+return arr.map((w) => ({
+  ...w,
+  ctr: safeDiv(w.clicks, w.impressions),
+  cpc: safeDiv(w.cost, w.clicks),
+  cvr: safeDiv(w.conversions, w.clicks),
+  cpa: safeDiv(w.cost, w.conversions),
+  roas: safeDiv(w.revenue, w.cost),
+}));
+
+
 }, [rows]);
+const lastWeek = byWeek[0];
+const prevWeek = byWeek[1];
+
+function diffPct(a: number, b: number) {
+  if (!b) return 0;
+  return (a - b) / b;
+}
+
 
 const byMonth = useMemo(() => {
   const map = new Map<
@@ -373,16 +417,17 @@ const byMonth = useMemo(() => {
           return (
             <tr className="border-t bg-gray-100 font-semibold">
               <td className="p-3">증감 (최근월-전월)</td>
-              <td className="p-3 text-right">{fmtPct(diffPct(last.impressions, prev.impressions))}</td>
-              <td className="p-3 text-right">{fmtPct(diffPct(last.clicks, prev.clicks))}</td>
-              <td className="p-3 text-right">{fmtPct(diffPct(last.ctr, prev.ctr), 2)}</td>
-              <td className="p-3 text-right">{fmtPct(diffPct(last.cpc, prev.cpc), 2)}</td>
-              <td className="p-3 text-right">{fmtPct(diffPct(last.cost, prev.cost))}</td>
-              <td className="p-3 text-right">{fmtPct(diffPct(last.conversions, prev.conversions))}</td>
-              <td className="p-3 text-right">{fmtPct(diffPct(last.cvr, prev.cvr), 2)}</td>
-              <td className="p-3 text-right">{fmtPct(diffPct(last.cpa, prev.cpa), 2)}</td>
-              <td className="p-3 text-right">{fmtPct(diffPct(last.revenue, prev.revenue))}</td>
-              <td className="p-3 text-right">{fmtPct(diffPct(last.roas, prev.roas), 2)}</td>
+          <td className="p-3 text-right"><TrendCell v={diffPct(last.impressions, prev.impressions)} /></td>
+          <td className="p-3 text-right"><TrendCell v={diffPct(last.clicks, prev.clicks)} /></td>
+          <td className="p-3 text-right"><TrendCell v={diffPct(last.ctr, prev.ctr)} digits={2} /></td>
+          <td className="p-3 text-right"><TrendCell v={diffPct(last.cpc, prev.cpc)} digits={2} /></td>
+          <td className="p-3 text-right"><TrendCell v={diffPct(last.cost, prev.cost)} /></td>
+          <td className="p-3 text-right"><TrendCell v={diffPct(last.conversions, prev.conversions)} /></td>
+          <td className="p-3 text-right"><TrendCell v={diffPct(last.cvr, prev.cvr)} digits={2} /></td>
+          <td className="p-3 text-right"><TrendCell v={diffPct(last.cpa, prev.cpa)} digits={2} /></td>
+          <td className="p-3 text-right"><TrendCell v={diffPct(last.revenue, prev.revenue)} /></td>
+          <td className="p-3 text-right"><TrendCell v={diffPct(last.roas, prev.roas)} digits={2} /></td>
+
             </tr>
           );
         })()}
@@ -391,22 +436,111 @@ const byMonth = useMemo(() => {
         {byMonth.map((m) => (
           <tr key={m.month} className="border-t">
             <td className="p-3 font-medium">{m.month}</td>
+
             <td className="p-3 text-right">{m.impressions.toLocaleString()}</td>
             <td className="p-3 text-right">{m.clicks.toLocaleString()}</td>
+
             <td className="p-3 text-right">{(m.ctr * 100).toFixed(2)}%</td>
             <td className="p-3 text-right">{KRW(m.cpc)}</td>
+
             <td className="p-3 text-right">{KRW(m.cost)}</td>
             <td className="p-3 text-right">{m.conversions.toLocaleString()}</td>
+
             <td className="p-3 text-right">{(m.cvr * 100).toFixed(2)}%</td>
             <td className="p-3 text-right">{KRW(m.cpa)}</td>
+
             <td className="p-3 text-right">{KRW(m.revenue)}</td>
             <td className="p-3 text-right">{(m.roas * 100).toFixed(1)}%</td>
+  </tr>
+))}
+
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section className="mt-10">
+  <h2 className="text-lg font-semibold mb-3">
+    주차별 성과 (최근 5주)
+  </h2>
+
+  <div className="overflow-auto border rounded-xl">
+    <table className="w-full text-sm">
+      <thead className="bg-gray-50">
+        <tr>
+          <th className="text-left p-3">Week</th>
+          <th className="text-right p-3">Impr</th>
+          <th className="text-right p-3">Clicks</th>
+          <th className="text-right p-3">CTR</th>
+          <th className="text-right p-3">CPC</th>
+          <th className="text-right p-3">Cost</th>
+          <th className="text-right p-3">Conv</th>
+          <th className="text-right p-3">CVR</th>
+          <th className="text-right p-3">CPA</th>
+          <th className="text-right p-3">Revenue</th>
+          <th className="text-right p-3">ROAS</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {/* 🔥 증감 행 */}
+        {lastWeek && prevWeek && (
+          <tr className="bg-gray-100 font-medium">
+            <td className="p-3">증감(최근주-전주)</td>
+            <td className="p-3 text-right">
+              <TrendCell v={diffPct(lastWeek.impressions, prevWeek.impressions)} />
+            </td>
+            <td className="p-3 text-right">
+              <TrendCell v={diffPct(lastWeek.clicks, prevWeek.clicks)} />
+            </td>
+            <td className="p-3 text-right">
+              <TrendCell v={diffPct(lastWeek.ctr, prevWeek.ctr)} digits={2} />
+            </td>
+            <td className="p-3 text-right">
+              <TrendCell v={diffPct(lastWeek.cpc, prevWeek.cpc)} digits={2} />
+            </td>
+            <td className="p-3 text-right">
+              <TrendCell v={diffPct(lastWeek.cost, prevWeek.cost)} />
+            </td>
+            <td className="p-3 text-right">
+              <TrendCell v={diffPct(lastWeek.conversions, prevWeek.conversions)} />
+            </td>
+            <td className="p-3 text-right">
+              <TrendCell v={diffPct(lastWeek.cvr, prevWeek.cvr)} digits={2} />
+            </td>
+            <td className="p-3 text-right">
+              <TrendCell v={diffPct(lastWeek.cpa, prevWeek.cpa)} digits={2} />
+            </td>
+            <td className="p-3 text-right">
+              <TrendCell v={diffPct(lastWeek.revenue, prevWeek.revenue)} />
+            </td>
+            <td className="p-3 text-right">
+              <TrendCell v={diffPct(lastWeek.roas, prevWeek.roas)} digits={2} />
+            </td>
+          </tr>
+        )}
+
+        {/* 🔥 최근 5주 */}
+        {byWeek.map((w) => (
+          <tr key={w.weekKey} className="border-t">
+            <td className="p-3 font-medium">{w.label}</td>
+            <td className="p-3 text-right">{w.impressions.toLocaleString()}</td>
+            <td className="p-3 text-right">{w.clicks.toLocaleString()}</td>
+            <td className="p-3 text-right">{(w.ctr * 100).toFixed(2)}%</td>
+            <td className="p-3 text-right">{KRW(w.cpc)}</td>
+            <td className="p-3 text-right">{KRW(w.cost)}</td>
+            <td className="p-3 text-right">{w.conversions.toLocaleString()}</td>
+            <td className="p-3 text-right">{(w.cvr * 100).toFixed(2)}%</td>
+            <td className="p-3 text-right">{KRW(w.cpa)}</td>
+            <td className="p-3 text-right">{KRW(w.revenue)}</td>
+            <td className="p-3 text-right">{(w.roas * 100).toFixed(1)}%</td>
           </tr>
         ))}
       </tbody>
     </table>
   </div>
 </section>
+
 
     <section className="mt-10">
   <h2 className="text-lg font-semibold mb-3">최근 5주 주간 성과</h2>
