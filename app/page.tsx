@@ -51,12 +51,67 @@ const TrendCell = ({ v, digits = 1 }: { v: number | null; digits?: number }) => 
     </span>
   );
 };
+function FilterBtn({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        "px-4 py-2 rounded-xl border text-sm font-semibold transition",
+        "border-orange-900/40",
+        active
+          ? "bg-orange-700 text-white shadow"
+          : "bg-orange-600 text-white/90 hover:bg-orange-700",
+      ].join(" ")}
+    >
+      {children}
+    </button>
+  );
+}
 
 export default function Page() {
   const [rows, setRows] = useState<Row[]>([]);
+  type MonthKey = "all" | string; // "YYYY-MM" 또는 "all"
+  const [selectedMonth, setSelectedMonth] = useState<MonthKey>("all");
+  type FilterKey = "month" | "week" | "device" | "channel" | null;
+const [filterKey, setFilterKey] = useState<FilterKey>(null);
+
+// 버튼 누르면 열고/닫는 토글
+const toggleFilter = (k: Exclude<FilterKey, null>) => {
+  setFilterKey((prev) => (prev === k ? null : k));
+};
   const [tab, setTab] = useState<TabKey>("summary");
 
-  useEffect(() => {
+const monthOptions = useMemo(() => {
+  const set = new Set<string>();
+  for (const r of rows) {
+    // r.date가 "YYYY-MM-DD" 라고 가정
+    const d = new Date(r.date);
+    if (Number.isNaN(d.getTime())) continue;
+
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    set.add(`${y}-${m}`); // ✅ 너 MonthKey가 "YYYY-MM" 형태라서 이걸로 맞춤
+  }
+  return Array.from(set).sort().reverse(); // 최신 월이 앞으로
+}, [rows]);
+
+  const monthLabel =
+  selectedMonth === "all"
+    ? "전체"
+    : `${selectedMonth.slice(0, 4)}년 ${Number(selectedMonth.slice(5, 7))}월`;
+    const monthLabelOf = (m: string) =>
+      `${m.slice(0, 4)}년 ${Number(m.slice(5, 7))}월`;
+
+    useEffect(() => {
     fetch("/data/acc_001.csv")
       .then((res) => res.text())
       .then((csv) => {
@@ -69,9 +124,35 @@ export default function Page() {
       });
   }, []);
 
+  function monthKeyOf(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`; // YYYY-MM
+}
+
+const months = useMemo(() => {
+  const set = new Set<string>();
+  for (const r of rows as any[]) {
+    const d = parseDateLoose(r.date);
+    if (!d) continue;
+    set.add(monthKeyOf(d));
+  }
+  // 최신 월이 앞에 오도록
+  return Array.from(set).sort((a, b) => b.localeCompare(a));
+}, [rows]);
+
+const filteredRows = useMemo(() => {
+  if (selectedMonth === "all") return rows;
+  return (rows as any[]).filter((r) => {
+    const d = parseDateLoose(r.date);
+    if (!d) return false;
+    return monthKeyOf(d) === selectedMonth;
+  });
+}, [rows, selectedMonth]);
+
   const totals = useMemo(() => {
     const sum = (key: keyof Row) =>
-      rows.reduce((acc, cur) => acc + (Number(cur[key]) || 0), 0);
+      filteredRows.reduce((acc, cur) => acc + (Number(cur[key]) || 0), 0);
 
     const impressions = sum("impressions");
     const clicks = sum("clicks");
@@ -91,7 +172,7 @@ export default function Page() {
       cpa: safeDiv(cost, conversions),
       roas: safeDiv(revenue, cost),
     };
-  }, [rows]);
+  }, [filteredRows]);
 
   const bySource = useMemo(() => {
   // group key: platform 우선, 없으면 soucrce/source도 fallback
@@ -110,7 +191,7 @@ export default function Page() {
     }
   >();
 
-  for (const r of rows as any[]) {
+  for (const r of filteredRows as any[]) {
     const k = keyOf(r);
 
     const impressions = Number(r.impressions ?? r.impression ?? 0) || 0;
@@ -144,7 +225,7 @@ export default function Page() {
     cpa: safeDiv(r.cost, r.conversions),
     roas: safeDiv(r.revenue, r.cost),
   }));
-}, [rows]);
+}, [filteredRows]);
 
 function parseDateLoose(s: any): Date | null {
   if (!s) return null;
@@ -182,35 +263,68 @@ function week1StartOfMonth(year: number, monthIndex0: number) {
   return ws;
 }
 
+function addDays(d: Date, days: number) {
+  const x = new Date(d);
+  x.setDate(x.getDate() + days);
+  return x;
+}
+
+function startOfWeekMon(d: Date) {
+  const x = new Date(d);
+  const day = x.getDay(); // 0 Sun, 1 Mon ...
+  const diff = (day + 6) % 7; // Mon=0 ... Sun=6
+  x.setDate(x.getDate() - diff);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+// ✅ 네가 말한 룰 반영 라벨 생성기
 function monthWeekLabelRule(ws: Date) {
-  const y = ws.getFullYear();
-  const m = ws.getMonth();
+  const we = addDays(ws, 6); // week end (Sun)
 
-  const candidates = [
-    { year: y, month: m },
-    { year: m === 0 ? y - 1 : y, month: m === 0 ? 11 : m - 1 },
-  ];
+  // 1) 기본은 ws의 달
+  let baseY = ws.getFullYear();
+  let baseM = ws.getMonth();
 
-  for (const c of candidates) {
-    const start = week1StartOfMonth(c.year, c.month);
-    const nextMonthYear = c.month === 11 ? c.year + 1 : c.year;
-    const nextMonth = c.month === 11 ? 0 : c.month + 1;
-    const end = week1StartOfMonth(nextMonthYear, nextMonth);
-
-    if (ws >= start && ws < end) {
-      const diffDays = Math.floor((ws.getTime() - start.getTime()) / 86400000);
-      const weekNo = Math.floor(diffDays / 7) + 1;
-      return `${c.month + 1}월 ${weekNo}주차`;
+  // 2) "다음달 1일"이 이번 주에 포함되고, 그 요일이 월~목이면 → 기준달을 다음달로
+  const nextMonthFirst = new Date(ws.getFullYear(), ws.getMonth() + 1, 1);
+  if (nextMonthFirst >= ws && nextMonthFirst <= we) {
+    const dow = nextMonthFirst.getDay(); // 1~4 => Mon~Thu
+    if (dow >= 1 && dow <= 4) {
+      baseY = nextMonthFirst.getFullYear();
+      baseM = nextMonthFirst.getMonth();
     }
   }
 
-  return `${m + 1}월`;
+  // 3) 기준달의 1주차 시작(월요일)을 계산
+  const monthFirst = new Date(baseY, baseM, 1);
+  const monthFirstDow = monthFirst.getDay(); // 0 Sun
+  const week1Start = startOfWeekMon(monthFirst);
+
+  // 네 룰: 1일이 금/토/일이면 그 주는 "전월 마지막 주" 취급
+  // => 즉, 그 달의 1주차는 다음주(다음 월요일)부터 시작
+  const effectiveWeek1Start =
+    monthFirstDow === 5 || monthFirstDow === 6 || monthFirstDow === 0
+      ? addDays(week1Start, 7)
+      : week1Start;
+
+  // 4) ws가 기준달의 몇 주차인지 계산
+  const diffWeeks = Math.floor(
+    (startOfWeekMon(ws).getTime() - effectiveWeek1Start.getTime()) / (7 * 24 * 60 * 60 * 1000)
+  );
+  const weekNo = diffWeeks + 1;
+
+  // 안전장치(음수면 전월로 잘못 잡힌 케이스): 최소 1주차로
+  const safeWeekNo = weekNo < 1 ? 1 : weekNo;
+
+  return `${baseY}년 ${baseM + 1}월 ${safeWeekNo}주차`;
 }
+
 
 
 const byWeek = useMemo(() => {
   // 1) rows에서 날짜 파싱 가능한 것만
-  const valid = (rows as any[])
+  const valid = (filteredRows as any[])
     .map((r) => {
       const d = parseDateLoose(r.date);
       if (!d) return null;
@@ -281,7 +395,19 @@ return arr.map((w) => ({
 }));
 
 
-}, [rows]);
+}, 
+[rows,filteredRows]);
+
+// ✅ "주차" 라벨만 남기기 (5월 같은 월 라벨 제거)
+const byWeekOnly = useMemo(
+  () => byWeek.filter((w: any) => String(w.label).includes("주차")),
+  [byWeek]
+);
+
+// ✅ 차트 X축 좌/우 뒤집기용 (원본 배열 보존)
+const byWeekChart = useMemo(() => [...byWeekOnly].reverse(), [byWeekOnly]);
+
+
 const lastWeek = byWeek[0];
 const prevWeek = byWeek[1];
 
@@ -290,6 +416,21 @@ function diffPct(a: number, b: number) {
   return (a - b) / b;
 }
 
+const monthScopeRows = useMemo(() => {
+  // 1) 전체면 rows 그대로
+  if (selectedMonth === "all") return rows;
+
+  // 2) 선택월 포함 최근 3개월 범위 생성
+  const [yy, mm] = selectedMonth.split("-").map(Number); // ✅ "-" 임
+  const start = new Date(yy, mm - 1 - 2, 1); // 선택월 -2개월 1일
+  const end = new Date(yy, mm, 1);           // 선택월 다음달 1일 (exclusive)
+
+  return (rows as any[]).filter((r) => {
+    const d = parseDateLoose(r.date);
+    if (!d) return false;
+    return d >= start && d < end;
+  });
+}, [rows, selectedMonth]);
 
 const byMonth = useMemo(() => {
   const map = new Map<
@@ -304,7 +445,7 @@ const byMonth = useMemo(() => {
     }
   >();
 
-  for (const r of rows as any[]) {
+  for (const r of monthScopeRows as any[]) {
     const d = parseDateLoose(r.date);
     if (!d) continue;
 
@@ -349,7 +490,8 @@ const byMonth = useMemo(() => {
     cpa: safeDiv(m.cost, m.conversions),
     roas: safeDiv(m.revenue, m.cost),
   }));
-}, [rows]);
+},
+[monthScopeRows]);
 
 
   return (
@@ -366,32 +508,134 @@ const byMonth = useMemo(() => {
         <div className="mt-1 border-t border-gray-300"></div>
       </div>
 
-<div className="mt-6 flex gap-2">
-  <button
-    onClick={() => setTab("summary")}
-    className={`px-4 py-2 rounded-lg border text-sm font-semibold ${
-      tab === "summary" ? "bg-black text-white" : "bg-white"
-    }`}
-  >
-    요약
-  </button>
-  <button
-    onClick={() => setTab("structure")}
-    className={`px-4 py-2 rounded-lg border text-sm font-semibold ${
-      tab === "structure" ? "bg-black text-white" : "bg-white"
-    }`}
-  >
-    구조
-  </button>
-  <button
-    onClick={() => setTab("keyword")}
-    className={`px-4 py-2 rounded-lg border text-sm font-semibold ${
-      tab === "keyword" ? "bg-black text-white" : "bg-white"
-    }`}
-  >
-    키워드
-  </button>
+{/* 🔥 상단 필터 + 탭 영역 */}
+<div className="flex items-center justify-between mb-8">
+
+  {/* 🟠 왼쪽: 필터 버튼 + 드롭다운 기준점(엑셀 느낌) */}
+<div className="relative inline-block">
+  <div className="flex gap-2">
+    <FilterBtn active={filterKey === "month"} onClick={() => toggleFilter("month")}>
+      월
+    </FilterBtn>
+    <FilterBtn active={filterKey === "week"} onClick={() => toggleFilter("week")}>
+      주차
+    </FilterBtn>
+    <FilterBtn active={filterKey === "device"} onClick={() => toggleFilter("device")}>
+      기기
+    </FilterBtn>
+    <FilterBtn active={filterKey === "channel"} onClick={() => toggleFilter("channel")}>
+      채널
+    </FilterBtn>
+  </div>
+
+  {/* ✅ 월 드롭다운 패널 (버튼 아래에 겹쳐서 뜸) */}
+  {filterKey === "month" && (
+    <div className="absolute left-0 top-full mt-2 z-50 w-[520px] rounded-xl border bg-white shadow-lg p-3">
+      <div className="flex flex-wrap gap-2 max-h-[220px] overflow-auto">
+        <button
+          type="button"
+          onClick={() => {
+            setSelectedMonth("all");
+            setFilterKey(null); // 선택 후 패널 닫기
+          }}
+          className={[
+            "px-3 py-1 rounded-lg border text-sm font-semibold",
+            selectedMonth === "all" ? "bg-orange-700 text-white border-orange-700" : "bg-white text-orange-700 border-orange-300",
+          ].join(" ")}
+        >
+          전체
+        </button>
+
+        {monthOptions.map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => {
+              setSelectedMonth(m);
+              setFilterKey(null); // 선택 후 패널 닫기
+            }}
+            className={[
+              "px-3 py-1 rounded-lg border text-sm font-semibold",
+              selectedMonth === m ? "bg-orange-700 text-white border-orange-700" : "bg-white text-orange-700 border-orange-300",
+            ].join(" ")}
+          >
+            {monthLabelOf(m)}
+          </button>
+        ))}
+      </div>
+    </div>
+  )}
 </div>
+
+
+  {/* 🔵 오른쪽: 요약 / 구조 / 키워드 */}
+  <div className="flex gap-3">
+    <button
+      onClick={() => setTab("summary")}
+      className={`px-5 py-2 rounded-xl border text-sm font-semibold transition
+        ${tab === "summary"
+          ? "bg-black text-white border-black"
+          : "bg-white text-black border-gray-300 hover:bg-gray-100"}`}
+    >
+      요약
+    </button>
+
+    <button
+      onClick={() => setTab("structure")}
+      className={`px-5 py-2 rounded-xl border text-sm font-semibold transition
+        ${tab === "structure"
+          ? "bg-black text-white border-black"
+          : "bg-white text-black border-gray-300 hover:bg-gray-100"}`}
+    >
+      구조
+    </button>
+
+    <button
+      onClick={() => setTab("keyword")}
+      className={`px-5 py-2 rounded-xl border text-sm font-semibold transition
+        ${tab === "keyword"
+          ? "bg-black text-white border-black"
+          : "bg-white text-black border-gray-300 hover:bg-gray-100"}`}
+    >
+      키워드
+    </button>
+  </div>
+</div>
+
+{filterKey === "month" && (
+  <div className="mt-2 flex flex-wrap gap-2">
+    <button
+      type="button"
+      onClick={() => setSelectedMonth("all")}
+      className={[
+        "px-3 py-1 rounded-lg border text-sm font-semibold",
+        selectedMonth === "all" ? "bg-orange-700 text-white" : "bg-white text-orange-700 border-orange-700/40",
+      ].join(" ")}
+    >
+      전체
+    </button>
+
+    {months.map((m) => {
+      const label = `${m.slice(0, 4)}년 ${Number(m.slice(5, 7))}월`;
+      const active = selectedMonth === m;
+      return (
+        <button
+          key={m}
+          type="button"
+          onClick={() => setSelectedMonth(m)}
+          className={[
+            "px-3 py-1 rounded-lg border text-sm font-semibold",
+            active ? "bg-orange-700 text-white" : "bg-white text-orange-700 border-orange-700/40",
+          ].join(" ")}
+        >
+          {label}
+        </button>
+      );
+    })}
+  </div>
+)}
+
+
 {tab === "summary" && (
 <>
  {/* KPI 그리드 */}
@@ -554,7 +798,7 @@ const byMonth = useMemo(() => {
         )}
 
         {/* 🔥 최근 5주 */}
-        {byWeek.map((w) => (
+        {byWeekOnly.map((w) => (
           <tr key={w.weekKey} className="border-t">
             <td className="p-3 font-medium">{w.label}</td>
             <td className="p-3 text-right">{w.impressions.toLocaleString()}</td>
@@ -581,7 +825,7 @@ const byMonth = useMemo(() => {
   {/* 가로 꽉 + 높이 (표의 1.5배 느낌으로 일단 420px 추천) */}
   <div className="w-full h-[420px] border rounded-xl p-4">
     <ResponsiveContainer width="100%" height="100%">
-      <ComposedChart data={byWeek} margin={{ top: 10, right: 30, left: 10, bottom: 0 }}>
+      <ComposedChart data={byWeekChart} margin={{ top: 10, right: 30, left: 10, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" />
         <XAxis dataKey="label" />
         <YAxis
@@ -600,13 +844,25 @@ const byMonth = useMemo(() => {
 />
 
         <Tooltip
-  formatter={(value: any, name: any) => {
-    if (name === "roas") return [`${(Number(value) * 100).toFixed(1)}%`, "ROAS"];
-    if (name === "cost") return [KRW(Number(value)), "비용"];        // KRW가 이미 쉼표 처리중
-    if (name === "revenue") return [KRW(Number(value)), "전환매출"]; // KRW가 이미 쉼표 처리중
+  formatter={(value: any, name: any, item: any) => {
+    const key = item?.dataKey ?? name; // ✅ dataKey 우선
+
+    if (key === "roas") {
+      return [`${(Number(value) * 100).toFixed(1)}%`, "ROAS"];
+    }
+
+    if (key === "cost") {
+      return [`₩${Number(value).toLocaleString()}`, "비용"];
+    }
+
+    if (key === "revenue") {
+      return [`₩${Number(value).toLocaleString()}`, "전환매출"];
+    }
+
     return [value, name];
   }}
 />
+
 
         <Legend />
 
