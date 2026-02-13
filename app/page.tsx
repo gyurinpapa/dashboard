@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Papa from "papaparse";
 import {
   ResponsiveContainer,
@@ -31,6 +31,13 @@ import {
 } from "./lib/report/aggregate";
 import { monthLabelOf, monthKeyOfDate, parseDateLoose } from "./lib/report/date";
 import { useLocalStorageState } from "./lib/useLocalStorageState";
+import { useInsights } from "./hooks/useInsights";
+import TrendCell from "./components/TrendCell";
+import FilterBtn from "./components/FilterBtn";
+import ArrowDot from "./components/ArrowDot";
+import KPI from "./components/KPI";
+import InsightBox from "./components/InsightBox";
+
 
 const MONTH_GOAL_KEY = "nature_report_month_goal_v1";
 
@@ -42,67 +49,6 @@ const DEFAULT_GOAL: GoalState = {
   revenue: 0,
 };
 
-const TrendCell = ({ v, digits = 1 }: { v: number | null; digits?: number }) => {
-  if (v === null || !isFinite(v)) return <span className="text-gray-400">-</span>;
-
-  const up = v > 0;
-  const down = v < 0;
-  const arrow = up ? "▲" : down ? "▼" : "•";
-  const color = up ? "text-red-600" : down ? "text-blue-600" : "text-gray-500";
-
-  return (
-    <span className={`inline-flex items-center gap-1 font-semibold ${color}`}>
-      <span className="text-xs">{arrow}</span>
-      <span>{(v * 100).toFixed(digits)}%</span>
-    </span>
-  );
-};
-
-function FilterBtn({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={[
-        "px-4 py-2 rounded-xl border text-sm font-semibold transition",
-        "border-orange-900/40",
-        active ? "bg-orange-700 text-white shadow" : "bg-orange-600 text-white/90 hover:bg-orange-700",
-      ].join(" ")}
-    >
-      {children}
-    </button>
-  );
-}
-
-// 선 그래프 마지막 점 → 화살표
-const ArrowDot = (props: any) => {
-  const { cx, cy, index, data } = props;
-  if (!data || !Array.isArray(data)) return null;
-  if (index !== data.length - 1) return null;
-
-  return (
-    <text x={cx} y={cy} dy={4} dx={8} fill="#ef4444" fontSize={20}>
-      →
-    </text>
-  );
-};
-
-function KPI({ title, value }: { title: string; value: string }) {
-  return (
-    <div className="border rounded-xl p-4 min-w-[160px]">
-      <div className="text-sm text-gray-500 whitespace-nowrap">{title}</div>
-      <div className="text-2xl font-bold mt-1 whitespace-nowrap">{value}</div>
-    </div>
-  );
-}
 
 export default function Page() {
   // ===== state =====
@@ -226,7 +172,6 @@ export default function Page() {
     const conversions = Number(monthGoal.conversions) || 0;
     const revenue = Number(monthGoal.revenue) || 0;
 
-    // summarize 형태로 맞추기
     return summarize([
       {
         date: "",
@@ -252,16 +197,40 @@ export default function Page() {
   const lastWeek = byWeekOnly[0];
   const prevWeek = byWeekOnly[1];
 
-  const byMonth = useMemo(
-    () =>
-      groupByMonthRecent3({
-        rows,
-        selectedMonth,
-        selectedDevice,
-        selectedChannel,
-      }),
-    [rows, selectedMonth, selectedDevice, selectedChannel]
-  );
+  // ✅ 너가 말한 “당월용 데이터 배열 = byMonth”
+const byMonth = useMemo(
+  () =>
+    groupByMonthRecent3({
+      rows,
+      selectedMonth,
+      selectedDevice,
+      selectedChannel,
+    }),
+  [rows, selectedMonth, selectedDevice, selectedChannel]
+);
+
+// ✅ 여기! useInsights 호출 "바로 위"
+console.log("[page] currentMonthKey", currentMonthKey, "rows", rows.length);
+
+const { monthlyInsight, monthGoalInsight } = useInsights({
+  byMonth,
+  rowsLength: rows.length,
+  currentMonthKey,
+  monthGoal,
+  currentMonthActual: {
+    impressions: currentMonthActual.impressions,
+    clicks: currentMonthActual.clicks,
+    cost: currentMonthActual.cost,
+    conversions: currentMonthActual.conversions,
+    revenue: currentMonthActual.revenue,
+    ctr: currentMonthActual.ctr,
+    cpc: currentMonthActual.cpc,
+    cvr: currentMonthActual.cvr,
+    cpa: currentMonthActual.cpa,
+    roas: currentMonthActual.roas,
+  },
+  currentMonthGoalComputed,
+});
 
   // ===== UI =====
   return (
@@ -696,6 +665,9 @@ export default function Page() {
                   </tbody>
                 </table>
               </div>
+
+              {/* ✅ 표 “아래” 인사이트 */}
+              <InsightBox text={monthGoalInsight} />
             </section>
 
             {/* 기간 성과 */}
@@ -801,8 +773,12 @@ export default function Page() {
                   </tbody>
                 </table>
               </div>
+
+              {/* ✅ 표 “아래” 인사이트 */}
+              <InsightBox text={monthlyInsight} />
             </section>
 
+            {/* (이하 기존 UI 그대로) */}
             {/* 주차별 표 */}
             <section className="mt-10">
               <h2 className="text-lg font-semibold mb-3">주차별 성과 (최근 5주)</h2>
