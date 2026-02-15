@@ -190,7 +190,7 @@ export default function SummaryGoal({
         </table>
       </div>
 
-      {/* 인사이트 */}
+      {/* 인사이트*/}
       {monthGoalInsight ? (
         <div className="mt-6">
           <div className="border rounded-xl p-4 bg-white">
