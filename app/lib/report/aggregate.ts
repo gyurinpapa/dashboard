@@ -271,3 +271,53 @@ export function periodText(args: { rows: Row[]; selectedMonth: string | "all"; s
   const max = new Date(Math.max(...ds.map((d) => d.getTime())));
   return `${fmt(min)} ~ ${fmt(max)}`;
 }
+
+  export function groupByCampaign(rows: any[]) {
+  const map = new Map<string, any[]>();
+
+  (rows ?? []).forEach((r) => {
+    const key = String(r.campaign_name ?? "").trim();
+    if (!key) return;
+
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(r);
+  });
+
+  const out = Array.from(map.entries()).map(([campaign, items]) => {
+    const s = summarize(items);
+    return {
+      campaign,
+      ...s,
+    };
+  });
+
+  // 비용 큰 순 정렬
+  out.sort((a, b) => (b.cost ?? 0) - (a.cost ?? 0));
+
+  return out;
+}
+
+export function groupByGroup(rows: any[]) {
+  const map = new Map<string, any[]>();
+
+  (rows ?? []).forEach((r) => {
+    const key = r.group_name || "미지정";
+    if (!map.has(key)) {
+      map.set(key, []);
+    }
+    map.get(key)!.push(r);
+  });
+
+  const result: any[] = [];
+
+  map.forEach((items, key) => {
+    const sum = summarize(items);
+
+    result.push({
+      group: key,
+      ...sum,
+    });
+  });
+
+  return result.sort((a, b) => b.cost - a.cost);
+}

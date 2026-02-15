@@ -1,39 +1,45 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 
-/**
- * useLocalStorageState
- * - client component 전용
- * - localStorage에 값 저장/로드를 자동 처리
- * - 초기 렌더에서 SSR/CSR mismatch 방지용으로 mount 이후에만 로드
- */
-export function useLocalStorageState<T>(key: string, initialValue: T) {
-  const [value, setValue] = useState<T>(initialValue);
-  const [hydrated, setHydrated] = useState(false);
+export function useLocalStorageState<T>(
+  key: string,
+  defaultValue: T
+): [T, Dispatch<SetStateAction<T>>] {
+  const isBrowser = typeof window !== "undefined";
 
-  // 1) mount 이후 localStorage 로드
-  useEffect(() => {
+  const read = (): T => {
+    if (!isBrowser) return defaultValue;
+
     try {
-      const raw = localStorage.getItem(key);
-      if (raw != null) setValue(JSON.parse(raw));
+      const raw = window.localStorage.getItem(key);
+      if (raw == null) return defaultValue;
+
+      const parsed = JSON.parse(raw) as T;
+      return parsed ?? defaultValue;
     } catch {
-      // ignore
-    } finally {
-      setHydrated(true);
+      return defaultValue;
     }
+  };
+
+  const [value, setValue] = useState<T>(() => read());
+
+  // key가 바뀌면 그 key로 다시 로드
+  useEffect(() => {
+    if (!isBrowser) return;
+    setValue(read());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
-  // 2) 값 변경 시 localStorage 저장 (hydrated 이후만)
+  // 값 변경 시 저장
   useEffect(() => {
-    if (!hydrated) return;
+    if (!isBrowser) return;
     try {
-      localStorage.setItem(key, JSON.stringify(value));
+      window.localStorage.setItem(key, JSON.stringify(value));
     } catch {
-      // ignore
+      // 저장 실패는 무시
     }
-  }, [key, value, hydrated]);
+  }, [key, value, isBrowser]);
 
-  return [value, setValue] as const;
+  return [value, setValue];
 }

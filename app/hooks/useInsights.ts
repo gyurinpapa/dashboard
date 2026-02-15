@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GoalState, MonthKey } from "../lib/report/types";
-import { progressRate } from "../lib/report/format";
+
 
 type InsightOk = { ok: true; result: string };
 type InsightFail = { ok: false; error?: string; aborted?: boolean };
@@ -16,6 +16,8 @@ async function requestInsight(payload: any, signal?: AbortSignal): Promise<Insig
       body: JSON.stringify(payload),
       signal,
     });
+
+
 
     const raw = await res.text().catch(() => "");
     let json: any = null;
@@ -103,15 +105,22 @@ export function useInsights(params: {
     };
   }, [params.byMonth]);
 
+   const safeProgressRate = (actual: number, goal: number) => {
+    const a = Number(actual) || 0;
+    const g = Number(goal) || 0;
+    if (g <= 0) return 0;
+    return a / g;
+    };
+    
   // progress (목표 인사이트에 사용)
   const progress = useMemo(
     () => ({
-      impressions: progressRate(params.currentMonthActual.impressions, params.currentMonthGoalComputed.impressions),
-      clicks: progressRate(params.currentMonthActual.clicks, params.currentMonthGoalComputed.clicks),
-      cost: progressRate(params.currentMonthActual.cost, params.currentMonthGoalComputed.cost),
-      conversions: progressRate(params.currentMonthActual.conversions, params.currentMonthGoalComputed.conversions),
-      revenue: progressRate(params.currentMonthActual.revenue, params.currentMonthGoalComputed.revenue),
-      roas: progressRate(params.currentMonthActual.roas, params.currentMonthGoalComputed.roas),
+      impressions: safeProgressRate(params.currentMonthActual.impressions, params.currentMonthGoalComputed.impressions),
+      clicks: safeProgressRate(params.currentMonthActual.clicks, params.currentMonthGoalComputed.clicks),
+      cost: safeProgressRate(params.currentMonthActual.cost, params.currentMonthGoalComputed.cost),
+      conversions: safeProgressRate(params.currentMonthActual.conversions, params.currentMonthGoalComputed.conversions),
+      revenue: safeProgressRate(params.currentMonthActual.revenue, params.currentMonthGoalComputed.revenue),
+      roas: safeProgressRate(params.currentMonthActual.roas, params.currentMonthGoalComputed.roas),
     }),
     [params.currentMonthActual, params.currentMonthGoalComputed]
   );

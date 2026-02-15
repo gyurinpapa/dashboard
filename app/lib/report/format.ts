@@ -24,3 +24,7 @@ export function progressRate(actual: number, goal: number) {
   if (!goal) return 0;
   return actual / goal;
 }
+export function diffPct(current: number, prev: number) {
+  if (!prev || prev === 0) return 0;
+  return ((current - prev) / prev) * 100;
+}
