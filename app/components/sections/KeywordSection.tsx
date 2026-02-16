@@ -12,6 +12,7 @@ import {
   LabelList,
 } from "recharts";
 import { KRW, formatNumber } from "../../lib/report/format";
+import DataBarCell from "../DataBarCell"; // ✅ 추가 (경로 확인: KeywordSection이 sections 폴더면 ../DataBarCell 맞음)
 
 type Props = {
   keywordAgg: any[];
@@ -96,10 +97,32 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
     [rows]
   );
 
-  // ===== 표(Structure 탭 캠페인 요약표 느낌): 클릭순 Top50 =====
+  // ===== 표: 클릭순 Top50 =====
   const tableRows = useMemo(() => {
     return [...rows].sort((a, b) => b.clicks - a.clicks).slice(0, 50);
   }, [rows]);
+
+  // ✅ (키워드 표 막대그래프용) max 계산: "표에 보여주는 50개 기준"으로 맞춤
+  const kwMaxImpr = useMemo(
+    () => Math.max(0, ...tableRows.map((r) => toNum(r.impressions))),
+    [tableRows]
+  );
+  const kwMaxClicks = useMemo(
+    () => Math.max(0, ...tableRows.map((r) => toNum(r.clicks))),
+    [tableRows]
+  );
+  const kwMaxCost = useMemo(
+    () => Math.max(0, ...tableRows.map((r) => toNum(r.cost))),
+    [tableRows]
+  );
+  const kwMaxConv = useMemo(
+    () => Math.max(0, ...tableRows.map((r) => toNum(r.conversions))),
+    [tableRows]
+  );
+  const kwMaxRev = useMemo(
+    () => Math.max(0, ...tableRows.map((r) => toNum(r.revenue))),
+    [tableRows]
+  );
 
   return (
     <section className="mt-1">
@@ -129,12 +152,11 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
                 <YAxis type="category" dataKey="keyword" width={100} tick={{ fontSize: 11 }} />
                 <Tooltip wrapperStyle={{ fontSize: 11 }} formatter={(v: any) => fmtComma(v)} />
                 <Bar dataKey="clicks">
-                  {/* ✅ 검은 배경 라벨 제거: LabelList만 사용(숫자만) */}
                   <LabelList
                     dataKey="clicks"
                     position="right"
                     formatter={(v: any) => fmtComma(v)}
-                    style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }} // ✅ 주황
+                    style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
                   />
                 </Bar>
               </BarChart>
@@ -165,7 +187,7 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
                     dataKey="conversions"
                     position="right"
                     formatter={(v: any) => fmtComma(v)}
-                    style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }} // ✅ 주황
+                    style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
                   />
                 </Bar>
               </BarChart>
@@ -184,11 +206,7 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
                 margin={{ top: 6, right: 82, left: 0, bottom: 6 }}
               >
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  type="number"
-                  tick={{ fontSize: 11 }}
-                  tickFormatter={(v) => fmtRoasPct(v)}
-                />
+                <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => fmtRoasPct(v)} />
                 <YAxis type="category" dataKey="keyword" width={100} tick={{ fontSize: 11 }} />
                 <Tooltip wrapperStyle={{ fontSize: 11 }} formatter={(v: any) => fmtRoasPct(v)} />
                 <Bar dataKey="roas">
@@ -196,7 +214,7 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
                     dataKey="roas"
                     position="right"
                     formatter={(v: any) => fmtRoasPct(v)}
-                    style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }} // ✅ 주황
+                    style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
                   />
                 </Bar>
               </BarChart>
@@ -205,7 +223,7 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
         </div>
       </div>
 
-      {/* ✅ 인사이트 요약 (Structure 탭 스타일로) */}
+      {/* ✅ 인사이트 요약 */}
       <section className="mt-6">
         <div className="border rounded-xl p-6 bg-white">
           <div className="font-semibold mb-3">요약 인사이트</div>
@@ -217,7 +235,7 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
         </div>
       </section>
 
-      {/* ✅ 키워드 요약표 (Structure 탭 ‘캠페인 요약’ 표 스타일과 동일 톤) */}
+      {/* ✅ 키워드 요약표 */}
       <section className="mt-10">
         <h2 className="text-lg font-semibold mb-3">키워드 요약</h2>
 
@@ -250,15 +268,34 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
                 tableRows.map((r, idx) => (
                   <tr key={`${r.keyword}-${idx}`} className="border-t">
                     <td className="p-3 font-medium whitespace-nowrap">{r.keyword || "(empty)"}</td>
-                    <td className="p-3 text-right">{fmtComma(r.impressions)}</td>
-                    <td className="p-3 text-right">{fmtComma(r.clicks)}</td>
+
+                    {/* ✅ 막대그래프 적용 5개: Impr/Clicks/Cost/Conv/Revenue */}
+                    <td className="p-3">
+                      <DataBarCell value={toNum(r.impressions)} max={kwMaxImpr} label={fmtComma(r.impressions)} />
+                    </td>
+
+                    <td className="p-3">
+                      <DataBarCell value={toNum(r.clicks)} max={kwMaxClicks} label={fmtComma(r.clicks)} />
+                    </td>
+
                     <td className="p-3 text-right">{pctText(r.ctr, 2)}</td>
                     <td className="p-3 text-right">{KRW(r.cpc)}</td>
-                    <td className="p-3 text-right">{KRW(r.cost)}</td>
-                    <td className="p-3 text-right">{fmtComma(r.conversions)}</td>
+
+                    <td className="p-3">
+                      <DataBarCell value={toNum(r.cost)} max={kwMaxCost} label={KRW(r.cost)} />
+                    </td>
+
+                    <td className="p-3">
+                      <DataBarCell value={toNum(r.conversions)} max={kwMaxConv} label={fmtComma(r.conversions)} />
+                    </td>
+
                     <td className="p-3 text-right">{pctText(r.cvr, 2)}</td>
                     <td className="p-3 text-right">{KRW(r.cpa)}</td>
-                    <td className="p-3 text-right">{KRW(r.revenue)}</td>
+
+                    <td className="p-3">
+                      <DataBarCell value={toNum(r.revenue)} max={kwMaxRev} label={KRW(r.revenue)} />
+                    </td>
+
                     <td className="p-3 text-right">{pctText(r.roas, 1)}</td>
                   </tr>
                 ))

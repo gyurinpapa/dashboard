@@ -12,6 +12,8 @@ import SummaryTable from "./summary/SummaryTable";
 import SummaryGoal from "./summary/SummaryGoal";
 import SummaryInsight from "./summary/SummaryInsight"; // ✅ 추가
 import TrendCell from "../TrendCell";
+import DataBarCell from "../DataBarCell";
+
 
 type Props = {
   currentMonthKey: string;
@@ -93,6 +95,25 @@ export default function SummarySection(props: Props) {
   const sortedWeeks = [...weeks].sort((a, b) => weekSortKey(a).localeCompare(weekSortKey(b)));
   const prevWeekSorted = sortedWeeks.at(-2);
   const lastWeekSorted = sortedWeeks.at(-1);
+
+    // ✅ 주차표 막대그래프용 Max (빈 배열 안전)
+  const maxImpr = Math.max(0, ...weeks.map((r: any) => toNum(r.impressions ?? r.impr)));
+  const maxClicks = Math.max(0, ...weeks.map((r: any) => toNum(r.clicks)));
+  const maxCost = Math.max(0, ...weeks.map((r: any) => toNum(r.cost)));
+  const maxConv = Math.max(0, ...weeks.map((r: any) => toNum(r.conversions ?? r.conv)));
+  const maxRev = Math.max(0, ...weeks.map((r: any) => toNum(r.revenue)));
+
+    // ✅ 소스별 데이터 배열 안전 처리
+  const sources = Array.isArray(bySource) ? bySource : [];
+
+  // ✅ 소스별 표 막대그래프용 Max (빈 배열 안전)
+  const srcMaxImpr = Math.max(0, ...sources.map((r: any) => toNum(r.impressions ?? r.impr)));
+  const srcMaxClicks = Math.max(0, ...sources.map((r: any) => toNum(r.clicks)));
+  const srcMaxCost = Math.max(0, ...sources.map((r: any) => toNum(r.cost)));
+  const srcMaxConv = Math.max(0, ...sources.map((r: any) => toNum(r.conversions ?? r.conv)));
+  const srcMaxRev = Math.max(0, ...sources.map((r: any) => toNum(r.revenue)));
+
+
 
   return (
     <>
@@ -182,15 +203,25 @@ export default function SummarySection(props: Props) {
               {weeks.map((w: any, idx: number) => (
                 <tr key={w.weekKey ?? `${weekSortKey(w)}-${idx}`} className="border-t">
                   <td className="p-3 font-medium">{w.label}</td>
-                  <td className="p-3 text-right">{toNum(w.impressions).toLocaleString()}</td>
-                  <td className="p-3 text-right">{toNum(w.clicks).toLocaleString()}</td>
+                  <td className="p-3">
+                    <DataBarCell value={toNum(w.impressions ?? w.impr)} max={maxImpr} />
+                  </td>
+                  <td className="p-3">
+                    <DataBarCell value={toNum(w.clicks)} max={maxClicks} />
+                  </td>
                   <td className="p-3 text-right">{(toRate01(w.ctr) * 100).toFixed(2)}%</td>
                   <td className="p-3 text-right">{KRW(toNum(w.cpc))}</td>
-                  <td className="p-3 text-right">{KRW(toNum(w.cost))}</td>
-                  <td className="p-3 text-right">{toNum(w.conversions).toLocaleString()}</td>
+                  <td className="p-3">
+                    <DataBarCell value={toNum(w.cost)} max={maxCost} label={KRW(toNum(w.cost))} />
+                  </td>
+                  <td className="p-3">
+                    <DataBarCell value={toNum(w.conversions ?? w.conv)} max={maxConv} />
+                  </td>
                   <td className="p-3 text-right">{(toRate01(w.cvr) * 100).toFixed(2)}%</td>
                   <td className="p-3 text-right">{KRW(toNum(w.cpa))}</td>
-                  <td className="p-3 text-right">{KRW(toNum(w.revenue))}</td>
+                  <td className="p-3">
+                    <DataBarCell value={toNum(w.revenue)} max={maxRev} label={KRW(toNum(w.revenue))} />
+                  </td>
                   <td className="p-3 text-right">{(toRoas01(w.roas) * 100).toFixed(1)}%</td>
                 </tr>
               ))}
@@ -228,18 +259,28 @@ export default function SummarySection(props: Props) {
             </thead>
 
             <tbody>
-              {(Array.isArray(bySource) ? bySource : []).map((r: any, idx: number) => (
+              {sources.map((r: any, idx: number) => (
                 <tr key={r.source ?? idx} className="border-t">
                   <td className="p-3 font-medium">{r.source}</td>
-                  <td className="p-3 text-right">{toNum(r.impressions).toLocaleString()}</td>
-                  <td className="p-3 text-right">{toNum(r.clicks).toLocaleString()}</td>
+                  <td className="p-3">
+                    <DataBarCell value={toNum(r.impressions ?? r.impr)} max={srcMaxImpr} />
+                  </td>
+                  <td className="p-3">
+                    <DataBarCell value={toNum(r.clicks)} max={srcMaxClicks} />
+                  </td>
                   <td className="p-3 text-right">{(toRate01(r.ctr) * 100).toFixed(2)}%</td>
                   <td className="p-3 text-right">{KRW(toNum(r.cpc))}</td>
-                  <td className="p-3 text-right">{KRW(toNum(r.cost))}</td>
-                  <td className="p-3 text-right">{toNum(r.conversions).toLocaleString()}</td>
+                  <td className="p-3">
+                    <DataBarCell value={toNum(r.cost)} max={srcMaxCost} label={KRW(toNum(r.cost))} />
+                  </td>
+                  <td className="p-3">
+                    <DataBarCell value={toNum(r.conversions ?? r.conv)} max={srcMaxConv} />
+                  </td>
                   <td className="p-3 text-right">{(toRate01(r.cvr) * 100).toFixed(2)}%</td>
                   <td className="p-3 text-right">{KRW(toNum(r.cpa))}</td>
-                  <td className="p-3 text-right">{KRW(toNum(r.revenue))}</td>
+                  <td className="p-3">
+                    <DataBarCell value={toNum(r.revenue)} max={srcMaxRev} label={KRW(toNum(r.revenue))} />
+                  </td>
                   <td className="p-3 text-right">{(toRoas01(r.roas) * 100).toFixed(1)}%</td>
                 </tr>
               ))}

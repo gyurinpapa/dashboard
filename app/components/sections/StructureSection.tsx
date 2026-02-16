@@ -3,6 +3,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { KRW } from "../../lib/report/format";
 import { groupByGroup } from "../../lib/report/aggregate";
+import DataBarCell from "../DataBarCell";
 
 type Props = {
   bySource: any;
@@ -139,24 +140,34 @@ export default function StructureSection({
 }: Props) {
   // ✅ 전역필터가 반영된 “원천 rows”
   const scopedRows = Array.isArray(rows) ? rows : [];
-  const sourceRows = Array.isArray(bySource) ? bySource : [];
 
-  // ✅ 인사이트 상태(“인사이트 생성 중...”이 계속 뜨는 문제 방지)
-  // - 데이터가 이미 있으면 무조건 문장 렌더
-  // - 로딩표시는 진짜로 sourceRows가 없고 원천 로딩중일 때만
+  // ✅ 소스/캠페인/그룹 배열 안전 처리
+  const sourceRows = Array.isArray(bySource) ? bySource : [];
+  const campaignRows = Array.isArray(byCampaign) ? byCampaign : [];
+
+  // ✅ 막대그래프용 Max (빈 배열 안전)
+  const srcMaxImpr = Math.max(0, ...sourceRows.map((r: any) => toNum(r.impressions ?? r.impr)));
+  const srcMaxClicks = Math.max(0, ...sourceRows.map((r: any) => toNum(r.clicks)));
+  const srcMaxCost = Math.max(0, ...sourceRows.map((r: any) => toNum(r.cost)));
+  const srcMaxConv = Math.max(0, ...sourceRows.map((r: any) => toNum(r.conversions ?? r.conv)));
+  const srcMaxRev = Math.max(0, ...sourceRows.map((r: any) => toNum(r.revenue)));
+
+  const campMaxImpr = Math.max(0, ...campaignRows.map((r: any) => toNum(r.impressions ?? r.impr)));
+  const campMaxClicks = Math.max(0, ...campaignRows.map((r: any) => toNum(r.clicks)));
+  const campMaxCost = Math.max(0, ...campaignRows.map((r: any) => toNum(r.cost)));
+  const campMaxConv = Math.max(0, ...campaignRows.map((r: any) => toNum(r.conversions ?? r.conv)));
+  const campMaxRev = Math.max(0, ...campaignRows.map((r: any) => toNum(r.revenue)));
+
+  // ✅ 인사이트 상태
   const insightLoading = (allRowsLoading ?? false) && sourceRows.length === 0;
   const [sentences, setSentences] = useState<string[]>([]);
 
   useEffect(() => {
-    if (sourceRows.length > 0) {
-      // ✅ 여기서 확실하게 생성해서 state로 넣어둠 (렌더 누락 방지)
-      setSentences(generateSourceInsights(sourceRows, monthGoal));
-    } else {
-      setSentences([]);
-    }
+    if (sourceRows.length > 0) setSentences(generateSourceInsights(sourceRows, monthGoal));
+    else setSentences([]);
   }, [sourceRows, monthGoal]);
 
-  // ✅ (그룹표 전용) 캠페인명 필터: “버튼 1개” + “1열 리스트”
+  // ✅ (그룹표 전용) 캠페인명 필터
   const [selectedCampaign, setSelectedCampaign] = useState<string | null>(null);
   const [campaignOpen, setCampaignOpen] = useState(false);
 
@@ -179,6 +190,13 @@ export default function StructureSection({
   }, [scopedRows, selectedCampaign]);
 
   const byGroup = useMemo(() => groupByGroup(groupRows), [groupRows]);
+  const groupAggRows = Array.isArray(byGroup) ? byGroup : [];
+
+  const grpMaxImpr = Math.max(0, ...groupAggRows.map((r: any) => toNum(r.impressions ?? r.impr)));
+  const grpMaxClicks = Math.max(0, ...groupAggRows.map((r: any) => toNum(r.clicks)));
+  const grpMaxCost = Math.max(0, ...groupAggRows.map((r: any) => toNum(r.cost)));
+  const grpMaxConv = Math.max(0, ...groupAggRows.map((r: any) => toNum(r.conversions ?? r.conv)));
+  const grpMaxRev = Math.max(0, ...groupAggRows.map((r: any) => toNum(r.revenue)));
 
   return (
     <>
@@ -217,15 +235,41 @@ export default function StructureSection({
                 sourceRows.map((r: any, idx: number) => (
                   <tr key={r.source ?? idx} className="border-t">
                     <td className="p-3 font-medium whitespace-nowrap">{r.source}</td>
-                    <td className="p-3 text-right">{toNum(r.impressions).toLocaleString()}</td>
-                    <td className="p-3 text-right">{toNum(r.clicks).toLocaleString()}</td>
+
+                    <td className="p-3">
+                      <DataBarCell value={toNum(r.impressions ?? r.impr)} max={srcMaxImpr} />
+                    </td>
+
+                    <td className="p-3">
+                      <DataBarCell value={toNum(r.clicks)} max={srcMaxClicks} />
+                    </td>
+
                     <td className="p-3 text-right">{(toRate01(r.ctr) * 100).toFixed(2)}%</td>
                     <td className="p-3 text-right">{KRW(toNum(r.cpc))}</td>
-                    <td className="p-3 text-right">{KRW(toNum(r.cost))}</td>
-                    <td className="p-3 text-right">{toNum(r.conversions).toLocaleString()}</td>
+
+                    <td className="p-3">
+                      <DataBarCell
+                        value={toNum(r.cost)}
+                        max={srcMaxCost}
+                        label={KRW(toNum(r.cost))}
+                      />
+                    </td>
+
+                    <td className="p-3">
+                      <DataBarCell value={toNum(r.conversions ?? r.conv)} max={srcMaxConv} />
+                    </td>
+
                     <td className="p-3 text-right">{(toRate01(r.cvr) * 100).toFixed(2)}%</td>
                     <td className="p-3 text-right">{KRW(toNum(r.cpa))}</td>
-                    <td className="p-3 text-right">{KRW(toNum(r.revenue))}</td>
+
+                    <td className="p-3">
+                      <DataBarCell
+                        value={toNum(r.revenue)}
+                        max={srcMaxRev}
+                        label={KRW(toNum(r.revenue))}
+                      />
+                    </td>
+
                     <td className="p-3 text-right">{(toRoas01(r.roas) * 100).toFixed(1)}%</td>
                   </tr>
                 ))
@@ -235,7 +279,7 @@ export default function StructureSection({
         </div>
       </section>
 
-      {/* ✅ 요약 인사이트 (반드시 표시되도록 “커스텀 박스”로 고정) */}
+      {/* ✅ 요약 인사이트 */}
       <section className="mt-6">
         <div className="border rounded-xl p-6 bg-white">
           <div className="font-semibold mb-3">요약 인사이트</div>
@@ -283,23 +327,49 @@ export default function StructureSection({
             </thead>
 
             <tbody>
-              {(Array.isArray(byCampaign) ? byCampaign : []).map((r: any, idx: number) => (
+              {campaignRows.map((r: any, idx: number) => (
                 <tr key={r.campaign ?? idx} className="border-t">
                   <td className="p-3 font-medium whitespace-nowrap">{r.campaign}</td>
-                  <td className="p-3 text-right">{toNum(r.impressions).toLocaleString()}</td>
-                  <td className="p-3 text-right">{toNum(r.clicks).toLocaleString()}</td>
+
+                  <td className="p-3">
+                    <DataBarCell value={toNum(r.impressions ?? r.impr)} max={campMaxImpr} />
+                  </td>
+
+                  <td className="p-3">
+                    <DataBarCell value={toNum(r.clicks)} max={campMaxClicks} />
+                  </td>
+
                   <td className="p-3 text-right">{(toRate01(r.ctr) * 100).toFixed(2)}%</td>
                   <td className="p-3 text-right">{KRW(toNum(r.cpc))}</td>
-                  <td className="p-3 text-right">{KRW(toNum(r.cost))}</td>
-                  <td className="p-3 text-right">{toNum(r.conversions).toLocaleString()}</td>
+
+                  <td className="p-3">
+                    <DataBarCell
+                      value={toNum(r.cost)}
+                      max={campMaxCost}
+                      label={KRW(toNum(r.cost))}
+                    />
+                  </td>
+
+                  <td className="p-3">
+                    <DataBarCell value={toNum(r.conversions ?? r.conv)} max={campMaxConv} />
+                  </td>
+
                   <td className="p-3 text-right">{(toRate01(r.cvr) * 100).toFixed(2)}%</td>
                   <td className="p-3 text-right">{KRW(toNum(r.cpa))}</td>
-                  <td className="p-3 text-right">{KRW(toNum(r.revenue))}</td>
+
+                  <td className="p-3">
+                    <DataBarCell
+                      value={toNum(r.revenue)}
+                      max={campMaxRev}
+                      label={KRW(toNum(r.revenue))}
+                    />
+                  </td>
+
                   <td className="p-3 text-right">{(toRoas01(r.roas) * 100).toFixed(1)}%</td>
                 </tr>
               ))}
 
-              {(!Array.isArray(byCampaign) || byCampaign.length === 0) && (
+              {campaignRows.length === 0 && (
                 <tr className="border-t">
                   <td className="p-3 text-gray-500" colSpan={11}>
                     표시할 캠페인 데이터가 없습니다. (필터/컬럼명을 확인)
@@ -317,7 +387,6 @@ export default function StructureSection({
           <h3 className="text-lg font-semibold">그룹 요약</h3>
 
           <div className="relative">
-            {/* 캠페인명 버튼 1개 (좌측 상단 필터와 동일 톤: 주황 계열) */}
             <button
               type="button"
               onClick={(e) => {
@@ -332,7 +401,6 @@ export default function StructureSection({
               캠페인명 {campaignOpen ? "▲" : "▼"}
             </button>
 
-            {/* 1열 리스트: 선택=주황 / 미선택=옅은 회색 */}
             {campaignOpen && (
               <div
                 className="absolute right-0 mt-2 w-64 bg-white border rounded-xl shadow-lg z-50 p-2"
@@ -398,23 +466,49 @@ export default function StructureSection({
             </thead>
 
             <tbody>
-              {(Array.isArray(byGroup) ? byGroup : []).map((r: any, idx: number) => (
+              {groupAggRows.map((r: any, idx: number) => (
                 <tr key={r.group ?? idx} className="border-t">
                   <td className="p-3 font-medium whitespace-nowrap">{r.group}</td>
-                  <td className="p-3 text-right">{toNum(r.impressions).toLocaleString()}</td>
-                  <td className="p-3 text-right">{toNum(r.clicks).toLocaleString()}</td>
+
+                  <td className="p-3">
+                    <DataBarCell value={toNum(r.impressions ?? r.impr)} max={grpMaxImpr} />
+                  </td>
+
+                  <td className="p-3">
+                    <DataBarCell value={toNum(r.clicks)} max={grpMaxClicks} />
+                  </td>
+
                   <td className="p-3 text-right">{(toRate01(r.ctr) * 100).toFixed(2)}%</td>
                   <td className="p-3 text-right">{KRW(toNum(r.cpc))}</td>
-                  <td className="p-3 text-right">{KRW(toNum(r.cost))}</td>
-                  <td className="p-3 text-right">{toNum(r.conversions).toLocaleString()}</td>
+
+                  <td className="p-3">
+                    <DataBarCell
+                      value={toNum(r.cost)}
+                      max={grpMaxCost}
+                      label={KRW(toNum(r.cost))}
+                    />
+                  </td>
+
+                  <td className="p-3">
+                    <DataBarCell value={toNum(r.conversions ?? r.conv)} max={grpMaxConv} />
+                  </td>
+
                   <td className="p-3 text-right">{(toRate01(r.cvr) * 100).toFixed(2)}%</td>
                   <td className="p-3 text-right">{KRW(toNum(r.cpa))}</td>
-                  <td className="p-3 text-right">{KRW(toNum(r.revenue))}</td>
+
+                  <td className="p-3">
+                    <DataBarCell
+                      value={toNum(r.revenue)}
+                      max={grpMaxRev}
+                      label={KRW(toNum(r.revenue))}
+                    />
+                  </td>
+
                   <td className="p-3 text-right">{(toRoas01(r.roas) * 100).toFixed(1)}%</td>
                 </tr>
               ))}
 
-              {(!Array.isArray(byGroup) || byGroup.length === 0) && (
+              {groupAggRows.length === 0 && (
                 <tr className="border-t">
                   <td className="p-3 text-gray-500" colSpan={11}>
                     표시할 그룹 데이터가 없습니다. (필터/캠페인 선택/컬럼명을 확인)

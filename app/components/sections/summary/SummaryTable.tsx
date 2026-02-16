@@ -2,6 +2,8 @@
 
 import TrendCell from "../../TrendCell";
 import { KRW } from "../../../lib/report/format";
+import DataBarCell from "../../DataBarCell";
+
 
 type Props = {
   byMonth: any[];
@@ -60,6 +62,13 @@ export default function SummaryTable({ byMonth }: Props) {
   // ✅ 증감: 최근월(0) vs 전월(1)
   const lastMonth = sortedMonths[0];
   const prevMonth = sortedMonths[1];
+
+  const maxImpr = Math.max(...byMonth.map(r => r.impressions || 0));
+  const maxClicks = Math.max(...byMonth.map(r => r.clicks || 0));
+  const maxCost = Math.max(...byMonth.map(r => r.cost || 0));
+  const maxConv = Math.max(...byMonth.map(r => r.conversions || 0));
+  const maxRev = Math.max(...byMonth.map(r => r.revenue || 0));
+
 
   return (
     <section className="mt-10">
@@ -143,31 +152,55 @@ export default function SummaryTable({ byMonth }: Props) {
               <tr key={row?.monthKey ?? row?.month ?? row?.label ?? idx} className="border-t">
                 <td className="text-left p-3">{row?.month ?? row?.label ?? "-"}</td>
 
-                <td className="text-right p-3">
-                  {row?.impressions?.toLocaleString?.() ??
-                    row?.impr?.toLocaleString?.() ??
-                    "-"}
-                </td>
+                <td className="p-3">
+                    <DataBarCell
+                        value={row?.impressions ?? row?.impr ?? 0}
+                        max={maxImpr}
+                    />
+                    </td>
 
-                <td className="text-right p-3">{row?.clicks?.toLocaleString?.() ?? "-"}</td>
+
+                <td className="p-3">
+                    <DataBarCell
+                        value={row?.clicks ?? 0}
+                        max={maxClicks}
+                    />
+                    </td>
+
 
                 <td className="p-3 text-right">{(toRate01(row?.ctr) * 100).toFixed(2)}%</td>
 
                 {/* ✅ 원화 표기 통일 */}
                 <td className="text-right p-3">{KRW(row?.cpc)}</td>
-                <td className="text-right p-3">{KRW(row?.cost)}</td>
+                <td className="p-3">
+                    <DataBarCell
+                        value={row?.cost ?? 0}
+                        max={maxCost}
+                        label={KRW(row?.cost)}
+                    />
+                    </td>
 
-                <td className="text-right p-3">
-                  {row?.conversions?.toLocaleString?.() ??
-                    row?.conv?.toLocaleString?.() ??
-                    "-"}
-                </td>
+
+                <td className="p-3">
+                    <DataBarCell
+                        value={row?.conversions ?? row?.conv ?? 0}
+                        max={maxConv}
+                    />
+                    </td>
+
 
                 <td className="p-3 text-right">{(toRate01(row?.cvr) * 100).toFixed(2)}%</td>
 
                 {/* ✅ 원화 표기 통일 */}
                 <td className="text-right p-3">{KRW(row?.cpa)}</td>
-                <td className="text-right p-3">{KRW(row?.revenue)}</td>
+                <td className="p-3">
+                    <DataBarCell
+                        value={row?.revenue ?? 0}
+                        max={maxRev}
+                        label={KRW(row?.revenue)}
+                    />
+                    </td>
+
 
                 <td className="p-3 text-right">{(toRoas01(row?.roas) * 100).toFixed(1)}%</td>
               </tr>
