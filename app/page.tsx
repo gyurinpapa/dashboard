@@ -38,6 +38,7 @@ import HeaderBar from "./components/sections/HeaderBar";
 import StructureSection from "./components/sections/StructureSection";
 import KeywordSection from "./components/sections/KeywordSection";
 import SummarySection from "./components/sections/SummarySection";
+import CreativeSection from "./components/sections/CreativeSection";
 import MonthGoalSection from "./components/sections/MonthGoalSection";
 
 const MONTH_GOAL_KEY = "nature_report_month_goal_v1";
@@ -471,6 +472,12 @@ export default function Page() {
               keywordInsight={keywordInsight}
             />
           )}
+
+          {tab === "creative" && (
+            <CreativeSection />
+          )}
+
+
         </div>
       </div>
     </main>

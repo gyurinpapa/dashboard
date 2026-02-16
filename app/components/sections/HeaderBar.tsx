@@ -328,6 +328,19 @@ export default function HeaderBar(props: Props) {
                 >
                   키워드
                 </button>
+
+                   <button
+                  type="button"
+                  onClick={() => setTab("creative")}
+                  className={`px-5 py-2 rounded-xl border text-sm font-semibold transition ${
+                    tab === "creative"
+                      ? "bg-black text-white border-black"
+                      : "bg-white text-black border-gray-300 hover:bg-gray-100"
+                  }`}
+                >
+                  소재
+                </button>
+
               </div>
 
               <div className="text-sm text-gray-600">[+VAT]</div>
