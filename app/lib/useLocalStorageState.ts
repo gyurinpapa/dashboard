@@ -6,40 +6,37 @@ export function useLocalStorageState<T>(
   key: string,
   defaultValue: T
 ): [T, Dispatch<SetStateAction<T>>] {
-  const isBrowser = typeof window !== "undefined";
-
   const read = (): T => {
-    if (!isBrowser) return defaultValue;
-
     try {
       const raw = window.localStorage.getItem(key);
       if (raw == null) return defaultValue;
-
       const parsed = JSON.parse(raw) as T;
-      return parsed ?? defaultValue;
+      return (parsed ?? defaultValue) as T;
     } catch {
       return defaultValue;
     }
   };
 
-  const [value, setValue] = useState<T>(() => read());
+  // ✅ 초기 렌더에서는 defaultValue로 시작 → mount 후에만 localStorage로 동기화
+  const [value, setValue] = useState<T>(defaultValue);
+  const [hydrated, setHydrated] = useState(false);
 
-  // key가 바뀌면 그 key로 다시 로드
+  // 1) mount 후 로드
   useEffect(() => {
-    if (!isBrowser) return;
     setValue(read());
+    setHydrated(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
-  // 값 변경 시 저장
+  // 2) hydrated 이후에만 저장
   useEffect(() => {
-    if (!isBrowser) return;
+    if (!hydrated) return;
     try {
       window.localStorage.setItem(key, JSON.stringify(value));
     } catch {
-      // 저장 실패는 무시
+      // ignore
     }
-  }, [key, value, isBrowser]);
+  }, [key, value, hydrated]);
 
   return [value, setValue];
 }
