@@ -24,6 +24,7 @@ import { buildKeywordInsight } from "./lib/report/insights/buildKeywordInsight";
 import HeaderBar from "./components/sections/HeaderBar";
 import StructureSection from "./components/sections/StructureSection";
 import KeywordSection from "./components/sections/KeywordSection";
+import KeywordDetailSection from "./components/sections/KeywordDetailSection";
 import SummarySection from "./components/sections/SummarySection";
 import CreativeSection from "./components/sections/CreativeSection";
 import MonthGoalSection from "./components/sections/MonthGoalSection";
@@ -191,6 +192,11 @@ export default function Page() {
               keywordInsight={keywordInsight}
             />
           )}
+
+          {tab === "keywordDetail" && (
+            <KeywordDetailSection rows={filteredRows as any[]} />
+          )}
+
 
           {tab === "creative" && <CreativeSection />}
         </div>

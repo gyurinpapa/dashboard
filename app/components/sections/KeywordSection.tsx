@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -12,7 +12,7 @@ import {
   LabelList,
 } from "recharts";
 import { KRW, formatNumber } from "../../lib/report/format";
-import DataBarCell from "../DataBarCell"; // ✅ 추가 (경로 확인: KeywordSection이 sections 폴더면 ../DataBarCell 맞음)
+import DataBarCell from "../DataBarCell";
 
 type Props = {
   keywordAgg: any[];
@@ -49,9 +49,51 @@ function fmtRoasPct(roas01: any) {
   return `${(v * 100).toFixed(1)}%`;
 }
 
+type Row = {
+  keyword: string;
+  impressions: number;
+  clicks: number;
+  ctr: number; // 0~1
+  cpc: number;
+  cost: number;
+  conversions: number;
+  cvr: number; // 0~1
+  cpa: number;
+  revenue: number;
+  roas: number; // 0~1 (예: 1.15 = 115%)
+};
+
+type SortDir = "asc" | "desc";
+type SortKey =
+  | "keyword"
+  | "impressions"
+  | "clicks"
+  | "ctr"
+  | "cpc"
+  | "cost"
+  | "conversions"
+  | "cvr"
+  | "cpa"
+  | "revenue"
+  | "roas";
+
+const SORT_LABEL: Record<SortKey, string> = {
+  keyword: "Keyword",
+  impressions: "Impr",
+  clicks: "Clicks",
+  ctr: "CTR",
+  cpc: "CPC",
+  cost: "Cost",
+  conversions: "Conv",
+  cvr: "CVR",
+  cpa: "CPA",
+  revenue: "Revenue",
+  roas: "ROAS",
+};
+
 export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
   // ===== keywordAgg normalize (표/차트 공용) =====
-  const rows = useMemo(() => {
+  const rows: Row[] = useMemo(() => {
     return (Array.isArray(keywordAgg) ? keywordAgg : []).map((r: any) => {
       const keyword = String(r.keyword ?? r.label ?? r.name ?? "");
 
@@ -97,32 +139,69 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
     [rows]
   );
 
-  // ===== 표: 클릭순 Top50 =====
-  const tableRows = useMemo(() => {
-    return [...rows].sort((a, b) => b.clicks - a.clicks).slice(0, 50);
-  }, [rows]);
+  // ==========================
+  // ✅ 표 정렬(오름/내림) 상태
+  // ==========================
+  const [sortKey, setSortKey] = useState<SortKey>("clicks");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
-  // ✅ (키워드 표 막대그래프용) max 계산: "표에 보여주는 50개 기준"으로 맞춤
-  const kwMaxImpr = useMemo(
-    () => Math.max(0, ...tableRows.map((r) => toNum(r.impressions))),
-    [tableRows]
+  const onClickHeader = (k: SortKey) => {
+    if (k === sortKey) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortKey(k);
+
+    // 숫자 지표는 보통 desc가 기본, 키워드는 asc가 자연스러움
+    setSortDir(k === "keyword" ? "asc" : "desc");
+  };
+
+  const SortArrow = ({ k }: { k: SortKey }) => {
+    if (sortKey !== k) return null;
+    // ✅ 같은 폰트/색/크기: 텍스트 화살표(이미지 불필요)
+    return <span className="ml-1 inline-block align-middle">{sortDir === "asc" ? "▲" : "▼"}</span>;
+  };
+
+  const Th = ({ k, align = "right" }: { k: SortKey; align?: "left" | "right" }) => (
+    <th
+      className={[
+        "p-3 select-none whitespace-nowrap",
+        align === "left" ? "text-left" : "text-right",
+        "cursor-pointer hover:bg-gray-100",
+      ].join(" ")}
+      onClick={() => onClickHeader(k)}
+      title={`정렬: ${SORT_LABEL[k]}`}
+    >
+      {SORT_LABEL[k]}
+      <SortArrow k={k} />
+    </th>
   );
-  const kwMaxClicks = useMemo(
-    () => Math.max(0, ...tableRows.map((r) => toNum(r.clicks))),
-    [tableRows]
-  );
-  const kwMaxCost = useMemo(
-    () => Math.max(0, ...tableRows.map((r) => toNum(r.cost))),
-    [tableRows]
-  );
-  const kwMaxConv = useMemo(
-    () => Math.max(0, ...tableRows.map((r) => toNum(r.conversions))),
-    [tableRows]
-  );
-  const kwMaxRev = useMemo(
-    () => Math.max(0, ...tableRows.map((r) => toNum(r.revenue))),
-    [tableRows]
-  );
+
+  // ===== 표: 선택한 컬럼 정렬 → Top50 =====
+  const tableRows = useMemo(() => {
+    const sorted = [...rows].sort((a, b) => {
+      const dir = sortDir === "asc" ? 1 : -1;
+
+      if (sortKey === "keyword") {
+        return dir * a.keyword.localeCompare(b.keyword, "ko");
+      }
+
+      const av = (a as any)[sortKey] as number;
+      const bv = (b as any)[sortKey] as number;
+
+      // 숫자 정렬
+      return dir * (toNum(av) - toNum(bv));
+    });
+
+    return sorted.slice(0, 50);
+  }, [rows, sortKey, sortDir]);
+
+  // ✅ (키워드 표 막대그래프용) max 계산: "표에 보여주는 50개 기준"
+  const kwMaxImpr = useMemo(() => Math.max(0, ...tableRows.map((r) => toNum(r.impressions))), [tableRows]);
+  const kwMaxClicks = useMemo(() => Math.max(0, ...tableRows.map((r) => toNum(r.clicks))), [tableRows]);
+  const kwMaxCost = useMemo(() => Math.max(0, ...tableRows.map((r) => toNum(r.cost))), [tableRows]);
+  const kwMaxConv = useMemo(() => Math.max(0, ...tableRows.map((r) => toNum(r.conversions))), [tableRows]);
+  const kwMaxRev = useMemo(() => Math.max(0, ...tableRows.map((r) => toNum(r.revenue))), [tableRows]);
 
   return (
     <section className="mt-1">
@@ -138,17 +217,9 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
           <div className="text-xs font-semibold mb-2">클릭수 TOP20 키워드</div>
           <div style={{ width: "100%", height: 340 }}>
             <ResponsiveContainer>
-              <BarChart
-                data={topClicks}
-                layout="vertical"
-                margin={{ top: 6, right: 70, left: 0, bottom: 6 }}
-              >
+              <BarChart data={topClicks} layout="vertical" margin={{ top: 6, right: 70, left: 0, bottom: 6 }}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  type="number"
-                  tick={{ fontSize: 11 }}
-                  tickFormatter={(v) => formatNumber(toNum(v))}
-                />
+                <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => formatNumber(toNum(v))} />
                 <YAxis type="category" dataKey="keyword" width={100} tick={{ fontSize: 11 }} />
                 <Tooltip wrapperStyle={{ fontSize: 11 }} formatter={(v: any) => fmtComma(v)} />
                 <Bar dataKey="clicks">
@@ -169,17 +240,9 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
           <div className="text-xs font-semibold mb-2">전환수 TOP20 키워드</div>
           <div style={{ width: "100%", height: 340 }}>
             <ResponsiveContainer>
-              <BarChart
-                data={topConv}
-                layout="vertical"
-                margin={{ top: 6, right: 70, left: 0, bottom: 6 }}
-              >
+              <BarChart data={topConv} layout="vertical" margin={{ top: 6, right: 70, left: 0, bottom: 6 }}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  type="number"
-                  tick={{ fontSize: 11 }}
-                  tickFormatter={(v) => formatNumber(toNum(v))}
-                />
+                <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => formatNumber(toNum(v))} />
                 <YAxis type="category" dataKey="keyword" width={100} tick={{ fontSize: 11 }} />
                 <Tooltip wrapperStyle={{ fontSize: 11 }} formatter={(v: any) => fmtComma(v)} />
                 <Bar dataKey="conversions">
@@ -200,11 +263,7 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
           <div className="text-xs font-semibold mb-2">ROAS TOP20 키워드</div>
           <div style={{ width: "100%", height: 340 }}>
             <ResponsiveContainer>
-              <BarChart
-                data={topRoas}
-                layout="vertical"
-                margin={{ top: 6, right: 82, left: 0, bottom: 6 }}
-              >
+              <BarChart data={topRoas} layout="vertical" margin={{ top: 6, right: 82, left: 0, bottom: 6 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => fmtRoasPct(v)} />
                 <YAxis type="category" dataKey="keyword" width={100} tick={{ fontSize: 11 }} />
@@ -243,17 +302,17 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
           <table className="w-full text-sm border-collapse">
             <thead className="bg-gray-50 text-gray-600">
               <tr>
-                <th className="text-left p-3">Keyword</th>
-                <th className="text-right p-3">Impr</th>
-                <th className="text-right p-3">Clicks</th>
-                <th className="text-right p-3">CTR</th>
-                <th className="text-right p-3">CPC</th>
-                <th className="text-right p-3">Cost</th>
-                <th className="text-right p-3">Conv</th>
-                <th className="text-right p-3">CVR</th>
-                <th className="text-right p-3">CPA</th>
-                <th className="text-right p-3">Revenue</th>
-                <th className="text-right p-3">ROAS</th>
+                <Th k="keyword" align="left" />
+                <Th k="impressions" />
+                <Th k="clicks" />
+                <Th k="ctr" />
+                <Th k="cpc" />
+                <Th k="cost" />
+                <Th k="conversions" />
+                <Th k="cvr" />
+                <Th k="cpa" />
+                <Th k="revenue" />
+                <Th k="roas" />
               </tr>
             </thead>
 
@@ -267,7 +326,7 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
               ) : (
                 tableRows.map((r, idx) => (
                   <tr key={`${r.keyword}-${idx}`} className="border-t">
-                    <td className="p-3 font-medium whitespace-nowrap">{r.keyword || "(empty)"}</td>
+                    <td className="p-3 font-medium whitespace-nowrap text-left">{r.keyword || "(empty)"}</td>
 
                     {/* ✅ 막대그래프 적용 5개: Impr/Clicks/Cost/Conv/Revenue */}
                     <td className="p-3">
@@ -305,7 +364,7 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
         </div>
 
         <div className="mt-2 text-xs text-gray-400">
-          * 표는 클릭수 기준 Top50 키워드입니다. (좌측 필터 조건에 따라 자동 변경)
+          * 표는 선택한 정렬 기준으로 Top50 키워드입니다. (좌측 필터 조건에 따라 자동 변경)
         </div>
       </section>
     </section>

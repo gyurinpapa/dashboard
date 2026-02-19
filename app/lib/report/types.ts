@@ -1,7 +1,13 @@
 // app/lib/report/types.ts
 
 // ===== Tabs =====
-export type TabKey = "summary" | "structure" | "keyword" | "creative";
+export type TabKey =
+  | "summary"
+  | "structure"
+  | "keyword"
+  | "keywordDetail" // ✅ 키워드(상세)
+  | "creative";
+
 
 // ===== FilterKey (HeaderBar에서 쓰는 상단 4버튼: 월/주차/기기/채널) =====
 // 지금 page.tsx에서 초기값을 null로 쓰고 있으니 null 포함
@@ -35,6 +41,7 @@ export type Row = {
   cost?: number | string;
   conversions?: number | string;
   revenue?: number | string;
+  avgRank?: number | string;
 
   // 필터링/그룹핑에 쓰일 수 있는 후보 키들
   month?: string;

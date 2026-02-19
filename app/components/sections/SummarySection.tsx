@@ -289,10 +289,6 @@ export default function SummarySection(props: Props) {
         </div>
       </section>
 
-      {/* ✅ 요약 인사이트 (구조탭과 동일하게 InsightBox 기반으로 렌더) */}
-      <section className="mt-6">
-        <SummaryInsight monthGoalInsight={monthGoalInsight} />
-      </section>
     </>
   );
 }

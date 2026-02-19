@@ -5,13 +5,6 @@ import { parseDateLoose, monthKeyOfDate, startOfWeekMonday, toYMDLocal, addDays,
 export function normalizeCsvRows(raw: any[]): Row[] {
   return (raw || []).map((r: any) => {
     const sourceFixed = (r.source ?? r.soucrce ?? r.platform ?? "").toString().trim();
-
-    const avgRankRaw = r.rank ?? r.avgRank ?? r["avg.rank"] ?? null;
-    const avgRank =
-      avgRankRaw == null || avgRankRaw === ""
-        ? undefined
-        : Number(String(avgRankRaw).replace(/[^\d.\-]/g, ""));
-
     return {
       ...r,
       source: sourceFixed,
@@ -20,13 +13,9 @@ export function normalizeCsvRows(raw: any[]): Row[] {
       cost: Number(r.cost ?? 0) || 0,
       conversions: Number(r.conversions ?? r.conversion ?? 0) || 0,
       revenue: Number(r.revenue ?? 0) || 0,
-
-      // ✅ CSV의 rank를 KeywordDetail에서 쓰는 avgRank로 통일
-      avgRank: Number.isFinite(avgRank as any) ? (avgRank as number) : undefined,
     } as Row;
   });
 }
-
 
 export function summarize(rows: Row[]) {
   const sum = (key: keyof Row) => rows.reduce((acc, cur) => acc + (Number(cur[key]) || 0), 0);
@@ -155,23 +144,6 @@ export function groupBySource(rows: Row[]) {
     .map(([source, list]) => ({ source, ...summarize(list) }))
     .sort((a, b) => b.cost - a.cost);
 }
-
-export function groupByDevice(rows: Row[]) {
-  const keyOf = (r: Row) => (String(r.device ?? "").trim() || "unknown").toLowerCase();
-
-  const map = new Map<string, Row[]>();
-  for (const r of rows) {
-    const k = keyOf(r);
-    const cur = map.get(k) ?? [];
-    cur.push(r);
-    map.set(k, cur);
-  }
-
-  return Array.from(map.entries())
-    .map(([device, list]) => ({ device, ...summarize(list) }))
-    .sort((a, b) => b.cost - a.cost);
-}
-
 
 export function groupByWeekRecent5(filteredRows: Row[]) {
   const valid = filteredRows
@@ -348,38 +320,4 @@ export function groupByGroup(rows: any[]) {
   });
 
   return result.sort((a, b) => b.cost - a.cost);
-}
-export function groupByKeyword(rows: any[]) {
-  const map = new Map<string, any>();
-
-  const getKey = (r: any) => String(r.keyword ?? r.query ?? r.term ?? "").trim() || "(unknown)";
-
-  for (const r of rows) {
-    const k = getKey(r);
-    if (!map.has(k)) {
-      map.set(k, {
-        keyword: k,
-        impressions: 0,
-        clicks: 0,
-        cost: 0,
-        conversions: 0,
-        revenue: 0,
-      });
-    }
-    const t = map.get(k);
-    t.impressions += Number(r.impressions) || 0;
-    t.clicks += Number(r.clicks) || 0;
-    t.cost += Number(r.cost) || 0;
-    t.conversions += Number(r.conversions) || 0;
-    t.revenue += Number(r.revenue) || 0;
-  }
-
-  const arr = Array.from(map.values()).map((x) => ({
-    ...x,
-    roas: x.cost > 0 ? x.revenue / x.cost : 0, // 1.15 = 115%
-  }));
-
-  // 기본은 클릭 많은 순으로 TOP 20
-  arr.sort((a, b) => (b.clicks || 0) - (a.clicks || 0));
-  return arr.slice(0, 20);
 }
