@@ -301,7 +301,14 @@ export default function KeywordDetailSection(props: Props) {
   const byDevice = useMemo(() => groupByDevice(filteredRows), [filteredRows]);
 
   const byWeekOnly = useMemo(() => groupByWeekRecent5(filteredRows), [filteredRows]);
-  const byWeekChart = byWeekOnly;
+
+// ✅ 그래프는 과거 → 최신(오른쪽이 최신)으로 정렬
+    const byWeekChart = useMemo(() => {
+    const arr = [...byWeekOnly];
+    arr.sort((a, b) => String(a.weekKey ?? "").localeCompare(String(b.weekKey ?? "")));
+    return arr;
+    }, [byWeekOnly]);
+
 
   const byMonth = useMemo(
     () =>
