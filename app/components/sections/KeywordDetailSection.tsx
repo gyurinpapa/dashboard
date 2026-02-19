@@ -44,7 +44,7 @@ function safePct0(n: number) {
 
 function pickDeviceLabel(raw: string) {
   const s = (raw ?? "").toLowerCase();
-  if (s.includes("mobile") || s.includes("m")) return "모바일";
+  if (s.includes("mobile") || s === "m") return "모바일";
   if (s.includes("pc") || s.includes("desktop")) return "PC";
   if (s.includes("tablet")) return "태블릿";
   if (s.includes("unknown") || !s.trim()) return "미지정";
@@ -64,6 +64,7 @@ function calcAvgRankWeighted(rows: Row[]) {
   let sCnt = 0;
 
   for (const r of rows) {
+    // ✅ CSV 원본이 rank 라면 normalize 단계에서 avgRank로 매핑되어 있어야 함
     const rank = Number((r as any).avgRank);
     if (!Number.isFinite(rank)) continue;
 
@@ -202,7 +203,6 @@ function buildKeywordDetailInsight(args: {
   // 액션 추천(클릭/전환/ROAS + 기기 기반)
   const actions: string[] = [];
 
-  // 클릭 개선
   if (me.ctr < 0.02 && me.impressions > 0) {
     actions.push(
       "클릭 개선: CTR이 낮습니다. 광고문구/확장소재(가격·혜택·신뢰요소) A/B, 매칭타입/제외키워드 정리로 클릭 품질을 먼저 끌어올리세요."
@@ -213,7 +213,6 @@ function buildKeywordDetailInsight(args: {
     );
   }
 
-  // 전환 개선
   if (me.cvr < 0.01 && me.clicks >= 30) {
     actions.push(
       "전환 개선: CVR이 낮습니다. 랜딩 첫 화면(USP+신뢰+CTA) 간소화, 폼 필드 축소, 상담/전화 CTA 가시성 개선을 우선 적용하세요."
@@ -224,7 +223,6 @@ function buildKeywordDetailInsight(args: {
     );
   }
 
-  // ROAS/예산: 소스
   if (topS1) {
     const s1 = `소스: 비용 상위 “${String(topS1.source)}”(ROAS ${safePct0(safeNum(topS1.roas))}).`;
     if (safeNum(topS1.roas) >= me.roas) {
@@ -241,7 +239,6 @@ function buildKeywordDetailInsight(args: {
     );
   }
 
-  // 기기 기반 액션(핵심)
   if (topD1 && topD2) {
     const d1 = String(topD1.device ?? "unknown");
     const d2 = String(topD2.device ?? "unknown");
@@ -302,13 +299,12 @@ export default function KeywordDetailSection(props: Props) {
 
   const byWeekOnly = useMemo(() => groupByWeekRecent5(filteredRows), [filteredRows]);
 
-// ✅ 그래프는 과거 → 최신(오른쪽이 최신)으로 정렬
-    const byWeekChart = useMemo(() => {
+  // ✅ 그래프는 과거 → 최신(오른쪽이 최신)으로 정렬
+  const byWeekChart = useMemo(() => {
     const arr = [...byWeekOnly];
     arr.sort((a, b) => String(a.weekKey ?? "").localeCompare(String(b.weekKey ?? "")));
     return arr;
-    }, [byWeekOnly]);
-
+  }, [byWeekOnly]);
 
   const byMonth = useMemo(
     () =>
@@ -389,7 +385,9 @@ export default function KeywordDetailSection(props: Props) {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h3 className="text-base font-semibold">{insight.title}</h3>
-                <div className="mt-1 text-xs text-gray-500">{selectedKeyword ? `키워드: ${selectedKeyword}` : "키워드를 선택하세요"}</div>
+                <div className="mt-1 text-xs text-gray-500">
+                  {selectedKeyword ? `키워드: ${selectedKeyword}` : "키워드를 선택하세요"}
+                </div>
               </div>
 
               {/* Avg.rank 강조 */}
@@ -415,16 +413,32 @@ export default function KeywordDetailSection(props: Props) {
             </div>
           </section>
 
-          {/* ✅ 요약탭 섹션 재사용(선택 키워드 기준 데이터) */}
-          <SummarySection
-            totals={totals as any}
-            byMonth={byMonth as any}
-            byWeekOnly={byWeekOnly as any}
-            byWeekChart={byWeekChart as any}
-            bySource={bySource as any}
-          />
+          {/* ✅ A안 적용: 키워드 상세 탭에서만 Week 첫 컬럼 줄바꿈 금지 */}
+          <div className="keyword-detail-week-table-fix">
+            <SummarySection
+              totals={totals as any}
+              byMonth={byMonth as any}
+              byWeekOnly={byWeekOnly as any}
+              byWeekChart={byWeekChart as any}
+              bySource={bySource as any}
+            />
+          </div>
         </div>
       </div>
+
+      {/* ✅ A안: 키워드 상세 탭에서만 적용되는 전용 CSS */}
+      <style jsx global>{`
+        .keyword-detail-week-table-fix table th:first-child,
+        .keyword-detail-week-table-fix table td:first-child {
+          white-space: nowrap !important;
+          width: 180px;
+          max-width: 180px;
+        }
+        .keyword-detail-week-table-fix table td:first-child {
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+      `}</style>
     </section>
   );
 }
