@@ -1,13 +1,15 @@
-console.log("ENV KEY:", process.env.OPENAI_API_KEY);
-
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
 
-export const runtime = "nodejs"; // (중요) edge 말고 node에서 돌아야 openai 사용 안정적
+export const runtime = "nodejs";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// 환경변수 안전 체크
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
+// 키가 있을 때만 클라이언트 생성
+const openai = OPENAI_API_KEY
+  ? new OpenAI({ apiKey: OPENAI_API_KEY })
+  : null;
 
 function safeJson(obj: any) {
   try {
@@ -19,11 +21,16 @@ function safeJson(obj: any) {
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    // ✅ 키가 없으면 500이 아니라 "기능 비활성"으로 정상 응답(200)
+    if (!openai) {
+      return NextResponse.json({
+        ok: true,
+        disabled: true,
+        result: "인사이트 기능이 아직 비활성화되어 있어요. (OPENAI_API_KEY 미설정)",
+      });
+    }
 
-    // body 형태:
-    // 1) { type: "monthly", data: [...] }
-    // 2) { type: "monthGoal", monthKey, goal, actual, progress, note }
+    const body = await req.json();
     const type = body?.type;
 
     let prompt = "";
@@ -79,8 +86,6 @@ ${safeJson(progress)}
 ${note}
 `.trim();
     } else {
-      // 혹시 기존 코드에서 배열만 보내도 최소 동작하도록 백업
-      // (예전: body가 배열일 때)
       if (Array.isArray(body)) {
         prompt = `
 너는 퍼포먼스 마케팅 분석가야.
@@ -90,11 +95,13 @@ ${note}
 ${safeJson(body)}
 `.trim();
       } else {
-        return NextResponse.json({ ok: false, error: "Invalid request body" }, { status: 400 });
+        return NextResponse.json(
+          { ok: false, error: "Invalid request body" },
+          { status: 400 }
+        );
       }
     }
 
-    // ✅ SDK 버전에 따라 chat.completions이 가장 호환이 넓음
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -108,6 +115,7 @@ ${safeJson(body)}
 
     return NextResponse.json({ ok: true, result });
   } catch (err: any) {
+    // ✅ 에러를 그대로 HTML로 만들지 말고 JSON으로만 반환
     return NextResponse.json(
       { ok: false, error: err?.message || "Server error" },
       { status: 500 }
