@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GoalState, MonthKey } from "../../src/lib/report/types";
 
-
 type InsightOk = { ok: true; result: string };
 type InsightFail = { ok: false; error?: string; aborted?: boolean };
 type InsightRes = InsightOk | InsightFail;
@@ -17,24 +16,45 @@ async function requestInsight(payload: any, signal?: AbortSignal): Promise<Insig
       signal,
     });
 
-
-
     const raw = await res.text().catch(() => "");
+
+    // ✅ HTML(Next 에러 페이지 등) 응답 방지
+    const trimmed = raw.trim();
+    const looksLikeHtml =
+      trimmed.startsWith("<!DOCTYPE") ||
+      trimmed.startsWith("<html") ||
+      trimmed.startsWith("<HTML");
+
     let json: any = null;
-    try {
-      json = raw ? JSON.parse(raw) : null;
-    } catch {
-      json = null;
+    if (!looksLikeHtml && raw) {
+      try {
+        json = JSON.parse(raw);
+      } catch {
+        json = null;
+      }
     }
 
-    if (!res.ok) return { ok: false, error: json?.error || raw || `HTTP ${res.status}` };
-    if (!json?.ok) return { ok: false, error: json?.error || "Unknown error" };
+    // ✅ HTTP 자체가 실패인 경우
+    if (!res.ok) {
+      const msg =
+        json?.error ||
+        (looksLikeHtml ? `Server returned HTML error (HTTP ${res.status})` : raw) ||
+        `HTTP ${res.status}`;
+      return { ok: false, error: msg };
+    }
+
+    // ✅ HTTP는 성공이지만 API 포맷이 ok가 아닌 경우
+    if (!json?.ok) {
+      const msg =
+        json?.error ||
+        (looksLikeHtml ? "Server returned HTML (unexpected)." : raw) ||
+        "Unknown error";
+      return { ok: false, error: msg };
+    }
 
     return { ok: true, result: String(json.result || "") };
   } catch (err: any) {
-    if (err?.name === "AbortError") {
-      return { ok: false, aborted: true };
-    }
+    if (err?.name === "AbortError") return { ok: false, aborted: true };
     return { ok: false, error: err?.message || "Network error" };
   }
 }
@@ -100,25 +120,29 @@ export function useInsights(params: {
       }
     })();
 
-    return () => {
-      ac.abort();
-    };
+    return () => ac.abort();
   }, [params.byMonth]);
 
-   const safeProgressRate = (actual: number, goal: number) => {
+  const safeProgressRate = (actual: number, goal: number) => {
     const a = Number(actual) || 0;
     const g = Number(goal) || 0;
     if (g <= 0) return 0;
     return a / g;
-    };
-    
+  };
+
   // progress (목표 인사이트에 사용)
   const progress = useMemo(
     () => ({
-      impressions: safeProgressRate(params.currentMonthActual.impressions, params.currentMonthGoalComputed.impressions),
+      impressions: safeProgressRate(
+        params.currentMonthActual.impressions,
+        params.currentMonthGoalComputed.impressions
+      ),
       clicks: safeProgressRate(params.currentMonthActual.clicks, params.currentMonthGoalComputed.clicks),
       cost: safeProgressRate(params.currentMonthActual.cost, params.currentMonthGoalComputed.cost),
-      conversions: safeProgressRate(params.currentMonthActual.conversions, params.currentMonthGoalComputed.conversions),
+      conversions: safeProgressRate(
+        params.currentMonthActual.conversions,
+        params.currentMonthGoalComputed.conversions
+      ),
       revenue: safeProgressRate(params.currentMonthActual.revenue, params.currentMonthGoalComputed.revenue),
       roas: safeProgressRate(params.currentMonthActual.roas, params.currentMonthGoalComputed.roas),
     }),
@@ -128,10 +152,11 @@ export function useInsights(params: {
   // 2) 당월 목표/결과 인사이트 (700ms 디바운스)
   useEffect(() => {
     console.log("[goal] effect fired", {
-  rowsLength: params.rowsLength,
-  currentMonthKey: params.currentMonthKey,
-  monthGoal: params.monthGoal,
-});
+      rowsLength: params.rowsLength,
+      currentMonthKey: params.currentMonthKey,
+      monthGoal: params.monthGoal,
+    });
+
     if (!params.rowsLength || params.currentMonthKey === "all") return;
 
     const goalSum =
@@ -187,27 +212,27 @@ export function useInsights(params: {
     };
   }, [
     params.rowsLength,
-  params.currentMonthKey,
+    params.currentMonthKey,
 
-  params.monthGoal.impressions,
-  params.monthGoal.clicks,
-  params.monthGoal.cost,
-  params.monthGoal.conversions,
-  params.monthGoal.revenue,
+    params.monthGoal.impressions,
+    params.monthGoal.clicks,
+    params.monthGoal.cost,
+    params.monthGoal.conversions,
+    params.monthGoal.revenue,
 
-  params.currentMonthActual.impressions,
-  params.currentMonthActual.clicks,
-  params.currentMonthActual.cost,
-  params.currentMonthActual.conversions,
-  params.currentMonthActual.revenue,
-  params.currentMonthActual.roas,
+    params.currentMonthActual.impressions,
+    params.currentMonthActual.clicks,
+    params.currentMonthActual.cost,
+    params.currentMonthActual.conversions,
+    params.currentMonthActual.revenue,
+    params.currentMonthActual.roas,
 
-  params.currentMonthGoalComputed.impressions,
-  params.currentMonthGoalComputed.clicks,
-  params.currentMonthGoalComputed.cost,
-  params.currentMonthGoalComputed.conversions,
-  params.currentMonthGoalComputed.revenue,
-  params.currentMonthGoalComputed.roas,
+    params.currentMonthGoalComputed.impressions,
+    params.currentMonthGoalComputed.clicks,
+    params.currentMonthGoalComputed.cost,
+    params.currentMonthGoalComputed.conversions,
+    params.currentMonthGoalComputed.revenue,
+    params.currentMonthGoalComputed.roas,
   ]);
 
   return { monthlyInsight, monthGoalInsight };
