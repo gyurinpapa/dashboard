@@ -13,7 +13,6 @@ import { monthLabelOf } from "../../lib/report/date";
 
 import FilterBtn from "../FilterBtn";
 
-
 type WeekOption = { weekKey: WeekKey; label: string };
 
 type Props = {
@@ -72,19 +71,18 @@ export default function HeaderBar(props: Props) {
   const toggleFilter = (k: Exclude<FilterKey, null>) =>
     setFilterKey((prev) => (prev === k ? null : k));
 
- return (
-  <header className="sticky top-0 z-50 bg-white/95 backdrop-blur border-b">
-    {/* ✅ 헤더도 본문과 동일한 폭/패딩 */}
-    <div className="p-8 pb-4">
-      <div className="mx-auto w-full max-w-[1400px]">
-          {/* 제목 */}
+  return (
+    <header className="sticky top-0 z-50 bg-white/95 backdrop-blur border-b">
+      <div className="p-8 pb-4">
+        <div className="mx-auto w-full max-w-[1400px]">
           <div className="mb-6 text-center pt-4">
-            <h1 className="text-3xl font-semibold tracking-tight">네이처컬렉션 온라인광고 보고서</h1>
+            <h1 className="text-3xl font-semibold tracking-tight">
+              네이처컬렉션 온라인광고 보고서
+            </h1>
             <div className="mt-4 border-t border-gray-400" />
             <div className="mt-1 border-t border-gray-300" />
           </div>
 
-          {/* 상단: 필터 + 탭 */}
           <div className="flex items-start justify-between mb-2">
             {/* LEFT: Filters */}
             <div className="relative inline-block">
@@ -103,7 +101,6 @@ export default function HeaderBar(props: Props) {
                 </FilterBtn>
               </div>
 
-              {/* 기간 */}
               {period && (
                 <div className="mt-3 mb-2 text-sm text-gray-600">
                   기간: <span className="font-semibold text-gray-900">{period}</span>
@@ -341,7 +338,7 @@ export default function HeaderBar(props: Props) {
                   키워드(상세)
                 </button>
 
-                   <button
+                <button
                   type="button"
                   onClick={() => setTab("creative")}
                   className={`px-5 py-2 rounded-xl border text-sm font-semibold transition ${
@@ -353,6 +350,17 @@ export default function HeaderBar(props: Props) {
                   소재
                 </button>
 
+                <button
+                  type="button"
+                  onClick={() => setTab("creativeDetail")}
+                  className={`px-5 py-2 rounded-xl border text-sm font-semibold transition ${
+                    tab === "creativeDetail"
+                      ? "bg-black text-white border-black"
+                      : "bg-white text-black border-gray-300 hover:bg-gray-100"
+                  }`}
+                >
+                  소재(상세)
+                </button>
               </div>
 
               <div className="text-sm text-gray-600">[+VAT]</div>
@@ -361,5 +369,5 @@ export default function HeaderBar(props: Props) {
         </div>
       </div>
     </header>
- );
+  );
 }

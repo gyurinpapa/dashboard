@@ -5,8 +5,9 @@ export type TabKey =
   | "summary"
   | "structure"
   | "keyword"
-  | "keywordDetail" // ✅ 키워드(상세)
-  | "creative";
+  | "keywordDetail"
+  | "creative"
+  | "creativeDetail";
 
 
 // ===== FilterKey (HeaderBar에서 쓰는 상단 4버튼: 월/주차/기기/채널) =====

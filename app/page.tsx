@@ -27,6 +27,7 @@ import KeywordSection from "./components/sections/KeywordSection";
 import KeywordDetailSection from "./components/sections/KeywordDetailSection";
 import SummarySection from "./components/sections/SummarySection";
 import CreativeSection from "./components/sections/CreativeSection";
+import CreativeDetailSection from "./components/sections/CreativeDetailSection";
 import MonthGoalSection from "./components/sections/MonthGoalSection";
 
 const MONTH_GOAL_KEY = "nature_report_month_goal_v1";
@@ -131,11 +132,9 @@ export default function Page() {
 
   // ============================
   // ✅ Creative 탭 데이터
-  // - 지금 단계에서는 "필터 적용된 rows"만 넘겨도 충분
-  // - (선택) 나중에 creativeInsight 생성 로직 붙일 자리
   // ============================
   const creativeBaseRows = useMemo(() => filteredRows, [filteredRows]);
-  const creativeInsight = useMemo(() => "", []); // ✅ 지금은 빈값. 나중에 buildCreativeInsight 같은걸 붙이면 됨.
+  const creativeInsight = useMemo(() => "", []);
 
   return (
     <main className="min-h-screen">
@@ -206,11 +205,13 @@ export default function Page() {
             <KeywordDetailSection rows={filteredRows as any[]} />
           )}
 
-          {/* ✅ 핵심 변경: 소재탭에도 "필터 적용된 rows"를 넘긴다 */}
           {tab === "creative" && (
-            <CreativeSection rows={filteredRows} creativeInsight={""} />
+            <CreativeSection rows={creativeBaseRows} creativeInsight={creativeInsight} />
           )}
-          
+
+          {tab === "creativeDetail" && (
+            <CreativeDetailSection rows={filteredRows as any[]} />
+          )}
         </div>
       </div>
     </main>
