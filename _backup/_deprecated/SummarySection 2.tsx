@@ -2,16 +2,16 @@
 
 import { useMemo } from "react";
 
-import KPI from "../../../components/KPI";
-import InsightBox from "../../../components/InsightBox"; // (남겨도 되고, 안 쓰면 지워도 됨)
-import { KRW } from "../../../lib/report/format";
+import KPI from "../KPI";
+import InsightBox from "../InsightBox"; // (남겨도 되고, 안 쓰면 지워도 됨)
+import { KRW } from "../../lib/report/format";
 
 import SummaryChart from "./summary/SummaryChart";
 import SummaryKPI from "./summary/SummaryKPI";
 import SummaryTable from "./summary/SummaryTable";
 import SummaryGoal from "./summary/SummaryGoal";
 import SummaryInsight from "./summary/SummaryInsight"; // ✅ 추가
-import TrendCell from "../../../components/TrendCell";
+import TrendCell from "../TrendCell";
 
 type Props = {
   currentMonthKey: string;
