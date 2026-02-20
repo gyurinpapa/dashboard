@@ -12,13 +12,13 @@ import {
   LabelList,
 } from "recharts";
 
-import { KRW, formatNumber } from "../../lib/report/format";
+import { KRW, formatNumber } from "../../../src/lib/report/format";
 import DataBarCell from "../ui/DataBarCell";
 
 // ✅ 소재 집계 유틸 (너가 만든 것)
 // - groupByCreative(rows): creative별 합계(+ imagePath 포함)
 // ⚠️ buildCreativeFilters / filterByCampaignGroup 는 이제 안 씀
-import { groupByCreative } from "../../lib/report/creative";
+import { groupByCreative } from "../../../src/lib/report/creative";
 
 type Props = {
   rows: any[]; // ✅ (월/주/기기/채널)까지 적용된 rows를 page.tsx에서 넘겨주기

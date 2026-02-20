@@ -1,7 +1,7 @@
 "use client";
 
 import TrendCell from "../../ui/TrendCell";
-import { KRW } from "../../../lib/report/format";
+import { KRW } from "../../../../src/lib/report/format";
 import DataBarCell from "../../ui/DataBarCell";
 
 

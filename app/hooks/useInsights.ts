@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { GoalState, MonthKey } from "../lib/report/types";
+import type { GoalState, MonthKey } from "../../src/lib/report/types";
 
 
 type InsightOk = { ok: true; result: string };

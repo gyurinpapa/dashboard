@@ -1,6 +1,6 @@
 "use client";
 
-import { progressRate, formatNumber, KRW, parseNumberInput } from "../../../lib/report/format";
+import { progressRate, formatNumber, KRW, parseNumberInput } from "../../../../src/lib/report/format";
 
 
 type Props = {

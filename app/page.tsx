@@ -10,16 +10,16 @@ import type {
   MonthKey,
   TabKey,
   WeekKey,
-} from "./lib/report/types";
+} from "../src/lib/report/types";
 
-import { groupByKeyword } from "./lib/report/keyword";
+import { groupByKeyword } from "../src/lib/report/keyword";
 
-import { useLocalStorageState } from "./lib/useLocalStorageState";
+import { useLocalStorageState } from "../src/useLocalStorageState";
 import { useInsights } from "./hooks/useInsights";
 
-import { useReportRows } from "./lib/report/useReportRows";
-import { useReportAggregates } from "./lib/report/useReportAggregates";
-import { buildKeywordInsight } from "./lib/report/insights/buildKeywordInsight";
+import { useReportRows } from "../src/lib/report/useReportRows";
+import { useReportAggregates } from "../src/lib/report/useReportAggregates";
+import { buildKeywordInsight } from "../src/lib/report/insights/buildKeywordInsight";
 
 import HeaderBar from "./components/sections/HeaderBar";
 import StructureSection from "./components/sections/StructureSection";

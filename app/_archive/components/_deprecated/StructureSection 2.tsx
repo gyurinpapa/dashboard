@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
-import { KRW } from "../../../lib/report/format";
-import { groupByGroup } from "../../../lib/report/aggregate";
+import { KRW } from "../../../../src/lib/report/format";
+import { groupByGroup } from "../../../../src/lib/report/aggregate";
 
 type Props = {
   bySource: any;

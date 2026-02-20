@@ -7,9 +7,9 @@ import type {
   MonthKey,
   TabKey,
   WeekKey,
-} from "../../../lib/report/types";
+} from "../../../../src/lib/report/types";
 
-import { monthLabelOf } from "../../../lib/report/date";
+import { monthLabelOf } from "../../../../src/lib/report/date";
 
 import FilterBtn from "../../../components/ui/FilterBtn";
 

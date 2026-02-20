@@ -4,7 +4,7 @@ import { useMemo } from "react";
 
 import KPI from "../../../components/ui/KPI";
 import InsightBox from "../../../components/ui/InsightBox"; // (남겨도 되고, 안 쓰면 지워도 됨)
-import { KRW } from "../../../lib/report/format";
+import { KRW } from "../../../../src/lib/report/format";
 
 import SummaryChart from "./summary/SummaryChart";
 import SummaryKPI from "./summary/SummaryKPI";

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { Row } from "../../lib/report/types";
+import type { Row } from "../../../src/lib/report/types";
 
 import SummarySection from "./SummarySection";
 
@@ -11,7 +11,7 @@ import {
   groupByDevice,
   groupByWeekRecent5,
   groupByMonthRecent3,
-} from "../../lib/report/aggregate";
+} from "../../../src/lib/report/aggregate";
 
 /** =========================
  * Utils (안전 방어)

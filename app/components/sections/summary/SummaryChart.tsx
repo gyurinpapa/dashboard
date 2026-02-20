@@ -1,6 +1,6 @@
     "use client";
 
-import { KRW } from "../../../lib/report/format";
+import { KRW } from "../../../../src/lib/report/format";
 import {
   ResponsiveContainer,
   ComposedChart,

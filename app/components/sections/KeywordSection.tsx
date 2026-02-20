@@ -11,7 +11,7 @@ import {
   Tooltip,
   LabelList,
 } from "recharts";
-import { KRW, formatNumber } from "../../lib/report/format";
+import { KRW, formatNumber } from "../../../src/lib/report/format";
 import DataBarCell from "../ui/DataBarCell";
 
 type Props = {
