@@ -114,6 +114,7 @@ export default function Page() {
   // ✅ Keyword 탭 데이터 (좌측 필터만 적용)
   // ============================
   const keywordBaseRows = useMemo(() => filteredRows, [filteredRows]);
+
   const keywordAgg = useMemo(
     () => groupByKeyword(keywordBaseRows as any[]),
     [keywordBaseRows]
@@ -127,6 +128,14 @@ export default function Page() {
       currentMonthGoalComputed: currentMonthGoalComputed as any,
     });
   }, [keywordAgg, keywordBaseRows, currentMonthActual, currentMonthGoalComputed]);
+
+  // ============================
+  // ✅ Creative 탭 데이터
+  // - 지금 단계에서는 "필터 적용된 rows"만 넘겨도 충분
+  // - (선택) 나중에 creativeInsight 생성 로직 붙일 자리
+  // ============================
+  const creativeBaseRows = useMemo(() => filteredRows, [filteredRows]);
+  const creativeInsight = useMemo(() => "", []); // ✅ 지금은 빈값. 나중에 buildCreativeInsight 같은걸 붙이면 됨.
 
   return (
     <main className="min-h-screen">
@@ -197,8 +206,11 @@ export default function Page() {
             <KeywordDetailSection rows={filteredRows as any[]} />
           )}
 
-
-          {tab === "creative" && <CreativeSection />}
+          {/* ✅ 핵심 변경: 소재탭에도 "필터 적용된 rows"를 넘긴다 */}
+          {tab === "creative" && (
+            <CreativeSection rows={filteredRows} creativeInsight={""} />
+          )}
+          
         </div>
       </div>
     </main>
