@@ -68,6 +68,23 @@ function getCreativeKey(r: Row) {
     .trim();
 }
 
+/** ✅ 선택 소재 이미지 URL 추출 (소재 탭 기능 이식용) */
+function getCreativePreviewUrl(r: Row) {
+  const anyR = r as any;
+  return (
+    anyR.imagePath || // ✅ 너가 이미 쓰던 키
+    anyR.creativeImageUrl ||
+    anyR.thumbnailUrl ||
+    anyR.thumbUrl ||
+    anyR.imageUrl ||
+    anyR.previewUrl ||
+    anyR.assetUrl ||
+    ""
+  )
+    .toString()
+    .trim();
+}
+
 function extractCreatives(rows: Row[]) {
   const set = new Set<string>();
   for (const r of rows) {
@@ -87,7 +104,6 @@ function safeCall<T>(fn: () => T, fallback: T): T {
   try {
     return fn();
   } catch (e) {
-    // 서버 콘솔에서 원인 확인 가능
     console.error(e);
     return fallback;
   }
@@ -152,11 +168,11 @@ function buildCreativeDetailInsight(args: {
   const convWoW = wLast && wPrev ? diffPct(safeNum(wLast.conversions), safeNum(wPrev.conversions)) : 0;
   const costWoW = wLast && wPrev ? diffPct(safeNum(wLast.cost), safeNum(wPrev.cost)) : 0;
 
-  const sources = [...(bySource || [])].sort((a, b) => (safeNum(b.cost) - safeNum(a.cost)));
+  const sources = [...(bySource || [])].sort((a, b) => safeNum(b.cost) - safeNum(a.cost));
   const topS1 = sources[0] ?? null;
   const topS2 = sources[1] ?? null;
 
-  const devices = [...(byDevice || [])].sort((a, b) => (safeNum(b.cost) - safeNum(a.cost)));
+  const devices = [...(byDevice || [])].sort((a, b) => safeNum(b.cost) - safeNum(a.cost));
   const topD1 = devices[0] ?? null;
   const topD2 = devices[1] ?? null;
 
@@ -243,10 +259,9 @@ type Props = {
 export default function CreativeDetailSection({ rows }: Props) {
   const creatives = useMemo(() => extractCreatives(rows), [rows]);
 
-  // ✅ 리스트가 늦게 로딩될 수 있으니, 초기 선택값도 안전하게
   const [selectedCreative, setSelectedCreative] = useState<string | null>(null);
 
-  // ✅ creatives가 생기면 자동으로 첫 항목 선택 (KeywordDetailSection의 “초기 1회” 문제 방지)
+  // ✅ creatives가 생기면 자동으로 첫 항목 선택
   useMemo(() => {
     if (!selectedCreative && creatives.length > 0) {
       setSelectedCreative(creatives[0]);
@@ -258,6 +273,14 @@ export default function CreativeDetailSection({ rows }: Props) {
     () => filterByCreative(rows, selectedCreative),
     [rows, selectedCreative]
   );
+
+  /** ✅ 최상단 프리뷰용 URL (선택 소재 이미지) */
+  const selectedPreviewUrl = useMemo(() => {
+    if (!selectedCreative) return "";
+    const sampleRow = rows.find((r) => getCreativeKey(r) === selectedCreative);
+    if (!sampleRow) return "";
+    return getCreativePreviewUrl(sampleRow);
+  }, [rows, selectedCreative]);
 
   // ✅ 여기서부터는 절대 안 터지게 safeCall로 감싼다
   const totals = useMemo(
@@ -277,9 +300,18 @@ export default function CreativeDetailSection({ rows }: Props) {
     [filteredRows]
   );
 
-  const bySource = useMemo(() => safeCall(() => groupBySource(filteredRows as any), [] as any[]), [filteredRows]);
-  const byDevice = useMemo(() => safeCall(() => groupByDevice(filteredRows as any), [] as any[]), [filteredRows]);
-  const byWeekOnly = useMemo(() => safeCall(() => groupByWeekRecent5(filteredRows as any), [] as any[]), [filteredRows]);
+  const bySource = useMemo(
+    () => safeCall(() => groupBySource(filteredRows as any), [] as any[]),
+    [filteredRows]
+  );
+  const byDevice = useMemo(
+    () => safeCall(() => groupByDevice(filteredRows as any), [] as any[]),
+    [filteredRows]
+  );
+  const byWeekOnly = useMemo(
+    () => safeCall(() => groupByWeekRecent5(filteredRows as any), [] as any[]),
+    [filteredRows]
+  );
 
   const byWeekChart = useMemo(() => {
     const arr = [...(byWeekOnly || [])];
@@ -319,7 +351,31 @@ export default function CreativeDetailSection({ rows }: Props) {
     <section className="w-full">
       <h2 className="text-xl font-semibold">소재 상세</h2>
 
-      <div className="mt-4 grid grid-cols-1 items-start gap-6 lg:grid-cols-[360px_1fr]">
+      {/* ✅ 최상단: 선택 소재 프리뷰 (이미지만 가운데 정렬, KPI 없음) */}
+      <section className="mt-4 rounded-2xl border border-gray-200 bg-white p-6">
+        <div className="font-semibold mb-3">선택 소재</div>
+
+        {!selectedCreative ? (
+          <div className="text-sm text-gray-500">
+            차트/표에서 소재를 클릭하면 이미지가 표시됩니다.
+          </div>
+        ) : selectedPreviewUrl ? (
+          <div className="w-full flex justify-center">
+            <img
+              src={selectedPreviewUrl}
+              alt={selectedCreative}
+              className="w-full max-w-[560px] max-h-[320px] object-contain rounded-2xl border bg-white"
+              loading="lazy"
+            />
+          </div>
+        ) : (
+          <div className="text-sm text-gray-500">
+            imagePath(또는 썸네일 URL) 데이터가 없어 이미지를 표시할 수 없습니다.
+          </div>
+        )}
+      </section>
+
+      <div className="mt-6 grid grid-cols-1 items-start gap-6 lg:grid-cols-[360px_1fr]">
         {/* LEFT: 소재 리스트 */}
         <aside className="rounded-2xl border border-gray-200 bg-white p-4 flex flex-col sticky top-24 max-h-[calc(100vh-6rem)]">
           <div className="flex items-center justify-between">

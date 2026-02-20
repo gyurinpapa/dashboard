@@ -456,50 +456,30 @@ export default function CreativeSection({ rows }: Props) {
           <div className="font-semibold mb-3">선택 소재</div>
 
           {!selectedCreative ? (
-            <div className="text-sm text-gray-500">차트/표에서 소재를 클릭하면 이미지가 표시됩니다.</div>
+            <div className="text-sm text-gray-500">
+              차트/표에서 소재를 클릭하면 이미지가 표시됩니다.
+            </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-              <div>
-                <div className="text-sm font-semibold mb-2">{selectedCreative.creative}</div>
+            <div className="flex flex-col items-center gap-3">
+              {/* 소재명 (원하면 빼도 됨) */}
+              <div className="text-sm font-semibold text-center">
+                {selectedCreative.creative}
+              </div>
 
-                {selectedCreative.imagePath ? (
+              {/* ✅ 이미지: 가운데 정렬 + 최대 폭 제한 */}
+              {selectedCreative.imagePath ? (
+                <div className="w-full flex justify-center">
                   <img
                     src={selectedCreative.imagePath}
                     alt={selectedCreative.creative}
-                    className="w-full rounded-xl border"
+                    className="w-full max-w-[900px] rounded-xl border"
                   />
-                ) : (
-                  <div className="text-sm text-gray-500">imagePath가 없어 이미지를 표시할 수 없습니다.</div>
-                )}
-              </div>
-
-              <div className="text-sm">
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="text-gray-500">Impr</div>
-                  <div className="text-right">{fmtComma(selectedCreative.impressions)}</div>
-
-                  <div className="text-gray-500">Clicks</div>
-                  <div className="text-right">{fmtComma(selectedCreative.clicks)}</div>
-
-                  <div className="text-gray-500">CTR</div>
-                  <div className="text-right">{pctText(selectedCreative.ctr, 2)}</div>
-
-                  <div className="text-gray-500">Cost</div>
-                  <div className="text-right">{KRW(selectedCreative.cost)}</div>
-
-                  <div className="text-gray-500">Conv</div>
-                  <div className="text-right">{fmtComma(selectedCreative.conversions)}</div>
-
-                  <div className="text-gray-500">CPA</div>
-                  <div className="text-right">{KRW(selectedCreative.cpa)}</div>
-
-                  <div className="text-gray-500">Revenue</div>
-                  <div className="text-right">{KRW(selectedCreative.revenue)}</div>
-
-                  <div className="text-gray-500">ROAS</div>
-                  <div className="text-right">{pctText(selectedCreative.roas, 1)}</div>
                 </div>
-              </div>
+              ) : (
+                <div className="text-sm text-gray-500">
+                  imagePath가 없어 이미지를 표시할 수 없습니다.
+                </div>
+              )}
             </div>
           )}
         </div>
