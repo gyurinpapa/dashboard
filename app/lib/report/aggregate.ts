@@ -1,6 +1,13 @@
 import type { Row } from "./types";
 import { safeDiv } from "./format";
-import { parseDateLoose, monthKeyOfDate, startOfWeekMonday, toYMDLocal, addDays, monthWeekLabelRule } from "./date";
+import {
+  parseDateLoose,
+  monthKeyOfDate,
+  startOfWeekMonday,
+  toYMDLocal,
+  addDays,
+  monthWeekLabelRule,
+} from "./date";
 
 export function normalizeCsvRows(raw: any[]): Row[] {
   return (raw || []).map((r: any) => {
@@ -26,7 +33,6 @@ export function normalizeCsvRows(raw: any[]): Row[] {
     } as Row;
   });
 }
-
 
 export function summarize(rows: Row[]) {
   const sum = (key: keyof Row) => rows.reduce((acc, cur) => acc + (Number(cur[key]) || 0), 0);
@@ -172,7 +178,6 @@ export function groupByDevice(rows: Row[]) {
     .sort((a, b) => b.cost - a.cost);
 }
 
-
 export function groupByWeekRecent5(filteredRows: Row[]) {
   const valid = filteredRows
     .map((r) => {
@@ -300,86 +305,42 @@ export function periodText(args: { rows: Row[]; selectedMonth: string | "all"; s
   return `${fmt(min)} ~ ${fmt(max)}`;
 }
 
-  export function groupByCampaign(rows: any[]) {
-  const map = new Map<string, any[]>();
+export function groupByCampaign(rows: Row[]) {
+  const map = new Map<string, Row[]>();
 
-  (rows ?? []).forEach((r) => {
-    const key = String(r.campaign_name ?? "").trim();
-    if (!key) return;
+  for (const r of rows ?? []) {
+    const key = String((r as any).campaign_name ?? "").trim();
+    if (!key) continue;
 
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(r);
-  });
+  }
 
-  const out = Array.from(map.entries()).map(([campaign, items]) => {
-    const s = summarize(items);
-    return {
-      campaign,
-      ...s,
-    };
-  });
+  const out = Array.from(map.entries()).map(([campaign, items]) => ({
+    campaign,
+    ...summarize(items),
+  }));
 
-  // 비용 큰 순 정렬
   out.sort((a, b) => (b.cost ?? 0) - (a.cost ?? 0));
-
   return out;
 }
 
-export function groupByGroup(rows: any[]) {
-  const map = new Map<string, any[]>();
+export function groupByGroup(rows: Row[]) {
+  const map = new Map<string, Row[]>();
 
-  (rows ?? []).forEach((r) => {
-    const key = r.group_name || "미지정";
-    if (!map.has(key)) {
-      map.set(key, []);
-    }
+  for (const r of rows ?? []) {
+    const key = String((r as any).group_name ?? "").trim() || "미지정";
+    if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(r);
-  });
-
-  const result: any[] = [];
-
-  map.forEach((items, key) => {
-    const sum = summarize(items);
-
-    result.push({
-      group: key,
-      ...sum,
-    });
-  });
-
-  return result.sort((a, b) => b.cost - a.cost);
-}
-export function groupByKeyword(rows: any[]) {
-  const map = new Map<string, any>();
-
-  const getKey = (r: any) => String(r.keyword ?? r.query ?? r.term ?? "").trim() || "(unknown)";
-
-  for (const r of rows) {
-    const k = getKey(r);
-    if (!map.has(k)) {
-      map.set(k, {
-        keyword: k,
-        impressions: 0,
-        clicks: 0,
-        cost: 0,
-        conversions: 0,
-        revenue: 0,
-      });
-    }
-    const t = map.get(k);
-    t.impressions += Number(r.impressions) || 0;
-    t.clicks += Number(r.clicks) || 0;
-    t.cost += Number(r.cost) || 0;
-    t.conversions += Number(r.conversions) || 0;
-    t.revenue += Number(r.revenue) || 0;
   }
 
-  const arr = Array.from(map.values()).map((x) => ({
-    ...x,
-    roas: x.cost > 0 ? x.revenue / x.cost : 0, // 1.15 = 115%
+  const result = Array.from(map.entries()).map(([group, items]) => ({
+    group,
+    ...summarize(items),
   }));
 
-  // 기본은 클릭 많은 순으로 TOP 20
-  arr.sort((a, b) => (b.clicks || 0) - (a.clicks || 0));
-  return arr.slice(0, 20);
+  return result.sort((a, b) => (b.cost ?? 0) - (a.cost ?? 0));
 }
+
+// ✅ groupByKeyword는 이제 app/lib/report/keyword.ts 로 분리해서 관리
+// (중복 export/라우팅 빌드 꼬임 방지)

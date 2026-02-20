@@ -12,7 +12,7 @@ import type {
   WeekKey,
 } from "./lib/report/types";
 
-import { groupByKeyword } from "./lib/report/aggregate";
+import { groupByKeyword } from "./lib/report/keyword";
 
 import { useLocalStorageState } from "./lib/useLocalStorageState";
 import { useInsights } from "./hooks/useInsights";
