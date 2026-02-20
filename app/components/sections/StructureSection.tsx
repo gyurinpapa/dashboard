@@ -3,7 +3,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { KRW } from "../../lib/report/format";
 import { groupByGroup } from "../../lib/report/aggregate";
-import DataBarCell from "../DataBarCell";
+import DataBarCell from "../ui/DataBarCell";
 
 type Props = {
   bySource: any;

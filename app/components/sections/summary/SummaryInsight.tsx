@@ -1,6 +1,6 @@
 "use client";
 
-import InsightBox from "../../InsightBox";
+import InsightBox from "../../ui/InsightBox";
 
 type InsightItem =
   | string

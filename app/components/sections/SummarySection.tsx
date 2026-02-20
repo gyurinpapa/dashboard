@@ -2,8 +2,8 @@
 
 import { useMemo } from "react";
 
-import KPI from "../KPI";
-import InsightBox from "../InsightBox"; // (남겨도 되고, 안 쓰면 지워도 됨)
+import KPI from "../ui/KPI";
+import InsightBox from "../ui/InsightBox"; // (남겨도 되고, 안 쓰면 지워도 됨)
 import { KRW } from "../../lib/report/format";
 
 import SummaryChart from "./summary/SummaryChart";
@@ -11,8 +11,8 @@ import SummaryKPI from "./summary/SummaryKPI";
 import SummaryTable from "./summary/SummaryTable";
 import SummaryGoal from "./summary/SummaryGoal";
 import SummaryInsight from "./summary/SummaryInsight"; // ✅ 추가
-import TrendCell from "../TrendCell";
-import DataBarCell from "../DataBarCell";
+import TrendCell from "../ui/TrendCell";
+import DataBarCell from "../ui/DataBarCell";
 
 
 type Props = {

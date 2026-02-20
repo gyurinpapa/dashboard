@@ -12,7 +12,7 @@ import {
   LabelList,
 } from "recharts";
 import { KRW, formatNumber } from "../../lib/report/format";
-import DataBarCell from "../DataBarCell";
+import DataBarCell from "../ui/DataBarCell";
 
 type Props = {
   keywordAgg: any[];

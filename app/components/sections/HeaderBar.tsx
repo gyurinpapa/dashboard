@@ -11,7 +11,7 @@ import type {
 
 import { monthLabelOf } from "../../lib/report/date";
 
-import FilterBtn from "../FilterBtn";
+import FilterBtn from "../ui/FilterBtn";
 
 type WeekOption = { weekKey: WeekKey; label: string };
 

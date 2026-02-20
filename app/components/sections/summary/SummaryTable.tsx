@@ -1,8 +1,8 @@
 "use client";
 
-import TrendCell from "../../TrendCell";
+import TrendCell from "../../ui/TrendCell";
 import { KRW } from "../../../lib/report/format";
-import DataBarCell from "../../DataBarCell";
+import DataBarCell from "../../ui/DataBarCell";
 
 
 type Props = {

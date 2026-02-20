@@ -13,7 +13,7 @@ import {
 } from "recharts";
 
 import { KRW, formatNumber } from "../../lib/report/format";
-import DataBarCell from "../DataBarCell";
+import DataBarCell from "../ui/DataBarCell";
 
 // ✅ 소재 집계 유틸 (너가 만든 것)
 // - groupByCreative(rows): creative별 합계(+ imagePath 포함)
