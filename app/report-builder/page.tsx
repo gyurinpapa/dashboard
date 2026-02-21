@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
+import { useRouter } from "next/navigation";
 
 type ReportType = {
   id: string;
@@ -10,12 +11,15 @@ type ReportType = {
 };
 
 export default function ReportBuilderPage() {
+  const router = useRouter();
+
   const [email, setEmail] = useState("test@test.com");
   const [password, setPassword] = useState("12345678");
   const [userId, setUserId] = useState<string | null>(null);
 
   const [types, setTypes] = useState<ReportType[]>([]);
   const [loadingTypes, setLoadingTypes] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [msg, setMsg] = useState<string>("");
 
   // 1) 현재 로그인 상태 읽기
@@ -48,11 +52,9 @@ export default function ReportBuilderPage() {
         .select("id,key,name")
         .order("name", { ascending: true });
 
-      if (error) {
-        setMsg(`report_types 조회 실패: ${error.message}`);
-      } else {
-        setTypes((data ?? []) as ReportType[]);
-      }
+      if (error) setMsg(`report_types 조회 실패: ${error.message}`);
+      else setTypes((data ?? []) as ReportType[]);
+
       setLoadingTypes(false);
     })();
   }, [userId]);
@@ -79,44 +81,65 @@ export default function ReportBuilderPage() {
       setMsg("먼저 로그인 해줘.");
       return;
     }
+    if (creating) return;
 
+    setCreating(true);
     setMsg("");
-    // ⚠️ workspace_id가 필요함. 일단 가장 최근 workspace 1개를 가져와서 거기에 생성.
-    const { data: ws, error: wsErr } = await supabase
-      .from("workspaces")
-      .select("id,name,created_at")
+
+    // 1) 내가 속한 workspace 1개 가져오기 (workspace_members 기준)
+    const { data: wm, error: wmErr } = await supabase
+      .from("workspace_members")
+      .select("workspace_id")
+      .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
-    if (wsErr || !ws) {
-      setMsg(`workspace 조회 실패: ${wsErr?.message ?? "workspace 없음"}`);
+    if (wmErr || !wm) {
+      setMsg(`workspace_members 조회 실패: ${wmErr?.message ?? "소속 workspace 없음"}`);
+      setCreating(false);
       return;
     }
 
+    const workspaceId = wm.workspace_id;
     const title = `${type.name} - Draft`;
 
+    // 2) reports 생성
     const { data: report, error } = await supabase
       .from("reports")
       .insert({
-        workspace_id: ws.id,
+        workspace_id: workspaceId,
         report_type_id: type.id,
         title,
         status: "draft",
         created_by: userId,
       })
-      .select("*")
+      .select("id")
       .single();
 
-    if (error) setMsg(`report 생성 실패: ${error.message}`);
-    else setMsg(`✅ report 생성됨: ${report.id} (workspace=${ws.name})`);
+    if (error) {
+      setMsg(`report 생성 실패: ${error.message}`);
+      setCreating(false);
+      return;
+    }
+
+    // ✅ 생성 즉시 이동
+    setMsg(`✅ report 생성됨: ${report.id}`);
+    router.push(`/reports/${report.id}`);
   }
 
   return (
     <main style={{ padding: 24, maxWidth: 900 }}>
       <h1 style={{ fontSize: 24, fontWeight: 700 }}>Report Builder (테스트)</h1>
 
-      <div style={{ marginTop: 16, padding: 12, border: "1px solid #ddd", borderRadius: 12 }}>
+      <div
+        style={{
+          marginTop: 16,
+          padding: 12,
+          border: "1px solid #ddd",
+          borderRadius: 12,
+        }}
+      >
         <div style={{ fontWeight: 600, marginBottom: 8 }}>
           로그인 상태: {userId ? "로그인됨" : "로그아웃"}
         </div>
@@ -126,14 +149,24 @@ export default function ReportBuilderPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="email"
-            style={{ padding: 8, border: "1px solid #ccc", borderRadius: 8, minWidth: 220 }}
+            style={{
+              padding: 8,
+              border: "1px solid #ccc",
+              borderRadius: 8,
+              minWidth: 220,
+            }}
           />
           <input
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="password"
             type="password"
-            style={{ padding: 8, border: "1px solid #ccc", borderRadius: 8, minWidth: 220 }}
+            style={{
+              padding: 8,
+              border: "1px solid #ccc",
+              borderRadius: 8,
+              minWidth: 220,
+            }}
           />
           <button onClick={signIn} style={{ padding: "8px 12px" }}>
             로그인
@@ -151,18 +184,27 @@ export default function ReportBuilderPage() {
         {!userId && <p style={{ marginTop: 8 }}>먼저 로그인하면 유형이 보여.</p>}
         {userId && loadingTypes && <p style={{ marginTop: 8 }}>불러오는 중...</p>}
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginTop: 12 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 12,
+            marginTop: 12,
+          }}
+        >
           {types.map((t) => (
             <button
               key={t.id}
               onClick={() => createReport(t)}
+              disabled={!userId || creating}
               style={{
                 textAlign: "left",
                 padding: 14,
                 border: "1px solid #ddd",
                 borderRadius: 14,
                 background: "white",
-                cursor: "pointer",
+                cursor: creating ? "wait" : "pointer",
+                opacity: creating ? 0.7 : 1,
               }}
             >
               <div style={{ fontWeight: 700 }}>{t.name}</div>
@@ -170,6 +212,11 @@ export default function ReportBuilderPage() {
               <div style={{ marginTop: 10, fontSize: 12, opacity: 0.7 }}>
                 클릭하면 draft report 1개 생성
               </div>
+              {creating && (
+                <div style={{ marginTop: 10, fontSize: 12, opacity: 0.7 }}>
+                  생성 중...
+                </div>
+              )}
             </button>
           ))}
         </div>
