@@ -19,6 +19,10 @@ export default function ReportDetailPage() {
   const [report, setReport] = useState<any>(null);
   const [reportType, setReportType] = useState<any>(null);
 
+  // AI Insight UI 상태
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiMsg, setAiMsg] = useState("");
+
   useEffect(() => {
     if (!id) return;
 
@@ -85,6 +89,52 @@ export default function ReportDetailPage() {
     };
     return channels.map((c) => map[c] ?? c).join(", ");
   }, [channels]);
+
+  const aiInsightText = (meta?.ai_insight?.text ?? "") as string;
+  const aiInsightCreatedAt = meta?.ai_insight?.created_at as string | undefined;
+
+  async function generateAIInsight() {
+    if (!id) return;
+    if (aiLoading) return;
+
+    setAiLoading(true);
+    setAiMsg("");
+
+    try {
+      const res = await fetch("/api/ai/insights/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reportId: id }),
+      });
+
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        const errText = json?.error ?? `HTTP ${res.status}`;
+        setAiMsg(`AI 인사이트 생성 실패: ${errText}`);
+        setAiLoading(false);
+        return;
+      }
+
+      // ✅ 서버가 meta까지 돌려주므로 그대로 반영
+      const nextMeta = json?.meta;
+      const insight = json?.insight as string | undefined;
+
+      if (nextMeta) {
+        setReport((prev: any) => (prev ? { ...prev, meta: nextMeta } : prev));
+      }
+
+      if (insight) {
+        setAiMsg("✅ AI 인사이트 생성 완료");
+      } else {
+        setAiMsg("✅ 저장은 됐는데, 본문이 비어있어. (서버 응답 확인 필요)");
+      }
+    } catch (e: any) {
+      setAiMsg(`AI 인사이트 생성 실패: ${e?.message ?? "unknown error"}`);
+    } finally {
+      setAiLoading(false);
+    }
+  }
 
   return (
     <main style={{ padding: 24, maxWidth: 1400 }}>
@@ -153,6 +203,58 @@ export default function ReportDetailPage() {
             setReport((prev: any) => (prev ? { ...prev, meta: nextMeta } : prev));
           }}
         />
+      )}
+
+      {/* ✅ AI 인사이트 생성 UI (진짜 연결) */}
+      {!loading && report && (
+        <section style={{ marginTop: 18, borderTop: "1px solid #eee", paddingTop: 18 }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0 }}>AI 인사이트</h2>
+
+            <button
+              onClick={generateAIInsight}
+              disabled={aiLoading}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #ddd",
+                background: aiLoading ? "#f5f5f5" : "white",
+                cursor: aiLoading ? "wait" : "pointer",
+              }}
+            >
+              {aiLoading ? "생성 중..." : "AI 인사이트 생성"}
+            </button>
+
+            {aiMsg && <span style={{ fontSize: 13, opacity: 0.8 }}>{aiMsg}</span>}
+          </div>
+
+          <div
+            style={{
+              marginTop: 12,
+              padding: 14,
+              border: "1px solid #ddd",
+              borderRadius: 12,
+              background: "#fafafa",
+              whiteSpace: "pre-wrap",
+              lineHeight: 1.6,
+            }}
+          >
+            {aiInsightText ? (
+              <>
+                {aiInsightCreatedAt && (
+                  <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>
+                    마지막 생성: {aiInsightCreatedAt}
+                  </div>
+                )}
+                {aiInsightText}
+              </>
+            ) : (
+              <div style={{ opacity: 0.7 }}>
+                아직 인사이트가 없어. 위의 <b>“AI 인사이트 생성”</b>을 눌러봐.
+              </div>
+            )}
+          </div>
+        </section>
       )}
 
       {/* ✅ 기존 홈 대시보드 UI 재사용 + 기간/채널(rowOptions)까지 실제 적용 */}

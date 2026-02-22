@@ -1,155 +1,232 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase/client";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useParams } from "next/navigation";
 
-type ReportRow = {
+type Report = {
   id: string;
   title: string;
   status: string;
-  period_start: string | null;
+  period_start: string | null; // "YYYY-MM-DD" or null
   period_end: string | null;
+  meta: any;
   created_at: string;
   updated_at: string;
 };
 
-export default function ReportsPage() {
-  const router = useRouter();
+function fmtDT(iso: string) {
+  const d = new Date(iso);
+  return isFinite(d.getTime()) ? d.toLocaleString() : iso;
+}
 
-  const [userId, setUserId] = useState<string | null>(null);
-  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+export default function ReportDetailPage() {
+  const params = useParams<{ id: string }>();
+  const reportId = params?.id as string;
 
-  const [reports, setReports] = useState<ReportRow[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
 
-  // 로그인 상태
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setUserId(data.user?.id ?? null);
-    });
+  const [report, setReport] = useState<Report | null>(null);
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUserId(session?.user?.id ?? null);
-    });
+  // editable fields
+  const [title, setTitle] = useState("");
+  const [periodStart, setPeriodStart] = useState<string>("");
+  const [periodEnd, setPeriodEnd] = useState<string>("");
+  const [note, setNote] = useState<string>(""); // meta.note
 
-    return () => sub.subscription.unsubscribe();
-  }, []);
-
-  // 내 workspace 1개
-  useEffect(() => {
-    if (!userId) {
-      setWorkspaceId(null);
-      return;
-    }
-
-    (async () => {
-      setMsg("");
-      const { data: wm, error } = await supabase
-        .from("workspace_members")
-        .select("workspace_id")
-        .eq("user_id", userId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (error || !wm?.workspace_id) {
-        setWorkspaceId(null);
-        setMsg(`workspace 조회 실패: ${error?.message ?? "소속 workspace 없음"}`);
-      } else {
-        setWorkspaceId(wm.workspace_id);
-      }
-    })();
-  }, [userId]);
-
-  async function loadReports() {
-    if (!workspaceId) {
-      setMsg("workspace_id가 없어. 먼저 로그인 상태/워크스페이스를 확인해줘.");
-      return;
-    }
-
+  async function load() {
+    if (!reportId) return;
     setLoading(true);
     setMsg("");
 
     try {
-      const res = await fetch(`/api/reports/list?workspace_id=${workspaceId}`);
-      const json = await res.json();
+      const res = await fetch(`/api/reports/${reportId}`);
+      const text = await res.text();
+      const json = text ? JSON.parse(text) : null;
 
       if (!res.ok) {
-        setReports([]);
-        setMsg(`목록 조회 실패: ${json?.error ?? "unknown error"}`);
-      } else {
-        setReports((json?.reports ?? []) as ReportRow[]);
+        setMsg(`불러오기 실패(${res.status}): ${json?.error ?? text ?? "empty"}`);
+        setReport(null);
+        return;
       }
+
+      const r = json.report as Report;
+      setReport(r);
+      setTitle(r.title ?? "");
+      setPeriodStart(r.period_start ?? "");
+      setPeriodEnd(r.period_end ?? "");
+      setNote((r.meta?.note as string) ?? "");
     } catch (e: any) {
-      setMsg(`목록 조회 예외: ${e?.message ?? String(e)}`);
+      setMsg(`불러오기 예외: ${e?.message ?? String(e)}`);
+      setReport(null);
     } finally {
       setLoading(false);
     }
   }
 
-  // workspaceId 생기면 자동 로드
-  useEffect(() => {
-    if (workspaceId) loadReports();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceId]);
+  async function save() {
+    if (!reportId) return;
+    if (saving) return;
+
+    setSaving(true);
+    setMsg("");
+
+    try {
+      const payload = {
+        title,
+        period_start: periodStart ? periodStart : null,
+        period_end: periodEnd ? periodEnd : null,
+        meta: {
+          ...(report?.meta ?? {}),
+          note,
+        },
+      };
+
+      const res = await fetch(`/api/reports/${reportId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const text = await res.text();
+      const json = text ? JSON.parse(text) : null;
+
+      if (!res.ok) {
+        setMsg(`저장 실패(${res.status}): ${json?.error ?? text ?? "empty"}`);
+        return;
+      }
+
+      const updated = json.report as Report;
+      setReport((prev) => (prev ? { ...prev, ...updated } : updated));
+      setMsg("✅ 저장 완료");
+    } catch (e: any) {
+      setMsg(`저장 예외: ${e?.message ?? String(e)}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function generateAI() {
+    // 지금은 더미 (다음 단계에서 OpenAI 붙일 예정)
+    setMsg("🤖 AI 인사이트 생성: 다음 단계에서 붙일게 (지금은 더미 버튼)");
+    // 여기서 나중에 /api/insights/generate 같은 걸 호출할 거야.
+  }
+
+  const header = useMemo(() => {
+    if (!report) return null;
+    return (
+      <div style={{ opacity: 0.8, fontSize: 13, marginTop: 6 }}>
+        <div>status: {report.status}</div>
+        <div>created: {fmtDT(report.created_at)}</div>
+        <div>updated: {fmtDT(report.updated_at)}</div>
+      </div>
+    );
+  }, [report]);
 
   return (
-    <main style={{ padding: 24, maxWidth: 980 }}>
-      <h1 style={{ fontSize: 24, fontWeight: 700 }}>Reports</h1>
+    <main style={{ padding: 24, maxWidth: 920 }}>
+      <h1 style={{ fontSize: 26, fontWeight: 800 }}>Report Editor</h1>
+      <div style={{ marginTop: 6, opacity: 0.7 }}>id: {reportId}</div>
 
-      <div style={{ marginTop: 10, fontSize: 12, opacity: 0.8 }}>
-        user: {userId ?? "(none)"} <br />
-        workspace: {workspaceId ?? "(none)"}
-      </div>
+      {loading && <p style={{ marginTop: 12 }}>불러오는 중...</p>}
+      {!loading && !report && <p style={{ marginTop: 12 }}>리포트를 찾지 못했어.</p>}
 
-      {msg && <p style={{ marginTop: 10, whiteSpace: "pre-wrap" }}>{msg}</p>}
-
-      <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
-        <button
-          onClick={loadReports}
-          disabled={!workspaceId || loading}
-          style={{ padding: "8px 12px" }}
+      {!loading && report && (
+        <section
+          style={{
+            marginTop: 16,
+            padding: 16,
+            border: "1px solid #e5e5e5",
+            borderRadius: 14,
+          }}
         >
-          {loading ? "불러오는 중..." : "새로고침"}
-        </button>
-
-        <button
-          onClick={() => router.push("/report-builder")}
-          style={{ padding: "8px 12px" }}
-        >
-          + 새 리포트 만들기
-        </button>
-      </div>
-
-      <section style={{ marginTop: 16 }}>
-        {reports.length === 0 && !loading && (
-          <p style={{ opacity: 0.8 }}>리포트가 없거나 아직 불러오지 못했어.</p>
-        )}
-
-        <div style={{ display: "grid", gap: 10 }}>
-          {reports.map((r) => (
-            <button
-              key={r.id}
-              onClick={() => router.push(`/reports/${r.id}`)}
+          <label style={{ display: "block", fontWeight: 700 }}>
+            제목
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
               style={{
-                textAlign: "left",
-                padding: 14,
-                border: "1px solid #eee",
-                borderRadius: 12,
-                background: "white",
+                display: "block",
+                width: "100%",
+                marginTop: 8,
+                padding: 10,
+                border: "1px solid #ccc",
+                borderRadius: 10,
               }}
-            >
-              <div style={{ fontWeight: 700 }}>{r.title}</div>
-              <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75 }}>
-                status: {r.status} · created:{" "}
-                {new Date(r.created_at).toLocaleString()}
-              </div>
+            />
+          </label>
+
+          <div style={{ display: "flex", gap: 12, marginTop: 14, flexWrap: "wrap" }}>
+            <label style={{ display: "block", fontWeight: 700 }}>
+              기간 시작
+              <input
+                type="date"
+                value={periodStart}
+                onChange={(e) => setPeriodStart(e.target.value)}
+                style={{
+                  display: "block",
+                  marginTop: 8,
+                  padding: 10,
+                  border: "1px solid #ccc",
+                  borderRadius: 10,
+                  minWidth: 200,
+                }}
+              />
+            </label>
+
+            <label style={{ display: "block", fontWeight: 700 }}>
+              기간 종료
+              <input
+                type="date"
+                value={periodEnd}
+                onChange={(e) => setPeriodEnd(e.target.value)}
+                style={{
+                  display: "block",
+                  marginTop: 8,
+                  padding: 10,
+                  border: "1px solid #ccc",
+                  borderRadius: 10,
+                  minWidth: 200,
+                }}
+              />
+            </label>
+          </div>
+
+          <label style={{ display: "block", marginTop: 14, fontWeight: 700 }}>
+            메모 (meta.note)
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              rows={4}
+              style={{
+                display: "block",
+                width: "100%",
+                marginTop: 8,
+                padding: 10,
+                border: "1px solid #ccc",
+                borderRadius: 10,
+              }}
+            />
+          </label>
+
+          <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
+            <button onClick={save} disabled={saving} style={{ padding: "10px 14px" }}>
+              {saving ? "저장 중..." : "저장"}
             </button>
-          ))}
-        </div>
-      </section>
+            <button onClick={load} style={{ padding: "10px 14px" }}>
+              새로고침
+            </button>
+            <button onClick={generateAI} style={{ padding: "10px 14px" }}>
+              AI 인사이트 생성(더미)
+            </button>
+          </div>
+
+          {header}
+        </section>
+      )}
+
+      {msg && <p style={{ marginTop: 14 }}>{msg}</p>}
     </main>
   );
 }
