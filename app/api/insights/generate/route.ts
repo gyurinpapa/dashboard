@@ -229,26 +229,34 @@ if (fromYMD && toYMD) {
 
     // ✅ 5) OpenAI 프롬프트
     const prompt = `
-너는 퍼포먼스 마케팅 리포트 분석가야.
-아래 "리포트 메타"와 "지표 샘플"을 보고, 한국어로 인사이트를 JSON으로 만들어.
+    너는 퍼포먼스 마케팅 리포트 분석가야.
+    아래 "리포트 메타"와 "지표 샘플"을 보고, 한국어로 인사이트를 JSON으로 만들어.
 
-요구 JSON 스키마:
-{
-  "summary": "3~5문장 요약",
-  "anomalies": [{"title":"", "why":"", "impact":"", "checklist":["",""]}],
-  "actions": [{"title":"", "rationale":"", "next_steps":["",""]}],
-  "kpi": [{"name":"", "value":"", "delta":"", "note":""}]
-}
+    요구 JSON 스키마:
+    {
+    "summary": "3~5문장 요약",
+    "anomalies": [{"title":"", "why":"", "impact":"", "checklist":["",""]}],
+    "actions": [{"title":"", "rationale":"", "next_steps":["",""]}],
+    "kpi": [{"name":"", "value":"", "delta":"", "note":""}]
+    }
 
-반드시 지켜:
-- 출력은 JSON만 (설명 텍스트 금지)
-- 샘플이 0 rows면, 그 사실을 summary 첫 문장에 명확히 적고,
-  actions에 '기간/채널/소스 매핑 확인'을 포함해줘.
-- 숫자는 가능한 한 보기 좋게(천단위 콤마, 원 단위는 "원") 표현해도 좋아.
+    반드시 지켜:
+    - 출력은 JSON만 (설명 텍스트 금지)
+    - 샘플이 0 rows면, 그 사실을 summary 첫 문장에 명확히 적고,
+    actions에 '기간/채널/소스 매핑 확인'을 반드시 포함해줘.
+    - 샘플이 1 rows 이상이면, "데이터가 적다"는 이유만으로 점검 액션을 넣지 말고
+    주어진 지표(노출/클릭/비용/전환/매출)를 기반으로 성과 해석과 개선 액션을 작성해줘.
+    - actions에는 최소 1개 이상, 최대 3개까지만 제안해줘. (불필요한 점검 액션 금지)
+    - '매핑/점검/확인' 류의 액션은 rows=0인 경우에만 허용한다.
 
-리포트 메타:
-${JSON.stringify(
-      {
+    숫자 표현 가이드:
+    - 금액은 "원" 단위 사용 (예: 45,000원)
+    - ROAS, CTR 등은 % 표현 가능
+    - 천 단위 콤마 사용
+
+    리포트 메타:
+    ${JSON.stringify(
+    {
         title: report.title,
         status: report.status,
         period_start: report.period_start,
@@ -256,24 +264,24 @@ ${JSON.stringify(
         meta: report.meta ?? {},
         metrics_info: metricsInfo,
         metrics_schema_hint: {
-          date: "일자",
-          source: "매체/소스 (예: naver_sa, mobon 등)",
-          entity_type: "집계 단위 (campaign/adgroup/creative 등)",
-          entity_name: "집계 대상 이름",
-          imp: "노출",
-          clk: "클릭",
-          cost: "비용",
-          conv: "전환",
-          revenue: "매출",
+        date: "일자",
+        source: "매체/소스 (예: naver_sa, mobon 등)",
+        entity_type: "집계 단위 (campaign/adgroup/creative 등)",
+        entity_name: "집계 대상 이름",
+        imp: "노출",
+        clk: "클릭",
+        cost: "비용",
+        conv: "전환",
+        revenue: "매출",
         },
-      },
-      null,
-      2
+    },
+    null,
+    2
     )}
 
-지표 샘플(최대 200행, 없을 수도 있음):
-${JSON.stringify(metricsSample, null, 2)}
-`;
+    지표 샘플(최대 200행, 없을 수도 있음):
+    ${JSON.stringify(metricsSample, null, 2)}
+    `;
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",

@@ -53,8 +53,6 @@ function mapMetricsDailyToRow(m: any) {
     m?.dt;
 
   // 채널 그룹(search/display) 후보
-  // 1) 이미 "search"/"display"가 들어있으면 그대로
-  // 2) 아니면 source/채널 문자열에서 추론해서 group으로 만든다
   const direct =
     m?.channel_group ??
     m?.channelGroup ??
@@ -73,14 +71,12 @@ function mapMetricsDailyToRow(m: any) {
       m?.channel ?? m?.source ?? m?.media ?? m?.platform ?? m?.campaignType ?? ""
     ).toLowerCase();
 
-    // search 힌트(네이버 SA/파워링크/쇼핑검색 등)
     const isSearch =
       raw.includes("search") ||
       raw.includes("sa") ||
       raw.includes("powerlink") ||
       raw.includes("shopping");
 
-    // display 힌트(GFA/GDN/DA 등)
     const isDisplay =
       raw.includes("display") ||
       raw.includes("gfa") ||
@@ -88,34 +84,52 @@ function mapMetricsDailyToRow(m: any) {
       raw.includes("da") ||
       raw.includes("banner");
 
-    // 둘 다 아니면: 안전 기본값(일단 display로 두면 대부분 “필터로 0”되는 걸 줄일 수 있음)
     channelGroup = isSearch ? "search" : isDisplay ? "display" : "display";
   }
 
   return {
-    // 날짜: dashboard 필터가 찾을 수 있게 여러 키로 안전하게 제공
     date,
     day: date,
     ymd: date,
 
-    // 채널 그룹: search/display 필터가 먹게
     channelGroup,
     channel_group: channelGroup,
 
-    // 핵심 지표(프로젝트마다 키가 다를 수 있어 후보를 넓게 둠)
     impressions: num(m?.impressions ?? m?.imp ?? m?.impCnt ?? m?.impr ?? m?.imprCnt),
     clicks: num(m?.clicks ?? m?.clk ?? m?.clkCnt ?? m?.clickCnt),
     cost: num(m?.cost ?? m?.spend ?? m?.adCost ?? m?.costAmt),
     conversions: num(m?.conversions ?? m?.conv ?? m?.convCnt ?? m?.purchase ?? m?.orders),
     revenue: num(m?.revenue ?? m?.sales ?? m?.rev ?? m?.gmv),
 
-    // (선택) 구조/키워드 탭용 필드들 - 없으면 null
     source: m?.source ?? m?.media ?? m?.platform ?? null,
     campaign: m?.campaign ?? m?.campaign_name ?? null,
     group: m?.group ?? m?.adgroup ?? m?.adgroup_name ?? null,
     keyword: m?.keyword ?? null,
     device: m?.device ?? null,
   };
+}
+
+// ✅ 작은 UI helper (카드 스타일)
+function CardBox({
+  children,
+  style,
+}: {
+  children: React.ReactNode;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <div
+      style={{
+        padding: 12,
+        border: "1px solid #e5e5e5",
+        borderRadius: 12,
+        background: "white",
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
 }
 
 export default function ReportDetailPage() {
@@ -133,7 +147,7 @@ export default function ReportDetailPage() {
   // AI Insight UI 상태
   const [aiLoading, setAiLoading] = useState(false);
   const [aiMsg, setAiMsg] = useState("");
-  const [aiContent, setAiContent] = useState<any>(null); // insights.content (JSON)
+  const [aiContent, setAiContent] = useState<any>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -146,10 +160,9 @@ export default function ReportDetailPage() {
       setReport(null);
       setReportType(null);
       setAiContent(null);
-      setMetricsDaily([]); // ✅ reset
+      setMetricsDaily([]);
 
       try {
-        // ✅ 1) report는 API로 통일 (세션/권한 체크는 route에서)
         const res = await fetch(`/api/reports/${id}`, {
           method: "GET",
           cache: "no-store",
@@ -175,13 +188,9 @@ export default function ReportDetailPage() {
         if (!mounted) return;
         setReport(r);
 
-        // ✅ NEW: API가 같이 내려주는 metrics_daily를 받아서 저장
-        // - 키 이름이 다르면 여기만 바꾸면 됨
-        // - 예: json.metricsDaily / json.metrics_daily / json.data.metrics_daily 등
         const md = (json.metrics_daily ?? json.metricsDaily ?? []) as any[];
         setMetricsDaily(Array.isArray(md) ? md : []);
 
-        // ✅ 2) report type은 우선 supabase client로 조회 (나중에 API로 빼도 됨)
         const { data: t, error: tErr } = await supabase
           .from("report_types")
           .select("id, key, name")
@@ -197,7 +206,6 @@ export default function ReportDetailPage() {
         }
         setReportType(t as ReportTypeRow);
 
-        // ✅ 3) (선택) 기존 저장된 insights 있으면 보여주기
         const { data: ins, error: insErr } = await supabase
           .from("insights")
           .select("content, updated_at")
@@ -228,8 +236,6 @@ export default function ReportDetailPage() {
   const isCommerce = reportType?.key === "commerce";
   const meta = report?.meta ?? {};
 
-  // ✅ meta 스키마: { period: {from,to}, channels: ["search"|"display"], note: "" }
-  // ✅ fallback: meta.period가 비어있으면 reports.period_start/end 사용
   const periodFrom =
     (meta?.period?.from as string | undefined) ?? (report?.period_start ?? undefined);
   const periodTo =
@@ -238,14 +244,11 @@ export default function ReportDetailPage() {
   const channels = (meta?.channels ?? []) as ChannelKey[];
   const note = (meta?.note ?? "") as string;
 
-  // ✅ NEW: metrics_daily → rowsOverride 변환
   const rowsOverride = useMemo(() => {
     if (!Array.isArray(metricsDaily) || metricsDaily.length === 0) return [];
     return metricsDaily.map(mapMetricsDailyToRow);
   }, [metricsDaily]);
 
-  // ✅ 저장 후 meta가 바뀌면 대시보드를 리마운트해서 즉시 반영
-  // ✅ rowsOverride 길이도 key에 포함(데이터 주입 반영)
   const dashboardKey = useMemo(() => {
     return JSON.stringify({
       from: periodFrom ?? "",
@@ -312,9 +315,19 @@ export default function ReportDetailPage() {
   return (
     <main style={{ padding: 24, maxWidth: 1400 }}>
       <h1 style={{ fontSize: 24, fontWeight: 800 }}>Report Detail</h1>
-      <div style={{ marginTop: 8, padding: 10, border: "1px dashed #999", borderRadius: 10, fontSize: 13 }}>
+
+      <div
+        style={{
+          marginTop: 8,
+          padding: 10,
+          border: "1px dashed #999",
+          borderRadius: 10,
+          fontSize: 13,
+        }}
+      >
         <b>DEBUG</b>{" "}
-        id={id || "(no id)"} / loading={String(loading)} / report={report ? "yes" : "no"} / type={reportType?.key ?? "-"}
+        id={id || "(no id)"} / loading={String(loading)} / report={report ? "yes" : "no"} / type=
+        {reportType?.key ?? "-"}
         <br />
         <b>period</b> {periodFrom ?? "-"} ~ {periodTo ?? "-"}
         <br />
@@ -358,7 +371,6 @@ export default function ReportDetailPage() {
             {reportType ? `${reportType.name} (key=${reportType.key})` : "loading..."}
           </div>
 
-          {/* ✅ meta + reports.period fallback 요약 표시 */}
           {isCommerce && (
             <div style={{ marginTop: 10, opacity: 0.9, fontSize: 13 }}>
               <div>
@@ -373,14 +385,14 @@ export default function ReportDetailPage() {
                 </div>
               )}
               <div style={{ marginTop: 6, opacity: 0.7 }}>
-                <b>DB metrics_daily</b>: {metricsDaily.length}건 / <b>rowsOverride</b>: {rowsOverride.length}건
+                <b>DB metrics_daily</b>: {metricsDaily.length}건 / <b>rowsOverride</b>:{" "}
+                {rowsOverride.length}건
               </div>
             </div>
           )}
         </div>
       )}
 
-      {/* ✅ 커머스 설정 저장 UI */}
       {!loading && report && isCommerce && (
         <CommerceReportEditor
           report={report}
@@ -390,7 +402,7 @@ export default function ReportDetailPage() {
         />
       )}
 
-      {/* ✅ AI 인사이트 생성 UI */}
+      {/* ✅ AI 인사이트 생성 UI (가독성 카드 버전) */}
       {!loading && report && (
         <section style={{ marginTop: 18, borderTop: "1px solid #eee", paddingTop: 18 }}>
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -420,7 +432,6 @@ export default function ReportDetailPage() {
               border: "1px solid #ddd",
               borderRadius: 12,
               background: "#fafafa",
-              whiteSpace: "pre-wrap",
               lineHeight: 1.6,
             }}
           >
@@ -431,14 +442,117 @@ export default function ReportDetailPage() {
                     마지막 저장: {fmtDT(aiContent._saved_updated_at)}
                   </div>
                 )}
+
+                {/* 요약 */}
                 <div style={{ fontWeight: 800, marginBottom: 6 }}>요약</div>
-                <div style={{ marginBottom: 12 }}>{aiContent.summary ?? "(summary 없음)"}</div>
+                <CardBox style={{ background: "white" }}>
+                  <div style={{ whiteSpace: "pre-wrap" }}>{aiContent.summary ?? "(summary 없음)"}</div>
+                </CardBox>
 
-                <div style={{ fontWeight: 800, marginBottom: 6 }}>이상징후</div>
-                <pre style={{ margin: 0 }}>{JSON.stringify(aiContent.anomalies ?? [], null, 2)}</pre>
+                {/* 이상징후 */}
+                <div style={{ fontWeight: 800, marginTop: 14, marginBottom: 6 }}>이상징후</div>
+                {Array.isArray(aiContent?.anomalies) && aiContent.anomalies.length > 0 ? (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {aiContent.anomalies.slice(0, 5).map((a: any, idx: number) => (
+                      <CardBox key={idx}>
+                        <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+                          <div style={{ fontWeight: 800 }}>{a?.title ?? "(제목 없음)"}</div>
+                        </div>
 
-                <div style={{ fontWeight: 800, marginTop: 12, marginBottom: 6 }}>액션</div>
-                <pre style={{ margin: 0 }}>{JSON.stringify(aiContent.actions ?? [], null, 2)}</pre>
+                        {a?.why && (
+                          <div style={{ marginTop: 8 }}>
+                            <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.75 }}>원인</div>
+                            <div style={{ opacity: 0.95 }}>{a.why}</div>
+                          </div>
+                        )}
+
+                        {a?.impact && (
+                          <div style={{ marginTop: 8 }}>
+                            <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.75 }}>영향</div>
+                            <div style={{ opacity: 0.95 }}>{a.impact}</div>
+                          </div>
+                        )}
+
+                        {Array.isArray(a?.checklist) && a.checklist.length > 0 && (
+                          <div style={{ marginTop: 10 }}>
+                            <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.75, marginBottom: 6 }}>
+                              체크리스트
+                            </div>
+                            <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
+                              {a.checklist.map((s: any, i: number) => (
+                                <li key={i}>{String(s)}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </CardBox>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ opacity: 0.7 }}>(이상징후 없음)</div>
+                )}
+
+                {/* 액션 */}
+                <div style={{ fontWeight: 800, marginTop: 14, marginBottom: 6 }}>액션</div>
+                {Array.isArray(aiContent?.actions) && aiContent.actions.length > 0 ? (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {aiContent.actions.slice(0, 3).map((a: any, idx: number) => (
+                      <CardBox key={idx}>
+                        <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+                          <div
+                            style={{
+                              width: 22,
+                              height: 22,
+                              borderRadius: 999,
+                              border: "1px solid #ddd",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: 12,
+                              opacity: 0.8,
+                            }}
+                          >
+                            {idx + 1}
+                          </div>
+                          <div style={{ fontWeight: 800 }}>{a?.title ?? "(제목 없음)"}</div>
+                        </div>
+
+                        {a?.rationale && (
+                          <div style={{ marginTop: 8, opacity: 0.9, lineHeight: 1.55 }}>
+                            {a.rationale}
+                          </div>
+                        )}
+
+                        {Array.isArray(a?.next_steps) && a.next_steps.length > 0 && (
+                          <div style={{ marginTop: 10 }}>
+                            <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.75, marginBottom: 6 }}>
+                              다음 단계
+                            </div>
+                            <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
+                              {a.next_steps.map((s: any, i: number) => (
+                                <li key={i}>{String(s)}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </CardBox>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ opacity: 0.7 }}>(액션 없음)</div>
+                )}
+
+                {/* 원문 JSON은 접기 */}
+                <details style={{ marginTop: 14 }}>
+                  <summary style={{ cursor: "pointer", opacity: 0.75 }}>원문 JSON 보기</summary>
+                  <pre style={{ marginTop: 10, overflowX: "auto" }}>
+                    {JSON.stringify(
+                      { summary: aiContent.summary, anomalies: aiContent.anomalies, actions: aiContent.actions, kpi: aiContent.kpi, _debug: aiContent._debug },
+                      null,
+                      2
+                    )}
+                  </pre>
+                </details>
               </>
             ) : (
               <div style={{ opacity: 0.7 }}>
@@ -449,7 +563,6 @@ export default function ReportDetailPage() {
         </section>
       )}
 
-      {/* ✅ 기존 홈 대시보드 UI 재사용 + 기간/채널 실제 적용 + DB rowsOverride 주입 */}
       {!loading && report && isCommerce && (
         <div style={{ marginTop: 18, borderTop: "1px solid #eee", paddingTop: 18 }}>
           <div style={{ marginBottom: 10, opacity: 0.7 }}>
@@ -458,8 +571,8 @@ export default function ReportDetailPage() {
 
           <CommerceDashboard
             key={dashboardKey}
-            dataUrl="/data/acc_001.csv" // ✅ fallback로 남겨둠 (rowsOverride가 있으면 이건 무시됨)
-            rowsOverride={rowsOverride} // ✅ NEW: DB 데이터 주입
+            dataUrl="/data/acc_001.csv"
+            rowsOverride={rowsOverride}
             rowOptions={{
               from: periodFrom,
               to: periodTo,
