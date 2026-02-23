@@ -8,12 +8,19 @@ type Props = {
   onSaved?: (nextMeta: any) => void;
 };
 
-// ✅ 채널 정의 변경: display/search
+// ✅ 채널 정의: search / display
 type ChannelKey = "search" | "display";
 
 function isValidDateRange(from: string, to: string) {
   if (!from || !to) return false;
   return from <= to;
+}
+
+function asYMD(v: any): string {
+  if (v == null) return "";
+  const s = String(v).trim();
+  // date 컬럼은 보통 "YYYY-MM-DD"로 오므로 그대로 사용
+  return s;
 }
 
 export default function CommerceReportEditor({ report, onSaved }: Props) {
@@ -24,21 +31,30 @@ export default function CommerceReportEditor({ report, onSaved }: Props) {
   const [msg, setMsg] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // ✅ report.meta에서 값 복원
+  // ✅ 초기값 복원:
+  // 1) meta.period.from/to 우선
+  // 2) 없으면 report.period_start/end fallback
   useEffect(() => {
     const m = report?.meta ?? {};
-    setFrom(m?.period?.from ?? "");
-    setTo(m?.period?.to ?? "");
+
+    const metaFrom = asYMD(m?.period?.from);
+    const metaTo = asYMD(m?.period?.to);
+
+    const colFrom = asYMD(report?.period_start);
+    const colTo = asYMD(report?.period_end);
+
+    setFrom(metaFrom || colFrom || "");
+    setTo(metaTo || colTo || "");
+
     setChannels((m?.channels ?? []) as ChannelKey[]);
-    setNote(m?.note ?? "");
+    setNote((m?.note ?? "") as string);
+
     setMsg("");
     setSaving(false);
-  }, [report?.id]);
+  }, [report?.id, report?.updated_at]); // ✅ updated_at까지 보면 저장 후 반영이 더 안정적
 
   function toggleChannel(key: ChannelKey) {
-    setChannels((prev) =>
-      prev.includes(key) ? prev.filter((c) => c !== key) : [...prev, key]
-    );
+    setChannels((prev) => (prev.includes(key) ? prev.filter((c) => c !== key) : [...prev, key]));
   }
 
   // ✅ 검증 규칙
@@ -49,7 +65,7 @@ export default function CommerceReportEditor({ report, onSaved }: Props) {
     if (from && to && !isValidDateRange(from, to)) e.push("기간이 올바르지 않아. (From ≤ To)");
     if (!channels.length) e.push("채널을 최소 1개 선택해줘.");
     return e;
-  }, [from, to, channels.length]);
+  }, [from, to, channels]);
 
   const canSave = useMemo(() => {
     return Boolean(report?.id) && errors.length === 0 && !saving;
@@ -70,23 +86,41 @@ export default function CommerceReportEditor({ report, onSaved }: Props) {
 
     setSaving(true);
 
-    const meta = {
+    // ✅ 기존 meta를 보존하면서 필요한 키만 갱신
+    const nextMeta = {
+      ...(report?.meta ?? {}),
       period: { from, to },
-      channels, // ✅ ["search"|"display"]
+      channels, // ["search"|"display"]
       note: note || "",
     };
 
-    const { error } = await supabase
+    // ✅ meta + 컬럼 period_start/end까지 동기화 저장
+    const { data, error } = await supabase
       .from("reports")
-      .update({ meta })
-      .eq("id", report.id);
+      .update({
+        meta: nextMeta,
+        period_start: from, // date 컬럼: "YYYY-MM-DD"
+        period_end: to,
+      })
+      .eq("id", report.id)
+      .select("id, meta, period_start, period_end, updated_at")
+      .maybeSingle();
 
     if (error) {
       setMsg("❌ 저장 실패: " + error.message);
-    } else {
-      setMsg("✅ 저장 완료");
-      onSaved?.(meta); // ✅ 성공했을 때만
+      setSaving(false);
+      return;
     }
+
+    // ✅ 서버가 돌려준 meta를 우선 반영 (없으면 nextMeta)
+    const savedMeta = (data as any)?.meta ?? nextMeta;
+
+    setMsg("✅ 저장 완료");
+    onSaved?.(savedMeta);
+
+    // 로컬 state도 즉시 맞춰두기 (체감 안정성↑)
+    setFrom(asYMD((data as any)?.period_start) || from);
+    setTo(asYMD((data as any)?.period_end) || to);
 
     setSaving(false);
   }
@@ -94,9 +128,7 @@ export default function CommerceReportEditor({ report, onSaved }: Props) {
   return (
     <section style={{ marginTop: 18, padding: 16, border: "1px solid #ddd", borderRadius: 12 }}>
       <h3 style={{ fontSize: 18, fontWeight: 800 }}>커머스 리포트 설정</h3>
-      <p style={{ marginTop: 6, opacity: 0.7 }}>
-        필수: 기간(from/to), 채널 1개 이상 / 선택: 메모
-      </p>
+      <p style={{ marginTop: 6, opacity: 0.7 }}>필수: 기간(from/to), 채널 1개 이상 / 선택: 메모</p>
 
       <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
         {/* 기간 */}
@@ -106,6 +138,11 @@ export default function CommerceReportEditor({ report, onSaved }: Props) {
             <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
             <span>~</span>
             <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          </div>
+
+          {/* 참고용: meta 비어있어도 컬럼에서 가져왔다는 걸 확인할 수 있게 (원하면 지워도 됨) */}
+          <div style={{ marginTop: 6, fontSize: 12, opacity: 0.6 }}>
+            (fallback: reports.period_start/end → meta.period.from/to)
           </div>
         </div>
 
@@ -149,7 +186,9 @@ export default function CommerceReportEditor({ report, onSaved }: Props) {
             <div style={{ fontWeight: 700, marginBottom: 6 }}>저장 불가</div>
             <ul style={{ margin: 0, paddingLeft: 18 }}>
               {errors.map((e) => (
-                <li key={e} style={{ opacity: 0.85 }}>{e}</li>
+                <li key={e} style={{ opacity: 0.85 }}>
+                  {e}
+                </li>
               ))}
             </ul>
           </div>

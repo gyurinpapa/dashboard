@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { parseDateLoose } from "../../src/lib/report/date";
 
 import type {
   ChannelKey,
@@ -49,39 +50,222 @@ type DashboardInit = {
   period?: { from?: string; to?: string };
 };
 
-// ✅ 추가: rows 단계 필터 옵션
+// ✅ rows 단계 필터 옵션
 type RowOptions = {
-  from?: string;
-  to?: string;
+  from?: string; // e.g. "2026-02-01" or "2026. 02. 01."
+  to?: string; // e.g. "2026-02-29" or "2026. 02. 29."
   channels?: ("search" | "display")[];
 };
 
 type Props = {
   dataUrl?: string;
   init?: DashboardInit;
-  rowOptions?: RowOptions; // ✅ NEW
+  rowOptions?: RowOptions;
+
+  /**
+   * ✅ NEW: DB(metrics_daily) 등에서 만든 "Row 배열"을 주입하는 통로
+   * - 값이 있으면 CSV rows 대신 이것을 우선 사용
+   */
+  rowsOverride?: any[];
 };
+
+/** =========================
+ * RowOptions filtering (safe, dashboard-level guarantee)
+ * ========================= */
+
+function toDateOrNull(v?: string) {
+  if (!v) return null;
+  const d = parseDateLoose(v); // ✅ 점(.) 포맷까지 안전 처리
+  return d && Number.isFinite(d.getTime()) ? d : null;
+}
+
+function startOfDay(d: Date) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+function endOfDay(d: Date) {
+  const x = new Date(d);
+  x.setHours(23, 59, 59, 999);
+  return x;
+}
+
+// row에서 날짜 필드 후보들을 최대한 안전하게 탐색
+function getRowDate(row: any): Date | null {
+  const candidates = [
+    row?.date,
+    row?.day,
+    row?.ymd,
+    row?.period_date,
+    row?.metric_date,
+    row?.report_date,
+    row?.dt,
+  ];
+
+  for (const c of candidates) {
+    if (!c) continue;
+
+    // Date 객체면 그대로 사용
+    if (c instanceof Date && Number.isFinite(c.getTime())) return c;
+
+    const d = parseDateLoose(String(c));
+    if (d && Number.isFinite(d.getTime())) return d;
+  }
+  return null;
+}
+
+// row에서 채널 그룹(search/display) 필드 후보 탐색
+function getRowChannelGroup(row: any): "search" | "display" | null {
+  // ✅ 가장 가능성 높은 후보들
+  const direct =
+    row?.channelGroup ??
+    row?.channel_group ??
+    row?.channelType ??
+    row?.channel_type ??
+    row?.mediaType ??
+    row?.media_type ??
+    row?.inventoryType ??
+    row?.inventory_type;
+
+  if (direct === "search" || direct === "display") return direct;
+
+  // ✅ 혹시 문자열에 힌트가 들어있는 경우(너무 공격적이지 않게)
+  const maybe = String(
+    row?.channel ??
+      row?.source ??
+      row?.media ??
+      row?.platform ??
+      row?.campaignType ??
+      ""
+  ).toLowerCase();
+
+  if (!maybe) return null;
+
+  // search 힌트
+  if (
+    maybe.includes("search") ||
+    maybe.includes("sa") || // naver sa 같은 케이스
+    maybe.includes("powerlink") ||
+    maybe.includes("shopping")
+  ) {
+    return "search";
+  }
+
+  // display 힌트
+  if (
+    maybe.includes("display") ||
+    maybe.includes("gdn") ||
+    maybe.includes("gfa") ||
+    maybe.includes("da") ||
+    maybe.includes("banner")
+  ) {
+    return "display";
+  }
+
+  return null;
+}
+
+function isWithinRangeInclusive(d: Date, from: Date | null, to: Date | null) {
+  const t = d.getTime();
+
+  const fromT = from ? startOfDay(from).getTime() : null;
+  const toT = to ? endOfDay(to).getTime() : null;
+
+  if (fromT != null && t < fromT) return false;
+  if (toT != null && t > toT) return false;
+  return true;
+}
+
+function applyRowOptions<T extends any>(rows: T[], options?: RowOptions) {
+  if (!options) return rows;
+
+  const fromD = toDateOrNull(options.from);
+  const toD = toDateOrNull(options.to);
+  const channels = options.channels?.length ? options.channels : null;
+
+  // 옵션이 사실상 비어있으면 그대로 반환
+  if (!fromD && !toD && !channels) return rows;
+
+  return rows.filter((row: any) => {
+    // 기간 필터
+    if (fromD || toD) {
+      const d = getRowDate(row);
+      // 날짜 필드가 없으면 "기간필터 적용 불가" → 안전하게 제외(=필터 의도에 맞춤)
+      if (!d) return false;
+      if (!isWithinRangeInclusive(d, fromD, toD)) return false;
+    }
+
+    // 채널 그룹 필터(search/display)
+    if (channels) {
+      const g = getRowChannelGroup(row);
+      // 채널 구분이 불가능하면 안전하게 제외
+      if (!g) return false;
+      if (!channels.includes(g)) return false;
+    }
+
+    return true;
+  });
+}
 
 export default function CommerceDashboard({
   dataUrl = "/data/acc_001.csv",
   init,
   rowOptions,
+  rowsOverride, // ✅ NEW
 }: Props) {
-  // ✅ 가장 안전: rows 단계에서 먼저 자르기(기간 + 채널)
-  const { rows, isLoading } = useReportRows(dataUrl, {
-    from: rowOptions?.from ?? init?.period?.from,
-    to: rowOptions?.to ?? init?.period?.to,
-    channels: rowOptions?.channels,
+  // ✅ rowOptions 우선, 없으면 init.period fallback
+  const effectiveRowOptions: RowOptions | undefined = useMemo(() => {
+    const from = rowOptions?.from ?? init?.period?.from;
+    const to = rowOptions?.to ?? init?.period?.to;
+    const channels = rowOptions?.channels;
+
+    // 모두 없으면 undefined로 (불필요한 리렌더/필터 방지)
+    if (!from && !to && (!channels || channels.length === 0)) return undefined;
+
+    return { from, to, channels };
+  }, [
+    rowOptions?.from,
+    rowOptions?.to,
+    rowOptions?.channels,
+    init?.period?.from,
+    init?.period?.to,
+  ]);
+
+  // ✅ CSV rows도 로드(테스트/백업). 실제 운영은 rowsOverride로 주입
+  const { rows: csvRows, isLoading } = useReportRows(dataUrl, {
+    from: effectiveRowOptions?.from,
+    to: effectiveRowOptions?.to,
+    channels: effectiveRowOptions?.channels,
   });
+
+  // ✅ rows source 선택: rowsOverride가 있으면 우선 사용
+  const baseRows = useMemo(() => {
+    if (rowsOverride && rowsOverride.length > 0) return rowsOverride;
+    return csvRows;
+  }, [rowsOverride, csvRows]);
+
+  // ✅ Dashboard 레벨에서 필터 보장
+  const rowsByRowOptions = useMemo(() => {
+    return applyRowOptions(baseRows as any[], effectiveRowOptions);
+  }, [baseRows, effectiveRowOptions]);
 
   // ===== state =====
   const [tab, setTab] = useState<TabKey>(init?.tab ?? "summary");
 
   const [filterKey, setFilterKey] = useState<FilterKey>(null);
-  const [selectedMonth, setSelectedMonth] = useState<MonthKey>(init?.selectedMonth ?? "all");
-  const [selectedWeek, setSelectedWeek] = useState<WeekKey>(init?.selectedWeek ?? "all");
-  const [selectedDevice, setSelectedDevice] = useState<DeviceKey>(init?.selectedDevice ?? "all");
-  const [selectedChannel, setSelectedChannel] = useState<ChannelKey>(init?.selectedChannel ?? "all");
+  const [selectedMonth, setSelectedMonth] = useState<MonthKey>(
+    init?.selectedMonth ?? "all"
+  );
+  const [selectedWeek, setSelectedWeek] = useState<WeekKey>(
+    init?.selectedWeek ?? "all"
+  );
+  const [selectedDevice, setSelectedDevice] = useState<DeviceKey>(
+    init?.selectedDevice ?? "all"
+  );
+  const [selectedChannel, setSelectedChannel] = useState<ChannelKey>(
+    init?.selectedChannel ?? "all"
+  );
 
   const [monthGoal, setMonthGoal] = useLocalStorageState<GoalState>(
     MONTH_GOAL_KEY,
@@ -111,7 +295,7 @@ export default function CommerceDashboard({
     byWeekChart,
     byMonth,
   } = useReportAggregates({
-    rows,
+    rows: rowsByRowOptions as any[],
     selectedMonth,
     selectedWeek,
     selectedDevice,
@@ -122,7 +306,7 @@ export default function CommerceDashboard({
 
   const { monthGoalInsight } = useInsights({
     byMonth,
-    rowsLength: rows.length,
+    rowsLength: rowsByRowOptions.length,
     currentMonthKey,
     monthGoal,
     currentMonthActual: {

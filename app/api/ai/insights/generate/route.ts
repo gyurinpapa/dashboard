@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { sbAuth } from "@/src/lib/supabase/auth-server";
 
 type ChannelKey = "search" | "display";
 
@@ -129,7 +130,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "OPENAI_API_KEY missing" }, { status: 500 });
     }
 
-    const sb = supabaseAdmin();
+    const sb = supabaseAdmin;
 
     // 1) report 읽기
     const { data: report, error: rErr } = await sb

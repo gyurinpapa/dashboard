@@ -48,7 +48,7 @@ export default function ReportsPage() {
       setMsg("");
       const { data: wm, error } = await supabase
         .from("workspace_members")
-        .select("workspace_id")
+        .select("id, title, status, created_at, workspace_id, created_by, report_type_id, meta, period_start, period_end")
         .eq("user_id", userId)
         .order("created_at", { ascending: false })
         .limit(1)

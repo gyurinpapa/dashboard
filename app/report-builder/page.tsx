@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabase/client";
+import { useEffect, useState } from "react";
+import { supabase } from "@/src/lib/supabase/client";
 import { useRouter } from "next/navigation";
 
 type ReportType = {
@@ -14,11 +14,21 @@ type ReportRow = {
   id: string;
   title: string;
   status: string;
-  period_start: string | null;
-  period_end: string | null;
-  created_at: string;
-  updated_at: string;
+  created_at?: string;
+  period_start?: string | null;
+  period_end?: string | null;
 };
+
+async function safeReadJson(res: Response) {
+  const text = await res.text(); // ✅ 먼저 text로 받기
+  if (!text) return { __nonjson: true, status: res.status, text: "" };
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { __nonjson: true, status: res.status, text };
+  }
+}
 
 export default function ReportBuilderPage() {
   const router = useRouter();
@@ -27,19 +37,16 @@ export default function ReportBuilderPage() {
   const [password, setPassword] = useState("12345678");
   const [userId, setUserId] = useState<string | null>(null);
 
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+
   const [types, setTypes] = useState<ReportType[]>([]);
   const [loadingTypes, setLoadingTypes] = useState(false);
-
-  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
-  const [loadingWorkspace, setLoadingWorkspace] = useState(false);
-
-  const [creating, setCreating] = useState(false);
-  const [msg, setMsg] = useState<string>("");
 
   const [reports, setReports] = useState<ReportRow[]>([]);
   const [loadingReports, setLoadingReports] = useState(false);
 
-  const canUseApi = useMemo(() => !!userId && !!workspaceId, [userId, workspaceId]);
+  const [creating, setCreating] = useState(false);
+  const [msg, setMsg] = useState<string>("");
 
   // 1) 현재 로그인 상태 읽기
   useEffect(() => {
@@ -66,7 +73,6 @@ export default function ReportBuilderPage() {
     (async () => {
       setLoadingTypes(true);
       setMsg("");
-
       const { data, error } = await supabase
         .from("report_types")
         .select("id,key,name")
@@ -79,18 +85,14 @@ export default function ReportBuilderPage() {
     })();
   }, [userId]);
 
-  // 3) 로그인되어 있으면 "내 workspace 1개" 가져오기 (workspace_members 기준)
+  // 3) workspace_id 1개 가져오기
   useEffect(() => {
     if (!userId) {
       setWorkspaceId(null);
       return;
     }
-
     (async () => {
-      setLoadingWorkspace(true);
-      setMsg("");
-
-      const { data: wm, error: wmErr } = await supabase
+      const { data: wm, error } = await supabase
         .from("workspace_members")
         .select("workspace_id")
         .eq("user_id", userId)
@@ -98,14 +100,12 @@ export default function ReportBuilderPage() {
         .limit(1)
         .maybeSingle();
 
-      if (wmErr || !wm?.workspace_id) {
+      if (error || !wm) {
         setWorkspaceId(null);
-        setMsg(`workspace_members 조회 실패: ${wmErr?.message ?? "소속 workspace 없음"}`);
-      } else {
-        setWorkspaceId(wm.workspace_id);
+        setMsg(`workspace_members 조회 실패: ${error?.message ?? "소속 workspace 없음"}`);
+        return;
       }
-
-      setLoadingWorkspace(false);
+      setWorkspaceId(wm.workspace_id);
     })();
   }, [userId]);
 
@@ -128,44 +128,42 @@ export default function ReportBuilderPage() {
     setReports([]);
   }
 
-  // ✅ API: reports 목록 가져오기
   async function fetchReports() {
     if (!workspaceId) {
-      setMsg("workspace_id가 없어. 먼저 로그인/워크스페이스 확인!");
+      setMsg("workspace_id가 없어. workspace_members부터 확인해줘.");
       return;
     }
 
     setLoadingReports(true);
     setMsg("");
 
-    try {
-      const res = await fetch(`/api/reports/list?workspace_id=${workspaceId}`, {
-        method: "GET",
-      });
-      const json = await res.json();
+    const res = await fetch(`/api/reports/list?workspace_id=${workspaceId}&limit=50`, {
+        credentials: "include", // ✅ 추가
+        });
+    const json = await safeReadJson(res);
 
-      if (!res.ok) {
-        setMsg(`reports list 실패: ${json?.error ?? "unknown error"}`);
-        setReports([]);
-      } else {
-        setReports((json.reports ?? []) as ReportRow[]);
-        setMsg(`✅ reports ${json.reports?.length ?? 0}개 로드 완료`);
-      }
-    } catch (e: any) {
-      setMsg(`reports list 예외: ${e?.message ?? String(e)}`);
-    } finally {
+    if ((json as any).__nonjson) {
+      setMsg(
+        `목록 조회 응답이 JSON이 아님 (status ${(json as any).status}).\n` +
+          String((json as any).text).slice(0, 400)
+      );
       setLoadingReports(false);
-    }
-  }
-
-  // ✅ API: reports 생성
-  async function createReport(type: ReportType) {
-    if (!userId) {
-      setMsg("먼저 로그인 해줘.");
       return;
     }
+
+    if (!res.ok || !(json as any).ok) {
+      setMsg(`목록 조회 실패(${res.status}): ${(json as any).error ?? "unknown error"}`);
+      setLoadingReports(false);
+      return;
+    }
+
+    setReports(((json as any).reports ?? []) as ReportRow[]);
+    setLoadingReports(false);
+  }
+
+  async function createReport(type: ReportType) {
     if (!workspaceId) {
-      setMsg("workspace_id를 못 가져왔어. workspace_members 확인해줘.");
+      setMsg("workspace_id가 없어. workspace_members부터 확인해줘.");
       return;
     }
     if (creating) return;
@@ -175,52 +173,59 @@ export default function ReportBuilderPage() {
 
     const title = `${type.name} - Draft`;
 
-    try {
-      const res = await fetch("/api/reports/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          workspace_id: workspaceId,
-          report_type_id: type.id,
-          title,
-          period_start: null,
-          period_end: null,
-          meta: {},
+    const res = await fetch("/api/reports/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include", // ✅ 추가
+      body: JSON.stringify({
+        workspace_id: workspaceId,
+        report_type_id: type.id,
+        title,
+        // period_start / period_end를 null로 보내도 되지만,
+        // 이제 create route에서 자동 세팅(가능하면) 하니까 생략해도 OK
+        // period_start: null,
+        // period_end: null,
+        meta: {},
+        status: "draft",
         }),
-      });
+    });
 
-      const json = await res.json();
+    const json = await safeReadJson(res);
 
-      if (!res.ok) {
-        setMsg(`report 생성 실패(API): ${json?.error ?? "unknown error"}`);
-        return;
-      }
-
-      const reportId = json?.report?.id as string | undefined;
-      if (!reportId) {
-        setMsg("report 생성은 됐는데 id를 못 받았어(응답 확인 필요)");
-        return;
-      }
-
-      setMsg(`✅ report 생성됨: ${reportId}`);
-
-      // 목록 갱신
-      await fetchReports();
-
-      // 생성 즉시 이동
-      router.push(`/reports/${reportId}`);
-    } catch (e: any) {
-      setMsg(`report 생성 예외: ${e?.message ?? String(e)}`);
-    } finally {
+    if ((json as any).__nonjson) {
+      setMsg(
+        `report 생성 응답이 JSON이 아님 (status ${(json as any).status}).\n` +
+          String((json as any).text).slice(0, 400)
+      );
       setCreating(false);
+      return;
     }
+
+    if (!res.ok || !(json as any).ok) {
+      setMsg(`report 생성 실패(${res.status}): ${(json as any).error ?? "unknown error"}`);
+      setCreating(false);
+      return;
+    }
+
+    const reportId = (json as any).report?.id as string | undefined;
+    if (!reportId) {
+      setMsg("report 생성은 성공했는데 id가 없어. 응답 포맷 확인 필요");
+      setCreating(false);
+      return;
+    }
+
+    setMsg(`✅ report 생성됨: ${reportId}`);
+    setCreating(false);
+
+    // 목록 갱신 + 상세 이동
+    await fetchReports();
+    router.push(`/reports/${reportId}`);
   }
 
   return (
-    <main style={{ padding: 24, maxWidth: 980 }}>
-      <h1 style={{ fontSize: 24, fontWeight: 700 }}>Report Builder (테스트)</h1>
+    <main style={{ padding: 24, maxWidth: 1000 }}>
+      <h1 style={{ fontSize: 28, fontWeight: 800 }}>Report Builder (테스트)</h1>
 
-      {/* 로그인 박스 */}
       <div
         style={{
           marginTop: 16,
@@ -242,7 +247,7 @@ export default function ReportBuilderPage() {
               padding: 8,
               border: "1px solid #ccc",
               borderRadius: 8,
-              minWidth: 220,
+              minWidth: 260,
             }}
           />
           <input
@@ -263,42 +268,37 @@ export default function ReportBuilderPage() {
           <button onClick={signOut} style={{ padding: "8px 12px" }}>
             로그아웃
           </button>
-
-          <div style={{ marginLeft: 8, fontSize: 12, opacity: 0.8 }}>
-            workspace_id:{" "}
-            {loadingWorkspace ? "불러오는 중..." : workspaceId ? workspaceId : "(없음)"}
-          </div>
         </div>
 
-        {msg && <p style={{ marginTop: 10, whiteSpace: "pre-wrap" }}>{msg}</p>}
+        <div style={{ marginTop: 10, fontSize: 13, opacity: 0.8 }}>
+          workspace_id: {workspaceId ?? "(없음)"}
+        </div>
 
-        {/* ✅ 임시 테스트 버튼: API list */}
-        <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button
-            onClick={fetchReports}
-            disabled={!canUseApi || loadingReports}
-            style={{ padding: "8px 12px" }}
-          >
-            {loadingReports ? "불러오는 중..." : "reports list test"}
+        <div style={{ marginTop: 10, display: "flex", gap: 10 }}>
+          <button onClick={fetchReports} style={{ padding: "8px 12px" }} disabled={!workspaceId}>
+            reports list test
           </button>
+        </div>
 
-          <button
-            onClick={async () => {
-              // create API가 401 뜨면, 로그인 세션/쿠키가 안 붙는 상태일 수 있음
-              setMsg(
-                "Tip: create 버튼은 아래 '보고서 유형 선택'에서 하나 클릭하면 실행됨."
-              );
+        {msg && (
+          <pre
+            style={{
+              marginTop: 10,
+              whiteSpace: "pre-wrap",
+              background: "#fafafa",
+              border: "1px solid #eee",
+              padding: 10,
+              borderRadius: 10,
+              fontSize: 13,
             }}
-            style={{ padding: "8px 12px" }}
           >
-            create는 유형 클릭
-          </button>
-        </div>
+            {msg}
+          </pre>
+        )}
       </div>
 
-      {/* 보고서 유형 */}
       <section style={{ marginTop: 18 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 700 }}>보고서 유형 선택</h2>
+        <h2 style={{ fontSize: 18, fontWeight: 800 }}>보고서 유형 선택</h2>
         {!userId && <p style={{ marginTop: 8 }}>먼저 로그인하면 유형이 보여.</p>}
         {userId && loadingTypes && <p style={{ marginTop: 8 }}>불러오는 중...</p>}
 
@@ -314,7 +314,7 @@ export default function ReportBuilderPage() {
             <button
               key={t.id}
               onClick={() => createReport(t)}
-              disabled={!userId || !workspaceId || creating}
+              disabled={!workspaceId || creating}
               style={{
                 textAlign: "left",
                 padding: 14,
@@ -322,68 +322,56 @@ export default function ReportBuilderPage() {
                 borderRadius: 14,
                 background: "white",
                 cursor: creating ? "wait" : "pointer",
-                opacity: creating ? 0.7 : 1,
+                opacity: !workspaceId || creating ? 0.6 : 1,
               }}
             >
-              <div style={{ fontWeight: 700 }}>{t.name}</div>
+              <div style={{ fontWeight: 800, fontSize: 16 }}>{t.name}</div>
               <div style={{ opacity: 0.7, marginTop: 4 }}>key: {t.key}</div>
               <div style={{ marginTop: 10, fontSize: 12, opacity: 0.7 }}>
                 클릭하면 draft report 1개 생성(API 사용)
               </div>
               {creating && (
-                <div style={{ marginTop: 10, fontSize: 12, opacity: 0.7 }}>
-                  생성 중...
-                </div>
+                <div style={{ marginTop: 10, fontSize: 12, opacity: 0.7 }}>생성 중...</div>
               )}
             </button>
           ))}
         </div>
       </section>
 
-      {/* 리포트 목록 */}
       <section style={{ marginTop: 22 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 700 }}>내 리포트 목록</h2>
-          <span style={{ fontSize: 12, opacity: 0.8 }}>
-            (reports list test 버튼 누르면 로드)
-          </span>
+        <h2 style={{ fontSize: 18, fontWeight: 800 }}>내 리포트 목록</h2>
+        <div style={{ marginTop: 8, opacity: 0.7, fontSize: 13 }}>
+          (reports list test 버튼 누르면 로드)
         </div>
 
-        {!userId && <p style={{ marginTop: 8 }}>로그인하면 목록을 불러올 수 있어.</p>}
-        {userId && !workspaceId && (
-          <p style={{ marginTop: 8 }}>
-            workspace_members에서 workspace_id를 못 가져왔어.
+        {loadingReports && <p style={{ marginTop: 10 }}>불러오는 중...</p>}
+
+        {!loadingReports && reports.length === 0 && (
+          <p style={{ marginTop: 10, opacity: 0.7 }}>
+            아직 목록이 비었어. (list 버튼을 눌러 로드해봐)
           </p>
         )}
 
-        {reports.length > 0 && (
-          <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-            {reports.map((r) => (
-              <button
-                key={r.id}
-                onClick={() => router.push(`/reports/${r.id}`)}
-                style={{
-                  textAlign: "left",
-                  padding: 12,
-                  border: "1px solid #eee",
-                  borderRadius: 12,
-                  background: "white",
-                }}
-              >
-                <div style={{ fontWeight: 700 }}>{r.title}</div>
-                <div style={{ marginTop: 4, fontSize: 12, opacity: 0.8 }}>
-                  status: {r.status} · created_at: {new Date(r.created_at).toLocaleString()}
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
-
-        {reports.length === 0 && userId && (
-          <p style={{ marginTop: 10, opacity: 0.8 }}>
-            아직 목록이 비어있어. (list 버튼을 눌러 로드해봐)
-          </p>
-        )}
+        <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+          {reports.map((r) => (
+            <button
+              key={r.id}
+              onClick={() => router.push(`/reports/${r.id}`)}
+              style={{
+                textAlign: "left",
+                padding: 14,
+                border: "1px solid #eee",
+                borderRadius: 14,
+                background: "white",
+              }}
+            >
+              <div style={{ fontWeight: 800 }}>{r.title}</div>
+              <div style={{ marginTop: 6, fontSize: 13, opacity: 0.75 }}>
+                status: {r.status} · created: {r.created_at ?? "-"}
+              </div>
+            </button>
+          ))}
+        </div>
       </section>
     </main>
   );
