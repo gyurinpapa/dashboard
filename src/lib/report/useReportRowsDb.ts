@@ -104,9 +104,9 @@ export function useReportRowsDb(options: Options) {
           source: d.source,
           channel: d.channel, // ✅ DB 기준
           device: "all",
-          campaign: null,
-          group: null,
-          keyword: null,
+          campaign: d.campaign ?? undefined,
+          group: d.group ?? undefined,
+          keyword: d.keyword ?? undefined,
           imp: toNum(d.imp),
           clk: toNum(d.clk),
           cost: toNum(d.cost),
