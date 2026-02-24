@@ -68,8 +68,10 @@ export default function HeaderBar(props: Props) {
     period,
   } = props;
 
-  const toggleFilter = (k: Exclude<FilterKey, null>) =>
-    setFilterKey((prev) => (prev === k ? null : k));
+  const toggleFilter = (k: Exclude<FilterKey, null>) =>{
+    const next = filterKey === k ? null : k;
+    setFilterKey(next as any);
+  };
 
   return (
     <header className="sticky top-0 z-50 bg-white/95 backdrop-blur border-b">
