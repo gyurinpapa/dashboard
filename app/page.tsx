@@ -187,7 +187,6 @@ export default function Page() {
             <StructureSection
               bySource={bySource}
               byCampaign={byCampaign}
-              byGroup={byGroup}
               rows={filteredRows}
               monthGoal={monthGoal}
               isLoading={isLoading}
