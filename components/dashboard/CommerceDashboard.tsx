@@ -453,7 +453,6 @@ export default function CommerceDashboard({
     workspaceId: workspaceId ?? "",
     from: effectiveRowOptions?.from,
     to: effectiveRowOptions?.to,
-    source: "naver_sa",
   });
 
   if (dbError) console.error("[useReportRowsDb]", dbError);
