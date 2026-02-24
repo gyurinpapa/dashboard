@@ -753,7 +753,7 @@ export default function CommerceDashboard({
           )}
 
           {tab === "creative" && (
-            <CreativeSection rows={creativeBaseRows} creativeInsight={creativeInsight} />
+            <CreativeSection rows={creativeBaseRows} />
           )}
 
           {tab === "creativeDetail" && (
