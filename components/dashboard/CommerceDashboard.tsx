@@ -31,6 +31,9 @@ import CreativeSection from "../../app/components/sections/CreativeSection";
 import CreativeDetailSection from "../../app/components/sections/CreativeDetailSection";
 import MonthGoalSection from "../../app/components/sections/MonthGoalSection";
 
+// ✅ DB 훅
+import { useReportRowsDb } from "@/lib/report/useReportRowsDb";
+
 const MONTH_GOAL_KEY = "nature_report_month_goal_v1";
 
 const DEFAULT_GOAL: GoalState = {
@@ -52,8 +55,8 @@ type DashboardInit = {
 
 // ✅ rows 단계 필터 옵션
 type RowOptions = {
-  from?: string; // e.g. "2026-02-01" or "2026. 02. 01."
-  to?: string; // e.g. "2026-02-29" or "2026. 02. 29."
+  from?: string;
+  to?: string;
   channels?: ("search" | "display")[];
 };
 
@@ -62,10 +65,7 @@ type Props = {
   init?: DashboardInit;
   rowOptions?: RowOptions;
 
-  /**
-   * ✅ NEW: DB(metrics_daily) 등에서 만든 "Row 배열"을 주입하는 통로
-   * - 값이 있으면 CSV rows 대신 이것을 우선 사용
-   */
+  workspaceId?: string;
   rowsOverride?: any[];
 };
 
@@ -75,7 +75,7 @@ type Props = {
 
 function toDateOrNull(v?: string) {
   if (!v) return null;
-  const d = parseDateLoose(v); // ✅ 점(.) 포맷까지 안전 처리
+  const d = parseDateLoose(v);
   return d && Number.isFinite(d.getTime()) ? d : null;
 }
 
@@ -91,7 +91,6 @@ function endOfDay(d: Date) {
   return x;
 }
 
-// row에서 날짜 필드 후보들을 최대한 안전하게 탐색
 function getRowDate(row: any): Date | null {
   const candidates = [
     row?.date,
@@ -105,19 +104,14 @@ function getRowDate(row: any): Date | null {
 
   for (const c of candidates) {
     if (!c) continue;
-
-    // Date 객체면 그대로 사용
     if (c instanceof Date && Number.isFinite(c.getTime())) return c;
-
     const d = parseDateLoose(String(c));
     if (d && Number.isFinite(d.getTime())) return d;
   }
   return null;
 }
 
-// row에서 채널 그룹(search/display) 필드 후보 탐색
 function getRowChannelGroup(row: any): "search" | "display" | null {
-  // ✅ 가장 가능성 높은 후보들
   const direct =
     row?.channelGroup ??
     row?.channel_group ??
@@ -130,7 +124,6 @@ function getRowChannelGroup(row: any): "search" | "display" | null {
 
   if (direct === "search" || direct === "display") return direct;
 
-  // ✅ 혹시 문자열에 힌트가 들어있는 경우(너무 공격적이지 않게)
   const maybe = String(
     row?.channel ??
       row?.source ??
@@ -142,17 +135,15 @@ function getRowChannelGroup(row: any): "search" | "display" | null {
 
   if (!maybe) return null;
 
-  // search 힌트
   if (
     maybe.includes("search") ||
-    maybe.includes("sa") || // naver sa 같은 케이스
+    maybe.includes("sa") ||
     maybe.includes("powerlink") ||
     maybe.includes("shopping")
   ) {
     return "search";
   }
 
-  // display 힌트
   if (
     maybe.includes("display") ||
     maybe.includes("gdn") ||
@@ -168,7 +159,6 @@ function getRowChannelGroup(row: any): "search" | "display" | null {
 
 function isWithinRangeInclusive(d: Date, from: Date | null, to: Date | null) {
   const t = d.getTime();
-
   const fromT = from ? startOfDay(from).getTime() : null;
   const toT = to ? endOfDay(to).getTime() : null;
 
@@ -184,22 +174,17 @@ function applyRowOptions<T extends any>(rows: T[], options?: RowOptions) {
   const toD = toDateOrNull(options.to);
   const channels = options.channels?.length ? options.channels : null;
 
-  // 옵션이 사실상 비어있으면 그대로 반환
   if (!fromD && !toD && !channels) return rows;
 
   return rows.filter((row: any) => {
-    // 기간 필터
     if (fromD || toD) {
       const d = getRowDate(row);
-      // 날짜 필드가 없으면 "기간필터 적용 불가" → 안전하게 제외(=필터 의도에 맞춤)
       if (!d) return false;
       if (!isWithinRangeInclusive(d, fromD, toD)) return false;
     }
 
-    // 채널 그룹 필터(search/display)
     if (channels) {
       const g = getRowChannelGroup(row);
-      // 채널 구분이 불가능하면 안전하게 제외
       if (!g) return false;
       if (!channels.includes(g)) return false;
     }
@@ -208,21 +193,249 @@ function applyRowOptions<T extends any>(rows: T[], options?: RowOptions) {
   });
 }
 
+/** =========================
+ * KPI helpers
+ * ========================= */
+
+function safeNum(n: any) {
+  const v = Number(n);
+  return Number.isFinite(v) ? v : 0;
+}
+
+function fmtInt(n: any) {
+  const v = safeNum(n);
+  return Math.round(v).toLocaleString();
+}
+
+function fmtWon(n: any) {
+  const v = safeNum(n);
+  return `${Math.round(v).toLocaleString()}원`;
+}
+
+function fmtPct01(n: any) {
+  const v = safeNum(n);
+  return `${(v * 100).toFixed(2)}%`;
+}
+
+function fmtPct100(n: any) {
+  const v = safeNum(n);
+  return `${(v * 100).toFixed(1)}%`;
+}
+
+function fmtX(n: any) {
+  const v = safeNum(n);
+  return `${v.toFixed(2)}x`;
+}
+
+function diffPct(cur: number, prev: number) {
+  if (!Number.isFinite(prev) || prev === 0) return null;
+  return (cur - prev) / prev;
+}
+
+function fmtDeltaPct(v: number | null) {
+  if (v == null) return "-";
+  const s = v >= 0 ? "+" : "";
+  return `${s}${(v * 100).toFixed(1)}%`;
+}
+
+/**
+ * series에서 (현재, 이전) 값을 뽑는다.
+ * - selectedKey가 "all"이면: 최신 2개
+ * - selectedKey가 특정 값이면: 해당 항목과 그 직전 항목
+ * key를 최대한 유연하게 찾는다.
+ */
+function pickCurrentPrevFromSeries(
+  series: any[],
+  selectedKey: string | null,
+  keyCandidates: string[]
+): { cur: any | null; prev: any | null } {
+  if (!Array.isArray(series) || series.length === 0) return { cur: null, prev: null };
+
+  const getKey = (x: any) => {
+    for (const k of keyCandidates) {
+      if (x?.[k]) return String(x[k]);
+    }
+    return "";
+  };
+
+  const sorted = [...series]
+    .map((x) => ({ x, k: getKey(x) }))
+    .filter((p) => p.k)
+    .sort((a, b) => (a.k < b.k ? 1 : a.k > b.k ? -1 : 0))
+    .map((p) => p.x);
+
+  if (sorted.length === 0) return { cur: null, prev: null };
+
+  // all이면 최신 2개
+  if (!selectedKey || selectedKey === "all") {
+    return { cur: sorted[0] ?? null, prev: sorted[1] ?? null };
+  }
+
+  const idx = sorted.findIndex((x) => getKey(x) === String(selectedKey));
+  if (idx < 0) {
+    // 못 찾으면 안전하게 최신 2개
+    return { cur: sorted[0] ?? null, prev: sorted[1] ?? null };
+  }
+  return { cur: sorted[idx] ?? null, prev: sorted[idx + 1] ?? null };
+}
+
+function calcTotalsDerived(totals: any) {
+  const impressions = safeNum(totals?.impressions);
+  const clicks = safeNum(totals?.clicks);
+  const cost = safeNum(totals?.cost);
+  const conversions = safeNum(totals?.conversions);
+  const revenue = safeNum(totals?.revenue);
+
+  const ctr = totals?.ctr ?? (impressions ? clicks / impressions : 0);
+  const cvr = totals?.cvr ?? (clicks ? conversions / clicks : 0);
+  const cpc = totals?.cpc ?? (clicks ? cost / clicks : 0);
+  const cpa = totals?.cpa ?? (conversions ? cost / conversions : 0);
+  const roas = totals?.roas ?? (cost ? revenue / cost : 0);
+
+  return { impressions, clicks, cost, conversions, revenue, ctr, cvr, cpc, cpa, roas };
+}
+
+function ChannelKpiCard({
+  title,
+  subtitle,
+  totals,
+  allTotals,
+  wow,
+  mom,
+}: {
+  title: string;
+  subtitle?: string;
+  totals: any;
+  allTotals: any; // contribution 기준(전체 all 채널)
+  wow: { revenue: string; cost: string; roas: string; conv: string; cpa: string };
+  mom: { revenue: string; cost: string; roas: string; conv: string; cpa: string };
+}) {
+  const t = calcTotalsDerived(totals);
+  const all = calcTotalsDerived(allTotals);
+
+  const contribCost = all.cost ? t.cost / all.cost : null;
+  const contribRev = all.revenue ? t.revenue / all.revenue : null;
+  const contribConv = all.conversions ? t.conversions / all.conversions : null;
+
+  return (
+    <div className="rounded-2xl border bg-white p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-zinc-900">{title}</div>
+          {subtitle ? <div className="mt-1 text-xs text-zinc-500">{subtitle}</div> : null}
+        </div>
+
+        {/* 기여도 */}
+        <div className="text-right">
+          <div className="text-[11px] text-zinc-500">기여도(전체 대비)</div>
+          <div className="mt-1 text-xs font-semibold text-zinc-900">
+            Cost {contribCost == null ? "-" : fmtPct100(contribCost)} · Revenue{" "}
+            {contribRev == null ? "-" : fmtPct100(contribRev)} · Conv{" "}
+            {contribConv == null ? "-" : fmtPct100(contribConv)}
+          </div>
+        </div>
+      </div>
+
+      {/* 핵심 KPI */}
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <div className="rounded-xl bg-zinc-50 p-3">
+          <div className="text-[11px] text-zinc-500">Cost</div>
+          <div className="mt-1 text-base font-semibold">{fmtWon(t.cost)}</div>
+        </div>
+        <div className="rounded-xl bg-zinc-50 p-3">
+          <div className="text-[11px] text-zinc-500">Revenue</div>
+          <div className="mt-1 text-base font-semibold">{fmtWon(t.revenue)}</div>
+        </div>
+
+        <div className="rounded-xl bg-zinc-50 p-3">
+          <div className="text-[11px] text-zinc-500">ROAS</div>
+          <div className="mt-1 text-base font-semibold">{fmtX(t.roas)}</div>
+        </div>
+        <div className="rounded-xl bg-zinc-50 p-3">
+          <div className="text-[11px] text-zinc-500">Conversions</div>
+          <div className="mt-1 text-base font-semibold">{fmtInt(t.conversions)}</div>
+        </div>
+
+        <div className="rounded-xl bg-zinc-50 p-3">
+          <div className="text-[11px] text-zinc-500">Clicks / CTR</div>
+          <div className="mt-1 text-sm font-semibold">
+            {fmtInt(t.clicks)} <span className="text-zinc-500">({fmtPct01(t.ctr)})</span>
+          </div>
+        </div>
+        <div className="rounded-xl bg-zinc-50 p-3">
+          <div className="text-[11px] text-zinc-500">CPC / CVR</div>
+          <div className="mt-1 text-sm font-semibold">
+            {fmtWon(t.cpc)} <span className="text-zinc-500">({fmtPct01(t.cvr)})</span>
+          </div>
+        </div>
+
+        <div className="rounded-xl bg-zinc-50 p-3">
+          <div className="text-[11px] text-zinc-500">CPA</div>
+          <div className="mt-1 text-base font-semibold">{fmtWon(t.cpa)}</div>
+        </div>
+        <div className="rounded-xl bg-zinc-50 p-3">
+          <div className="text-[11px] text-zinc-500">Impressions</div>
+          <div className="mt-1 text-base font-semibold">{fmtInt(t.impressions)}</div>
+        </div>
+      </div>
+
+      {/* 증감 */}
+      <div className="mt-4 rounded-xl border bg-white p-3">
+        <div className="flex items-center justify-between">
+          <div className="text-[11px] font-semibold text-zinc-900">증감</div>
+          <div className="text-[11px] text-zinc-500">전주 / 전월</div>
+        </div>
+
+        <div className="mt-2 grid grid-cols-5 gap-2 text-xs">
+          <div className="rounded-lg bg-zinc-50 p-2">
+            <div className="text-[11px] text-zinc-500">Revenue</div>
+            <div className="mt-1 font-semibold">
+              {wow.revenue} <span className="text-zinc-400">/</span> {mom.revenue}
+            </div>
+          </div>
+          <div className="rounded-lg bg-zinc-50 p-2">
+            <div className="text-[11px] text-zinc-500">Cost</div>
+            <div className="mt-1 font-semibold">
+              {wow.cost} <span className="text-zinc-400">/</span> {mom.cost}
+            </div>
+          </div>
+          <div className="rounded-lg bg-zinc-50 p-2">
+            <div className="text-[11px] text-zinc-500">ROAS</div>
+            <div className="mt-1 font-semibold">
+              {wow.roas} <span className="text-zinc-400">/</span> {mom.roas}
+            </div>
+          </div>
+          <div className="rounded-lg bg-zinc-50 p-2">
+            <div className="text-[11px] text-zinc-500">Conv</div>
+            <div className="mt-1 font-semibold">
+              {wow.conv} <span className="text-zinc-400">/</span> {mom.conv}
+            </div>
+          </div>
+          <div className="rounded-lg bg-zinc-50 p-2">
+            <div className="text-[11px] text-zinc-500">CPA</div>
+            <div className="mt-1 font-semibold">
+              {wow.cpa} <span className="text-zinc-400">/</span> {mom.cpa}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CommerceDashboard({
   dataUrl = "/data/acc_001.csv",
   init,
   rowOptions,
-  rowsOverride, // ✅ NEW
+  workspaceId,
+  rowsOverride,
 }: Props) {
-  // ✅ rowOptions 우선, 없으면 init.period fallback
   const effectiveRowOptions: RowOptions | undefined = useMemo(() => {
     const from = rowOptions?.from ?? init?.period?.from;
     const to = rowOptions?.to ?? init?.period?.to;
     const channels = rowOptions?.channels;
 
-    // 모두 없으면 undefined로 (불필요한 리렌더/필터 방지)
     if (!from && !to && (!channels || channels.length === 0)) return undefined;
-
     return { from, to, channels };
   }, [
     rowOptions?.from,
@@ -232,20 +445,42 @@ export default function CommerceDashboard({
     init?.period?.to,
   ]);
 
-  // ✅ CSV rows도 로드(테스트/백업). 실제 운영은 rowsOverride로 주입
-  const { rows: csvRows, isLoading } = useReportRows(dataUrl, {
+  const {
+    rows: dbRows,
+    isLoading: isDbLoading,
+    error: dbError,
+  } = useReportRowsDb({
+    workspaceId: workspaceId ?? "",
+    from: effectiveRowOptions?.from,
+    to: effectiveRowOptions?.to,
+    source: "naver_sa",
+  });
+
+  if (dbError) console.error("[useReportRowsDb]", dbError);
+
+  const { rows: csvRows, isLoading: isCsvLoading } = useReportRows(dataUrl, {
     from: effectiveRowOptions?.from,
     to: effectiveRowOptions?.to,
     channels: effectiveRowOptions?.channels,
   });
 
-  // ✅ rows source 선택: rowsOverride가 있으면 우선 사용
   const baseRows = useMemo(() => {
     if (rowsOverride && rowsOverride.length > 0) return rowsOverride;
-    return csvRows;
-  }, [rowsOverride, csvRows]);
 
-  // ✅ Dashboard 레벨에서 필터 보장
+    if (workspaceId) {
+      if (dbRows && dbRows.length > 0) return dbRows;
+      return csvRows;
+    }
+
+    return csvRows;
+  }, [rowsOverride, workspaceId, dbRows, csvRows]);
+
+  const isLoading = useMemo(() => {
+    if (rowsOverride && rowsOverride.length > 0) return false;
+    if (workspaceId) return isDbLoading;
+    return isCsvLoading;
+  }, [rowsOverride, workspaceId, isDbLoading, isCsvLoading]);
+
   const rowsByRowOptions = useMemo(() => {
     return applyRowOptions(baseRows as any[], effectiveRowOptions);
   }, [baseRows, effectiveRowOptions]);
@@ -272,29 +507,7 @@ export default function CommerceDashboard({
     DEFAULT_GOAL
   );
 
-  const {
-    monthOptions,
-    weekOptions,
-    deviceOptions,
-    channelOptions,
-    enabledMonthKeySet,
-    enabledWeekKeySet,
-
-    filteredRows,
-    period,
-
-    currentMonthKey,
-    currentMonthActual,
-    currentMonthGoalComputed,
-
-    totals,
-    bySource,
-    byCampaign,
-    byGroup,
-    byWeekOnly,
-    byWeekChart,
-    byMonth,
-  } = useReportAggregates({
+  const agg = useReportAggregates({
     rows: rowsByRowOptions as any[],
     selectedMonth,
     selectedWeek,
@@ -303,6 +516,118 @@ export default function CommerceDashboard({
     monthGoal,
     onInvalidWeek: () => setSelectedWeek("all"),
   });
+
+  const {
+    monthOptions,
+    weekOptions,
+    deviceOptions,
+    channelOptions,
+    enabledMonthKeySet,
+    enabledWeekKeySet,
+    filteredRows,
+    period,
+    currentMonthKey,
+    currentMonthActual,
+    currentMonthGoalComputed,
+    totals,
+    bySource,
+    byCampaign,
+    byGroup,
+    byWeekOnly,
+    byWeekChart,
+    byMonth,
+  } = agg;
+
+  /**
+   * ✅ baseline(전체 all 채널) — 기여도 계산용
+   * - 월/주/디바이스는 동일, 채널만 all로 고정
+   */
+  const allAgg = useReportAggregates({
+    rows: rowsByRowOptions as any[],
+    selectedMonth,
+    selectedWeek,
+    selectedDevice,
+    selectedChannel: "all" as any,
+    monthGoal,
+    onInvalidWeek: () => {},
+  });
+
+  /**
+   * ✅ search / display 고정 집계(카드 + 증감 계산용)
+   */
+  const searchAgg = useReportAggregates({
+    rows: rowsByRowOptions as any[],
+    selectedMonth,
+    selectedWeek,
+    selectedDevice,
+    selectedChannel: "search" as any,
+    monthGoal,
+    onInvalidWeek: () => {},
+  });
+
+  const displayAgg = useReportAggregates({
+    rows: rowsByRowOptions as any[],
+    selectedMonth,
+    selectedWeek,
+    selectedDevice,
+    selectedChannel: "display" as any,
+    monthGoal,
+    onInvalidWeek: () => {},
+  });
+
+  // ✅ (전주/전월) 증감 계산
+  const deltas = useMemo(() => {
+    const make = (a: any) => {
+      // 전주
+      const w = pickCurrentPrevFromSeries(
+        a?.byWeekOnly ?? [],
+        selectedWeek as any,
+        ["weekKey", "week", "key", "label"]
+      );
+      const wCur = w.cur ? calcTotalsDerived(w.cur) : null;
+      const wPrev = w.prev ? calcTotalsDerived(w.prev) : null;
+
+      // 전월
+      const m = pickCurrentPrevFromSeries(
+        a?.byMonth ?? [],
+        selectedMonth as any,
+        ["monthKey", "month", "key", "label"]
+      );
+      const mCur = m.cur ? calcTotalsDerived(m.cur) : null;
+      const mPrev = m.prev ? calcTotalsDerived(m.prev) : null;
+
+      const wow = {
+        revenue: fmtDeltaPct(
+          wCur && wPrev ? diffPct(wCur.revenue, wPrev.revenue) : null
+        ),
+        cost: fmtDeltaPct(wCur && wPrev ? diffPct(wCur.cost, wPrev.cost) : null),
+        roas: fmtDeltaPct(wCur && wPrev ? diffPct(wCur.roas, wPrev.roas) : null),
+        conv: fmtDeltaPct(
+          wCur && wPrev ? diffPct(wCur.conversions, wPrev.conversions) : null
+        ),
+        cpa: fmtDeltaPct(wCur && wPrev ? diffPct(wCur.cpa, wPrev.cpa) : null),
+      };
+
+      const mom = {
+        revenue: fmtDeltaPct(
+          mCur && mPrev ? diffPct(mCur.revenue, mPrev.revenue) : null
+        ),
+        cost: fmtDeltaPct(mCur && mPrev ? diffPct(mCur.cost, mPrev.cost) : null),
+        roas: fmtDeltaPct(mCur && mPrev ? diffPct(mCur.roas, mPrev.roas) : null),
+        conv: fmtDeltaPct(
+          mCur && mPrev ? diffPct(mCur.conversions, mPrev.conversions) : null
+        ),
+        cpa: fmtDeltaPct(mCur && mPrev ? diffPct(mCur.cpa, mPrev.cpa) : null),
+      };
+
+      return { wow, mom };
+    };
+
+    return {
+      search: make(searchAgg),
+      display: make(displayAgg),
+    };
+  }, [searchAgg, displayAgg, selectedWeek, selectedMonth]);
 
   const { monthGoalInsight } = useInsights({
     byMonth,
@@ -372,6 +697,26 @@ export default function CommerceDashboard({
         <div className="mx-auto w-full max-w-[1400px]">
           {tab === "summary" && (
             <>
+              {/* ✅ Search / Display KPI cards + 기여도 + 전주/전월 증감 */}
+              <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+                <ChannelKpiCard
+                  title="Search 성과 요약"
+                  subtitle="선택한 월/주/디바이스 조건 기준 (채널만 Search 고정)"
+                  totals={searchAgg.totals}
+                  allTotals={allAgg.totals}
+                  wow={deltas.search.wow}
+                  mom={deltas.search.mom}
+                />
+                <ChannelKpiCard
+                  title="Display 성과 요약"
+                  subtitle="선택한 월/주/디바이스 조건 기준 (채널만 Display 고정)"
+                  totals={displayAgg.totals}
+                  allTotals={allAgg.totals}
+                  wow={deltas.display.wow}
+                  mom={deltas.display.mom}
+                />
+              </div>
+
               <MonthGoalSection
                 currentMonthKey={currentMonthKey}
                 currentMonthActual={currentMonthActual}
@@ -403,10 +748,7 @@ export default function CommerceDashboard({
           )}
 
           {tab === "keyword" && (
-            <KeywordSection
-              keywordAgg={keywordAgg}
-              keywordInsight={keywordInsight}
-            />
+            <KeywordSection keywordAgg={keywordAgg} keywordInsight={keywordInsight} />
           )}
 
           {tab === "keywordDetail" && (

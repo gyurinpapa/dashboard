@@ -2,10 +2,18 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
+import CommerceDashboard from "@/components/dashboard/CommerceDashboard";
 
 type Props = {
   report: any;
   onSaved?: (nextMeta: any) => void;
+
+  /**
+   * ✅ NEW: 보고용/안전장치
+   * - 기본 true: 저장폼 아래에 "DB/API 미리보기"를 붙인다
+   * - false로 주면 프리뷰 영역 자체를 숨길 수 있음
+   */
+  showDbPreview?: boolean;
 };
 
 // ✅ 채널 정의: search / display
@@ -23,13 +31,20 @@ function asYMD(v: any): string {
   return s;
 }
 
-export default function CommerceReportEditor({ report, onSaved }: Props) {
+export default function CommerceReportEditor({
+  report,
+  onSaved,
+  showDbPreview = true,
+}: Props) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [channels, setChannels] = useState<ChannelKey[]>([]);
   const [note, setNote] = useState("");
   const [msg, setMsg] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // ✅ 프리뷰 토글 (보고용)
+  const [previewOpen, setPreviewOpen] = useState(true);
 
   // ✅ 초기값 복원:
   // 1) meta.period.from/to 우선
@@ -54,7 +69,9 @@ export default function CommerceReportEditor({ report, onSaved }: Props) {
   }, [report?.id, report?.updated_at]); // ✅ updated_at까지 보면 저장 후 반영이 더 안정적
 
   function toggleChannel(key: ChannelKey) {
-    setChannels((prev) => (prev.includes(key) ? prev.filter((c) => c !== key) : [...prev, key]));
+    setChannels((prev) =>
+      prev.includes(key) ? prev.filter((c) => c !== key) : [...prev, key]
+    );
   }
 
   // ✅ 검증 규칙
@@ -125,6 +142,18 @@ export default function CommerceReportEditor({ report, onSaved }: Props) {
     setSaving(false);
   }
 
+  // ✅ DB 프리뷰에 필요한 값들
+  const workspaceId: string | null = report?.workspace_id ?? null;
+
+  // CommerceDashboard는 rowOptions를 받아서 "기간/채널" 필터를 안전하게 보장해줌
+  const rowOptions = useMemo(() => {
+    return {
+      from: from || undefined,
+      to: to || undefined,
+      channels: (channels?.length ? channels : undefined) as any,
+    };
+  }, [from, to, channels]);
+
   return (
     <section style={{ marginTop: 18, padding: 16, border: "1px solid #ddd", borderRadius: 12 }}>
       <h3 style={{ fontSize: 18, fontWeight: 800 }}>커머스 리포트 설정</h3>
@@ -140,7 +169,7 @@ export default function CommerceReportEditor({ report, onSaved }: Props) {
             <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
           </div>
 
-          {/* 참고용: meta 비어있어도 컬럼에서 가져왔다는 걸 확인할 수 있게 (원하면 지워도 됨) */}
+          {/* 참고용 */}
           <div style={{ marginTop: 6, fontSize: 12, opacity: 0.6 }}>
             (fallback: reports.period_start/end → meta.period.from/to)
           </div>
@@ -214,6 +243,60 @@ export default function CommerceReportEditor({ report, onSaved }: Props) {
           {msg && <span style={{ fontSize: 13, opacity: 0.85 }}>{msg}</span>}
         </div>
       </div>
+
+      {/* ✅ DB/API 미리보기 (CSV 업로드 페이지는 그대로 두고, 하단 미리보기만 교체하는 핵심) */}
+      {showDbPreview && (
+        <section style={{ marginTop: 18, paddingTop: 16, borderTop: "1px dashed #ddd" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 800 }}>미리보기 (DB/API)</div>
+              <div style={{ marginTop: 4, fontSize: 12, opacity: 0.7 }}>
+                아래 미리보기는 DB(metrics_daily) 기준입니다. (CSV 업로드 흐름은 그대로 유지)
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setPreviewOpen((v) => !v)}
+              style={{
+                padding: "8px 10px",
+                borderRadius: 10,
+                border: "1px solid #ddd",
+                background: "white",
+                fontWeight: 700,
+              }}
+            >
+              {previewOpen ? "미리보기 접기" : "미리보기 펼치기"}
+            </button>
+          </div>
+
+          {previewOpen && (
+            <div style={{ marginTop: 12 }}>
+              {!workspaceId ? (
+                <div style={{ padding: 12, border: "1px solid #eee", borderRadius: 12, background: "#fafafa" }}>
+                  <div style={{ fontWeight: 800, marginBottom: 6 }}>프리뷰를 띄울 수 없음</div>
+                  <div style={{ fontSize: 13, opacity: 0.85 }}>
+                    report.workspace_id가 없어 DB 기반 미리보기를 띄울 수 없어. <br />
+                    (리포트 row에 workspace_id가 포함되어야 함)
+                  </div>
+                </div>
+              ) : (
+                <div style={{ border: "1px solid #eee", borderRadius: 12, overflow: "hidden" }}>
+                  <CommerceDashboard
+                    workspaceId={workspaceId}
+                    dataUrl="/data/acc_001.csv" // ✅ DB가 비어있을 때 자동 fallback (안전)
+                    rowOptions={rowOptions as any}
+                    init={{
+                      period: { from: from || undefined, to: to || undefined },
+                      // 탭/필터 초기값 필요하면 여기에 확장 가능
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
     </section>
   );
 }
