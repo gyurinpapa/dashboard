@@ -451,17 +451,6 @@ export default function CreativeDetailSection({ rows }: Props) {
               </ul>
             </div>
           </section>
-
-          {/* Summary */}
-          <div className="creative-detail-week-table-fix">
-            <SummarySection
-              totals={totals as any}
-              byMonth={byMonth as any}
-              byWeekOnly={byWeekOnly as any}
-              byWeekChart={byWeekChart as any}
-              bySource={bySource as any}
-            />
-          </div>
         </div>
       </div>
 
