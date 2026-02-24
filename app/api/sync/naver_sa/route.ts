@@ -1,13 +1,46 @@
+// app/api/sync/naver_sa/route.ts
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { naverSaFetch } from "@/lib/sync/naverSa";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const NAVER_SA_BASE_URL = "https://api.searchad.naver.com";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const SOURCE = "naver_sa";
+const ENTITY_TYPE = "account";
+const ON_CONFLICT = "workspace_id,source,channel,date,entity_type,entity_id";
+
+/* ------------------ env / supabase (SAFE) ------------------ */
+
+function getEnv(name: string): string | null {
+  const v = process.env[name];
+  if (!v || !String(v).trim()) return null;
+  return v;
+}
+
+/**
+ * ✅ 요청 시점에만 생성, env 없으면 null
+ * - import 시점에 createClient 실행 금지 (빌드 안전)
+ */
+function getSupabaseAdmin(): SupabaseClient | null {
+  const url = getEnv("SUPABASE_URL") || getEnv("NEXT_PUBLIC_SUPABASE_URL");
+  const key = getEnv("SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !key) return null;
+
+  return createClient(url, key, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+  });
+}
+
+function jsonFail(status: number, error: string, hint?: string) {
+  return NextResponse.json({ ok: false, error, hint }, { status });
+}
 
 /* ------------------ utils ------------------ */
 
@@ -134,10 +167,6 @@ async function downloadText({ apiKey, secretKey, customerId, downloadUrl }: any)
 
 /* ------------------ metrics_daily helpers ------------------ */
 
-const SOURCE = "naver_sa";
-const ENTITY_TYPE = "account";
-const ON_CONFLICT = "workspace_id,source,channel,date,entity_type,entity_id";
-
 type MetricsRow = {
   workspace_id: string;
   source: string;
@@ -181,12 +210,10 @@ function baseRow(params: {
   };
 }
 
-async function fetchExistingByDates(args: {
-  workspace_id: string;
-  channel: string;
-  entity_id: string;
-  dates: string[];
-}) {
+async function fetchExistingByDates(
+  supabase: SupabaseClient,
+  args: { workspace_id: string; channel: string; entity_id: string; dates: string[] }
+) {
   if (args.dates.length === 0) return new Map<string, any>();
 
   const { data, error } = await supabase
@@ -228,10 +255,9 @@ function mergeRow(base: MetricsRow, existing: any | undefined, patch: Partial<Me
   return merged;
 }
 
-async function upsertMetrics(rows: MetricsRow[]) {
+async function upsertMetrics(supabase: SupabaseClient, rows: MetricsRow[]) {
   if (!rows.length) return { upserted: 0 };
 
-  // ✅ select()를 붙이면 반환 row를 받아 "반영된 row 수"를 확정적으로 셀 수 있음
   const { data, error } = await supabase
     .from("metrics_daily")
     .upsert(rows, { onConflict: ON_CONFLICT })
@@ -243,13 +269,10 @@ async function upsertMetrics(rows: MetricsRow[]) {
 
 /* ------------------ sync_runs helpers ------------------ */
 
-async function startRun(args: {
-  workspace_id: string;
-  channel: string;
-  since: string;
-  until: string;
-  meta?: any;
-}) {
+async function startRun(
+  supabase: SupabaseClient,
+  args: { workspace_id: string; channel: string; since: string; until: string; meta?: any }
+) {
   const { data, error } = await supabase
     .from("sync_runs")
     .insert({
@@ -268,15 +291,18 @@ async function startRun(args: {
   return data.id as string;
 }
 
-async function finishRun(args: {
-  runId: string;
-  status: "success" | "fail";
-  upserted: number;
-  inserted?: number;
-  updated?: number;
-  error_message?: string;
-  meta?: any;
-}) {
+async function finishRun(
+  supabase: SupabaseClient,
+  args: {
+    runId: string;
+    status: "success" | "fail";
+    upserted: number;
+    inserted?: number;
+    updated?: number;
+    error_message?: string;
+    meta?: any;
+  }
+) {
   const { error } = await supabase
     .from("sync_runs")
     .update({
@@ -296,6 +322,7 @@ async function finishRun(args: {
 /* ------------------ per-channel sync runner ------------------ */
 
 async function runOneChannel(args: {
+  supabase: SupabaseClient;
   workspace_id: string;
   channel: "search" | "display";
   apiKey: string;
@@ -306,7 +333,8 @@ async function runOneChannel(args: {
   maxTry: number;
   intervalMs: number;
 }) {
-  const { workspace_id, channel, apiKey, secretKey, customerId, since, until, maxTry, intervalMs } = args;
+  const { supabase, workspace_id, channel, apiKey, secretKey, customerId, since, until, maxTry, intervalMs } =
+    args;
 
   // 1) AD
   const adJob = await runReport({
@@ -339,7 +367,7 @@ async function runOneChannel(args: {
   }
 
   const adDates = Object.keys(byDate);
-  const existingForAd = await fetchExistingByDates({
+  const existingForAd = await fetchExistingByDates(supabase, {
     workspace_id,
     channel,
     entity_id: customerId,
@@ -356,7 +384,7 @@ async function runOneChannel(args: {
     });
   });
 
-  const adRes = await upsertMetrics(adUpserts);
+  const adRes = await upsertMetrics(supabase, adUpserts);
 
   // 2) CONVERSION (fallback chain)
   const reportTypes = ["CRITERION_CONVERSION", "AD_CONVERSION", "AD_CONVERSION_DETAIL"] as const;
@@ -401,7 +429,7 @@ async function runOneChannel(args: {
     }
 
     const convDates = Object.keys(convByDate);
-    const existingForConv = await fetchExistingByDates({
+    const existingForConv = await fetchExistingByDates(supabase, {
       workspace_id,
       channel,
       entity_id: customerId,
@@ -417,7 +445,7 @@ async function runOneChannel(args: {
       });
     });
 
-    const convRes = await upsertMetrics(convUpserts);
+    const convRes = await upsertMetrics(supabase, convUpserts);
     convUpserted = convRes.upserted;
 
     conversionSuccess = {
@@ -439,8 +467,7 @@ async function runOneChannel(args: {
       upsertedRows: adRes.upserted,
     },
     conversion:
-      conversionSuccess ??
-      {
+      conversionSuccess ?? {
         ok: false,
         skipped: true,
         attempts,
@@ -455,11 +482,21 @@ async function runOneChannel(args: {
 /* ------------------ MAIN ------------------ */
 
 export async function GET(req: Request) {
+  // ✅ 요청 시점에만 Supabase 생성
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    return jsonFail(
+      503,
+      "Supabase environment variables are missing.",
+      "Set SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY in Vercel env."
+    );
+  }
+
   const url = new URL(req.url);
 
   const workspace_id = url.searchParams.get("workspace_id");
   if (!workspace_id) {
-    return NextResponse.json({ ok: false, error: "workspace_id required" }, { status: 400 });
+    return jsonFail(400, "workspace_id required");
   }
 
   const channelParam = (url.searchParams.get("channel") ?? "search").toLowerCase();
@@ -467,7 +504,7 @@ export async function GET(req: Request) {
   const maxTry = Number(url.searchParams.get("maxTry") ?? 60);
   const intervalMs = Number(url.searchParams.get("intervalMs") ?? 3000);
 
-  const { data: conn } = await supabase
+  const { data: conn, error: cErr } = await supabase
     .from("connections")
     .select("*")
     .eq("workspace_id", workspace_id)
@@ -476,8 +513,12 @@ export async function GET(req: Request) {
     .limit(1)
     .maybeSingle();
 
+  if (cErr) {
+    return jsonFail(500, `Failed to load connection: ${cErr.message}`);
+  }
+
   if (!conn) {
-    return NextResponse.json({ ok: false, error: "No naver_sa connection" }, { status: 400 });
+    return jsonFail(400, "No naver_sa connection");
   }
 
   const apiKey = conn.access_token;
@@ -485,13 +526,9 @@ export async function GET(req: Request) {
   const customerId = conn.external_account_id;
 
   const channelsToRun: ("search" | "display")[] =
-    channelParam === "all"
-      ? ["search", "display"]
-      : channelParam === "display"
-      ? ["display"]
-      : ["search"];
+    channelParam === "all" ? ["search", "display"] : channelParam === "display" ? ["display"] : ["search"];
 
-  const runId = await startRun({
+  const runId = await startRun(supabase, {
     workspace_id,
     channel: channelParam,
     since,
@@ -501,10 +538,11 @@ export async function GET(req: Request) {
 
   try {
     let upsertedTotal = 0;
-    const results = [];
+    const results: any[] = [];
 
     for (const ch of channelsToRun) {
       const one = await runOneChannel({
+        supabase,
         workspace_id,
         channel: ch,
         apiKey,
@@ -519,7 +557,7 @@ export async function GET(req: Request) {
       results.push(one);
     }
 
-    await finishRun({
+    await finishRun(supabase, {
       runId,
       status: "success",
       upserted: upsertedTotal,
@@ -539,13 +577,16 @@ export async function GET(req: Request) {
       results,
     });
   } catch (e: any) {
-    await finishRun({
-      runId,
-      status: "fail",
-      upserted: 0,
-      error_message: e?.message ?? "Unknown error",
-      meta: { channel: channelParam, since, until },
-    });
+    // 실패 기록은 최대한 남기되, finish 자체 실패는 무시하고 원본 에러 반환
+    try {
+      await finishRun(supabase, {
+        runId,
+        status: "fail",
+        upserted: 0,
+        error_message: e?.message ?? "Unknown error",
+        meta: { channel: channelParam, since, until },
+      });
+    } catch {}
 
     return NextResponse.json(
       { ok: false, step: "naver_call_failed", run_id: runId, error: e?.message ?? "Unknown error" },

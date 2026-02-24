@@ -1,7 +1,10 @@
 // app/api/reports/[id]/route.ts
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -11,14 +14,31 @@ function asString(v: any) {
   return s ? s : undefined;
 }
 
+function jsonError(status: number, message: string) {
+  return NextResponse.json({ ok: false, error: message }, { status });
+}
+
+function supabaseMissing() {
+  return NextResponse.json(
+    {
+      ok: false,
+      error: "Supabase env missing",
+      hint: "Set SUPABASE_URL(or NEXT_PUBLIC_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY in environment.",
+    },
+    { status: 503 }
+  );
+}
+
 export async function GET(_req: Request, ctx: Ctx) {
   try {
     const { id: idRaw } = await ctx.params;
     const id = asString(idRaw);
 
-    if (!id) {
-      return NextResponse.json({ ok: false, error: "id is required" }, { status: 400 });
-    }
+    if (!id) return jsonError(400, "id is required");
+
+    // ✅ Supabase Admin (요청 시점 생성)
+    const supabaseAdmin = getSupabaseAdmin();
+    if (!supabaseAdmin) return supabaseMissing();
 
     // ✅ 1) 세션 통일: 서버에서 쿠키 기반 user 읽기
     const sb = await sbAuth();
@@ -27,12 +47,7 @@ export async function GET(_req: Request, ctx: Ctx) {
       error: userErr,
     } = await sb.auth.getUser();
 
-    if (userErr || !user) {
-      return NextResponse.json(
-        { ok: false, error: "Unauthorized (no session). Please sign in." },
-        { status: 401 }
-      );
-    }
+    if (userErr || !user) return jsonError(401, "Unauthorized (no session). Please sign in.");
 
     // ✅ 2) report 조회 (workspace_id 확보 포함)
     const { data: report, error: rErr } = await supabaseAdmin
@@ -43,8 +58,8 @@ export async function GET(_req: Request, ctx: Ctx) {
       .eq("id", id)
       .maybeSingle();
 
-    if (rErr) return NextResponse.json({ ok: false, error: rErr.message }, { status: 400 });
-    if (!report) return NextResponse.json({ ok: false, error: "Report not found" }, { status: 404 });
+    if (rErr) return jsonError(400, rErr.message);
+    if (!report) return jsonError(404, "Report not found");
 
     // ✅ 3) workspace 멤버십 체크 (권한 확인)
     const { data: wm, error: wmErr } = await supabaseAdmin
@@ -54,17 +69,12 @@ export async function GET(_req: Request, ctx: Ctx) {
       .eq("user_id", user.id)
       .maybeSingle();
 
-    if (wmErr) return NextResponse.json({ ok: false, error: wmErr.message }, { status: 500 });
-    if (!wm) {
-      return NextResponse.json(
-        { ok: false, error: "Forbidden: you are not a member of this workspace" },
-        { status: 403 }
-      );
-    }
+    if (wmErr) return jsonError(500, wmErr.message);
+    if (!wm) return jsonError(403, "Forbidden: you are not a member of this workspace");
 
     return NextResponse.json({ ok: true, report });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message ?? String(e) }, { status: 500 });
+    return jsonError(500, e?.message ?? String(e));
   }
 }
 
@@ -73,9 +83,11 @@ export async function PATCH(req: Request, ctx: Ctx) {
     const { id: idRaw } = await ctx.params;
     const id = asString(idRaw);
 
-    if (!id) {
-      return NextResponse.json({ ok: false, error: "id is required" }, { status: 400 });
-    }
+    if (!id) return jsonError(400, "id is required");
+
+    // ✅ Supabase Admin (요청 시점 생성)
+    const supabaseAdmin = getSupabaseAdmin();
+    if (!supabaseAdmin) return supabaseMissing();
 
     // ✅ 1) 세션 통일
     const sb = await sbAuth();
@@ -84,12 +96,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
       error: userErr,
     } = await sb.auth.getUser();
 
-    if (userErr || !user) {
-      return NextResponse.json(
-        { ok: false, error: "Unauthorized (no session). Please sign in." },
-        { status: 401 }
-      );
-    }
+    if (userErr || !user) return jsonError(401, "Unauthorized (no session). Please sign in.");
 
     // ✅ 2) report 먼저 조회 (workspace_id 확보)
     const { data: report, error: rErr } = await supabaseAdmin
@@ -98,8 +105,8 @@ export async function PATCH(req: Request, ctx: Ctx) {
       .eq("id", id)
       .maybeSingle();
 
-    if (rErr) return NextResponse.json({ ok: false, error: rErr.message }, { status: 400 });
-    if (!report) return NextResponse.json({ ok: false, error: "Report not found" }, { status: 404 });
+    if (rErr) return jsonError(400, rErr.message);
+    if (!report) return jsonError(404, "Report not found");
 
     // ✅ 3) 멤버십 체크
     const { data: wm, error: wmErr } = await supabaseAdmin
@@ -109,23 +116,14 @@ export async function PATCH(req: Request, ctx: Ctx) {
       .eq("user_id", user.id)
       .maybeSingle();
 
-    if (wmErr) return NextResponse.json({ ok: false, error: wmErr.message }, { status: 500 });
-    if (!wm) {
-      return NextResponse.json(
-        { ok: false, error: "Forbidden: you are not a member of this workspace" },
-        { status: 403 }
-      );
-    }
-
-    // (선택) 수정 권한을 role로 제한하고 싶으면 여기서 체크 가능
-    // if (!["owner", "admin", "editor"].includes(wm.role)) { ... }
+    if (wmErr) return jsonError(500, wmErr.message);
+    if (!wm) return jsonError(403, "Forbidden: you are not a member of this workspace");
 
     // ✅ 4) body 파싱 + patch 구성
     const body = await req.json().catch(() => ({}));
 
     const title = typeof body.title === "string" ? body.title.trim() : undefined;
 
-    // date는 "YYYY-MM-DD" 문자열 또는 null을 허용
     const hasPeriodStart = Object.prototype.hasOwnProperty.call(body, "period_start");
     const hasPeriodEnd = Object.prototype.hasOwnProperty.call(body, "period_end");
 
@@ -141,10 +139,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
     if (meta !== undefined) patch.meta = meta;
 
     if (Object.keys(patch).length === 0) {
-      return NextResponse.json(
-        { ok: false, error: "No fields to update" },
-        { status: 400 }
-      );
+      return jsonError(400, "No fields to update");
     }
 
     // ✅ 5) update
@@ -155,11 +150,11 @@ export async function PATCH(req: Request, ctx: Ctx) {
       .select("id, workspace_id, report_type_id, title, status, period_start, period_end, meta, updated_at")
       .maybeSingle();
 
-    if (uErr) return NextResponse.json({ ok: false, error: uErr.message }, { status: 400 });
-    if (!updated) return NextResponse.json({ ok: false, error: "Report not found" }, { status: 404 });
+    if (uErr) return jsonError(400, uErr.message);
+    if (!updated) return jsonError(404, "Report not found");
 
     return NextResponse.json({ ok: true, report: updated });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message ?? String(e) }, { status: 500 });
+    return jsonError(500, e?.message ?? String(e));
   }
 }

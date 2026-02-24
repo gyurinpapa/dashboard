@@ -1,20 +1,53 @@
+// app/api/cron/naver_sa/route.ts
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+/* ------------------ env / supabase (SAFE) ------------------ */
+
+function getEnv(name: string): string | null {
+  const v = process.env[name];
+  if (!v || !String(v).trim()) return null;
+  return v;
+}
+
+/**
+ * ✅ 요청 시점에만 생성, env 없으면 null
+ * - import 시점에 createClient 실행 금지 (빌드 안전)
+ */
+function getSupabaseAdmin(): SupabaseClient | null {
+  const url = getEnv("SUPABASE_URL") || getEnv("NEXT_PUBLIC_SUPABASE_URL");
+  const key = getEnv("SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !key) return null;
+
+  return createClient(url, key, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+  });
+}
+
+function jsonFail(status: number, error: string, hint?: string) {
+  return NextResponse.json({ ok: false, error, hint }, { status });
+}
+
+/* ------------------ auth ------------------ */
 
 function requireCronSecret(req: Request) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return { ok: false, error: "Missing env CRON_SECRET" as const };
+  const secret = getEnv("CRON_SECRET");
+  if (!secret) return { ok: false as const, error: "Missing env CRON_SECRET" as const };
 
   const got = new URL(req.url).searchParams.get("secret");
-  if (got !== secret) return { ok: false, error: "Unauthorized" as const };
+  if (got !== secret) return { ok: false as const, error: "Unauthorized" as const };
 
   return { ok: true as const };
 }
+
+/* ------------------ utils ------------------ */
 
 // KST 기준 YYYY-MM-DD
 function kstYmd(offsetDays: number) {
@@ -29,9 +62,35 @@ function kstYmd(offsetDays: number) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function resolveBaseUrl(): string {
+  // 우선순위: 명시 설정 > vercel 도메인 > 로컬
+  const explicit = getEnv("NEXT_PUBLIC_BASE_URL") || getEnv("SITE_URL") || getEnv("NEXT_PUBLIC_SITE_URL");
+  if (explicit) return explicit;
+
+  const vercelUrl = getEnv("VERCEL_URL");
+  if (vercelUrl) {
+    if (vercelUrl.startsWith("http://") || vercelUrl.startsWith("https://")) return vercelUrl;
+    return `https://${vercelUrl}`;
+  }
+
+  return "http://localhost:3000";
+}
+
+/* ------------------ MAIN ------------------ */
+
 export async function GET(req: Request) {
   const auth = requireCronSecret(req);
   if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: 401 });
+
+  // ✅ 요청 시점에만 Supabase 생성
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    return jsonFail(
+      503,
+      "Supabase environment variables are missing.",
+      "Set SUPABASE_URL(or NEXT_PUBLIC_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY in Vercel env."
+    );
+  }
 
   // ✅ 기본: 어제 하루만 (가장 안정)
   const since = kstYmd(-1);
@@ -48,11 +107,7 @@ export async function GET(req: Request) {
   const results: any[] = [];
 
   // ✅ baseUrl 안전하게 만들기 (Invalid URL 방지)
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL
-    ? process.env.NEXT_PUBLIC_BASE_URL
-    : process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : "http://localhost:3000";
+  const baseUrl = resolveBaseUrl();
 
   for (const c of conns ?? []) {
     try {
@@ -64,7 +119,7 @@ export async function GET(req: Request) {
       u.searchParams.set("intervalMs", "3000");
 
       const r = await fetch(u.toString(), { method: "GET" });
-      const j = await r.json();
+      const j = await r.json().catch(() => ({}));
 
       results.push({
         ok: r.ok && j?.ok === true,

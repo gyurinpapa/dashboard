@@ -1,10 +1,41 @@
+// app/api/jobs/daily-sync/route.ts
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+/* ------------------ env / supabase (SAFE) ------------------ */
+
+function getEnv(name: string): string | null {
+  const v = process.env[name];
+  if (!v || !String(v).trim()) return null;
+  return v;
+}
+
+/**
+ * ✅ 요청 시점에만 생성, env 없으면 null
+ * - import 시점에 createClient 실행 금지 (빌드 안전)
+ */
+function getSupabaseAdmin(): SupabaseClient | null {
+  const url = getEnv("SUPABASE_URL") || getEnv("NEXT_PUBLIC_SUPABASE_URL");
+  const key = getEnv("SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !key) return null;
+
+  return createClient(url, key, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+  });
+}
+
+function jsonFail(status: number, step: string, error: string, hint?: string) {
+  return NextResponse.json({ ok: false, step, error, hint }, { status });
+}
+
+/* ------------------ utils ------------------ */
 
 function kstYmd(offsetDays: number) {
   const now = new Date();
@@ -17,37 +48,56 @@ function kstYmd(offsetDays: number) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function resolveBaseUrl(): string {
+  // 우선순위: 명시 설정 > public > vercel preview/prod 도메인
+  const siteUrl = getEnv("SITE_URL") || getEnv("NEXT_PUBLIC_SITE_URL");
+  if (siteUrl) return siteUrl;
+
+  const vercelUrl = getEnv("VERCEL_URL");
+  if (!vercelUrl) return "";
+
+  // VERCEL_URL은 보통 "myapp.vercel.app" 형태
+  if (vercelUrl.startsWith("http://") || vercelUrl.startsWith("https://")) return vercelUrl;
+  return `https://${vercelUrl}`;
+}
+
+/* ------------------ MAIN ------------------ */
+
 export async function GET() {
   const since = kstYmd(-1);
   const until = kstYmd(0);
 
+  // ✅ 요청 시점에만 Supabase 생성
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    return jsonFail(
+      503,
+      "supabase_env_missing",
+      "Supabase environment variables are missing.",
+      "Set SUPABASE_URL(or NEXT_PUBLIC_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY in Vercel env."
+    );
+  }
+
   // ✅ 연결된 naver_sa workspace 목록
-  // status 컬럼이 없을 수도 있어서, 일단 source 기준으로만 가져오고
-  // 너가 status 쓰고 있으면 여기 .eq("status","connected") 추가하면 됨
   const { data: conns, error } = await supabase
     .from("connections")
     .select("workspace_id")
     .eq("source", "naver_sa");
 
   if (error) {
-    return NextResponse.json({ ok: false, step: "connections_query_failed", error: error.message }, { status: 500 });
+    return jsonFail(500, "connections_query_failed", error.message);
   }
 
-  const workspaceIds = Array.from(new Set((conns ?? []).map((c: any) => c.workspace_id).filter(Boolean)));
+  const workspaceIds = Array.from(
+    new Set((conns ?? []).map((c: any) => c.workspace_id).filter(Boolean))
+  );
 
-  const baseUrl =
-    process.env.SITE_URL ||
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.VERCEL_URL?.startsWith("http")
-      ? process.env.VERCEL_URL
-      : process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : "";
-
+  const baseUrl = resolveBaseUrl();
   if (!baseUrl) {
-    return NextResponse.json(
-      { ok: false, step: "base_url_missing", error: "Set SITE_URL or NEXT_PUBLIC_SITE_URL (e.g. https://your-app.vercel.app)" },
-      { status: 500 }
+    return jsonFail(
+      500,
+      "base_url_missing",
+      "Set SITE_URL or NEXT_PUBLIC_SITE_URL (e.g. https://your-app.vercel.app) or ensure VERCEL_URL is present."
     );
   }
 

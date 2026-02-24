@@ -1,11 +1,46 @@
 // app/api/ai/insights/generate/route.ts
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
-import { supabaseAdmin } from "@/lib/supabase/admin";
-import { sbAuth } from "@/src/lib/supabase/auth-server";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 type ChannelKey = "search" | "display";
 
+/** ------------------ utils: env ------------------ */
+function getEnv(name: string): string | null {
+  const v = process.env[name];
+  if (!v || !String(v).trim()) return null;
+  return v;
+}
+
+/**
+ * ✅ 핵심: env 없으면 null (절대 throw 금지)
+ * - 빌드/collect 단계에서 import만으로 죽는 걸 방지
+ */
+function getSupabaseAdmin(): SupabaseClient | null {
+  // server-side 권장 키 (NEXT_PUBLIC_도 fallback으로 허용)
+  const url = getEnv("SUPABASE_URL") || getEnv("NEXT_PUBLIC_SUPABASE_URL");
+  const key =
+    getEnv("SUPABASE_SERVICE_ROLE_KEY") ||
+    getEnv("SUPABASE_SERVICE_KEY") ||
+    getEnv("SUPABASE_ANON_KEY") ||
+    getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+
+  // 여기서 서비스 롤을 강제하고 싶으면 key 후보를 SERVICE_ROLE만 남기면 됨
+  if (!url || !key) return null;
+
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
+function jsonFail(status: number, error: string, hint?: string) {
+  return NextResponse.json({ ok: false, error, hint }, { status });
+}
+
+/** ------------------ utils: parsing/format ------------------ */
 /** 숫자 안전 파싱 */
 function toNum(v: any) {
   if (v == null) return 0;
@@ -85,13 +120,14 @@ function aggregateMetrics(rows: any[], channelsWanted: ChannelKey[] | null) {
   };
 
   // 채널 필터 (없으면 전체)
-  const filtered = Array.isArray(channelsWanted) && channelsWanted.length
-    ? rows.filter((r) => {
-        const inferred = inferChannel(r);
-        if (inferred === "unknown") return true; // 모르겠으면 버리지 말자(데이터 누락 방지)
-        return channelsWanted.includes(inferred);
-      })
-    : rows;
+  const filtered =
+    Array.isArray(channelsWanted) && channelsWanted.length
+      ? rows.filter((r) => {
+          const inferred = inferChannel(r);
+          if (inferred === "unknown") return true; // 모르겠으면 버리지 말자(데이터 누락 방지)
+          return channelsWanted.includes(inferred);
+        })
+      : rows;
 
   const sum = filtered.reduce(
     (acc, r) => {
@@ -105,11 +141,11 @@ function aggregateMetrics(rows: any[], channelsWanted: ChannelKey[] | null) {
     { impressions: 0, clicks: 0, cost: 0, conversions: 0, revenue: 0 }
   );
 
-  const ctr = safeDiv(sum.clicks, sum.impressions);      // clicks / impressions
-  const cpc = safeDiv(sum.cost, sum.clicks);             // cost / clicks
-  const cvr = safeDiv(sum.conversions, sum.clicks);      // conv / clicks
-  const cpa = safeDiv(sum.cost, sum.conversions);        // cost / conv
-  const roas = safeDiv(sum.revenue, sum.cost);           // revenue / cost
+  const ctr = safeDiv(sum.clicks, sum.impressions); // clicks / impressions
+  const cpc = safeDiv(sum.cost, sum.clicks); // cost / clicks
+  const cvr = safeDiv(sum.conversions, sum.clicks); // conv / clicks
+  const cpa = safeDiv(sum.cost, sum.conversions); // cost / conv
+  const roas = safeDiv(sum.revenue, sum.cost); // revenue / cost
 
   return {
     rowCount: filtered.length,
@@ -118,19 +154,31 @@ function aggregateMetrics(rows: any[], channelsWanted: ChannelKey[] | null) {
   };
 }
 
+/** ------------------ handler ------------------ */
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
-    const reportId = String(body?.reportId ?? "");
+    const reportId = String(body?.reportId ?? "").trim();
 
     if (!reportId) {
-      return NextResponse.json({ ok: false, error: "reportId is required" }, { status: 400 });
-    }
-    if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json({ ok: false, error: "OPENAI_API_KEY missing" }, { status: 500 });
+      return jsonFail(400, "reportId is required");
     }
 
-    const sb = supabaseAdmin;
+    // ✅ OpenAI key 없을 때도 throw 말고 응답으로 처리
+    const openaiKey = getEnv("OPENAI_API_KEY");
+    if (!openaiKey) {
+      return jsonFail(503, "OPENAI_API_KEY missing", "Set OPENAI_API_KEY in Vercel env.");
+    }
+
+    // ✅ Supabase env 없을 때도 throw 말고 응답으로 처리 (빌드 안전)
+    const sb = getSupabaseAdmin();
+    if (!sb) {
+      return jsonFail(
+        503,
+        "Supabase environment variables are missing.",
+        "Set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (recommended) in Vercel env."
+      );
+    }
 
     // 1) report 읽기
     const { data: report, error: rErr } = await sb
@@ -161,8 +209,6 @@ export async function POST(req: Request) {
     const note = (meta?.note ?? "") as string;
 
     // 3) metrics_daily 읽기 (실데이터)
-    // - 컬럼명 불확실하므로 select("*")로 안전하게 가져오고
-    // - date/workspace_id는 where로 걸어줌(여기는 거의 고정일 확률 높음)
     let metricsRows: any[] = [];
     if (periodFrom && periodTo) {
       const { data: rows, error: mErr } = await sb
@@ -173,23 +219,20 @@ export async function POST(req: Request) {
         .lte("date", periodTo);
 
       if (mErr) {
-        // metrics가 실패해도 AI는 돌아가게(단, 프롬프트에 실패 메시지 포함)
         metricsRows = [];
         meta.__metrics_error = mErr.message;
       } else {
         metricsRows = rows ?? [];
       }
     } else {
-      // 기간이 없으면 metrics를 못 뽑음
       metricsRows = [];
     }
 
     const agg = aggregateMetrics(metricsRows, Array.isArray(channels) ? channels : null);
 
     // 4) OpenAI 호출
-    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const client = new OpenAI({ apiKey: openaiKey });
 
-    // 숫자 텍스트 블록 만들기
     const dataBlock =
       periodFrom && periodTo
         ? `
@@ -236,25 +279,26 @@ ${dataBlock}
 - 채널이 미설정이면, 채널 설정/분리 집계가 왜 중요한지 먼저 짚어.
 `.trim();
 
+    const model = getEnv("OPENAI_MODEL") || "gpt-5.2";
+
     const resp = await client.responses.create({
-      model: "gpt-5.2",
+      model,
       input: prompt,
     });
 
     const text = resp.output_text?.trim() ?? "";
     if (!text) {
-      return NextResponse.json({ ok: false, error: "Empty model output" }, { status: 500 });
+      return jsonFail(500, "Empty model output");
     }
 
-    // 5) reports.meta에 저장 (ai_insight + ai_input_metrics 같이 저장)
+    // 5) reports.meta에 저장
     const nextMeta = {
       ...meta,
       ai_insight: {
         text,
-        model: "gpt-5.2",
+        model,
         created_at: new Date().toISOString(),
       },
-      // ✅ “어떤 데이터로 인사이트를 만들었는지” 재현 가능하게 저장
       ai_input_metrics: {
         period: { from: periodFrom ?? null, to: periodTo ?? null },
         channels: Array.isArray(channels) ? channels : [],
@@ -265,20 +309,18 @@ ${dataBlock}
       },
     };
 
-    const { error: uErr } = await sb
-      .from("reports")
-      .update({ meta: nextMeta })
-      .eq("id", reportId);
+    const { error: uErr } = await sb.from("reports").update({ meta: nextMeta }).eq("id", reportId);
 
     if (uErr) {
-      return NextResponse.json(
-        { ok: false, error: `meta update failed: ${uErr.message}` },
-        { status: 500 }
-      );
+      return jsonFail(500, `meta update failed: ${uErr.message}`);
     }
 
     return NextResponse.json({ ok: true, insight: text, meta: nextMeta });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message ?? "unknown error" }, { status: 500 });
+    return jsonFail(500, e?.message ?? "unknown error");
   }
+}
+
+export async function GET() {
+  return jsonFail(405, "Method Not Allowed");
 }

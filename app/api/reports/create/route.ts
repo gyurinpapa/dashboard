@@ -1,7 +1,10 @@
 // app/api/reports/create/route.ts
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 type CreateBody = {
   workspace_id?: string;
@@ -27,12 +30,21 @@ export async function POST(req: Request) {
     const status = body.status?.trim() || "draft";
     const meta = body.meta ?? {};
 
-    // period는 "들어오면 우선", 없으면 자동세팅
     const period_start_in = body.period_start ?? null;
     const period_end_in = body.period_end ?? null;
 
     if (!workspace_id) return jsonError(400, "workspace_id is required");
     if (!report_type_id) return jsonError(400, "report_type_id is required");
+
+    // ✅ Supabase Admin (요청 시점 생성)
+    const supabaseAdmin = getSupabaseAdmin();
+    if (!supabaseAdmin) {
+      return jsonError(
+        503,
+        "Supabase env missing",
+        { hint: "Set SUPABASE_URL(or NEXT_PUBLIC_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY in environment." }
+      );
+    }
 
     // ✅ 1) 서버 쿠키 세션으로 user 확인 (단일 방식)
     const sb = await sbAuth();
