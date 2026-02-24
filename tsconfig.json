@@ -33,5 +33,12 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules"
+    "node_modules",
+    ".next",
+    "src/lib/report/_deprecated/**",
+    "app/_archive/**",
+    "**/* 2.ts",
+    "**/* 2.tsx"
+  ]
 }
