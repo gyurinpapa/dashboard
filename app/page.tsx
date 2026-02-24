@@ -77,7 +77,8 @@ export default function Page() {
     totals,
     bySource,
     byCampaign,
-    byGroup,
+    // byGroup 는 여기서 받아도 되지만, StructureSection Props에 없으면 넘기지 말자.
+    // byGroup,
     byWeekOnly,
     byWeekChart,
     byMonth,
@@ -173,6 +174,7 @@ export default function Page() {
                 monthGoalInsight={monthGoalInsight}
               />
 
+              {/* ✅ SummarySection은 props를 optional로 완화했으므로 여기 호출은 안전 */}
               <SummarySection
                 totals={totals}
                 byMonth={byMonth}
@@ -184,12 +186,16 @@ export default function Page() {
           )}
 
           {tab === "structure" && (
+            /**
+             * ✅ 빌드 안정화:
+             * - StructureSection Props에 없는 값(byGroup/isLoading 등)을 넘기면 타입 에러로 빌드가 터짐
+             * - 따라서 "확실히 존재하는 props"만 넘긴다.
+             */
             <StructureSection
               bySource={bySource}
               byCampaign={byCampaign}
               rows={filteredRows}
               monthGoal={monthGoal}
-              isLoading={isLoading}
             />
           )}
 
@@ -205,11 +211,19 @@ export default function Page() {
           )}
 
           {tab === "creative" && (
-            <CreativeSection rows={creativeBaseRows} creativeInsight={creativeInsight} />
+            <CreativeSection
+              rows={creativeBaseRows}
+              creativeInsight={creativeInsight}
+            />
           )}
 
           {tab === "creativeDetail" && (
             <CreativeDetailSection rows={filteredRows as any[]} />
+          )}
+
+          {/* ✅ 로딩 UI는 Page 레벨에서만 가볍게 처리 (StructureSection에 넘기지 않음) */}
+          {isLoading && (
+            <div className="mt-6 text-sm text-gray-500">Loading…</div>
           )}
         </div>
       </div>
