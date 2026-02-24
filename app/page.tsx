@@ -213,7 +213,6 @@ export default function Page() {
           {tab === "creative" && (
             <CreativeSection
               rows={creativeBaseRows}
-              creativeInsight={creativeInsight}
             />
           )}
 
