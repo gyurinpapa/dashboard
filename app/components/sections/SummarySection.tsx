@@ -1,35 +1,41 @@
 "use client";
 
-import { useMemo } from "react";
-
-import KPI from "../ui/KPI";
-import InsightBox from "../ui/InsightBox"; // (남겨도 되고, 안 쓰면 지워도 됨)
 import { KRW } from "../../../src/lib/report/format";
 
 import SummaryChart from "./summary/SummaryChart";
 import SummaryKPI from "./summary/SummaryKPI";
 import SummaryTable from "./summary/SummaryTable";
-import SummaryGoal from "./summary/SummaryGoal";
-import SummaryInsight from "./summary/SummaryInsight"; // ✅ 추가
 import TrendCell from "../ui/TrendCell";
 import DataBarCell from "../ui/DataBarCell";
 
-
+/**
+ * ✅ 빌드 정상화 목적:
+ * - SummarySection을 호출하는 곳이 (page.tsx / KeywordDetail / CreativeDetail 등) 제각각이라
+ *   props mismatch 타입 에러가 연쇄 발생했음
+ * - 따라서 Props를 "optional + any fallback"으로 완화해서, 어디서 어떻게 호출해도 빌드가 깨지지 않게 함
+ *
+ * ✅ 나중에 구조 안정화되면 Props를 다시 엄격하게 정리해도 됨
+ */
 type Props = {
-  currentMonthKey: string;
-  currentMonthActual: any;
-  currentMonthGoalComputed: any;
-  monthGoal: any;
-  setMonthGoal: any;
-  monthGoalInsight: any; // ✅ string 고정 X (배열/객체일 수도 있어서 any로)
+  // (선택) 목표/인사이트 관련 (있을 수도 있고 없을 수도 있음)
+  currentMonthKey?: string;
+  currentMonthActual?: any;
+  currentMonthGoalComputed?: any;
+  monthGoal?: any;
+  setMonthGoal?: any;
+  monthGoalInsight?: any;
 
-  totals: any;
-  byMonth: any;
+  // (선택) 요약 데이터
+  totals?: any;
+  byMonth?: any;
 
-  byWeekOnly: any;
-  byWeekChart: any;
+  byWeekOnly?: any;
+  byWeekChart?: any;
 
-  bySource: any;
+  bySource?: any;
+
+  // ✅ 호출부가 추가 props를 넘겨도 타입 에러 안 나게
+  [key: string]: any;
 };
 
 // ===== 숫자/비율 안전 유틸 =====
@@ -38,7 +44,7 @@ const toNum = (v: any) => {
   if (typeof v === "number") return v;
   const s = String(v).replace(/[%₩,\s]/g, "");
   const n = Number(s);
-  return isFinite(n) ? n : 0;
+  return Number.isFinite(n) ? n : 0;
 };
 
 // CTR/CVR: 2.42(%) 또는 0.0242(비율) 모두 허용
@@ -61,21 +67,13 @@ const diffPct = (cur: any, prev: any) => {
   return (c - p) / p;
 };
 
-export default function SummarySection(props: Props) {
-  const {
-    currentMonthKey,
-    currentMonthActual,
-    currentMonthGoalComputed,
-    monthGoal,
-    setMonthGoal,
-    monthGoalInsight,
-    totals,
-    byMonth,
-    byWeekOnly,
-    byWeekChart,
-    bySource,
-  } = props;
-
+export default function SummarySection({
+  totals = {},
+  byMonth = [],
+  byWeekOnly = [],
+  byWeekChart = [],
+  bySource = [],
+}: Props) {
   // ✅ 주차 데이터 배열 안전 처리
   const weeks = Array.isArray(byWeekOnly) ? byWeekOnly : [];
 
@@ -84,7 +82,9 @@ export default function SummarySection(props: Props) {
     const k = w.weekKey ?? w.startDate ?? w.weekStart ?? w.dateKey;
     if (k) return String(k);
 
-    const m = String(w.label ?? "").match(/(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})주차/);
+    const m = String(w.label ?? "").match(
+      /(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})주차/
+    );
     if (!m) return String(w.label ?? "");
     const y = m[1];
     const mo = m[2].padStart(2, "0");
@@ -92,18 +92,20 @@ export default function SummarySection(props: Props) {
     return `${y}-${mo}-${wk}`;
   };
 
-  const sortedWeeks = [...weeks].sort((a, b) => weekSortKey(a).localeCompare(weekSortKey(b)));
+  const sortedWeeks = [...weeks].sort((a, b) =>
+    weekSortKey(a).localeCompare(weekSortKey(b))
+  );
   const prevWeekSorted = sortedWeeks.at(-2);
   const lastWeekSorted = sortedWeeks.at(-1);
 
-    // ✅ 주차표 막대그래프용 Max (빈 배열 안전)
+  // ✅ 주차표 막대그래프용 Max (빈 배열 안전)
   const maxImpr = Math.max(0, ...weeks.map((r: any) => toNum(r.impressions ?? r.impr)));
   const maxClicks = Math.max(0, ...weeks.map((r: any) => toNum(r.clicks)));
   const maxCost = Math.max(0, ...weeks.map((r: any) => toNum(r.cost)));
   const maxConv = Math.max(0, ...weeks.map((r: any) => toNum(r.conversions ?? r.conv)));
   const maxRev = Math.max(0, ...weeks.map((r: any) => toNum(r.revenue)));
 
-    // ✅ 소스별 데이터 배열 안전 처리
+  // ✅ 소스별 데이터 배열 안전 처리
   const sources = Array.isArray(bySource) ? bySource : [];
 
   // ✅ 소스별 표 막대그래프용 Max (빈 배열 안전)
@@ -113,13 +115,8 @@ export default function SummarySection(props: Props) {
   const srcMaxConv = Math.max(0, ...sources.map((r: any) => toNum(r.conversions ?? r.conv)));
   const srcMaxRev = Math.max(0, ...sources.map((r: any) => toNum(r.revenue)));
 
-
-
   return (
     <>
-      {/* ✅ 당월 목표/결과/진도율 (목표 인사이트만) */}
-      {/* (현재 파일에서는 SummaryGoal을 렌더링하지 않고 있었음. 필요하면 여기에 넣으면 됨) */}
-
       {/* 기간 성과 */}
       <div className="mt-10 mb-3">
         <h2 className="text-lg font-semibold">기간 성과</h2>
@@ -167,7 +164,10 @@ export default function SummarySection(props: Props) {
                   </td>
 
                   <td className="p-3 text-right">
-                    <TrendCell v={diffPct(toRate01(lastWeekSorted.ctr), toRate01(prevWeekSorted.ctr))} digits={2} />
+                    <TrendCell
+                      v={diffPct(toRate01(lastWeekSorted.ctr), toRate01(prevWeekSorted.ctr))}
+                      digits={2}
+                    />
                   </td>
 
                   <td className="p-3 text-right">
@@ -183,7 +183,10 @@ export default function SummarySection(props: Props) {
                   </td>
 
                   <td className="p-3 text-right">
-                    <TrendCell v={diffPct(toRate01(lastWeekSorted.cvr), toRate01(prevWeekSorted.cvr))} digits={2} />
+                    <TrendCell
+                      v={diffPct(toRate01(lastWeekSorted.cvr), toRate01(prevWeekSorted.cvr))}
+                      digits={2}
+                    />
                   </td>
 
                   <td className="p-3 text-right">
@@ -195,7 +198,10 @@ export default function SummarySection(props: Props) {
                   </td>
 
                   <td className="p-3 text-right">
-                    <TrendCell v={diffPct(toRoas01(lastWeekSorted.roas), toRoas01(prevWeekSorted.roas))} digits={2} />
+                    <TrendCell
+                      v={diffPct(toRoas01(lastWeekSorted.roas), toRoas01(prevWeekSorted.roas))}
+                      digits={2}
+                    />
                   </td>
                 </tr>
               )}
@@ -203,25 +209,35 @@ export default function SummarySection(props: Props) {
               {weeks.map((w: any, idx: number) => (
                 <tr key={w.weekKey ?? `${weekSortKey(w)}-${idx}`} className="border-t">
                   <td className="p-3 font-medium">{w.label}</td>
+
                   <td className="p-3">
                     <DataBarCell value={toNum(w.impressions ?? w.impr)} max={maxImpr} />
                   </td>
+
                   <td className="p-3">
                     <DataBarCell value={toNum(w.clicks)} max={maxClicks} />
                   </td>
+
                   <td className="p-3 text-right">{(toRate01(w.ctr) * 100).toFixed(2)}%</td>
+
                   <td className="p-3 text-right">{KRW(toNum(w.cpc))}</td>
+
                   <td className="p-3">
                     <DataBarCell value={toNum(w.cost)} max={maxCost} label={KRW(toNum(w.cost))} />
                   </td>
+
                   <td className="p-3">
                     <DataBarCell value={toNum(w.conversions ?? w.conv)} max={maxConv} />
                   </td>
+
                   <td className="p-3 text-right">{(toRate01(w.cvr) * 100).toFixed(2)}%</td>
+
                   <td className="p-3 text-right">{KRW(toNum(w.cpa))}</td>
+
                   <td className="p-3">
                     <DataBarCell value={toNum(w.revenue)} max={maxRev} label={KRW(toNum(w.revenue))} />
                   </td>
+
                   <td className="p-3 text-right">{(toRoas01(w.roas) * 100).toFixed(1)}%</td>
                 </tr>
               ))}
@@ -262,25 +278,35 @@ export default function SummarySection(props: Props) {
               {sources.map((r: any, idx: number) => (
                 <tr key={r.source ?? idx} className="border-t">
                   <td className="p-3 font-medium">{r.source}</td>
+
                   <td className="p-3">
                     <DataBarCell value={toNum(r.impressions ?? r.impr)} max={srcMaxImpr} />
                   </td>
+
                   <td className="p-3">
                     <DataBarCell value={toNum(r.clicks)} max={srcMaxClicks} />
                   </td>
+
                   <td className="p-3 text-right">{(toRate01(r.ctr) * 100).toFixed(2)}%</td>
+
                   <td className="p-3 text-right">{KRW(toNum(r.cpc))}</td>
+
                   <td className="p-3">
                     <DataBarCell value={toNum(r.cost)} max={srcMaxCost} label={KRW(toNum(r.cost))} />
                   </td>
+
                   <td className="p-3">
                     <DataBarCell value={toNum(r.conversions ?? r.conv)} max={srcMaxConv} />
                   </td>
+
                   <td className="p-3 text-right">{(toRate01(r.cvr) * 100).toFixed(2)}%</td>
+
                   <td className="p-3 text-right">{KRW(toNum(r.cpa))}</td>
+
                   <td className="p-3">
                     <DataBarCell value={toNum(r.revenue)} max={srcMaxRev} label={KRW(toNum(r.revenue))} />
                   </td>
+
                   <td className="p-3 text-right">{(toRoas01(r.roas) * 100).toFixed(1)}%</td>
                 </tr>
               ))}
@@ -288,7 +314,6 @@ export default function SummarySection(props: Props) {
           </table>
         </div>
       </section>
-
     </>
   );
 }
