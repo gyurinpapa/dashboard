@@ -415,13 +415,6 @@ export default function KeywordDetailSection(props: Props) {
 
           {/* ✅ A안 적용: 키워드 상세 탭에서만 Week 첫 컬럼 줄바꿈 금지 */}
           <div className="keyword-detail-week-table-fix">
-            <SummarySection
-              totals={totals as any}
-              byMonth={byMonth as any}
-              byWeekOnly={byWeekOnly as any}
-              byWeekChart={byWeekChart as any}
-              bySource={bySource as any}
-            />
           </div>
         </div>
       </div>
