@@ -9,28 +9,59 @@ import {
   monthWeekLabelRule,
 } from "./date";
 
-export function normalizeCsvRows(raw: any[]): Row[] {
-  return (raw || []).map((r: any) => {
-    const sourceFixed = (r.source ?? r.soucrce ?? r.platform ?? "").toString().trim();
+// src/lib/report/aggregate.ts (또는 normalizeCsvRows 파일)
 
-    const avgRankRaw = r.rank ?? r.avgRank ?? r["avg.rank"] ?? null;
-    const avgRank =
-      avgRankRaw == null || avgRankRaw === ""
-        ? undefined
-        : Number(String(avgRankRaw).replace(/[^\d.\-]/g, ""));
+// =========================
+// 숫자 정규화 유틸
+// =========================
+function toNum(v: any): number {
+  if (v == null) return 0;
 
+  // 이미 숫자면 그대로
+  if (typeof v === "number") {
+    return Number.isFinite(v) ? v : 0;
+  }
+
+  const cleaned = String(v)
+    .replace(/[^\d.-]/g, "")   // 숫자, 소수점, 마이너스 제외 전부 제거
+    .trim();
+
+  if (!cleaned) return 0;
+
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : 0;
+}
+
+// =========================
+// CSV → Row 정규화
+// =========================
+export function normalizeCsvRows(rawRows: any[]) {
+  return rawRows.map((row) => {
     return {
-      ...r,
-      source: sourceFixed,
-      impressions: Number(r.impressions ?? r.impression ?? 0) || 0,
-      clicks: Number(r.clicks ?? r.click ?? 0) || 0,
-      cost: Number(r.cost ?? 0) || 0,
-      conversions: Number(r.conversions ?? r.conversion ?? 0) || 0,
-      revenue: Number(r.revenue ?? 0) || 0,
+      account_id: row.account_id ?? "",
+      channel: row.channel ?? "",
+      source: row.source ?? "",
+      platform: row.platform ?? "",
+      campaign_name: row.campaign_name ?? "",
+      group_name: row.group_name ?? "",
+      keyword: row.keyword ?? "",
+      creative: row.creative ?? "",
+      imagePath: row.imagePath ?? "",
+      device: row.device ?? "",
 
-      // ✅ CSV의 rank를 KeywordDetail에서 쓰는 avgRank로 통일
-      avgRank: Number.isFinite(avgRank as any) ? (avgRank as number) : undefined,
-    } as Row;
+      // 날짜는 문자열 그대로 유지 (이미 검증 완료)
+      date: row.date ?? "",
+
+      // 🔥 숫자 필드 전부 정규화
+      impressions: toNum(row.impressions),
+      clicks: toNum(row.clicks),
+      cost: toNum(row.cost),
+      conversions: toNum(row.conversions),
+      revenue: toNum(row.revenue),
+
+      // rank는 소수점 가능
+      rank: toNum(row.rank),
+    };
   });
 }
 

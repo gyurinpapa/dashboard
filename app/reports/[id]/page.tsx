@@ -458,7 +458,7 @@ export default function ReportDetailPage() {
 
           <CommerceDashboard
             key={dashboardKey}
-            dataUrl="/data/acc_001.csv" // ✅ fallback로 남겨둠 (rowsOverride가 있으면 이건 무시됨)
+            dataUrl="/data/TEST_ver1.csv" // ✅ fallback로 남겨둠 (rowsOverride가 있으면 이건 무시됨)
             rowsOverride={rowsOverride} // ✅ NEW: DB 데이터 주입
             rowOptions={{
               from: periodFrom,

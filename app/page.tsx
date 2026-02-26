@@ -42,7 +42,7 @@ const DEFAULT_GOAL: GoalState = {
 
 export default function Page() {
   // ✅ CSV rows 로딩 (나중에 DB로 교체 가능)
-  const { rows, isLoading } = useReportRows("/data/acc_001.csv");
+  const { rows, isLoading } = useReportRows("/data/TEST_ver1.csv");
 
   // ===== state =====
   const [tab, setTab] = useState<TabKey>("summary");

@@ -5,6 +5,7 @@ import Papa from "papaparse";
 
 import type { Row } from "./types";
 import { normalizeCsvRows } from "./aggregate";
+import { parseDateLoose } from "./date"; // ⚠️ 파일 상단에 이미 있으면 추가하지 말 것
 
 type ChannelKind = "search" | "display";
 
@@ -139,12 +140,41 @@ export function useReportRows(
           skipEmptyLines: true,
         });
 
+        console.log("FIRST DATE:", parsed.data[0]?.date);
+        console.log("LAST DATE:", parsed.data[parsed.data.length - 1]?.date);
+
         if (parsed.errors?.length) {
           const first = parsed.errors[0];
           throw new Error(`CSV parse error: ${first.message ?? "unknown"}`);
         }
 
         const original = normalizeCsvRows(parsed.data as any[]);
+
+        /* ===== 🔍 날짜 검증 로그 START ===== */
+
+        const invalidDates = original.filter(r => !parseDateLoose(r.date));
+        console.log("INVALID DATE COUNT:", invalidDates.length);
+        console.log("INVALID SAMPLE:", invalidDates.slice(0, 5));
+        /* ===== 🔍 날짜 검증 로그 END ===== */
+        console.log("normalized length:", original.length);
+
+        const rawImpTotal = parsed.data
+        .filter((r: any) => r && r.impressions !== undefined)
+        .reduce((sum: number, r: any) => {
+          const v = Number(r.impressions);
+          return sum + (Number.isFinite(v) ? v : 0);
+        }, 0);
+
+        console.log("RAW IMP TOTAL:", rawImpTotal);
+
+        const normalizedImpTotal = original.reduce((sum: number, r: any) => {
+          return sum + Number(r.impressions ?? 0);
+        }, 0);
+
+        console.log("RAW IMP TOTAL:", rawImpTotal);
+        console.log("NORMALIZED IMP TOTAL:", normalizedImpTotal);
+        console.log("==== CSV DEBUG END ====");
+
         if (!alive) return;
 
         let normalized = original;

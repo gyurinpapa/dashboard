@@ -190,6 +190,10 @@ export default function SummaryGoal({
         </table>
       </div>
 
+      <p className="text-xs text-gray-500 mt-2">
+  * 목표&달성현황은 필터의 영향을 받지 않습니다.
+</p>
+
       {/* 인사이트*/}
       {monthGoalInsight ? (
         <div className="mt-6">
