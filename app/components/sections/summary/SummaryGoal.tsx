@@ -54,7 +54,7 @@ export default function SummaryGoal({
     <section>
       <h2 className="text-lg font-semibold mb-3">목표 입력 &amp; 달성 현황</h2>
 
-      <div className="overflow-auto border rounded-xl">
+      <div className="overflow-auto border-3 border-gray-900 rounded-xl">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-600">
             <tr>
@@ -158,18 +158,48 @@ export default function SummaryGoal({
             </tr>
 
             {/* 2) 결과(실적) */}
-            <tr className="border-t">
-              <td className="p-3 font-medium">결과</td>
-              <td className="p-3 text-right">{formatNumber(currentMonthActual?.impressions ?? 0)}</td>
-              <td className="p-3 text-right">{formatNumber(currentMonthActual?.clicks ?? 0)}</td>
-              <td className="p-3 text-right">{pct2(currentMonthActual?.ctr ?? 0)}</td>
-              <td className="p-3 text-right">{KRW(currentMonthActual?.cpc ?? 0)}</td>
-              <td className="p-3 text-right">{KRW(currentMonthActual?.cost ?? 0)}</td>
-              <td className="p-3 text-right">{formatNumber(currentMonthActual?.conversions ?? 0)}</td>
-              <td className="p-3 text-right">{pct2(currentMonthActual?.cvr ?? 0)}</td>
-              <td className="p-3 text-right">{KRW(currentMonthActual?.cpa ?? 0)}</td>
-              <td className="p-3 text-right">{KRW(currentMonthActual?.revenue ?? 0)}</td>
-              <td className="p-3 text-right">{pct1(currentMonthActual?.roas ?? 0)}</td>
+            <tr className="border-t bg-gray-50">
+              <td className="p-3 font-bold text-gray-900">결과</td>
+
+              <td className="p-3 text-right font-semibold text-gray-900">
+                {formatNumber(currentMonthActual?.impressions ?? 0)}
+              </td>
+
+              <td className="p-3 text-right font-semibold text-gray-900">
+                {formatNumber(currentMonthActual?.clicks ?? 0)}
+              </td>
+
+              <td className="p-3 text-right font-semibold text-blue-600">
+                {pct2(currentMonthActual?.ctr ?? 0)}
+              </td>
+
+              <td className="p-3 text-right font-semibold text-gray-900">
+                {KRW(currentMonthActual?.cpc ?? 0)}
+              </td>
+
+              <td className="p-3 text-right font-semibold text-gray-900">
+                {KRW(currentMonthActual?.cost ?? 0)}
+              </td>
+
+              <td className="p-3 text-right font-semibold text-gray-900">
+                {formatNumber(currentMonthActual?.conversions ?? 0)}
+              </td>
+
+              <td className="p-3 text-right font-semibold text-blue-600">
+                {pct2(currentMonthActual?.cvr ?? 0)}
+              </td>
+
+              <td className="p-3 text-right font-semibold text-gray-900">
+                {KRW(currentMonthActual?.cpa ?? 0)}
+              </td>
+
+              <td className="p-3 text-right font-semibold text-green-600">
+                {KRW(currentMonthActual?.revenue ?? 0)}
+              </td>
+
+              <td className="p-3 text-right font-bold text-orange-600">
+                {pct1(currentMonthActual?.roas ?? 0)}
+              </td>
             </tr>
 
             {/* 3) 달성률 (결과 / 목표) */}

@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+
 import type {
   ChannelKey,
   DeviceKey,
@@ -10,7 +12,6 @@ import type {
 } from "../../../src/lib/report/types";
 
 import { monthLabelOf } from "../../../src/lib/report/date";
-
 import FilterBtn from "../ui/FilterBtn";
 
 type WeekOption = { weekKey: WeekKey; label: string };
@@ -74,6 +75,36 @@ export default function HeaderBar(props: Props) {
   // ✅ 키워드 탭에서만 display ad 비활성
   const disableDisplayChannel = tab === "keyword" || tab === "keywordDetail";
 
+  // ✅ 바깥 클릭하면 필터 패널 닫기
+  const filterRootRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const onPointerDown = (e: MouseEvent | TouchEvent) => {
+      if (!filterKey) return; // 열려있을 때만
+      const el = filterRootRef.current;
+      if (!el) return;
+
+      const target = e.target as Node | null;
+      if (target && el.contains(target)) return; // 안쪽 클릭이면 무시
+
+      setFilterKey(null); // ✅ 바깥 클릭이면 닫기
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFilterKey(null);
+    };
+
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("touchstart", onPointerDown, { passive: true });
+    document.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("touchstart", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [filterKey, setFilterKey]);
+
   return (
     <header className="sticky top-0 z-50 bg-white/95 backdrop-blur border-b">
       <div className="p-8 pb-4">
@@ -88,7 +119,7 @@ export default function HeaderBar(props: Props) {
 
           <div className="flex items-start justify-between mb-2">
             {/* LEFT: Filters */}
-            <div className="relative inline-block">
+            <div ref={filterRootRef} className="relative inline-block">
               <div className="flex gap-2">
                 <FilterBtn
                   active={filterKey === "month"}
@@ -298,7 +329,11 @@ export default function HeaderBar(props: Props) {
                             setSelectedChannel(c);
                             setFilterKey(null);
                           }}
-                          title={disabled ? "키워드 탭에서는 display ad를 선택할 수 없습니다." : String(c)}
+                          title={
+                            disabled
+                              ? "키워드 탭에서는 display ad를 선택할 수 없습니다."
+                              : String(c)
+                          }
                           className={[
                             "px-3 py-1 rounded-lg border text-sm font-semibold transition",
                             selectedChannel === c

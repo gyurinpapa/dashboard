@@ -68,11 +68,11 @@ function getCreativeKey(r: Row) {
     .trim();
 }
 
-/** ✅ 선택 소재 이미지 URL 추출 (소재 탭 기능 이식용) */
+/** ✅ 선택 소재 이미지 URL 추출 */
 function getCreativePreviewUrl(r: Row) {
   const anyR = r as any;
   return (
-    anyR.imagePath || // ✅ 너가 이미 쓰던 키
+    anyR.imagePath ||
     anyR.creativeImageUrl ||
     anyR.thumbnailUrl ||
     anyR.thumbUrl ||
@@ -109,6 +109,38 @@ function safeCall<T>(fn: () => T, fallback: T): T {
   }
 }
 
+/** =========================
+ * Badge helpers (TOP3)
+ * ========================= */
+type BadgeKey = "ctr" | "conversions" | "roas";
+
+const BADGE_META: Record<
+  BadgeKey,
+  { label: string; className: string }
+> = {
+  ctr: { label: "TOP CTR", className: "bg-blue-600 text-white" },
+  conversions: { label: "TOP 전환", className: "bg-orange-600 text-white" },
+  roas: { label: "TOP ROAS", className: "bg-emerald-600 text-white" },
+};
+
+function BadgePill({ k }: { k: BadgeKey }) {
+  const meta = BADGE_META[k];
+  return (
+    <span
+      className={[
+        "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
+        meta.className,
+      ].join(" ")}
+      title={meta.label}
+    >
+      🥇 {meta.label}
+    </span>
+  );
+}
+
+/** =========================
+ * Insight
+ * ========================= */
 function buildCreativeDetailInsight(args: {
   creative: string | null;
   allRowsScope: Row[];
@@ -117,7 +149,8 @@ function buildCreativeDetailInsight(args: {
   bySource: any[];
   byDevice: any[];
 }) {
-  const { creative, allRowsScope, creativeRows, byWeekOnly, bySource, byDevice } = args;
+  const { creative, allRowsScope, creativeRows, byWeekOnly, bySource, byDevice } =
+    args;
 
   if (!creative) {
     return {
@@ -157,7 +190,9 @@ function buildCreativeDetailInsight(args: {
 
   const shareCost = all.cost ? safeNum(me.cost) / safeNum(all.cost) : 0;
   const shareRev = all.revenue ? safeNum(me.revenue) / safeNum(all.revenue) : 0;
-  const shareConv = all.conversions ? safeNum(me.conversions) / safeNum(all.conversions) : 0;
+  const shareConv = all.conversions
+    ? safeNum(me.conversions) / safeNum(all.conversions)
+    : 0;
 
   const weeks = [...(byWeekOnly || [])].sort((a, b) =>
     String(a.weekKey ?? "").localeCompare(String(b.weekKey ?? ""))
@@ -165,18 +200,28 @@ function buildCreativeDetailInsight(args: {
   const wLast = weeks.length ? weeks[weeks.length - 1] : null;
   const wPrev = weeks.length >= 2 ? weeks[weeks.length - 2] : null;
 
-  const roasWoW = wLast && wPrev ? diffPct(safeNum(wLast.roas), safeNum(wPrev.roas)) : 0;
+  const roasWoW =
+    wLast && wPrev ? diffPct(safeNum(wLast.roas), safeNum(wPrev.roas)) : 0;
   const clickWoW =
-    wLast && wPrev ? diffPct(safeNum(wLast.clicks), safeNum(wPrev.clicks)) : 0;
+    wLast && wPrev
+      ? diffPct(safeNum(wLast.clicks), safeNum(wPrev.clicks))
+      : 0;
   const convWoW =
-    wLast && wPrev ? diffPct(safeNum(wLast.conversions), safeNum(wPrev.conversions)) : 0;
-  const costWoW = wLast && wPrev ? diffPct(safeNum(wLast.cost), safeNum(wPrev.cost)) : 0;
+    wLast && wPrev
+      ? diffPct(safeNum(wLast.conversions), safeNum(wPrev.conversions))
+      : 0;
+  const costWoW =
+    wLast && wPrev ? diffPct(safeNum(wLast.cost), safeNum(wPrev.cost)) : 0;
 
-  const sources = [...(bySource || [])].sort((a, b) => safeNum(b.cost) - safeNum(a.cost));
+  const sources = [...(bySource || [])].sort(
+    (a, b) => safeNum(b.cost) - safeNum(a.cost)
+  );
   const topS1 = sources[0] ?? null;
   const topS2 = sources[1] ?? null;
 
-  const devices = [...(byDevice || [])].sort((a, b) => safeNum(b.cost) - safeNum(a.cost));
+  const devices = [...(byDevice || [])].sort(
+    (a, b) => safeNum(b.cost) - safeNum(a.cost)
+  );
   const topD1 = devices[0] ?? null;
   const topD2 = devices[1] ?? null;
 
@@ -189,21 +234,23 @@ function buildCreativeDetailInsight(args: {
 
   const trendLabel =
     wLast && wPrev
-      ? `최근 1주 기준: 클릭 ${signPct(clickWoW)}, 전환 ${signPct(convWoW)}, ROAS ${signPct(
-          roasWoW
-        )} (비용 ${signPct(costWoW)})`
+      ? `최근 1주 기준: 클릭 ${signPct(clickWoW)}, 전환 ${signPct(
+          convWoW
+        )}, ROAS ${signPct(roasWoW)} (비용 ${signPct(costWoW)})`
       : "최근 주간 데이터가 부족하여 추세 비교는 제한적입니다.";
 
   const bullets: string[] = [];
   bullets.push(
-    `선택 소재 “${creative}” 성과: 클릭 ${Math.round(safeNum(me.clicks))} / 전환 ${safeNum(
-      me.conversions
-    ).toFixed(1)} / ROAS ${safePct0(safeNum(me.roas))} · ${efficiencyLabel}`
+    `선택 소재 “${creative}” 성과: 클릭 ${Math.round(
+      safeNum(me.clicks)
+    )} / 전환 ${safeNum(me.conversions).toFixed(1)} / ROAS ${safePct0(
+      safeNum(me.roas)
+    )} · ${efficiencyLabel}`
   );
   bullets.push(
-    `기여도(현재 탭 범위 대비): 비용 ${safePct(shareCost)}, 전환 ${safePct(shareConv)}, 매출 ${safePct(
-      shareRev
-    )}`
+    `기여도(현재 탭 범위 대비): 비용 ${safePct(
+      shareCost
+    )}, 전환 ${safePct(shareConv)}, 매출 ${safePct(shareRev)}`
   );
   bullets.push(trendLabel);
 
@@ -268,9 +315,19 @@ type Props = {
   rows: Row[];
 };
 
+type CreativePerf = {
+  creative: string;
+  impressions: number;
+  clicks: number;
+  cost: number;
+  conversions: number;
+  revenue: number;
+  ctr: number; // 0~1
+  roas: number; // 0~1
+};
+
 export default function CreativeDetailSection({ rows }: Props) {
   const creatives = useMemo(() => extractCreatives(rows), [rows]);
-
   const [selectedCreative, setSelectedCreative] = useState<string | null>(null);
 
   // ✅ creatives가 생기면 자동으로 첫 항목 선택
@@ -279,6 +336,87 @@ export default function CreativeDetailSection({ rows }: Props) {
       setSelectedCreative(creatives[0]);
     }
   }, [creatives, selectedCreative]);
+
+  /** =========================
+   * ✅ Performance aggregation (전체 rows 기준)
+   * - TOP badge는 "탭 범위(월/주/기기/채널 적용된 rows)"에서 계산하는 게 자연스럽다
+   * - 지금 props.rows 자체가 이미 필터 적용된 상태로 넘어온 구조임
+   * ========================= */
+  const perfList: CreativePerf[] = useMemo(() => {
+    const map = new Map<string, CreativePerf>();
+
+    for (const r of rows ?? []) {
+      const k = getCreativeKey(r);
+      if (!k) continue;
+
+      const anyR = r as any;
+      const impr = safeNum(anyR.impressions ?? anyR.impr ?? anyR.imp ?? 0);
+      const clk = safeNum(anyR.clicks ?? anyR.clk ?? 0);
+      const cost = safeNum(anyR.cost ?? 0);
+      const conv = safeNum(anyR.conversions ?? anyR.conv ?? 0);
+      const rev = safeNum(anyR.revenue ?? 0);
+
+      const prev = map.get(k) ?? {
+        creative: k,
+        impressions: 0,
+        clicks: 0,
+        cost: 0,
+        conversions: 0,
+        revenue: 0,
+        ctr: 0,
+        roas: 0,
+      };
+
+      prev.impressions += impr;
+      prev.clicks += clk;
+      prev.cost += cost;
+      prev.conversions += conv;
+      prev.revenue += rev;
+
+      map.set(k, prev);
+    }
+
+    const arr = Array.from(map.values()).map((x) => {
+      const ctr = x.impressions > 0 ? x.clicks / x.impressions : 0;
+      const roas = x.cost > 0 ? x.revenue / x.cost : 0;
+      return { ...x, ctr, roas };
+    });
+
+    return arr;
+  }, [rows]);
+
+  // ✅ badgeMap: creative -> BadgeKey[]
+  const badgeMap = useMemo(() => {
+    const map = new Map<string, BadgeKey[]>();
+
+    const top3 = (key: BadgeKey) => {
+      const sorted = [...perfList].sort((a, b) => {
+        const av = safeNum((a as any)[key]);
+        const bv = safeNum((b as any)[key]);
+        return bv - av;
+      });
+
+      // 성과 0만 잔뜩인 경우 방지: 0보다 큰 것만
+      const picked = sorted.filter((x) => safeNum((x as any)[key]) > 0).slice(0, 3);
+
+      for (const it of picked) {
+        const prev = map.get(it.creative) ?? [];
+        if (!prev.includes(key)) prev.push(key);
+        map.set(it.creative, prev);
+      }
+    };
+
+    top3("ctr");
+    top3("conversions");
+    top3("roas");
+
+    return map;
+  }, [perfList]);
+
+  const selectedBadges = useMemo(() => {
+    if (!selectedCreative) return [] as BadgeKey[];
+    return badgeMap.get(selectedCreative) ?? [];
+  }, [badgeMap, selectedCreative]);
 
   const filteredRows = useMemo(
     () => filterByCreative(rows, selectedCreative),
@@ -294,37 +432,29 @@ export default function CreativeDetailSection({ rows }: Props) {
   }, [rows, selectedCreative]);
 
   // ✅ "리스트 순서대로" 5개 썸네일(선택 기준 다음 5개, 부족하면 앞에서 채움)
-  const SIDE_THUMB_COUNT = 5;
-
   const sideThumbs = useMemo(() => {
     if (!creatives.length) return [] as { creative: string; url: string }[];
 
     const idx = selectedCreative ? creatives.indexOf(selectedCreative) : -1;
-
-    // 선택이 없으면 상단 N개
     const start = idx >= 0 ? idx + 1 : 0;
 
     const picked: string[] = [];
-    for (let i = start; i < creatives.length && picked.length < SIDE_THUMB_COUNT; i++) {
-      picked.push(creatives[i]);
-    }
+    for (let i = start; i < creatives.length && picked.length < 5; i++) picked.push(creatives[i]);
 
-    // 뒤에서 부족하면 앞에서 채우기(선택 항목은 제외)
-    for (let i = 0; i < creatives.length && picked.length < SIDE_THUMB_COUNT; i++) {
+    for (let i = 0; i < creatives.length && picked.length < 5; i++) {
       const k = creatives[i];
       if (k === selectedCreative) continue;
       if (picked.includes(k)) continue;
       picked.push(k);
     }
 
-    // url 매핑
     return picked
       .map((k) => {
         const row = rows.find((r) => getCreativeKey(r) === k);
         const url = row ? getCreativePreviewUrl(row) : "";
         return { creative: k, url };
       })
-      .filter((x) => x.url); // ✅ 이미지 없는 건 제외(원하면 포함 가능)
+      .filter((x) => x.url);
   }, [creatives, selectedCreative, rows]);
 
   // ✅ 여기서부터는 절대 안 터지게 safeCall로 감싼다
@@ -399,7 +529,19 @@ export default function CreativeDetailSection({ rows }: Props) {
       {/* ✅ 최상단: 선택 소재(좌측) + 5개 흑백 썸네일(우측) */}
       <section className="mt-4 rounded-2xl border border-gray-200 bg-white p-6">
         <div className="flex items-center justify-between gap-4">
-          <div className="font-semibold">선택 소재</div>
+          <div className="flex items-center gap-2">
+            <div className="font-semibold">선택 소재</div>
+
+            {/* ✅ 선택 소재 TOP 배지 */}
+            {selectedBadges.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {selectedBadges.map((b) => (
+                  <BadgePill key={b} k={b} />
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="text-xs text-gray-500">
             {selectedCreative ? `선택: ${selectedCreative}` : "선택 없음"}
           </div>
@@ -410,26 +552,24 @@ export default function CreativeDetailSection({ rows }: Props) {
             차트/표에서 소재를 클릭하면 이미지가 표시됩니다.
           </div>
         ) : (
-          <div className="mt-4 grid grid-cols-1 gap-5 lg:grid-cols-[1fr_240px]">
-            {/* LEFT: 메인 프리뷰(선명/크게) */}
-           <div className="rounded-2xl bg-white p-3">
-            {selectedPreviewUrl ? (
-              <div className="w-full h-[420px] flex items-center justify-center overflow-hidden">
+          <div className="mt-4 grid grid-cols-1 gap-5 lg:grid-cols-[1fr_280px]">
+            {/* LEFT: 메인 프리뷰 (테두리 제거 + 중앙 정렬) */}
+            <div className="rounded-2xl bg-white h-[420px] flex items-center justify-center overflow-hidden">
+              {selectedPreviewUrl ? (
                 <img
                   src={selectedPreviewUrl}
                   alt={selectedCreative}
                   className="max-w-[680px] max-h-[420px] object-contain rounded-xl"
                   loading="lazy"
                 />
-              </div>
-            ) : (
-              <div className="text-sm text-gray-500 p-4">
-                imagePath(또는 썸네일 URL) 데이터가 없어 이미지를 표시할 수 없습니다.
-              </div>
-            )}
-          </div>
+              ) : (
+                <div className="text-sm text-gray-500 p-4">
+                  imagePath(또는 썸네일 URL) 데이터가 없어 이미지를 표시할 수 없습니다.
+                </div>
+              )}
+            </div>
 
-            {/* RIGHT: 리스트 순서 기반 5썸네일 (흑백) */}
+            {/* RIGHT: 리스트 순서 기반 5썸네일 (흑백) + TOP 배지 */}
             <div className="flex flex-col gap-3">
               <div className="text-xs font-semibold text-gray-600">다음 소재 미리보기</div>
 
@@ -439,7 +579,7 @@ export default function CreativeDetailSection({ rows }: Props) {
                 </div>
               ) : (
                 sideThumbs.map((t) => {
-                  const active = t.creative === selectedCreative;
+                  const badges = badgeMap.get(t.creative) ?? [];
                   return (
                     <button
                       key={t.creative}
@@ -448,28 +588,45 @@ export default function CreativeDetailSection({ rows }: Props) {
                       className={[
                         "w-full rounded-xl border bg-white p-2 text-left transition",
                         "hover:border-orange-300 hover:bg-orange-50",
-                        active ? "border-orange-500 ring-2 ring-orange-200" : "border-gray-200",
                       ].join(" ")}
                       title={t.creative}
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-[92px] h-[64px] rounded-lg overflow-hidden border bg-white flex items-center justify-center">
+                        <div className="relative w-[92px] h-[64px] rounded-lg overflow-hidden border bg-white flex items-center justify-center">
                           <img
                             src={t.url}
                             alt={t.creative}
                             className={[
-                              "w-full h-full object-cover",
-                              active ? "grayscale-0 opacity-100" : "grayscale opacity-80",
-                              "transition",
-                              "hover:grayscale-0 hover:opacity-100",
+                              "w-full h-full object-cover grayscale opacity-80",
+                              "transition hover:grayscale-0 hover:opacity-100",
                             ].join(" ")}
                             loading="lazy"
                           />
+
                         </div>
 
                         <div className="min-w-0 flex-1">
-                          <div className="text-xs font-semibold text-gray-900 truncate">{t.creative}</div>
-                          <div className="text-[11px] text-gray-500">클릭해서 선택 소재로 변경</div>
+                          {/* ✅ 제목을 위로 (한 줄 더 확보) */}
+                          <div className="text-xs font-semibold text-gray-900 leading-4 break-words line-clamp-2">
+                            {t.creative}
+                          </div>
+
+                          {/* ✅ 뱃지는 아래 줄 */}
+                          {badges.length > 0 && (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {badges.slice(0, 3).map((b) => (
+                                <span
+                                  key={b}
+                                  className={[
+                                    "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                                    BADGE_META[b].className,
+                                  ].join(" ")}
+                                >
+                                  {BADGE_META[b].label}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </button>
@@ -500,6 +657,8 @@ export default function CreativeDetailSection({ rows }: Props) {
               ) : (
                 creatives.map((k) => {
                   const active = k === selectedCreative;
+                  const badges = badgeMap.get(k) ?? [];
+
                   return (
                     <button
                       key={k}
@@ -507,13 +666,31 @@ export default function CreativeDetailSection({ rows }: Props) {
                       onClick={() => setSelectedCreative(k)}
                       className={[
                         "w-full rounded-xl border px-3 py-2 text-left text-sm font-semibold transition",
+                        "flex items-center justify-between gap-3",
                         active
                           ? "bg-orange-700 text-white border-orange-700"
                           : "bg-white text-gray-900 border-gray-200 hover:bg-orange-50 hover:border-orange-200",
                       ].join(" ")}
                       title={k}
                     >
-                      {k}
+                      <span className="truncate">{k}</span>
+
+                      {/* ✅ TOP 배지 (최대 2개만) */}
+                      {badges.length > 0 && (
+                        <span className="flex shrink-0 gap-1">
+                          {badges.slice(0, 2).map((b) => (
+                            <span
+                              key={b}
+                              className={[
+                                "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold",
+                                active ? "bg-white/20 text-white" : BADGE_META[b].className,
+                              ].join(" ")}
+                            >
+                              {active ? `TOP ${b === "ctr" ? "CTR" : b === "roas" ? "ROAS" : "전환"}` : BADGE_META[b].label}
+                            </span>
+                          ))}
+                        </span>
+                      )}
                     </button>
                   );
                 })
@@ -549,7 +726,9 @@ export default function CreativeDetailSection({ rows }: Props) {
             </ul>
 
             <div className="mt-4 rounded-xl bg-gray-50 p-4">
-              <div className="text-sm font-semibold text-gray-900">다음 운영 액션(클릭 · 전환 · ROAS)</div>
+              <div className="text-sm font-semibold text-gray-900">
+                다음 운영 액션(클릭 · 전환 · ROAS)
+              </div>
               <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-gray-700">
                 {insight.actions.map((a, i) => (
                   <li key={i}>{a}</li>
