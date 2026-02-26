@@ -415,13 +415,46 @@ export default function KeywordDetailSection(props: Props) {
 
           {/* ✅ A안 적용: 키워드 상세 탭에서만 Week 첫 컬럼 줄바꿈 금지 */}
           <div className="keyword-detail-week-table-fix">
-            <SummarySection
-              totals={totals as any}
-              byMonth={byMonth as any}
-              byWeekOnly={byWeekOnly as any}
-              byWeekChart={byWeekChart as any}
-              bySource={bySource as any}
-            />
+            {/* ✅ Summary */}
+            {(() => {
+              const currentMonthKey = (totals as any)?.currentMonthKey ?? null;
+              const currentMonthActual = (totals as any)?.currentMonthActual ?? totals;
+
+              const monthGoal = (totals as any)?.monthGoal ?? null;
+
+              const currentMonthGoalComputed =
+                (totals as any)?.currentMonthGoalComputed ?? {
+                  imp: 0,
+                  click: 0,
+                  cost: 0,
+                  conv: 0,
+                  revenue: 0,
+                  ctr: 0,
+                  cpc: 0,
+                  cvr: 0,
+                  cpa: 0,
+                  roas: 0,
+                };
+
+              const setMonthGoal = () => {};
+              const monthGoalInsight = null;
+
+              return (
+                <SummarySection
+                  totals={totals as any}
+                  byMonth={byMonth as any}
+                  byWeekOnly={byWeekOnly as any}
+                  byWeekChart={byWeekChart as any}
+                  bySource={bySource as any}
+                  currentMonthKey={currentMonthKey}
+                  currentMonthActual={currentMonthActual}
+                  currentMonthGoalComputed={currentMonthGoalComputed}
+                  monthGoal={monthGoal}
+                  setMonthGoal={setMonthGoal}
+                  monthGoalInsight={monthGoalInsight}
+                />
+              );
+            })()}
           </div>
         </div>
       </div>

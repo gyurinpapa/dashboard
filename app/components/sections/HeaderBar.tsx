@@ -69,8 +69,9 @@ export default function HeaderBar(props: Props) {
     period,
   } = props;
 
-  const toggleFilter = (k: Exclude<FilterKey, null>) =>
-    setFilterKey((prev) => (prev === k ? null : k));
+  const toggleFilter = (k: Exclude<FilterKey, null>) => {
+  setFilterKey(filterKey === k ? null : k);
+};
 
   // ✅ 키워드 탭에서만 display ad 비활성
   const disableDisplayChannel = tab === "keyword" || tab === "keywordDetail";

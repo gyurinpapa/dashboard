@@ -738,15 +738,45 @@ export default function CreativeDetailSection({ rows }: Props) {
           </section>
 
           {/* Summary */}
-          <div className="creative-detail-week-table-fix">
-            <SummarySection
-              totals={totals as any}
-              byMonth={byMonth as any}
-              byWeekOnly={byWeekOnly as any}
-              byWeekChart={byWeekChart as any}
-              bySource={bySource as any}
-            />
-          </div>
+          {(() => {
+            const currentMonthKey = (totals as any)?.currentMonthKey ?? null;
+            const currentMonthActual = (totals as any)?.currentMonthActual ?? totals;
+            const monthGoal = (totals as any)?.monthGoal ?? null;
+
+            const currentMonthGoalComputed =
+              (totals as any)?.currentMonthGoalComputed ?? {
+                imp: 0,
+                click: 0,
+                cost: 0,
+                conv: 0,
+                revenue: 0,
+                ctr: 0,
+                cpc: 0,
+                cvr: 0,
+                cpa: 0,
+                roas: 0,
+              };
+
+            // ✅ 추가로 필요한 props (안전 더미)
+            const setMonthGoal = () => {};
+            const monthGoalInsight = null;
+
+            return (
+              <SummarySection
+                totals={totals as any}
+                byMonth={byMonth as any}
+                byWeekOnly={byWeekOnly as any}
+                byWeekChart={byWeekChart as any}
+                bySource={bySource as any}
+                currentMonthKey={currentMonthKey}
+                currentMonthActual={currentMonthActual}
+                currentMonthGoalComputed={currentMonthGoalComputed}
+                monthGoal={monthGoal}
+                setMonthGoal={setMonthGoal}
+                monthGoalInsight={monthGoalInsight}
+              />
+            );
+          })()}
         </div>
       </div>
 
