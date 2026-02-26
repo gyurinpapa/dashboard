@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type {
   ChannelKey,
@@ -57,6 +57,21 @@ export default function Page() {
     MONTH_GOAL_KEY,
     DEFAULT_GOAL
   );
+
+  // ============================
+  // ✅ Keyword 탭에서는 "display" 채널 선택을 막는다 (상태 가드)
+  // - UI(회색/disabled)는 HeaderBar에서 처리
+  // - 여기서는 "선택되어버리는 상황" 자체를 방지/자동해제
+  // ============================
+  useEffect(() => {
+    if (tab !== "keyword") return;
+
+    // ChannelKey가 "all" | "search" | "display" 구조라고 가정
+    // 키워드 탭에서는 display 단독 선택을 허용하지 않음
+    if (selectedChannel === ("display" as ChannelKey)) {
+      setSelectedChannel("search" as ChannelKey);
+    }
+  }, [tab, selectedChannel, setSelectedChannel]);
 
   // ✅ 집계/옵션/기간/그룹핑은 전부 훅에서
   const {
@@ -206,7 +221,10 @@ export default function Page() {
           )}
 
           {tab === "creative" && (
-            <CreativeSection rows={creativeBaseRows} creativeInsight={creativeInsight} />
+            <CreativeSection
+              rows={creativeBaseRows}
+              creativeInsight={creativeInsight}
+            />
           )}
 
           {tab === "creativeDetail" && (

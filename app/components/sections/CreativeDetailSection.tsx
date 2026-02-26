@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Row } from "../../../src/lib/report/types";
 
 import SummarySection from "./SummarySection";
@@ -122,7 +122,9 @@ function buildCreativeDetailInsight(args: {
   if (!creative) {
     return {
       title: "선택 소재 요약 인사이트",
-      bullets: ["소재를 선택하면 해당 소재의 실적/기여도/추세/기기 근거 기반 인사이트가 표시됩니다."],
+      bullets: [
+        "소재를 선택하면 해당 소재의 실적/기여도/추세/기기 근거 기반 인사이트가 표시됩니다.",
+      ],
       actions: [],
     };
   }
@@ -164,8 +166,10 @@ function buildCreativeDetailInsight(args: {
   const wPrev = weeks.length >= 2 ? weeks[weeks.length - 2] : null;
 
   const roasWoW = wLast && wPrev ? diffPct(safeNum(wLast.roas), safeNum(wPrev.roas)) : 0;
-  const clickWoW = wLast && wPrev ? diffPct(safeNum(wLast.clicks), safeNum(wPrev.clicks)) : 0;
-  const convWoW = wLast && wPrev ? diffPct(safeNum(wLast.conversions), safeNum(wPrev.conversions)) : 0;
+  const clickWoW =
+    wLast && wPrev ? diffPct(safeNum(wLast.clicks), safeNum(wPrev.clicks)) : 0;
+  const convWoW =
+    wLast && wPrev ? diffPct(safeNum(wLast.conversions), safeNum(wPrev.conversions)) : 0;
   const costWoW = wLast && wPrev ? diffPct(safeNum(wLast.cost), safeNum(wPrev.cost)) : 0;
 
   const sources = [...(bySource || [])].sort((a, b) => safeNum(b.cost) - safeNum(a.cost));
@@ -192,18 +196,22 @@ function buildCreativeDetailInsight(args: {
 
   const bullets: string[] = [];
   bullets.push(
-    `선택 소재 “${creative}” 성과: 클릭 ${Math.round(safeNum(me.clicks))} / 전환 ${safeNum(me.conversions).toFixed(
-      1
-    )} / ROAS ${safePct0(safeNum(me.roas))} · ${efficiencyLabel}`
+    `선택 소재 “${creative}” 성과: 클릭 ${Math.round(safeNum(me.clicks))} / 전환 ${safeNum(
+      me.conversions
+    ).toFixed(1)} / ROAS ${safePct0(safeNum(me.roas))} · ${efficiencyLabel}`
   );
   bullets.push(
-    `기여도(현재 탭 범위 대비): 비용 ${safePct(shareCost)}, 전환 ${safePct(shareConv)}, 매출 ${safePct(shareRev)}`
+    `기여도(현재 탭 범위 대비): 비용 ${safePct(shareCost)}, 전환 ${safePct(shareConv)}, 매출 ${safePct(
+      shareRev
+    )}`
   );
   bullets.push(trendLabel);
 
   if (topD1) {
     const d1 = pickDeviceLabel(String(topD1.device ?? "unknown"));
-    let deviceLine = `기기별: “${d1}” 비중이 가장 큽니다(ROAS ${safePct0(safeNum(topD1.roas))}).`;
+    let deviceLine = `기기별: “${d1}” 비중이 가장 큽니다(ROAS ${safePct0(
+      safeNum(topD1.roas)
+    )}).`;
     if (topD2) {
       const d2 = pickDeviceLabel(String(topD2.device ?? "unknown"));
       deviceLine += ` 비교: “${d2}” ROAS ${safePct0(safeNum(topD2.roas))}.`;
@@ -237,12 +245,16 @@ function buildCreativeDetailInsight(args: {
 
   if (topS1) {
     actions.push(
-      `소스 기준: 비용 상위 “${String(topS1.source)}”(ROAS ${safePct0(safeNum(topS1.roas))})를 중심으로 예산/세팅 최적화를 우선하세요.`
+      `소스 기준: 비용 상위 “${String(topS1.source)}”(ROAS ${safePct0(
+        safeNum(topS1.roas)
+      )})를 중심으로 예산/세팅 최적화를 우선하세요.`
     );
   }
   if (topS2) {
     actions.push(
-      `소스 비교: 2순위 “${String(topS2.source)}”(ROAS ${safePct0(safeNum(topS2.roas))})와 함께 유지/축소 기준을 명확히 하세요.`
+      `소스 비교: 2순위 “${String(topS2.source)}”(ROAS ${safePct0(
+        safeNum(topS2.roas)
+      )})와 함께 유지/축소 기준을 명확히 하세요.`
     );
   }
 
@@ -262,12 +274,11 @@ export default function CreativeDetailSection({ rows }: Props) {
   const [selectedCreative, setSelectedCreative] = useState<string | null>(null);
 
   // ✅ creatives가 생기면 자동으로 첫 항목 선택
-  useMemo(() => {
+  useEffect(() => {
     if (!selectedCreative && creatives.length > 0) {
       setSelectedCreative(creatives[0]);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [creatives]);
+  }, [creatives, selectedCreative]);
 
   const filteredRows = useMemo(
     () => filterByCreative(rows, selectedCreative),
@@ -281,6 +292,40 @@ export default function CreativeDetailSection({ rows }: Props) {
     if (!sampleRow) return "";
     return getCreativePreviewUrl(sampleRow);
   }, [rows, selectedCreative]);
+
+  // ✅ "리스트 순서대로" 5개 썸네일(선택 기준 다음 5개, 부족하면 앞에서 채움)
+  const SIDE_THUMB_COUNT = 5;
+
+  const sideThumbs = useMemo(() => {
+    if (!creatives.length) return [] as { creative: string; url: string }[];
+
+    const idx = selectedCreative ? creatives.indexOf(selectedCreative) : -1;
+
+    // 선택이 없으면 상단 N개
+    const start = idx >= 0 ? idx + 1 : 0;
+
+    const picked: string[] = [];
+    for (let i = start; i < creatives.length && picked.length < SIDE_THUMB_COUNT; i++) {
+      picked.push(creatives[i]);
+    }
+
+    // 뒤에서 부족하면 앞에서 채우기(선택 항목은 제외)
+    for (let i = 0; i < creatives.length && picked.length < SIDE_THUMB_COUNT; i++) {
+      const k = creatives[i];
+      if (k === selectedCreative) continue;
+      if (picked.includes(k)) continue;
+      picked.push(k);
+    }
+
+    // url 매핑
+    return picked
+      .map((k) => {
+        const row = rows.find((r) => getCreativeKey(r) === k);
+        const url = row ? getCreativePreviewUrl(row) : "";
+        return { creative: k, url };
+      })
+      .filter((x) => x.url); // ✅ 이미지 없는 건 제외(원하면 포함 가능)
+  }, [creatives, selectedCreative, rows]);
 
   // ✅ 여기서부터는 절대 안 터지게 safeCall로 감싼다
   const totals = useMemo(
@@ -351,26 +396,87 @@ export default function CreativeDetailSection({ rows }: Props) {
     <section className="w-full">
       <h2 className="text-xl font-semibold">소재 상세</h2>
 
-      {/* ✅ 최상단: 선택 소재 프리뷰 (이미지만 가운데 정렬, KPI 없음) */}
+      {/* ✅ 최상단: 선택 소재(좌측) + 5개 흑백 썸네일(우측) */}
       <section className="mt-4 rounded-2xl border border-gray-200 bg-white p-6">
-        <div className="font-semibold mb-3">선택 소재</div>
+        <div className="flex items-center justify-between gap-4">
+          <div className="font-semibold">선택 소재</div>
+          <div className="text-xs text-gray-500">
+            {selectedCreative ? `선택: ${selectedCreative}` : "선택 없음"}
+          </div>
+        </div>
 
         {!selectedCreative ? (
-          <div className="text-sm text-gray-500">
+          <div className="mt-3 text-sm text-gray-500">
             차트/표에서 소재를 클릭하면 이미지가 표시됩니다.
           </div>
-        ) : selectedPreviewUrl ? (
-          <div className="w-full flex justify-center">
-            <img
-              src={selectedPreviewUrl}
-              alt={selectedCreative}
-              className="w-full max-w-[560px] max-h-[320px] object-contain rounded-2xl border bg-white"
-              loading="lazy"
-            />
-          </div>
         ) : (
-          <div className="text-sm text-gray-500">
-            imagePath(또는 썸네일 URL) 데이터가 없어 이미지를 표시할 수 없습니다.
+          <div className="mt-4 grid grid-cols-1 gap-5 lg:grid-cols-[1fr_240px]">
+            {/* LEFT: 메인 프리뷰(선명/크게) */}
+           <div className="rounded-2xl bg-white p-3">
+            {selectedPreviewUrl ? (
+              <div className="w-full h-[420px] flex items-center justify-center overflow-hidden">
+                <img
+                  src={selectedPreviewUrl}
+                  alt={selectedCreative}
+                  className="max-w-[680px] max-h-[420px] object-contain rounded-xl"
+                  loading="lazy"
+                />
+              </div>
+            ) : (
+              <div className="text-sm text-gray-500 p-4">
+                imagePath(또는 썸네일 URL) 데이터가 없어 이미지를 표시할 수 없습니다.
+              </div>
+            )}
+          </div>
+
+            {/* RIGHT: 리스트 순서 기반 5썸네일 (흑백) */}
+            <div className="flex flex-col gap-3">
+              <div className="text-xs font-semibold text-gray-600">다음 소재 미리보기</div>
+
+              {sideThumbs.length === 0 ? (
+                <div className="rounded-xl border bg-gray-50 p-4 text-xs text-gray-600">
+                  표시할 썸네일이 없습니다. (thumbnail/imagePath 매핑 확인)
+                </div>
+              ) : (
+                sideThumbs.map((t) => {
+                  const active = t.creative === selectedCreative;
+                  return (
+                    <button
+                      key={t.creative}
+                      type="button"
+                      onClick={() => setSelectedCreative(t.creative)}
+                      className={[
+                        "w-full rounded-xl border bg-white p-2 text-left transition",
+                        "hover:border-orange-300 hover:bg-orange-50",
+                        active ? "border-orange-500 ring-2 ring-orange-200" : "border-gray-200",
+                      ].join(" ")}
+                      title={t.creative}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-[92px] h-[64px] rounded-lg overflow-hidden border bg-white flex items-center justify-center">
+                          <img
+                            src={t.url}
+                            alt={t.creative}
+                            className={[
+                              "w-full h-full object-cover",
+                              active ? "grayscale-0 opacity-100" : "grayscale opacity-80",
+                              "transition",
+                              "hover:grayscale-0 hover:opacity-100",
+                            ].join(" ")}
+                            loading="lazy"
+                          />
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-semibold text-gray-900 truncate">{t.creative}</div>
+                          <div className="text-[11px] text-gray-500">클릭해서 선택 소재로 변경</div>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
           </div>
         )}
       </section>

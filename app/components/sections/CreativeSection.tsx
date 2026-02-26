@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -104,19 +104,45 @@ const SORT_LABEL: Record<SortKey, string> = {
 };
 
 export default function CreativeSection({ rows }: Props) {
+  const [selectedSource, setSelectedSource] = useState<string | "all">("all");
+
   // =========================
   // ✅ 소스 필터 옵션 만들기
+  // - "소재(creative) 데이터가 있는 소스"만 노출
+  // - 판단 기준: 해당 소스 rows로 groupByCreative를 돌렸을 때
+  //   creative 값이 비어있지 않은 agg가 1개 이상 존재
   // =========================
   const sourceOptions = useMemo(() => {
-    const set = new Set<string>();
+    const srcSet = new Set<string>();
+
     for (const r of rows ?? []) {
       const s = String(r.source ?? r.platform ?? "").trim();
-      if (s) set.add(s);
+      if (s) srcSet.add(s);
     }
-    return ["all", ...Array.from(set).sort((a, b) => a.localeCompare(b, "ko"))];
+
+    const sources = Array.from(srcSet);
+    const validSources: string[] = [];
+
+    for (const s of sources) {
+      const srcRows = (rows ?? []).filter((r) => String(r.source ?? r.platform ?? "").trim() === s);
+      const agg = groupByCreative(srcRows) ?? [];
+      const hasCreative = agg.some((a: any) => String(a?.creative ?? "").trim().length > 0);
+      if (hasCreative) validSources.push(s);
+    }
+
+    validSources.sort((a, b) => a.localeCompare(b, "ko"));
+
+    // ✅ 옵션이 하나도 없더라도 "all"은 유지
+    return ["all", ...validSources];
   }, [rows]);
 
-  const [selectedSource, setSelectedSource] = useState<string | "all">("all");
+  // ✅ 현재 선택된 소스가 "유효 옵션"에서 사라지면 자동 보정
+  useEffect(() => {
+    if (selectedSource === "all") return;
+    if (!sourceOptions.includes(selectedSource)) {
+      setSelectedSource("all");
+    }
+  }, [sourceOptions, selectedSource]);
 
   // =========================
   // ✅ 소스 필터 적용
@@ -461,18 +487,16 @@ export default function CreativeSection({ rows }: Props) {
             </div>
           ) : (
             <div className="flex flex-col items-center gap-3">
-              {/* 소재명 (원하면 빼도 됨) */}
               <div className="text-sm font-semibold text-center">
                 {selectedCreative.creative}
               </div>
 
-              {/* ✅ 이미지: 가운데 정렬 + 최대 폭 제한 */}
               {selectedCreative.imagePath ? (
                 <div className="w-full flex justify-center">
                   <img
                     src={selectedCreative.imagePath}
                     alt={selectedCreative.creative}
-                    className="w-full max-w-[900px] rounded-xl border"
+                    className="w-full max-w-[680px] max-h-[360px] object-contain rounded-xl bg-white"
                   />
                 </div>
               ) : (

@@ -71,6 +71,9 @@ export default function HeaderBar(props: Props) {
   const toggleFilter = (k: Exclude<FilterKey, null>) =>
     setFilterKey((prev) => (prev === k ? null : k));
 
+  // ✅ 키워드 탭에서만 display ad 비활성
+  const disableDisplayChannel = tab === "keyword" || tab === "keywordDetail";
+
   return (
     <header className="sticky top-0 z-50 bg-white/95 backdrop-blur border-b">
       <div className="p-8 pb-4">
@@ -87,23 +90,36 @@ export default function HeaderBar(props: Props) {
             {/* LEFT: Filters */}
             <div className="relative inline-block">
               <div className="flex gap-2">
-                <FilterBtn active={filterKey === "month"} onClick={() => toggleFilter("month")}>
+                <FilterBtn
+                  active={filterKey === "month"}
+                  onClick={() => toggleFilter("month")}
+                >
                   월
                 </FilterBtn>
-                <FilterBtn active={filterKey === "week"} onClick={() => toggleFilter("week")}>
+                <FilterBtn
+                  active={filterKey === "week"}
+                  onClick={() => toggleFilter("week")}
+                >
                   주차
                 </FilterBtn>
-                <FilterBtn active={filterKey === "device"} onClick={() => toggleFilter("device")}>
+                <FilterBtn
+                  active={filterKey === "device"}
+                  onClick={() => toggleFilter("device")}
+                >
                   기기
                 </FilterBtn>
-                <FilterBtn active={filterKey === "channel"} onClick={() => toggleFilter("channel")}>
+                <FilterBtn
+                  active={filterKey === "channel"}
+                  onClick={() => toggleFilter("channel")}
+                >
                   채널
                 </FilterBtn>
               </div>
 
               {period && (
                 <div className="mt-3 mb-2 text-sm text-gray-600">
-                  기간: <span className="font-semibold text-gray-900">{period}</span>
+                  기간:{" "}
+                  <span className="font-semibold text-gray-900">{period}</span>
                 </div>
               )}
 
@@ -264,24 +280,40 @@ export default function HeaderBar(props: Props) {
                       전체
                     </button>
 
-                    {channelOptions.map((c) => (
-                      <button
-                        key={c}
-                        type="button"
-                        onClick={() => {
-                          setSelectedChannel(c);
-                          setFilterKey(null);
-                        }}
-                        className={[
-                          "px-3 py-1 rounded-lg border text-sm font-semibold transition",
-                          selectedChannel === c
-                            ? "bg-orange-700 text-white border-orange-700"
-                            : "bg-white text-orange-700 border-orange-300 hover:bg-orange-50",
-                        ].join(" ")}
-                      >
-                        {c}
-                      </button>
-                    ))}
+                    {channelOptions.map((c) => {
+                      const isDisplay =
+                        c === "display" ||
+                        c === ("display ad" as any) ||
+                        c === ("display_ad" as any);
+
+                      const disabled = disableDisplayChannel && isDisplay;
+
+                      return (
+                        <button
+                          key={c}
+                          type="button"
+                          disabled={disabled}
+                          onClick={() => {
+                            if (disabled) return; // ✅ 안전 가드
+                            setSelectedChannel(c);
+                            setFilterKey(null);
+                          }}
+                          title={disabled ? "키워드 탭에서는 display ad를 선택할 수 없습니다." : String(c)}
+                          className={[
+                            "px-3 py-1 rounded-lg border text-sm font-semibold transition",
+                            selectedChannel === c
+                              ? "bg-orange-700 text-white border-orange-700"
+                              : "bg-white text-orange-700 border-orange-300 hover:bg-orange-50",
+                            // ✅ disabled 스타일(회색 처리)
+                            disabled
+                              ? "opacity-40 cursor-not-allowed bg-gray-100 text-gray-400 border-gray-200 hover:bg-gray-100"
+                              : "",
+                          ].join(" ")}
+                        >
+                          {c}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
