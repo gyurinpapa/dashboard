@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import SignedImage from "@/app/components/uploads/SignedImage";
 
 type UploadCsvInfo = {
   id?: string; // uuid
@@ -76,11 +77,13 @@ export default function ReportDetailPage() {
   const [csvUploading, setCsvUploading] = useState(false);
   const [imgUploading, setImgUploading] = useState(false);
 
-  const [imgSignedMap, setImgSignedMap] = useState<Record<string, string>>({});
   const [shareUrl, setShareUrl] = useState<string>("");
 
   const [deletingMap, setDeletingMap] = useState<Record<string, boolean>>({});
   const [bulkDeleting, setBulkDeleting] = useState(false);
+
+  // ✅ accessToken은 페이지에서 1회 확보 후 재사용 (SignedImage에 전달)
+  const [accessToken, setAccessToken] = useState<string>("");
 
   // ✅ 선택된 이미지(path)
   const [selected, setSelected] = useState<Record<string, boolean>>({});
@@ -109,6 +112,7 @@ export default function ReportDetailPage() {
   async function refreshReport(nextMsg?: string) {
     try {
       const token = await getAccessTokenOrThrow();
+      setAccessToken(token);
 
       const res = await fetch(`/api/reports/${reportId}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -139,6 +143,7 @@ export default function ReportDetailPage() {
         setMsg("");
 
         const token = await getAccessTokenOrThrow();
+        setAccessToken(token);
 
         const res = await fetch(`/api/reports/${reportId}`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -178,6 +183,7 @@ export default function ReportDetailPage() {
     try {
       setMsg("");
       const token = await getAccessTokenOrThrow();
+      setAccessToken(token);
 
       const res = await fetch("/api/reports/publish", {
         method: "POST",
@@ -205,6 +211,7 @@ export default function ReportDetailPage() {
     try {
       setMsg("");
       const token = await getAccessTokenOrThrow();
+      setAccessToken(token);
 
       const res = await fetch("/api/reports/share/create", {
         method: "POST",
@@ -246,6 +253,7 @@ export default function ReportDetailPage() {
       setMsg("");
 
       const token = await getAccessTokenOrThrow();
+      setAccessToken(token);
 
       const form = new FormData();
       form.append("reportId", report.id);
@@ -274,6 +282,32 @@ export default function ReportDetailPage() {
     }
   }
 
+  // =========================
+  // ✅ signed-url helper (여기 페이지: 로그인 기반)
+  // =========================
+  async function createSignedUrl(path: string) {
+    const token = accessToken || (await getAccessTokenOrThrow());
+    if (!accessToken) setAccessToken(token);
+
+    const res = await fetch("/api/uploads/signed-url", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ path }),
+      cache: "no-store",
+    });
+
+    const json = await safeReadJson(res);
+    if (!res.ok || !json?.ok) {
+      console.warn("signed-url failed", res.status, json);
+      return null;
+    }
+
+    return (json.url as string) || (json.signedUrl as string) || null;
+  }
+
   // ✅ CSV open (signed-url) -> 새 탭
   async function openCsv(it: UploadCsvInfo) {
     if (!report) return;
@@ -283,27 +317,13 @@ export default function ReportDetailPage() {
       setMsg("");
       setCsvBusyMap((p) => ({ ...p, [it.path]: true }));
 
-      const token = await getAccessTokenOrThrow();
-      const res = await fetch("/api/uploads/signed-url", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          reportId: report.id,
-          bucket: "report_uploads",
-          path: it.path,
-        }),
-      });
-
-      const json = await safeReadJson(res);
-      if (!res.ok || !json?.ok || !json?.url) {
-        setMsg(json?.error || "CSV signed-url 생성 실패");
+      const url = await createSignedUrl(it.path);
+      if (!url) {
+        setMsg("CSV signed-url 생성 실패");
         return;
       }
 
-      window.open(String(json.url), "_blank", "noopener,noreferrer");
+      window.open(String(url), "_blank", "noopener,noreferrer");
     } catch (e: any) {
       setMsg(e?.message || "CSV 열기 실패");
     } finally {
@@ -331,7 +351,9 @@ export default function ReportDetailPage() {
         return { ...prev, meta };
       });
 
-      const token = await getAccessTokenOrThrow();
+      const token = accessToken || (await getAccessTokenOrThrow());
+      if (!accessToken) setAccessToken(token);
+
       const res = await fetch("/api/uploads/csv/delete", {
         method: "POST",
         headers: {
@@ -369,7 +391,8 @@ export default function ReportDetailPage() {
       setImgUploading(true);
       setMsg("");
 
-      const token = await getAccessTokenOrThrow();
+      const token = accessToken || (await getAccessTokenOrThrow());
+      if (!accessToken) setAccessToken(token);
 
       const form = new FormData();
       form.append("report_id", report.id);
@@ -388,8 +411,6 @@ export default function ReportDetailPage() {
       }
 
       const count = Array.isArray(json.uploaded) ? json.uploaded.length : 0;
-
-      setImgSignedMap({});
       await refreshReport(`이미지 업로드 완료 (${count}개)`);
     } finally {
       setImgUploading(false);
@@ -413,16 +434,8 @@ export default function ReportDetailPage() {
       setReport((prev) => {
         if (!prev) return prev;
         const meta = ensureUpload(prev.meta);
-        meta.upload.images = (meta.upload.images || []).filter(
-          (x: any) => String(x?.path || "") !== it.path
-        );
+        meta.upload.images = (meta.upload.images || []).filter((x: any) => String(x?.path || "") !== it.path);
         return { ...prev, meta };
-      });
-
-      setImgSignedMap((prev) => {
-        const next = { ...prev };
-        delete next[it.path];
-        return next;
       });
 
       setSelected((prev) => {
@@ -431,7 +444,8 @@ export default function ReportDetailPage() {
         return next;
       });
 
-      const token = await getAccessTokenOrThrow();
+      const token = accessToken || (await getAccessTokenOrThrow());
+      if (!accessToken) setAccessToken(token);
 
       const res = await fetch("/api/uploads/images/delete", {
         method: "POST",
@@ -484,23 +498,15 @@ export default function ReportDetailPage() {
         if (!prev) return prev;
         const meta = ensureUpload(prev.meta);
         const removeSet = new Set(paths);
-        meta.upload.images = (meta.upload.images || []).filter(
-          (x: any) => !removeSet.has(String(x?.path || ""))
-        );
+        meta.upload.images = (meta.upload.images || []).filter((x: any) => !removeSet.has(String(x?.path || "")));
         return { ...prev, meta };
-      });
-
-      // signed map에서 제거
-      setImgSignedMap((prev) => {
-        const next = { ...prev };
-        for (const p of paths) delete next[p];
-        return next;
       });
 
       // 선택 초기화
       setSelected({});
 
-      const token = await getAccessTokenOrThrow();
+      const token = accessToken || (await getAccessTokenOrThrow());
+      if (!accessToken) setAccessToken(token);
 
       const res = await fetch("/api/uploads/images/delete-many", {
         method: "POST",
@@ -528,50 +534,6 @@ export default function ReportDetailPage() {
       setBulkDeleting(false);
     }
   }
-
-  // =========================
-  // signed-url (authed) for images
-  // =========================
-  async function getSignedUrlAuthed(reportId: string, bucket: string, path: string) {
-    const token = await getAccessTokenOrThrow();
-
-    const res = await fetch("/api/uploads/signed-url", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ reportId, bucket, path }),
-    });
-
-    const json = await safeReadJson(res);
-    if (!res.ok || !json?.ok) {
-      console.warn("signed-url failed", res.status, json);
-      return null;
-    }
-    return json.url as string;
-  }
-
-  useEffect(() => {
-    let alive = true;
-
-    (async () => {
-      if (!report) return;
-
-      const need = images.filter((it) => !imgSignedMap[it.path]);
-      if (!need.length) return;
-
-      for (const it of need) {
-        const url = await getSignedUrlAuthed(report.id, it.bucket, it.path);
-        if (!alive) return;
-        if (url) setImgSignedMap((prev) => ({ ...prev, [it.path]: url }));
-      }
-    })();
-
-    return () => {
-      alive = false;
-    };
-  }, [report, images, imgSignedMap]);
 
   // ✅ images가 바뀌면, selected에서 존재하지 않는 path 정리(안전)
   useEffect(() => {
@@ -604,8 +566,7 @@ export default function ReportDetailPage() {
   const csvList: UploadCsvInfo[] = (meta.upload?.csv || []).slice();
 
   const title = report.title || "Report";
-  const statusLabel =
-    report.status === "draft" ? "Draft" : report.status === "ready" ? "Ready" : "Archived";
+  const statusLabel = report.status === "draft" ? "Draft" : report.status === "ready" ? "Ready" : "Archived";
 
   const allSelected = images.length > 0 && selectedPaths.length === images.length;
 
@@ -792,9 +753,7 @@ export default function ReportDetailPage() {
             })}
           </div>
         ) : (
-          <div style={{ marginTop: 10, fontSize: 13, opacity: 0.8 }}>
-            아직 CSV가 업로드되지 않았습니다.
-          </div>
+          <div style={{ marginTop: 10, fontSize: 13, opacity: 0.8 }}>아직 CSV가 업로드되지 않았습니다.</div>
         )}
       </section>
 
@@ -878,7 +837,6 @@ export default function ReportDetailPage() {
               .slice()
               .reverse()
               .map((it) => {
-                const url = imgSignedMap[it.path];
                 const deleting = !!deletingMap[it.path] || bulkDeleting;
                 const checked = !!selected[it.path];
 
@@ -894,45 +852,26 @@ export default function ReportDetailPage() {
                     }}
                   >
                     <div style={{ position: "relative" }}>
+                      {/* ✅ 이미지 클릭 시 "새 탭" 유지: 클릭 순간에만 signed-url 1회 발급 */}
                       <a
-                        href={url || "#"}
-                        target="_blank"
-                        rel="noreferrer"
+                        href="#"
+                        onClick={async (e) => {
+                          e.preventDefault();
+                          if (deleting) return;
+                          const url = await createSignedUrl(it.path);
+                          if (!url) return;
+                          window.open(String(url), "_blank", "noopener,noreferrer");
+                        }}
                         style={{
                           display: "block",
                           width: "100%",
                           aspectRatio: "4 / 3",
                           background: "#f5f5f5",
-                          pointerEvents: url && !deleting ? "auto" : "none",
+                          pointerEvents: !deleting ? "auto" : "none",
                         }}
                         title="새 탭에서 열기"
                       >
-                        {url ? (
-                          <img
-                            src={url}
-                            alt={it.name}
-                            style={{
-                              width: "100%",
-                              height: "100%",
-                              objectFit: "cover",
-                              display: "block",
-                            }}
-                          />
-                        ) : (
-                          <div
-                            style={{
-                              width: "100%",
-                              height: "100%",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              fontSize: 12,
-                              opacity: 0.7,
-                            }}
-                          >
-                            loading...
-                          </div>
-                        )}
+                        <SignedImage path={it.path} alt={it.name} accessToken={accessToken} />
                       </a>
 
                       {/* ✅ 선택 체크박스 */}
@@ -1000,18 +939,14 @@ export default function ReportDetailPage() {
                       >
                         {it.name}
                       </div>
-                      <div style={{ fontSize: 12, opacity: 0.75 }}>
-                        {(it.size || 0).toLocaleString()} bytes
-                      </div>
+                      <div style={{ fontSize: 12, opacity: 0.75 }}>{(it.size || 0).toLocaleString()} bytes</div>
                     </div>
                   </div>
                 );
               })}
           </div>
         ) : (
-          <div style={{ marginTop: 10, fontSize: 13, opacity: 0.8 }}>
-            업로드된 이미지가 없습니다.
-          </div>
+          <div style={{ marginTop: 10, fontSize: 13, opacity: 0.8 }}>업로드된 이미지가 없습니다.</div>
         )}
       </section>
     </div>
