@@ -107,7 +107,7 @@ export default function ShareReportPage() {
   return (
     <main className="p-6" style={{ maxWidth: 1400, margin: "0 auto" }}>
       {/* ✅ shareToken을 그대로 전달 (하위가 /api/uploads/signed-url 호출 시 body에 shareToken 넣도록 하면 됨) */}
-      <CommerceDashboard report={report as any} shareToken={token as any} />
+      <CommerceDashboard />
     </main>
   );
 }

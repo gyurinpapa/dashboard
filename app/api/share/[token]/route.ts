@@ -56,10 +56,18 @@ export async function GET(_req: Request, ctx: Ctx) {
   if (error) return jsonError(500, error.message || "DB error");
   if (!report) return jsonError(404, "Invalid share token");
 
-  if (report.status !== "ready") {
-    // draft/기타 상태는 공유로 노출 금지
-    return jsonError(403, "Report is not published");
-  }
+  // ✅ TS 타입가드 추가 (report.status 접근 전에)
+  if (!report || typeof report !== "object" || !("status" in report)) {
+  return jsonError(404, "Invalid share token");
+}
+
+  const status = (report as any)?.status;
+if (!status) return jsonError(404, "Invalid share token");
+
+if (status !== "ready") {
+  // draft/기타 상태는 공유로 노출 금지
+  return jsonError(403, "Report is not published");
+}
 
   return NextResponse.json({ ok: true, report }, { status: 200 });
 }

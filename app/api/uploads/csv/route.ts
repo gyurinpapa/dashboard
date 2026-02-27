@@ -65,11 +65,14 @@ async function getUserId(req: Request, supabaseAdmin: ReturnType<typeof getSupab
     return { ok: true as const, userId: data.user.id };
   }
 
-  const auth = await sbAuth();
-  if (!auth?.user?.id) {
+    const sb = await sbAuth();
+  const { data: { user }, error } = await sb.auth.getUser();
+
+  if (error || !user?.id) {
     return { ok: false as const, status: 401, message: "Unauthorized (no session)" };
   }
-  return { ok: true as const, userId: auth.user.id };
+
+  return { ok: true as const, userId: user.id };
 }
 
 async function assertCanAccessReport(params: {

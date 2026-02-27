@@ -23,12 +23,13 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-// Bearer 우선, 없으면 쿠키 fallback
+// Bearer 우선, 없으면 쿠키(session) fallback
 async function getUserId(req: Request, supabaseAdmin: ReturnType<typeof getSupabaseAdmin>) {
   const authz = req.headers.get("authorization") || req.headers.get("Authorization") || "";
   const m = authz.match(/^Bearer\s+(.+)$/i);
   const bearer = m?.[1]?.trim();
 
+  // 1) Bearer 토큰이 있으면 admin으로 검증
   if (bearer) {
     const { data, error } = await supabaseAdmin.auth.getUser(bearer);
     if (error || !data?.user?.id) {
@@ -37,9 +38,15 @@ async function getUserId(req: Request, supabaseAdmin: ReturnType<typeof getSupab
     return { ok: true as const, userId: data.user.id };
   }
 
-  const auth = await sbAuth();
-  if (!auth?.user?.id) return { ok: false as const, status: 401, message: "Unauthorized (no session)" };
-  return { ok: true as const, userId: auth.user.id };
+  // 2) 없으면 쿠키 기반 서버 세션으로 user 확인
+  const sb = await sbAuth();
+  const { data, error } = await sb.auth.getUser();
+
+  if (error || !data?.user?.id) {
+    return { ok: false as const, status: 401, message: "Unauthorized (no session)" };
+  }
+
+  return { ok: true as const, userId: data.user.id };
 }
 
 async function assertCanAccessReport(params: {
@@ -113,7 +120,6 @@ export async function POST(req: Request) {
   const upload = safeObj(meta.upload);
 
   const csvAny = (upload as any).csv;
-
   const csvList: any[] = Array.isArray(csvAny) ? csvAny : csvAny ? [csvAny] : [];
 
   // path가 meta.upload.csv 안에 없으면 차단
