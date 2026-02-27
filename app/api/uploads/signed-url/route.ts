@@ -75,15 +75,35 @@ export async function POST(req: Request) {
     const meta = safeObj(report.meta);
     const upload = safeObj(meta.upload);
 
-    const csv = safeObj(upload.csv);
-    const csvPath = csv?.path ? String(csv.path) : "";
+    /**
+     * ✅ CSV 허용 경로 계산 (로직 유지 + 호환성만 강화)
+     * - 기존: upload.csv가 "객체"일 때 csv.path
+     * - 표준: upload.csv가 "배열"일 때 각 item.path
+     */
+    const csvPaths: string[] = [];
 
-    const images = Array.isArray(upload.images) ? upload.images : [];
+    const csvAny = (upload as any).csv;
+
+    // (1) 표준: 배열
+    if (Array.isArray(csvAny)) {
+      for (const it of csvAny) {
+        const p = it?.path ? String(it.path) : "";
+        if (p) csvPaths.push(p);
+      }
+    } else {
+      // (2) 레거시: 객체
+      const csvObj = safeObj(csvAny);
+      const p = (csvObj as any)?.path ? String((csvObj as any).path) : "";
+      if (p) csvPaths.push(p);
+    }
+
+    // images
+    const images = Array.isArray((upload as any).images) ? (upload as any).images : [];
     const imagePaths = images
       .map((it: any) => (it?.path ? String(it.path) : ""))
       .filter(Boolean);
 
-    const allowed = path === csvPath || imagePaths.includes(path);
+    const allowed = csvPaths.includes(path) || imagePaths.includes(path);
     if (!allowed) return jsonError(403, "Path not allowed");
 
     // ✅ signed url 생성

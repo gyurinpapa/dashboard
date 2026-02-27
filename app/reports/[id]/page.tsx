@@ -1,16 +1,18 @@
 // app/reports/[id]/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 
 type UploadCsvInfo = {
-  bucket: string;
-  path: string;
+  id?: string; // uuid
   name: string;
   size: number;
-  uploaded_at: string;
+  contentType?: string;
+  path: string;
+  created_at?: string;
+  uploaded_at?: string;
 };
 
 type UploadImageInfo = {
@@ -45,6 +47,7 @@ function ensureUpload(meta: any) {
   const m = meta && typeof meta === "object" ? meta : {};
   if (!m.upload || typeof m.upload !== "object") m.upload = {};
   if (!Array.isArray(m.upload.images)) m.upload.images = [];
+  if (!Array.isArray(m.upload.csv)) m.upload.csv = [];
   return m;
 }
 
@@ -53,6 +56,13 @@ async function getAccessTokenOrThrow() {
   const token = data?.session?.access_token;
   if (!token) throw new Error("로그인이 필요합니다.");
   return token;
+}
+
+function fmtTs(iso?: string) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toISOString().replace("T", " ").slice(0, 19);
 }
 
 export default function ReportDetailPage() {
@@ -74,6 +84,12 @@ export default function ReportDetailPage() {
 
   // ✅ 선택된 이미지(path)
   const [selected, setSelected] = useState<Record<string, boolean>>({});
+
+  // ✅ 같은 파일 재선택 가능하게 (CSV)
+  const csvInputRef = useRef<HTMLInputElement | null>(null);
+
+  // ✅ CSV open/delete 상태
+  const [csvBusyMap, setCsvBusyMap] = useState<Record<string, boolean>>({}); // key=path
 
   const images: UploadImageInfo[] = useMemo(() => {
     if (!report) return [];
@@ -220,7 +236,7 @@ export default function ReportDetailPage() {
   }
 
   // =========================
-  // CSV upload
+  // ✅ CSV upload (Bearer)
   // =========================
   async function onUploadCsv(file: File | null) {
     if (!file || !report) return;
@@ -232,7 +248,7 @@ export default function ReportDetailPage() {
       const token = await getAccessTokenOrThrow();
 
       const form = new FormData();
-      form.append("report_id", report.id);
+      form.append("reportId", report.id);
       form.append("file", file);
 
       const res = await fetch("/api/uploads/csv", {
@@ -243,13 +259,103 @@ export default function ReportDetailPage() {
 
       const json = await safeReadJson(res);
       if (!res.ok || !json?.ok) {
-        setMsg(json?.error || "CSV upload failed");
+        setMsg(json?.error || `CSV upload failed (${res.status})`);
         return;
       }
 
+      // 같은 파일 재선택 가능
+      if (csvInputRef.current) csvInputRef.current.value = "";
+
       await refreshReport("CSV 업로드 완료");
+    } catch (e: any) {
+      setMsg(e?.message || "CSV 업로드 실패");
     } finally {
       setCsvUploading(false);
+    }
+  }
+
+  // ✅ CSV open (signed-url) -> 새 탭
+  async function openCsv(it: UploadCsvInfo) {
+    if (!report) return;
+    if (!it?.path) return;
+
+    try {
+      setMsg("");
+      setCsvBusyMap((p) => ({ ...p, [it.path]: true }));
+
+      const token = await getAccessTokenOrThrow();
+      const res = await fetch("/api/uploads/signed-url", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          reportId: report.id,
+          bucket: "report_uploads",
+          path: it.path,
+        }),
+      });
+
+      const json = await safeReadJson(res);
+      if (!res.ok || !json?.ok || !json?.url) {
+        setMsg(json?.error || "CSV signed-url 생성 실패");
+        return;
+      }
+
+      window.open(String(json.url), "_blank", "noopener,noreferrer");
+    } catch (e: any) {
+      setMsg(e?.message || "CSV 열기 실패");
+    } finally {
+      setCsvBusyMap((p) => ({ ...p, [it.path]: false }));
+    }
+  }
+
+  // ✅ CSV delete (storage + meta)
+  async function deleteCsv(it: UploadCsvInfo) {
+    if (!report) return;
+    if (!it?.path) return;
+
+    const ok = window.confirm(`CSV를 삭제할까요?\n\n- ${it.name}`);
+    if (!ok) return;
+
+    try {
+      setMsg("");
+      setCsvBusyMap((p) => ({ ...p, [it.path]: true }));
+
+      // optimistic remove from UI
+      setReport((prev) => {
+        if (!prev) return prev;
+        const meta = ensureUpload(prev.meta);
+        meta.upload.csv = (meta.upload.csv || []).filter((x: any) => String(x?.path || "") !== it.path);
+        return { ...prev, meta };
+      });
+
+      const token = await getAccessTokenOrThrow();
+      const res = await fetch("/api/uploads/csv/delete", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          reportId: report.id,
+          bucket: "report_uploads",
+          path: it.path,
+        }),
+      });
+
+      const json = await safeReadJson(res);
+      if (!res.ok || !json?.ok) {
+        await refreshReport(json?.error || "CSV 삭제 실패");
+        return;
+      }
+
+      await refreshReport("CSV 삭제 완료");
+    } catch (e: any) {
+      await refreshReport(e?.message || "CSV 삭제 실패");
+    } finally {
+      setCsvBusyMap((p) => ({ ...p, [it.path]: false }));
     }
   }
 
@@ -291,7 +397,7 @@ export default function ReportDetailPage() {
   }
 
   // =========================
-  // Single delete (existing)
+  // Single delete
   // =========================
   async function onDeleteImage(it: UploadImageInfo) {
     if (!report) return;
@@ -396,7 +502,6 @@ export default function ReportDetailPage() {
 
       const token = await getAccessTokenOrThrow();
 
-      // ⚠️ bucket은 “report_uploads”로 통일(현재 구조)
       const res = await fetch("/api/uploads/images/delete-many", {
         method: "POST",
         headers: {
@@ -425,7 +530,7 @@ export default function ReportDetailPage() {
   }
 
   // =========================
-  // signed-url (authed)
+  // signed-url (authed) for images
   // =========================
   async function getSignedUrlAuthed(reportId: string, bucket: string, path: string) {
     const token = await getAccessTokenOrThrow();
@@ -466,7 +571,7 @@ export default function ReportDetailPage() {
     return () => {
       alive = false;
     };
-  }, [report, images]);
+  }, [report, images, imgSignedMap]);
 
   // ✅ images가 바뀌면, selected에서 존재하지 않는 path 정리(안전)
   useEffect(() => {
@@ -494,7 +599,9 @@ export default function ReportDetailPage() {
   }
 
   const meta = ensureUpload(report.meta);
-  const csv: UploadCsvInfo | null = meta.upload?.csv || null;
+
+  // CSV list (최신 먼저)
+  const csvList: UploadCsvInfo[] = (meta.upload?.csv || []).slice();
 
   const title = report.title || "Report";
   const statusLabel =
@@ -586,7 +693,7 @@ export default function ReportDetailPage() {
         </div>
       ) : null}
 
-      {/* CSV 업로드 */}
+      {/* CSV 업로드 + 리스트 */}
       <section
         style={{
           border: "1px solid #e5e5e5",
@@ -598,21 +705,97 @@ export default function ReportDetailPage() {
         <div style={{ fontWeight: 800, marginBottom: 8 }}>CSV 업로드</div>
 
         <input
+          ref={csvInputRef}
           type="file"
           accept=".csv,text/csv"
           disabled={csvUploading}
           onChange={(e) => onUploadCsv(e.target.files?.[0] || null)}
         />
 
-        <div style={{ marginTop: 10, fontSize: 13, opacity: 0.8 }}>
-          {csv ? (
-            <>
-              업로드됨: <b>{csv.name}</b> ({csv.size.toLocaleString()} bytes)
-            </>
-          ) : (
-            <>아직 CSV가 업로드되지 않았습니다.</>
-          )}
+        <div style={{ marginTop: 10, fontSize: 13, opacity: 0.85 }}>
+          {csvUploading ? "업로드 중..." : `총 ${csvList.length}개`}
         </div>
+
+        {csvList.length ? (
+          <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+            {csvList.map((it) => {
+              const busy = !!csvBusyMap[it.path];
+              return (
+                <div
+                  key={it.path}
+                  style={{
+                    border: "1px solid #eee",
+                    borderRadius: 12,
+                    padding: 12,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 10,
+                    opacity: busy ? 0.75 : 1,
+                    background: "#fff",
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontWeight: 800,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                      title={it.name}
+                    >
+                      {it.name}
+                    </div>
+                    <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
+                      {(it.size || 0).toLocaleString()} bytes{" "}
+                      {it.created_at || it.uploaded_at ? `· ${fmtTs(it.created_at || it.uploaded_at)}` : ""}
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                    <button
+                      onClick={() => openCsv(it)}
+                      disabled={busy}
+                      style={{
+                        padding: "8px 10px",
+                        borderRadius: 10,
+                        border: "1px solid #ddd",
+                        background: "#111",
+                        color: "#fff",
+                        cursor: busy ? "not-allowed" : "pointer",
+                        fontWeight: 800,
+                      }}
+                      title="새 탭에서 열기"
+                    >
+                      열기
+                    </button>
+
+                    <button
+                      onClick={() => deleteCsv(it)}
+                      disabled={busy}
+                      style={{
+                        padding: "8px 10px",
+                        borderRadius: 10,
+                        border: "1px solid #ddd",
+                        background: "#fff",
+                        cursor: busy ? "not-allowed" : "pointer",
+                        fontWeight: 800,
+                      }}
+                      title="삭제"
+                    >
+                      삭제
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div style={{ marginTop: 10, fontSize: 13, opacity: 0.8 }}>
+            아직 CSV가 업로드되지 않았습니다.
+          </div>
+        )}
       </section>
 
       {/* 이미지 업로드 */}
