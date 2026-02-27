@@ -1,3 +1,4 @@
+// app/report-builder/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -102,7 +103,9 @@ export default function ReportBuilderPage() {
 
       if (error || !wm) {
         setWorkspaceId(null);
-        setMsg(`workspace_members 조회 실패: ${error?.message ?? "소속 workspace 없음"}`);
+        setMsg(
+          `workspace_members 조회 실패: ${error?.message ?? "소속 workspace 없음"}`
+        );
         return;
       }
       setWorkspaceId(wm.workspace_id);
@@ -137,9 +140,12 @@ export default function ReportBuilderPage() {
     setLoadingReports(true);
     setMsg("");
 
-    const res = await fetch(`/api/reports/list?workspace_id=${workspaceId}&limit=50`, {
+    const res = await fetch(
+      `/api/reports/list?workspace_id=${workspaceId}&limit=50`,
+      {
         credentials: "include", // ✅ 추가
-        });
+      }
+    );
     const json = await safeReadJson(res);
 
     if ((json as any).__nonjson) {
@@ -152,7 +158,9 @@ export default function ReportBuilderPage() {
     }
 
     if (!res.ok || !(json as any).ok) {
-      setMsg(`목록 조회 실패(${res.status}): ${(json as any).error ?? "unknown error"}`);
+      setMsg(
+        `목록 조회 실패(${res.status}): ${(json as any).error ?? "unknown error"}`
+      );
       setLoadingReports(false);
       return;
     }
@@ -181,13 +189,9 @@ export default function ReportBuilderPage() {
         workspace_id: workspaceId,
         report_type_id: type.id,
         title,
-        // period_start / period_end를 null로 보내도 되지만,
-        // 이제 create route에서 자동 세팅(가능하면) 하니까 생략해도 OK
-        // period_start: null,
-        // period_end: null,
         meta: {},
         status: "draft",
-        }),
+      }),
     });
 
     const json = await safeReadJson(res);
@@ -202,7 +206,9 @@ export default function ReportBuilderPage() {
     }
 
     if (!res.ok || !(json as any).ok) {
-      setMsg(`report 생성 실패(${res.status}): ${(json as any).error ?? "unknown error"}`);
+      setMsg(
+        `report 생성 실패(${res.status}): ${(json as any).error ?? "unknown error"}`
+      );
       setCreating(false);
       return;
     }
@@ -222,157 +228,178 @@ export default function ReportBuilderPage() {
     router.push(`/reports/${reportId}`);
   }
 
+  const containerStyle: React.CSSProperties = {
+    width: "100%",
+    maxWidth: 1000,
+    padding: 24,
+  };
+
   return (
-    <main style={{ padding: 24, maxWidth: 1000 }}>
-      <h1 style={{ fontSize: 28, fontWeight: 800 }}>Report Builder (테스트)</h1>
-
-      <div
-        style={{
-          marginTop: 16,
-          padding: 12,
-          border: "1px solid #ddd",
-          borderRadius: 12,
-        }}
-      >
-        <div style={{ fontWeight: 600, marginBottom: 8 }}>
-          로그인 상태: {userId ? "로그인됨" : "로그아웃"}
-        </div>
-
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <input
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="email"
-            style={{
-              padding: 8,
-              border: "1px solid #ccc",
-              borderRadius: 8,
-              minWidth: 260,
-            }}
-          />
-          <input
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="password"
-            type="password"
-            style={{
-              padding: 8,
-              border: "1px solid #ccc",
-              borderRadius: 8,
-              minWidth: 220,
-            }}
-          />
-          <button onClick={signIn} style={{ padding: "8px 12px" }}>
-            로그인
-          </button>
-          <button onClick={signOut} style={{ padding: "8px 12px" }}>
-            로그아웃
-          </button>
-        </div>
-
-        <div style={{ marginTop: 10, fontSize: 13, opacity: 0.8 }}>
-          workspace_id: {workspaceId ?? "(없음)"}
-        </div>
-
-        <div style={{ marginTop: 10, display: "flex", gap: 10 }}>
-          <button onClick={fetchReports} style={{ padding: "8px 12px" }} disabled={!workspaceId}>
-            reports list test
-          </button>
-        </div>
-
-        {msg && (
-          <pre
-            style={{
-              marginTop: 10,
-              whiteSpace: "pre-wrap",
-              background: "#fafafa",
-              border: "1px solid #eee",
-              padding: 10,
-              borderRadius: 10,
-              fontSize: 13,
-            }}
-          >
-            {msg}
-          </pre>
-        )}
-      </div>
-
-      <section style={{ marginTop: 18 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 800 }}>보고서 유형 선택</h2>
-        {!userId && <p style={{ marginTop: 8 }}>먼저 로그인하면 유형이 보여.</p>}
-        {userId && loadingTypes && <p style={{ marginTop: 8 }}>불러오는 중...</p>}
+    <main style={{ display: "flex", justifyContent: "center" }}>
+      <div style={containerStyle}>
+        <h1 style={{ fontSize: 28, fontWeight: 800 }}>Report Builder</h1>
 
         <div
           style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 12,
-            marginTop: 12,
+            marginTop: 16,
+            padding: 12,
+            border: "1px solid #ddd",
+            borderRadius: 12,
           }}
         >
-          {types.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => createReport(t)}
-              disabled={!workspaceId || creating}
+          <div style={{ fontWeight: 600, marginBottom: 8 }}>
+            로그인 상태: {userId ? "로그인됨" : "로그아웃"}
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="email"
               style={{
-                textAlign: "left",
-                padding: 14,
-                border: "1px solid #ddd",
-                borderRadius: 14,
-                background: "white",
-                cursor: creating ? "wait" : "pointer",
-                opacity: !workspaceId || creating ? 0.6 : 1,
+                padding: 8,
+                border: "1px solid #ccc",
+                borderRadius: 8,
+                minWidth: 260,
               }}
-            >
-              <div style={{ fontWeight: 800, fontSize: 16 }}>{t.name}</div>
-              <div style={{ opacity: 0.7, marginTop: 4 }}>key: {t.key}</div>
-              <div style={{ marginTop: 10, fontSize: 12, opacity: 0.7 }}>
-                클릭하면 draft report 1개 생성(API 사용)
-              </div>
-              {creating && (
-                <div style={{ marginTop: 10, fontSize: 12, opacity: 0.7 }}>생성 중...</div>
-              )}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <section style={{ marginTop: 22 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 800 }}>내 리포트 목록</h2>
-        <div style={{ marginTop: 8, opacity: 0.7, fontSize: 13 }}>
-          (reports list test 버튼 누르면 로드)
-        </div>
-
-        {loadingReports && <p style={{ marginTop: 10 }}>불러오는 중...</p>}
-
-        {!loadingReports && reports.length === 0 && (
-          <p style={{ marginTop: 10, opacity: 0.7 }}>
-            아직 목록이 비었어. (list 버튼을 눌러 로드해봐)
-          </p>
-        )}
-
-        <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
-          {reports.map((r) => (
-            <button
-              key={r.id}
-              onClick={() => router.push(`/reports/${r.id}`)}
+            />
+            <input
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="password"
+              type="password"
               style={{
-                textAlign: "left",
-                padding: 14,
+                padding: 8,
+                border: "1px solid #ccc",
+                borderRadius: 8,
+                minWidth: 220,
+              }}
+            />
+            <button onClick={signIn} style={{ padding: "8px 12px" }}>
+              로그인
+            </button>
+            <button onClick={signOut} style={{ padding: "8px 12px" }}>
+              로그아웃
+            </button>
+          </div>
+
+          <div style={{ marginTop: 10, fontSize: 13, opacity: 0.8 }}>
+            workspace_id: {workspaceId ?? "(없음)"}
+          </div>
+
+          <div style={{ marginTop: 10, display: "flex", gap: 10 }}>
+            <button
+              onClick={fetchReports}
+              style={{ padding: "8px 12px" }}
+              disabled={!workspaceId}
+            >
+              reports list test
+            </button>
+          </div>
+
+          {msg && (
+            <pre
+              style={{
+                marginTop: 10,
+                whiteSpace: "pre-wrap",
+                background: "#fafafa",
                 border: "1px solid #eee",
-                borderRadius: 14,
-                background: "white",
+                padding: 10,
+                borderRadius: 10,
+                fontSize: 13,
               }}
             >
-              <div style={{ fontWeight: 800 }}>{r.title}</div>
-              <div style={{ marginTop: 6, fontSize: 13, opacity: 0.75 }}>
-                status: {r.status} · created: {r.created_at ?? "-"}
-              </div>
-            </button>
-          ))}
+              {msg}
+            </pre>
+          )}
         </div>
-      </section>
+
+        <section style={{ marginTop: 18 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 800 }}>보고서 유형 선택</h2>
+          {!userId && (
+            <p style={{ marginTop: 8 }}>먼저 로그인하면 유형이 보입니다.</p>
+          )}
+          {userId && loadingTypes && <p style={{ marginTop: 8 }}>불러오는 중...</p>}
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: 12,
+              marginTop: 12,
+            }}
+          >
+            {types.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => createReport(t)}
+                disabled={!workspaceId || creating}
+                style={{
+                  textAlign: "left",
+                  padding: 14,
+                  border: "1px solid #ddd",
+                  borderRadius: 14,
+                  background: "white",
+                  cursor: creating ? "wait" : "pointer",
+                  opacity: !workspaceId || creating ? 0.6 : 1,
+                }}
+              >
+                <div style={{ fontWeight: 800, fontSize: 16 }}>{t.name}</div>
+                <div style={{ opacity: 0.7, marginTop: 4 }}>key: {t.key}</div>
+                <div style={{ marginTop: 10, fontSize: 12, opacity: 0.7 }}>
+                  클릭하면 draft report 1개 생성(API 사용)
+                </div>
+                {creating && (
+                  <div style={{ marginTop: 10, fontSize: 12, opacity: 0.7 }}>
+                    생성 중...
+                  </div>
+                )}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section style={{ marginTop: 22 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 800 }}>내 리포트 목록</h2>
+          <div style={{ marginTop: 8, opacity: 0.7, fontSize: 13 }}>
+            (reports list test 버튼 누르면 로드)
+          </div>
+
+          {loadingReports && <p style={{ marginTop: 10 }}>불러오는 중...</p>}
+
+          {!loadingReports && reports.length === 0 && (
+            <p style={{ marginTop: 10, opacity: 0.7 }}>아직 목록이 없습니다.</p>
+          )}
+
+          <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+            {reports.map((r) => (
+              <button
+                key={r.id}
+                onClick={() => router.push(`/reports/${r.id}`)}
+                style={{
+                  textAlign: "left",
+                  padding: 14,
+                  border: "1px solid #eee",
+                  borderRadius: 14,
+                  background: "white",
+                }}
+              >
+                <div style={{ fontWeight: 800 }}>{r.title}</div>
+                <div style={{ marginTop: 6, fontSize: 13, opacity: 0.75 }}>
+                  status: {r.status} · created: {r.created_at ?? "-"}
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
+      </div>
     </main>
   );
 }
