@@ -1,477 +1,836 @@
+// app/reports/[id]/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 
-import CommerceReportEditor from "@/components/reports/CommerceReportEditor";
-import CommerceDashboard from "@/components/dashboard/CommerceDashboard";
+type UploadCsvInfo = {
+  bucket: string;
+  path: string;
+  name: string;
+  size: number;
+  uploaded_at: string;
+};
 
-type ChannelKey = "search" | "display";
+type UploadImageInfo = {
+  bucket: string;
+  path: string;
+  name: string;
+  size: number;
+  uploaded_at: string;
+};
 
 type ReportRow = {
   id: string;
   title: string;
-  status: string;
-  created_at: string;
-  updated_at?: string;
-  workspace_id: string;
-  created_by: string;
-  report_type_id: string;
+  status: "draft" | "ready" | "archived";
   meta: any;
-  period_start: string | null;
-  period_end: string | null;
+  share_token?: string | null;
+  created_at?: string;
+  updated_at?: string;
 };
 
-type ReportTypeRow = {
-  id: string;
-  key: string;
-  name: string;
-};
-
-function fmtDT(iso?: string) {
-  if (!iso) return "-";
-  const d = new Date(iso);
-  return isFinite(d.getTime()) ? d.toLocaleString() : iso;
+async function safeReadJson(res: Response) {
+  const text = await res.text().catch(() => "");
+  if (!text) return { __nonjson: true, status: res.status, text: "" };
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { __nonjson: true, status: res.status, text };
+  }
 }
 
-// ✅ metrics_daily → dashboard Row 변환기 (최소 필드만 맞추면 집계/인사이트 살아남음)
-function mapMetricsDailyToRow(m: any) {
-  const num = (v: any) => {
-    const n = Number(String(v ?? 0).replace(/[,₩%\s]/g, ""));
-    return Number.isFinite(n) ? n : 0;
-  };
+function ensureUpload(meta: any) {
+  const m = meta && typeof meta === "object" ? meta : {};
+  if (!m.upload || typeof m.upload !== "object") m.upload = {};
+  if (!Array.isArray(m.upload.images)) m.upload.images = [];
+  return m;
+}
 
-  // date 필드 후보(너 DB 실제 컬럼명에 맞춰 필요한 것만 남겨도 됨)
-  const date =
-    m?.date ??
-    m?.day ??
-    m?.ymd ??
-    m?.metric_date ??
-    m?.period_date ??
-    m?.report_date ??
-    m?.dt;
-
-  // 채널 그룹(search/display) 후보
-  // 1) 이미 "search"/"display"가 들어있으면 그대로
-  // 2) 아니면 source/채널 문자열에서 추론해서 group으로 만든다
-  const direct =
-    m?.channel_group ??
-    m?.channelGroup ??
-    m?.channel_type ??
-    m?.channelType ??
-    m?.media_type ??
-    m?.mediaType ??
-    m?.inventory_type ??
-    m?.inventoryType;
-
-  let channelGroup: ChannelKey | null =
-    direct === "search" || direct === "display" ? direct : null;
-
-  if (!channelGroup) {
-    const raw = String(
-      m?.channel ?? m?.source ?? m?.media ?? m?.platform ?? m?.campaignType ?? ""
-    ).toLowerCase();
-
-    // search 힌트(네이버 SA/파워링크/쇼핑검색 등)
-    const isSearch =
-      raw.includes("search") ||
-      raw.includes("sa") ||
-      raw.includes("powerlink") ||
-      raw.includes("shopping");
-
-    // display 힌트(GFA/GDN/DA 등)
-    const isDisplay =
-      raw.includes("display") ||
-      raw.includes("gfa") ||
-      raw.includes("gdn") ||
-      raw.includes("da") ||
-      raw.includes("banner");
-
-    // 둘 다 아니면: 안전 기본값(일단 display로 두면 대부분 “필터로 0”되는 걸 줄일 수 있음)
-    channelGroup = isSearch ? "search" : isDisplay ? "display" : "display";
-  }
-
-  return {
-    // 날짜: dashboard 필터가 찾을 수 있게 여러 키로 안전하게 제공
-    date,
-    day: date,
-    ymd: date,
-
-    // 채널 그룹: search/display 필터가 먹게
-    channelGroup,
-    channel_group: channelGroup,
-
-    // 핵심 지표(프로젝트마다 키가 다를 수 있어 후보를 넓게 둠)
-    impressions: num(m?.impressions ?? m?.imp ?? m?.impCnt ?? m?.impr ?? m?.imprCnt),
-    clicks: num(m?.clicks ?? m?.clk ?? m?.clkCnt ?? m?.clickCnt),
-    cost: num(m?.cost ?? m?.spend ?? m?.adCost ?? m?.costAmt),
-    conversions: num(m?.conversions ?? m?.conv ?? m?.convCnt ?? m?.purchase ?? m?.orders),
-    revenue: num(m?.revenue ?? m?.sales ?? m?.rev ?? m?.gmv),
-
-    // (선택) 구조/키워드 탭용 필드들 - 없으면 null
-    source: m?.source ?? m?.media ?? m?.platform ?? null,
-    campaign: m?.campaign ?? m?.campaign_name ?? null,
-    group: m?.group ?? m?.adgroup ?? m?.adgroup_name ?? null,
-    keyword: m?.keyword ?? null,
-    device: m?.device ?? null,
-  };
+async function getAccessTokenOrThrow() {
+  const { data } = await supabase.auth.getSession();
+  const token = data?.session?.access_token;
+  if (!token) throw new Error("로그인이 필요합니다.");
+  return token;
 }
 
 export default function ReportDetailPage() {
-  const params = useParams();
-  const id = (params?.id as string) ?? "";
+  const params = useParams<{ id: string }>();
+  const reportId = params?.id;
 
   const [loading, setLoading] = useState(true);
-  const [msg, setMsg] = useState("");
   const [report, setReport] = useState<ReportRow | null>(null);
-  const [reportType, setReportType] = useState<ReportTypeRow | null>(null);
+  const [msg, setMsg] = useState<string>("");
 
-  // ✅ NEW: DB(metrics_daily) 기반 rowsOverride
-  const [metricsDaily, setMetricsDaily] = useState<any[]>([]);
+  const [csvUploading, setCsvUploading] = useState(false);
+  const [imgUploading, setImgUploading] = useState(false);
 
-  // AI Insight UI 상태
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiMsg, setAiMsg] = useState("");
-  const [aiContent, setAiContent] = useState<any>(null); // insights.content (JSON)
+  const [imgSignedMap, setImgSignedMap] = useState<Record<string, string>>({});
+  const [shareUrl, setShareUrl] = useState<string>("");
+
+  const [deletingMap, setDeletingMap] = useState<Record<string, boolean>>({});
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
+  // ✅ 선택된 이미지(path)
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+
+  const images: UploadImageInfo[] = useMemo(() => {
+    if (!report) return [];
+    const meta = ensureUpload(report.meta);
+    return meta.upload.images as UploadImageInfo[];
+  }, [report]);
+
+  const selectedPaths = useMemo(() => {
+    return Object.keys(selected).filter((p) => selected[p]);
+  }, [selected]);
+
+  function computeShareUrl(shareToken: string | null | undefined) {
+    if (!shareToken) return "";
+    return `${location.origin}/share/${shareToken}`;
+  }
+
+  async function refreshReport(nextMsg?: string) {
+    try {
+      const token = await getAccessTokenOrThrow();
+
+      const res = await fetch(`/api/reports/${reportId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+
+      const json = await safeReadJson(res);
+      if (!res.ok || !json?.ok) {
+        setMsg(json?.error || "Report refresh failed");
+        return;
+      }
+
+      const r = json.report as ReportRow;
+      setReport(r);
+      setShareUrl(computeShareUrl(r?.share_token));
+
+      if (nextMsg) setMsg(nextMsg);
+    } catch (e: any) {
+      setMsg(e?.message || "Unknown error");
+    }
+  }
 
   useEffect(() => {
-    if (!id) return;
-
-    let mounted = true;
-
+    let alive = true;
     (async () => {
-      setLoading(true);
-      setMsg("");
-      setReport(null);
-      setReportType(null);
-      setAiContent(null);
-      setMetricsDaily([]); // ✅ reset
-
       try {
-        // ✅ 1) report는 API로 통일 (세션/권한 체크는 route에서)
-        const res = await fetch(`/api/reports/${id}`, {
-          method: "GET",
+        setLoading(true);
+        setMsg("");
+
+        const token = await getAccessTokenOrThrow();
+
+        const res = await fetch(`/api/reports/${reportId}`, {
+          headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         });
-        const text = await res.text();
 
-        let json: any = null;
-        try {
-          json = text ? JSON.parse(text) : null;
-        } catch {
-          json = null;
-        }
-
+        const json = await safeReadJson(res);
         if (!res.ok || !json?.ok) {
-          if (!mounted) return;
-          setMsg(`report 조회 실패(${res.status}): ${json?.error ?? text ?? "empty"}`);
+          setMsg(json?.error || "Report load failed");
           setLoading(false);
           return;
         }
 
+        if (!alive) return;
         const r = json.report as ReportRow;
-
-        if (!mounted) return;
         setReport(r);
-
-        // ✅ NEW: API가 같이 내려주는 metrics_daily를 받아서 저장
-        // - 키 이름이 다르면 여기만 바꾸면 됨
-        // - 예: json.metricsDaily / json.metrics_daily / json.data.metrics_daily 등
-        const md = (json.metrics_daily ?? json.metricsDaily ?? []) as any[];
-        setMetricsDaily(Array.isArray(md) ? md : []);
-
-        // ✅ 2) report type은 우선 supabase client로 조회 (나중에 API로 빼도 됨)
-        const { data: t, error: tErr } = await supabase
-          .from("report_types")
-          .select("id, key, name")
-          .eq("id", r.report_type_id)
-          .maybeSingle();
-
-        if (!mounted) return;
-
-        if (tErr || !t) {
-          setMsg(`report_type 조회 실패: ${tErr?.message ?? "not found"}`);
-          setLoading(false);
-          return;
-        }
-        setReportType(t as ReportTypeRow);
-
-        // ✅ 3) (선택) 기존 저장된 insights 있으면 보여주기
-        const { data: ins, error: insErr } = await supabase
-          .from("insights")
-          .select("content, updated_at")
-          .eq("report_id", id)
-          .eq("kind", "summary")
-          .order("updated_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (!mounted) return;
-        if (!insErr && ins?.content) {
-          setAiContent({ ...ins.content, _saved_updated_at: ins.updated_at });
-        }
+        setShareUrl(computeShareUrl(r?.share_token));
 
         setLoading(false);
       } catch (e: any) {
-        if (!mounted) return;
-        setMsg(`불러오기 예외: ${e?.message ?? String(e)}`);
+        if (!alive) return;
+        setMsg(e?.message || "Unknown error");
         setLoading(false);
       }
     })();
 
     return () => {
-      mounted = false;
+      alive = false;
     };
-  }, [id]);
+  }, [reportId]);
 
-  const isCommerce = reportType?.key === "commerce";
-  const meta = report?.meta ?? {};
-
-  // ✅ meta 스키마: { period: {from,to}, channels: ["search"|"display"], note: "" }
-  // ✅ fallback: meta.period가 비어있으면 reports.period_start/end 사용
-  const periodFrom =
-    (meta?.period?.from as string | undefined) ?? (report?.period_start ?? undefined);
-  const periodTo =
-    (meta?.period?.to as string | undefined) ?? (report?.period_end ?? undefined);
-
-  const channels = (meta?.channels ?? []) as ChannelKey[];
-  const note = (meta?.note ?? "") as string;
-
-  // ✅ NEW: metrics_daily → rowsOverride 변환
-  const rowsOverride = useMemo(() => {
-    if (!Array.isArray(metricsDaily) || metricsDaily.length === 0) return [];
-    return metricsDaily.map(mapMetricsDailyToRow);
-  }, [metricsDaily]);
-
-  // ✅ 저장 후 meta가 바뀌면 대시보드를 리마운트해서 즉시 반영
-  // ✅ rowsOverride 길이도 key에 포함(데이터 주입 반영)
-  const dashboardKey = useMemo(() => {
-    return JSON.stringify({
-      from: periodFrom ?? "",
-      to: periodTo ?? "",
-      channels: Array.isArray(channels) ? channels.slice().sort() : [],
-      rowsLen: rowsOverride.length,
-    });
-  }, [periodFrom, periodTo, channels, rowsOverride.length]);
-
-  const channelsLabel = useMemo(() => {
-    if (!Array.isArray(channels) || channels.length === 0) return "(미설정)";
-    const map: Record<ChannelKey, string> = {
-      search: "Search AD",
-      display: "Display AD",
-    };
-    return channels.map((c) => map[c] ?? c).join(", ");
-  }, [channels]);
-
-  async function generateAIInsight() {
-    if (!id) return;
-    if (aiLoading) return;
-
-    setAiLoading(true);
-    setAiMsg("");
-
+  // =========================
+  // publish
+  // =========================
+  async function onPublish() {
+    if (!report) return;
     try {
-      const res = await fetch("/api/insights/generate", {
+      setMsg("");
+      const token = await getAccessTokenOrThrow();
+
+      const res = await fetch("/api/reports/publish", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
-        body: JSON.stringify({ report_id: id }),
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ reportId: report.id }),
       });
 
-      const text = await res.text();
-      let json: any = null;
-      try {
-        json = text ? JSON.parse(text) : null;
-      } catch {
-        json = null;
-      }
+      const json = await safeReadJson(res);
+      if (!res.ok || !json?.ok) throw new Error(json?.error || "Publish failed");
 
-      if (!res.ok || !json?.ok) {
-        const errText = json?.error ?? text ?? `HTTP ${res.status}`;
-        setAiMsg(`AI 인사이트 생성 실패: ${errText}`);
-        return;
-      }
-
-      const saved = json?.insight;
-      const content = saved?.content ?? null;
-
-      if (content) {
-        setAiContent(content);
-        setAiMsg("✅ AI 인사이트 생성 완료");
-      } else {
-        setAiMsg("✅ 저장은 됐는데 content가 비어있어. (서버 응답 확인 필요)");
-      }
+      await refreshReport("발행 완료 (draft → ready)");
     } catch (e: any) {
-      setAiMsg(`AI 인사이트 생성 실패: ${e?.message ?? "unknown error"}`);
-    } finally {
-      setAiLoading(false);
+      setMsg(e?.message || "발행 실패");
     }
   }
 
+  // =========================
+  // share link
+  // =========================
+  async function onCreateShareLink() {
+    if (!report) return;
+    try {
+      setMsg("");
+      const token = await getAccessTokenOrThrow();
+
+      const res = await fetch("/api/reports/share/create", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ reportId: report.id }),
+      });
+
+      const json = await safeReadJson(res);
+      if (!res.ok || !json?.ok) throw new Error(json?.error || "Share create failed");
+
+      const shareToken = (json?.token as string) || "";
+      if (!shareToken) throw new Error("Missing token in response");
+
+      const url = `${location.origin}/share/${shareToken}`;
+      setShareUrl(url);
+
+      try {
+        await navigator.clipboard.writeText(url);
+        await refreshReport("공유 링크 생성 + 클립보드 복사 완료");
+      } catch {
+        await refreshReport("공유 링크 생성 완료 (클립보드 복사 실패)");
+      }
+    } catch (e: any) {
+      setMsg(e?.message || "공유 링크 생성 실패");
+    }
+  }
+
+  // =========================
+  // CSV upload
+  // =========================
+  async function onUploadCsv(file: File | null) {
+    if (!file || !report) return;
+
+    try {
+      setCsvUploading(true);
+      setMsg("");
+
+      const token = await getAccessTokenOrThrow();
+
+      const form = new FormData();
+      form.append("report_id", report.id);
+      form.append("file", file);
+
+      const res = await fetch("/api/uploads/csv", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+
+      const json = await safeReadJson(res);
+      if (!res.ok || !json?.ok) {
+        setMsg(json?.error || "CSV upload failed");
+        return;
+      }
+
+      await refreshReport("CSV 업로드 완료");
+    } finally {
+      setCsvUploading(false);
+    }
+  }
+
+  // =========================
+  // Images upload
+  // =========================
+  async function onUploadImages(files: FileList | null) {
+    if (!files || !files.length || !report) return;
+
+    try {
+      setImgUploading(true);
+      setMsg("");
+
+      const token = await getAccessTokenOrThrow();
+
+      const form = new FormData();
+      form.append("report_id", report.id);
+      Array.from(files).forEach((f) => form.append("files", f));
+
+      const res = await fetch("/api/uploads/images", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+
+      const json = await safeReadJson(res);
+      if (!res.ok || !json?.ok) {
+        setMsg(json?.error || "Image upload failed");
+        return;
+      }
+
+      const count = Array.isArray(json.uploaded) ? json.uploaded.length : 0;
+
+      setImgSignedMap({});
+      await refreshReport(`이미지 업로드 완료 (${count}개)`);
+    } finally {
+      setImgUploading(false);
+    }
+  }
+
+  // =========================
+  // Single delete (existing)
+  // =========================
+  async function onDeleteImage(it: UploadImageInfo) {
+    if (!report) return;
+
+    const ok = window.confirm(`이미지를 삭제할까요?\n\n- ${it.name}`);
+    if (!ok) return;
+
+    try {
+      setMsg("");
+      setDeletingMap((prev) => ({ ...prev, [it.path]: true }));
+
+      // optimistic remove
+      setReport((prev) => {
+        if (!prev) return prev;
+        const meta = ensureUpload(prev.meta);
+        meta.upload.images = (meta.upload.images || []).filter(
+          (x: any) => String(x?.path || "") !== it.path
+        );
+        return { ...prev, meta };
+      });
+
+      setImgSignedMap((prev) => {
+        const next = { ...prev };
+        delete next[it.path];
+        return next;
+      });
+
+      setSelected((prev) => {
+        const next = { ...prev };
+        delete next[it.path];
+        return next;
+      });
+
+      const token = await getAccessTokenOrThrow();
+
+      const res = await fetch("/api/uploads/images/delete", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          reportId: report.id,
+          bucket: it.bucket,
+          path: it.path,
+        }),
+      });
+
+      const json = await safeReadJson(res);
+      if (!res.ok || !json?.ok) {
+        await refreshReport(json?.error || "이미지 삭제 실패");
+        return;
+      }
+
+      await refreshReport("이미지 삭제 완료");
+    } catch (e: any) {
+      await refreshReport(e?.message || "이미지 삭제 실패");
+    } finally {
+      setDeletingMap((prev) => ({ ...prev, [it.path]: false }));
+    }
+  }
+
+  // =========================
+  // ✅ Bulk delete (selected)
+  // =========================
+  async function onDeleteSelected() {
+    if (!report) return;
+
+    const paths = selectedPaths;
+    if (!paths.length) {
+      setMsg("선택된 이미지가 없습니다.");
+      return;
+    }
+
+    const ok = window.confirm(`선택한 ${paths.length}개 이미지를 삭제할까요?`);
+    if (!ok) return;
+
+    try {
+      setMsg("");
+      setBulkDeleting(true);
+
+      // optimistic: meta에서 제거
+      setReport((prev) => {
+        if (!prev) return prev;
+        const meta = ensureUpload(prev.meta);
+        const removeSet = new Set(paths);
+        meta.upload.images = (meta.upload.images || []).filter(
+          (x: any) => !removeSet.has(String(x?.path || ""))
+        );
+        return { ...prev, meta };
+      });
+
+      // signed map에서 제거
+      setImgSignedMap((prev) => {
+        const next = { ...prev };
+        for (const p of paths) delete next[p];
+        return next;
+      });
+
+      // 선택 초기화
+      setSelected({});
+
+      const token = await getAccessTokenOrThrow();
+
+      // ⚠️ bucket은 “report_uploads”로 통일(현재 구조)
+      const res = await fetch("/api/uploads/images/delete-many", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          reportId: report.id,
+          bucket: "report_uploads",
+          paths,
+        }),
+      });
+
+      const json = await safeReadJson(res);
+      if (!res.ok || !json?.ok) {
+        await refreshReport(json?.error || "선택 삭제 실패");
+        return;
+      }
+
+      await refreshReport(`선택 삭제 완료 (${paths.length}개)`);
+    } catch (e: any) {
+      await refreshReport(e?.message || "선택 삭제 실패");
+    } finally {
+      setBulkDeleting(false);
+    }
+  }
+
+  // =========================
+  // signed-url (authed)
+  // =========================
+  async function getSignedUrlAuthed(reportId: string, bucket: string, path: string) {
+    const token = await getAccessTokenOrThrow();
+
+    const res = await fetch("/api/uploads/signed-url", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ reportId, bucket, path }),
+    });
+
+    const json = await safeReadJson(res);
+    if (!res.ok || !json?.ok) {
+      console.warn("signed-url failed", res.status, json);
+      return null;
+    }
+    return json.url as string;
+  }
+
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      if (!report) return;
+
+      const need = images.filter((it) => !imgSignedMap[it.path]);
+      if (!need.length) return;
+
+      for (const it of need) {
+        const url = await getSignedUrlAuthed(report.id, it.bucket, it.path);
+        if (!alive) return;
+        if (url) setImgSignedMap((prev) => ({ ...prev, [it.path]: url }));
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [report, images]);
+
+  // ✅ images가 바뀌면, selected에서 존재하지 않는 path 정리(안전)
+  useEffect(() => {
+    const exist = new Set(images.map((x) => x.path));
+    setSelected((prev) => {
+      let changed = false;
+      const next: Record<string, boolean> = {};
+      for (const k of Object.keys(prev)) {
+        if (prev[k] && exist.has(k)) next[k] = true;
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [images]);
+
+  if (loading) return <div style={{ padding: 16 }}>Loading...</div>;
+
+  if (!report) {
+    return (
+      <div style={{ padding: 16 }}>
+        <div style={{ marginBottom: 8 }}>Report not found</div>
+        {msg ? <div style={{ color: "#b00" }}>{msg}</div> : null}
+      </div>
+    );
+  }
+
+  const meta = ensureUpload(report.meta);
+  const csv: UploadCsvInfo | null = meta.upload?.csv || null;
+
+  const title = report.title || "Report";
+  const statusLabel =
+    report.status === "draft" ? "Draft" : report.status === "ready" ? "Ready" : "Archived";
+
+  const allSelected = images.length > 0 && selectedPaths.length === images.length;
+
+  function toggleSelect(path: string, checked: boolean) {
+    setSelected((prev) => {
+      const next = { ...prev };
+      if (checked) next[path] = true;
+      else delete next[path];
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (!images.length) return;
+    if (allSelected) {
+      setSelected({});
+      return;
+    }
+    const next: Record<string, boolean> = {};
+    for (const it of images) next[it.path] = true;
+    setSelected(next);
+  }
+
   return (
-    <main style={{ padding: 24, maxWidth: 1400 }}>
-      <h1 style={{ fontSize: 24, fontWeight: 800 }}>Report Detail</h1>
-      <div style={{ marginTop: 8, padding: 10, border: "1px dashed #999", borderRadius: 10, fontSize: 13 }}>
-        <b>DEBUG</b>{" "}
-        id={id || "(no id)"} / loading={String(loading)} / report={report ? "yes" : "no"} / type={reportType?.key ?? "-"}
-        <br />
-        <b>period</b> {periodFrom ?? "-"} ~ {periodTo ?? "-"}
-        <br />
-        <b>channels</b> {Array.isArray(channels) ? channels.join(",") : "-"}
-        <br />
-        <b>metricsDaily</b> {metricsDaily.length} / <b>rowsOverride</b> {rowsOverride.length}
+    <div style={{ padding: 16, maxWidth: 980, margin: "0 auto" }}>
+      <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>
+        {title} <span style={{ opacity: 0.6 }}>- {statusLabel}</span>
+      </h1>
+
+      <div style={{ marginBottom: 12, opacity: 0.85 }}>
+        상태: <b>{report.status}</b>
       </div>
 
-      {loading && <p style={{ marginTop: 12 }}>불러오는 중...</p>}
-      {msg && <p style={{ marginTop: 12, whiteSpace: "pre-wrap" }}>{msg}</p>}
+      {/* 발행/공유 */}
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16 }}>
+        {report.status === "draft" ? (
+          <button
+            onClick={onPublish}
+            style={{
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: "1px solid #ddd",
+              background: "#111",
+              color: "#fff",
+              cursor: "pointer",
+            }}
+          >
+            발행하기 (draft → ready)
+          </button>
+        ) : null}
 
-      {!loading && report && (
+        {report.status === "ready" ? (
+          <button
+            onClick={onCreateShareLink}
+            style={{
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: "1px solid #ddd",
+              background: "#fff",
+              cursor: "pointer",
+            }}
+          >
+            공유 링크 생성
+          </button>
+        ) : null}
+
+        {shareUrl ? (
+          <a href={shareUrl} target="_blank" rel="noreferrer" style={{ fontSize: 13 }}>
+            {shareUrl}
+          </a>
+        ) : null}
+      </div>
+
+      {msg ? (
         <div
           style={{
-            marginTop: 14,
-            padding: 14,
+            marginBottom: 16,
+            padding: 10,
             border: "1px solid #ddd",
-            borderRadius: 12,
+            borderRadius: 8,
+            background: "#fafafa",
           }}
         >
-          <div>
-            <b>ID</b>: {report.id}
-          </div>
-          <div>
-            <b>Title</b>: {report.title}
-          </div>
-          <div>
-            <b>Status</b>: {report.status}
-          </div>
-          <div>
-            <b>Created</b>: {fmtDT(report.created_at)}
-          </div>
-          <div>
-            <b>Workspace</b>: {report.workspace_id}
-          </div>
+          {msg}
+        </div>
+      ) : null}
 
-          <hr style={{ margin: "12px 0" }} />
+      {/* CSV 업로드 */}
+      <section
+        style={{
+          border: "1px solid #e5e5e5",
+          borderRadius: 12,
+          padding: 14,
+          marginBottom: 16,
+        }}
+      >
+        <div style={{ fontWeight: 800, marginBottom: 8 }}>CSV 업로드</div>
 
-          <div>
-            <b>Type</b>:{" "}
-            {reportType ? `${reportType.name} (key=${reportType.key})` : "loading..."}
-          </div>
+        <input
+          type="file"
+          accept=".csv,text/csv"
+          disabled={csvUploading}
+          onChange={(e) => onUploadCsv(e.target.files?.[0] || null)}
+        />
 
-          {/* ✅ meta + reports.period fallback 요약 표시 */}
-          {isCommerce && (
-            <div style={{ marginTop: 10, opacity: 0.9, fontSize: 13 }}>
-              <div>
-                <b>기간</b>: {periodFrom ?? "-"} ~ {periodTo ?? "-"}
-              </div>
-              <div>
-                <b>채널</b>: {channelsLabel}
-              </div>
-              {note?.trim() && (
-                <div>
-                  <b>메모</b>: {note}
-                </div>
-              )}
-              <div style={{ marginTop: 6, opacity: 0.7 }}>
-                <b>DB metrics_daily</b>: {metricsDaily.length}건 / <b>rowsOverride</b>: {rowsOverride.length}건
-              </div>
-            </div>
+        <div style={{ marginTop: 10, fontSize: 13, opacity: 0.8 }}>
+          {csv ? (
+            <>
+              업로드됨: <b>{csv.name}</b> ({csv.size.toLocaleString()} bytes)
+            </>
+          ) : (
+            <>아직 CSV가 업로드되지 않았습니다.</>
           )}
         </div>
-      )}
+      </section>
 
-      {/* ✅ 커머스 설정 저장 UI */}
-      {!loading && report && isCommerce && (
-        <CommerceReportEditor
-          report={report}
-          onSaved={(nextMeta: any) => {
-            setReport((prev) => (prev ? { ...prev, meta: nextMeta } : prev));
-          }}
+      {/* 이미지 업로드 */}
+      <section
+        style={{
+          border: "1px solid #e5e5e5",
+          borderRadius: 12,
+          padding: 14,
+          marginBottom: 16,
+        }}
+      >
+        <div style={{ fontWeight: 800, marginBottom: 8 }}>이미지 업로드</div>
+
+        <input
+          type="file"
+          accept="image/png,image/jpeg,image/jpg,image/webp"
+          multiple
+          disabled={imgUploading || bulkDeleting}
+          onChange={(e) => onUploadImages(e.target.files)}
         />
-      )}
 
-      {/* ✅ AI 인사이트 생성 UI */}
-      {!loading && report && (
-        <section style={{ marginTop: 18, borderTop: "1px solid #eee", paddingTop: 18 }}>
-          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0 }}>AI 인사이트</h2>
+        {/* ✅ 선택 삭제 컨트롤 */}
+        <div
+          style={{
+            marginTop: 10,
+            display: "flex",
+            gap: 10,
+            alignItems: "center",
+            flexWrap: "wrap",
+            fontSize: 13,
+            opacity: 0.95,
+          }}
+        >
+          <span>{imgUploading ? "업로드 중..." : `총 ${images.length}개`}</span>
 
-            <button
-              onClick={generateAIInsight}
-              disabled={aiLoading}
-              style={{
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid #ddd",
-                background: aiLoading ? "#f5f5f5" : "white",
-                cursor: aiLoading ? "wait" : "pointer",
-              }}
-            >
-              {aiLoading ? "생성 중..." : "AI 인사이트 생성"}
-            </button>
+          <button
+            onClick={toggleSelectAll}
+            disabled={!images.length || bulkDeleting}
+            style={{
+              padding: "8px 10px",
+              borderRadius: 10,
+              border: "1px solid #ddd",
+              background: "#fff",
+              cursor: !images.length || bulkDeleting ? "not-allowed" : "pointer",
+              fontWeight: 700,
+            }}
+            title="전체 선택/해제"
+          >
+            {allSelected ? "전체 해제" : "전체 선택"}
+          </button>
 
-            {aiMsg && <span style={{ fontSize: 13, opacity: 0.8 }}>{aiMsg}</span>}
-          </div>
+          <button
+            onClick={onDeleteSelected}
+            disabled={!selectedPaths.length || bulkDeleting}
+            style={{
+              padding: "8px 10px",
+              borderRadius: 10,
+              border: "1px solid #ddd",
+              background: selectedPaths.length ? "#111" : "#f3f3f3",
+              color: selectedPaths.length ? "#fff" : "#666",
+              cursor: !selectedPaths.length || bulkDeleting ? "not-allowed" : "pointer",
+              fontWeight: 800,
+            }}
+            title="선택 삭제"
+          >
+            {bulkDeleting ? "삭제 중..." : `선택 삭제 (${selectedPaths.length})`}
+          </button>
+        </div>
 
+        {images.length ? (
           <div
             style={{
               marginTop: 12,
-              padding: 14,
-              border: "1px solid #ddd",
-              borderRadius: 12,
-              background: "#fafafa",
-              whiteSpace: "pre-wrap",
-              lineHeight: 1.6,
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
+              gap: 12,
             }}
           >
-            {aiContent ? (
-              <>
-                {aiContent?._saved_updated_at && (
-                  <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>
-                    마지막 저장: {fmtDT(aiContent._saved_updated_at)}
+            {images
+              .slice()
+              .reverse()
+              .map((it) => {
+                const url = imgSignedMap[it.path];
+                const deleting = !!deletingMap[it.path] || bulkDeleting;
+                const checked = !!selected[it.path];
+
+                return (
+                  <div
+                    key={it.path}
+                    style={{
+                      border: "1px solid #eee",
+                      borderRadius: 12,
+                      overflow: "hidden",
+                      background: "#fff",
+                      opacity: deleting ? 0.75 : 1,
+                    }}
+                  >
+                    <div style={{ position: "relative" }}>
+                      <a
+                        href={url || "#"}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          display: "block",
+                          width: "100%",
+                          aspectRatio: "4 / 3",
+                          background: "#f5f5f5",
+                          pointerEvents: url && !deleting ? "auto" : "none",
+                        }}
+                        title="새 탭에서 열기"
+                      >
+                        {url ? (
+                          <img
+                            src={url}
+                            alt={it.name}
+                            style={{
+                              width: "100%",
+                              height: "100%",
+                              objectFit: "cover",
+                              display: "block",
+                            }}
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              width: "100%",
+                              height: "100%",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: 12,
+                              opacity: 0.7,
+                            }}
+                          >
+                            loading...
+                          </div>
+                        )}
+                      </a>
+
+                      {/* ✅ 선택 체크박스 */}
+                      <label
+                        style={{
+                          position: "absolute",
+                          top: 8,
+                          left: 8,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                          padding: "6px 8px",
+                          borderRadius: 999,
+                          background: "rgba(255,255,255,0.92)",
+                          border: "1px solid rgba(0,0,0,0.12)",
+                          cursor: deleting ? "not-allowed" : "pointer",
+                          fontSize: 12,
+                          fontWeight: 800,
+                          userSelect: "none",
+                        }}
+                        title="선택"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={deleting}
+                          onChange={(e) => toggleSelect(it.path, e.target.checked)}
+                        />
+                        선택
+                      </label>
+
+                      {/* ✅ 단일 삭제 버튼 */}
+                      <button
+                        onClick={() => onDeleteImage(it)}
+                        disabled={deleting}
+                        style={{
+                          position: "absolute",
+                          top: 8,
+                          right: 8,
+                          padding: "6px 8px",
+                          borderRadius: 999,
+                          border: "1px solid rgba(0,0,0,0.12)",
+                          background: "rgba(255,255,255,0.92)",
+                          cursor: deleting ? "not-allowed" : "pointer",
+                          fontSize: 12,
+                          fontWeight: 700,
+                        }}
+                        title="삭제"
+                      >
+                        삭제
+                      </button>
+                    </div>
+
+                    <div style={{ padding: 10 }}>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          marginBottom: 6,
+                        }}
+                        title={it.name}
+                      >
+                        {it.name}
+                      </div>
+                      <div style={{ fontSize: 12, opacity: 0.75 }}>
+                        {(it.size || 0).toLocaleString()} bytes
+                      </div>
+                    </div>
                   </div>
-                )}
-                <div style={{ fontWeight: 800, marginBottom: 6 }}>요약</div>
-                <div style={{ marginBottom: 12 }}>{aiContent.summary ?? "(summary 없음)"}</div>
-
-                <div style={{ fontWeight: 800, marginBottom: 6 }}>이상징후</div>
-                <pre style={{ margin: 0 }}>{JSON.stringify(aiContent.anomalies ?? [], null, 2)}</pre>
-
-                <div style={{ fontWeight: 800, marginTop: 12, marginBottom: 6 }}>액션</div>
-                <pre style={{ margin: 0 }}>{JSON.stringify(aiContent.actions ?? [], null, 2)}</pre>
-              </>
-            ) : (
-              <div style={{ opacity: 0.7 }}>
-                아직 인사이트가 없어. 위의 <b>“AI 인사이트 생성”</b>을 눌러봐.
-              </div>
-            )}
+                );
+              })}
           </div>
-        </section>
-      )}
-
-      {/* ✅ 기존 홈 대시보드 UI 재사용 + 기간/채널 실제 적용 + DB rowsOverride 주입 */}
-      {!loading && report && isCommerce && (
-        <div style={{ marginTop: 18, borderTop: "1px solid #eee", paddingTop: 18 }}>
-          <div style={{ marginBottom: 10, opacity: 0.7 }}>
-            아래는 <b>기존 홈(/) 보고서 UI</b>를 그대로 재사용한 영역이야. (홈은 훼손되지 않음)
+        ) : (
+          <div style={{ marginTop: 10, fontSize: 13, opacity: 0.8 }}>
+            업로드된 이미지가 없습니다.
           </div>
-
-          <CommerceDashboard
-            key={dashboardKey}
-            dataUrl="/data/TEST_ver1.csv" // ✅ fallback로 남겨둠 (rowsOverride가 있으면 이건 무시됨)
-            rowsOverride={rowsOverride} // ✅ NEW: DB 데이터 주입
-            rowOptions={{
-              from: periodFrom,
-              to: periodTo,
-              channels: Array.isArray(channels) ? channels : [],
-            }}
-            init={{
-              tab: "summary",
-              period: { from: periodFrom, to: periodTo },
-            }}
-          />
-        </div>
-      )}
-    </main>
+        )}
+      </section>
+    </div>
   );
 }
