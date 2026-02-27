@@ -4,7 +4,12 @@ import OpenAI from "openai";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+/**
+ * ✅ 옵션 B: 빌드가 절대 깨지지 않도록
+ * - OpenAI 클라이언트를 "모듈 top-level"에서 만들지 않는다.
+ * - 요청 처리 시점(POST)에서만 env 체크 후 생성한다.
+ * - 기존 로직(프롬프트/샘플링/업서트)은 그대로 유지한다.
+ */
 
 function jsonError(status: number, message: string, extra?: Record<string, any>) {
   return NextResponse.json({ ok: false, error: message, ...(extra ?? {}) }, { status });
@@ -38,7 +43,6 @@ function normalizeToYMD(v: any): string | null {
   if (!s) return null;
 
   // 1) ISO 형태면 앞 10자리 사용 (YYYY-MM-DD)
-  //    예: 2026-02-20T00:00:00.000Z → 2026-02-20
   const isoMatch = s.match(/^(\d{4}-\d{2}-\d{2})/);
   if (isoMatch?.[1]) return isoMatch[1];
 
@@ -77,13 +81,20 @@ function getEffectivePeriod(report: any): { from: string | null; to: string | nu
   const to = normalizeToYMD(metaTo) ?? normalizeToYMD(report?.period_end);
 
   const source =
-    (normalizeToYMD(metaFrom) && normalizeToYMD(metaTo))
+    normalizeToYMD(metaFrom) && normalizeToYMD(metaTo)
       ? "meta.period"
-      : (normalizeToYMD(report?.period_start) && normalizeToYMD(report?.period_end))
+      : normalizeToYMD(report?.period_start) && normalizeToYMD(report?.period_end)
         ? "reports.period_start/end"
         : "none";
 
   return { from, to, source };
+}
+
+function getOpenAIClientOrNull() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+  // ✅ 여기서만 생성 (빌드 시점 평가 방지)
+  return new OpenAI({ apiKey });
 }
 
 export async function POST(req: Request) {
@@ -92,7 +103,12 @@ export async function POST(req: Request) {
     const report_id = asNonEmptyString(body?.report_id);
 
     if (!report_id) return jsonError(400, "report_id is required");
-    if (!process.env.OPENAI_API_KEY) return jsonError(500, "OPENAI_API_KEY is missing in environment");
+
+    // ✅ (옵션B 핵심) 키가 없어도 "빌드 실패"가 아니라 "요청 실패"로만 처리
+    const openai = getOpenAIClientOrNull();
+    if (!openai) {
+      return jsonError(501, "AI insight is not configured. Missing OPENAI_API_KEY in environment.");
+    }
 
     // ✅ 1) 서버 쿠키 세션으로 user 확인 (단일 방식)
     const sb = await sbAuth();
@@ -121,113 +137,112 @@ export async function POST(req: Request) {
     if (wmErr) return jsonError(500, wmErr.message);
     if (!wm) return jsonError(403, "Forbidden: you are not a member of this workspace");
 
-   // ✅ 4) metrics_daily 샘플링 (진단 모드)
-let metricsSample: any[] = [];
-let metricsInfo: any = { rows: 0, reason: "", debug: {} };
+    // ✅ 4) metrics_daily 샘플링 (진단 모드)
+    let metricsSample: any[] = [];
+    let metricsInfo: any = { rows: 0, reason: "", debug: {} };
 
-// ✅ 기간: meta.period(from/to) → reports.period_start/end fallback
-const metaFrom = report?.meta?.period?.from;
-const metaTo = report?.meta?.period?.to;
+    // ✅ 기간: meta.period(from/to) → reports.period_start/end fallback
+    const metaFrom = report?.meta?.period?.from;
+    const metaTo = report?.meta?.period?.to;
 
-// ✅ 무조건 YYYY-MM-DD로 정규화(10자리)
-// (report.period_start가 timestamptz여도 앞 10자리면 date 컬럼과 비교 안전)
-const fromYMD = String(metaFrom ?? report.period_start ?? "").slice(0, 10) || null;
-const toYMD = String(metaTo ?? report.period_end ?? "").slice(0, 10) || null;
+    // ✅ 무조건 YYYY-MM-DD로 정규화(10자리)
+    const fromYMD = String(metaFrom ?? report.period_start ?? "").slice(0, 10) || null;
+    const toYMD = String(metaTo ?? report.period_end ?? "").slice(0, 10) || null;
 
-// ✅ 4-A) workspace에 데이터 자체가 있는지 먼저 카운트
-const { count: wsCount, error: wsCountErr } = await supabaseAdmin
-  .from("metrics_daily")
-  .select("*", { count: "exact", head: true })
-  .eq("workspace_id", report.workspace_id);
+    // ✅ 4-A) workspace에 데이터 자체가 있는지 먼저 카운트
+    const { count: wsCount, error: wsCountErr } = await supabaseAdmin
+      .from("metrics_daily")
+      .select("*", { count: "exact", head: true })
+      .eq("workspace_id", report.workspace_id);
 
-// ✅ 4-B) 기간으로 카운트 (이게 0이면 “기간 값/형식” 문제 확정)
-let rangeCount: number | null = null;
-let rangeCountErr: string | null = null;
+    // ✅ 4-B) 기간으로 카운트 (이게 0이면 “기간 값/형식” 문제 확정)
+    let rangeCount: number | null = null;
+    let rangeCountErr: string | null = null;
 
-if (fromYMD && toYMD) {
-  const { count, error } = await supabaseAdmin
-    .from("metrics_daily")
-    .select("*", { count: "exact", head: true })
-    .eq("workspace_id", report.workspace_id)
-    .gte("date", fromYMD)
-    .lte("date", toYMD);
+    if (fromYMD && toYMD) {
+      const { count, error } = await supabaseAdmin
+        .from("metrics_daily")
+        .select("*", { count: "exact", head: true })
+        .eq("workspace_id", report.workspace_id)
+        .gte("date", fromYMD)
+        .lte("date", toYMD);
 
-  rangeCount = count ?? 0;
-  rangeCountErr = error ? error.message : null;
-}
+      rangeCount = count ?? 0;
+      rangeCountErr = error ? error.message : null;
+    }
 
-// ✅ 4-C) 실제 샘플 로드
-if (fromYMD && toYMD) {
-  const { data: m, error: mErr } = await supabaseAdmin
-    .from("metrics_daily")
-    .select("date, source, entity_type, entity_id, entity_name, imp, clk, cost, conv, revenue, extra")
-    .eq("workspace_id", report.workspace_id)
-    .gte("date", fromYMD)
-    .lte("date", toYMD)
-    .order("date", { ascending: true })
-    .limit(200);
+    // ✅ 4-C) 실제 샘플 로드
+    if (fromYMD && toYMD) {
+      const { data: m, error: mErr } = await supabaseAdmin
+        .from("metrics_daily")
+        .select("date, source, entity_type, entity_id, entity_name, imp, clk, cost, conv, revenue, extra")
+        .eq("workspace_id", report.workspace_id)
+        .gte("date", fromYMD)
+        .lte("date", toYMD)
+        .order("date", { ascending: true })
+        .limit(200);
 
-  if (mErr) {
-    metricsInfo = {
-      rows: 0,
-      reason: `metrics query error: ${mErr.message}`,
-      debug: {
-        report_workspace_id: report.workspace_id,
-        fromYMD,
-        toYMD,
-        wsCount: wsCountErr ? `err:${wsCountErr.message}` : wsCount ?? null,
-        rangeCount,
-        rangeCountErr,
-      },
-    };
-  } else {
-    const rows = (m ?? []).map((row: any) => ({
-      date: row.date,
-      source: row.source,
-      entity_type: row.entity_type,
-      entity_id: row.entity_id,
-      entity_name: row.entity_name,
-      imp: row.imp,
-      clk: row.clk,
-      cost: row.cost,
-      conv: row.conv,
-      revenue: row.revenue,
-      extra: clampText(row.extra, 800),
-    }));
+      if (mErr) {
+        metricsInfo = {
+          rows: 0,
+          reason: `metrics query error: ${mErr.message}`,
+          debug: {
+            report_workspace_id: report.workspace_id,
+            fromYMD,
+            toYMD,
+            wsCount: wsCountErr ? `err:${wsCountErr.message}` : wsCount ?? null,
+            rangeCount,
+            rangeCountErr,
+          },
+        };
+      } else {
+        const rows = (m ?? []).map((row: any) => ({
+          date: row.date,
+          source: row.source,
+          entity_type: row.entity_type,
+          entity_id: row.entity_id,
+          entity_name: row.entity_name,
+          imp: row.imp,
+          clk: row.clk,
+          cost: row.cost,
+          conv: row.conv,
+          revenue: row.revenue,
+          extra: clampText(row.extra, 800),
+        }));
 
-    metricsSample = rows;
-    metricsInfo = {
-      rows: rows.length,
-      reason: rows.length ? "" : "0 rows after date filter",
-      debug: {
-        report_workspace_id: report.workspace_id,
-        fromYMD,
-        toYMD,
-        wsCount: wsCountErr ? `err:${wsCountErr.message}` : wsCount ?? null,
-        rangeCount,
-        rangeCountErr,
-      },
-    };
-  }
-} else {
-  metricsInfo = {
-    rows: 0,
-    reason: "period missing or invalid",
-    debug: {
-      report_workspace_id: report.workspace_id,
-      meta_period: report?.meta?.period ?? null,
-      report_period_start: report.period_start ?? null,
-      report_period_end: report.period_end ?? null,
-      fromYMD,
-      toYMD,
-      wsCount: wsCountErr ? `err:${wsCountErr.message}` : wsCount ?? null,
-      rangeCount,
-      rangeCountErr,
-    },
-  };
-}
+        metricsSample = rows;
+        metricsInfo = {
+          rows: rows.length,
+          reason: rows.length ? "" : "0 rows after date filter",
+          debug: {
+            report_workspace_id: report.workspace_id,
+            fromYMD,
+            toYMD,
+            wsCount: wsCountErr ? `err:${wsCountErr.message}` : wsCount ?? null,
+            rangeCount,
+            rangeCountErr,
+          },
+        };
+      }
+    } else {
+      metricsInfo = {
+        rows: 0,
+        reason: "period missing or invalid",
+        debug: {
+          report_workspace_id: report.workspace_id,
+          meta_period: report?.meta?.period ?? null,
+          report_period_start: report.period_start ?? null,
+          report_period_end: report.period_end ?? null,
+          fromYMD,
+          toYMD,
+          wsCount: wsCountErr ? `err:${wsCountErr.message}` : wsCount ?? null,
+          rangeCount,
+          rangeCountErr,
+        },
+      };
+    }
 
-    // ✅ 5) OpenAI 프롬프트
+    // ✅ 5) OpenAI 프롬프트 (기존 그대로)
     const prompt = `
 너는 퍼포먼스 마케팅 리포트 분석가야.
 아래 "리포트 메타"와 "지표 샘플"을 보고, 한국어로 인사이트를 JSON으로 만들어.
@@ -248,28 +263,28 @@ if (fromYMD && toYMD) {
 
 리포트 메타:
 ${JSON.stringify(
-      {
-        title: report.title,
-        status: report.status,
-        period_start: report.period_start,
-        period_end: report.period_end,
-        meta: report.meta ?? {},
-        metrics_info: metricsInfo,
-        metrics_schema_hint: {
-          date: "일자",
-          source: "매체/소스 (예: naver_sa, mobon 등)",
-          entity_type: "집계 단위 (campaign/adgroup/creative 등)",
-          entity_name: "집계 대상 이름",
-          imp: "노출",
-          clk: "클릭",
-          cost: "비용",
-          conv: "전환",
-          revenue: "매출",
-        },
-      },
-      null,
-      2
-    )}
+  {
+    title: report.title,
+    status: report.status,
+    period_start: report.period_start,
+    period_end: report.period_end,
+    meta: report.meta ?? {},
+    metrics_info: metricsInfo,
+    metrics_schema_hint: {
+      date: "일자",
+      source: "매체/소스 (예: naver_sa, mobon 등)",
+      entity_type: "집계 단위 (campaign/adgroup/creative 등)",
+      entity_name: "집계 대상 이름",
+      imp: "노출",
+      clk: "클릭",
+      cost: "비용",
+      conv: "전환",
+      revenue: "매출",
+    },
+  },
+  null,
+  2
+)}
 
 지표 샘플(최대 200행, 없을 수도 있음):
 ${JSON.stringify(metricsSample, null, 2)}
@@ -303,7 +318,7 @@ ${JSON.stringify(metricsSample, null, 2)}
       generated_at: new Date().toISOString(),
     };
 
-    // ✅ 7) insights upsert
+    // ✅ 7) insights upsert (기존 그대로)
     const kind = "summary";
     const { data: saved, error: sErr } = await supabaseAdmin
       .from("insights")
