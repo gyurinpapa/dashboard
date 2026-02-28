@@ -6,6 +6,9 @@ import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import SignedImage from "@/app/components/uploads/SignedImage";
 
+/** =========================
+ * Types
+ * ========================= */
 type UploadCsvInfo = {
   id?: string; // uuid
   name: string;
@@ -32,8 +35,16 @@ type ReportRow = {
   share_token?: string | null;
   created_at?: string;
   updated_at?: string;
+
+  // ✅ 보고서가 속한 workspace_id (API 응답에 있으면 사용)
+  workspace_id?: string;
 };
 
+type CheckState = "idle" | "checking" | "available" | "duplicate" | "error";
+
+/** =========================
+ * Utils
+ * ========================= */
 async function safeReadJson(res: Response) {
   const text = await res.text().catch(() => "");
   if (!text) return { __nonjson: true, status: res.status, text: "" };
@@ -66,6 +77,9 @@ function fmtTs(iso?: string) {
   return d.toISOString().replace("T", " ").slice(0, 19);
 }
 
+/** =========================
+ * Component
+ * ========================= */
 export default function ReportDetailPage() {
   const params = useParams<{ id: string }>();
   const reportId = params?.id;
@@ -74,35 +88,47 @@ export default function ReportDetailPage() {
   const [report, setReport] = useState<ReportRow | null>(null);
   const [msg, setMsg] = useState<string>("");
 
+  // CSV/Logo busy
   const [csvUploading, setCsvUploading] = useState(false);
   const [imgUploading, setImgUploading] = useState(false);
 
+  // share
   const [shareUrl, setShareUrl] = useState<string>("");
 
+  // delete busy map
   const [deletingMap, setDeletingMap] = useState<Record<string, boolean>>({});
-  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   // ✅ accessToken은 페이지에서 1회 확보 후 재사용 (SignedImage에 전달)
   const [accessToken, setAccessToken] = useState<string>("");
 
-  // ✅ 선택된 이미지(path)
-  const [selected, setSelected] = useState<Record<string, boolean>>({});
-
-  // ✅ 같은 파일 재선택 가능하게 (CSV)
+  // ✅ 같은 파일 재선택 가능하게 (CSV/Logo)
   const csvInputRef = useRef<HTMLInputElement | null>(null);
+  const logoInputRef = useRef<HTMLInputElement | null>(null);
 
   // ✅ CSV open/delete 상태
   const [csvBusyMap, setCsvBusyMap] = useState<Record<string, boolean>>({}); // key=path
 
+  // =========================
+  // 광고주 생성/중복확인 상태
+  // =========================
+  const [advertiserName, setAdvertiserName] = useState("");
+  const [advState, setAdvState] = useState<CheckState>("idle");
+  const [advMsg, setAdvMsg] = useState("");
+  const [advCreating, setAdvCreating] = useState(false);
+
+  const meta = useMemo(() => ensureUpload(report?.meta), [report]);
+
   const images: UploadImageInfo[] = useMemo(() => {
     if (!report) return [];
-    const meta = ensureUpload(report.meta);
-    return meta.upload.images as UploadImageInfo[];
+    const m = ensureUpload(report.meta);
+    return m.upload.images as UploadImageInfo[];
   }, [report]);
 
-  const selectedPaths = useMemo(() => {
-    return Object.keys(selected).filter((p) => selected[p]);
-  }, [selected]);
+  // ✅ "로고"는 MVP로: 가장 최근 업로드 이미지 1개를 로고로 간주
+  const logoItem: UploadImageInfo | null = useMemo(() => {
+    if (!images.length) return null;
+    return images[images.length - 1]; // 마지막(최신)
+  }, [images]);
 
   function computeShareUrl(shareToken: string | null | undefined) {
     if (!shareToken) return "";
@@ -137,6 +163,7 @@ export default function ReportDetailPage() {
 
   useEffect(() => {
     let alive = true;
+
     (async () => {
       try {
         setLoading(true);
@@ -158,10 +185,10 @@ export default function ReportDetailPage() {
         }
 
         if (!alive) return;
+
         const r = json.report as ReportRow;
         setReport(r);
         setShareUrl(computeShareUrl(r?.share_token));
-
         setLoading(false);
       } catch (e: any) {
         if (!alive) return;
@@ -243,6 +270,32 @@ export default function ReportDetailPage() {
   }
 
   // =========================
+  // ✅ signed-url helper (여기 페이지: 로그인 기반)
+  // =========================
+  async function createSignedUrl(path: string) {
+    const token = accessToken || (await getAccessTokenOrThrow());
+    if (!accessToken) setAccessToken(token);
+
+    const res = await fetch("/api/uploads/signed-url", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ path }),
+      cache: "no-store",
+    });
+
+    const json = await safeReadJson(res);
+    if (!res.ok || !json?.ok) {
+      console.warn("signed-url failed", res.status, json);
+      return null;
+    }
+
+    return (json.url as string) || (json.signedUrl as string) || null;
+  }
+
+  // =========================
   // ✅ CSV upload (Bearer)
   // =========================
   async function onUploadCsv(file: File | null) {
@@ -271,9 +324,7 @@ export default function ReportDetailPage() {
         return;
       }
 
-      // 같은 파일 재선택 가능
       if (csvInputRef.current) csvInputRef.current.value = "";
-
       await refreshReport("CSV 업로드 완료");
     } catch (e: any) {
       setMsg(e?.message || "CSV 업로드 실패");
@@ -282,33 +333,6 @@ export default function ReportDetailPage() {
     }
   }
 
-  // =========================
-  // ✅ signed-url helper (여기 페이지: 로그인 기반)
-  // =========================
-  async function createSignedUrl(path: string) {
-    const token = accessToken || (await getAccessTokenOrThrow());
-    if (!accessToken) setAccessToken(token);
-
-    const res = await fetch("/api/uploads/signed-url", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ path }),
-      cache: "no-store",
-    });
-
-    const json = await safeReadJson(res);
-    if (!res.ok || !json?.ok) {
-      console.warn("signed-url failed", res.status, json);
-      return null;
-    }
-
-    return (json.url as string) || (json.signedUrl as string) || null;
-  }
-
-  // ✅ CSV open (signed-url) -> 새 탭
   async function openCsv(it: UploadCsvInfo) {
     if (!report) return;
     if (!it?.path) return;
@@ -331,7 +355,6 @@ export default function ReportDetailPage() {
     }
   }
 
-  // ✅ CSV delete (storage + meta)
   async function deleteCsv(it: UploadCsvInfo) {
     if (!report) return;
     if (!it?.path) return;
@@ -343,12 +366,12 @@ export default function ReportDetailPage() {
       setMsg("");
       setCsvBusyMap((p) => ({ ...p, [it.path]: true }));
 
-      // optimistic remove from UI
+      // optimistic remove
       setReport((prev) => {
         if (!prev) return prev;
-        const meta = ensureUpload(prev.meta);
-        meta.upload.csv = (meta.upload.csv || []).filter((x: any) => String(x?.path || "") !== it.path);
-        return { ...prev, meta };
+        const m = ensureUpload(prev.meta);
+        m.upload.csv = (m.upload.csv || []).filter((x: any) => String(x?.path || "") !== it.path);
+        return { ...prev, meta: m };
       });
 
       const token = accessToken || (await getAccessTokenOrThrow());
@@ -382,10 +405,10 @@ export default function ReportDetailPage() {
   }
 
   // =========================
-  // Images upload
+  // ✅ 로고 업로드 (기존 images 업로드 엔드포인트 재사용 / 단일 파일)
   // =========================
-  async function onUploadImages(files: FileList | null) {
-    if (!files || !files.length || !report) return;
+  async function onUploadLogo(file: File | null) {
+    if (!file || !report) return;
 
     try {
       setImgUploading(true);
@@ -396,7 +419,7 @@ export default function ReportDetailPage() {
 
       const form = new FormData();
       form.append("report_id", report.id);
-      Array.from(files).forEach((f) => form.append("files", f));
+      form.append("files", file);
 
       const res = await fetch("/api/uploads/images", {
         method: "POST",
@@ -406,42 +429,35 @@ export default function ReportDetailPage() {
 
       const json = await safeReadJson(res);
       if (!res.ok || !json?.ok) {
-        setMsg(json?.error || "Image upload failed");
+        setMsg(json?.error || "로고 업로드 실패");
         return;
       }
 
-      const count = Array.isArray(json.uploaded) ? json.uploaded.length : 0;
-      await refreshReport(`이미지 업로드 완료 (${count}개)`);
+      if (logoInputRef.current) logoInputRef.current.value = "";
+      await refreshReport("로고 업로드 완료");
+    } catch (e: any) {
+      setMsg(e?.message || "로고 업로드 실패");
     } finally {
       setImgUploading(false);
     }
   }
 
-  // =========================
-  // Single delete
-  // =========================
-  async function onDeleteImage(it: UploadImageInfo) {
-    if (!report) return;
+  async function onDeleteLogo() {
+    if (!report || !logoItem) return;
 
-    const ok = window.confirm(`이미지를 삭제할까요?\n\n- ${it.name}`);
+    const ok = window.confirm(`로고를 삭제할까요?\n\n- ${logoItem.name}`);
     if (!ok) return;
 
     try {
       setMsg("");
-      setDeletingMap((prev) => ({ ...prev, [it.path]: true }));
+      setDeletingMap((prev) => ({ ...prev, [logoItem.path]: true }));
 
       // optimistic remove
       setReport((prev) => {
         if (!prev) return prev;
-        const meta = ensureUpload(prev.meta);
-        meta.upload.images = (meta.upload.images || []).filter((x: any) => String(x?.path || "") !== it.path);
-        return { ...prev, meta };
-      });
-
-      setSelected((prev) => {
-        const next = { ...prev };
-        delete next[it.path];
-        return next;
+        const m = ensureUpload(prev.meta);
+        m.upload.images = (m.upload.images || []).filter((x: any) => String(x?.path || "") !== logoItem.path);
+        return { ...prev, meta: m };
       });
 
       const token = accessToken || (await getAccessTokenOrThrow());
@@ -455,100 +471,129 @@ export default function ReportDetailPage() {
         },
         body: JSON.stringify({
           reportId: report.id,
-          bucket: it.bucket,
-          path: it.path,
+          bucket: logoItem.bucket,
+          path: logoItem.path,
         }),
       });
 
       const json = await safeReadJson(res);
       if (!res.ok || !json?.ok) {
-        await refreshReport(json?.error || "이미지 삭제 실패");
+        await refreshReport(json?.error || "로고 삭제 실패");
         return;
       }
 
-      await refreshReport("이미지 삭제 완료");
+      await refreshReport("로고 삭제 완료");
     } catch (e: any) {
-      await refreshReport(e?.message || "이미지 삭제 실패");
+      await refreshReport(e?.message || "로고 삭제 실패");
     } finally {
-      setDeletingMap((prev) => ({ ...prev, [it.path]: false }));
+      setDeletingMap((prev) => ({ ...prev, [logoItem.path]: false }));
     }
   }
 
   // =========================
-  // ✅ Bulk delete (selected)
+  // ✅ 광고주: 중복 확인 / 생성 (Bearer 통일)
   // =========================
-  async function onDeleteSelected() {
-    if (!report) return;
+  const workspaceIdForAdvertiser =
+    report?.workspace_id || report?.meta?.workspace_id || null;
 
-    const paths = selectedPaths;
-    if (!paths.length) {
-      setMsg("선택된 이미지가 없습니다.");
-      return;
-    }
+  const canCheckAdv = !!workspaceIdForAdvertiser && !!advertiserName.trim();
+  const canCreateAdv = canCheckAdv && advState === "available" && !advCreating;
 
-    const ok = window.confirm(`선택한 ${paths.length}개 이미지를 삭제할까요?`);
-    if (!ok) return;
+  async function checkAdvertiserDup() {
+    if (!canCheckAdv) return;
 
     try {
-      setMsg("");
-      setBulkDeleting(true);
-
-      // optimistic: meta에서 제거
-      setReport((prev) => {
-        if (!prev) return prev;
-        const meta = ensureUpload(prev.meta);
-        const removeSet = new Set(paths);
-        meta.upload.images = (meta.upload.images || []).filter((x: any) => !removeSet.has(String(x?.path || "")));
-        return { ...prev, meta };
-      });
-
-      // 선택 초기화
-      setSelected({});
+      setAdvState("checking");
+      setAdvMsg("");
 
       const token = accessToken || (await getAccessTokenOrThrow());
       if (!accessToken) setAccessToken(token);
 
-      const res = await fetch("/api/uploads/images/delete-many", {
+      const res = await fetch("/api/advertisers/check-name", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          reportId: report.id,
-          bucket: "report_uploads",
-          paths,
+          workspace_id: workspaceIdForAdvertiser,
+          name: advertiserName.trim(),
         }),
       });
 
       const json = await safeReadJson(res);
-      if (!res.ok || !json?.ok) {
-        await refreshReport(json?.error || "선택 삭제 실패");
+
+      if (!res.ok || !(json as any)?.ok) {
+        setAdvState("error");
+        setAdvMsg((json as any)?.error || "중복확인 실패");
         return;
       }
 
-      await refreshReport(`선택 삭제 완료 (${paths.length}개)`);
+      const exists = !!(json as any).exists;
+      if (exists) {
+        setAdvState("duplicate");
+        setAdvMsg("광고주 중복");
+      } else {
+        setAdvState("available");
+        setAdvMsg("사용가능");
+      }
     } catch (e: any) {
-      await refreshReport(e?.message || "선택 삭제 실패");
-    } finally {
-      setBulkDeleting(false);
+      setAdvState("error");
+      setAdvMsg(e?.message || "중복확인 실패");
     }
   }
 
-  // ✅ images가 바뀌면, selected에서 존재하지 않는 path 정리(안전)
-  useEffect(() => {
-    const exist = new Set(images.map((x) => x.path));
-    setSelected((prev) => {
-      let changed = false;
-      const next: Record<string, boolean> = {};
-      for (const k of Object.keys(prev)) {
-        if (prev[k] && exist.has(k)) next[k] = true;
-        else changed = true;
-      }
-      return changed ? next : prev;
-    });
-  }, [images]);
+  async function createAdvertiser() {
+    if (!canCreateAdv) return;
 
+    try {
+      setAdvCreating(true);
+      setAdvMsg("");
+
+      const token = accessToken || (await getAccessTokenOrThrow());
+      if (!accessToken) setAccessToken(token);
+
+      const res = await fetch("/api/advertisers/create", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          workspace_id: workspaceIdForAdvertiser,
+          name: advertiserName.trim(),
+        }),
+      });
+
+      const json = await safeReadJson(res);
+      if (!res.ok || !(json as any)?.ok) {
+        setAdvMsg((json as any)?.error || "광고주 생성 실패");
+        return;
+      }
+
+      setAdvMsg("✅ 광고주 생성 완료");
+    } catch (e: any) {
+      setAdvMsg(e?.message || "광고주 생성 실패");
+    } finally {
+      setAdvCreating(false);
+    }
+  }
+
+  function advBadge() {
+    if (advState === "available")
+      return { text: "사용가능", fg: "#0a7a2f", bg: "rgba(10,122,47,0.12)" };
+    if (advState === "duplicate")
+      return { text: "광고주 중복", fg: "#b42318", bg: "rgba(180,35,24,0.12)" };
+    if (advState === "checking")
+      return { text: "확인중...", fg: "#444", bg: "rgba(0,0,0,0.06)" };
+    if (advState === "error")
+      return { text: "오류", fg: "#b42318", bg: "rgba(180,35,24,0.12)" };
+    return null;
+  }
+
+  // =========================
+  // Render guards
+  // =========================
   if (loading) return <div style={{ padding: 16 }}>Loading...</div>;
 
   if (!report) {
@@ -560,35 +605,18 @@ export default function ReportDetailPage() {
     );
   }
 
-  const meta = ensureUpload(report.meta);
-
-  // CSV list (최신 먼저)
+  // CSV list
   const csvList: UploadCsvInfo[] = (meta.upload?.csv || []).slice();
 
   const title = report.title || "Report";
-  const statusLabel = report.status === "draft" ? "Draft" : report.status === "ready" ? "Ready" : "Archived";
+  const statusLabel =
+    report.status === "draft"
+      ? "Draft"
+      : report.status === "ready"
+      ? "Ready"
+      : "Archived";
 
-  const allSelected = images.length > 0 && selectedPaths.length === images.length;
-
-  function toggleSelect(path: string, checked: boolean) {
-    setSelected((prev) => {
-      const next = { ...prev };
-      if (checked) next[path] = true;
-      else delete next[path];
-      return next;
-    });
-  }
-
-  function toggleSelectAll() {
-    if (!images.length) return;
-    if (allSelected) {
-      setSelected({});
-      return;
-    }
-    const next: Record<string, boolean> = {};
-    for (const it of images) next[it.path] = true;
-    setSelected(next);
-  }
+  const logoDeleting = logoItem ? !!deletingMap[logoItem.path] : false;
 
   return (
     <div style={{ padding: 16, maxWidth: 980, margin: "0 auto" }}>
@@ -601,7 +629,15 @@ export default function ReportDetailPage() {
       </div>
 
       {/* 발행/공유 */}
-      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16 }}>
+      <div
+        style={{
+          display: "flex",
+          gap: 10,
+          alignItems: "center",
+          marginBottom: 16,
+          flexWrap: "wrap",
+        }}
+      >
         {report.status === "draft" ? (
           <button
             onClick={onPublish}
@@ -654,7 +690,102 @@ export default function ReportDetailPage() {
         </div>
       ) : null}
 
-      {/* CSV 업로드 + 리스트 */}
+      {/* =========================
+          1) 광고주 생성 (NEW)
+         ========================= */}
+      <section
+        style={{
+          border: "1px solid #e5e5e5",
+          borderRadius: 12,
+          padding: 14,
+          marginBottom: 16,
+          background: "#fff",
+        }}
+      >
+        <div style={{ fontWeight: 900, marginBottom: 10 }}>광고주 생성</div>
+
+        <div style={{ display: "grid", gap: 10 }}>
+          <input
+            value={advertiserName}
+            onChange={(e) => {
+              setAdvertiserName(e.target.value);
+              setAdvState("idle");
+              setAdvMsg("");
+            }}
+            placeholder="광고주명을 입력하세요"
+            style={{
+              width: "100%",
+              padding: "12px 12px",
+              borderRadius: 12,
+              border: "1px solid rgba(0,0,0,0.14)",
+              fontSize: 14,
+            }}
+          />
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <button
+              onClick={checkAdvertiserDup}
+              disabled={!canCheckAdv || advState === "checking"}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #ddd",
+                background: "#fff",
+                cursor: !canCheckAdv ? "not-allowed" : "pointer",
+                opacity: !canCheckAdv ? 0.6 : 1,
+                fontWeight: 800,
+              }}
+            >
+              중복확인
+            </button>
+
+            <button
+              onClick={createAdvertiser}
+              disabled={!canCreateAdv}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #ddd",
+                background: "#111",
+                color: "#fff",
+                cursor: !canCreateAdv ? "not-allowed" : "pointer",
+                opacity: !canCreateAdv ? 0.6 : 1,
+                fontWeight: 900,
+              }}
+            >
+              {advCreating ? "생성중..." : "광고주 생성"}
+            </button>
+
+            {advBadge() ? (
+              <span
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: 999,
+                  fontWeight: 900,
+                  color: advBadge()!.fg,
+                  background: advBadge()!.bg,
+                  border: "1px solid rgba(0,0,0,0.08)",
+                  fontSize: 13,
+                }}
+              >
+                {advBadge()!.text}
+              </span>
+            ) : null}
+          </div>
+
+          {advMsg ? <div style={{ fontSize: 13, opacity: 0.85 }}>{advMsg}</div> : null}
+
+          {!workspaceIdForAdvertiser ? (
+            <div style={{ fontSize: 13, color: "#b42318", opacity: 0.9 }}>
+              workspace_id를 찾을 수 없습니다. (API에서 report.workspace_id를 내려주도록 확인 필요)
+            </div>
+          ) : null}
+        </div>
+      </section>
+
+      {/* =========================
+          2) CSV 업로드
+         ========================= */}
       <section
         style={{
           border: "1px solid #e5e5e5",
@@ -714,6 +845,7 @@ export default function ReportDetailPage() {
                     </div>
                   </div>
 
+                  {/* ✅ 여기 flexShrink: 0 로 “완성” (EOF 에러 방지 포인트) */}
                   <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
                     <button
                       onClick={() => openCsv(it)}
@@ -753,11 +885,15 @@ export default function ReportDetailPage() {
             })}
           </div>
         ) : (
-          <div style={{ marginTop: 10, fontSize: 13, opacity: 0.8 }}>아직 CSV가 업로드되지 않았습니다.</div>
+          <div style={{ marginTop: 10, fontSize: 13, opacity: 0.8 }}>
+            아직 CSV가 업로드되지 않았습니다.
+          </div>
         )}
       </section>
 
-      {/* 이미지 업로드 */}
+      {/* =========================
+          3) 로고 업로드 (NEW: 단일)
+         ========================= */}
       <section
         style={{
           border: "1px solid #e5e5e5",
@@ -766,187 +902,87 @@ export default function ReportDetailPage() {
           marginBottom: 16,
         }}
       >
-        <div style={{ fontWeight: 800, marginBottom: 8 }}>이미지 업로드</div>
+        <div style={{ fontWeight: 800, marginBottom: 8 }}>로고 업로드</div>
 
         <input
+          ref={logoInputRef}
           type="file"
           accept="image/png,image/jpeg,image/jpg,image/webp"
-          multiple
-          disabled={imgUploading || bulkDeleting}
-          onChange={(e) => onUploadImages(e.target.files)}
+          disabled={imgUploading || logoDeleting}
+          onChange={(e) => onUploadLogo(e.target.files?.[0] || null)}
         />
 
-        {/* ✅ 선택 삭제 컨트롤 */}
-        <div
-          style={{
-            marginTop: 10,
-            display: "flex",
-            gap: 10,
-            alignItems: "center",
-            flexWrap: "wrap",
-            fontSize: 13,
-            opacity: 0.95,
-          }}
-        >
-          <span>{imgUploading ? "업로드 중..." : `총 ${images.length}개`}</span>
-
-          <button
-            onClick={toggleSelectAll}
-            disabled={!images.length || bulkDeleting}
-            style={{
-              padding: "8px 10px",
-              borderRadius: 10,
-              border: "1px solid #ddd",
-              background: "#fff",
-              cursor: !images.length || bulkDeleting ? "not-allowed" : "pointer",
-              fontWeight: 700,
-            }}
-            title="전체 선택/해제"
-          >
-            {allSelected ? "전체 해제" : "전체 선택"}
-          </button>
-
-          <button
-            onClick={onDeleteSelected}
-            disabled={!selectedPaths.length || bulkDeleting}
-            style={{
-              padding: "8px 10px",
-              borderRadius: 10,
-              border: "1px solid #ddd",
-              background: selectedPaths.length ? "#111" : "#f3f3f3",
-              color: selectedPaths.length ? "#fff" : "#666",
-              cursor: !selectedPaths.length || bulkDeleting ? "not-allowed" : "pointer",
-              fontWeight: 800,
-            }}
-            title="선택 삭제"
-          >
-            {bulkDeleting ? "삭제 중..." : `선택 삭제 (${selectedPaths.length})`}
-          </button>
+        <div style={{ marginTop: 10, fontSize: 13, opacity: 0.85 }}>
+          {imgUploading ? "업로드 중..." : logoItem ? "로고 1개 등록됨" : "등록된 로고가 없습니다."}
         </div>
 
-        {images.length ? (
+        {logoItem ? (
           <div
             style={{
               marginTop: 12,
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
-              gap: 12,
+              border: "1px solid #eee",
+              borderRadius: 12,
+              overflow: "hidden",
+              background: "#fff",
             }}
           >
-            {images
-              .slice()
-              .reverse()
-              .map((it) => {
-                const deleting = !!deletingMap[it.path] || bulkDeleting;
-                const checked = !!selected[it.path];
+            <div style={{ position: "relative" }}>
+              <a
+                href="#"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  if (logoDeleting) return;
+                  const url = await createSignedUrl(logoItem.path);
+                  if (!url) return;
+                  window.open(String(url), "_blank", "noopener,noreferrer");
+                }}
+                style={{
+                  display: "block",
+                  width: "100%",
+                  maxWidth: 520,
+                  aspectRatio: "4 / 2",
+                  background: "#f5f5f5",
+                  margin: "0 auto",
+                }}
+                title="새 탭에서 열기"
+              >
+                <SignedImage path={logoItem.path} alt={logoItem.name} accessToken={accessToken} />
+              </a>
 
-                return (
-                  <div
-                    key={it.path}
-                    style={{
-                      border: "1px solid #eee",
-                      borderRadius: 12,
-                      overflow: "hidden",
-                      background: "#fff",
-                      opacity: deleting ? 0.75 : 1,
-                    }}
-                  >
-                    <div style={{ position: "relative" }}>
-                      {/* ✅ 이미지 클릭 시 "새 탭" 유지: 클릭 순간에만 signed-url 1회 발급 */}
-                      <a
-                        href="#"
-                        onClick={async (e) => {
-                          e.preventDefault();
-                          if (deleting) return;
-                          const url = await createSignedUrl(it.path);
-                          if (!url) return;
-                          window.open(String(url), "_blank", "noopener,noreferrer");
-                        }}
-                        style={{
-                          display: "block",
-                          width: "100%",
-                          aspectRatio: "4 / 3",
-                          background: "#f5f5f5",
-                          pointerEvents: !deleting ? "auto" : "none",
-                        }}
-                        title="새 탭에서 열기"
-                      >
-                        <SignedImage path={it.path} alt={it.name} accessToken={accessToken} />
-                      </a>
+              <button
+                onClick={onDeleteLogo}
+                disabled={logoDeleting || imgUploading}
+                style={{
+                  position: "absolute",
+                  top: 10,
+                  right: 10,
+                  padding: "8px 10px",
+                  borderRadius: 10,
+                  border: "1px solid rgba(0,0,0,0.12)",
+                  background: "rgba(255,255,255,0.92)",
+                  cursor: logoDeleting ? "not-allowed" : "pointer",
+                  fontWeight: 800,
+                }}
+                title="로고 삭제"
+              >
+                {logoDeleting ? "삭제중..." : "삭제"}
+              </button>
+            </div>
 
-                      {/* ✅ 선택 체크박스 */}
-                      <label
-                        style={{
-                          position: "absolute",
-                          top: 8,
-                          left: 8,
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 6,
-                          padding: "6px 8px",
-                          borderRadius: 999,
-                          background: "rgba(255,255,255,0.92)",
-                          border: "1px solid rgba(0,0,0,0.12)",
-                          cursor: deleting ? "not-allowed" : "pointer",
-                          fontSize: 12,
-                          fontWeight: 800,
-                          userSelect: "none",
-                        }}
-                        title="선택"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          disabled={deleting}
-                          onChange={(e) => toggleSelect(it.path, e.target.checked)}
-                        />
-                        선택
-                      </label>
-
-                      {/* ✅ 단일 삭제 버튼 */}
-                      <button
-                        onClick={() => onDeleteImage(it)}
-                        disabled={deleting}
-                        style={{
-                          position: "absolute",
-                          top: 8,
-                          right: 8,
-                          padding: "6px 8px",
-                          borderRadius: 999,
-                          border: "1px solid rgba(0,0,0,0.12)",
-                          background: "rgba(255,255,255,0.92)",
-                          cursor: deleting ? "not-allowed" : "pointer",
-                          fontSize: 12,
-                          fontWeight: 700,
-                        }}
-                        title="삭제"
-                      >
-                        삭제
-                      </button>
-                    </div>
-
-                    <div style={{ padding: 10 }}>
-                      <div
-                        style={{
-                          fontSize: 12,
-                          fontWeight: 700,
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          marginBottom: 6,
-                        }}
-                        title={it.name}
-                      >
-                        {it.name}
-                      </div>
-                      <div style={{ fontSize: 12, opacity: 0.75 }}>{(it.size || 0).toLocaleString()} bytes</div>
-                    </div>
-                  </div>
-                );
-              })}
+            <div style={{ padding: 12 }}>
+              <div style={{ fontWeight: 800 }}>{logoItem.name}</div>
+              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
+                {(logoItem.size || 0).toLocaleString()} bytes · {fmtTs(logoItem.uploaded_at)}
+              </div>
+              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 6 }}>
+                * MVP: “가장 최근 업로드 이미지 1개”를 로고로 취급합니다.
+              </div>
+            </div>
           </div>
         ) : (
-          <div style={{ marginTop: 10, fontSize: 13, opacity: 0.8 }}>업로드된 이미지가 없습니다.</div>
+          <div style={{ marginTop: 10, fontSize: 13, opacity: 0.8 }}>
+            로고 이미지를 업로드해 주세요.
+          </div>
         )}
       </section>
     </div>
