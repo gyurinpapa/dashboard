@@ -14,8 +14,12 @@ type CsvItem = {
   name: string;
   size: number;
   contentType: string;
+
+  bucket: string;
   path: string;
+
   created_at: string;
+  uploaded_by: string;
 };
 
 function jsonError(status: number, message: string, extra?: any) {
@@ -49,8 +53,7 @@ function ensureUploadShape(meta: any) {
 
 /**
  * ✅ Bearer 우선 + 쿠키 fallback
- * - 프론트가 Authorization: Bearer 를 보내면 그걸로 인증
- * - 없으면 sbAuth()로 쿠키 세션을 읽어 인증
+ * (기존 동작 유지)
  */
 async function getUserId(req: Request, supabaseAdmin: ReturnType<typeof getSupabaseAdmin>) {
   const authz = req.headers.get("authorization") || req.headers.get("Authorization") || "";
@@ -65,7 +68,8 @@ async function getUserId(req: Request, supabaseAdmin: ReturnType<typeof getSupab
     return { ok: true as const, userId: data.user.id };
   }
 
-    const sb = await sbAuth();
+  // 쿠키 세션 fallback
+  const sb = await sbAuth();
   const { data: { user }, error } = await sb.auth.getUser();
 
   if (error || !user?.id) {
@@ -84,7 +88,7 @@ async function assertCanAccessReport(params: {
 
   const { data: report, error: repErr } = await supabaseAdmin
     .from("reports")
-    .select("id, workspace_id, created_by, meta")
+    .select("id, workspace_id, created_by, meta, advertiser_id")
     .eq("id", reportId)
     .maybeSingle();
 
@@ -176,18 +180,37 @@ export async function POST(req: Request) {
   }
 
   // ✅ meta 업데이트
+  const uploadedAt = nowIso();
+
   const meta0 = ensureUploadShape(report.meta);
   const item: CsvItem = {
     id,
     name: file.name,
     size,
     contentType,
+    bucket: BUCKET,
     path,
-    created_at: nowIso(),
+    created_at: uploadedAt,
+    uploaded_by: userId,
   };
 
+  // 🔥 최신이 앞(0번)으로 유지 (기존 유지)
   const nextMeta = {
     ...meta0,
+
+    // ✅ publish 가드용 (최상위에 강제 기록)
+    last_csv_uploaded_at: uploadedAt,
+    lastCsvUploadedAt: uploadedAt,
+
+    last_csv_id: id,
+    lastCsvId: id,
+
+    last_csv_bucket: BUCKET,
+    lastCsvBucket: BUCKET,
+
+    last_csv_path: path,
+    lastCsvPath: path,
+
     upload: {
       ...meta0.upload,
       csv: [item, ...(meta0.upload.csv ?? [])],
@@ -196,7 +219,7 @@ export async function POST(req: Request) {
 
   const { error: updErr } = await supabaseAdmin
     .from("reports")
-    .update({ meta: nextMeta, updated_at: nowIso() })
+    .update({ meta: nextMeta, updated_at: uploadedAt })
     .eq("id", reportId);
 
   if (updErr) {
@@ -207,5 +230,36 @@ export async function POST(req: Request) {
     });
   }
 
-  return NextResponse.json({ ok: true, item, csv: nextMeta.upload.csv });
+  // ✅ ingestion(job) 생성 (있으면 좋고, 없어도 업로드 자체는 성공)
+  let ingestionId: string | null = null;
+  try {
+    const { data: ins, error: insErr } = await supabaseAdmin
+      .from("report_ingestions")
+      .insert({
+        workspace_id: report.workspace_id,
+        report_id: reportId,
+        kind: "csv",
+        status: "queued",
+        csv_bucket: BUCKET,
+        csv_path: path,
+        created_by: userId,
+        updated_at: uploadedAt,
+      })
+      .select("id")
+      .maybeSingle();
+
+    if (!insErr && ins?.id) ingestionId = String(ins.id);
+  } catch (e) {
+    console.warn("report_ingestions insert failed", (e as any)?.message || e);
+  }
+
+  return NextResponse.json({
+    ok: true,
+    reportId,
+    bucket: BUCKET,
+    path,
+    item,
+    csv: nextMeta.upload.csv,
+    ingestion_id: ingestionId,
+  });
 }

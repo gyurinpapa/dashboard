@@ -1,0 +1,8 @@
+=== SAVE POINT ===
+2026-03-03 20:04:49 (KST)
+Nature Report - creative upload/matching fix completed
+- creative_key now preserves original filename (NFC normalized)
+- underscore legacy key issue resolved
+- matching between report_rows.imagepath_raw and report_creatives.creative_key fixed
+- next: batch_id session separation
+

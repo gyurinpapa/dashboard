@@ -1,9 +1,8 @@
-// app/share/[token]/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import CommerceDashboard from "@/components/dashboard/CommerceDashboard";
+import ReportTemplate from "@/app/components/ReportTemplate";
 
 type ReportRow = {
   id: string;
@@ -13,6 +12,7 @@ type ReportRow = {
   share_token?: string | null;
   period_start?: string | null;
   period_end?: string | null;
+  advertiser_id?: string | null;
 };
 
 async function safeReadJson(res: Response) {
@@ -31,6 +31,8 @@ export default function ShareReportPage() {
 
   const [loading, setLoading] = useState(true);
   const [report, setReport] = useState<ReportRow | null>(null);
+  const [rows, setRows] = useState<any[]>([]);
+  const [creativesMap, setCreativesMap] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -41,6 +43,8 @@ export default function ShareReportPage() {
         setLoading(true);
         setError("");
         setReport(null);
+        setRows([]);
+        setCreativesMap({});
 
         if (!token) {
           setError("잘못된 공유 링크입니다. (token 없음)");
@@ -48,11 +52,12 @@ export default function ShareReportPage() {
           return;
         }
 
-        // ✅ 공개 API 사용
-        const res = await fetch(`/api/reports/share/${encodeURIComponent(token)}`, {
+        const res = await fetch(`/api/share/${encodeURIComponent(token)}`, {
           cache: "no-store",
         });
         const json = await safeReadJson(res);
+
+        if (!alive) return;
 
         if (!res.ok || !json?.ok) {
           setError(json?.error || "공유 리포트 조회 실패");
@@ -60,16 +65,36 @@ export default function ShareReportPage() {
           return;
         }
 
-        if (!alive) return;
-
         const r = json.report as ReportRow;
+
         if (r?.status !== "ready") {
           setError("아직 공개되지 않은 리포트입니다. (status != ready)");
           setLoading(false);
           return;
         }
 
+        const rowsArr = Array.isArray(json.rows) ? json.rows : [];
+
+        // creativesMap or creatives[] 모두 대응
+        const cmap =
+          (json.creativesMap && typeof json.creativesMap === "object"
+            ? json.creativesMap
+            : null) ??
+          (Array.isArray(json.creatives)
+            ? Object.fromEntries(
+                json.creatives
+                  .map((c: any) => [
+                    String(c?.creative_key ?? "").trim(),
+                    String(c?.signed_url ?? "").trim(),
+                  ])
+                  .filter(([k, u]: any[]) => k && u)
+              )
+            : {}) ??
+          {};
+
         setReport(r);
+        setRows(rowsArr);
+        setCreativesMap(cmap);
         setLoading(false);
       } catch (e: any) {
         if (!alive) return;
@@ -88,26 +113,30 @@ export default function ShareReportPage() {
   if (error) {
     return (
       <main className="p-6" style={{ maxWidth: 1100, margin: "0 auto" }}>
-        <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 8 }}>공유 리포트</h1>
-        <div style={{ padding: 12, border: "1px solid #eee", borderRadius: 10, background: "#fafafa" }}>
+        <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 8 }}>
+          공유 리포트
+        </h1>
+        <div
+          style={{
+            padding: 12,
+            border: "1px solid #eee",
+            borderRadius: 10,
+            background: "#fafafa",
+          }}
+        >
           {error}
         </div>
       </main>
     );
   }
 
-  if (!report) {
-    return (
-      <main className="p-6">
-        <div>Report not found</div>
-      </main>
-    );
-  }
-
   return (
     <main className="p-6" style={{ maxWidth: 1400, margin: "0 auto" }}>
-      {/* ✅ shareToken을 그대로 전달 (하위가 /api/uploads/signed-url 호출 시 body에 shareToken 넣도록 하면 됨) */}
-      <CommerceDashboard />
+      <ReportTemplate rows={rows} isLoading={false} creativesMap={creativesMap} />
+      <div className="mt-2 text-xs text-gray-500">
+        rows: {rows.length}개 / creatives: {Object.keys(creativesMap || {}).length}
+        개
+      </div>
     </main>
   );
 }
