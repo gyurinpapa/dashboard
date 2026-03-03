@@ -103,10 +103,13 @@ export async function POST(req: Request, ctx: Ctx) {
 
   try {
     // 1) Auth
-    const { user, error: authErr } = await sbAuth();
-    if (authErr || !user) return jsonError(401, "UNAUTHORIZED");
+    const auth = await sbAuth();
+    const user = (auth as any)?.user ?? null;
+    const authErr = (auth as any)?.error ?? null;
 
-    // 2) reportId
+    if (authErr || !user) return jsonError(401, "UNAUTHORIZED");
+    
+        // 2) reportId
     const { id } = await ctx.params;
     const reportId = asString(id);
     if (!reportId) return jsonError(400, "MISSING_REPORT_ID");

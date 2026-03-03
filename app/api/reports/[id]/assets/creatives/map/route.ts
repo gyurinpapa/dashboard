@@ -12,128 +12,140 @@ function jsonError(status: number, message: string, extra?: any) {
   return NextResponse.json({ ok: false, error: message, ...extra }, { status });
 }
 
-function asString(v: any) {
-  if (v == null) return "";
-  return String(v).trim();
+function asInt(v: any, def = 3600) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return def;
+  if (n < 60) return 60;
+  if (n > 60 * 60 * 24) return 60 * 60 * 24;
+  return Math.floor(n);
 }
 
-function uniq<T>(arr: T[]) {
-  return Array.from(new Set(arr));
+function normalizeFilenameKey(v: any): string {
+  // ✅ 최소한의 키 정규화(과매칭 방지)
+  // - NFC normalize
+  // - trim
+  // - basename만 (path 제거)
+  // - 소문자
+  const s = String(v ?? "").trim();
+  const base = s.split("/").pop() ?? s;
+  try {
+    return base.normalize("NFC").toLowerCase();
+  } catch {
+    return base.toLowerCase();
+  }
+}
+
+function stripExt(name: string) {
+  return name.replace(/\.[a-z0-9]{1,8}$/i, "");
+}
+
+function shouldExpand(mode: string) {
+  return mode === "expanded";
 }
 
 export async function GET(req: Request, ctx: Ctx) {
-  const t0 = Date.now();
-
   try {
-    const { user, error: authErr } = await sbAuth();
-    if (authErr || !user) return jsonError(401, "UNAUTHORIZED");
+    // ✅ auth: sbAuth() 결과 객체 방식
+    const auth = await sbAuth();
+    const user = (auth as any)?.user ?? null;
+    const authErr = (auth as any)?.error ?? null;
+
+    if (authErr || !user) {
+      return jsonError(401, "UNAUTHORIZED");
+    }
 
     const { id } = await ctx.params;
-    const reportId = asString(id);
-    if (!reportId) return jsonError(400, "MISSING_REPORT_ID");
 
-    const supabase = getSupabaseAdmin();
-
-    // ✅ mode=published 지원(공유페이지에서 쓸 수 있음)
     const url = new URL(req.url);
-    const mode = asString(url.searchParams.get("mode")) || "current"; // current | published
+    const expiresIn = asInt(url.searchParams.get("expiresIn"), 3600);
+    const mode = (url.searchParams.get("mode") || "strict").toLowerCase();
 
-    const { data: rep, error: repErr } = await supabase
+    const admin = getSupabaseAdmin();
+
+    // ✅ report 조회 (workspace_id 필요)
+    const { data: report, error: rErr } = await admin
       .from("reports")
-      .select("id, current_creatives_batch_id, published_creatives_batch_id")
-      .eq("id", reportId)
+      .select("id, workspace_id")
+      .eq("id", id)
       .maybeSingle();
 
-    if (repErr) return jsonError(500, "REPORT_SELECT_FAILED", { detail: repErr.message });
-    if (!rep) return jsonError(404, "REPORT_NOT_FOUND");
+    if (rErr) return jsonError(500, rErr.message);
+    if (!report) return jsonError(404, "REPORT_NOT_FOUND");
 
-    const batchId =
-      mode === "published"
-        ? asString((rep as any).published_creatives_batch_id)
-        : asString((rep as any).current_creatives_batch_id);
+    // ✅ membership 체크
+    const { data: wm, error: wmErr } = await admin
+      .from("workspace_members")
+      .select("id")
+      .eq("workspace_id", report.workspace_id)
+      .eq("user_id", user.id)
+      .maybeSingle();
 
-    // ✅ 배치가 없으면 map은 빈 것(= 착시 차단)
-    if (!batchId) {
-      return NextResponse.json(
-        {
-          ok: true,
-          report_id: reportId,
-          mode,
-          batch_id: null,
-          count_db_rows: 0,
-          count_signed: 0,
-          unique_url_count: 0,
-          unique_path_count: 0,
-          creativesMap: {},
-          creatives: [],
-          ms: Date.now() - t0,
-        },
-        { status: 200 }
-      );
-    }
+    if (wmErr) return jsonError(500, wmErr.message);
+    if (!wm) return jsonError(403, "FORBIDDEN");
 
-    // ✅ batch_id로만 제한 (핵심)
-    const { data: rows, error: selErr } = await supabase
+    // ✅ report_creatives: 업로드된 소재 목록
+    const { data: rows, error: cErr } = await admin
       .from("report_creatives")
-      .select("id, report_id, batch_id, creative_key, file_name, storage_bucket, storage_path, created_at")
-      .eq("report_id", reportId)
-      .eq("batch_id", batchId)
+      .select("creative_key, file_name, storage_path")
+      .eq("report_id", id)
       .order("created_at", { ascending: false });
 
-    if (selErr) return jsonError(500, "DB_SELECT_FAILED", { detail: selErr.message });
+    if (cErr) return jsonError(500, cErr.message);
 
-    const creatives = rows ?? [];
+    const BUCKET = "report_uploads";
 
-    const map: Record<string, string> = {};
-    const signed: Array<{
-      creative_key: string;
-      url: string;
-      storage_path: string;
-      file_name?: string | null;
-      created_at?: string | null;
-    }> = [];
-
-    for (const c of creatives) {
-      const bucket = asString((c as any).storage_bucket) || "report_uploads";
-      const path = asString((c as any).storage_path);
-      const key = asString((c as any).creative_key);
-
-      if (!bucket || !path || !key) continue;
-
-      const { data: s, error: sErr } = await supabase.storage
-        .from(bucket)
-        .createSignedUrl(path, 60 * 60);
-
-      if (sErr || !s?.signedUrl) continue;
-
-      map[key] = s.signedUrl;
-      signed.push({
-        creative_key: key,
-        url: s.signedUrl,
-        storage_path: path,
-        file_name: (c as any).file_name ?? null,
-        created_at: (c as any).created_at ?? null,
-      });
+    // ✅ strict 원본 entries: "파일 기준"으로만 만든다 (과매칭 방지)
+    // key: creative_key (원본파일명)
+    // url: signed url
+    const baseEntries: Array<{ key: string; path: string }> = [];
+    for (const r of rows ?? []) {
+      const path = String((r as any).storage_path || "").trim();
+      const keyRaw = (r as any).creative_key ?? (r as any).file_name ?? "";
+      const key = normalizeFilenameKey(keyRaw);
+      if (!path || !key) continue;
+      baseEntries.push({ key, path });
     }
 
-    const urls = signed.map((x) => x.url);
-    const uniqUrls = uniq(urls);
-    const uniqPaths = uniq(signed.map((x) => x.storage_path));
+    // ✅ signed urls (중복 path 제거)
+    const uniqPath = new Map<string, { key: string; path: string }>();
+    for (const e of baseEntries) {
+      if (!uniqPath.has(e.path)) uniqPath.set(e.path, e);
+    }
+
+    const creativesMap: Record<string, string> = {};
+    const strictCount = uniqPath.size;
+
+    for (const e of uniqPath.values()) {
+      const { data: signed, error: sErr } = await admin.storage
+        .from(BUCKET)
+        .createSignedUrl(e.path, expiresIn);
+
+      if (sErr || !signed?.signedUrl) continue;
+
+      // ✅ strict key only
+      creativesMap[e.key] = signed.signedUrl;
+
+      // ✅ expanded 모드일 때만 “최소 확장” 허용
+      // - stripExt(basename) 정도만 추가 (공백/언더스코어/특수문자 확장은 금지)
+      if (shouldExpand(mode)) {
+        const k2 = stripExt(e.key);
+        if (k2 && !creativesMap[k2]) creativesMap[k2] = signed.signedUrl;
+      }
+    }
+
+    const expandedCount = Object.keys(creativesMap).length;
 
     return NextResponse.json({
       ok: true,
-      report_id: reportId,
-      mode,
-      batch_id: batchId,
-      count_db_rows: creatives.length,
-      count_signed: signed.length,
-      unique_url_count: uniqUrls.length,
-      unique_path_count: uniqPaths.length,
-      creativesMap: map,
-      creatives: signed,
-      ms: Date.now() - t0,
+      creativesMap,
+      meta: {
+        mode,
+        strictCount, // 실제 파일 수(고유 path)
+        expandedCount, // 키 후보 수
+        expiresIn,
+      },
     });
   } catch (e: any) {
-    return jsonError(500, "SERVER_ERROR", { detail: String(e?.message ?? e) });
+    return jsonError(500, e?.message || String(e));
   }
 }

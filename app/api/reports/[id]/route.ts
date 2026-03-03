@@ -11,27 +11,31 @@ function asString(v: any) {
   return s ? s : undefined;
 }
 
+function jsonError(status: number, message: string, extra?: any) {
+  return NextResponse.json({ ok: false, error: message, ...extra }, { status });
+}
+
+async function getUserFromSbAuth() {
+  // ✅ 이 프로젝트의 sbAuth()는 "결과 객체"를 반환 (SbAuthResult/AuthOk)
+  const auth = await sbAuth();
+  const user = (auth as any)?.user ?? null;
+  const authErr = (auth as any)?.error ?? null;
+  return { user, authErr };
+}
+
 export async function GET(_req: Request, ctx: Ctx) {
   try {
     const { id: idRaw } = await ctx.params;
     const id = asString(idRaw);
 
     if (!id) {
-      return NextResponse.json({ ok: false, error: "id is required" }, { status: 400 });
+      return jsonError(400, "id is required");
     }
 
-    // ✅ 1) 세션 통일: 서버에서 쿠키 기반 user 읽기
-    const sb = await sbAuth();
-    const {
-      data: { user },
-      error: userErr,
-    } = await sb.auth.getUser();
-
-    if (userErr || !user) {
-      return NextResponse.json(
-        { ok: false, error: "Unauthorized (no session). Please sign in." },
-        { status: 401 }
-      );
+    // ✅ 1) 세션 통일: 결과 객체 방식
+    const { user, authErr } = await getUserFromSbAuth();
+    if (authErr || !user) {
+      return jsonError(401, "Unauthorized (no session). Please sign in.");
     }
 
     // ✅ 2) report 조회 (workspace_id 확보 포함)
@@ -43,8 +47,8 @@ export async function GET(_req: Request, ctx: Ctx) {
       .eq("id", id)
       .maybeSingle();
 
-    if (rErr) return NextResponse.json({ ok: false, error: rErr.message }, { status: 400 });
-    if (!report) return NextResponse.json({ ok: false, error: "Report not found" }, { status: 404 });
+    if (rErr) return jsonError(400, rErr.message);
+    if (!report) return jsonError(404, "Report not found");
 
     // ✅ 3) workspace 멤버십 체크 (권한 확인)
     const { data: wm, error: wmErr } = await supabaseAdmin
@@ -54,17 +58,14 @@ export async function GET(_req: Request, ctx: Ctx) {
       .eq("user_id", user.id)
       .maybeSingle();
 
-    if (wmErr) return NextResponse.json({ ok: false, error: wmErr.message }, { status: 500 });
+    if (wmErr) return jsonError(500, wmErr.message);
     if (!wm) {
-      return NextResponse.json(
-        { ok: false, error: "Forbidden: you are not a member of this workspace" },
-        { status: 403 }
-      );
+      return jsonError(403, "Forbidden: you are not a member of this workspace");
     }
 
     return NextResponse.json({ ok: true, report });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message ?? String(e) }, { status: 500 });
+    return jsonError(500, e?.message ?? String(e));
   }
 }
 
@@ -74,21 +75,13 @@ export async function PATCH(req: Request, ctx: Ctx) {
     const id = asString(idRaw);
 
     if (!id) {
-      return NextResponse.json({ ok: false, error: "id is required" }, { status: 400 });
+      return jsonError(400, "id is required");
     }
 
-    // ✅ 1) 세션 통일
-    const sb = await sbAuth();
-    const {
-      data: { user },
-      error: userErr,
-    } = await sb.auth.getUser();
-
-    if (userErr || !user) {
-      return NextResponse.json(
-        { ok: false, error: "Unauthorized (no session). Please sign in." },
-        { status: 401 }
-      );
+    // ✅ 1) 세션 통일: 결과 객체 방식
+    const { user, authErr } = await getUserFromSbAuth();
+    if (authErr || !user) {
+      return jsonError(401, "Unauthorized (no session). Please sign in.");
     }
 
     // ✅ 2) report 먼저 조회 (workspace_id 확보)
@@ -98,8 +91,8 @@ export async function PATCH(req: Request, ctx: Ctx) {
       .eq("id", id)
       .maybeSingle();
 
-    if (rErr) return NextResponse.json({ ok: false, error: rErr.message }, { status: 400 });
-    if (!report) return NextResponse.json({ ok: false, error: "Report not found" }, { status: 404 });
+    if (rErr) return jsonError(400, rErr.message);
+    if (!report) return jsonError(404, "Report not found");
 
     // ✅ 3) 멤버십 체크
     const { data: wm, error: wmErr } = await supabaseAdmin
@@ -109,12 +102,9 @@ export async function PATCH(req: Request, ctx: Ctx) {
       .eq("user_id", user.id)
       .maybeSingle();
 
-    if (wmErr) return NextResponse.json({ ok: false, error: wmErr.message }, { status: 500 });
+    if (wmErr) return jsonError(500, wmErr.message);
     if (!wm) {
-      return NextResponse.json(
-        { ok: false, error: "Forbidden: you are not a member of this workspace" },
-        { status: 403 }
-      );
+      return jsonError(403, "Forbidden: you are not a member of this workspace");
     }
 
     // (선택) 수정 권한을 role로 제한하고 싶으면 여기서 체크 가능
@@ -141,10 +131,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
     if (meta !== undefined) patch.meta = meta;
 
     if (Object.keys(patch).length === 0) {
-      return NextResponse.json(
-        { ok: false, error: "No fields to update" },
-        { status: 400 }
-      );
+      return jsonError(400, "No fields to update");
     }
 
     // ✅ 5) update
@@ -155,11 +142,11 @@ export async function PATCH(req: Request, ctx: Ctx) {
       .select("id, workspace_id, report_type_id, title, status, period_start, period_end, meta, updated_at")
       .maybeSingle();
 
-    if (uErr) return NextResponse.json({ ok: false, error: uErr.message }, { status: 400 });
-    if (!updated) return NextResponse.json({ ok: false, error: "Report not found" }, { status: 404 });
+    if (uErr) return jsonError(400, uErr.message);
+    if (!updated) return jsonError(404, "Report not found");
 
     return NextResponse.json({ ok: true, report: updated });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message ?? String(e) }, { status: 500 });
+    return jsonError(500, e?.message ?? String(e));
   }
 }

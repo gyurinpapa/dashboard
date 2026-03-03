@@ -3,104 +3,101 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
 
-type CreateBody = {
-  workspace_id?: string;
-  report_type_id?: string;
-  title?: string;
-  status?: string;
-  meta?: any;
-  period_start?: string | null;
-  period_end?: string | null;
-};
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-function jsonError(status: number, message: string, extra?: Record<string, any>) {
-  return NextResponse.json({ ok: false, error: message, ...(extra ?? {}) }, { status });
+function jsonError(status: number, message: string, extra?: any) {
+  return NextResponse.json({ ok: false, error: message, ...extra }, { status });
+}
+
+function asString(v: any) {
+  if (v == null) return "";
+  return String(v).trim();
+}
+
+function asNonEmpty(v: any) {
+  const s = asString(v);
+  return s ? s : null;
+}
+
+function toYMD(d: Date) {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function defaultPeriod() {
+  // ✅ 기본값: 최근 7일 (필요시 기존 프로젝트 규칙으로 변경 가능)
+  const today = new Date();
+  const end = new Date(today);
+  const start = new Date(today);
+  start.setDate(start.getDate() - 6);
+  return { period_start: toYMD(start), period_end: toYMD(end) };
 }
 
 export async function POST(req: Request) {
   try {
-    const body = (await req.json().catch(() => ({}))) as CreateBody;
+    const body = await req.json().catch(() => ({}));
 
-    const workspace_id = body.workspace_id?.trim();
-    const report_type_id = body.report_type_id?.trim();
-    const title = body.title?.trim();
-    const status = body.status?.trim() || "draft";
-    const meta = body.meta ?? {};
+    // ✅ auth: sbAuth() 결과객체 방식 통일
+    const auth = await sbAuth();
+    const user = (auth as any)?.user ?? null;
+    const authErr = (auth as any)?.error ?? null;
 
-    // period는 "들어오면 우선", 없으면 자동세팅
-    const period_start_in = body.period_start ?? null;
-    const period_end_in = body.period_end ?? null;
+    if (authErr || !user) {
+      return jsonError(401, "Unauthorized (no session). Please sign in.");
+    }
+
+    const workspace_id = asNonEmpty(body.workspace_id);
+    const report_type_id = asNonEmpty(body.report_type_id);
+    const title = asNonEmpty(body.title) ?? "새 리포트";
 
     if (!workspace_id) return jsonError(400, "workspace_id is required");
     if (!report_type_id) return jsonError(400, "report_type_id is required");
 
-    // ✅ 1) 서버 쿠키 세션으로 user 확인 (단일 방식)
-    const sb = await sbAuth();
-    const { data: userRes, error: userErr } = await sb.auth.getUser();
-    const user = userRes?.user ?? null;
-    if (userErr || !user) return jsonError(401, "Unauthorized (no session). Please sign in.");
-
-    const created_by = user.id;
-
-    // ✅ 2) 멤버십 체크 (workspace_members)
+    // ✅ membership 체크
     const { data: wm, error: wmErr } = await supabaseAdmin
       .from("workspace_members")
-      .select("workspace_id")
+      .select("workspace_id, role")
       .eq("workspace_id", workspace_id)
-      .eq("user_id", created_by)
+      .eq("user_id", user.id)
       .maybeSingle();
 
     if (wmErr) return jsonError(500, wmErr.message);
     if (!wm) return jsonError(403, "Forbidden: you are not a member of this workspace");
 
-    // ✅ 3) period 자동세팅 (없을 때만)
-    let period_start = period_start_in;
-    let period_end = period_end_in;
+    // ✅ period 자동 세팅 (body가 주면 우선, 없으면 기본값)
+    const hasStart = Object.prototype.hasOwnProperty.call(body, "period_start");
+    const hasEnd = Object.prototype.hasOwnProperty.call(body, "period_end");
+    const fallback = defaultPeriod();
 
-    if (!period_start || !period_end) {
-      const { data: minRows, error: minErr } = await supabaseAdmin
-        .from("metrics_daily")
-        .select("date")
-        .eq("workspace_id", workspace_id)
-        .order("date", { ascending: true })
-        .limit(1);
+    const period_start = hasStart ? (body.period_start ?? null) : fallback.period_start;
+    const period_end = hasEnd ? (body.period_end ?? null) : fallback.period_end;
 
-      const { data: maxRows, error: maxErr } = await supabaseAdmin
-        .from("metrics_daily")
-        .select("date")
-        .eq("workspace_id", workspace_id)
-        .order("date", { ascending: false })
-        .limit(1);
+    const meta = body.meta !== undefined ? body.meta : {};
 
-      // 조회 실패는 create를 막지 않고(초기엔 데이터 없을 수 있음) null 유지
-      if (!minErr && !maxErr) {
-        const minDate = (minRows?.[0] as any)?.date ?? null;
-        const maxDate = (maxRows?.[0] as any)?.date ?? null;
+    const insertPayload: any = {
+      workspace_id,
+      report_type_id,
+      title,
+      status: "draft",
+      period_start,
+      period_end,
+      meta,
+      created_by: user.id,
+    };
 
-        if (!period_start && minDate) period_start = minDate;
-        if (!period_end && maxDate) period_end = maxDate;
-      }
-    }
-
-    // ✅ 4) reports insert (service role)
-    const { data, error } = await supabaseAdmin
+    const { data: created, error: cErr } = await supabaseAdmin
       .from("reports")
-      .insert({
-        workspace_id,
-        report_type_id,
-        title: title ?? "New Report - Draft",
-        status,
-        period_start,
-        period_end,
-        created_by,
-        meta,
-      })
-      .select("id, workspace_id, report_type_id, title, status, period_start, period_end, created_at")
-      .single();
+      .insert(insertPayload)
+      .select("id, workspace_id, report_type_id, title, status, period_start, period_end, meta, created_at")
+      .maybeSingle();
 
-    if (error) return jsonError(400, error.message);
+    if (cErr) return jsonError(400, cErr.message);
+    if (!created) return jsonError(500, "CREATE_FAILED");
 
-    return NextResponse.json({ ok: true, report: data });
+    return NextResponse.json({ ok: true, report: created });
   } catch (e: any) {
     return jsonError(500, e?.message ?? String(e));
   }

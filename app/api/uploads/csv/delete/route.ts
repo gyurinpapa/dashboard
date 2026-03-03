@@ -38,15 +38,16 @@ async function getUserId(req: Request, supabaseAdmin: ReturnType<typeof getSupab
     return { ok: true as const, userId: data.user.id };
   }
 
-  // 2) 없으면 쿠키 기반 서버 세션으로 user 확인
-  const sb = await sbAuth();
-  const { data, error } = await sb.auth.getUser();
+  // 2) 없으면 쿠키 기반 서버 세션으로 user 확인 (✅ sbAuth 결과객체 방식)
+  const auth = await sbAuth();
+  const user = (auth as any)?.user ?? null;
+  const authErr = (auth as any)?.error ?? null;
 
-  if (error || !data?.user?.id) {
+  if (authErr || !user?.id) {
     return { ok: false as const, status: 401, message: "Unauthorized (no session)" };
   }
 
-  return { ok: true as const, userId: data.user.id };
+  return { ok: true as const, userId: user.id };
 }
 
 async function assertCanAccessReport(params: {
@@ -117,7 +118,7 @@ export async function POST(req: Request) {
 
   // ✅ meta.upload.csv 배열/객체 모두 지원
   const meta = safeObj(report.meta);
-  const upload = safeObj(meta.upload);
+  const upload = safeObj((meta as any).upload);
 
   const csvAny = (upload as any).csv;
   const csvList: any[] = Array.isArray(csvAny) ? csvAny : csvAny ? [csvAny] : [];

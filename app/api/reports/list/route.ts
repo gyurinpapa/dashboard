@@ -3,36 +3,43 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
 
-function clampInt(n: any, min: number, max: number, fallback: number) {
-  const v = Number(n);
-  if (!Number.isFinite(v)) return fallback;
-  return Math.min(Math.max(Math.trunc(v), min), max);
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+function jsonError(status: number, message: string, extra?: any) {
+  return NextResponse.json({ ok: false, error: message, ...extra }, { status });
 }
 
-function jsonError(status: number, message: string, extra?: Record<string, any>) {
-  return NextResponse.json({ ok: false, error: message, ...(extra ?? {}) }, { status });
+function asString(v: any) {
+  if (v == null) return "";
+  return String(v).trim();
+}
+
+function asNonEmpty(v: any) {
+  const s = asString(v);
+  return s ? s : null;
 }
 
 export async function GET(req: Request) {
   try {
-    const url = new URL(req.url);
+    // ✅ auth: 결과객체 방식 통일
+    const auth = await sbAuth();
+    const user = (auth as any)?.user ?? null;
+    const authErr = (auth as any)?.error ?? null;
 
-    const workspace_id = url.searchParams.get("workspace_id")?.trim() || "";
-    const limit = clampInt(url.searchParams.get("limit"), 1, 200, 50);
+    if (authErr || !user) {
+      return jsonError(401, "Unauthorized (no session). Please sign in.");
+    }
+
+    const url = new URL(req.url);
+    const workspace_id = asNonEmpty(url.searchParams.get("workspace_id"));
 
     if (!workspace_id) return jsonError(400, "workspace_id is required");
 
-    // ✅ 1) 서버 쿠키 세션으로 user 확인 (단일 방식)
-    const sb = await sbAuth();
-    const { data: userRes, error: userErr } = await sb.auth.getUser();
-    const user = userRes?.user ?? null;
-
-    if (userErr || !user) return jsonError(401, "Unauthorized (no session). Please sign in.");
-
-    // ✅ 2) workspace 멤버십 체크
+    // ✅ membership 체크
     const { data: wm, error: wmErr } = await supabaseAdmin
       .from("workspace_members")
-      .select("workspace_id")
+      .select("workspace_id, role")
       .eq("workspace_id", workspace_id)
       .eq("user_id", user.id)
       .maybeSingle();
@@ -40,17 +47,17 @@ export async function GET(req: Request) {
     if (wmErr) return jsonError(500, wmErr.message);
     if (!wm) return jsonError(403, "Forbidden: you are not a member of this workspace");
 
-    // ✅ 3) reports 조회
-    const { data, error } = await supabaseAdmin
+    // ✅ report 목록 조회
+    const { data: reports, error: rErr } = await supabaseAdmin
       .from("reports")
-      .select("id, title, status, period_start, period_end, created_at, updated_at")
+      .select("id, title, status, period_start, period_end, meta, created_at, updated_at, report_type_id")
       .eq("workspace_id", workspace_id)
       .order("created_at", { ascending: false })
-      .limit(limit);
+      .limit(200);
 
-    if (error) return jsonError(400, error.message);
+    if (rErr) return jsonError(400, rErr.message);
 
-    return NextResponse.json({ ok: true, reports: data ?? [] });
+    return NextResponse.json({ ok: true, reports: reports ?? [] });
   } catch (e: any) {
     return jsonError(500, e?.message ?? String(e));
   }

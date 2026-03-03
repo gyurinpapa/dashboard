@@ -1,3 +1,4 @@
+// app/api/advertisers/create/route.ts
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
@@ -5,127 +6,72 @@ import { sbAuth } from "@/src/lib/supabase/auth-server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const BUCKET = "report_uploads"; // ✅ 사용 중인 storage bucket명으로 맞추기
-
 function asString(v: any) {
   if (v == null) return "";
   return String(v).trim();
 }
 
-function getBearerToken(req: Request) {
-  const h = req.headers.get("authorization") || "";
-  const m = h.match(/^Bearer\s+(.+)$/i);
-  return m ? m[1].trim() : "";
-}
-
-async function getUserFromReq(req: Request) {
-  const admin = getSupabaseAdmin();
-
-  // 1) Bearer 우선
-  const token = getBearerToken(req);
-  if (token) {
-    const { data, error } = await admin.auth.getUser(token);
-    if (!error && data?.user) return { user: data.user, error: null };
-  }
-
-  // 2) fallback: 쿠키 세션(sbAuth)
-  const { user, error } = await sbAuth();
-  return { user: user ?? null, error: error ?? null };
-}
-
-async function assertWorkspaceMember(workspace_id: string, user_id: string) {
-  const admin = getSupabaseAdmin();
-
-  const { data, error } = await admin
-    .from("workspace_members")
-    .select("role")
-    .eq("workspace_id", workspace_id)
-    .eq("user_id", user_id)
-    .maybeSingle();
-
-  if (error) return { ok: false, status: 500 as const, error: error.message };
-  if (!data) return { ok: false, status: 403 as const, error: "FORBIDDEN" };
-
-  return { ok: true as const, role: data.role };
-}
-
-// ✅ “폴더 생성” 효과: 폴더 아래에 placeholder 파일 1개 업로드
-async function ensureAdvertiserFolder(workspace_id: string, advertiser_id: string) {
-  const admin = getSupabaseAdmin();
-
-  // 원하는 폴더 구조는 여기서 결정
-  // 예) workspaces/<ws>/advertisers/<adv>/
-  const dir = `workspaces/${workspace_id}/advertisers/${advertiser_id}`;
-  const placeholderPath = `${dir}/.keep`;
-
-  const { error } = await admin.storage
-    .from(BUCKET)
-    .upload(placeholderPath, Buffer.from(""), {
-      contentType: "application/octet-stream",
-      upsert: true, // ✅ 이미 있어도 OK (idempotent)
-    });
-
-  if (error) {
-    // 폴더 생성 실패는 치명적일 수도/아닐 수도 -> 여기선 에러로 처리
-    throw new Error(`STORAGE_FOLDER_CREATE_FAILED: ${error.message}`);
-  }
-
-  return { dir, placeholderPath, bucket: BUCKET };
+function jsonError(status: number, message: string, extra?: any) {
+  return NextResponse.json({ ok: false, error: message, ...extra }, { status });
 }
 
 export async function POST(req: Request) {
   try {
-    const { user, error: authErr } = await getUserFromReq(req);
+    // ✅ 현재 프로젝트 sbAuth() 시그니처에 맞춤: 결과객체에서 user/error 꺼내기
+    const auth = await sbAuth();
+    const user = (auth as any)?.user ?? null;
+    const authErr = (auth as any)?.error ?? null;
+
     if (authErr || !user) {
-      return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+      return jsonError(401, "UNAUTHORIZED");
     }
 
     const body = await req.json().catch(() => ({}));
     const workspace_id = asString(body.workspace_id);
     const name = asString(body.name);
 
-    if (!workspace_id) {
-      return NextResponse.json({ ok: false, error: "workspace_id is required" }, { status: 400 });
-    }
-    if (!name) {
-      return NextResponse.json({ ok: false, error: "name is required" }, { status: 400 });
-    }
-
-    // ✅ 권한: workspace 멤버인지 확인
-    const mem = await assertWorkspaceMember(workspace_id, user.id);
-    if (!mem.ok) {
-      return NextResponse.json({ ok: false, error: mem.error }, { status: mem.status });
-    }
+    if (!workspace_id) return jsonError(400, "workspace_id required");
+    if (!name) return jsonError(400, "name required");
 
     const admin = getSupabaseAdmin();
 
-    // ✅ insert로 중복은 unique constraint(workspace_id,name)에서 막히도록
-    const { data, error } = await admin
+    // ✅ 멤버십 체크 (workspace 멤버만 생성 가능)
+    const { data: mem, error: memErr } = await admin
+      .from("workspace_members")
+      .select("id, role")
+      .eq("workspace_id", workspace_id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (memErr) return jsonError(500, "MEMBERSHIP_CHECK_FAILED", { detail: memErr.message });
+    if (!mem) return jsonError(403, "FORBIDDEN");
+
+    // ✅ 중복 이름 체크 (workspace 스코프)
+    const { data: dup, error: dupErr } = await admin
       .from("advertisers")
-      .insert({ workspace_id, name, created_by: user.id })
-      .select("id, workspace_id, name")
+      .select("id")
+      .eq("workspace_id", workspace_id)
+      .ilike("name", name)
+      .limit(1);
+
+    if (dupErr) return jsonError(500, "DUP_CHECK_FAILED", { detail: dupErr.message });
+    if ((dup?.length ?? 0) > 0) return jsonError(409, "NAME_ALREADY_EXISTS");
+
+    // ✅ 광고주 생성
+    const { data: created, error: insErr } = await admin
+      .from("advertisers")
+      .insert({
+        workspace_id,
+        name,
+        created_by: user.id,
+      })
+      .select("*")
       .single();
 
-    if (error) {
-      const code = (error as any)?.code;
-      if (code === "23505") {
-        return NextResponse.json({ ok: false, error: "광고주 중복" }, { status: 409 });
-      }
-      return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
-    }
+    if (insErr) return jsonError(500, "CREATE_FAILED", { detail: insErr.message });
 
-    // ✅ 광고주 생성 성공 → storage “폴더” 자동 생성
-    const folder = await ensureAdvertiserFolder(workspace_id, data.id);
-
-    return NextResponse.json({
-      ok: true,
-      advertiser: data,
-      storage_folder: folder, // dir / placeholderPath / bucket 반환
-    });
+    return NextResponse.json({ ok: true, advertiser: created });
   } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: e?.message ?? "unknown error" },
-      { status: 500 }
-    );
+    return jsonError(500, "INTERNAL_ERROR", { detail: e?.message || String(e) });
   }
 }

@@ -14,12 +14,8 @@ type CsvItem = {
   name: string;
   size: number;
   contentType: string;
-
-  bucket: string;
   path: string;
-
   created_at: string;
-  uploaded_by: string;
 };
 
 function jsonError(status: number, message: string, extra?: any) {
@@ -27,52 +23,48 @@ function jsonError(status: number, message: string, extra?: any) {
 }
 
 function asString(v: any) {
-  if (v == null) return undefined;
-  const s = String(v).trim();
-  return s ? s : undefined;
+  if (v == null) return "";
+  return String(v).trim();
+}
+
+function asNonEmpty(v: any) {
+  const s = asString(v);
+  return s ? s : null;
 }
 
 function nowIso() {
   return new Date().toISOString();
 }
 
-function ensureUploadShape(meta: any) {
-  const safe = meta && typeof meta === "object" ? meta : {};
-  const upload = safe.upload && typeof safe.upload === "object" ? safe.upload : {};
-  const csv = Array.isArray(upload.csv) ? upload.csv : [];
-  const images = Array.isArray(upload.images) ? upload.images : [];
-  return {
-    ...safe,
-    upload: {
-      ...upload,
-      csv,
-      images,
-    },
-  };
+function safeObj(v: any) {
+  return v && typeof v === "object" ? v : {};
 }
 
-/**
- * ✅ Bearer 우선 + 쿠키 fallback
- * (기존 동작 유지)
- */
-async function getUserId(req: Request, supabaseAdmin: ReturnType<typeof getSupabaseAdmin>) {
-  const authz = req.headers.get("authorization") || req.headers.get("Authorization") || "";
-  const m = authz.match(/^Bearer\s+(.+)$/i);
-  const bearer = m?.[1]?.trim();
+function getBearerToken(req: Request) {
+  const h = req.headers.get("authorization") || req.headers.get("Authorization") || "";
+  const m = h.match(/^Bearer\s+(.+)$/i);
+  return m?.[1]?.trim() ?? null;
+}
 
+// ✅ Bearer 우선, 없으면 쿠키(session) fallback
+async function getUserId(req: Request, supabaseAdmin: ReturnType<typeof getSupabaseAdmin>) {
+  const bearer = getBearerToken(req);
+
+  // 1) Bearer 토큰이 있으면 admin으로 검증
   if (bearer) {
     const { data, error } = await supabaseAdmin.auth.getUser(bearer);
     if (error || !data?.user?.id) {
-      return { ok: false as const, status: 401, message: "Unauthorized (bad bearer)" };
+      return { ok: false as const, status: 401, message: "Unauthorized (invalid bearer token)" };
     }
     return { ok: true as const, userId: data.user.id };
   }
 
-  // 쿠키 세션 fallback
-  const sb = await sbAuth();
-  const { data: { user }, error } = await sb.auth.getUser();
+  // 2) 없으면 쿠키 기반 서버 세션으로 user 확인 (✅ sbAuth 결과객체 방식)
+  const auth = await sbAuth();
+  const user = (auth as any)?.user ?? null;
+  const authErr = (auth as any)?.error ?? null;
 
-  if (error || !user?.id) {
+  if (authErr || !user?.id) {
     return { ok: false as const, status: 401, message: "Unauthorized (no session)" };
   }
 
@@ -88,7 +80,7 @@ async function assertCanAccessReport(params: {
 
   const { data: report, error: repErr } = await supabaseAdmin
     .from("reports")
-    .select("id, workspace_id, created_by, meta, advertiser_id")
+    .select("id, workspace_id, created_by, meta")
     .eq("id", reportId)
     .maybeSingle();
 
@@ -99,167 +91,105 @@ async function assertCanAccessReport(params: {
 
   const { data: wm, error: wmErr } = await supabaseAdmin
     .from("workspace_members")
-    .select("id")
+    .select("role")
     .eq("workspace_id", report.workspace_id)
     .eq("user_id", userId)
     .maybeSingle();
 
   if (wmErr) throw new Error(`workspace_members read error: ${wmErr.message}`);
-  if (!wm) return { ok: false as const, status: 403, message: "Forbidden" };
+
+  const role = wm?.role;
+  const canWrite = role === "admin" || role === "director" || role === "master";
+  if (!canWrite) return { ok: false as const, status: 403, message: "Forbidden" };
 
   return { ok: true as const, report };
+}
+
+function cleanFileName(name: string) {
+  // path traversal 방지 + 너무 공격적인 치환은 하지 않음
+  const base = name.split("/").pop() || name;
+  return base.replace(/[\\]/g, "_");
 }
 
 export async function POST(req: Request) {
   const supabaseAdmin = getSupabaseAdmin();
 
-  // ✅ 인증
+  // auth
   const uid = await getUserId(req, supabaseAdmin);
   if (!uid.ok) return jsonError(uid.status, uid.message);
-  const userId = uid.userId;
 
-  // ✅ form-data
+  // formdata
   let fd: FormData;
   try {
     fd = await req.formData();
   } catch {
-    return jsonError(400, "Invalid form-data");
+    return jsonError(400, "Invalid form data");
   }
 
-  const reportId = asString(fd.get("reportId"));
+  const reportId = asNonEmpty(fd.get("reportId"));
   const file = fd.get("file");
 
   if (!reportId) return jsonError(400, "Missing reportId");
-  if (!file || !(file instanceof File)) return jsonError(400, "Missing file");
-  if (!file.name) return jsonError(400, "File name is required");
+  if (!(file instanceof File)) return jsonError(400, "Missing file");
 
-  const contentType = file.type || "text/csv";
-  const size = file.size ?? 0;
+  if (file.size > MAX_BYTES) return jsonError(413, "File too large", { maxBytes: MAX_BYTES });
 
-  if (size <= 0) return jsonError(400, "Empty file");
-  if (size > MAX_BYTES) return jsonError(413, `File too large (max ${MAX_BYTES} bytes)`);
-
-  const lower = file.name.toLowerCase();
-  const isCsv = lower.endsWith(".csv") || contentType.includes("csv") || contentType === "text/plain";
-  if (!isCsv) {
-    return jsonError(415, "Only CSV files are allowed", {
-      got: { name: file.name, type: contentType },
-    });
-  }
-
-  // ✅ 권한 체크 + meta 읽기
+  // access + read meta
   let report: any;
   try {
-    const access = await assertCanAccessReport({ supabaseAdmin, reportId, userId });
+    const access = await assertCanAccessReport({ supabaseAdmin, reportId, userId: uid.userId });
     if (!access.ok) return jsonError(access.status, access.message);
     report = access.report;
   } catch (e: any) {
     return jsonError(500, "Access check failed", { detail: e?.message });
   }
 
-  // ✅ storage upload
-  const id = crypto.randomUUID();
-  const safeName = file.name.replace(/[^\w.\-()\s]/g, "_");
-  const path = `reports/${reportId}/csv/${id}-${safeName}`;
+  const fileName = cleanFileName(file.name || "upload.csv");
+  const ts = Date.now();
+  const path = `workspaces/${report.workspace_id}/reports/${reportId}/csv/${ts}_${fileName}`;
 
-  let bytes: ArrayBuffer;
-  try {
-    bytes = await file.arrayBuffer();
-  } catch {
-    return jsonError(400, "Failed to read file bytes");
-  }
-
-  const { error: upErr } = await supabaseAdmin.storage.from(BUCKET).upload(path, bytes, {
-    contentType,
-    upsert: false,
-    cacheControl: "3600",
+  // upload to storage
+  const { error: upErr } = await supabaseAdmin.storage.from(BUCKET).upload(path, file, {
+    upsert: true,
+    contentType: file.type || "text/csv",
   });
 
-  if (upErr) {
-    return jsonError(500, "Storage upload failed", { detail: upErr.message, bucket: BUCKET, path });
-  }
+  if (upErr) return jsonError(500, "CSV upload failed", { detail: upErr.message, path });
 
-  // ✅ meta 업데이트
-  const uploadedAt = nowIso();
-
-  const meta0 = ensureUploadShape(report.meta);
   const item: CsvItem = {
-    id,
-    name: file.name,
-    size,
-    contentType,
-    bucket: BUCKET,
+    id: `${ts}`,
+    name: fileName,
+    size: file.size,
+    contentType: file.type || "text/csv",
     path,
-    created_at: uploadedAt,
-    uploaded_by: userId,
+    created_at: nowIso(),
   };
 
-  // 🔥 최신이 앞(0번)으로 유지 (기존 유지)
+  // ✅ meta.upload.csv 배열/객체 모두 지원 → 표준: 배열 유지
+  const meta = safeObj(report.meta);
+  const upload = safeObj((meta as any).upload);
+
+  const csvAny = (upload as any).csv;
+  const csvList: any[] = Array.isArray(csvAny) ? csvAny : csvAny ? [csvAny] : [];
+
+  const nextCsv = [item, ...csvList].slice(0, 20); // 최근 20개만 유지(안전)
+
   const nextMeta = {
-    ...meta0,
-
-    // ✅ publish 가드용 (최상위에 강제 기록)
-    last_csv_uploaded_at: uploadedAt,
-    lastCsvUploadedAt: uploadedAt,
-
-    last_csv_id: id,
-    lastCsvId: id,
-
-    last_csv_bucket: BUCKET,
-    lastCsvBucket: BUCKET,
-
-    last_csv_path: path,
-    lastCsvPath: path,
-
+    ...meta,
     upload: {
-      ...meta0.upload,
-      csv: [item, ...(meta0.upload.csv ?? [])],
+      ...upload,
+      csv: nextCsv,
     },
   };
 
   const { error: updErr } = await supabaseAdmin
     .from("reports")
-    .update({ meta: nextMeta, updated_at: uploadedAt })
+    .update({ meta: nextMeta, updated_at: nowIso() })
     .eq("id", reportId);
 
   if (updErr) {
-    // 롤백: storage 삭제
-    await supabaseAdmin.storage.from(BUCKET).remove([path]).catch(() => {});
-    return jsonError(500, "Failed to update report meta (rolled back storage)", {
-      detail: updErr.message,
-    });
+    return jsonError(500, "Failed to update report meta", { detail: updErr.message, path });
   }
 
-  // ✅ ingestion(job) 생성 (있으면 좋고, 없어도 업로드 자체는 성공)
-  let ingestionId: string | null = null;
-  try {
-    const { data: ins, error: insErr } = await supabaseAdmin
-      .from("report_ingestions")
-      .insert({
-        workspace_id: report.workspace_id,
-        report_id: reportId,
-        kind: "csv",
-        status: "queued",
-        csv_bucket: BUCKET,
-        csv_path: path,
-        created_by: userId,
-        updated_at: uploadedAt,
-      })
-      .select("id")
-      .maybeSingle();
-
-    if (!insErr && ins?.id) ingestionId = String(ins.id);
-  } catch (e) {
-    console.warn("report_ingestions insert failed", (e as any)?.message || e);
-  }
-
-  return NextResponse.json({
-    ok: true,
-    reportId,
-    bucket: BUCKET,
-    path,
-    item,
-    csv: nextMeta.upload.csv,
-    ingestion_id: ingestionId,
-  });
+  return NextResponse.json({ ok: true, item });
 }

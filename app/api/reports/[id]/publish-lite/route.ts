@@ -20,7 +20,10 @@ function randToken(len = 32) {
 }
 
 export async function POST(_req: Request, ctx: Ctx) {
-  const { user, error: authErr } = await sbAuth();
+  const auth = await sbAuth();
+  const user = (auth as any)?.user ?? null;
+  const authErr = (auth as any)?.error ?? null;
+
   if (authErr || !user) return jsonError(401, "UNAUTHORIZED");
 
   const { id } = await ctx.params;

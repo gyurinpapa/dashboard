@@ -1,3 +1,4 @@
+// app/api/advertisers/check-name/route.ts
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
@@ -10,87 +11,59 @@ function asString(v: any) {
   return String(v).trim();
 }
 
-function getBearerToken(req: Request) {
-  const h = req.headers.get("authorization") || "";
-  const m = h.match(/^Bearer\s+(.+)$/i);
-  return m ? m[1].trim() : "";
-}
-
-async function getUserFromReq(req: Request) {
-  const admin = getSupabaseAdmin();
-
-  // 1) Bearer 우선
-  const token = getBearerToken(req);
-  if (token) {
-    const { data, error } = await admin.auth.getUser(token);
-    if (!error && data?.user) return { user: data.user, error: null };
-  }
-
-  // 2) fallback: 쿠키 세션(sbAuth)
-  const { user, error } = await sbAuth();
-  return { user: user ?? null, error: error ?? null };
-}
-
-async function assertWorkspaceMember(workspace_id: string, user_id: string) {
-  const admin = getSupabaseAdmin();
-
-  const { data, error } = await admin
-    .from("workspace_members")
-    .select("role")
-    .eq("workspace_id", workspace_id)
-    .eq("user_id", user_id)
-    .maybeSingle();
-
-  if (error) return { ok: false, status: 500 as const, error: error.message };
-  if (!data) return { ok: false, status: 403 as const, error: "FORBIDDEN" };
-
-  return { ok: true as const, role: data.role };
+function jsonError(status: number, message: string, extra?: any) {
+  return NextResponse.json({ ok: false, error: message, ...extra }, { status });
 }
 
 export async function POST(req: Request) {
   try {
-    const { user, error: authErr } = await getUserFromReq(req);
+    // ✅ 현재 프로젝트 sbAuth() 시그니처에 맞춤: { ok, user, error } 형태
+    const auth = await sbAuth();
+    const user = (auth as any)?.user ?? null;
+    const authErr = (auth as any)?.error ?? null;
+
     if (authErr || !user) {
-      return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+      return jsonError(401, "UNAUTHORIZED");
     }
 
     const body = await req.json().catch(() => ({}));
     const workspace_id = asString(body.workspace_id);
     const name = asString(body.name);
 
-    if (!workspace_id) {
-      return NextResponse.json({ ok: false, error: "workspace_id is required" }, { status: 400 });
-    }
-    if (!name) {
-      return NextResponse.json({ ok: false, error: "name is required" }, { status: 400 });
-    }
-
-    // ✅ 권한: workspace 멤버인지 확인
-    const mem = await assertWorkspaceMember(workspace_id, user.id);
-    if (!mem.ok) {
-      return NextResponse.json({ ok: false, error: mem.error }, { status: mem.status });
-    }
+    if (!workspace_id) return jsonError(400, "workspace_id required");
+    if (!name) return jsonError(400, "name required");
 
     const admin = getSupabaseAdmin();
 
-    // ✅ workspace 내 name 존재 여부
-    const { data, error } = await admin
-      .from("advertisers")
-      .select("id")
+    // ✅ membership 체크 (workspace 멤버인지)
+    const { data: mem, error: memErr } = await admin
+      .from("workspace_members")
+      .select("id, role")
       .eq("workspace_id", workspace_id)
-      .eq("name", name)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (memErr) return jsonError(500, "MEMBERSHIP_CHECK_FAILED", { detail: memErr.message });
+    if (!mem) return jsonError(403, "FORBIDDEN");
+
+    // ✅ 동일 이름 존재 여부 확인 (workspace 스코프)
+    const { data: exists, error: exErr } = await admin
+      .from("advertisers")
+      .select("id, name")
+      .eq("workspace_id", workspace_id)
+      .ilike("name", name)
       .limit(1);
 
-    if (error) {
-      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
-    }
+    if (exErr) return jsonError(500, "QUERY_FAILED", { detail: exErr.message });
 
-    const exists = (data?.length ?? 0) > 0;
-    return NextResponse.json({ ok: true, exists });
+    const isTaken = (exists?.length ?? 0) > 0;
+
+    return NextResponse.json({
+      ok: true,
+      isTaken,
+      matched: isTaken ? exists?.[0] ?? null : null,
+    });
   } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: e?.message ?? "unknown error" },
-      { status: 500 }
-    );
+    return jsonError(500, "INTERNAL_ERROR", { detail: e?.message || String(e) });
   }
 }

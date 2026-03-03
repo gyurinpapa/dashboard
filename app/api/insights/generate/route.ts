@@ -110,11 +110,11 @@ export async function POST(req: Request) {
       return jsonError(501, "AI insight is not configured. Missing OPENAI_API_KEY in environment.");
     }
 
-    // ✅ 1) 서버 쿠키 세션으로 user 확인 (단일 방식)
-    const sb = await sbAuth();
-    const { data: userRes, error: userErr } = await sb.auth.getUser();
-    const user = userRes?.user ?? null;
-    if (userErr || !user) return jsonError(401, "Unauthorized (no session). Please sign in.");
+    // ✅ 1) 서버 쿠키 세션으로 user 확인 (단일 방식) - 프로젝트 sbAuth() 시그니처에 맞춤
+    const auth = await sbAuth();
+    const user = (auth as any)?.user ?? null;
+    const authErr = (auth as any)?.error ?? null;
+    if (authErr || !user) return jsonError(401, "Unauthorized (no session). Please sign in.");
 
     // ✅ 2) report 가져오기
     const { data: report, error: rErr } = await supabaseAdmin
@@ -142,10 +142,13 @@ export async function POST(req: Request) {
     let metricsInfo: any = { rows: 0, reason: "", debug: {} };
 
     // ✅ 기간: meta.period(from/to) → reports.period_start/end fallback
+    // (기존 로직 유지) + 안전한 period 결정 함수도 “참고용”으로 계산만 해둠
+    const effectivePeriod = getEffectivePeriod(report);
+
     const metaFrom = report?.meta?.period?.from;
     const metaTo = report?.meta?.period?.to;
 
-    // ✅ 무조건 YYYY-MM-DD로 정규화(10자리)
+    // ✅ 무조건 YYYY-MM-DD로 정규화(10자리) - 기존 slice 방식 유지
     const fromYMD = String(metaFrom ?? report.period_start ?? "").slice(0, 10) || null;
     const toYMD = String(metaTo ?? report.period_end ?? "").slice(0, 10) || null;
 
@@ -314,7 +317,7 @@ ${JSON.stringify(metricsSample, null, 2)}
       report_id,
       workspace_id: report.workspace_id,
       metrics_rows: metricsInfo.rows,
-      effective_period: metricsInfo.period ?? null,
+      effective_period: effectivePeriod,
       generated_at: new Date().toISOString(),
     };
 
