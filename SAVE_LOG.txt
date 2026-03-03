@@ -6,3 +6,11 @@ Nature Report - creative upload/matching fix completed
 - matching between report_rows.imagepath_raw and report_creatives.creative_key fixed
 - next: batch_id session separation
 
+=== SAVE POINT ===
+2026-03-03 20:00 KST
+Nature Report - creative upload/matching fix stabilized
+- creative_key original filename preserved (NFC)
+- underscore legacy mismatch resolved
+- matching between report_rows.imagepath_raw and report_creatives.creative_key confirmed
+- next step: batch_id session separation
+
