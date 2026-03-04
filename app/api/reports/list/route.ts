@@ -1,4 +1,5 @@
 // app/api/reports/list/route.ts
+
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
@@ -6,59 +7,106 @@ import { sbAuth } from "@/src/lib/supabase/auth-server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function jsonError(status: number, message: string, extra?: any) {
-  return NextResponse.json({ ok: false, error: message, ...extra }, { status });
+function jsonError(status: number, message: string) {
+  return NextResponse.json({ ok: false, error: message }, { status });
 }
 
 function asString(v: any) {
-  if (v == null) return "";
+  if (!v) return "";
   return String(v).trim();
 }
 
-function asNonEmpty(v: any) {
-  const s = asString(v);
-  return s ? s : null;
+function asLimit(v: any, def = 50) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return def;
+  const x = Math.floor(n);
+  if (x < 1) return 1;
+  if (x > 200) return 200;
+  return x;
+}
+
+/**
+ * ✅ Bearer 우선 + cookie fallback
+ */
+async function getUserId(req: Request): Promise<
+  | { ok: true; userId: string }
+  | { ok: false; status: number; message: string }
+> {
+  const authz = req.headers.get("authorization") || req.headers.get("Authorization") || "";
+
+  const m = authz.match(/^Bearer\s+(.+)$/i);
+  const bearer = m?.[1]?.trim();
+
+  if (bearer) {
+    const { data, error } = await supabaseAdmin.auth.getUser(bearer);
+    const userId = data?.user?.id ?? null;
+
+    if (error || !userId) {
+      return {
+        ok: false,
+        status: 401,
+        message: "Unauthorized (invalid bearer token)",
+      };
+    }
+
+    return { ok: true, userId };
+  }
+
+  // fallback cookie session
+  const auth = await sbAuth();
+
+  if (!auth?.user?.id) {
+    return { ok: false, status: 401, message: "Unauthorized (no session)" };
+  }
+
+  return { ok: true, userId: auth.user.id };
 }
 
 export async function GET(req: Request) {
   try {
-    // ✅ auth: 결과객체 방식 통일
-    const auth = await sbAuth();
-    const user = (auth as any)?.user ?? null;
-    const authErr = (auth as any)?.error ?? null;
+    const url = new URL(req.url);
 
-    if (authErr || !user) {
-      return jsonError(401, "Unauthorized (no session). Please sign in.");
+    const workspace_id = asString(url.searchParams.get("workspace_id"));
+    const limit = asLimit(url.searchParams.get("limit"), 50);
+
+    if (!workspace_id) {
+      return jsonError(400, "workspace_id required");
     }
 
-    const url = new URL(req.url);
-    const workspace_id = asNonEmpty(url.searchParams.get("workspace_id"));
+    // ✅ auth
+    const auth = await getUserId(req);
+    if (!auth.ok) return jsonError(auth.status, auth.message);
 
-    if (!workspace_id) return jsonError(400, "workspace_id is required");
+    const userId = auth.userId;
 
-    // ✅ membership 체크
+    // ✅ workspace membership 확인 (+ 에러 핸들링)
     const { data: wm, error: wmErr } = await supabaseAdmin
       .from("workspace_members")
-      .select("workspace_id, role")
+      .select("workspace_id")
       .eq("workspace_id", workspace_id)
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .maybeSingle();
 
     if (wmErr) return jsonError(500, wmErr.message);
-    if (!wm) return jsonError(403, "Forbidden: you are not a member of this workspace");
+    if (!wm) return jsonError(403, "Forbidden");
 
-    // ✅ report 목록 조회
-    const { data: reports, error: rErr } = await supabaseAdmin
+    // ✅ reports list
+    const { data, error } = await supabaseAdmin
       .from("reports")
-      .select("id, title, status, period_start, period_end, meta, created_at, updated_at, report_type_id")
+      .select("id,title,status,created_at")
       .eq("workspace_id", workspace_id)
       .order("created_at", { ascending: false })
-      .limit(200);
+      .limit(limit);
 
-    if (rErr) return jsonError(400, rErr.message);
+    if (error) {
+      return jsonError(500, error.message);
+    }
 
-    return NextResponse.json({ ok: true, reports: reports ?? [] });
+    return NextResponse.json({
+      ok: true,
+      reports: data ?? [],
+    });
   } catch (e: any) {
-    return jsonError(500, e?.message ?? String(e));
+    return jsonError(500, e?.message ?? "server error");
   }
 }

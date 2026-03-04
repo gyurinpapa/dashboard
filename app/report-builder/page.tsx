@@ -19,7 +19,7 @@ type ReportRow = {
 };
 
 async function safeReadJson(res: Response) {
-  const text = await res.text();
+  const text = await res.text().catch(() => "");
   if (!text) return { __nonjson: true, status: res.status, text: "" };
 
   try {
@@ -107,16 +107,39 @@ export default function ReportBuilderPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId]);
 
+  async function getAccessToken(): Promise<string | null> {
+    const { data } = await supabase.auth.getSession();
+    return data?.session?.access_token ?? null;
+  }
+
   async function fetchReports() {
     if (!workspaceId) return;
 
+    const token = await getAccessToken();
+    if (!token) {
+      // 로그인 UI는 userId로 보일 수 있는데, 세션 토큰이 아직 없으면 서버 API가 무조건 401
+      // 구조는 유지하되 안전하게 중단
+      return;
+    }
+
     const res = await fetch(
       `/api/reports/list?workspace_id=${workspaceId}&limit=50`,
-      { credentials: "include" }
+      {
+        method: "GET",
+        credentials: "include",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
     );
 
     const json = await safeReadJson(res);
-    if (!res.ok || !(json as any).ok) return;
+    if (!res.ok || !(json as any).ok) {
+      // 필요하면 콘솔로만 확인 (UI/구조 영향 없음)
+      // eslint-disable-next-line no-console
+      console.warn("[reports/list] failed", res.status, json);
+      return;
+    }
 
     setReports(((json as any).reports ?? []) as ReportRow[]);
   }
@@ -132,6 +155,9 @@ export default function ReportBuilderPage() {
 
     setUserId(data.user?.id ?? null);
     setUserEmail(data.user?.email ?? null);
+
+    // ✅ 로그인 직후 token null 방지용(세션이 늦게 세팅되는 케이스 대비)
+    await supabase.auth.getSession();
   }
 
   async function signOut() {
@@ -147,16 +173,19 @@ export default function ReportBuilderPage() {
 
     setCreating(true);
 
-    const { data } = await supabase.auth.getSession();
-    const token = data?.session?.access_token;
+    const token = await getAccessToken();
+    if (!token) {
+      setCreating(false);
+      return;
+    }
 
     const res = await fetch("/api/reports/create", {
       method: "POST",
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`, // ⭐ 추가
+        Authorization: `Bearer ${token}`,
       },
-      credentials: "include",
       body: JSON.stringify({
         workspace_id: workspaceId,
         report_type_id: type.id,
@@ -167,11 +196,17 @@ export default function ReportBuilderPage() {
     });
 
     const json = await safeReadJson(res);
+
+    // 너 API 응답 형태가 { report: { id } } 인 것으로 유지
     const reportId = (json as any)?.report?.id;
 
     setCreating(false);
 
-    if (!reportId) return;
+    if (!res.ok || !reportId) {
+      // eslint-disable-next-line no-console
+      console.warn("[reports/create] failed", res.status, json);
+      return;
+    }
 
     await fetchReports();
     router.push(`/reports/${reportId}`);

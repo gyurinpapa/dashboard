@@ -1,10 +1,11 @@
+// middleware.ts
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 export function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
 
-  // 항상 허용
+  // always allow
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api") ||
@@ -15,13 +16,14 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // reports는 로그인 필요
+  // protect /reports/*
   if (pathname.startsWith("/reports")) {
-    const hasSession =
-      req.cookies.get("sb-access-token") ||
-      req.cookies.get("supabase-auth-token");
+    const hasAuthCookie = req.cookies.getAll().some((c) => {
+      const n = c.name || "";
+      return n.startsWith("sb-") && n.endsWith("-auth-token") && !!c.value;
+    });
 
-    if (!hasSession) {
+    if (!hasAuthCookie) {
       const url = req.nextUrl.clone();
       url.pathname = "/report-builder";
       url.search = `?next=${pathname}${search}`;
@@ -33,7 +35,5 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico).*)",
-  ],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };

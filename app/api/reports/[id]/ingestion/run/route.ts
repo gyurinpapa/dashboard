@@ -233,13 +233,43 @@ function pickImagePathLike(obj: any) {
   return img ? String(img).trim() : "";
 }
 
-export async function POST(req: Request, ctx: Ctx) {
-  // ✅ auth
-  const auth = await sbAuth();
-  const user = (auth as any)?.user ?? null;
-  const authErr = (auth as any)?.error ?? null;
+/**
+ * ✅ Bearer 우선 + 쿠키(session) fallback
+ */
+async function getUserId(req: Request) {
+  const admin = getSupabaseAdmin();
 
-  if (authErr || !user) return jsonError(401, "UNAUTHORIZED");
+  // 1) Bearer 우선
+  const authz = req.headers.get("authorization") || req.headers.get("Authorization") || "";
+  const m = authz.match(/^Bearer\s+(.+)$/i);
+  const bearer = m?.[1]?.trim();
+
+  if (bearer) {
+    const { data, error } = await admin.auth.getUser(bearer);
+    const userId = data?.user?.id ?? null;
+
+    if (error || !userId) {
+      return { ok: false as const, status: 401, message: "Unauthorized (invalid bearer token)" };
+    }
+
+    return { ok: true as const, userId };
+  }
+
+  // 2) 쿠키 세션 fallback
+  const auth = await sbAuth();
+  if (!auth.ok || !auth.user?.id) {
+    return { ok: false as const, status: 401, message: "Unauthorized (no session)" };
+  }
+
+  return { ok: true as const, userId: auth.user.id };
+}
+
+export async function POST(req: Request, ctx: Ctx) {
+  // ✅ auth (Bearer 우선 + 쿠키 fallback)
+  const auth = await getUserId(req);
+  if (!auth.ok) return jsonError(auth.status, "UNAUTHORIZED", { detail: auth.message });
+
+  const userId = auth.userId;
 
   const { id } = await ctx.params;
   const reportId = asString(id);
@@ -259,6 +289,17 @@ export async function POST(req: Request, ctx: Ctx) {
 
   if (repErr) return jsonError(500, repErr.message || "DB error");
   if (!report) return jsonError(404, "Report not found");
+
+  // ✅ (보안 통일) workspace membership 체크
+  const { data: wm, error: wmErr } = await sb
+    .from("workspace_members")
+    .select("role")
+    .eq("workspace_id", (report as any).workspace_id)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (wmErr) return jsonError(500, wmErr.message || "DB error");
+  if (!wm) return jsonError(403, "FORBIDDEN");
 
   const meta: any = (report as any).meta ?? {};
   const csvArr: any[] = meta?.upload?.csv ?? [];

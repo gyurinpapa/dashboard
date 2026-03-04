@@ -34,7 +34,10 @@ function safeObj(v: any) {
  * - 프론트에서 Authorization: Bearer ... 를 보내면 이걸 먼저 검증
  * - 없으면 sbAuth() 쿠키 세션으로 user 확인
  */
-async function getUserId(req: Request) {
+async function getUserId(req: Request): Promise<
+  | { ok: true; userId: string }
+  | { ok: false; status: number; message: string }
+> {
   // 1) Bearer 토큰
   const authz = req.headers.get("authorization") || req.headers.get("Authorization") || "";
   const m = authz.match(/^Bearer\s+(.+)$/i);
@@ -43,25 +46,23 @@ async function getUserId(req: Request) {
   if (bearer) {
     const { data, error } = await supabaseAdmin.auth.getUser(bearer);
     const userId = data?.user?.id ?? null;
+
     if (error || !userId) {
-      return { ok: false as const, status: 401, message: "Unauthorized (invalid bearer token)" };
+      return { ok: false, status: 401, message: "Unauthorized (invalid bearer token)" };
     }
-    return { ok: true as const, userId };
+    return { ok: true, userId };
   }
 
-  // 2) 쿠키 세션
+  // 2) 쿠키 세션 (fallback)
   const auth = await sbAuth();
+  const user = auth?.user ?? null;
 
-  if (!auth.ok) {
-  return NextResponse.json(
-    { ok: false, error: "Unauthorized (no session). Please sign in." },
-    { status: 401 }
-    );
+  if (!user) {
+    // auth.error가 있으면 같이 내려도 좋지만, 구조 유지 위해 메시지만
+    return { ok: false, status: 401, message: "Unauthorized (no session). Please sign in." };
   }
 
-const user = auth.user;
-
-  return { ok: true as const, userId: user.id };
+  return { ok: true, userId: user.id };
 }
 
 export async function POST(req: Request) {
@@ -83,10 +84,7 @@ export async function POST(req: Request) {
 
     // ✅ 1) Auth (Bearer 우선 + 쿠키 fallback)
     const auth = await getUserId(req);
-
-    if (auth instanceof NextResponse) {
-      return auth;
-    }
+    if (!auth.ok) return jsonError(auth.status, auth.message);
 
     const created_by = auth.userId;
 
@@ -107,20 +105,21 @@ export async function POST(req: Request) {
 
     if (!period_start || !period_end) {
       // 초기엔 metrics_daily가 없을 수 있으니: 실패해도 create를 막지 않음
-      const [{ data: minRows, error: minErr }, { data: maxRows, error: maxErr }] = await Promise.all([
-        supabaseAdmin
-          .from("metrics_daily")
-          .select("date")
-          .eq("workspace_id", workspace_id)
-          .order("date", { ascending: true })
-          .limit(1),
-        supabaseAdmin
-          .from("metrics_daily")
-          .select("date")
-          .eq("workspace_id", workspace_id)
-          .order("date", { ascending: false })
-          .limit(1),
-      ]);
+      const [{ data: minRows, error: minErr }, { data: maxRows, error: maxErr }] =
+        await Promise.all([
+          supabaseAdmin
+            .from("metrics_daily")
+            .select("date")
+            .eq("workspace_id", workspace_id)
+            .order("date", { ascending: true })
+            .limit(1),
+          supabaseAdmin
+            .from("metrics_daily")
+            .select("date")
+            .eq("workspace_id", workspace_id)
+            .order("date", { ascending: false })
+            .limit(1),
+        ]);
 
       if (!minErr && !maxErr) {
         const minDate = (minRows?.[0] as any)?.date ?? null;
@@ -144,7 +143,9 @@ export async function POST(req: Request) {
         created_by,
         meta,
       })
-      .select("id, workspace_id, report_type_id, title, status, period_start, period_end, created_at")
+      .select(
+        "id, workspace_id, report_type_id, title, status, period_start, period_end, created_at"
+      )
       .single();
 
     if (error) return jsonError(400, error.message);

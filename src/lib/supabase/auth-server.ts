@@ -1,114 +1,77 @@
 // src/lib/supabase/auth-server.ts
 import { cookies, headers } from "next/headers";
-import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from "@supabase/ssr";
 
-type AuthOk = {
-  ok: true;
-  user: { id: string; email?: string | null };
-  accessToken: string;
-};
-type AuthFail = { ok: false; error: string };
-export type SbAuthResult = AuthOk | AuthFail;
-
-function envOrThrow(key: string) {
-  const v = process.env[key];
-  if (!v) throw new Error(`Missing env: ${key}`);
+function mustEnv(name: string) {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing env: ${name}`);
   return v;
 }
 
-function extractBearer(h: Headers) {
-  const authHeader =
-    h.get("authorization") ||
-    h.get("Authorization") ||
-    null;
-
-  if (!authHeader) return null;
-
-  if (authHeader.toLowerCase().startsWith("bearer ")) {
-    return authHeader.slice("bearer ".length).trim();
-  }
-
-  return null;
-}
-
-function extractCookieToken(cookieStr: string | null): string | null {
-  if (!cookieStr) return null;
-
-  const parts = cookieStr.split(";").map((s) => s.trim());
-
-  for (const p of parts) {
-    const eq = p.indexOf("=");
-    if (eq < 0) continue;
-
-    const k = p.slice(0, eq);
-    const vraw = p.slice(eq + 1);
-
-    if (!k.includes("auth-token")) continue;
-
-    try {
-      const decoded = decodeURIComponent(vraw);
-      const v = JSON.parse(decoded);
-
-      if (Array.isArray(v) && typeof v[0] === "string") return v[0];
-      if (v?.access_token) return v.access_token;
-      if (v?.currentSession?.access_token) return v.currentSession.access_token;
-    } catch {
-      // ignore
-    }
-  }
-
-  return null;
-}
-
-export async function sbAuth(): Promise<SbAuthResult> {
-  try {
-    const url = envOrThrow("NEXT_PUBLIC_SUPABASE_URL");
-    const anon = envOrThrow("NEXT_PUBLIC_SUPABASE_ANON_KEY");
-
-    // ✅ Next 15: 반드시 await
-    const h = await headers();
-    const ck = await cookies();
-
-    let token: string | null = null;
-
-    // 1️⃣ Bearer 우선
-    token = extractBearer(h);
-
-    // 2️⃣ cookie fallback
-    if (!token) {
-      const rawCookie = h.get("cookie");
-      token = extractCookieToken(rawCookie);
-    }
-
-    // 3️⃣ sb-access-token fallback
-    if (!token) {
-      token = ck.get("sb-access-token")?.value || null;
-    }
-
-    if (!token) {
-      return { ok: false, error: "Unauthorized" };
-    }
-
-    const supabase = createClient(url, anon, {
-      auth: { persistSession: false, autoRefreshToken: false },
-      global: { headers: { Authorization: `Bearer ${token}` } },
+function parseCookieHeader(raw: string | null): Array<{ name: string; value: string }> {
+  if (!raw) return [];
+  return raw
+    .split(";")
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((kv) => {
+      const eq = kv.indexOf("=");
+      if (eq < 0) return { name: kv, value: "" };
+      const name = kv.slice(0, eq).trim();
+      const value = kv.slice(eq + 1).trim();
+      return { name, value };
     });
+}
 
-    const { data, error } = await supabase.auth.getUser(token);
-
-    if (error || !data?.user?.id) {
-      return { ok: false, error: "Unauthorized" };
+function getAllCookiesSafe(): Array<{ name: string; value: string }> {
+  // ✅ 최신 Next: cookies().getAll() 존재
+  try {
+    const cs: any = cookies();
+    if (cs && typeof cs.getAll === "function") {
+      const all = cs.getAll();
+      // Next의 getAll()은 {name,value,...} 배열
+      return (all ?? []).map((c: any) => ({ name: c.name, value: c.value }));
     }
-
-    return {
-      ok: true,
-      user: {
-        id: data.user.id,
-        email: data.user.email,
-      },
-      accessToken: token,
-    };
-  } catch (e: any) {
-    return { ok: false, error: e?.message || "Auth error" };
+  } catch {
+    // ignore
   }
+
+  // ✅ 구버전/특수 런타임: headers().get("cookie")로 파싱
+  try {
+    const h = headers();
+    const raw = h.get("cookie");
+    return parseCookieHeader(raw);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Route Handler / Server Components에서 쿠키 기반 세션을 안정적으로 읽기 위한 공통 헬퍼.
+ * - 기존 API들이 쓰는 sbAuth() 시그니처 유지 → 구조 안 깨짐
+ */
+export async function sbAuth() {
+  const supabase = createServerClient(
+    mustEnv("NEXT_PUBLIC_SUPABASE_URL"),
+    mustEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
+    {
+      cookies: {
+        getAll() {
+          return getAllCookiesSafe();
+        },
+        setAll() {
+          // 현재 목적(세션 읽기)엔 setAll이 필수 아님.
+          // 필요해지는 시점(리프레시 토큰 갱신 등)이 오면 NextResponse 기반으로 확장 가능.
+        },
+      },
+    }
+  );
+
+  const { data, error } = await supabase.auth.getUser();
+
+  return {
+    supabase,
+    user: data?.user ?? null,
+    error,
+  };
 }

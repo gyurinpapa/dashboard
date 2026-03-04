@@ -47,7 +47,8 @@ function getBearerToken(req: Request) {
 }
 
 // ✅ Bearer 우선, 없으면 쿠키(session) fallback
-async function getUserId(req: Request, supabaseAdmin: ReturnType<typeof getSupabaseAdmin>) {
+async function getUserId(req: Request) {
+  const supabaseAdmin = getSupabaseAdmin();
   const bearer = getBearerToken(req);
 
   // 1) Bearer 토큰이 있으면 admin으로 검증
@@ -87,18 +88,21 @@ async function assertCanAccessReport(params: {
   if (repErr) throw new Error(`reports read error: ${repErr.message}`);
   if (!report) return { ok: false as const, status: 404, message: "Report not found" };
 
-  if (report.created_by === userId) return { ok: true as const, report };
+  // created_by가 null일 수도 있으니 안전 처리
+  if ((report as any).created_by && (report as any).created_by === userId) {
+    return { ok: true as const, report };
+  }
 
   const { data: wm, error: wmErr } = await supabaseAdmin
     .from("workspace_members")
     .select("role")
-    .eq("workspace_id", report.workspace_id)
+    .eq("workspace_id", (report as any).workspace_id)
     .eq("user_id", userId)
     .maybeSingle();
 
   if (wmErr) throw new Error(`workspace_members read error: ${wmErr.message}`);
 
-  const role = wm?.role;
+  const role = (wm as any)?.role ?? null;
   const canWrite = role === "admin" || role === "director" || role === "master";
   if (!canWrite) return { ok: false as const, status: 403, message: "Forbidden" };
 
@@ -107,15 +111,23 @@ async function assertCanAccessReport(params: {
 
 function cleanFileName(name: string) {
   // path traversal 방지 + 너무 공격적인 치환은 하지 않음
-  const base = name.split("/").pop() || name;
-  return base.replace(/[\\]/g, "_");
+  let base = name.split("/").pop() || name;
+  base = base.replace(/[\\]/g, "_");
+
+  // NBSP -> space, collapse spaces, NFC normalize (macOS 한글 조합 안정화)
+  base = base.replace(/\u00A0/g, " ").replace(/\s+/g, " ").trim();
+  try {
+    base = base.normalize("NFC");
+  } catch {}
+
+  return base || "upload.csv";
 }
 
 export async function POST(req: Request) {
   const supabaseAdmin = getSupabaseAdmin();
 
   // auth
-  const uid = await getUserId(req, supabaseAdmin);
+  const uid = await getUserId(req);
   if (!uid.ok) return jsonError(uid.status, uid.message);
 
   // formdata

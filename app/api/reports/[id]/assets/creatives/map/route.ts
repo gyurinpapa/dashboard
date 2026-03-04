@@ -38,17 +38,53 @@ function shouldExpand(mode: string) {
   return mode === "expanded";
 }
 
-export async function GET(req: Request, ctx: Ctx) {
-  try {
-    // ✅ auth 통일
-    const auth = await sbAuth();
+/**
+ * ✅ Bearer 우선 + 쿠키(session) fallback
+ * - 프론트에서 Authorization: Bearer ... 를 보내면 이걸 먼저 검증
+ * - 없으면 sbAuth() 쿠키 세션으로 user 확인
+ *
+ * 반환:
+ *  - { ok: true, userId }
+ *  - { ok: false, status, message }
+ */
+async function getUserId(req: Request) {
+  const admin = getSupabaseAdmin();
 
-    if (!auth.ok) {
-    return jsonError(401, "UNAUTHORIZED");
+  // 1) Bearer 토큰 우선
+  const authz = req.headers.get("authorization") || req.headers.get("Authorization") || "";
+  const m = authz.match(/^Bearer\s+(.+)$/i);
+  const bearer = m?.[1]?.trim();
+
+  if (bearer) {
+    const { data, error } = await admin.auth.getUser(bearer);
+    const userId = data?.user?.id ?? null;
+
+    if (error || !userId) {
+      return {
+        ok: false as const,
+        status: 401,
+        message: "Unauthorized (invalid bearer token)",
+      };
     }
 
-    const user = auth.user;
+    return { ok: true as const, userId };
+  }
 
+  // 2) 쿠키 세션 fallback
+  const auth = await sbAuth();
+  if (!auth.ok || !auth.user?.id) {
+    return {
+      ok: false as const,
+      status: 401,
+      message: "Unauthorized (no session). Please sign in.",
+    };
+  }
+
+  return { ok: true as const, userId: auth.user.id };
+}
+
+export async function GET(req: Request, ctx: Ctx) {
+  try {
     const { id } = await ctx.params;
 
     const url = new URL(req.url);
@@ -56,6 +92,13 @@ export async function GET(req: Request, ctx: Ctx) {
     const mode = (url.searchParams.get("mode") || "strict").toLowerCase();
 
     const admin = getSupabaseAdmin();
+
+    // ✅ auth 통일 (Bearer 우선 + 쿠키 fallback)
+    const auth = await getUserId(req);
+    if (!auth.ok) {
+      return jsonError(auth.status, auth.message);
+    }
+    const userId = auth.userId;
 
     // 1️⃣ report 조회
     const { data: report, error: rErr } = await admin
@@ -72,7 +115,7 @@ export async function GET(req: Request, ctx: Ctx) {
       .from("workspace_members")
       .select("role")
       .eq("workspace_id", report.workspace_id)
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .maybeSingle();
 
     if (wmErr) return jsonError(500, wmErr.message);

@@ -97,26 +97,59 @@ type UploadCreativesResult = {
   ok: boolean;
   items?: any[];
   creativesMap?: Record<string, string>;
+  batch_id?: string;
   error?: string;
 };
 
+/**
+ * ✅ batched uploader (FORMDATA_PARSE_FAILED 방지용)
+ * - 한 번에 너무 많은 파일/큰 payload를 보내지 않고, 여러 번 나눠서 업로드
+ * - Content-Type은 절대 지정하지 않음(브라우저가 boundary 포함해서 자동 설정)
+ */
 async function uploadCreatives(reportId: string, files: File[]) {
-  const fd = new FormData();
-  for (const f of files) fd.append("files", f);
-  fd.set("expiresIn", "3600");
+  if (!reportId) throw new Error("Missing reportId");
+  if (!files?.length) throw new Error("No files");
 
-  const res = await authFetch(`/api/reports/${reportId}/assets/creatives/upload`, {
-    method: "POST",
-    body: fd,
-  });
+  const BATCH_SIZE = 4; // 기존 값 유지 (필요시 2로 낮춰도 됨)
 
-  const json = (await safeJson(res)) as UploadCreativesResult;
+  let batchId: string | undefined; // ✅ “고정 batch_id”
+  const allItems: any[] = [];
 
-  if (!res.ok || !json?.ok) {
-    throw new Error(json?.error || `Creatives upload failed (${res.status})`);
+  for (let i = 0; i < files.length; i += BATCH_SIZE) {
+    const chunk = files.slice(i, i + BATCH_SIZE);
+
+    const fd = new FormData();
+    for (const f of chunk) fd.append("files", f);
+
+    // (선택) 기존 동작 유지용
+    fd.set("expiresIn", "3600");
+
+    // ✅ 핵심: 첫 배치에서 batch_id를 받으면, 다음 배치부터는 같은 batch로 이어붙인다
+    if (batchId) fd.set("batch_id", batchId);
+
+    const res = await authFetch(`/api/reports/${reportId}/assets/creatives/upload`, {
+      method: "POST",
+      body: fd,
+    });
+
+    const json = (await safeJson(res)) as any;
+
+    if (!res.ok || !json?.ok) {
+      throw new Error(json?.error || `Creatives upload failed (${res.status})`);
+    }
+
+    // ✅ 첫 성공 응답의 batch_id를 “고정”으로 잡기 (last가 아니라 first가 기준)
+    if (!batchId && json?.batch_id) batchId = json.batch_id;
+
+    const items = json?.items ?? [];
+    if (Array.isArray(items) && items.length) allItems.push(...items);
   }
 
-  return json;
+  return {
+    ok: true,
+    batch_id: batchId,
+    items: allItems,
+  } as UploadCreativesResult;
 }
 
 /* =========================================================
@@ -204,8 +237,6 @@ function uniqCount(values: string[]) {
 
 /* =========================================================
  * ✅ UI helper (구조 유지 + 클릭 유도 업그레이드)
- * - input은 숨기고, label을 큰 버튼처럼 만든다
- * - "선택된 파일 없음"을 더 명확/강조
  * ========================================================= */
 
 function humanSize(bytes: number) {
@@ -224,13 +255,10 @@ function humanSize(bytes: number) {
 function extractTokenFromText(input: string) {
   const s = String(input || "").trim();
   if (!s) return "";
-  // /share/<token> 형태
   const m1 = s.match(/\/share\/([^/?#\s]+)/i);
   if (m1?.[1]) return m1[1].trim();
-  // token=xxx 쿼리
   const m2 = s.match(/[?&]token=([^&#\s]+)/i);
   if (m2?.[1]) return decodeURIComponent(m2[1]).trim();
-  // 그냥 token만 붙여넣은 경우
   return s;
 }
 
@@ -243,35 +271,29 @@ export default function ReportDetailPage() {
    * - 이 페이지에 들어온 “이번 세션”에서
    *   1) CSV 업로드+파싱(ingestion/run) 성공하기 전엔 미리보기 rows를 보여주지 않는다.
    *   2) 소재 업로드 성공하기 전엔 매칭된 소재(creativesMap)를 보여주지 않는다.
-   *
-   * => DB에 기존 rows/creatives가 있어도 "표시용"으로는 0에서 시작.
    */
 
-  // ✅ Hydration-safe: SSR에서 Date.now() 찍지 않기 (useEffect에서만 세팅)
   const sessionStartedAtRef = useRef<number | null>(null);
-  const [sessionStartedText, setSessionStartedText] = useState<string>("-"); // SSR/CSR 최초 동일
+  const [sessionStartedText, setSessionStartedText] = useState<string>("-");
 
   const [sessionIngested, setSessionIngested] = useState(false);
-  const [sessionCreativesUploaded, setSessionCreativesUploaded] = useState(false);
+  const [sessionCreativesUploaded, setSessionCreativesUploaded] =
+    useState(false);
 
-  // 서버에서 가져온 “실제 데이터”(표시 여부는 별도)
   const [rows, setRows] = useState<any[]>([]);
   const [loadingRows, setLoadingRows] = useState(true);
   const [msg, setMsg] = useState<string>("");
 
   const [creativesMap, setCreativesMap] = useState<Record<string, string>>({});
 
-  // ✅ 상단: 발행 URL
   const [publishing, setPublishing] = useState(false);
   const [sharePath, setSharePath] = useState<string>("");
 
-  // ✅ CSV
   const csvInputRef = useRef<HTMLInputElement | null>(null);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvUploading, setCsvUploading] = useState(false);
   const [lastUploadedCsvName, setLastUploadedCsvName] = useState<string>("");
 
-  // ✅ Creatives
   const creativesInputRef = useRef<HTMLInputElement | null>(null);
   const [creativeFiles, setCreativeFiles] = useState<File[]>([]);
   const [uploadingCreatives, setUploadingCreatives] = useState(false);
@@ -279,17 +301,11 @@ export default function ReportDetailPage() {
   const [lastUploadedCreativeCount, setLastUploadedCreativeCount] =
     useState<number>(0);
 
-  /**
-   * ✅ 표시용 데이터 (세션 기준 게이트)
-   * - 세션에서 ingestion 성공 전: rows를 빈 배열로 렌더
-   * - 세션에서 creatives 업로드 성공 전: creativesMap을 빈 객체로 렌더
-   */
   const displayRows = sessionIngested ? rows : [];
   const displayCreativesMap = sessionCreativesUploaded ? creativesMap : {};
 
   const creativesKeyCount = Object.keys(displayCreativesMap || {}).length;
 
-  // ✅ signed url token 착시 방지: pathname 기준 고유 수를 세는 편이 더 안전
   const creativesUrlCount = useMemo(() => {
     const paths = Object.values(displayCreativesMap || {}).map((url) => {
       const s = String(url || "");
@@ -304,7 +320,6 @@ export default function ReportDetailPage() {
     return uniqCount(paths);
   }, [displayCreativesMap]);
 
-  // ✅ 발행 가능 조건도 "세션에서 ingestion 성공" 기준으로 변경(착시 제거)
   const canPublish = sessionIngested && !publishing;
 
   async function refreshRows() {
@@ -325,27 +340,23 @@ export default function ReportDetailPage() {
     }
   }
 
-  // ✅ reportId 변경 시: 세션 시작시간/표시 문자열은 mount 후에만 세팅( hydration-safe )
   useEffect(() => {
     if (!reportId) return;
 
     sessionStartedAtRef.current = Date.now();
-    setSessionStartedText("-"); // 최초 렌더 SSR/CSR 동일 유지
+    setSessionStartedText("-");
 
-    // 세션 게이트 리셋
     setSessionIngested(false);
     setSessionCreativesUploaded(false);
 
     setSharePath("");
     setMsg("");
 
-    // “이번에 올린 것” UI 리셋
     setCreativeUploadLog([]);
     setLastUploadedCreativeCount(0);
 
     refreshRows();
 
-    // mount 이후에만 로컬 포맷 문자열 세팅(✅ hydration-safe)
     const d = new Date(sessionStartedAtRef.current);
     setSessionStartedText(d.toLocaleString());
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -363,27 +374,24 @@ export default function ReportDetailPage() {
     setMsg("");
 
     try {
-      // 1) upload
       const up = await uploadCsv(reportId, csvFile);
       const uploadedName =
         up?.item?.name || up?.item?.file_name || csvFile.name || "";
       if (uploadedName) setLastUploadedCsvName(String(uploadedName));
 
-      // 2) run ingestion
       const run = await runIngestion(reportId);
 
-      // ✅ B 정책: 이번 세션 ingestion 성공 처리
       setSessionIngested(true);
 
-      // 3) refresh (서버 데이터 최신화)
       await refreshRows();
 
-      // 4) UI 초기화
       setCsvFile(null);
       if (csvInputRef.current) csvInputRef.current.value = "";
 
       setMsg(
-        `CSV 업로드 + 파싱 완료 (inserted: ${run?.inserted ?? "?"}) → 미리보기에 반영되었습니다.`
+        `CSV 업로드 + 파싱 완료 (inserted: ${
+          run?.inserted ?? "?"
+        }) → 미리보기에 반영되었습니다.`
       );
     } catch (e: any) {
       setMsg(e?.message || "CSV 업로드/파싱 실패");
@@ -408,19 +416,15 @@ export default function ReportDetailPage() {
 
       const res = await uploadCreatives(reportId, creativeFiles);
 
-      // ✅ 이번 세션 creatives 업로드 성공 처리
       setSessionCreativesUploaded(true);
 
-      // 업로드 로그 유지(= “이번에 올린 것” 근거)
       const items = (res as any).items ?? [];
       setCreativeUploadLog(items);
       setLastUploadedCreativeCount(filesCount);
 
-      // input 비우기
       setCreativeFiles([]);
       if (creativesInputRef.current) creativesInputRef.current.value = "";
 
-      // 맵 재로딩(서버 기준 현재 상태)
       setCreativesMap(await fetchCreativesMap(reportId));
 
       setMsg(`소재 업로드 완료: ${filesCount}개`);
@@ -434,7 +438,6 @@ export default function ReportDetailPage() {
   async function handlePublish() {
     if (!reportId) return;
 
-    // ✅ B 정책: 세션 ingestion 없으면 프론트에서 먼저 차단(착시 제거)
     if (!sessionIngested) {
       setMsg(
         "이번 세션에서 CSV 업로드 + 파싱(ingestion/run)을 먼저 완료해야 발행할 수 있습니다."
@@ -465,7 +468,6 @@ export default function ReportDetailPage() {
 
   const shareUrl = sharePath ? fullUrl(sharePath) : "";
 
-  // ✅ 클릭 유도형 상태 문구(가독성 개선)
   const csvStatusText = useMemo(() => {
     if (csvFile) {
       const sz = csvFile.size ? ` (${humanSize(csvFile.size)})` : "";
@@ -482,7 +484,6 @@ export default function ReportDetailPage() {
     return "📌 이미지 파일을 선택해 주세요 (클릭)";
   }, [creativeFiles.length, lastUploadedCreativeCount]);
 
-  // ✅ 선택된 creatives 파일 이름 미리보기(너무 길면 3개만)
   const creativesNamePreview = useMemo(() => {
     const list = creativeFiles.map((f) => f?.name).filter(Boolean);
     if (!list.length) return "";
@@ -499,7 +500,8 @@ export default function ReportDetailPage() {
           <div className="min-w-0">
             <div className="text-sm font-semibold">실제 보고서 URL</div>
             <div className="text-xs text-gray-600">
-              CSV 업로드/파싱 + 소재 업로드 후, 발행하면 공유 링크(/share/[token])가 생성됩니다.
+              CSV 업로드/파싱 + 소재 업로드 후, 발행하면 공유 링크(/share/[token])가
+              생성됩니다.
             </div>
             <div className="mt-1 text-[11px] text-gray-500">
               세션 시작: {sessionStartedText}
@@ -540,44 +542,46 @@ export default function ReportDetailPage() {
         </div>
 
         {shareUrl ? (
-        <div className="mt-3 flex items-center gap-2">
-          <input
-            className="w-full rounded-md border px-3 py-2 text-sm"
-            readOnly
-            value={shareUrl}
-          />
+          <div className="mt-3 flex items-center gap-2">
+            <input
+              className="w-full rounded-md border px-3 py-2 text-sm"
+              readOnly
+              value={shareUrl}
+            />
 
-          {/* ✅ 오른쪽 버튼 2개: 발행/새로고침과 동일 사이즈 + 클릭 유도 UI */}
-          <button
-            type="button"
-            className="rounded-md border px-3 py-2 text-sm font-semibold bg-white hover:border-gray-400 hover:bg-gray-50 active:bg-gray-100"
-            style={{ minWidth: 74 }}
-            onClick={() => window.open(shareUrl, "_blank")}
-            title="새 탭에서 열기"
-          >
-            열기
-          </button>
+            {/* ✅ 오른쪽 버튼 2개: 발행/새로고침과 동일 사이즈 + 클릭 유도 UI */}
+            <button
+              type="button"
+              className="rounded-md border px-3 py-2 text-sm font-semibold bg-white hover:border-gray-400 hover:bg-gray-50 active:bg-gray-100"
+              style={{ minWidth: 74 }}
+              onClick={() => window.open(shareUrl, "_blank")}
+              title="새 탭에서 열기"
+            >
+              열기
+            </button>
 
-          <button
-            type="button"
-            className="rounded-md border px-3 py-2 text-sm font-semibold bg-white hover:border-gray-400 hover:bg-gray-50 active:bg-gray-100"
-            style={{ minWidth: 74 }}
-            onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(shareUrl);
-                setMsg("URL을 복사했습니다.");
-              } catch {
-                setMsg("복사 실패(브라우저 권한 확인)");
-              }
-            }}
-            title="클립보드에 복사"
-          >
-            복사
-          </button>
-        </div>
-      ) : (
-        <div className="mt-3 text-xs text-gray-500">아직 발행되지 않았습니다.</div>
-      )}
+            <button
+              type="button"
+              className="rounded-md border px-3 py-2 text-sm font-semibold bg-white hover:border-gray-400 hover:bg-gray-50 active:bg-gray-100"
+              style={{ minWidth: 74 }}
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(shareUrl);
+                  setMsg("URL을 복사했습니다.");
+                } catch {
+                  setMsg("복사 실패(브라우저 권한 확인)");
+                }
+              }}
+              title="클립보드에 복사"
+            >
+              복사
+            </button>
+          </div>
+        ) : (
+          <div className="mt-3 text-xs text-gray-500">
+            아직 발행되지 않았습니다.
+          </div>
+        )}
       </div>
 
       {/* 페이지 헤더 */}
@@ -604,7 +608,6 @@ export default function ReportDetailPage() {
               업로드 후 서버 파서(ingestion/run)가 실행되어 rows가 갱신됩니다.
             </div>
 
-            {/* ✅ input은 숨기고, label을 큰 클릭 영역으로 */}
             <input
               ref={csvInputRef}
               type="file"
@@ -687,7 +690,6 @@ export default function ReportDetailPage() {
               예: CSV <b>CR_001.png</b> → 업로드도 <b>CR_001.png</b>
             </div>
 
-            {/* ✅ input 숨김 + label 클릭 유도 */}
             <input
               ref={creativesInputRef}
               type="file"
@@ -719,7 +721,10 @@ export default function ReportDetailPage() {
                 >
                   {creativesStatusText}
                   {creativesNamePreview ? (
-                    <span className="text-gray-500"> · {creativesNamePreview}</span>
+                    <span className="text-gray-500">
+                      {" "}
+                      · {creativesNamePreview}
+                    </span>
                   ) : null}
                 </div>
 
@@ -804,8 +809,8 @@ export default function ReportDetailPage() {
             ) : null}
 
             <div className="mt-2 text-xs text-gray-500">
-              ※ 키 후보 수는 매칭 성공률을 올리기 위한 “확장 키”가 포함되어 커질 수 있습니다.
-              실제 이미지 파일 수 감은 “고유 URL”이 더 정확합니다.
+              ※ 키 후보 수는 매칭 성공률을 올리기 위한 “확장 키”가 포함되어 커질 수
+              있습니다. 실제 이미지 파일 수 감은 “고유 URL”이 더 정확합니다.
             </div>
           </div>
         </div>
@@ -827,7 +832,8 @@ export default function ReportDetailPage() {
                     이번 세션에서 CSV 업로드 + 파싱이 필요합니다.
                   </div>
                   <div className="mt-1 text-xs text-gray-600">
-                    현재 DB에 기존 데이터가 있더라도, B 정책(세션 기준)에 따라 미리보기는 숨깁니다.
+                    현재 DB에 기존 데이터가 있더라도, B 정책(세션 기준)에 따라
+                    미리보기는 숨깁니다.
                   </div>
                 </div>
               ) : (
