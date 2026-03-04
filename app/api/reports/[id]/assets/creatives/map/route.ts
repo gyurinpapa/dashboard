@@ -21,11 +21,6 @@ function asInt(v: any, def = 3600) {
 }
 
 function normalizeFilenameKey(v: any): string {
-  // ✅ 최소한의 키 정규화(과매칭 방지)
-  // - NFC normalize
-  // - trim
-  // - basename만 (path 제거)
-  // - 소문자
   const s = String(v ?? "").trim();
   const base = s.split("/").pop() ?? s;
   try {
@@ -45,14 +40,14 @@ function shouldExpand(mode: string) {
 
 export async function GET(req: Request, ctx: Ctx) {
   try {
-    // ✅ auth: sbAuth() 결과 객체 방식
+    // ✅ auth 통일
     const auth = await sbAuth();
-    const user = (auth as any)?.user ?? null;
-    const authErr = (auth as any)?.error ?? null;
 
-    if (authErr || !user) {
-      return jsonError(401, "UNAUTHORIZED");
+    if (!auth.ok) {
+    return jsonError(401, "UNAUTHORIZED");
     }
+
+    const user = auth.user;
 
     const { id } = await ctx.params;
 
@@ -62,7 +57,7 @@ export async function GET(req: Request, ctx: Ctx) {
 
     const admin = getSupabaseAdmin();
 
-    // ✅ report 조회 (workspace_id 필요)
+    // 1️⃣ report 조회
     const { data: report, error: rErr } = await admin
       .from("reports")
       .select("id, workspace_id")
@@ -72,10 +67,10 @@ export async function GET(req: Request, ctx: Ctx) {
     if (rErr) return jsonError(500, rErr.message);
     if (!report) return jsonError(404, "REPORT_NOT_FOUND");
 
-    // ✅ membership 체크
+    // 2️⃣ workspace membership 체크
     const { data: wm, error: wmErr } = await admin
       .from("workspace_members")
-      .select("id")
+      .select("role")
       .eq("workspace_id", report.workspace_id)
       .eq("user_id", user.id)
       .maybeSingle();
@@ -83,10 +78,10 @@ export async function GET(req: Request, ctx: Ctx) {
     if (wmErr) return jsonError(500, wmErr.message);
     if (!wm) return jsonError(403, "FORBIDDEN");
 
-    // ✅ report_creatives: 업로드된 소재 목록
+    // 3️⃣ report_creatives 조회
     const { data: rows, error: cErr } = await admin
       .from("report_creatives")
-      .select("creative_key, file_name, storage_path")
+      .select("creative_key, file_name, storage_path, created_at")
       .eq("report_id", id)
       .order("created_at", { ascending: false });
 
@@ -94,22 +89,24 @@ export async function GET(req: Request, ctx: Ctx) {
 
     const BUCKET = "report_uploads";
 
-    // ✅ strict 원본 entries: "파일 기준"으로만 만든다 (과매칭 방지)
-    // key: creative_key (원본파일명)
-    // url: signed url
     const baseEntries: Array<{ key: string; path: string }> = [];
+
     for (const r of rows ?? []) {
       const path = String((r as any).storage_path || "").trim();
       const keyRaw = (r as any).creative_key ?? (r as any).file_name ?? "";
       const key = normalizeFilenameKey(keyRaw);
+
       if (!path || !key) continue;
+
       baseEntries.push({ key, path });
     }
 
-    // ✅ signed urls (중복 path 제거)
     const uniqPath = new Map<string, { key: string; path: string }>();
+
     for (const e of baseEntries) {
-      if (!uniqPath.has(e.path)) uniqPath.set(e.path, e);
+      if (!uniqPath.has(e.path)) {
+        uniqPath.set(e.path, e);
+      }
     }
 
     const creativesMap: Record<string, string> = {};
@@ -122,26 +119,23 @@ export async function GET(req: Request, ctx: Ctx) {
 
       if (sErr || !signed?.signedUrl) continue;
 
-      // ✅ strict key only
       creativesMap[e.key] = signed.signedUrl;
 
-      // ✅ expanded 모드일 때만 “최소 확장” 허용
-      // - stripExt(basename) 정도만 추가 (공백/언더스코어/특수문자 확장은 금지)
       if (shouldExpand(mode)) {
         const k2 = stripExt(e.key);
-        if (k2 && !creativesMap[k2]) creativesMap[k2] = signed.signedUrl;
+        if (k2 && !creativesMap[k2]) {
+          creativesMap[k2] = signed.signedUrl;
+        }
       }
     }
-
-    const expandedCount = Object.keys(creativesMap).length;
 
     return NextResponse.json({
       ok: true,
       creativesMap,
       meta: {
         mode,
-        strictCount, // 실제 파일 수(고유 path)
-        expandedCount, // 키 후보 수
+        strictCount,
+        expandedCount: Object.keys(creativesMap).length,
         expiresIn,
       },
     });

@@ -55,9 +55,7 @@ async function fetchRows(reportId: string): Promise<any[]> {
 }
 
 async function fetchCreativesMap(reportId: string): Promise<Record<string, string>> {
-  const res = await authFetch(
-    `/api/reports/${reportId}/assets/creatives/map?expiresIn=3600`
-  );
+  const res = await authFetch(`/api/reports/${reportId}/assets/creatives/map?expiresIn=3600`);
   const json = await safeJson(res);
   if (!res.ok || !json?.ok)
     throw new Error(json?.error || `Failed to fetch creativesMap (${res.status})`);
@@ -71,8 +69,7 @@ async function runIngestion(reportId: string) {
     body: JSON.stringify({ mode: "replace" }),
   });
   const json = await safeJson(res);
-  if (!res.ok || !json?.ok)
-    throw new Error(json?.error || `Ingestion failed (${res.status})`);
+  if (!res.ok || !json?.ok) throw new Error(json?.error || `Ingestion failed (${res.status})`);
   return json;
 }
 
@@ -83,8 +80,7 @@ async function uploadCsv(reportId: string, file: File) {
 
   const res = await authFetch(`/api/uploads/csv`, { method: "POST", body: fd });
   const json = await safeJson(res);
-  if (!res.ok || !json?.ok)
-    throw new Error(json?.error || `CSV upload failed (${res.status})`);
+  if (!res.ok || !json?.ok) throw new Error(json?.error || `CSV upload failed (${res.status})`);
   return json;
 }
 
@@ -155,9 +151,7 @@ async function publishReportWithFallback(reportId: string) {
     };
   }
 
-  const msg1 = String(
-    json1?.error || json1?.message || `Publish failed (${res1.status})`
-  );
+  const msg1 = String(json1?.error || json1?.message || `Publish failed (${res1.status})`);
 
   if (looksLikePublishedAtIssue(msg1)) {
     const res2 = await authFetch(`/api/reports/${reportId}/publish-lite`, { method: "POST" });
@@ -173,9 +167,7 @@ async function publishReportWithFallback(reportId: string) {
       };
     }
 
-    const msg2 = String(
-      json2?.error || json2?.message || `Publish-lite failed (${res2.status})`
-    );
+    const msg2 = String(json2?.error || json2?.message || `Publish-lite failed (${res2.status})`);
     throw new Error(msg2);
   }
 
@@ -206,7 +198,11 @@ export default function ReportDetailPage() {
    *
    * => DB에 기존 rows/creatives가 있어도 "표시용"으로는 0에서 시작.
    */
-  const sessionStartedAtRef = useRef<number>(Date.now());
+
+  // ✅ Hydration-safe: SSR에서 Date.now() 찍지 않기 (useEffect에서만 세팅)
+  const sessionStartedAtRef = useRef<number | null>(null);
+  const [sessionStartedText, setSessionStartedText] = useState<string>("-"); // SSR/CSR 최초 동일
+
   const [sessionIngested, setSessionIngested] = useState(false);
   const [sessionCreativesUploaded, setSessionCreativesUploaded] = useState(false);
 
@@ -243,9 +239,20 @@ export default function ReportDetailPage() {
   const displayCreativesMap = sessionCreativesUploaded ? creativesMap : {};
 
   const creativesKeyCount = Object.keys(displayCreativesMap || {}).length;
+
+  // ✅ signed url token 착시 방지: pathname 기준 고유 수를 세는 편이 더 안전
   const creativesUrlCount = useMemo(() => {
-    const urls = Object.values(displayCreativesMap || {}).map((u) => String(u || ""));
-    return uniqCount(urls);
+    const paths = Object.values(displayCreativesMap || {}).map((url) => {
+      const s = String(url || "");
+      if (!s) return "";
+      try {
+        const u = new URL(s);
+        return u.pathname;
+      } catch {
+        return s;
+      }
+    });
+    return uniqCount(paths);
   }, [displayCreativesMap]);
 
   // ✅ 발행 가능 조건도 "세션에서 ingestion 성공" 기준으로 변경(착시 제거)
@@ -266,15 +273,29 @@ export default function ReportDetailPage() {
     }
   }
 
+  // ✅ reportId 변경 시: 세션 시작시간/표시 문자열은 mount 후에만 세팅( hydration-safe )
   useEffect(() => {
-    // ✅ reportId 바뀌면 세션 게이트도 리셋
+    if (!reportId) return;
+
     sessionStartedAtRef.current = Date.now();
+    setSessionStartedText("-"); // 최초 렌더 SSR/CSR 동일 유지
+
+    // 세션 게이트 리셋
     setSessionIngested(false);
     setSessionCreativesUploaded(false);
+
     setSharePath("");
     setMsg("");
 
+    // “이번에 올린 것” UI 리셋
+    setCreativeUploadLog([]);
+    setLastUploadedCreativeCount(0);
+
     refreshRows();
+
+    // mount 이후에만 로컬 포맷 문자열 세팅(✅ hydration-safe)
+    const d = new Date(sessionStartedAtRef.current);
+    setSessionStartedText(d.toLocaleString());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reportId]);
 
@@ -308,9 +329,7 @@ export default function ReportDetailPage() {
       setCsvFile(null);
       if (csvInputRef.current) csvInputRef.current.value = "";
 
-      setMsg(
-        `CSV 업로드 + 파싱 완료 (inserted: ${run?.inserted ?? "?"}) → 미리보기에 반영되었습니다.`
-      );
+      setMsg(`CSV 업로드 + 파싱 완료 (inserted: ${run?.inserted ?? "?"}) → 미리보기에 반영되었습니다.`);
     } catch (e: any) {
       setMsg(e?.message || "CSV 업로드/파싱 실패");
     } finally {
@@ -391,14 +410,14 @@ export default function ReportDetailPage() {
     <div className="p-6">
       {/* ✅ 상단: 발행 / 실제 URL 생성 바 */}
       <div className="rounded-lg border p-4 mb-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
             <div className="text-sm font-semibold">실제 보고서 URL</div>
             <div className="text-xs text-gray-600">
               CSV 업로드/파싱 + 소재 업로드 후, 발행하면 공유 링크(/share/[token])가 생성됩니다.
             </div>
             <div className="mt-1 text-[11px] text-gray-500">
-              세션 시작: {new Date(sessionStartedAtRef.current).toLocaleString()}
+              세션 시작: {sessionStartedText}
               {" · "}
               {sessionIngested ? "✅ 이번 세션 CSV 파싱 완료" : "⛔ 이번 세션 CSV 파싱 전(미리보기 숨김)"}
               {" · "}
@@ -406,7 +425,7 @@ export default function ReportDetailPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
               className={`rounded-md px-3 py-2 text-sm font-semibold ${
@@ -433,21 +452,19 @@ export default function ReportDetailPage() {
 
         {shareUrl ? (
           <div className="mt-3 flex items-center gap-2">
-            <input
-              className="w-full rounded-md border px-3 py-2 text-sm"
-              readOnly
-              value={shareUrl}
-            />
+            <input className="w-full rounded-md border px-3 py-2 text-sm" readOnly value={shareUrl} />
+
+            {/* ✅ "발행하기/새로고침"과 같은 크기 + 가로 텍스트 */}
             <button
               type="button"
-              className="rounded-md border px-3 py-2 text-sm hover:border-gray-400"
+              className="rounded-md border px-3 py-2 text-sm font-semibold hover:border-gray-400"
               onClick={() => window.open(shareUrl, "_blank")}
             >
               열기
             </button>
             <button
               type="button"
-              className="rounded-md border px-3 py-2 text-sm hover:border-gray-400"
+              className="rounded-md border px-3 py-2 text-sm font-semibold hover:border-gray-400"
               onClick={async () => {
                 try {
                   await navigator.clipboard.writeText(shareUrl);
@@ -474,9 +491,7 @@ export default function ReportDetailPage() {
       </div>
 
       {msg ? (
-        <div className="mt-3 rounded-md border bg-white p-3 text-sm text-gray-700">
-          {msg}
-        </div>
+        <div className="mt-3 rounded-md border bg-white p-3 text-sm text-gray-700">{msg}</div>
       ) : null}
 
       <div className="mt-6 grid grid-cols-12 gap-4">
@@ -541,9 +556,7 @@ export default function ReportDetailPage() {
               <button
                 type="button"
                 className={`rounded-md px-3 py-2 text-sm font-semibold ${
-                  uploadingCreatives
-                    ? "bg-gray-300 text-gray-600"
-                    : "bg-black text-white hover:opacity-90"
+                  uploadingCreatives ? "bg-gray-300 text-gray-600" : "bg-black text-white hover:opacity-90"
                 }`}
                 onClick={handleUploadCreatives}
                 disabled={uploadingCreatives}
@@ -566,13 +579,10 @@ export default function ReportDetailPage() {
                 <div className="max-h-40 overflow-auto space-y-1">
                   {creativeUploadLog.map((it, idx) => (
                     <div key={idx} className="text-xs text-gray-700">
-                      {it.ok ? "✅" : "❌"}{" "}
-                      <span className="font-medium">{it.file}</span>{" "}
+                      {it.ok ? "✅" : "❌"} <span className="font-medium">{it.file}</span>{" "}
                       <span className="text-gray-500">→ key:</span>{" "}
                       <span className="font-mono">{it.creative_key}</span>
-                      {!it.ok && it.error ? (
-                        <span className="text-red-600"> ({it.error})</span>
-                      ) : null}
+                      {!it.ok && it.error ? <span className="text-red-600"> ({it.error})</span> : null}
                     </div>
                   ))}
                 </div>
@@ -597,8 +607,8 @@ export default function ReportDetailPage() {
             ) : null}
 
             <div className="mt-2 text-xs text-gray-500">
-              ※ 키 후보 수는 매칭 성공률을 올리기 위한 “확장 키”가 포함되어 커질 수 있습니다.
-              실제 이미지 파일 수 감은 “고유 URL”이 더 정확합니다.
+              ※ 키 후보 수는 매칭 성공률을 올리기 위한 “확장 키”가 포함되어 커질 수 있습니다. 실제 이미지 파일 수
+              감은 “고유 URL”이 더 정확합니다.
             </div>
           </div>
         </div>
@@ -621,20 +631,15 @@ export default function ReportDetailPage() {
                 </div>
               ) : (
                 <div style={{ transform: "scale(0.9)", transformOrigin: "top center" }}>
-                  <ReportTemplate
-                    rows={displayRows}
-                    isLoading={loadingRows}
-                    creativesMap={displayCreativesMap}
-                  />
+                  <ReportTemplate rows={displayRows} isLoading={loadingRows} creativesMap={displayCreativesMap} />
                 </div>
               )}
             </div>
           </div>
 
           <div className="mt-2 text-xs text-gray-500">
-            서버 rows(실제): {rows.length}개{" "}
-            <span className="text-gray-400">·</span>{" "}
-            표시 rows(세션 기준): {displayRows.length}개
+            서버 rows(실제): {rows.length}개 <span className="text-gray-400">·</span> 표시 rows(세션 기준):{" "}
+            {displayRows.length}개
           </div>
         </div>
       </div>

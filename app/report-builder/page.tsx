@@ -147,9 +147,15 @@ export default function ReportBuilderPage() {
 
     setCreating(true);
 
+    const { data } = await supabase.auth.getSession();
+    const token = data?.session?.access_token;
+
     const res = await fetch("/api/reports/create", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`, // ⭐ 추가
+      },
       credentials: "include",
       body: JSON.stringify({
         workspace_id: workspaceId,

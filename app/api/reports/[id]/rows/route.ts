@@ -14,17 +14,19 @@ function jsonError(status: number, message: string, extra?: any) {
 
 export async function GET(_req: Request, ctx: Ctx) {
   try {
-    // ✅ auth: 결과객체 방식
+    // ✅ sbAuth는 "서버 supabase client"로 사용 (통일)
     const auth = await sbAuth();
-    const user = (auth as any)?.user ?? null;
-    const authErr = (auth as any)?.error ?? null;
 
-    if (authErr || !user) return jsonError(401, "UNAUTHORIZED");
+    if (!auth.ok) {
+    return jsonError(401, "UNAUTHORIZED");
+    }
+
+    const user = auth.user;
 
     const { id } = await ctx.params;
     const admin = getSupabaseAdmin();
 
-    // 1) report 조회 (workspace_id, current_ingestion_id)
+    // 1) report 조회
     const { data: report, error: rErr } = await admin
       .from("reports")
       .select("id, workspace_id, current_ingestion_id")
@@ -34,10 +36,10 @@ export async function GET(_req: Request, ctx: Ctx) {
     if (rErr) return jsonError(500, rErr.message);
     if (!report) return jsonError(404, "REPORT_NOT_FOUND");
 
-    // 2) membership 체크
+    // 2) membership 체크  ✅ id 컬럼 쓰지 말 것
     const { data: wm, error: wmErr } = await admin
       .from("workspace_members")
-      .select("id")
+      .select("role") // 또는 "workspace_id"
       .eq("workspace_id", report.workspace_id)
       .eq("user_id", user.id)
       .maybeSingle();
@@ -45,13 +47,11 @@ export async function GET(_req: Request, ctx: Ctx) {
     if (wmErr) return jsonError(500, wmErr.message);
     if (!wm) return jsonError(403, "FORBIDDEN");
 
-    // ✅ 3) current_ingestion_id 없으면 빈 배열
+    // 3) ingestion 없으면 빈 배열
     const ingestionId = report.current_ingestion_id;
-    if (!ingestionId) {
-      return NextResponse.json({ ok: true, rows: [] });
-    }
+    if (!ingestionId) return NextResponse.json({ ok: true, rows: [] });
 
-    // 4) rows 로드 (현재 ingestion_id 기준)
+    // 4) rows 로드
     const { data: rows, error: rowsErr } = await admin
       .from("report_rows")
       .select("id, report_id, ingestion_id, row, created_at")
