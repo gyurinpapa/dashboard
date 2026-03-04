@@ -132,7 +132,12 @@ export default function ShareReportPage() {
 
   return (
     <main className="p-6" style={{ maxWidth: 1400, margin: "0 auto" }}>
-      <ReportTemplate rows={rows} isLoading={false} creativesMap={creativesMap} />
+      <ReportTemplate
+        key={rows.length}
+        rows={rows}
+        isLoading={false}
+        creativesMap={creativesMap}
+      />
       <div className="mt-2 text-xs text-gray-500">
         rows: {rows.length}개 / creatives: {Object.keys(creativesMap || {}).length}
         개
