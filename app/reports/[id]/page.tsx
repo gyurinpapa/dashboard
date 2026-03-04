@@ -54,11 +54,17 @@ async function fetchRows(reportId: string): Promise<any[]> {
   return json.rows ?? [];
 }
 
-async function fetchCreativesMap(reportId: string): Promise<Record<string, string>> {
-  const res = await authFetch(`/api/reports/${reportId}/assets/creatives/map?expiresIn=3600`);
+async function fetchCreativesMap(
+  reportId: string
+): Promise<Record<string, string>> {
+  const res = await authFetch(
+    `/api/reports/${reportId}/assets/creatives/map?expiresIn=3600`
+  );
   const json = await safeJson(res);
   if (!res.ok || !json?.ok)
-    throw new Error(json?.error || `Failed to fetch creativesMap (${res.status})`);
+    throw new Error(
+      json?.error || `Failed to fetch creativesMap (${res.status})`
+    );
   return json.creativesMap ?? {};
 }
 
@@ -69,7 +75,8 @@ async function runIngestion(reportId: string) {
     body: JSON.stringify({ mode: "replace" }),
   });
   const json = await safeJson(res);
-  if (!res.ok || !json?.ok) throw new Error(json?.error || `Ingestion failed (${res.status})`);
+  if (!res.ok || !json?.ok)
+    throw new Error(json?.error || `Ingestion failed (${res.status})`);
   return json;
 }
 
@@ -80,7 +87,8 @@ async function uploadCsv(reportId: string, file: File) {
 
   const res = await authFetch(`/api/uploads/csv`, { method: "POST", body: fd });
   const json = await safeJson(res);
-  if (!res.ok || !json?.ok) throw new Error(json?.error || `CSV upload failed (${res.status})`);
+  if (!res.ok || !json?.ok)
+    throw new Error(json?.error || `CSV upload failed (${res.status})`);
   return json;
 }
 
@@ -138,7 +146,9 @@ function pickSharePath(json: any): string {
 }
 
 async function publishReportWithFallback(reportId: string) {
-  const res1 = await authFetch(`/api/reports/${reportId}/publish`, { method: "POST" });
+  const res1 = await authFetch(`/api/reports/${reportId}/publish`, {
+    method: "POST",
+  });
   const json1 = await safeJson(res1);
 
   if (res1.ok && json1?.ok) {
@@ -151,10 +161,14 @@ async function publishReportWithFallback(reportId: string) {
     };
   }
 
-  const msg1 = String(json1?.error || json1?.message || `Publish failed (${res1.status})`);
+  const msg1 = String(
+    json1?.error || json1?.message || `Publish failed (${res1.status})`
+  );
 
   if (looksLikePublishedAtIssue(msg1)) {
-    const res2 = await authFetch(`/api/reports/${reportId}/publish-lite`, { method: "POST" });
+    const res2 = await authFetch(`/api/reports/${reportId}/publish-lite`, {
+      method: "POST",
+    });
     const json2 = await safeJson(res2);
 
     if (res2.ok && json2?.ok) {
@@ -167,7 +181,9 @@ async function publishReportWithFallback(reportId: string) {
       };
     }
 
-    const msg2 = String(json2?.error || json2?.message || `Publish-lite failed (${res2.status})`);
+    const msg2 = String(
+      json2?.error || json2?.message || `Publish-lite failed (${res2.status})`
+    );
     throw new Error(msg2);
   }
 
@@ -184,6 +200,38 @@ function uniqCount(values: string[]) {
   const s = new Set<string>();
   for (const v of values) if (v) s.add(v);
   return s.size;
+}
+
+/* =========================================================
+ * ✅ UI helper (구조 유지 + 클릭 유도 업그레이드)
+ * - input은 숨기고, label을 큰 버튼처럼 만든다
+ * - "선택된 파일 없음"을 더 명확/강조
+ * ========================================================= */
+
+function humanSize(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "";
+  const units = ["B", "KB", "MB", "GB"];
+  let n = bytes;
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024;
+    i++;
+  }
+  const fixed = i === 0 ? String(Math.round(n)) : n.toFixed(n >= 10 ? 1 : 2);
+  return `${fixed}${units[i]}`;
+}
+
+function extractTokenFromText(input: string) {
+  const s = String(input || "").trim();
+  if (!s) return "";
+  // /share/<token> 형태
+  const m1 = s.match(/\/share\/([^/?#\s]+)/i);
+  if (m1?.[1]) return m1[1].trim();
+  // token=xxx 쿼리
+  const m2 = s.match(/[?&]token=([^&#\s]+)/i);
+  if (m2?.[1]) return decodeURIComponent(m2[1]).trim();
+  // 그냥 token만 붙여넣은 경우
+  return s;
 }
 
 export default function ReportDetailPage() {
@@ -228,7 +276,8 @@ export default function ReportDetailPage() {
   const [creativeFiles, setCreativeFiles] = useState<File[]>([]);
   const [uploadingCreatives, setUploadingCreatives] = useState(false);
   const [creativeUploadLog, setCreativeUploadLog] = useState<any[]>([]);
-  const [lastUploadedCreativeCount, setLastUploadedCreativeCount] = useState<number>(0);
+  const [lastUploadedCreativeCount, setLastUploadedCreativeCount] =
+    useState<number>(0);
 
   /**
    * ✅ 표시용 데이터 (세션 기준 게이트)
@@ -263,7 +312,10 @@ export default function ReportDetailPage() {
     setLoadingRows(true);
     setMsg("");
     try {
-      const [rws, cmap] = await Promise.all([fetchRows(reportId), fetchCreativesMap(reportId)]);
+      const [rws, cmap] = await Promise.all([
+        fetchRows(reportId),
+        fetchCreativesMap(reportId),
+      ]);
       setRows(rws);
       setCreativesMap(cmap);
     } catch (e: any) {
@@ -313,7 +365,8 @@ export default function ReportDetailPage() {
     try {
       // 1) upload
       const up = await uploadCsv(reportId, csvFile);
-      const uploadedName = up?.item?.name || up?.item?.file_name || csvFile.name || "";
+      const uploadedName =
+        up?.item?.name || up?.item?.file_name || csvFile.name || "";
       if (uploadedName) setLastUploadedCsvName(String(uploadedName));
 
       // 2) run ingestion
@@ -329,7 +382,9 @@ export default function ReportDetailPage() {
       setCsvFile(null);
       if (csvInputRef.current) csvInputRef.current.value = "";
 
-      setMsg(`CSV 업로드 + 파싱 완료 (inserted: ${run?.inserted ?? "?"}) → 미리보기에 반영되었습니다.`);
+      setMsg(
+        `CSV 업로드 + 파싱 완료 (inserted: ${run?.inserted ?? "?"}) → 미리보기에 반영되었습니다.`
+      );
     } catch (e: any) {
       setMsg(e?.message || "CSV 업로드/파싱 실패");
     } finally {
@@ -381,7 +436,9 @@ export default function ReportDetailPage() {
 
     // ✅ B 정책: 세션 ingestion 없으면 프론트에서 먼저 차단(착시 제거)
     if (!sessionIngested) {
-      setMsg("이번 세션에서 CSV 업로드 + 파싱(ingestion/run)을 먼저 완료해야 발행할 수 있습니다.");
+      setMsg(
+        "이번 세션에서 CSV 업로드 + 파싱(ingestion/run)을 먼저 완료해야 발행할 수 있습니다."
+      );
       return;
     }
 
@@ -393,7 +450,9 @@ export default function ReportDetailPage() {
       if (out.sharePath) setSharePath(out.sharePath);
 
       if (out.used === "publish-lite") {
-        setMsg("발행 완료(안전모드: publish-lite). 아래 URL로 실제 보고서를 볼 수 있습니다.");
+        setMsg(
+          "발행 완료(안전모드: publish-lite). 아래 URL로 실제 보고서를 볼 수 있습니다."
+        );
       } else {
         setMsg("발행 완료. 아래 URL로 실제 보고서를 볼 수 있습니다.");
       }
@@ -405,6 +464,32 @@ export default function ReportDetailPage() {
   }
 
   const shareUrl = sharePath ? fullUrl(sharePath) : "";
+
+  // ✅ 클릭 유도형 상태 문구(가독성 개선)
+  const csvStatusText = useMemo(() => {
+    if (csvFile) {
+      const sz = csvFile.size ? ` (${humanSize(csvFile.size)})` : "";
+      return `선택됨: ${csvFile.name}${sz}`;
+    }
+    if (lastUploadedCsvName) return `최근 업로드: ${lastUploadedCsvName}`;
+    return "📌 CSV 파일을 선택해 주세요 (클릭)";
+  }, [csvFile, lastUploadedCsvName]);
+
+  const creativesStatusText = useMemo(() => {
+    if (creativeFiles.length > 0) return `선택됨: ${creativeFiles.length}개`;
+    if (lastUploadedCreativeCount > 0)
+      return `최근 업로드: ${lastUploadedCreativeCount}개`;
+    return "📌 이미지 파일을 선택해 주세요 (클릭)";
+  }, [creativeFiles.length, lastUploadedCreativeCount]);
+
+  // ✅ 선택된 creatives 파일 이름 미리보기(너무 길면 3개만)
+  const creativesNamePreview = useMemo(() => {
+    const list = creativeFiles.map((f) => f?.name).filter(Boolean);
+    if (!list.length) return "";
+    const head = list.slice(0, 3).join(", ");
+    const more = list.length > 3 ? ` 외 ${list.length - 3}개` : "";
+    return `${head}${more}`;
+  }, [creativeFiles]);
 
   return (
     <div className="p-6">
@@ -419,9 +504,13 @@ export default function ReportDetailPage() {
             <div className="mt-1 text-[11px] text-gray-500">
               세션 시작: {sessionStartedText}
               {" · "}
-              {sessionIngested ? "✅ 이번 세션 CSV 파싱 완료" : "⛔ 이번 세션 CSV 파싱 전(미리보기 숨김)"}
+              {sessionIngested
+                ? "✅ 이번 세션 CSV 파싱 완료"
+                : "⛔ 이번 세션 CSV 파싱 전(미리보기 숨김)"}
               {" · "}
-              {sessionCreativesUploaded ? "✅ 이번 세션 소재 업로드 완료" : "⛔ 이번 세션 소재 업로드 전(매칭 0)"}
+              {sessionCreativesUploaded
+                ? "✅ 이번 세션 소재 업로드 완료"
+                : "⛔ 이번 세션 소재 업로드 전(매칭 0)"}
             </div>
           </div>
 
@@ -451,35 +540,44 @@ export default function ReportDetailPage() {
         </div>
 
         {shareUrl ? (
-          <div className="mt-3 flex items-center gap-2">
-            <input className="w-full rounded-md border px-3 py-2 text-sm" readOnly value={shareUrl} />
+        <div className="mt-3 flex items-center gap-2">
+          <input
+            className="w-full rounded-md border px-3 py-2 text-sm"
+            readOnly
+            value={shareUrl}
+          />
 
-            {/* ✅ "발행하기/새로고침"과 같은 크기 + 가로 텍스트 */}
-            <button
-              type="button"
-              className="rounded-md border px-3 py-2 text-sm font-semibold hover:border-gray-400"
-              onClick={() => window.open(shareUrl, "_blank")}
-            >
-              열기
-            </button>
-            <button
-              type="button"
-              className="rounded-md border px-3 py-2 text-sm font-semibold hover:border-gray-400"
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(shareUrl);
-                  setMsg("URL을 복사했습니다.");
-                } catch {
-                  setMsg("복사 실패(브라우저 권한 확인)");
-                }
-              }}
-            >
-              복사
-            </button>
-          </div>
-        ) : (
-          <div className="mt-3 text-xs text-gray-500">아직 발행되지 않았습니다.</div>
-        )}
+          {/* ✅ 오른쪽 버튼 2개: 발행/새로고침과 동일 사이즈 + 클릭 유도 UI */}
+          <button
+            type="button"
+            className="rounded-md border px-3 py-2 text-sm font-semibold bg-white hover:border-gray-400 hover:bg-gray-50 active:bg-gray-100"
+            style={{ minWidth: 74 }}
+            onClick={() => window.open(shareUrl, "_blank")}
+            title="새 탭에서 열기"
+          >
+            열기
+          </button>
+
+          <button
+            type="button"
+            className="rounded-md border px-3 py-2 text-sm font-semibold bg-white hover:border-gray-400 hover:bg-gray-50 active:bg-gray-100"
+            style={{ minWidth: 74 }}
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(shareUrl);
+                setMsg("URL을 복사했습니다.");
+              } catch {
+                setMsg("복사 실패(브라우저 권한 확인)");
+              }
+            }}
+            title="클립보드에 복사"
+          >
+            복사
+          </button>
+        </div>
+      ) : (
+        <div className="mt-3 text-xs text-gray-500">아직 발행되지 않았습니다.</div>
+      )}
       </div>
 
       {/* 페이지 헤더 */}
@@ -491,7 +589,9 @@ export default function ReportDetailPage() {
       </div>
 
       {msg ? (
-        <div className="mt-3 rounded-md border bg-white p-3 text-sm text-gray-700">{msg}</div>
+        <div className="mt-3 rounded-md border bg-white p-3 text-sm text-gray-700">
+          {msg}
+        </div>
       ) : null}
 
       <div className="mt-6 grid grid-cols-12 gap-4">
@@ -504,19 +604,63 @@ export default function ReportDetailPage() {
               업로드 후 서버 파서(ingestion/run)가 실행되어 rows가 갱신됩니다.
             </div>
 
+            {/* ✅ input은 숨기고, label을 큰 클릭 영역으로 */}
             <input
               ref={csvInputRef}
               type="file"
               accept=".csv,text/csv"
-              className="block w-full text-sm"
+              className="hidden"
               onChange={(e) => setCsvFile(e.target.files?.[0] ?? null)}
             />
+
+            <label
+              htmlFor={undefined as any}
+              onClick={() => csvInputRef.current?.click()}
+              className="block w-full rounded-md border px-4 py-3 cursor-pointer bg-gray-50 hover:bg-gray-100"
+              style={{ userSelect: "none" }}
+              title="클릭해서 CSV 파일을 선택하세요"
+            >
+              <div className="text-sm font-semibold">📁 CSV 파일 선택</div>
+              <div className="mt-1 text-xs text-gray-600">
+                클릭하여 파일을 선택하세요. (드래그앤드롭은 추후)
+              </div>
+
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <div
+                  className={`text-xs ${
+                    csvFile || lastUploadedCsvName
+                      ? "text-gray-700"
+                      : "text-gray-500"
+                  }`}
+                >
+                  {csvStatusText}
+                </div>
+
+                {csvFile ? (
+                  <button
+                    type="button"
+                    className="rounded-md border px-2 py-1 text-xs font-semibold hover:border-gray-400 bg-white"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setCsvFile(null);
+                      if (csvInputRef.current) csvInputRef.current.value = "";
+                    }}
+                    title="선택 해제"
+                  >
+                    선택 해제
+                  </button>
+                ) : null}
+              </div>
+            </label>
 
             <div className="mt-3 flex items-center gap-2">
               <button
                 type="button"
                 className={`rounded-md px-3 py-2 text-sm font-semibold ${
-                  csvUploading ? "bg-gray-300 text-gray-600" : "bg-black text-white hover:opacity-90"
+                  csvUploading
+                    ? "bg-gray-300 text-gray-600"
+                    : "bg-black text-white hover:opacity-90"
                 }`}
                 onClick={handleUploadCsv}
                 disabled={csvUploading}
@@ -526,10 +670,10 @@ export default function ReportDetailPage() {
 
               <div className="text-xs text-gray-600">
                 {csvFile
-                  ? `선택: ${csvFile.name}`
+                  ? "업로드 준비 완료"
                   : lastUploadedCsvName
-                  ? `최근 업로드: ${lastUploadedCsvName}`
-                  : "선택된 파일 없음"}
+                  ? "CSV를 다시 바꾸려면 위 박스를 클릭"
+                  : "먼저 CSV를 선택하세요"}
               </div>
             </div>
           </div>
@@ -543,20 +687,68 @@ export default function ReportDetailPage() {
               예: CSV <b>CR_001.png</b> → 업로드도 <b>CR_001.png</b>
             </div>
 
+            {/* ✅ input 숨김 + label 클릭 유도 */}
             <input
               ref={creativesInputRef}
               type="file"
               multiple
               accept="image/*"
-              className="block w-full text-sm"
+              className="hidden"
               onChange={(e) => setCreativeFiles(Array.from(e.target.files ?? []))}
             />
+
+            <label
+              htmlFor={undefined as any}
+              onClick={() => creativesInputRef.current?.click()}
+              className="block w-full rounded-md border px-4 py-3 cursor-pointer bg-gray-50 hover:bg-gray-100"
+              style={{ userSelect: "none" }}
+              title="클릭해서 이미지 파일을 선택하세요"
+            >
+              <div className="text-sm font-semibold">🖼️ 이미지 파일 선택</div>
+              <div className="mt-1 text-xs text-gray-600">
+                여러 개 선택 가능합니다.
+              </div>
+
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <div
+                  className={`text-xs ${
+                    creativeFiles.length > 0 || lastUploadedCreativeCount > 0
+                      ? "text-gray-700"
+                      : "text-gray-500"
+                  }`}
+                >
+                  {creativesStatusText}
+                  {creativesNamePreview ? (
+                    <span className="text-gray-500"> · {creativesNamePreview}</span>
+                  ) : null}
+                </div>
+
+                {creativeFiles.length > 0 ? (
+                  <button
+                    type="button"
+                    className="rounded-md border px-2 py-1 text-xs font-semibold hover:border-gray-400 bg-white"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setCreativeFiles([]);
+                      if (creativesInputRef.current)
+                        creativesInputRef.current.value = "";
+                    }}
+                    title="선택 해제"
+                  >
+                    선택 해제
+                  </button>
+                ) : null}
+              </div>
+            </label>
 
             <div className="mt-3 flex items-center gap-2">
               <button
                 type="button"
                 className={`rounded-md px-3 py-2 text-sm font-semibold ${
-                  uploadingCreatives ? "bg-gray-300 text-gray-600" : "bg-black text-white hover:opacity-90"
+                  uploadingCreatives
+                    ? "bg-gray-300 text-gray-600"
+                    : "bg-black text-white hover:opacity-90"
                 }`}
                 onClick={handleUploadCreatives}
                 disabled={uploadingCreatives}
@@ -566,23 +758,28 @@ export default function ReportDetailPage() {
 
               <div className="text-xs text-gray-600">
                 {creativeFiles.length > 0
-                  ? `선택: ${creativeFiles.length}개`
+                  ? "업로드 준비 완료"
                   : lastUploadedCreativeCount > 0
-                  ? `최근 업로드: ${lastUploadedCreativeCount}개`
-                  : "선택: 0개"}
+                  ? "이미지를 바꾸려면 위 박스를 클릭"
+                  : "먼저 이미지를 선택하세요"}
               </div>
             </div>
 
             {creativeUploadLog.length > 0 ? (
               <div className="mt-3 rounded-md border p-2 bg-white">
-                <div className="text-xs font-semibold mb-2">업로드 결과(이번 세션)</div>
+                <div className="text-xs font-semibold mb-2">
+                  업로드 결과(이번 세션)
+                </div>
                 <div className="max-h-40 overflow-auto space-y-1">
                   {creativeUploadLog.map((it, idx) => (
                     <div key={idx} className="text-xs text-gray-700">
-                      {it.ok ? "✅" : "❌"} <span className="font-medium">{it.file}</span>{" "}
+                      {it.ok ? "✅" : "❌"}{" "}
+                      <span className="font-medium">{it.file}</span>{" "}
                       <span className="text-gray-500">→ key:</span>{" "}
                       <span className="font-mono">{it.creative_key}</span>
-                      {!it.ok && it.error ? <span className="text-red-600"> ({it.error})</span> : null}
+                      {!it.ok && it.error ? (
+                        <span className="text-red-600"> ({it.error})</span>
+                      ) : null}
                     </div>
                   ))}
                 </div>
@@ -596,8 +793,8 @@ export default function ReportDetailPage() {
 
             <div className="text-sm text-gray-700">
               고유 URL: <b>{creativesUrlCount}</b>개{" "}
-              <span className="text-gray-400">·</span>{" "}
-              키 후보: <b>{creativesKeyCount}</b>개
+              <span className="text-gray-400">·</span> 키 후보:{" "}
+              <b>{creativesKeyCount}</b>개
             </div>
 
             {!sessionCreativesUploaded ? (
@@ -607,8 +804,8 @@ export default function ReportDetailPage() {
             ) : null}
 
             <div className="mt-2 text-xs text-gray-500">
-              ※ 키 후보 수는 매칭 성공률을 올리기 위한 “확장 키”가 포함되어 커질 수 있습니다. 실제 이미지 파일 수
-              감은 “고유 URL”이 더 정확합니다.
+              ※ 키 후보 수는 매칭 성공률을 올리기 위한 “확장 키”가 포함되어 커질 수 있습니다.
+              실제 이미지 파일 수 감은 “고유 URL”이 더 정확합니다.
             </div>
           </div>
         </div>
@@ -618,27 +815,41 @@ export default function ReportDetailPage() {
           <div className="rounded-lg border">
             <div className="flex items-center justify-between px-4 py-3 border-b">
               <div className="text-sm font-semibold">미리보기</div>
-              <div className="text-xs text-gray-500">compact + scale(0.9) + right scroll</div>
+              <div className="text-xs text-gray-500">
+                compact + scale(0.9) + right scroll
+              </div>
             </div>
 
             <div className="max-h-[78vh] overflow-y-auto p-4">
               {!sessionIngested ? (
                 <div className="rounded-md border bg-white p-4 text-sm text-gray-700">
-                  <div className="font-semibold">이번 세션에서 CSV 업로드 + 파싱이 필요합니다.</div>
+                  <div className="font-semibold">
+                    이번 세션에서 CSV 업로드 + 파싱이 필요합니다.
+                  </div>
                   <div className="mt-1 text-xs text-gray-600">
                     현재 DB에 기존 데이터가 있더라도, B 정책(세션 기준)에 따라 미리보기는 숨깁니다.
                   </div>
                 </div>
               ) : (
-                <div style={{ transform: "scale(0.9)", transformOrigin: "top center" }}>
-                  <ReportTemplate rows={displayRows} isLoading={loadingRows} creativesMap={displayCreativesMap} />
+                <div
+                  style={{
+                    transform: "scale(0.9)",
+                    transformOrigin: "top center",
+                  }}
+                >
+                  <ReportTemplate
+                    rows={displayRows}
+                    isLoading={loadingRows}
+                    creativesMap={displayCreativesMap}
+                  />
                 </div>
               )}
             </div>
           </div>
 
           <div className="mt-2 text-xs text-gray-500">
-            서버 rows(실제): {rows.length}개 <span className="text-gray-400">·</span> 표시 rows(세션 기준):{" "}
+            서버 rows(실제): {rows.length}개{" "}
+            <span className="text-gray-400">·</span> 표시 rows(세션 기준):{" "}
             {displayRows.length}개
           </div>
         </div>
