@@ -1,3 +1,4 @@
+// app/share/[token]/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -35,6 +36,17 @@ export default function ShareReportPage() {
   const [creativesMap, setCreativesMap] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
 
+  // ✅ ReportTemplate 내부 memo/state가 이전 데이터에 묶이지 않도록 “버전 키”를 만든다
+  // - report.updated_at (있으면 최우선)
+  // - rows length / creatives count로도 변화를 감지
+  const versionKey = useMemo(() => {
+    const id = report?.id ?? "no-report";
+    const u = (report as any)?.updated_at ?? "";
+    const rowsCnt = rows?.length ?? 0;
+    const cCnt = Object.keys(creativesMap || {}).length;
+    return `${id}:${u}:${rowsCnt}:${cCnt}`;
+  }, [report, rows, creativesMap]);
+
   useEffect(() => {
     let alive = true;
 
@@ -52,9 +64,12 @@ export default function ShareReportPage() {
           return;
         }
 
-        const res = await fetch(`/api/share/${encodeURIComponent(token)}`, {
-          cache: "no-store",
-        });
+        // ✅ cache bust (브라우저/프록시/CDN 캐시까지 확실히 차단)
+        const bust = Date.now();
+        const res = await fetch(
+          `/api/share/${encodeURIComponent(token)}?t=${bust}`,
+          { cache: "no-store" }
+        );
         const json = await safeReadJson(res);
 
         if (!alive) return;
@@ -75,8 +90,12 @@ export default function ShareReportPage() {
 
         const rowsArr = Array.isArray(json.rows) ? json.rows : [];
 
-        // creativesMap or creatives[] 모두 대응
+        // ✅ creativesMapNormalized(있으면 최우선) → creativesMap → creatives[]
         const cmap =
+          (json.creativesMapNormalized &&
+          typeof json.creativesMapNormalized === "object"
+            ? json.creativesMapNormalized
+            : null) ??
           (json.creativesMap && typeof json.creativesMap === "object"
             ? json.creativesMap
             : null) ??
@@ -133,7 +152,7 @@ export default function ShareReportPage() {
   return (
     <main className="p-6" style={{ maxWidth: 1400, margin: "0 auto" }}>
       <ReportTemplate
-        key={rows.length}
+        key={versionKey}
         rows={rows}
         isLoading={false}
         creativesMap={creativesMap}

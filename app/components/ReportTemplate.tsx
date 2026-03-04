@@ -292,6 +292,47 @@ function normalizeCreativesMap(map: Record<string, string>) {
   return out;
 }
 
+/** ✅ [ADD] rows 기반 period를 다시 계산해서 꼬임/캐시를 원천 차단 */
+function pickDateStrLoose(r: any) {
+  const v = r?.date ?? r?.ymd ?? r?.day ?? r?.dt ?? r?.report_date;
+  if (v == null) return "";
+
+  const s = String(v).trim();
+  if (!s) return "";
+
+  const parts = s
+    .slice(0, 20)
+    .replace(/[^\d]/g, "-")
+    .split("-")
+    .filter(Boolean);
+
+  const y = parts[0];
+  const m = parts[1];
+  const d = parts[2];
+  if (!y || !m || !d) return "";
+
+  const mm = String(Number(m)).padStart(2, "0");
+  const dd = String(Number(d)).padStart(2, "0");
+  return `${y}-${mm}-${dd}`; // 비교용(정렬 가능)
+}
+
+function formatYmd(ymd: string) {
+  if (!ymd) return "";
+  return ymd.replaceAll("-", ".");
+}
+
+function minMaxYmd(rows: any[]) {
+  let min = "";
+  let max = "";
+  for (const r of rows || []) {
+    const d = pickDateStrLoose(r);
+    if (!d) continue;
+    if (!min || d < min) min = d;
+    if (!max || d > max) max = d;
+  }
+  return { min, max };
+}
+
 export default function ReportTemplate({ rows, isLoading, creativesMap }: Props) {
   const [tab, setTab] = useState<TabKey>("summary");
 
@@ -386,6 +427,13 @@ export default function ReportTemplate({ rows, isLoading, creativesMap }: Props)
     monthGoal,
     onInvalidWeek: () => setSelectedWeek("all"),
   });
+
+  // ✅ [ADD] 화면에 실제로 쓰는 filteredRows 기준으로 period를 재계산 (캐시/꼬임 방지)
+  const periodFixed = useMemo(() => {
+    const mm = minMaxYmd(filteredRows as any[]);
+    if (!mm.min || !mm.max) return period; // fallback
+    return `${formatYmd(mm.min)} ~ ${formatYmd(mm.max)}`;
+  }, [filteredRows, period]);
 
   const { monthGoalInsight } = useInsights({
     byMonth,
@@ -575,7 +623,7 @@ export default function ReportTemplate({ rows, isLoading, creativesMap }: Props)
         channelOptions={channelOptions}
         enabledMonthKeySet={enabledMonthKeySet}
         enabledWeekKeySet={enabledWeekKeySet}
-        period={period}
+        period={periodFixed}
       />
 
       <div className="px-8 pt-10 pb-8">
