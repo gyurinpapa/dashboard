@@ -1,21 +1,13 @@
 // app/api/reports/delete/route.ts
 import { NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type DeleteBody = {
-  workspace_id?: string;
-  report_ids?: string[];
-};
-
 function jsonError(status: number, message: string, extra?: Record<string, any>) {
-  return NextResponse.json(
-    { ok: false, error: message, ...(extra ?? {}) },
-    { status }
-  );
+  return NextResponse.json({ ok: false, error: message, ...(extra ?? {}) }, { status });
 }
 
 function asString(v: any) {
@@ -23,126 +15,116 @@ function asString(v: any) {
   return String(v).trim();
 }
 
-function asIdList(v: any) {
-  if (!Array.isArray(v)) return [];
-  return Array.from(
-    new Set(
-      v
-        .map((x) => asString(x))
-        .filter(Boolean)
-    )
-  );
-}
-
-function getBearerToken(req: Request) {
-  const h = req.headers.get("authorization") || "";
-  const m = h.match(/^Bearer\s+(.+)$/i);
-  return m?.[1] ?? null;
-}
-
-async function resolveUser(req: Request) {
-  const sb = getSupabaseAdmin();
-
-  // 1) Bearer 우선
-  const bearer = getBearerToken(req);
-  if (bearer) {
-    const { data, error } = await sb.auth.getUser(bearer);
-    if (!error && data?.user) {
-      return { user: data.user, method: "bearer" as const };
-    }
-  }
-
-  // 2) 쿠키 fallback
-  const { user, error } = await sbAuth();
-  if (!error && user) {
-    return { user, method: "cookie" as const };
-  }
-
-  return { user: null, method: "none" as const };
-}
-
 export async function POST(req: Request) {
   try {
-    const auth = await resolveUser(req);
-    if (!auth.user) {
+    const { user, error: authErr } = await sbAuth();
+    if (authErr || !user) {
       return jsonError(401, "UNAUTHORIZED");
     }
 
-    const body = (await req.json().catch(() => ({}))) as DeleteBody;
-
-    const workspace_id = asString(body.workspace_id);
-    const report_ids = asIdList(body.report_ids);
+    const body = await req.json().catch(() => ({}));
+    const workspace_id = asString(body?.workspace_id);
+    const report_ids_raw = Array.isArray(body?.report_ids) ? body.report_ids : [];
+    const report_ids = report_ids_raw
+      .map((x: any) => asString(x))
+      .filter(Boolean);
 
     if (!workspace_id) {
-      return jsonError(400, "MISSING_WORKSPACE_ID");
+      return jsonError(400, "WORKSPACE_ID_REQUIRED");
     }
 
-    if (!report_ids.length) {
-      return jsonError(400, "MISSING_REPORT_IDS");
+    if (report_ids.length === 0) {
+      return jsonError(400, "REPORT_IDS_REQUIRED");
     }
 
-    const sb = getSupabaseAdmin();
-
-    // ✅ 사용자가 해당 workspace 구성원인지 확인
-    const { data: member, error: memberErr } = await sb
+    // 사용자가 해당 workspace 멤버인지 확인
+    const { data: member, error: memberErr } = await supabaseAdmin
       .from("workspace_members")
-      .select("workspace_id")
+      .select("workspace_id, user_id, role")
       .eq("workspace_id", workspace_id)
-      .eq("user_id", auth.user.id)
+      .eq("user_id", user.id)
       .maybeSingle();
 
     if (memberErr) {
-      return jsonError(500, memberErr.message || "WORKSPACE_MEMBER_CHECK_FAILED");
+      return jsonError(500, memberErr.message);
     }
 
-    if (!member?.workspace_id) {
-      return jsonError(403, "FORBIDDEN_WORKSPACE");
+    if (!member) {
+      return jsonError(403, "FORBIDDEN");
     }
 
-    // ✅ 실제 대상 리포트 조회
-    const { data: reports, error: reportsErr } = await sb
+    // 실제로 해당 workspace 소속 report만 삭제 대상
+    const { data: targetRows, error: targetErr } = await supabaseAdmin
       .from("reports")
-      .select("id, workspace_id, status")
+      .select("id")
       .eq("workspace_id", workspace_id)
       .in("id", report_ids);
 
-    if (reportsErr) {
-      return jsonError(500, reportsErr.message || "REPORT_LOOKUP_FAILED");
+    if (targetErr) {
+      return jsonError(500, targetErr.message);
     }
 
-    const targetIds = (reports ?? [])
-      .map((r: any) => asString(r.id))
-      .filter(Boolean);
+    const deletableIds = (targetRows ?? []).map((x: any) => String(x.id)).filter(Boolean);
 
-    if (!targetIds.length) {
-      return jsonError(404, "REPORTS_NOT_FOUND");
+    if (deletableIds.length === 0) {
+      return jsonError(404, "NO_REPORTS_FOUND");
     }
 
-    // ✅ 소프트 삭제: archived 처리
-    const { data: updated, error: updateErr } = await sb
+    // 자식 데이터 먼저 삭제
+    const { error: errRows } = await supabaseAdmin
+      .from("report_rows")
+      .delete()
+      .in("report_id", deletableIds);
+
+    if (errRows) {
+      return jsonError(500, errRows.message, { step: "delete_report_rows" });
+    }
+
+    const { error: errCreatives } = await supabaseAdmin
+      .from("report_creatives")
+      .delete()
+      .in("report_id", deletableIds);
+
+    if (errCreatives) {
+      return jsonError(500, errCreatives.message, { step: "delete_report_creatives" });
+    }
+
+    // uploads 테이블이 있다면 같이 정리
+    const { error: errCsvUploads } = await supabaseAdmin
+      .from("report_csv_uploads")
+      .delete()
+      .in("report_id", deletableIds);
+
+    if (errCsvUploads && !String(errCsvUploads.message || "").includes("does not exist")) {
+      return jsonError(500, errCsvUploads.message, { step: "delete_report_csv_uploads" });
+    }
+
+    const { error: errImageUploads } = await supabaseAdmin
+      .from("report_image_uploads")
+      .delete()
+      .in("report_id", deletableIds);
+
+    if (errImageUploads && !String(errImageUploads.message || "").includes("does not exist")) {
+      return jsonError(500, errImageUploads.message, { step: "delete_report_image_uploads" });
+    }
+
+    // 마지막으로 reports 삭제
+    const { error: errReports } = await supabaseAdmin
       .from("reports")
-      .update({
-        status: "archived",
-      })
-      .in("id", targetIds)
-      .eq("workspace_id", workspace_id)
-      .select("id,status");
+      .delete()
+      .in("id", deletableIds)
+      .eq("workspace_id", workspace_id);
 
-    if (updateErr) {
-      return jsonError(500, updateErr.message || "REPORT_ARCHIVE_FAILED");
+    if (errReports) {
+      return jsonError(500, errReports.message, { step: "delete_reports" });
     }
 
     return NextResponse.json({
       ok: true,
-      workspace_id,
-      auth_method: auth.method,
-      requested_count: report_ids.length,
-      archived_count: updated?.length ?? 0,
-      report_ids: (updated ?? [])
-        .map((x: any) => asString(x.id))
-        .filter(Boolean),
+      deleted_ids: deletableIds,
+      deleted_count: deletableIds.length,
     });
   } catch (e: any) {
-    return jsonError(500, e?.message || "UNKNOWN_DELETE_ERROR");
+    return jsonError(500, e?.message || "DELETE_REPORTS_FAILED");
   }
 }

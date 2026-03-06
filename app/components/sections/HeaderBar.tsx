@@ -51,7 +51,11 @@ type Props = {
 };
 
 function cleanText(v?: string | null) {
-  return String(v ?? "").trim();
+  const s = String(v ?? "").trim();
+  if (!s) return "";
+  if (s.toLowerCase() === "null") return "";
+  if (s.toLowerCase() === "undefined") return "";
+  return s;
 }
 
 export default function HeaderBar(props: Props) {
@@ -84,6 +88,8 @@ export default function HeaderBar(props: Props) {
   };
 
   // ✅ 상단 제목 계산
+  // - advertiserName / reportTypeName이 비어 있거나 "null"/"undefined"여도 안전 처리
+  // - 기존 UI 구조는 유지
   const headerTitle = useMemo(() => {
     const adv = cleanText(advertiserName);
     const typeName = cleanText(reportTypeName);

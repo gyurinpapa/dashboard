@@ -16,13 +16,12 @@ import {
 function toNum(v: any): number {
   if (v == null) return 0;
 
-  // 이미 숫자면 그대로
   if (typeof v === "number") {
     return Number.isFinite(v) ? v : 0;
   }
 
   const cleaned = String(v)
-    .replace(/[^\d.-]/g, "") // 숫자, 소수점, 마이너스 제외 전부 제거
+    .replace(/[^\d.-]/g, "")
     .trim();
 
   if (!cleaned) return 0;
@@ -31,14 +30,34 @@ function toNum(v: any): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function asStr(v: any) {
+  if (v == null) return "";
+  const s = String(v).trim();
+  if (!s) return "";
+  if (s.toLowerCase() === "null") return "";
+  if (s.toLowerCase() === "undefined") return "";
+  return s;
+}
+
+function firstStr(...values: any[]) {
+  for (const v of values) {
+    const s = asStr(v);
+    if (s) return s;
+  }
+  return "";
+}
+
+function firstNum(...values: any[]) {
+  for (const v of values) {
+    const n = toNum(v);
+    if (Number.isFinite(n) && n !== 0) return n;
+  }
+  return toNum(values[0]);
+}
+
 // =========================
 // ✅ 집계 결과에 "대표 row"의 creative/imagePath 등을 싣기 위한 유틸
 // =========================
-function asStr(v: any) {
-  if (v == null) return "";
-  return String(v).trim();
-}
-
 function getImagePathAny(r: any) {
   return (
     asStr(r?.imagePath) ||
@@ -100,11 +119,9 @@ function attachRepresentativeFields(out: any, rep: any) {
   return {
     ...out,
 
-    // ✅ 원본 row 재연결 키 (ReportTemplate에서 originalRowById에 도움)
     id: out?.id ?? repId,
     __row_id: out?.__row_id ?? repId,
 
-    // ✅ 소재 매칭에 필요한 최소 필드들
     creative: asStr(out?.creative) ? out.creative : creative,
     creative_file: asStr(out?.creative_file) ? out.creative_file : creativeFile,
     creativeFile: asStr(out?.creativeFile) ? out.creativeFile : creativeFile,
@@ -123,40 +140,110 @@ export function normalizeCsvRows(rawRows: any[]) {
   return (rawRows ?? []).map((row) => {
     const base: any = { ...(row ?? {}) };
 
-    const imagepath =
-      base.imagepath ??
-      base.imagePath ??
-      base.image_path ??
-      base.image_url ??
-      base.imageUrl ??
-      "";
-    const creative_file =
-      base.creative_file ?? base.creativeFile ?? base.creative_file_path ?? "";
+    const date = firstStr(
+      base.date,
+      base.report_date,
+      base.day,
+      base.segment_date,
+      base.stat_date,
+      base.period_start
+    );
+
+    const channel = firstStr(
+      base.channel,
+      base.ad_channel,
+      base.media,
+      base.media_type
+    );
+
+    const source = firstStr(
+      base.source,
+      base.site_source,
+      base.publisher,
+      base.inventory_source
+    );
+
+    const platform = firstStr(
+      base.platform,
+      base.media_source,
+      base.ad_platform,
+      base.account_type
+    );
+
+    const campaign_name = firstStr(
+      base.campaign_name,
+      base.campaignName,
+      base.campaign,
+      base.campaign_nm
+    );
+
+    const group_name = firstStr(
+      base.group_name,
+      base.groupName,
+      base.adgroup_name,
+      base.ad_group,
+      base.group,
+      base.group_nm
+    );
+
+    const keyword = firstStr(
+      base.keyword,
+      base.keyword_name,
+      base.search_term,
+      base.term
+    );
+
+    const creative = firstStr(base.creative, base.creative_name, base.asset_name);
+
+    const imagepath = firstStr(
+      base.imagepath,
+      base.imagePath,
+      base.image_path,
+      base.image_url,
+      base.imageUrl
+    );
+
+    const imagepath_raw = firstStr(base.imagepath_raw, base.image_raw, imagepath);
+
+    const creative_file = firstStr(
+      base.creative_file,
+      base.creativeFile,
+      base.creative_file_path,
+      base.file_name,
+      base.filename
+    );
+
+    const device = firstStr(base.device, base.device_type);
 
     return {
       ...base,
 
-      account_id: base.account_id ?? "",
-      channel: base.channel ?? "",
-      source: base.source ?? "",
-      platform: base.platform ?? "",
-      campaign_name: base.campaign_name ?? "",
-      group_name: base.group_name ?? "",
-      keyword: base.keyword ?? "",
-      creative: base.creative ?? "",
-      imagePath: base.imagePath ?? imagepath ?? "",
-      imagepath: base.imagepath ?? imagepath ?? "",
-      creative_file: creative_file || base.creative_file || "",
-      creativeFile: base.creativeFile ?? creative_file ?? "",
-      device: base.device ?? "",
+      id: base.id ?? base.__row_id ?? undefined,
+      __row_id: base.__row_id ?? base.id ?? undefined,
 
-      date: base.date ?? "",
+      account_id: firstStr(base.account_id, base.accountId),
+      channel,
+      source,
+      platform,
+      campaign_name,
+      group_name,
+      keyword,
+      creative,
+      imagePath: firstStr(base.imagePath, imagepath),
+      imagepath,
+      image_path: firstStr(base.image_path, imagepath),
+      imagepath_raw,
+      creative_file,
+      creativeFile: firstStr(base.creativeFile, creative_file),
+      device,
 
-      impressions: toNum(base.impressions),
-      clicks: toNum(base.clicks),
-      cost: toNum(base.cost),
-      conversions: toNum(base.conversions),
-      revenue: toNum(base.revenue),
+      date,
+
+      impressions: firstNum(base.impressions, base.impr, base.views),
+      clicks: firstNum(base.clicks, base.click, base.clk),
+      cost: firstNum(base.cost, base.spend, base.ad_cost, base.amount),
+      conversions: firstNum(base.conversions, base.conv, base.cv),
+      revenue: firstNum(base.revenue, base.sales, base.purchase_amount, base.gmv),
 
       rank: toNum(base.rank),
     };
@@ -165,7 +252,7 @@ export function normalizeCsvRows(rawRows: any[]) {
 
 export function summarize(rows: Row[]) {
   const sum = (key: keyof Row) =>
-    rows.reduce((acc, cur) => acc + (Number((cur as any)[key]) || 0), 0);
+    (rows ?? []).reduce((acc, cur) => acc + (Number((cur as any)[key]) || 0), 0);
 
   const impressions = sum("impressions");
   const clicks = sum("clicks");
@@ -192,14 +279,17 @@ export function buildOptions(rows: Row[]) {
   const deviceSet = new Set<string>();
   const channelSet = new Set<string>();
 
-  for (const r of rows) {
-    const d = parseDateLoose((r as any).date);
+  for (const raw of rows ?? []) {
+    const r: any = raw ?? {};
+    const d = parseDateLoose(
+      r.date ?? r.report_date ?? r.day ?? r.segment_date ?? r.stat_date
+    );
     if (d) monthSet.add(monthKeyOfDate(d));
 
-    const dv = String((r as any).device ?? "").trim();
+    const dv = asStr(r.device ?? r.device_type);
     if (dv) deviceSet.add(dv);
 
-    const cv = String((r as any).channel ?? "").trim();
+    const cv = asStr(r.channel ?? r.media ?? r.ad_channel);
     if (cv) channelSet.add(cv);
   }
 
@@ -214,14 +304,14 @@ export function buildWeekOptions(rows: Row[], selectedMonth: string | "all") {
   const scope =
     selectedMonth === "all"
       ? rows
-      : rows.filter((r) => {
-          const d = parseDateLoose((r as any).date);
+      : (rows ?? []).filter((r) => {
+          const d = parseDateLoose((r as any)?.date);
           return d ? monthKeyOfDate(d) === selectedMonth : false;
         });
 
-  const valid = scope
+  const valid = (scope ?? [])
     .map((r) => {
-      const d = parseDateLoose((r as any).date);
+      const d = parseDateLoose((r as any)?.date);
       if (!d) return null;
       return { r, d };
     })
@@ -253,9 +343,10 @@ export function filterRows(args: {
   const { rows, selectedMonth, selectedWeek, selectedDevice, selectedChannel } =
     args;
 
-  // ✅ 원본 객체를 그대로 filter만 해서 통과 (추가 훼손 없음)
   return (rows ?? []).filter((r: any) => {
-    const d = parseDateLoose(r?.date);
+    const d = parseDateLoose(
+      r?.date ?? r?.report_date ?? r?.day ?? r?.segment_date ?? r?.stat_date
+    );
     if (!d) return false;
 
     if (selectedMonth !== "all" && monthKeyOfDate(d) !== selectedMonth)
@@ -267,11 +358,12 @@ export function filterRows(args: {
     }
 
     if (selectedDevice !== "all") {
-      if (String(r?.device ?? "").trim() !== selectedDevice) return false;
+      if (asStr(r?.device ?? r?.device_type) !== selectedDevice) return false;
     }
 
     if (selectedChannel !== "all") {
-      if (String(r?.channel ?? "").trim() !== selectedChannel) return false;
+      if (asStr(r?.channel ?? r?.media ?? r?.ad_channel) !== selectedChannel)
+        return false;
     }
 
     return true;
@@ -280,12 +372,14 @@ export function filterRows(args: {
 
 export function groupBySource(rows: Row[]) {
   const keyOf = (r: Row) =>
-    (String((r as any).source ?? "").trim() ||
-      String((r as any).platform ?? "").trim() ||
-      "unknown").toLowerCase();
+    (
+      asStr((r as any)?.source) ||
+      asStr((r as any)?.platform) ||
+      "unknown"
+    ).toLowerCase();
 
   const map = new Map<string, Row[]>();
-  for (const r of rows) {
+  for (const r of rows ?? []) {
     const k = keyOf(r);
     const cur = map.get(k) ?? [];
     cur.push(r);
@@ -303,10 +397,10 @@ export function groupBySource(rows: Row[]) {
 
 export function groupByDevice(rows: Row[]) {
   const keyOf = (r: Row) =>
-    (String((r as any).device ?? "").trim() || "unknown").toLowerCase();
+    (asStr((r as any)?.device) || "unknown").toLowerCase();
 
   const map = new Map<string, Row[]>();
-  for (const r of rows) {
+  for (const r of rows ?? []) {
     const k = keyOf(r);
     const cur = map.get(k) ?? [];
     cur.push(r);
@@ -325,7 +419,7 @@ export function groupByDevice(rows: Row[]) {
 export function groupByWeekRecent5(filteredRows: Row[]) {
   const valid = (filteredRows ?? [])
     .map((r) => {
-      const d = parseDateLoose((r as any).date);
+      const d = parseDateLoose((r as any)?.date);
       if (!d) return null;
       return { r, d };
     })
@@ -380,15 +474,9 @@ export function groupByMonthRecent3(args: {
   const { rows, selectedMonth, selectedDevice, selectedChannel } = args;
 
   const baseRows = (rows ?? []).filter((r: any) => {
-    if (
-      selectedDevice !== "all" &&
-      String(r?.device ?? "").trim() !== selectedDevice
-    )
+    if (selectedDevice !== "all" && asStr(r?.device) !== selectedDevice)
       return false;
-    if (
-      selectedChannel !== "all" &&
-      String(r?.channel ?? "").trim() !== selectedChannel
-    )
+    if (selectedChannel !== "all" && asStr(r?.channel) !== selectedChannel)
       return false;
     return true;
   });
@@ -408,7 +496,7 @@ export function groupByMonthRecent3(args: {
 
   const map = new Map<string, Row[]>();
   for (const r of scope) {
-    const d = parseDateLoose((r as any).date);
+    const d = parseDateLoose((r as any)?.date);
     if (!d) continue;
     const mk = monthKeyOfDate(d);
     const cur = map.get(mk) ?? [];
@@ -428,7 +516,7 @@ export function groupByMonthRecent3(args: {
 
 export function getCurrentMonthKeyByData(rows: Row[]) {
   const ds = (rows ?? [])
-    .map((r) => parseDateLoose((r as any).date))
+    .map((r) => parseDateLoose((r as any)?.date))
     .filter(Boolean) as Date[];
   if (!ds.length) return "all";
   const max = new Date(Math.max(...ds.map((d) => d.getTime())));
@@ -470,7 +558,7 @@ export function periodText(args: {
   }
 
   const ds = (rows ?? [])
-    .map((r) => parseDateLoose((r as any).date))
+    .map((r) => parseDateLoose((r as any)?.date))
     .filter(Boolean) as Date[];
   if (!ds.length) return "";
   const min = new Date(Math.min(...ds.map((d) => d.getTime())));
@@ -482,7 +570,11 @@ export function groupByCampaign(rows: Row[]) {
   const map = new Map<string, Row[]>();
 
   for (const r of rows ?? []) {
-    const key = String((r as any).campaign_name ?? "").trim();
+    const key = asStr(
+      (r as any)?.campaign_name ??
+        (r as any)?.campaignName ??
+        (r as any)?.campaign
+    );
     if (!key) continue;
 
     if (!map.has(key)) map.set(key, []);
@@ -503,7 +595,15 @@ export function groupByGroup(rows: Row[]) {
   const map = new Map<string, Row[]>();
 
   for (const r of rows ?? []) {
-    const key = String((r as any).group_name ?? "").trim() || "미지정";
+    const key =
+      asStr(
+        (r as any)?.group_name ??
+          (r as any)?.groupName ??
+          (r as any)?.adgroup_name ??
+          (r as any)?.ad_group ??
+          (r as any)?.group
+      ) || "미지정";
+
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(r);
   }

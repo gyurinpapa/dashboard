@@ -86,12 +86,40 @@ async function createDraftReport(args: {
     throw new Error(json?.error || `Create report failed (${res.status})`);
   }
 
-  // 다양한 응답 형태에 안전하게 대응
   const reportId =
     json?.report?.id || json?.id || json?.report_id || json?.data?.id;
 
   if (!reportId) throw new Error("REPORT_ID_MISSING_FROM_RESPONSE");
   return String(reportId);
+}
+
+/* =========================================================
+ * 선택 삭제
+ * - 아래 route 예시는 /api/reports/delete 기준
+ * ========================================================= */
+async function deleteReports(args: {
+  workspace_id: string;
+  report_ids: string[];
+}) {
+  const res = await authFetch(`/api/reports/delete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      workspace_id: args.workspace_id,
+      report_ids: args.report_ids,
+    }),
+  });
+
+  const json = await safeJson(res);
+  if (!res.ok || !json?.ok) {
+    throw new Error(json?.error || `Delete reports failed (${res.status})`);
+  }
+
+  const deletedIds: string[] = Array.isArray(json?.deleted_ids)
+    ? json.deleted_ids.map((x: any) => String(x))
+    : args.report_ids;
+
+  return deletedIds;
 }
 
 export default function ReportsHomePage() {
@@ -113,6 +141,10 @@ export default function ReportsHomePage() {
 
   // 검색
   const [q, setQ] = useState("");
+
+  // 선택 삭제 관련
+  const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
+  const [deleting, setDeleting] = useState(false);
 
   // report type cards
   const reportTypes = useMemo(
@@ -142,7 +174,7 @@ export default function ReportsHomePage() {
         return;
       }
 
-      // 2) workspace_id 찾기 (profiles에 있다고 가정: workspace_id / current_workspace_id)
+      // 2) workspace_id 찾기
       const { data: prof, error: profErr } = await supabase
         .from("profiles")
         .select("id, workspace_id, current_workspace_id")
@@ -183,12 +215,22 @@ export default function ReportsHomePage() {
       if (repErr) throw new Error(repErr.message);
       setReports((reps ?? []) as ReportRow[]);
 
-      // openMap 초기값(새 광고주 폴더도 기본 open)
+      // openMap 초기값
       setOpenMap((prev) => {
         const next = { ...prev };
         next.__none__ = prev.__none__ ?? true;
         for (const a of advRows) {
           if (next[a.id] == null) next[a.id] = true;
+        }
+        return next;
+      });
+
+      // 현재 존재하지 않는 선택값 정리
+      setSelectedIds((prev) => {
+        const next: Record<string, boolean> = {};
+        const reportIdSet = new Set((reps ?? []).map((r: any) => String(r.id)));
+        for (const id of Object.keys(prev)) {
+          if (prev[id] && reportIdSet.has(id)) next[id] = true;
         }
         return next;
       });
@@ -236,16 +278,39 @@ export default function ReportsHomePage() {
       map.set(key, arr);
     }
 
-    // 광고주 이름 순서대로 + 미지정 마지막
     const orderedKeys: string[] = [];
     for (const a of advertisers) if (map.has(a.id)) orderedKeys.push(a.id);
     if (map.has("__none__")) orderedKeys.push("__none__");
 
-    // 혹시 advertisers에 없는 id가 존재하면 뒤에 붙임
     for (const k of map.keys()) if (!orderedKeys.includes(k)) orderedKeys.push(k);
 
     return { map, orderedKeys };
   }, [filteredReports, advertisers]);
+
+  const filteredReportIds = useMemo(
+    () => filteredReports.map((r) => String(r.id)),
+    [filteredReports]
+  );
+
+  const selectedCount = useMemo(() => {
+    let count = 0;
+    for (const id of Object.keys(selectedIds)) {
+      if (selectedIds[id]) count += 1;
+    }
+    return count;
+  }, [selectedIds]);
+
+  const selectedFilteredCount = useMemo(() => {
+    let count = 0;
+    for (const id of filteredReportIds) {
+      if (selectedIds[id]) count += 1;
+    }
+    return count;
+  }, [filteredReportIds, selectedIds]);
+
+  const allFilteredSelected =
+    filteredReportIds.length > 0 &&
+    filteredReportIds.every((id) => !!selectedIds[id]);
 
   function toggleFolder(key: string) {
     setOpenMap((prev) => ({ ...prev, [key]: !(prev[key] ?? true) }));
@@ -261,6 +326,33 @@ export default function ReportsHomePage() {
     const next: Record<string, boolean> = { __none__: false };
     for (const a of advertisers) next[a.id] = false;
     setOpenMap(next);
+  }
+
+  function toggleSelectOne(reportId: string) {
+    setSelectedIds((prev) => ({
+      ...prev,
+      [reportId]: !prev[reportId],
+    }));
+  }
+
+  function selectAllFiltered() {
+    setSelectedIds((prev) => {
+      const next = { ...prev };
+      for (const id of filteredReportIds) next[id] = true;
+      return next;
+    });
+  }
+
+  function unselectAllFiltered() {
+    setSelectedIds((prev) => {
+      const next = { ...prev };
+      for (const id of filteredReportIds) delete next[id];
+      return next;
+    });
+  }
+
+  function clearAllSelection() {
+    setSelectedIds({});
   }
 
   async function handleCreateDraft(reportTypeId: string, title: string) {
@@ -279,6 +371,52 @@ export default function ReportsHomePage() {
       router.push(`/reports/${reportId}`);
     } catch (e: any) {
       setMsg(e?.message || "리포트 생성 실패");
+    }
+  }
+
+  async function handleDeleteSelected() {
+    if (!workspaceId) {
+      setMsg("workspace_id가 없습니다.");
+      return;
+    }
+
+    const ids = Object.keys(selectedIds).filter((id) => selectedIds[id]);
+    if (ids.length === 0) {
+      setMsg("삭제할 리포트를 먼저 선택해주세요.");
+      return;
+    }
+
+    const ok = window.confirm(
+      `선택한 ${ids.length}개의 리포트를 삭제할까요?\n삭제 후 되돌릴 수 없습니다.`
+    );
+    if (!ok) return;
+
+    setDeleting(true);
+    setMsg("");
+
+    try {
+      const deletedIds = await deleteReports({
+        workspace_id: workspaceId,
+        report_ids: ids,
+      });
+
+      const deletedSet = new Set(deletedIds.map(String));
+
+      setReports((prev) => prev.filter((r) => !deletedSet.has(String(r.id))));
+      setSelectedIds((prev) => {
+        const next = { ...prev };
+        for (const id of deletedSet) delete next[id];
+        return next;
+      });
+
+      setMsg(`${deletedIds.length}개 리포트를 삭제했습니다.`);
+
+      // 최종 동기화 한 번 더
+      await loadAll();
+    } catch (e: any) {
+      setMsg(e?.message || "선택 삭제 실패");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -343,34 +481,82 @@ export default function ReportsHomePage() {
 
       {/* 내 리포트 목록(광고주별 폴더) */}
       <div className="mt-10">
-        <div className="flex items-center justify-between gap-3 mb-3">
-          <div className="text-lg font-extrabold">내 리포트 목록</div>
+        <div className="flex flex-col gap-3 mb-3">
+          <div className="flex items-center justify-between gap-3">
+           <div className="text-lg font-extrabold text-red-600">
+  내 리포트 목록 - PATCH TEST 777
+</div>
 
-          <div className="flex items-center gap-2">
-            <input
-              className="rounded-md border px-3 py-2 text-sm w-64"
-              placeholder="검색: 광고주/제목/ID"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-            />
-            <button
-              className="rounded-md border px-3 py-2 text-sm hover:border-gray-400"
-              onClick={openAll}
-            >
-              전체 펼치기
-            </button>
-            <button
-              className="rounded-md border px-3 py-2 text-sm hover:border-gray-400"
-              onClick={closeAll}
-            >
-              전체 접기
-            </button>
-            <button
-              className="rounded-md border px-3 py-2 text-sm hover:border-gray-400"
-              onClick={loadAll}
-            >
-              새로고침
-            </button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <input
+                className="rounded-md border px-3 py-2 text-sm w-64"
+                placeholder="검색: 광고주/제목/ID"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+              />
+              <button
+                className="rounded-md border px-3 py-2 text-sm hover:border-gray-400"
+                onClick={openAll}
+                type="button"
+              >
+                전체 펼치기
+              </button>
+              <button
+                className="rounded-md border px-3 py-2 text-sm hover:border-gray-400"
+                onClick={closeAll}
+                type="button"
+              >
+                전체 접기
+              </button>
+              <button
+                className="rounded-md border px-3 py-2 text-sm hover:border-gray-400"
+                onClick={loadAll}
+                type="button"
+              >
+                새로고침
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-3 rounded-xl border bg-white px-4 py-3">
+            <div className="text-sm text-gray-700">
+              선택됨 <span className="font-extrabold">{selectedCount}</span>개
+              {filteredReportIds.length > 0 ? (
+                <span className="text-gray-500">
+                  {" "}
+                  · 현재 목록 기준 {selectedFilteredCount}/{filteredReportIds.length}
+                </span>
+              ) : null}
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                className="rounded-md border px-3 py-2 text-sm hover:border-gray-400 disabled:opacity-50"
+                onClick={allFilteredSelected ? unselectAllFiltered : selectAllFiltered}
+                disabled={filteredReportIds.length === 0 || deleting}
+              >
+                {allFilteredSelected ? "현재 목록 선택해제" : "현재 목록 전체선택"}
+              </button>
+
+              <button
+                type="button"
+                className="rounded-md border px-3 py-2 text-sm hover:border-gray-400 disabled:opacity-50"
+                onClick={clearAllSelection}
+                disabled={selectedCount === 0 || deleting}
+              >
+                전체 해제
+              </button>
+
+              <button
+                type="button"
+                className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 hover:border-red-300 disabled:opacity-50"
+                onClick={handleDeleteSelected}
+                disabled={selectedCount === 0 || deleting}
+              >
+                {deleting ? "삭제 중..." : `선택 삭제 (${selectedCount})`}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -399,6 +585,7 @@ export default function ReportsHomePage() {
                   <button
                     className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 rounded-xl"
                     onClick={() => toggleFolder(key)}
+                    type="button"
                   >
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-extrabold">
@@ -417,23 +604,48 @@ export default function ReportsHomePage() {
 
                   {open ? (
                     <div className="border-t">
-                      {list.map((r) => (
-                        <button
-                          key={r.id}
-                          className="w-full text-left px-4 py-3 hover:bg-gray-50"
-                          onClick={() => router.push(`/reports/${r.id}`)}
-                        >
-                          <div className="font-semibold">
-                            {r.title || "제목 없음"}{" "}
-                            <span className="text-gray-500">
-                              · {String(r.status || "").toUpperCase()}
-                            </span>
+                      {list.map((r) => {
+                        const checked = !!selectedIds[String(r.id)];
+
+                        return (
+                          <div
+                            key={r.id}
+                            className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50"
+                          >
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4"
+                              checked={checked}
+                              onChange={() => toggleSelectOne(String(r.id))}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+
+                            <button
+                              type="button"
+                              className="min-w-0 flex-1 text-left"
+                              onClick={() => router.push(`/reports/${r.id}`)}
+                            >
+                              <div className="font-semibold truncate">
+                                {r.title || "제목 없음"}{" "}
+                                <span className="text-gray-500">
+                                  · {String(r.status || "").toUpperCase()}
+                                </span>
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                {fmtDate(r.created_at)}
+                              </div>
+                            </button>
+
+                            <button
+                              type="button"
+                              className="rounded-md border px-3 py-2 text-xs font-semibold hover:border-gray-400"
+                              onClick={() => router.push(`/reports/${r.id}`)}
+                            >
+                              열기
+                            </button>
                           </div>
-                          <div className="text-xs text-gray-500">
-                            {fmtDate(r.created_at)}
-                          </div>
-                        </button>
-                      ))}
+                        );
+                      })}
                     </div>
                   ) : null}
                 </div>

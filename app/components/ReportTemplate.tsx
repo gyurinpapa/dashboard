@@ -1,4 +1,3 @@
-// app/components/ReportTemplate.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -73,14 +72,18 @@ type Props = {
    */
   creativesMap?: Record<string, string>;
 
-  // ✅ 안전 확장: 부모에서 넘겨주면 HeaderBar 제목에 반영
+  // ✅ 부모에서 넘겨주는 제목 정보
   advertiserName?: string | null;
   reportTypeName?: string | null;
 };
 
 function asStr(v: any) {
   if (v == null) return "";
-  return String(v).trim();
+  const s = String(v).trim();
+  if (!s) return "";
+  if (s.toLowerCase() === "null") return "";
+  if (s.toLowerCase() === "undefined") return "";
+  return s;
 }
 
 function safeDecode(s: string) {
@@ -93,14 +96,22 @@ function safeDecode(s: string) {
   }
 }
 
+function firstNonEmpty(...values: any[]) {
+  for (const v of values) {
+    const s = asStr(v);
+    if (s) return s;
+  }
+  return "";
+}
+
 /**
  * ✅ 핵심: "눈에 같은 파일명"인데 매칭이 안 되는 가장 큰 원인 = 유니코드 정규화(NFD/NFC)
  */
 function normalizeKey(s: any) {
   let v = String(s ?? "");
   v = safeDecode(v);
-  v = v.replace(/\\/g, "/"); // windows slash
-  v = v.replace(/\u00A0/g, " "); // NBSP -> space
+  v = v.replace(/\\/g, "/");
+  v = v.replace(/\u00A0/g, " ");
   v = v.trim();
   v = v.replace(/\s+/g, " ");
   try {
@@ -151,26 +162,116 @@ function tryParseJson(v: any) {
 }
 
 function normalizeIncomingRow(rec: any) {
-  const raw = rec?.row ?? rec?.data ?? null;
+  const raw = rec?.row ?? rec?.data ?? rec?.payload ?? null;
   const rowObj = tryParseJson(raw) || null;
 
   const base = rowObj ? { ...rowObj } : { ...(rec ?? {}) };
 
-  if (base.date == null && rec?.date != null) base.date = rec.date;
-  if (base.channel == null && rec?.channel != null) base.channel = rec.channel;
-  if (base.device == null && rec?.device != null) base.device = rec.device;
-  if (base.source == null && rec?.source != null) base.source = rec.source;
+  // ✅ 날짜/기본 축 alias 흡수
+  if (base.date == null) {
+    base.date =
+      rec?.date ??
+      base?.report_date ??
+      base?.day ??
+      base?.ymd ??
+      base?.dt ??
+      base?.segment_date ??
+      base?.stat_date ??
+      null;
+  }
 
+  if (base.channel == null) {
+    base.channel = rec?.channel ?? base?.ad_channel ?? base?.media ?? base?.media_type ?? null;
+  }
+
+  if (base.device == null) {
+    base.device = rec?.device ?? base?.device_type ?? null;
+  }
+
+  if (base.source == null) {
+    base.source = rec?.source ?? base?.site_source ?? base?.publisher ?? null;
+  }
+
+  if (base.platform == null) {
+    base.platform = rec?.platform ?? base?.media_source ?? base?.ad_platform ?? null;
+  }
+
+  // ✅ 이름 alias 흡수
+  if (base.campaign_name == null && base.campaign != null) base.campaign_name = base.campaign;
+  if (base.campaign_name == null && base.campaignName != null) base.campaign_name = base.campaignName;
+
+  if (base.group_name == null && base.group != null) base.group_name = base.group;
+  if (base.group_name == null && base.groupName != null) base.group_name = base.groupName;
+  if (base.group_name == null && base.adgroup_name != null) base.group_name = base.adgroup_name;
+
+  if (base.keyword == null && base.keyword_name != null) base.keyword = base.keyword_name;
+  if (base.keyword == null && base.search_term != null) base.keyword = base.search_term;
+
+  // ✅ 이미지/creative alias 흡수
   if (base.imagepath == null && base.imagePath != null) base.imagepath = base.imagePath;
   if (base.imagePath == null && base.imagepath != null) base.imagePath = base.imagepath;
+  if (base.image_path == null && base.imagepath != null) base.image_path = base.imagepath;
+  if (base.imagepath_raw == null && base.image_raw != null) base.imagepath_raw = base.image_raw;
 
   if (base.creative_file == null && base.creativeFile != null) base.creative_file = base.creativeFile;
   if (base.creativeFile == null && base.creative_file != null) base.creativeFile = base.creative_file;
+
+  // ✅ 수치 alias 흡수
+  if (base.impressions == null && base.impr != null) base.impressions = base.impr;
+  if (base.clicks == null && base.click != null) base.clicks = base.click;
+  if (base.clicks == null && base.clk != null) base.clicks = base.clk;
+  if (base.cost == null && base.spend != null) base.cost = base.spend;
+  if (base.cost == null && base.ad_cost != null) base.cost = base.ad_cost;
+  if (base.conversions == null && base.conv != null) base.conversions = base.conv;
+  if (base.conversions == null && base.cv != null) base.conversions = base.cv;
+  if (base.revenue == null && base.sales != null) base.revenue = base.sales;
+  if (base.revenue == null && base.purchase_amount != null) base.revenue = base.purchase_amount;
+  if (base.revenue == null && base.gmv != null) base.revenue = base.gmv;
 
   if (base.__row_id == null && rec?.id != null) base.__row_id = rec.id;
   if (base.id == null && rec?.id != null) base.id = rec.id;
 
   return base;
+}
+
+function pickHeaderFallbackFromRows(rows: any[]) {
+  let advertiser = "";
+  let reportType = "";
+
+  for (const r of rows ?? []) {
+    advertiser =
+      advertiser ||
+      firstNonEmpty(
+        r?.advertiser_name,
+        r?.advertiserName,
+        r?.advertiser,
+        r?.brand_name,
+        r?.brandName,
+        r?.client_name,
+        r?.clientName
+      );
+
+    reportType =
+      reportType ||
+      firstNonEmpty(
+        r?.report_type_name,
+        r?.reportTypeName,
+        r?.report_type_key,
+        r?.reportTypeKey,
+        r?.report_type,
+        r?.reportType,
+        r?.type_name,
+        r?.typeName,
+        r?.type
+      );
+
+    if (advertiser && reportType) break;
+  }
+
+  return {
+    advertiserName: advertiser,
+    reportTypeName: reportType,
+  };
 }
 
 /**
@@ -229,7 +330,6 @@ function creativeCandidatesOfRow(row: any): string[] {
   const pathForms: string[] = [];
   for (const b of baseNames) {
     if (!b) continue;
-    // CSV에 "/creatives/파일명" 형태가 남아있는 케이스를 위해 후보로 유지
     pathForms.push(normalizeKey(`/creatives/${b}`));
     pathForms.push(normalizeKey(`C:/creatives/${b}`));
   }
@@ -296,9 +396,17 @@ function normalizeCreativesMap(map: Record<string, string>) {
   return out;
 }
 
-/** ✅ [ADD] rows 기반 period를 다시 계산해서 꼬임/캐시를 원천 차단 */
+/** ✅ rows 기반 period 재계산 */
 function pickDateStrLoose(r: any) {
-  const v = r?.date ?? r?.ymd ?? r?.day ?? r?.dt ?? r?.report_date;
+  const v =
+    r?.date ??
+    r?.ymd ??
+    r?.day ??
+    r?.dt ??
+    r?.report_date ??
+    r?.segment_date ??
+    r?.stat_date;
+
   if (v == null) return "";
 
   const s = String(v).trim();
@@ -317,7 +425,7 @@ function pickDateStrLoose(r: any) {
 
   const mm = String(Number(m)).padStart(2, "0");
   const dd = String(Number(d)).padStart(2, "0");
-  return `${y}-${mm}-${dd}`; // 비교용(정렬 가능)
+  return `${y}-${mm}-${dd}`;
 }
 
 function formatYmd(ymd: string) {
@@ -361,8 +469,50 @@ export default function ReportTemplate({
     return (rows ?? []).map(normalizeIncomingRow);
   }, [rows]);
 
-  // ✅ [INSERT HERE] 디버깅 편의: 콘솔에서 window.__ROWS__[0] 확인 가능
-  // - URL에 ?debugRows=1 붙였을 때만 노출
+  const headerFallback = useMemo(() => {
+    return pickHeaderFallbackFromRows(normalizedRows);
+  }, [normalizedRows]);
+
+  const effectiveAdvertiserName = useMemo(() => {
+    return firstNonEmpty(advertiserName, headerFallback.advertiserName);
+  }, [advertiserName, headerFallback.advertiserName]);
+
+  const effectiveReportTypeName = useMemo(() => {
+    return firstNonEmpty(reportTypeName, headerFallback.reportTypeName);
+  }, [reportTypeName, headerFallback.reportTypeName]);
+
+  const templateRenderKey = useMemo(() => {
+    const first = normalizedRows?.[0];
+    const last = normalizedRows?.[normalizedRows.length - 1];
+    const firstKey =
+      asStr(first?.id) ||
+      asStr(first?.__row_id) ||
+      asStr(first?.date) ||
+      asStr(first?.campaign_name) ||
+      "first";
+    const lastKey =
+      asStr(last?.id) ||
+      asStr(last?.__row_id) ||
+      asStr(last?.date) ||
+      asStr(last?.campaign_name) ||
+      "last";
+
+    return [
+      effectiveAdvertiserName,
+      effectiveReportTypeName,
+      normalizedRows.length,
+      firstKey,
+      lastKey,
+      Object.keys(creativesMap || {}).length,
+    ].join("|");
+  }, [
+    effectiveAdvertiserName,
+    effectiveReportTypeName,
+    normalizedRows,
+    creativesMap,
+  ]);
+
+  // ✅ 디버깅 편의
   useEffect(() => {
     try {
       const sp = new URLSearchParams(window.location.search);
@@ -377,9 +527,10 @@ export default function ReportTemplate({
   const originalRowById = useMemo(() => {
     const m = new Map<string, any>();
     for (const r of normalizedRows ?? []) {
-      const id = (r?.__row_id ?? r?.id) ? String(r.__row_id ?? r.id) : "";
-      if (!id) continue;
-      if (!m.has(id)) m.set(id, r);
+      const id = r?.__row_id ?? r?.id;
+      const key = id == null ? "" : String(id);
+      if (!key) continue;
+      if (!m.has(key)) m.set(key, r);
     }
     return m;
   }, [normalizedRows]);
@@ -396,15 +547,17 @@ export default function ReportTemplate({
         normalizedRows?.[0] ? Object.keys(normalizedRows[0]) : null
       );
       console.log("[normalizedRows sample]", normalizedRows?.slice(0, 5));
+      console.log("[effectiveAdvertiserName]", effectiveAdvertiserName);
+      console.log("[effectiveReportTypeName]", effectiveReportTypeName);
     } catch {}
-  }, [normalizedRows]);
+  }, [normalizedRows, effectiveAdvertiserName, effectiveReportTypeName]);
 
   useEffect(() => {
-    if (tab !== "keyword") return;
+    if (tab !== "keyword" && tab !== "keywordDetail") return;
     if (selectedChannel === ("display" as ChannelKey)) {
       setSelectedChannel("search" as ChannelKey);
     }
-  }, [tab, selectedChannel, setSelectedChannel]);
+  }, [tab, selectedChannel]);
 
   const {
     monthOptions,
@@ -438,10 +591,38 @@ export default function ReportTemplate({
     onInvalidWeek: () => setSelectedWeek("all"),
   });
 
-  // ✅ [ADD] 화면에 실제로 쓰는 filteredRows 기준으로 period를 재계산 (캐시/꼬임 방지)
+  // ✅ 필터가 새 데이터셋과 안 맞으면 자동 복구
+  useEffect(() => {
+    if (selectedMonth !== "all" && !enabledMonthKeySet.has(selectedMonth)) {
+      setSelectedMonth("all");
+    }
+  }, [selectedMonth, enabledMonthKeySet]);
+
+  useEffect(() => {
+    if (selectedWeek !== "all" && !enabledWeekKeySet.has(selectedWeek)) {
+      setSelectedWeek("all");
+    }
+  }, [selectedWeek, enabledWeekKeySet]);
+
+  // ✅ deviceOptions / channelOptions 는 문자열 배열이므로 직접 Set 구성
+  useEffect(() => {
+    const allowed = new Set((deviceOptions ?? []).map((x: any) => String(x)));
+    if (selectedDevice !== "all" && !allowed.has(String(selectedDevice))) {
+      setSelectedDevice("all");
+    }
+  }, [selectedDevice, deviceOptions]);
+
+  useEffect(() => {
+    const allowed = new Set((channelOptions ?? []).map((x: any) => String(x)));
+    if (selectedChannel !== "all" && !allowed.has(String(selectedChannel))) {
+      setSelectedChannel("all");
+    }
+  }, [selectedChannel, channelOptions]);
+
+  // ✅ period 재계산
   const periodFixed = useMemo(() => {
     const mm = minMaxYmd(filteredRows as any[]);
-    if (!mm.min || !mm.max) return period; // fallback
+    if (!mm.min || !mm.max) return period;
     return `${formatYmd(mm.min)} ~ ${formatYmd(mm.max)}`;
   }, [filteredRows, period]);
 
@@ -466,6 +647,7 @@ export default function ReportTemplate({
   });
 
   const keywordBaseRows = useMemo(() => filteredRows, [filteredRows]);
+
   const keywordAgg = useMemo(
     () => groupByKeyword(keywordBaseRows as any[]),
     [keywordBaseRows]
@@ -488,7 +670,8 @@ export default function ReportTemplate({
     const map = creativesMapNormalized;
 
     return (filteredRows as any[]).map((r) => {
-      const rid = (r?.__row_id ?? r?.id) ? String(r.__row_id ?? r.id) : "";
+      const ridValue = r?.__row_id ?? r?.id;
+      const rid = ridValue == null ? "" : String(ridValue);
       const orig = rid ? originalRowById.get(rid) : null;
 
       const baseForCandidates = orig ?? r;
@@ -523,12 +706,12 @@ export default function ReportTemplate({
           baseForCandidates?.imagepath ??
           baseForCandidates?.imagePath ??
           "",
-        __creative_candidates: candidates,
         __creative_raw: baseForCandidates?.creative ?? "",
         __creative_file_raw:
           baseForCandidates?.creative_file ??
           baseForCandidates?.creativeFile ??
           undefined,
+        __creative_candidates: candidates,
 
         __dbg_hit_candidates: candidates
           .map((x: any) => normalizeKey(x))
@@ -537,7 +720,6 @@ export default function ReportTemplate({
       };
 
       if (displayUrl) {
-        // ✅ 매칭 성공: signed url로 강제 주입
         const thumbObj = { imagePath: displayUrl, imagepath: displayUrl };
 
         out.imagePath = displayUrl;
@@ -554,7 +736,6 @@ export default function ReportTemplate({
         out.image_url = displayUrl;
         out.imageUrl = displayUrl;
       } else {
-        // ✅ [CHANGE] 매칭 실패: CSV에 남아있는 "/creatives/..." 같은 '옛 경로' 렌더링을 100% 차단
         out.imagePath = null;
         out.imagepath = null;
         out.image_path = null;
@@ -574,8 +755,6 @@ export default function ReportTemplate({
     });
   }, [filteredRows, creativesMapNormalized, originalRowById]);
 
-  // ✅ [CHANGE] 기존 "후보정보 있으면 소재로 취급" => 완전 금지
-  // ✅ 업로드된 소재(=매칭 성공, creative_url 존재)만 소재 탭에 노출
   const creativeBaseRows = useMemo(() => {
     const list = (filteredRowsWithCreatives as any[]) ?? [];
     return list.filter((r) => !!r?.creative_url);
@@ -613,7 +792,7 @@ export default function ReportTemplate({
   }, [tab, creativeBaseRows, creativesMapNormalized]);
 
   return (
-    <main className="min-h-screen bg-white">
+    <main key={templateRenderKey} className="min-h-screen bg-white">
       <HeaderBar
         tab={tab}
         setTab={setTab}
@@ -634,8 +813,8 @@ export default function ReportTemplate({
         enabledMonthKeySet={enabledMonthKeySet}
         enabledWeekKeySet={enabledWeekKeySet}
         period={periodFixed}
-        advertiserName={advertiserName}
-        reportTypeName={reportTypeName}
+        advertiserName={effectiveAdvertiserName}
+        reportTypeName={effectiveReportTypeName}
       />
 
       <div className="px-8 pt-10 pb-8">
@@ -655,45 +834,19 @@ export default function ReportTemplate({
                 monthGoalInsight={monthGoalInsight}
               />
 
-              {(() => {
-                const currentMonthKey2 = (totals as any)?.currentMonthKey ?? null;
-                const currentMonthActual2 = (totals as any)?.currentMonthActual ?? totals;
-
-                const monthGoal2 = (totals as any)?.monthGoal ?? null;
-
-                const currentMonthGoalComputed2 =
-                  (totals as any)?.currentMonthGoalComputed ?? {
-                    imp: 0,
-                    click: 0,
-                    cost: 0,
-                    conv: 0,
-                    revenue: 0,
-                    ctr: 0,
-                    cpc: 0,
-                    cvr: 0,
-                    cpa: 0,
-                    roas: 0,
-                  };
-
-                const setMonthGoalDummy = () => {};
-                const monthGoalInsightDummy = null;
-
-                return (
-                  <SummarySection
-                    totals={totals as any}
-                    byMonth={byMonth as any}
-                    byWeekOnly={byWeekOnly as any}
-                    byWeekChart={byWeekChart as any}
-                    bySource={bySource as any}
-                    currentMonthKey={currentMonthKey2}
-                    currentMonthActual={currentMonthActual2}
-                    currentMonthGoalComputed={currentMonthGoalComputed2}
-                    monthGoal={monthGoal2}
-                    setMonthGoal={setMonthGoalDummy}
-                    monthGoalInsight={monthGoalInsightDummy}
-                  />
-                );
-              })()}
+              <SummarySection
+                totals={totals as any}
+                byMonth={byMonth as any}
+                byWeekOnly={byWeekOnly as any}
+                byWeekChart={byWeekChart as any}
+                bySource={bySource as any}
+                currentMonthKey={currentMonthKey as any}
+                currentMonthActual={currentMonthActual as any}
+                currentMonthGoalComputed={currentMonthGoalComputed as any}
+                monthGoal={monthGoal as any}
+                setMonthGoal={setMonthGoal as any}
+                monthGoalInsight={monthGoalInsight as any}
+              />
             </>
           )}
 

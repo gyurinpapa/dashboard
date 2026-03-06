@@ -17,7 +17,7 @@ async function safeJson(res: Response) {
 }
 
 /* =========================================================
- * ✅ Bearer 우선 + 쿠키 fallback (가장 안전)
+ * ✅ Bearer 우선 + 쿠키 fallback
  * ========================================================= */
 
 async function getAccessToken(): Promise<string | null> {
@@ -49,8 +49,9 @@ async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
 async function fetchRows(reportId: string): Promise<any[]> {
   const res = await authFetch(`/api/reports/${reportId}/rows`);
   const json = await safeJson(res);
-  if (!res.ok || !json?.ok)
+  if (!res.ok || !json?.ok) {
     throw new Error(json?.error || `Failed to fetch rows (${res.status})`);
+  }
   return json.rows ?? [];
 }
 
@@ -61,10 +62,11 @@ async function fetchCreativesMap(
     `/api/reports/${reportId}/assets/creatives/map?expiresIn=3600`
   );
   const json = await safeJson(res);
-  if (!res.ok || !json?.ok)
+  if (!res.ok || !json?.ok) {
     throw new Error(
       json?.error || `Failed to fetch creativesMap (${res.status})`
     );
+  }
   return json.creativesMap ?? {};
 }
 
@@ -75,8 +77,9 @@ async function runIngestion(reportId: string) {
     body: JSON.stringify({ mode: "replace" }),
   });
   const json = await safeJson(res);
-  if (!res.ok || !json?.ok)
+  if (!res.ok || !json?.ok) {
     throw new Error(json?.error || `Ingestion failed (${res.status})`);
+  }
   return json;
 }
 
@@ -85,14 +88,17 @@ async function uploadCsv(reportId: string, file: File) {
   fd.append("file", file);
   fd.set("reportId", reportId);
 
-  const res = await authFetch(`/api/uploads/csv`, { method: "POST", body: fd });
+  const res = await authFetch(`/api/uploads/csv`, {
+    method: "POST",
+    body: fd,
+  });
   const json = await safeJson(res);
-  if (!res.ok || !json?.ok)
+  if (!res.ok || !json?.ok) {
     throw new Error(json?.error || `CSV upload failed (${res.status})`);
+  }
   return json;
 }
 
-// ✅ 소재 업로드 API
 type UploadCreativesResult = {
   ok: boolean;
   items?: any[];
@@ -106,16 +112,11 @@ type ReportHeaderInfo = {
   reportTypeName: string;
 };
 
-/**
- * ✅ batched uploader (FORMDATA_PARSE_FAILED 방지용)
- * - 한 번에 너무 많은 파일/큰 payload를 보내지 않고, 여러 번 나눠서 업로드
- * - Content-Type은 절대 지정하지 않음(브라우저가 boundary 포함해서 자동 설정)
- */
 async function uploadCreatives(reportId: string, files: File[]) {
   if (!reportId) throw new Error("Missing reportId");
   if (!files?.length) throw new Error("No files");
 
-  const BATCH_SIZE = 4; // 기존 값 유지 (필요시 2로 낮춰도 됨)
+  const BATCH_SIZE = 4;
 
   let batchId: string | undefined;
   const allItems: any[] = [];
@@ -127,7 +128,6 @@ async function uploadCreatives(reportId: string, files: File[]) {
     for (const f of chunk) fd.append("files", f);
 
     fd.set("expiresIn", "3600");
-
     if (batchId) fd.set("batch_id", batchId);
 
     const res = await authFetch(
@@ -158,7 +158,7 @@ async function uploadCreatives(reportId: string, files: File[]) {
 }
 
 /* =========================================================
- * ✅ Publish (published_at 포함 -> 실패 시 publish-lite 재시도)
+ * ✅ Publish
  * ========================================================= */
 
 function looksLikePublishedAtIssue(msg: string) {
@@ -241,7 +241,7 @@ function uniqCount(values: string[]) {
 }
 
 /* =========================================================
- * ✅ UI helper (구조 유지 + 클릭 유도 업그레이드)
+ * UI helper
  * ========================================================= */
 
 function humanSize(bytes: number) {
@@ -257,116 +257,52 @@ function humanSize(bytes: number) {
   return `${fixed}${units[i]}`;
 }
 
-function extractTokenFromText(input: string) {
-  const s = String(input || "").trim();
+function asStr(v: any) {
+  if (v == null) return "";
+  const s = String(v).trim();
   if (!s) return "";
-  const m1 = s.match(/\/share\/([^/?#\s]+)/i);
-  if (m1?.[1]) return m1[1].trim();
-  const m2 = s.match(/[?&]token=([^&#\s]+)/i);
-  if (m2?.[1]) return decodeURIComponent(m2[1]).trim();
+  if (s.toLowerCase() === "null") return "";
+  if (s.toLowerCase() === "undefined") return "";
   return s;
 }
 
-function asStr(v: any) {
-  if (v == null) return "";
-  return String(v).trim();
+function normalizeReportId(v: any) {
+  if (Array.isArray(v)) return asStr(v[0]);
+  return asStr(v);
 }
 
-function pickHeaderInfoFromReport(report: any): ReportHeaderInfo {
-  const meta = report?.meta && typeof report.meta === "object" ? report.meta : {};
-
-  const advertiserName =
-    asStr(report?.advertiser_name) ||
-    asStr(meta?.advertiser_name) ||
-    asStr(meta?.advertiserName) ||
-    "";
-
-  const reportTypeName =
-    asStr(report?.report_type_name) ||
-    asStr(report?.report_type_key) ||
-    asStr(meta?.report_type_name) ||
-    asStr(meta?.reportTypeName) ||
-    asStr(meta?.report_type_key) ||
-    asStr(meta?.reportTypeKey) ||
-    "";
-
-  return {
-    advertiserName,
-    reportTypeName,
-  };
+function rowFingerprint(row: any) {
+  if (!row || typeof row !== "object") return "";
+  return [
+    asStr(row?.id),
+    asStr(row?.__row_id),
+    asStr(row?.date ?? row?.report_date ?? row?.day),
+    asStr(row?.campaign_name ?? row?.campaign),
+    asStr(row?.group_name ?? row?.group),
+    asStr(row?.keyword),
+    asStr(row?.channel),
+    asStr(row?.device),
+    asStr(row?.creative_file ?? row?.creativeFile ?? row?.imagepath_raw),
+    asStr(row?.impressions ?? row?.impr),
+    asStr(row?.clicks ?? row?.click ?? row?.clk),
+    asStr(row?.cost ?? row?.spend),
+    asStr(row?.conversions ?? row?.conv ?? row?.cv),
+    asStr(row?.revenue ?? row?.sales ?? row?.gmv),
+  ].join("|");
 }
 
-async function fetchReportHeaderInfo(reportId: string): Promise<ReportHeaderInfo> {
-  const { data: report, error: reportError } = await supabase
-    .from("reports")
-    .select("id, meta, advertiser_id, report_type_id")
-    .eq("id", reportId)
-    .maybeSingle();
-
-  if (reportError) {
-    throw new Error(reportError.message || "Failed to load report header");
-  }
-
-  if (!report) {
-    return {
-      advertiserName: "",
-      reportTypeName: "",
-    };
-  }
-
-  const meta = report?.meta && typeof report.meta === "object" ? report.meta : {};
-
-  let advertiserName =
-    asStr((report as any)?.advertiser_name) ||
-    asStr(meta?.advertiser_name) ||
-    asStr(meta?.advertiserName);
-
-  let reportTypeName =
-    asStr((report as any)?.report_type_name) ||
-    asStr((report as any)?.report_type_key) ||
-    asStr(meta?.report_type_name) ||
-    asStr(meta?.reportTypeName) ||
-    asStr(meta?.report_type_key) ||
-    asStr(meta?.reportTypeKey);
-
-  const advertiserId = asStr((report as any)?.advertiser_id);
-  const reportTypeId = asStr((report as any)?.report_type_id);
-
-  if (!advertiserName && advertiserId) {
-    const { data: adv } = await supabase
-      .from("advertisers")
-      .select("name")
-      .eq("id", advertiserId)
-      .maybeSingle();
-
-    advertiserName = asStr(adv?.name);
-  }
-
-  if (!reportTypeName && reportTypeId) {
-    const { data: rt } = await supabase
-      .from("report_types")
-      .select("name,key")
-      .eq("id", reportTypeId)
-      .maybeSingle();
-
-    reportTypeName = asStr(rt?.name) || asStr(rt?.key);
-  }
-
+async function fetchReportHeaderInfo(
+  _reportId: string
+): Promise<ReportHeaderInfo> {
   return {
-    advertiserName,
-    reportTypeName,
+    advertiserName: "",
+    reportTypeName: "",
   };
 }
 
 export default function ReportDetailPage() {
   const params = useParams<{ id: string }>();
-  const reportId = params?.id;
-
-  /**
-   * ✅ 세션 기준 정책은 “재발행 제한”에만 사용
-   * - 기존에 저장된 rows / creativesMap 은 항상 재열람 가능
-   * - 단, 재발행은 이번 세션 CSV 업로드+파싱 이후에만 허용
-   */
+  const reportId = normalizeReportId(params?.id);
 
   const sessionStartedAtRef = useRef<number | null>(null);
   const [sessionStartedText, setSessionStartedText] = useState<string>("-");
@@ -384,6 +320,7 @@ export default function ReportDetailPage() {
     advertiserName: "",
     reportTypeName: "",
   });
+  const [previewVersion, setPreviewVersion] = useState(0);
 
   const [publishing, setPublishing] = useState(false);
   const [sharePath, setSharePath] = useState<string>("");
@@ -400,7 +337,6 @@ export default function ReportDetailPage() {
   const [lastUploadedCreativeCount, setLastUploadedCreativeCount] =
     useState<number>(0);
 
-  // ✅ 저장된 데이터는 항상 재열람 가능
   const displayRows = rows;
   const displayCreativesMap = creativesMap;
 
@@ -420,24 +356,136 @@ export default function ReportDetailPage() {
     return uniqCount(paths);
   }, [displayCreativesMap]);
 
-  // ✅ 재발행 제한은 기존 정책 유지
+  const rowsSignature = useMemo(() => {
+    if (!displayRows.length) return "rows:0";
+
+    const first = displayRows[0];
+    const second = displayRows[1];
+    const last = displayRows[displayRows.length - 1];
+    const prev = displayRows[displayRows.length - 2];
+
+    return [
+      `len:${displayRows.length}`,
+      `f1:${rowFingerprint(first)}`,
+      `f2:${rowFingerprint(second)}`,
+      `l2:${rowFingerprint(prev)}`,
+      `l1:${rowFingerprint(last)}`,
+    ].join("||");
+  }, [displayRows]);
+
+  const headerFallbackFromRows = useMemo(() => {
+    let advertiserName = "";
+    let reportTypeName = "";
+
+    for (const r of rows ?? []) {
+      if (!advertiserName) {
+        advertiserName =
+          asStr(r?.advertiser_name) ||
+          asStr(r?.advertiserName) ||
+          asStr(r?.advertiser) ||
+          asStr(r?.brand_name) ||
+          asStr(r?.client_name);
+      }
+
+      if (!reportTypeName) {
+        reportTypeName =
+          asStr(r?.report_type_name) ||
+          asStr(r?.reportTypeName) ||
+          asStr(r?.report_type_key) ||
+          asStr(r?.reportTypeKey) ||
+          asStr(r?.report_type);
+      }
+
+      if (advertiserName && reportTypeName) break;
+    }
+
+    return { advertiserName, reportTypeName };
+  }, [rows]);
+
+  const effectivePreviewAdvertiserName =
+    headerInfo.advertiserName || headerFallbackFromRows.advertiserName || "";
+
+  const effectivePreviewReportTypeName =
+    headerInfo.reportTypeName || headerFallbackFromRows.reportTypeName || "";
+
+  const previewKey = useMemo(() => {
+    return [
+      reportId || "",
+      effectivePreviewAdvertiserName,
+      effectivePreviewReportTypeName,
+      rowsSignature,
+      creativesUrlCount,
+      previewVersion,
+    ].join("|");
+  }, [
+    reportId,
+    effectivePreviewAdvertiserName,
+    effectivePreviewReportTypeName,
+    rowsSignature,
+    creativesUrlCount,
+    previewVersion,
+  ]);
+
   const canPublish = sessionIngested && !publishing;
 
   async function refreshRows() {
     if (!reportId) return;
+
     setLoadingRows(true);
     setMsg("");
+
+    let nextMsg = "";
+
     try {
-      const [rws, cmap, hdr] = await Promise.all([
-        fetchRows(reportId),
-        fetchCreativesMap(reportId),
-        fetchReportHeaderInfo(reportId),
-      ]);
-      setRows(rws);
-      setCreativesMap(cmap);
-      setHeaderInfo(hdr);
-    } catch (e: any) {
-      setMsg(e?.message || "Failed to load rows/creatives");
+      try {
+        const rws = await fetchRows(reportId);
+        const nextRows = Array.isArray(rws) ? [...rws] : [];
+        setRows(nextRows);
+
+        console.log("[refreshRows] rows ok", {
+          rowsLen: nextRows.length,
+          sampleRow: nextRows[0] ?? null,
+        });
+      } catch (e: any) {
+        console.error("[refreshRows] rows failed", e);
+        setRows([]);
+        nextMsg += `rows 조회 실패: ${e?.message || "unknown"}\n`;
+      }
+
+      try {
+        const cmap = await fetchCreativesMap(reportId);
+        const nextCreativesMap = { ...(cmap ?? {}) };
+        setCreativesMap(nextCreativesMap);
+
+        console.log("[refreshRows] creativesMap ok", {
+          keyCount: Object.keys(nextCreativesMap).length,
+        });
+      } catch (e: any) {
+        console.error("[refreshRows] creativesMap failed", e);
+        setCreativesMap({});
+        nextMsg += `creativesMap 조회 실패: ${e?.message || "unknown"}\n`;
+      }
+
+      try {
+        const hdr = await fetchReportHeaderInfo(reportId);
+        setHeaderInfo({
+          advertiserName: asStr(hdr?.advertiserName),
+          reportTypeName: asStr(hdr?.reportTypeName),
+        });
+      } catch (e: any) {
+        console.error("[refreshRows] headerInfo failed", e);
+        setHeaderInfo({
+          advertiserName: "",
+          reportTypeName: "",
+        });
+        nextMsg += `header 조회 실패: ${e?.message || "unknown"}\n`;
+      }
+
+      setPreviewVersion((v) => v + 1);
+
+      if (nextMsg.trim()) {
+        setMsg(nextMsg.trim());
+      }
     } finally {
       setLoadingRows(false);
     }
@@ -457,10 +505,13 @@ export default function ReportDetailPage() {
 
     setCreativeUploadLog([]);
     setLastUploadedCreativeCount(0);
+    setRows([]);
+    setCreativesMap({});
     setHeaderInfo({
       advertiserName: "",
       reportTypeName: "",
     });
+    setPreviewVersion(0);
 
     refreshRows();
 
@@ -532,7 +583,7 @@ export default function ReportDetailPage() {
       setCreativeFiles([]);
       if (creativesInputRef.current) creativesInputRef.current.value = "";
 
-      setCreativesMap(await fetchCreativesMap(reportId));
+      await refreshRows();
 
       setMsg(`소재 업로드 완료: ${filesCount}개`);
     } catch (e: any) {
@@ -586,8 +637,9 @@ export default function ReportDetailPage() {
 
   const creativesStatusText = useMemo(() => {
     if (creativeFiles.length > 0) return `선택됨: ${creativeFiles.length}개`;
-    if (lastUploadedCreativeCount > 0)
+    if (lastUploadedCreativeCount > 0) {
       return `최근 업로드: ${lastUploadedCreativeCount}개`;
+    }
     return "📌 이미지 파일을 선택해 주세요 (클릭)";
   }, [creativeFiles.length, lastUploadedCreativeCount]);
 
@@ -601,7 +653,6 @@ export default function ReportDetailPage() {
 
   return (
     <div className="p-6">
-      {/* ✅ 상단: 발행 / 실제 URL 생성 바 */}
       <div className="rounded-lg border p-4 mb-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -690,7 +741,6 @@ export default function ReportDetailPage() {
         )}
       </div>
 
-      {/* 페이지 헤더 */}
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-xl font-extrabold">리포트</div>
@@ -699,15 +749,13 @@ export default function ReportDetailPage() {
       </div>
 
       {msg ? (
-        <div className="mt-3 rounded-md border bg-white p-3 text-sm text-gray-700">
+        <div className="mt-3 rounded-md border bg-white p-3 text-sm text-gray-700 whitespace-pre-line">
           {msg}
         </div>
       ) : null}
 
       <div className="mt-6 grid grid-cols-12 gap-4">
-        {/* 좌측 */}
         <div className="col-span-12 lg:col-span-4 space-y-4">
-          {/* CSV 업로드 */}
           <div className="rounded-lg border p-4">
             <div className="text-sm font-semibold mb-2">CSV 업로드</div>
             <div className="text-xs text-gray-600 mb-3">
@@ -787,7 +835,6 @@ export default function ReportDetailPage() {
             </div>
           </div>
 
-          {/* 소재 업로드 */}
           <div className="rounded-lg border p-4">
             <div className="text-sm font-semibold mb-2">소재 업로드</div>
             <div className="text-xs text-gray-600 mb-3">
@@ -827,10 +874,7 @@ export default function ReportDetailPage() {
                 >
                   {creativesStatusText}
                   {creativesNamePreview ? (
-                    <span className="text-gray-500">
-                      {" "}
-                      · {creativesNamePreview}
-                    </span>
+                    <span className="text-gray-500"> · {creativesNamePreview}</span>
                   ) : null}
                 </div>
 
@@ -842,8 +886,9 @@ export default function ReportDetailPage() {
                       e.preventDefault();
                       e.stopPropagation();
                       setCreativeFiles([]);
-                      if (creativesInputRef.current)
+                      if (creativesInputRef.current) {
                         creativesInputRef.current.value = "";
+                      }
                     }}
                     title="선택 해제"
                   >
@@ -898,7 +943,6 @@ export default function ReportDetailPage() {
             ) : null}
           </div>
 
-          {/* 매칭 상태 */}
           <div className="rounded-lg border p-4">
             <div className="text-sm font-semibold mb-1">매칭된 소재</div>
 
@@ -916,13 +960,12 @@ export default function ReportDetailPage() {
             ) : null}
 
             <div className="mt-2 text-xs text-gray-500">
-              ※ 키 후보 수는 매칭 성공률을 올리기 위한 “확장 키”가 포함되어 커질 수
-              있습니다. 실제 이미지 파일 수 감은 “고유 URL”이 더 정확합니다.
+              ※ 키 후보 수는 매칭 성공률을 올리기 위한 확장 키가 포함되어 커질 수
+              있습니다. 실제 이미지 파일 수 감은 고유 URL이 더 정확합니다.
             </div>
           </div>
         </div>
 
-        {/* 우측 미리보기 */}
         <div className="col-span-12 lg:col-span-8">
           <div className="rounded-lg border">
             <div className="flex items-center justify-between px-4 py-3 border-b">
@@ -940,11 +983,12 @@ export default function ReportDetailPage() {
                 }}
               >
                 <ReportTemplate
+                  key={previewKey}
                   rows={displayRows}
                   isLoading={loadingRows}
                   creativesMap={displayCreativesMap}
-                  advertiserName={headerInfo.advertiserName}
-                  reportTypeName={headerInfo.reportTypeName}
+                  advertiserName={effectivePreviewAdvertiserName}
+                  reportTypeName={effectivePreviewReportTypeName}
                 />
               </div>
             </div>
@@ -953,7 +997,11 @@ export default function ReportDetailPage() {
           <div className="mt-2 text-xs text-gray-500">
             서버 rows(실제): {rows.length}개{" "}
             <span className="text-gray-400">·</span> 현재 표시 rows:{" "}
-            {displayRows.length}개
+            {displayRows.length}개{" "}
+            <span className="text-gray-400">·</span> 광고주:{" "}
+            {effectivePreviewAdvertiserName || "-"}{" "}
+            <span className="text-gray-400">·</span> 유형:{" "}
+            {effectivePreviewReportTypeName || "-"}
           </div>
         </div>
       </div>

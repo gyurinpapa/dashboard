@@ -22,6 +22,7 @@ import {
   groupByCampaign,
   groupByGroup,
   groupByWeekRecent5,
+  normalizeCsvRows,
   periodText,
   summarize,
 } from "./aggregate";
@@ -44,7 +45,11 @@ type Args = {
 
 function asStr(v: any) {
   if (v == null) return "";
-  return String(v).trim();
+  const s = String(v).trim();
+  if (!s) return "";
+  if (s.toLowerCase() === "null") return "";
+  if (s.toLowerCase() === "undefined") return "";
+  return s;
 }
 function asNum(v: any) {
   const n = Number(v);
@@ -62,7 +67,12 @@ function getImagePathAny(r: any) {
   );
 }
 function hasCreativeAny(r: any) {
-  return !!asStr(r?.creative) || !!getImagePathAny(r) || !!asStr(r?.creative_file) || !!asStr(r?.creativeFile);
+  return (
+    !!asStr(r?.creative) ||
+    !!getImagePathAny(r) ||
+    !!asStr(r?.creative_file) ||
+    !!asStr(r?.creativeFile)
+  );
 }
 
 /**
@@ -72,27 +82,45 @@ function sigOfRow(r: any) {
   const rid = asStr(r?.__row_id ?? r?.id);
   if (rid) return `ID:${rid}`;
 
-  const d = parseDateLoose(r?.date);
+  const d = parseDateLoose(
+    r?.date ??
+      r?.report_date ??
+      r?.day ??
+      r?.segment_date ??
+      r?.stat_date ??
+      r?.period_start
+  );
   const ymd = d
     ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
         d.getDate()
       ).padStart(2, "0")}`
-    : asStr(r?.date);
+    : asStr(
+        r?.date ??
+          r?.report_date ??
+          r?.day ??
+          r?.segment_date ??
+          r?.stat_date ??
+          r?.period_start
+      );
 
-  const channel = asStr(r?.channel);
-  const source = asStr(r?.source);
-  const device = asStr(r?.device);
+  const channel = asStr(r?.channel ?? r?.media ?? r?.ad_channel);
+  const source = asStr(r?.source ?? r?.site_source ?? r?.publisher);
+  const device = asStr(r?.device ?? r?.device_type);
 
-  const platform = asStr(r?.platform);
-  const campaign = asStr(r?.campaign_name ?? r?.campaignName);
-  const group = asStr(r?.group_name ?? r?.groupName);
-  const keyword = asStr(r?.keyword);
+  const platform = asStr(r?.platform ?? r?.media_source);
+  const campaign = asStr(
+    r?.campaign_name ?? r?.campaignName ?? r?.campaign ?? r?.campaign_nm
+  );
+  const group = asStr(
+    r?.group_name ?? r?.groupName ?? r?.adgroup_name ?? r?.ad_group ?? r?.group
+  );
+  const keyword = asStr(r?.keyword ?? r?.keyword_name ?? r?.search_term);
 
-  const imp = asNum(r?.impressions ?? r?.impr);
-  const clk = asNum(r?.clicks);
-  const cost = asNum(r?.cost);
-  const conv = asNum(r?.conversions ?? r?.conv);
-  const rev = asNum(r?.revenue ?? r?.sales);
+  const imp = asNum(r?.impressions ?? r?.impr ?? r?.views);
+  const clk = asNum(r?.clicks ?? r?.click ?? r?.clk);
+  const cost = asNum(r?.cost ?? r?.spend ?? r?.ad_cost);
+  const conv = asNum(r?.conversions ?? r?.conv ?? r?.cv);
+  const rev = asNum(r?.revenue ?? r?.sales ?? r?.purchase_amount ?? r?.gmv);
   const rank = asStr(r?.rank);
 
   return [
@@ -132,7 +160,8 @@ function hydrateFilteredRows(filteredRows: any[], originalRows: any[]) {
     const origId = orig?.__row_id ?? orig?.id ?? null;
     const frId = fr?.__row_id ?? fr?.id ?? null;
 
-    const origImagePath = orig?.imagePath ?? orig?.imagepath ?? orig?.image_path ?? null;
+    const origImagePath =
+      orig?.imagePath ?? orig?.imagepath ?? orig?.image_path ?? null;
     const frImagePath = fr?.imagePath ?? fr?.imagepath ?? fr?.image_path ?? null;
 
     const origCreativeFile = orig?.creative_file ?? orig?.creativeFile ?? null;
@@ -157,16 +186,22 @@ function hydrateFilteredRows(filteredRows: any[], originalRows: any[]) {
 
       imagePath: asStr(fr?.imagePath)
         ? fr.imagePath
+        : asStr(frImagePath)
+        ? frImagePath
         : asStr(origImagePath)
         ? origImagePath
         : fr?.imagePath,
       imagepath: asStr(fr?.imagepath)
         ? fr.imagepath
+        : asStr(frImagePath)
+        ? frImagePath
         : asStr(origImagePath)
         ? origImagePath
         : fr?.imagepath,
       image_path: asStr(fr?.image_path)
         ? fr.image_path
+        : asStr(frImagePath)
+        ? frImagePath
         : asStr(orig?.image_path)
         ? orig.image_path
         : fr?.image_path,
@@ -189,15 +224,25 @@ export function useReportAggregates({
   monthGoal,
   onInvalidWeek,
 }: Args) {
-  // ===== options =====
-  const { monthOptions, deviceOptions, channelOptions } = useMemo(
-    () => buildOptions(rows),
+  // ============================================================
+  // ✅ 가장 중요한 보강
+  // raw rows를 먼저 normalize 한 뒤,
+  // 모든 옵션/필터/집계가 같은 기준으로 계산되게 통일
+  // ============================================================
+  const normalizedRows = useMemo(
+    () => normalizeCsvRows((rows ?? []) as any[]),
     [rows]
   );
 
+  // ===== options =====
+  const { monthOptions, deviceOptions, channelOptions } = useMemo(
+    () => buildOptions(normalizedRows as any),
+    [normalizedRows]
+  );
+
   const weekOptions = useMemo(
-    () => buildWeekOptions(rows, selectedMonth),
-    [rows, selectedMonth]
+    () => buildWeekOptions(normalizedRows as any, selectedMonth),
+    [normalizedRows, selectedMonth]
   );
 
   const selectedWeekMonthKey = useMemo(
@@ -256,31 +301,32 @@ export function useReportAggregates({
   const filteredRowsRaw = useMemo(
     () =>
       filterRows({
-        rows,
+        rows: normalizedRows as any,
         selectedMonth,
         selectedWeek,
         selectedDevice,
         selectedChannel,
       }),
-    [rows, selectedMonth, selectedWeek, selectedDevice, selectedChannel]
+    [normalizedRows, selectedMonth, selectedWeek, selectedDevice, selectedChannel]
   );
 
+  // ✅ 집계용 row는 normalize 기준이지만,
+  // creative/imagePath/id 매칭은 원본 rows 기준으로 다시 hydrate
   const filteredRows = useMemo(
     () => hydrateFilteredRows(filteredRowsRaw as any[], rows as any[]),
     [filteredRowsRaw, rows]
   );
 
   // ============================================================
-  // ✅ DEBUG (강화판)
-  // - rows/filteredRowsRaw/filteredRows 각각:
-  //   1) length
-  //   2) creative/imagePath 있는 row count
-  //   3) 그 중 첫 샘플 1개를 "직접 찾아서" 출력
+  // ✅ DEBUG (유지)
   // ============================================================
   useEffect(() => {
     if (!rows?.length) return;
 
-    const cnt = (rows as any[]).reduce((acc, r) => acc + (hasCreativeAny(r) ? 1 : 0), 0);
+    const cnt = (rows as any[]).reduce(
+      (acc, r) => acc + (hasCreativeAny(r) ? 1 : 0),
+      0
+    );
     const sample = (rows as any[]).find((r) => hasCreativeAny(r));
 
     console.log("UA.DEBUG INPUT len=", rows.length, "creativeCnt=", cnt, {
@@ -307,6 +353,35 @@ export function useReportAggregates({
       console.log("UA.DEBUG INPUT firstCreativeSample = NONE");
     }
   }, [rows, selectedMonth, selectedWeek, selectedDevice, selectedChannel]);
+
+  useEffect(() => {
+    if (!normalizedRows?.length) return;
+
+    const cnt = (normalizedRows as any[]).reduce(
+      (acc, r) => acc + (hasCreativeAny(r) ? 1 : 0),
+      0
+    );
+    const sample = (normalizedRows as any[]).find((r) => hasCreativeAny(r));
+
+    console.log("UA.DEBUG NORMALIZED len=", normalizedRows.length, "creativeCnt=", cnt);
+
+    if (sample) {
+      console.log("UA.DEBUG NORMALIZED firstCreativeSample", {
+        keys: Object.keys(sample),
+        id: sample.id,
+        __row_id: sample.__row_id,
+        date: sample.date,
+        channel: sample.channel,
+        creative: sample.creative,
+        imagePath: sample.imagePath,
+        imagepath: sample.imagepath,
+        imagepath_raw: sample.imagepath_raw,
+        creative_file: sample.creative_file ?? sample.creativeFile,
+      });
+    } else {
+      console.log("UA.DEBUG NORMALIZED firstCreativeSample = NONE");
+    }
+  }, [normalizedRows]);
 
   useEffect(() => {
     const list = filteredRowsRaw as any[];
@@ -367,28 +442,35 @@ export function useReportAggregates({
       console.log("UA.DEBUG HYDRATED firstCreativeSample = NONE");
     }
   }, [filteredRows]);
-  // ============================================================
 
   // ===== period text =====
   const period = useMemo(
-    () => periodText({ rows, selectedMonth, selectedWeek }),
-    [rows, selectedMonth, selectedWeek]
+    () =>
+      periodText({
+        rows: normalizedRows as any,
+        selectedMonth,
+        selectedWeek,
+      }),
+    [normalizedRows, selectedMonth, selectedWeek]
   );
 
   // ===== 당월(데이터 최신 월) =====
-  const currentMonthKey = useMemo(() => getCurrentMonthKeyByData(rows), [rows]);
+  const currentMonthKey = useMemo(
+    () => getCurrentMonthKeyByData(normalizedRows as any),
+    [normalizedRows]
+  );
 
   const currentMonthActual = useMemo(() => {
-    if (!rows.length || currentMonthKey === "all") return summarize([]);
+    if (!normalizedRows.length || currentMonthKey === "all") return summarize([]);
 
-    const scope = rows.filter((r) => {
+    const scope = normalizedRows.filter((r) => {
       const d = parseDateLoose((r as any).date);
       if (!d) return false;
       return monthKeyOfDate(d) === currentMonthKey;
     });
 
-    return summarize(scope);
-  }, [rows, currentMonthKey]);
+    return summarize(scope as any);
+  }, [normalizedRows, currentMonthKey]);
 
   const currentMonthGoalComputed = useMemo(() => {
     const impressions = Number(monthGoal.impressions) || 0;
@@ -420,12 +502,12 @@ export function useReportAggregates({
   const byMonth = useMemo(
     () =>
       groupByMonthRecent3({
-        rows,
+        rows: normalizedRows as any,
         selectedMonth,
         selectedDevice,
         selectedChannel,
       }),
-    [rows, selectedMonth, selectedDevice, selectedChannel]
+    [normalizedRows, selectedMonth, selectedDevice, selectedChannel]
   );
 
   return {

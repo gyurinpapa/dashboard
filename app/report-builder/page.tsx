@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/src/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 type ReportType = {
   id: string;
@@ -27,6 +28,23 @@ type AdvertiserRow = {
 };
 
 type ReportFilterKey = "all" | "published" | "draft";
+type MemberRole = "master" | "director" | "admin" | "staff" | "client" | null;
+
+type WorkspaceMemberRow = {
+  workspace_id: string;
+  role: MemberRole;
+  division: string | null;
+  department: string | null;
+  team: string | null;
+};
+
+const ROLE_RANK: Record<Exclude<MemberRole, null>, number> = {
+  client: 1,
+  staff: 2,
+  admin: 3,
+  director: 4,
+  master: 5,
+};
 
 async function safeReadJson(res: Response) {
   const text = await res.text().catch(() => "");
@@ -40,9 +58,26 @@ async function safeReadJson(res: Response) {
 }
 
 function norm(s: any) {
-  return String(s ?? "")
-    .trim()
-    .toLowerCase();
+  return String(s ?? "").trim().toLowerCase();
+}
+
+function normalizeRole(v: any): MemberRole {
+  const s = norm(v);
+  if (
+    s === "master" ||
+    s === "director" ||
+    s === "admin" ||
+    s === "staff" ||
+    s === "client"
+  ) {
+    return s;
+  }
+  return null;
+}
+
+function hasMinRole(role: MemberRole, minRole: Exclude<MemberRole, null>) {
+  if (!role) return false;
+  return ROLE_RANK[role] >= ROLE_RANK[minRole];
 }
 
 function isPublishedReport(r: ReportRow) {
@@ -51,12 +86,18 @@ function isPublishedReport(r: ReportRow) {
 }
 
 function isDraftReport(r: ReportRow) {
-  const status = norm(r.status);
-  return status === "draft";
+  return norm(r.status) === "draft";
 }
 
 function isArchivedReport(r: ReportRow) {
   return norm(r.status) === "archived";
+}
+
+function fmtDate(iso?: string) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  return d.toLocaleString();
 }
 
 export default function ReportBuilderPage() {
@@ -70,32 +111,36 @@ export default function ReportBuilderPage() {
 
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
 
+  const [memberRole, setMemberRole] = useState<MemberRole>(null);
+  const [memberDivision, setMemberDivision] = useState<string | null>(null);
+  const [memberDepartment, setMemberDepartment] = useState<string | null>(null);
+  const [memberTeam, setMemberTeam] = useState<string | null>(null);
+
   const [types, setTypes] = useState<ReportType[]>([]);
   const [reports, setReports] = useState<ReportRow[]>([]);
 
   const [creating, setCreating] = useState(false);
 
-  // ✅ 광고주 목록/폴더 상태/검색
   const [advertisers, setAdvertisers] = useState<AdvertiserRow[]>([]);
   const [search, setSearch] = useState("");
   const [openMap, setOpenMap] = useState<Record<string, boolean>>({
     __none__: true,
   });
 
-  // ✅ 상태 필터
   const [reportFilter, setReportFilter] = useState<ReportFilterKey>("all");
 
-  // ✅ 광고주 선택/생성
   const [selectedAdvertiserId, setSelectedAdvertiserId] = useState<string>("");
   const [newAdvertiserName, setNewAdvertiserName] = useState("");
   const [creatingAdvertiser, setCreatingAdvertiser] = useState(false);
   const [localMsg, setLocalMsg] = useState("");
 
-  // ✅ 리포트 선택 삭제
   const [selectedReportIds, setSelectedReportIds] = useState<string[]>([]);
   const [deletingReports, setDeletingReports] = useState(false);
 
-  /* ---------------- auth ---------------- */
+  const canCreateReport = hasMinRole(memberRole, "staff");
+  const canManageAdvertisers = hasMinRole(memberRole, "staff");
+  const canDeleteReports = hasMinRole(memberRole, "staff");
+  const canManageMembers = hasMinRole(memberRole, "director");
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -111,27 +156,43 @@ export default function ReportBuilderPage() {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  /* ---------------- workspace ---------------- */
-
   useEffect(() => {
     if (!userId) {
       setWorkspaceId(null);
+      setMemberRole(null);
+      setMemberDivision(null);
+      setMemberDepartment(null);
+      setMemberTeam(null);
       return;
     }
 
     (async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("workspace_members")
-        .select("workspace_id")
+        .select("workspace_id, role, division, department, team")
         .eq("user_id", userId)
         .limit(1)
         .maybeSingle();
 
-      setWorkspaceId(data?.workspace_id ?? null);
+      if (error) {
+        console.warn("[workspace_members] failed", error);
+        setWorkspaceId(null);
+        setMemberRole(null);
+        setMemberDivision(null);
+        setMemberDepartment(null);
+        setMemberTeam(null);
+        return;
+      }
+
+      const row = (data ?? null) as WorkspaceMemberRow | null;
+
+      setWorkspaceId(row?.workspace_id ?? null);
+      setMemberRole(normalizeRole(row?.role));
+      setMemberDivision(row?.division ?? null);
+      setMemberDepartment(row?.department ?? null);
+      setMemberTeam(row?.team ?? null);
     })();
   }, [userId]);
-
-  /* ---------------- report types ---------------- */
 
   useEffect(() => {
     if (!userId) {
@@ -148,8 +209,6 @@ export default function ReportBuilderPage() {
       setTypes((data ?? []) as ReportType[]);
     })();
   }, [userId]);
-
-  /* ---------------- advertisers ---------------- */
 
   useEffect(() => {
     if (!workspaceId) {
@@ -195,8 +254,6 @@ export default function ReportBuilderPage() {
     })();
   }, [workspaceId]);
 
-  /* ---------------- reports ---------------- */
-
   useEffect(() => {
     if (!workspaceId) return;
     fetchReports();
@@ -204,12 +261,17 @@ export default function ReportBuilderPage() {
   }, [workspaceId]);
 
   useEffect(() => {
-    // ✅ 현재 목록에 없는 선택값은 자동 정리
     setSelectedReportIds((prev) => {
       const allowed = new Set(reports.map((r) => r.id));
       return prev.filter((id) => allowed.has(id));
     });
   }, [reports]);
+
+  useEffect(() => {
+    if (!canDeleteReports && selectedReportIds.length > 0) {
+      setSelectedReportIds([]);
+    }
+  }, [canDeleteReports, selectedReportIds.length]);
 
   async function getAccessToken(): Promise<string | null> {
     const { data } = await supabase.auth.getSession();
@@ -283,14 +345,18 @@ export default function ReportBuilderPage() {
     setReports(nextReports);
   }
 
-  /* ---------------- actions ---------------- */
-
   async function signIn() {
+    setLocalMsg("");
+
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
-    if (error) return;
+
+    if (error) {
+      setLocalMsg(error.message || "로그인 실패");
+      return;
+    }
 
     setUserId(data.user?.id ?? null);
     setUserEmail(data.user?.email ?? null);
@@ -303,6 +369,10 @@ export default function ReportBuilderPage() {
     setUserId(null);
     setUserEmail(null);
     setWorkspaceId(null);
+    setMemberRole(null);
+    setMemberDivision(null);
+    setMemberDepartment(null);
+    setMemberTeam(null);
     setReports([]);
     setAdvertisers([]);
     setSearch("");
@@ -315,6 +385,11 @@ export default function ReportBuilderPage() {
   }
 
   async function createAdvertiser() {
+    if (!canManageAdvertisers) {
+      setLocalMsg("광고주 생성 권한이 없습니다.");
+      return;
+    }
+
     if (!workspaceId || !userId || creatingAdvertiser) return;
 
     const name = newAdvertiserName.trim();
@@ -377,6 +452,11 @@ export default function ReportBuilderPage() {
   }
 
   async function createReport(type: ReportType) {
+    if (!canCreateReport) {
+      setLocalMsg("리포트 생성 권한이 없습니다.");
+      return;
+    }
+
     if (!workspaceId || creating) return;
 
     setCreating(true);
@@ -385,6 +465,7 @@ export default function ReportBuilderPage() {
     const token = await getAccessToken();
     if (!token) {
       setCreating(false);
+      setLocalMsg("로그인 세션이 없습니다.");
       return;
     }
 
@@ -423,6 +504,11 @@ export default function ReportBuilderPage() {
   }
 
   async function deleteSelectedReports() {
+    if (!canDeleteReports) {
+      setLocalMsg("리포트 삭제 권한이 없습니다.");
+      return;
+    }
+
     if (!workspaceId || !selectedReportIds.length || deletingReports) return;
 
     const ok = window.confirm(
@@ -463,10 +549,13 @@ export default function ReportBuilderPage() {
         return;
       }
 
-      const archivedCount = Number((json as any)?.archived_count ?? 0);
+      const deletedCount = Number((json as any)?.deleted_count ?? 0);
+
+      setReports((prev) => prev.filter((r) => !selectedReportIds.includes(r.id)));
       setSelectedReportIds([]);
       await fetchReports();
-      setLocalMsg(`리포트 ${archivedCount}개 삭제 완료`);
+
+      setLocalMsg(`리포트 ${deletedCount}개 삭제 완료`);
     } catch (e: any) {
       setLocalMsg(e?.message || "리포트 삭제 실패");
     } finally {
@@ -478,7 +567,21 @@ export default function ReportBuilderPage() {
     setOpenMap((prev) => ({ ...prev, [key]: !(prev[key] ?? true) }));
   }
 
+  function openAllFolders() {
+    const next: Record<string, boolean> = { __none__: true };
+    for (const a of advertisers) next[a.id] = true;
+    setOpenMap(next);
+  }
+
+  function closeAllFolders() {
+    const next: Record<string, boolean> = { __none__: false };
+    for (const a of advertisers) next[a.id] = false;
+    setOpenMap(next);
+  }
+
   function toggleReportSelection(reportId: string) {
+    if (!canDeleteReports) return;
+
     setSelectedReportIds((prev) => {
       return prev.includes(reportId)
         ? prev.filter((id) => id !== reportId)
@@ -486,7 +589,9 @@ export default function ReportBuilderPage() {
     });
   }
 
-  /* ---------------- derived ---------------- */
+  function openMemberManagement() {
+    setLocalMsg("멤버 관리 메뉴는 다음 단계에서 연결할 예정입니다.");
+  }
 
   const advNameById = useMemo(() => {
     const m = new Map<string, string>();
@@ -499,37 +604,47 @@ export default function ReportBuilderPage() {
     return advertisers.find((a) => a.id === selectedAdvertiserId)?.name ?? "";
   }, [advertisers, selectedAdvertiserId]);
 
+  const memberInfoText = useMemo(() => {
+    if (!userId || !memberRole) return "";
+    return [
+      `role: ${memberRole}`,
+      memberDivision ? `본부: ${memberDivision}` : "",
+      memberDepartment ? `부서: ${memberDepartment}` : "",
+      memberTeam ? `팀: ${memberTeam}` : "",
+    ]
+      .filter(Boolean)
+      .join(" / ");
+  }, [userId, memberRole, memberDivision, memberDepartment, memberTeam]);
+
   const filteredReports = useMemo(() => {
-  const s = norm(search);
+    const s = norm(search);
 
-  return reports.filter((r) => {
-    // ✅ archived는 목록에서 숨김
-    if (isArchivedReport(r)) return false;
+    return reports.filter((r) => {
+      if (isArchivedReport(r)) return false;
 
-    const title = norm(r.title);
-    const id = norm(r.id);
-    const advName =
-      norm(r.advertiser_name) ||
-      (r.advertiser_id ? norm(advNameById.get(r.advertiser_id) ?? "") : "");
+      const title = norm(r.title);
+      const id = norm(r.id);
+      const advName =
+        norm(r.advertiser_name) ||
+        (r.advertiser_id ? norm(advNameById.get(r.advertiser_id) ?? "") : "");
 
-    const matchesSearch =
-      !s || title.includes(s) || id.includes(s) || advName.includes(s);
+      const matchesSearch =
+        !s || title.includes(s) || id.includes(s) || advName.includes(s);
 
-    const matchesStatus =
-      reportFilter === "all"
-        ? true
-        : reportFilter === "published"
-        ? isPublishedReport(r)
-        : isDraftReport(r);
+      const matchesStatus =
+        reportFilter === "all"
+          ? true
+          : reportFilter === "published"
+          ? isPublishedReport(r)
+          : isDraftReport(r);
 
-    // ✅ 기존 광고주 선택 드롭다운과 목록 필터를 다시 연결
-    const matchesSelectedAdvertiser = selectedAdvertiserId
-      ? String(r.advertiser_id ?? "") === selectedAdvertiserId
-      : !r.advertiser_id;
+      const matchesSelectedAdvertiser = selectedAdvertiserId
+        ? String(r.advertiser_id ?? "") === selectedAdvertiserId
+        : !r.advertiser_id;
 
-    return matchesSearch && matchesStatus && matchesSelectedAdvertiser;
-  });
-}, [reports, search, advNameById, reportFilter, selectedAdvertiserId]);
+      return matchesSearch && matchesStatus && matchesSelectedAdvertiser;
+    });
+  }, [reports, search, advNameById, reportFilter, selectedAdvertiserId]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, ReportRow[]>();
@@ -552,7 +667,42 @@ export default function ReportBuilderPage() {
     return { map, orderedKeys };
   }, [filteredReports, advertisers]);
 
-  /* ---------------- UI ---------------- */
+  const visibleReportIds = useMemo(() => {
+    return filteredReports.map((r) => r.id);
+  }, [filteredReports]);
+
+  const selectedCount = selectedReportIds.length;
+
+  const selectedVisibleCount = useMemo(() => {
+    const set = new Set(selectedReportIds);
+    return visibleReportIds.filter((id) => set.has(id)).length;
+  }, [selectedReportIds, visibleReportIds]);
+
+  const allVisibleSelected =
+    visibleReportIds.length > 0 &&
+    visibleReportIds.every((id) => selectedReportIds.includes(id));
+
+  function selectAllVisibleReports() {
+    if (!canDeleteReports) return;
+
+    setSelectedReportIds((prev) => {
+      const set = new Set(prev);
+      for (const id of visibleReportIds) set.add(id);
+      return Array.from(set);
+    });
+  }
+
+  function unselectAllVisibleReports() {
+    if (!canDeleteReports) return;
+
+    const visibleSet = new Set(visibleReportIds);
+    setSelectedReportIds((prev) => prev.filter((id) => !visibleSet.has(id)));
+  }
+
+  function clearAllSelectedReports() {
+    if (!canDeleteReports) return;
+    setSelectedReportIds([]);
+  }
 
   const containerStyle: React.CSSProperties = {
     width: "100%",
@@ -631,6 +781,10 @@ export default function ReportBuilderPage() {
               <button className="mainBtn" onClick={signIn}>
                 로그인
               </button>
+
+              <Link href="/signup" className="signupBtn">
+                회원가입
+              </Link>
             </>
           ) : (
             <>
@@ -638,9 +792,38 @@ export default function ReportBuilderPage() {
                 {userEmail ?? "사용자"}님 반갑습니다 👋
               </div>
 
-              <button className="subBtn" onClick={signOut}>
-                로그아웃
-              </button>
+              {memberInfoText ? (
+                <div
+                  style={{
+                    fontSize: 13,
+                    opacity: 0.78,
+                    textAlign: "center",
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {memberInfoText}
+                </div>
+              ) : null}
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  justifyContent: "center",
+                }}
+              >
+                {canManageMembers ? (
+                  <button className="subBtn" onClick={openMemberManagement}>
+                    멤버 관리
+                  </button>
+                ) : null}
+
+                <button className="subBtn" onClick={signOut}>
+                  로그아웃
+                </button>
+              </div>
             </>
           )}
 
@@ -649,135 +832,143 @@ export default function ReportBuilderPage() {
           </div>
         </div>
 
-        <section style={{ marginTop: 32 }}>
-          <h2 style={{ fontSize: 20, fontWeight: 800 }}>광고주 선택 / 생성</h2>
+        {canManageAdvertisers ? (
+          <section style={{ marginTop: 32 }}>
+            <h2 style={{ fontSize: 20, fontWeight: 800 }}>광고주 선택 / 생성</h2>
 
-          <div
-            style={{
-              marginTop: 16,
-              display: "grid",
-              gridTemplateColumns: "minmax(280px, 1.1fr) minmax(280px, 1fr)",
-              gap: 16,
-            }}
-          >
-            <div className="panelCard">
-              <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 10 }}>
-                기존 광고주 선택
-              </div>
+            <div
+              style={{
+                marginTop: 16,
+                display: "grid",
+                gridTemplateColumns: "minmax(280px, 1.1fr) minmax(280px, 1fr)",
+                gap: 16,
+              }}
+            >
+              <div className="panelCard">
+                <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 10 }}>
+                  기존 광고주 선택
+                </div>
 
-              <select
-                value={selectedAdvertiserId}
-                onChange={(e) => setSelectedAdvertiserId(e.target.value)}
-                disabled={!userId || !workspaceId}
-                style={{
-                  width: "100%",
-                  padding: 14,
-                  borderRadius: 12,
-                  border: "1px solid #ddd",
-                  background: "white",
-                  fontSize: 15,
-                }}
-              >
-                <option value="">광고주 미지정으로 생성</option>
-                {advertisers.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
-
-              <div style={{ marginTop: 10, fontSize: 12, opacity: 0.65 }}>
-                현재 선택: {selectedAdvertiserName || "광고주 미지정"}
-              </div>
-            </div>
-
-            <div className="panelCard">
-              <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 10 }}>
-                새 광고주 생성
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  gap: 10,
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                }}
-              >
-                <input
-                  value={newAdvertiserName}
-                  onChange={(e) => setNewAdvertiserName(e.target.value)}
-                  placeholder="예: 네이처컬렉션"
-                  disabled={!userId || !workspaceId || creatingAdvertiser}
+                <select
+                  value={selectedAdvertiserId}
+                  onChange={(e) => setSelectedAdvertiserId(e.target.value)}
+                  disabled={!userId || !workspaceId}
                   style={{
-                    flex: 1,
-                    minWidth: 220,
+                    width: "100%",
                     padding: 14,
                     borderRadius: 12,
                     border: "1px solid #ddd",
                     background: "white",
                     fontSize: 15,
                   }}
-                />
-
-                <button
-                  className="subBtn"
-                  onClick={createAdvertiser}
-                  disabled={!userId || !workspaceId || creatingAdvertiser}
-                  style={{ padding: "12px 16px" }}
                 >
-                  {creatingAdvertiser ? "생성 중..." : "광고주 생성"}
-                </button>
-              </div>
+                  <option value="">광고주 미지정으로 생성</option>
+                  {advertisers.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
 
-              <div style={{ marginTop: 10, fontSize: 12, opacity: 0.65 }}>
-                생성 후 자동으로 해당 광고주가 선택됩니다.
-              </div>
-            </div>
-          </div>
-
-          {localMsg ? (
-            <div className="infoMsg" style={{ marginTop: 12 }}>
-              {localMsg}
-            </div>
-          ) : null}
-        </section>
-
-        <section style={{ marginTop: 32 }}>
-          <h2 style={{ fontSize: 20, fontWeight: 800 }}>보고서 유형 선택</h2>
-
-          <div style={{ marginTop: 10, fontSize: 13, opacity: 0.7 }}>
-            선택된 광고주: <b>{selectedAdvertiserName || "광고주 미지정"}</b>
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))",
-              gap: 16,
-              marginTop: 16,
-            }}
-          >
-            {types.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => createReport(t)}
-                disabled={!workspaceId || creating}
-                className="typeCard"
-              >
-                <div style={{ fontWeight: 800, fontSize: 16 }}>{t.name}</div>
-                <div style={{ marginTop: 6, opacity: 0.7 }}>key: {t.key}</div>
-                <div style={{ marginTop: 10, fontSize: 12, opacity: 0.6 }}>
-                  클릭하면{" "}
-                  {selectedAdvertiserName
-                    ? `"${selectedAdvertiserName}" 광고주로 `
-                    : ""}
-                  draft report 생성(API 사용)
+                <div style={{ marginTop: 10, fontSize: 12, opacity: 0.65 }}>
+                  현재 선택: {selectedAdvertiserName || "광고주 미지정"}
                 </div>
-              </button>
-            ))}
+              </div>
+
+              <div className="panelCard">
+                <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 10 }}>
+                  새 광고주 생성
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 10,
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <input
+                    value={newAdvertiserName}
+                    onChange={(e) => setNewAdvertiserName(e.target.value)}
+                    placeholder="예: 네이처컬렉션"
+                    disabled={!userId || !workspaceId || creatingAdvertiser}
+                    style={{
+                      flex: 1,
+                      minWidth: 220,
+                      padding: 14,
+                      borderRadius: 12,
+                      border: "1px solid #ddd",
+                      background: "white",
+                      fontSize: 15,
+                    }}
+                  />
+
+                  <button
+                    className="subBtn"
+                    onClick={createAdvertiser}
+                    disabled={!userId || !workspaceId || creatingAdvertiser}
+                    style={{ padding: "12px 16px" }}
+                  >
+                    {creatingAdvertiser ? "생성 중..." : "광고주 생성"}
+                  </button>
+                </div>
+
+                <div style={{ marginTop: 10, fontSize: 12, opacity: 0.65 }}>
+                  생성 후 자동으로 해당 광고주가 선택됩니다.
+                </div>
+              </div>
+            </div>
+
+            {localMsg ? (
+              <div className="infoMsg" style={{ marginTop: 12 }}>
+                {localMsg}
+              </div>
+            ) : null}
+          </section>
+        ) : localMsg ? (
+          <div className="infoMsg" style={{ marginTop: 32 }}>
+            {localMsg}
           </div>
-        </section>
+        ) : null}
+
+        {canCreateReport ? (
+          <section style={{ marginTop: 32 }}>
+            <h2 style={{ fontSize: 20, fontWeight: 800 }}>보고서 유형 선택</h2>
+
+            <div style={{ marginTop: 10, fontSize: 13, opacity: 0.7 }}>
+              선택된 광고주: <b>{selectedAdvertiserName || "광고주 미지정"}</b>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))",
+                gap: 16,
+                marginTop: 16,
+              }}
+            >
+              {types.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => createReport(t)}
+                  disabled={!workspaceId || creating}
+                  className="typeCard"
+                >
+                  <div style={{ fontWeight: 800, fontSize: 16 }}>{t.name}</div>
+                  <div style={{ marginTop: 6, opacity: 0.7 }}>key: {t.key}</div>
+                  <div style={{ marginTop: 10, fontSize: 12, opacity: 0.6 }}>
+                    클릭하면{" "}
+                    {selectedAdvertiserName
+                      ? `"${selectedAdvertiserName}" 광고주로 `
+                      : ""}
+                    draft report 생성(API 사용)
+                  </div>
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         <section style={{ marginTop: 40 }}>
           <div
@@ -831,26 +1022,6 @@ export default function ReportBuilderPage() {
 
               <button
                 className="subBtn"
-                onClick={deleteSelectedReports}
-                disabled={!userId || deletingReports || selectedReportIds.length === 0}
-                style={{ padding: "10px 14px" }}
-                title={
-                  selectedReportIds.length === 0
-                    ? "삭제할 리포트를 먼저 선택하세요"
-                    : `선택된 ${selectedReportIds.length}개 삭제`
-                }
-              >
-                {deletingReports
-                  ? "삭제 중..."
-                  : `선택 삭제${
-                      selectedReportIds.length > 0
-                        ? ` (${selectedReportIds.length})`
-                        : ""
-                    }`}
-              </button>
-
-              <button
-                className="subBtn"
                 onClick={fetchReports}
                 disabled={!userId || !workspaceId}
                 style={{ padding: "10px 14px" }}
@@ -875,6 +1046,67 @@ export default function ReportBuilderPage() {
               />
             </div>
           </div>
+
+          {canDeleteReports ? (
+            <div className="selectionBar" style={{ marginTop: 12 }}>
+              <div style={{ fontSize: 14, opacity: 0.8 }}>
+                선택됨 <b>{selectedCount}</b>개
+                {visibleReportIds.length > 0 ? (
+                  <span style={{ opacity: 0.7 }}>
+                    {" "}
+                    · 현재 목록 기준 {selectedVisibleCount}/{visibleReportIds.length}
+                  </span>
+                ) : null}
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                }}
+              >
+                <button
+                  className="subBtn"
+                  onClick={
+                    allVisibleSelected
+                      ? unselectAllVisibleReports
+                      : selectAllVisibleReports
+                  }
+                  disabled={!userId || visibleReportIds.length === 0 || deletingReports}
+                  style={{ padding: "10px 14px" }}
+                >
+                  {allVisibleSelected ? "현재 목록 선택해제" : "현재 목록 전체선택"}
+                </button>
+
+                <button
+                  className="subBtn"
+                  onClick={clearAllSelectedReports}
+                  disabled={!userId || selectedCount === 0 || deletingReports}
+                  style={{ padding: "10px 14px" }}
+                >
+                  전체 해제
+                </button>
+
+                <button
+                  className="subBtn deleteBtn"
+                  onClick={deleteSelectedReports}
+                  disabled={!userId || deletingReports || selectedCount === 0}
+                  style={{ padding: "10px 14px" }}
+                  title={
+                    selectedCount === 0
+                      ? "삭제할 리포트를 먼저 선택하세요"
+                      : `선택된 ${selectedCount}개 삭제`
+                  }
+                >
+                  {deletingReports
+                    ? "삭제 중..."
+                    : `선택 삭제${selectedCount > 0 ? ` (${selectedCount})` : ""}`}
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           {!userId && (
             <p style={{ marginTop: 10, opacity: 0.7 }}>
@@ -960,22 +1192,27 @@ export default function ReportBuilderPage() {
                                       : "1px solid #eee",
                                 }}
                               >
-                                <label
-                                  className="reportCheckWrap"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={() => toggleReportSelection(r.id)}
-                                  />
-                                </label>
+                                {canDeleteReports ? (
+                                  <label
+                                    className="reportCheckWrap"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={() => toggleReportSelection(r.id)}
+                                    />
+                                  </label>
+                                ) : null}
 
                                 <button
                                   onClick={() => router.push(`/reports/${r.id}`)}
                                   className={`reportItem reportItemMain ${
                                     checked ? "reportItemSelected" : ""
                                   }`}
+                                  style={{
+                                    width: "100%",
+                                  }}
                                 >
                                   <div style={{ fontWeight: 700 }}>
                                     {r.title}
@@ -985,7 +1222,7 @@ export default function ReportBuilderPage() {
                                     </span>
                                   </div>
                                   <div style={{ fontSize: 13, opacity: 0.6 }}>
-                                    {r.created_at ?? ""}
+                                    {fmtDate(r.created_at)}
                                   </div>
                                 </button>
                               </div>
@@ -1013,11 +1250,36 @@ export default function ReportBuilderPage() {
             cursor: pointer;
             box-shadow: 0 10px 18px rgba(0, 0, 0, 0.15);
             transition: 0.15s;
+            text-align: center;
           }
 
           .mainBtn:hover {
             transform: translateY(-1px);
             box-shadow: 0 14px 22px rgba(0, 0, 0, 0.18);
+          }
+
+          .signupBtn {
+            width: 100%;
+            max-width: 520px;
+            padding: 14px;
+            border-radius: 14px;
+            border: 1px solid #ddd;
+            background: rgba(255, 255, 255, 0.9);
+            color: black;
+            font-weight: 800;
+            cursor: pointer;
+            transition: 0.15s;
+            text-align: center;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 10px 18px rgba(0, 0, 0, 0.05);
+          }
+
+          .signupBtn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 14px 22px rgba(0, 0, 0, 0.08);
           }
 
           .subBtn {
@@ -1038,6 +1300,16 @@ export default function ReportBuilderPage() {
           .subBtn:disabled {
             cursor: not-allowed;
             opacity: 0.55;
+          }
+
+          .deleteBtn {
+            border-color: #f0cfcf;
+            background: #fff7f7;
+            color: #b42318;
+          }
+
+          .deleteBtn:hover:not(:disabled) {
+            box-shadow: 0 10px 18px rgba(180, 35, 24, 0.08);
           }
 
           .filterBtn {
@@ -1075,6 +1347,18 @@ export default function ReportBuilderPage() {
             border: 1px solid #eee;
             background: white;
             font-size: 14px;
+          }
+
+          .selectionBar {
+            padding: 12px 14px;
+            border-radius: 14px;
+            border: 1px solid #eee;
+            background: white;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
           }
 
           .typeCard {
@@ -1203,6 +1487,10 @@ export default function ReportBuilderPage() {
             .reportCheckWrap {
               width: 46px;
               min-width: 46px;
+            }
+
+            .selectionBar {
+              align-items: flex-start;
             }
           }
         `}</style>
