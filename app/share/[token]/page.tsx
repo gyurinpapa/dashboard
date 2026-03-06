@@ -14,6 +14,12 @@ type ReportRow = {
   period_start?: string | null;
   period_end?: string | null;
   advertiser_id?: string | null;
+
+  // ✅ 제목 표시용 확장
+  advertiser_name?: string | null;
+  report_type_name?: string | null;
+  report_type_key?: string | null;
+  updated_at?: string | null;
 };
 
 async function safeReadJson(res: Response) {
@@ -26,6 +32,34 @@ async function safeReadJson(res: Response) {
   }
 }
 
+function asStr(v: any) {
+  if (v == null) return "";
+  return String(v).trim();
+}
+
+function pickAdvertiserName(report: ReportRow | null) {
+  if (!report) return "";
+  return (
+    asStr((report as any)?.advertiser_name) ||
+    asStr(report?.meta?.advertiser_name) ||
+    asStr(report?.meta?.advertiserName) ||
+    ""
+  );
+}
+
+function pickReportTypeName(report: ReportRow | null) {
+  if (!report) return "";
+  return (
+    asStr((report as any)?.report_type_name) ||
+    asStr((report as any)?.report_type_key) ||
+    asStr(report?.meta?.report_type_name) ||
+    asStr(report?.meta?.reportTypeName) ||
+    asStr(report?.meta?.report_type_key) ||
+    asStr(report?.meta?.reportTypeKey) ||
+    ""
+  );
+}
+
 export default function ShareReportPage() {
   const params = useParams<{ token: string }>();
   const token = useMemo(() => String(params?.token ?? "").trim(), [params]);
@@ -36,6 +70,9 @@ export default function ShareReportPage() {
   const [creativesMap, setCreativesMap] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
 
+  const advertiserName = useMemo(() => pickAdvertiserName(report), [report]);
+  const reportTypeName = useMemo(() => pickReportTypeName(report), [report]);
+
   // ✅ ReportTemplate 내부 memo/state가 이전 데이터에 묶이지 않도록 “버전 키”를 만든다
   // - report.updated_at (있으면 최우선)
   // - rows length / creatives count로도 변화를 감지
@@ -44,8 +81,10 @@ export default function ShareReportPage() {
     const u = (report as any)?.updated_at ?? "";
     const rowsCnt = rows?.length ?? 0;
     const cCnt = Object.keys(creativesMap || {}).length;
-    return `${id}:${u}:${rowsCnt}:${cCnt}`;
-  }, [report, rows, creativesMap]);
+    const adv = advertiserName;
+    const rt = reportTypeName;
+    return `${id}:${u}:${rowsCnt}:${cCnt}:${adv}:${rt}`;
+  }, [report, rows, creativesMap, advertiserName, reportTypeName]);
 
   useEffect(() => {
     let alive = true;
@@ -156,6 +195,8 @@ export default function ShareReportPage() {
         rows={rows}
         isLoading={false}
         creativesMap={creativesMap}
+        advertiserName={advertiserName}
+        reportTypeName={reportTypeName}
       />
       <div className="mt-2 text-xs text-gray-500">
         rows: {rows.length}개 / creatives: {Object.keys(creativesMap || {}).length}

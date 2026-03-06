@@ -35,6 +35,11 @@ function asIsoOrNull(v: any): string | null {
   return new Date(t).toISOString();
 }
 
+function asStr(v: any) {
+  if (v == null) return "";
+  return String(v).trim();
+}
+
 /** ===== row extractor ===== */
 function extractRowObject(rec: any) {
   if (!rec) return null;
@@ -110,11 +115,13 @@ function basenameOf(v: string) {
   const base = s.split("?")[0].split("#")[0].split("/").pop() || s;
   return String(base).trim();
 }
+
 function stripExt(name: string) {
   const base = basenameOf(name);
   const i = base.lastIndexOf(".");
   return i > 0 ? base.slice(0, i) : base;
 }
+
 function uniq(arr: string[]) {
   const out: string[] = [];
   const seen = new Set<string>();
@@ -175,6 +182,63 @@ function makeCreativeKeyCandidates(c: any) {
   return uniq([creativeKey, fileName, baseFile, prefFile, storagePath, basePath, prefPath]);
 }
 
+async function fetchReportNames(sb: any, report: any) {
+  const meta: any =
+    report?.meta && typeof report.meta === "object" ? report.meta : {};
+
+  let advertiser_name =
+    asStr(report?.advertiser_name) ||
+    asStr(meta?.advertiser_name) ||
+    asStr(meta?.advertiserName) ||
+    "";
+
+  let report_type_name =
+    asStr(report?.report_type_name) ||
+    asStr(meta?.report_type_name) ||
+    asStr(meta?.reportTypeName) ||
+    "";
+
+  let report_type_key =
+    asStr(report?.report_type_key) ||
+    asStr(meta?.report_type_key) ||
+    asStr(meta?.reportTypeKey) ||
+    "";
+
+  const advertiserId = asStr(report?.advertiser_id);
+  const reportTypeId = asStr(report?.report_type_id);
+
+  if (!advertiser_name && advertiserId) {
+    const { data: adv, error: advErr } = await sb
+      .from("advertisers")
+      .select("name")
+      .eq("id", advertiserId)
+      .maybeSingle();
+
+    if (!advErr && adv) {
+      advertiser_name = asStr(adv?.name);
+    }
+  }
+
+  if ((!report_type_name || !report_type_key) && reportTypeId) {
+    const { data: rt, error: rtErr } = await sb
+      .from("report_types")
+      .select("name,key")
+      .eq("id", reportTypeId)
+      .maybeSingle();
+
+    if (!rtErr && rt) {
+      if (!report_type_name) report_type_name = asStr(rt?.name);
+      if (!report_type_key) report_type_key = asStr(rt?.key);
+    }
+  }
+
+  return {
+    advertiser_name,
+    report_type_name,
+    report_type_key,
+  };
+}
+
 /**
  * GET /api/share/[token]
  */
@@ -226,13 +290,29 @@ export async function GET(req: Request, ctx: Ctx) {
   const reportId = String((report as any).id);
   const meta: any = (report as any)?.meta ?? {};
 
+  // ✅ 제목용 이름 보강
+  const names = await fetchReportNames(sb, report);
+
+  const reportForResponse = {
+    ...(report as any),
+    advertiser_name: names.advertiser_name || null,
+    report_type_name: names.report_type_name || null,
+    report_type_key: names.report_type_key || null,
+  };
+
   // ✅ (옵션) strict 모드에서만 publish 정합성 검사
   if (strict) {
     const lastCsvUploadedAt = asIsoOrNull(
-      meta?.last_csv_uploaded_at ?? meta?.lastCsvUploadedAt ?? meta?.last_csv_at ?? meta?.lastCsvAt
+      meta?.last_csv_uploaded_at ??
+        meta?.lastCsvUploadedAt ??
+        meta?.last_csv_at ??
+        meta?.lastCsvAt
     );
     const lastIngestedAt = asIsoOrNull(
-      meta?.last_ingested_at ?? meta?.lastIngestedAt ?? meta?.last_ingestion_at ?? meta?.lastIngestionAt
+      meta?.last_ingested_at ??
+        meta?.lastIngestedAt ??
+        meta?.last_ingestion_at ??
+        meta?.lastIngestionAt
     );
 
     if (!lastCsvUploadedAt) {
@@ -409,7 +489,7 @@ export async function GET(req: Request, ctx: Ctx) {
   return NextResponse.json(
     {
       ok: true,
-      report,
+      report: reportForResponse,
       rows,
       creativesMap: creativesUrlMap,
       creativesMapNormalized,
@@ -421,7 +501,16 @@ export async function GET(req: Request, ctx: Ctx) {
         min_date: mm.min_date,
         max_date: mm.max_date,
         strict,
-        ...(debugOn ? { creativeErrors, rowSample: debugRowSample, meta } : {}),
+        ...(debugOn
+          ? {
+              creativeErrors,
+              rowSample: debugRowSample,
+              meta,
+              advertiser_name: reportForResponse.advertiser_name,
+              report_type_name: reportForResponse.report_type_name,
+              report_type_key: reportForResponse.report_type_key,
+            }
+          : {}),
       },
     },
     { status: 200 }

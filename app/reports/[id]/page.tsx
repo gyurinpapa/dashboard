@@ -101,6 +101,11 @@ type UploadCreativesResult = {
   error?: string;
 };
 
+type ReportHeaderInfo = {
+  advertiserName: string;
+  reportTypeName: string;
+};
+
 /**
  * ✅ batched uploader (FORMDATA_PARSE_FAILED 방지용)
  * - 한 번에 너무 많은 파일/큰 payload를 보내지 않고, 여러 번 나눠서 업로드
@@ -112,7 +117,7 @@ async function uploadCreatives(reportId: string, files: File[]) {
 
   const BATCH_SIZE = 4; // 기존 값 유지 (필요시 2로 낮춰도 됨)
 
-  let batchId: string | undefined; // ✅ “고정 batch_id”
+  let batchId: string | undefined;
   const allItems: any[] = [];
 
   for (let i = 0; i < files.length; i += BATCH_SIZE) {
@@ -121,16 +126,17 @@ async function uploadCreatives(reportId: string, files: File[]) {
     const fd = new FormData();
     for (const f of chunk) fd.append("files", f);
 
-    // (선택) 기존 동작 유지용
     fd.set("expiresIn", "3600");
 
-    // ✅ 핵심: 첫 배치에서 batch_id를 받으면, 다음 배치부터는 같은 batch로 이어붙인다
     if (batchId) fd.set("batch_id", batchId);
 
-    const res = await authFetch(`/api/reports/${reportId}/assets/creatives/upload`, {
-      method: "POST",
-      body: fd,
-    });
+    const res = await authFetch(
+      `/api/reports/${reportId}/assets/creatives/upload`,
+      {
+        method: "POST",
+        body: fd,
+      }
+    );
 
     const json = (await safeJson(res)) as any;
 
@@ -138,7 +144,6 @@ async function uploadCreatives(reportId: string, files: File[]) {
       throw new Error(json?.error || `Creatives upload failed (${res.status})`);
     }
 
-    // ✅ 첫 성공 응답의 batch_id를 “고정”으로 잡기 (last가 아니라 first가 기준)
     if (!batchId && json?.batch_id) batchId = json.batch_id;
 
     const items = json?.items ?? [];
@@ -262,15 +267,105 @@ function extractTokenFromText(input: string) {
   return s;
 }
 
+function asStr(v: any) {
+  if (v == null) return "";
+  return String(v).trim();
+}
+
+function pickHeaderInfoFromReport(report: any): ReportHeaderInfo {
+  const meta = report?.meta && typeof report.meta === "object" ? report.meta : {};
+
+  const advertiserName =
+    asStr(report?.advertiser_name) ||
+    asStr(meta?.advertiser_name) ||
+    asStr(meta?.advertiserName) ||
+    "";
+
+  const reportTypeName =
+    asStr(report?.report_type_name) ||
+    asStr(report?.report_type_key) ||
+    asStr(meta?.report_type_name) ||
+    asStr(meta?.reportTypeName) ||
+    asStr(meta?.report_type_key) ||
+    asStr(meta?.reportTypeKey) ||
+    "";
+
+  return {
+    advertiserName,
+    reportTypeName,
+  };
+}
+
+async function fetchReportHeaderInfo(reportId: string): Promise<ReportHeaderInfo> {
+  const { data: report, error: reportError } = await supabase
+    .from("reports")
+    .select("id, meta, advertiser_id, report_type_id")
+    .eq("id", reportId)
+    .maybeSingle();
+
+  if (reportError) {
+    throw new Error(reportError.message || "Failed to load report header");
+  }
+
+  if (!report) {
+    return {
+      advertiserName: "",
+      reportTypeName: "",
+    };
+  }
+
+  const meta = report?.meta && typeof report.meta === "object" ? report.meta : {};
+
+  let advertiserName =
+    asStr((report as any)?.advertiser_name) ||
+    asStr(meta?.advertiser_name) ||
+    asStr(meta?.advertiserName);
+
+  let reportTypeName =
+    asStr((report as any)?.report_type_name) ||
+    asStr((report as any)?.report_type_key) ||
+    asStr(meta?.report_type_name) ||
+    asStr(meta?.reportTypeName) ||
+    asStr(meta?.report_type_key) ||
+    asStr(meta?.reportTypeKey);
+
+  const advertiserId = asStr((report as any)?.advertiser_id);
+  const reportTypeId = asStr((report as any)?.report_type_id);
+
+  if (!advertiserName && advertiserId) {
+    const { data: adv } = await supabase
+      .from("advertisers")
+      .select("name")
+      .eq("id", advertiserId)
+      .maybeSingle();
+
+    advertiserName = asStr(adv?.name);
+  }
+
+  if (!reportTypeName && reportTypeId) {
+    const { data: rt } = await supabase
+      .from("report_types")
+      .select("name,key")
+      .eq("id", reportTypeId)
+      .maybeSingle();
+
+    reportTypeName = asStr(rt?.name) || asStr(rt?.key);
+  }
+
+  return {
+    advertiserName,
+    reportTypeName,
+  };
+}
+
 export default function ReportDetailPage() {
   const params = useParams<{ id: string }>();
   const reportId = params?.id;
 
   /**
-   * ✅ B 정책(세션 기준):
-   * - 이 페이지에 들어온 “이번 세션”에서
-   *   1) CSV 업로드+파싱(ingestion/run) 성공하기 전엔 미리보기 rows를 보여주지 않는다.
-   *   2) 소재 업로드 성공하기 전엔 매칭된 소재(creativesMap)를 보여주지 않는다.
+   * ✅ 세션 기준 정책은 “재발행 제한”에만 사용
+   * - 기존에 저장된 rows / creativesMap 은 항상 재열람 가능
+   * - 단, 재발행은 이번 세션 CSV 업로드+파싱 이후에만 허용
    */
 
   const sessionStartedAtRef = useRef<number | null>(null);
@@ -285,6 +380,10 @@ export default function ReportDetailPage() {
   const [msg, setMsg] = useState<string>("");
 
   const [creativesMap, setCreativesMap] = useState<Record<string, string>>({});
+  const [headerInfo, setHeaderInfo] = useState<ReportHeaderInfo>({
+    advertiserName: "",
+    reportTypeName: "",
+  });
 
   const [publishing, setPublishing] = useState(false);
   const [sharePath, setSharePath] = useState<string>("");
@@ -301,8 +400,9 @@ export default function ReportDetailPage() {
   const [lastUploadedCreativeCount, setLastUploadedCreativeCount] =
     useState<number>(0);
 
-  const displayRows = sessionIngested ? rows : [];
-  const displayCreativesMap = sessionCreativesUploaded ? creativesMap : {};
+  // ✅ 저장된 데이터는 항상 재열람 가능
+  const displayRows = rows;
+  const displayCreativesMap = creativesMap;
 
   const creativesKeyCount = Object.keys(displayCreativesMap || {}).length;
 
@@ -320,6 +420,7 @@ export default function ReportDetailPage() {
     return uniqCount(paths);
   }, [displayCreativesMap]);
 
+  // ✅ 재발행 제한은 기존 정책 유지
   const canPublish = sessionIngested && !publishing;
 
   async function refreshRows() {
@@ -327,12 +428,14 @@ export default function ReportDetailPage() {
     setLoadingRows(true);
     setMsg("");
     try {
-      const [rws, cmap] = await Promise.all([
+      const [rws, cmap, hdr] = await Promise.all([
         fetchRows(reportId),
         fetchCreativesMap(reportId),
+        fetchReportHeaderInfo(reportId),
       ]);
       setRows(rws);
       setCreativesMap(cmap);
+      setHeaderInfo(hdr);
     } catch (e: any) {
       setMsg(e?.message || "Failed to load rows/creatives");
     } finally {
@@ -354,6 +457,10 @@ export default function ReportDetailPage() {
 
     setCreativeUploadLog([]);
     setLastUploadedCreativeCount(0);
+    setHeaderInfo({
+      advertiserName: "",
+      reportTypeName: "",
+    });
 
     refreshRows();
 
@@ -508,11 +615,11 @@ export default function ReportDetailPage() {
               {" · "}
               {sessionIngested
                 ? "✅ 이번 세션 CSV 파싱 완료"
-                : "⛔ 이번 세션 CSV 파싱 전(미리보기 숨김)"}
+                : "⛔ 이번 세션 CSV 파싱 전(재발행 제한)"}
               {" · "}
               {sessionCreativesUploaded
                 ? "✅ 이번 세션 소재 업로드 완료"
-                : "⛔ 이번 세션 소재 업로드 전(매칭 0)"}
+                : "ℹ️ 기존 저장 소재는 표시되며, 이번 세션 재업로드 전 상태"}
             </div>
           </div>
 
@@ -549,7 +656,6 @@ export default function ReportDetailPage() {
               value={shareUrl}
             />
 
-            {/* ✅ 오른쪽 버튼 2개: 발행/새로고침과 동일 사이즈 + 클릭 유도 UI */}
             <button
               type="button"
               className="rounded-md border px-3 py-2 text-sm font-semibold bg-white hover:border-gray-400 hover:bg-gray-50 active:bg-gray-100"
@@ -803,8 +909,9 @@ export default function ReportDetailPage() {
             </div>
 
             {!sessionCreativesUploaded ? (
-              <div className="mt-2 text-xs text-orange-600">
-                이번 세션에서 소재 업로드 전이라 “매칭된 소재”는 0으로 표시됩니다.
+              <div className="mt-2 text-xs text-gray-600">
+                현재는 서버에 저장된 기존 매칭 결과를 표시 중입니다. 이번 세션에서
+                새 이미지를 업로드하면 즉시 갱신됩니다.
               </div>
             ) : null}
 
@@ -826,36 +933,26 @@ export default function ReportDetailPage() {
             </div>
 
             <div className="max-h-[78vh] overflow-y-auto p-4">
-              {!sessionIngested ? (
-                <div className="rounded-md border bg-white p-4 text-sm text-gray-700">
-                  <div className="font-semibold">
-                    이번 세션에서 CSV 업로드 + 파싱이 필요합니다.
-                  </div>
-                  <div className="mt-1 text-xs text-gray-600">
-                    현재 DB에 기존 데이터가 있더라도, B 정책(세션 기준)에 따라
-                    미리보기는 숨깁니다.
-                  </div>
-                </div>
-              ) : (
-                <div
-                  style={{
-                    transform: "scale(0.9)",
-                    transformOrigin: "top center",
-                  }}
-                >
-                  <ReportTemplate
-                    rows={displayRows}
-                    isLoading={loadingRows}
-                    creativesMap={displayCreativesMap}
-                  />
-                </div>
-              )}
+              <div
+                style={{
+                  transform: "scale(0.9)",
+                  transformOrigin: "top center",
+                }}
+              >
+                <ReportTemplate
+                  rows={displayRows}
+                  isLoading={loadingRows}
+                  creativesMap={displayCreativesMap}
+                  advertiserName={headerInfo.advertiserName}
+                  reportTypeName={headerInfo.reportTypeName}
+                />
+              </div>
             </div>
           </div>
 
           <div className="mt-2 text-xs text-gray-500">
             서버 rows(실제): {rows.length}개{" "}
-            <span className="text-gray-400">·</span> 표시 rows(세션 기준):{" "}
+            <span className="text-gray-400">·</span> 현재 표시 rows:{" "}
             {displayRows.length}개
           </div>
         </div>

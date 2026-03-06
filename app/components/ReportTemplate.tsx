@@ -72,6 +72,10 @@ type Props = {
    * value = signed_url
    */
   creativesMap?: Record<string, string>;
+
+  // ✅ 안전 확장: 부모에서 넘겨주면 HeaderBar 제목에 반영
+  advertiserName?: string | null;
+  reportTypeName?: string | null;
 };
 
 function asStr(v: any) {
@@ -333,7 +337,13 @@ function minMaxYmd(rows: any[]) {
   return { min, max };
 }
 
-export default function ReportTemplate({ rows, isLoading, creativesMap }: Props) {
+export default function ReportTemplate({
+  rows,
+  isLoading,
+  creativesMap,
+  advertiserName,
+  reportTypeName,
+}: Props) {
   const [tab, setTab] = useState<TabKey>("summary");
 
   const [filterKey, setFilterKey] = useState<FilterKey>(null);
@@ -624,6 +634,8 @@ export default function ReportTemplate({ rows, isLoading, creativesMap }: Props)
         enabledMonthKeySet={enabledMonthKeySet}
         enabledWeekKeySet={enabledWeekKeySet}
         period={periodFixed}
+        advertiserName={advertiserName}
+        reportTypeName={reportTypeName}
       />
 
       <div className="px-8 pt-10 pb-8">

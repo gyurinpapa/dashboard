@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import type {
   ChannelKey,
@@ -44,7 +44,15 @@ type Props = {
   enabledWeekKeySet: Set<string>;
 
   period: string;
+
+  // ✅ 안전 확장: 넘겨주면 제목에 반영, 안 넘겨주면 기존 기본 제목 유지
+  advertiserName?: string | null;
+  reportTypeName?: string | null;
 };
+
+function cleanText(v?: string | null) {
+  return String(v ?? "").trim();
+}
 
 export default function HeaderBar(props: Props) {
   const {
@@ -67,11 +75,24 @@ export default function HeaderBar(props: Props) {
     enabledMonthKeySet,
     enabledWeekKeySet,
     period,
+    advertiserName,
+    reportTypeName,
   } = props;
 
   const toggleFilter = (k: Exclude<FilterKey, null>) => {
-  setFilterKey(filterKey === k ? null : k);
-};
+    setFilterKey(filterKey === k ? null : k);
+  };
+
+  // ✅ 상단 제목 계산
+  const headerTitle = useMemo(() => {
+    const adv = cleanText(advertiserName);
+    const typeName = cleanText(reportTypeName);
+
+    if (adv && typeName) return `${adv} ${typeName} 보고서`;
+    if (adv) return `${adv} 온라인광고 보고서`;
+    if (typeName) return `${typeName} 보고서`;
+    return "온라인광고 보고서";
+  }, [advertiserName, reportTypeName]);
 
   // ✅ 키워드 탭에서만 display ad 비활성
   const disableDisplayChannel = tab === "keyword" || tab === "keywordDetail";
@@ -81,14 +102,14 @@ export default function HeaderBar(props: Props) {
 
   useEffect(() => {
     const onPointerDown = (e: MouseEvent | TouchEvent) => {
-      if (!filterKey) return; // 열려있을 때만
+      if (!filterKey) return;
       const el = filterRootRef.current;
       if (!el) return;
 
       const target = e.target as Node | null;
-      if (target && el.contains(target)) return; // 안쪽 클릭이면 무시
+      if (target && el.contains(target)) return;
 
-      setFilterKey(null); // ✅ 바깥 클릭이면 닫기
+      setFilterKey(null);
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
@@ -112,7 +133,7 @@ export default function HeaderBar(props: Props) {
         <div className="mx-auto w-full max-w-[1400px]">
           <div className="mb-6 text-center pt-4">
             <h1 className="text-3xl font-semibold tracking-tight">
-              네이처컬렉션 온라인광고 보고서
+              {headerTitle}
             </h1>
             <div className="mt-4 border-t border-gray-400" />
             <div className="mt-1 border-t border-gray-300" />
@@ -326,7 +347,7 @@ export default function HeaderBar(props: Props) {
                           type="button"
                           disabled={disabled}
                           onClick={() => {
-                            if (disabled) return; // ✅ 안전 가드
+                            if (disabled) return;
                             setSelectedChannel(c);
                             setFilterKey(null);
                           }}
@@ -340,7 +361,6 @@ export default function HeaderBar(props: Props) {
                             selectedChannel === c
                               ? "bg-orange-700 text-white border-orange-700"
                               : "bg-white text-orange-700 border-orange-300 hover:bg-orange-50",
-                            // ✅ disabled 스타일(회색 처리)
                             disabled
                               ? "opacity-40 cursor-not-allowed bg-gray-100 text-gray-400 border-gray-200 hover:bg-gray-100"
                               : "",

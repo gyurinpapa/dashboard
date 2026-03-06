@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 
 type CreateBody = {
   workspace_id?: string;
+  advertiser_id?: string | null;
   report_type_id?: string;
   title?: string;
   status?: string;
@@ -58,7 +59,6 @@ async function getUserId(req: Request): Promise<
   const user = auth?.user ?? null;
 
   if (!user) {
-    // auth.error가 있으면 같이 내려도 좋지만, 구조 유지 위해 메시지만
     return { ok: false, status: 401, message: "Unauthorized (no session). Please sign in." };
   }
 
@@ -70,6 +70,9 @@ export async function POST(req: Request) {
     const body = (await req.json().catch(() => ({}))) as CreateBody;
 
     const workspace_id = asString(body.workspace_id);
+    const advertiser_id_raw = asString(body.advertiser_id);
+    const advertiser_id = advertiser_id_raw || null;
+
     const report_type_id = asString(body.report_type_id);
     const title = asString(body.title);
     const status = asString(body.status) || "draft";
@@ -88,10 +91,10 @@ export async function POST(req: Request) {
 
     const created_by = auth.userId;
 
-    // ✅ 2) 멤버십 체크 (workspace_members)  ※ id 컬럼 쓰지 말 것
+    // ✅ 2) 멤버십 체크 (workspace_members)
     const { data: wm, error: wmErr } = await supabaseAdmin
       .from("workspace_members")
-      .select("role") // 또는 "workspace_id"
+      .select("role")
       .eq("workspace_id", workspace_id)
       .eq("user_id", created_by)
       .maybeSingle();
@@ -99,12 +102,26 @@ export async function POST(req: Request) {
     if (wmErr) return jsonError(500, wmErr.message);
     if (!wm) return jsonError(403, "Forbidden: you are not a member of this workspace");
 
+    // ✅ 2-1) advertiser_id가 들어오면 같은 workspace 소속 광고주인지 검증
+    if (advertiser_id) {
+      const { data: adv, error: advErr } = await supabaseAdmin
+        .from("advertisers")
+        .select("id, workspace_id")
+        .eq("id", advertiser_id)
+        .eq("workspace_id", workspace_id)
+        .maybeSingle();
+
+      if (advErr) return jsonError(500, advErr.message);
+      if (!adv) {
+        return jsonError(400, "Invalid advertiser_id for this workspace");
+      }
+    }
+
     // ✅ 3) period 자동세팅 (없을 때만)
     let period_start = period_start_in;
     let period_end = period_end_in;
 
     if (!period_start || !period_end) {
-      // 초기엔 metrics_daily가 없을 수 있으니: 실패해도 create를 막지 않음
       const [{ data: minRows, error: minErr }, { data: maxRows, error: maxErr }] =
         await Promise.all([
           supabaseAdmin
@@ -130,11 +147,12 @@ export async function POST(req: Request) {
       }
     }
 
-    // ✅ 4) reports insert (service role)
+    // ✅ 4) reports insert (advertiser_id 안전 반영)
     const { data, error } = await supabaseAdmin
       .from("reports")
       .insert({
         workspace_id,
+        advertiser_id,
         report_type_id,
         title: title || "New Report - Draft",
         status,
@@ -144,7 +162,7 @@ export async function POST(req: Request) {
         meta,
       })
       .select(
-        "id, workspace_id, report_type_id, title, status, period_start, period_end, created_at"
+        "id, workspace_id, advertiser_id, report_type_id, title, status, period_start, period_end, created_at"
       )
       .single();
 

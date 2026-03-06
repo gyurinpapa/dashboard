@@ -257,7 +257,7 @@ async function getUserId(req: Request) {
 
   // 2) 쿠키 세션 fallback
   const auth = await sbAuth();
-  if (!auth.ok || !auth.user?.id) {
+  if (auth.error || !auth.user?.id) {
     return { ok: false as const, status: 401, message: "Unauthorized (no session)" };
   }
 
