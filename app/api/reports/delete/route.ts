@@ -15,9 +15,41 @@ function asString(v: any) {
   return String(v).trim();
 }
 
+function getBearerToken(req: Request) {
+  const auth = req.headers.get("authorization") || req.headers.get("Authorization") || "";
+  if (!auth) return "";
+  const [type, token] = auth.split(" ");
+  if (String(type).toLowerCase() !== "bearer") return "";
+  return asString(token);
+}
+
+async function resolveUser(req: Request) {
+  // 1) Bearer 우선
+  const bearer = getBearerToken(req);
+  if (bearer) {
+    const { data, error } = await supabaseAdmin.auth.getUser(bearer);
+    if (!error && data?.user) {
+      return { user: data.user, error: null };
+    }
+  }
+
+  // 2) 쿠키 fallback
+  const { user, error } = await sbAuth();
+  return { user, error };
+}
+
+function isMissingTableError(message: string) {
+  const msg = String(message || "").toLowerCase();
+  return (
+    msg.includes("does not exist") ||
+    msg.includes("could not find the table") ||
+    msg.includes("schema cache")
+  );
+}
+
 export async function POST(req: Request) {
   try {
-    const { user, error: authErr } = await sbAuth();
+    const { user, error: authErr } = await resolveUser(req);
     if (authErr || !user) {
       return jsonError(401, "UNAUTHORIZED");
     }
@@ -64,7 +96,9 @@ export async function POST(req: Request) {
       return jsonError(500, targetErr.message);
     }
 
-    const deletableIds = (targetRows ?? []).map((x: any) => String(x.id)).filter(Boolean);
+    const deletableIds = (targetRows ?? [])
+      .map((x: any) => String(x.id))
+      .filter(Boolean);
 
     if (deletableIds.length === 0) {
       return jsonError(404, "NO_REPORTS_FOUND");
@@ -89,13 +123,13 @@ export async function POST(req: Request) {
       return jsonError(500, errCreatives.message, { step: "delete_report_creatives" });
     }
 
-    // uploads 테이블이 있다면 같이 정리
+    // uploads 테이블이 없으면 무시
     const { error: errCsvUploads } = await supabaseAdmin
       .from("report_csv_uploads")
       .delete()
       .in("report_id", deletableIds);
 
-    if (errCsvUploads && !String(errCsvUploads.message || "").includes("does not exist")) {
+    if (errCsvUploads && !isMissingTableError(errCsvUploads.message || "")) {
       return jsonError(500, errCsvUploads.message, { step: "delete_report_csv_uploads" });
     }
 
@@ -104,7 +138,7 @@ export async function POST(req: Request) {
       .delete()
       .in("report_id", deletableIds);
 
-    if (errImageUploads && !String(errImageUploads.message || "").includes("does not exist")) {
+    if (errImageUploads && !isMissingTableError(errImageUploads.message || "")) {
       return jsonError(500, errImageUploads.message, { step: "delete_report_image_uploads" });
     }
 

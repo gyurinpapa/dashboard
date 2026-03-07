@@ -1,14 +1,10 @@
 "use client";
 
-import KPI from "../ui/KPI";
-import InsightBox from "../ui/InsightBox"; // (남겨도 되고, 안 쓰면 지워도 됨)
 import { KRW } from "../../../src/lib/report/format";
 
 import SummaryChart from "./summary/SummaryChart";
 import SummaryKPI from "./summary/SummaryKPI";
 import SummaryTable from "./summary/SummaryTable";
-import SummaryGoal from "./summary/SummaryGoal";
-import SummaryInsight from "./summary/SummaryInsight";
 import TrendCell from "../ui/TrendCell";
 import DataBarCell from "../ui/DataBarCell";
 
@@ -58,14 +54,17 @@ const diffPct = (cur: any, prev: any) => {
   return (c - p) / p;
 };
 
+const TH_CLASS =
+  "px-4 py-3 text-right text-sm font-semibold text-gray-700 whitespace-nowrap";
+const TD_CLASS =
+  "px-4 py-4 text-right text-sm text-gray-800 whitespace-nowrap align-middle";
+const FIRST_TH_CLASS =
+  "px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap";
+const FIRST_TD_CLASS =
+  "px-4 py-4 text-left text-sm font-medium text-gray-800 whitespace-nowrap align-middle";
+
 export default function SummarySection(props: Props) {
   const {
-    currentMonthKey,
-    currentMonthActual,
-    currentMonthGoalComputed,
-    monthGoal,
-    setMonthGoal,
-    monthGoalInsight,
     totals,
     byMonth,
     byWeekOnly,
@@ -143,30 +142,46 @@ export default function SummarySection(props: Props) {
       <section className="mt-10">
         <h2 className="text-lg font-semibold mb-3">주차별 성과 (최근 5주)</h2>
 
-        <div className="overflow-auto border rounded-xl">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm">
+          <table className="w-full min-w-[1320px] table-fixed text-sm">
+            <colgroup>
+              <col className="w-[180px]" />
+              <col className="w-[90px]" />
+              <col className="w-[90px]" />
+              <col className="w-[90px]" />
+              <col className="w-[90px]" />
+              <col className="w-[110px]" />
+              <col className="w-[90px]" />
+              <col className="w-[90px]" />
+              <col className="w-[90px]" />
+              <col className="w-[120px]" />
+              <col className="w-[90px]" />
+            </colgroup>
+
             <thead className="bg-gray-50">
               <tr>
-                <th className="text-left p-3">Week</th>
-                <th className="text-right p-3">Impr</th>
-                <th className="text-right p-3">Clicks</th>
-                <th className="text-right p-3">CTR</th>
-                <th className="text-right p-3">CPC</th>
-                <th className="text-right p-3">Cost</th>
-                <th className="text-right p-3">Conv</th>
-                <th className="text-right p-3">CVR</th>
-                <th className="text-right p-3">CPA</th>
-                <th className="text-right p-3">Revenue</th>
-                <th className="text-right p-3">ROAS</th>
+                <th className={FIRST_TH_CLASS}>Week</th>
+                <th className={TH_CLASS}>Impr</th>
+                <th className={TH_CLASS}>Clicks</th>
+                <th className={TH_CLASS}>CTR</th>
+                <th className={TH_CLASS}>CPC</th>
+                <th className={TH_CLASS}>Cost</th>
+                <th className={TH_CLASS}>Conv</th>
+                <th className={TH_CLASS}>CVR</th>
+                <th className={TH_CLASS}>CPA</th>
+                <th className={TH_CLASS}>Revenue</th>
+                <th className={TH_CLASS}>ROAS</th>
               </tr>
             </thead>
 
             <tbody>
               {lastWeekSorted && prevWeekSorted && (
-                <tr className="bg-gray-100 font-medium">
-                  <td className="p-3">증감(최근주-전주)</td>
+                <tr className="bg-gray-100 font-medium border-t border-gray-200">
+                  <td className={`${FIRST_TD_CLASS} truncate`}>
+                    증감(최근주-전주)
+                  </td>
 
-                  <td className="p-3 text-right">
+                  <td className={TD_CLASS}>
                     <TrendCell
                       v={diffPct(
                         lastWeekSorted?.impressions,
@@ -175,13 +190,13 @@ export default function SummarySection(props: Props) {
                     />
                   </td>
 
-                  <td className="p-3 text-right">
+                  <td className={TD_CLASS}>
                     <TrendCell
                       v={diffPct(lastWeekSorted?.clicks, prevWeekSorted?.clicks)}
                     />
                   </td>
 
-                  <td className="p-3 text-right">
+                  <td className={TD_CLASS}>
                     <TrendCell
                       v={diffPct(
                         toRate01(lastWeekSorted?.ctr),
@@ -191,20 +206,20 @@ export default function SummarySection(props: Props) {
                     />
                   </td>
 
-                  <td className="p-3 text-right">
+                  <td className={TD_CLASS}>
                     <TrendCell
                       v={diffPct(lastWeekSorted?.cpc, prevWeekSorted?.cpc)}
                       digits={2}
                     />
                   </td>
 
-                  <td className="p-3 text-right">
+                  <td className={TD_CLASS}>
                     <TrendCell
                       v={diffPct(lastWeekSorted?.cost, prevWeekSorted?.cost)}
                     />
                   </td>
 
-                  <td className="p-3 text-right">
+                  <td className={TD_CLASS}>
                     <TrendCell
                       v={diffPct(
                         lastWeekSorted?.conversions,
@@ -213,7 +228,7 @@ export default function SummarySection(props: Props) {
                     />
                   </td>
 
-                  <td className="p-3 text-right">
+                  <td className={TD_CLASS}>
                     <TrendCell
                       v={diffPct(
                         toRate01(lastWeekSorted?.cvr),
@@ -223,20 +238,20 @@ export default function SummarySection(props: Props) {
                     />
                   </td>
 
-                  <td className="p-3 text-right">
+                  <td className={TD_CLASS}>
                     <TrendCell
                       v={diffPct(lastWeekSorted?.cpa, prevWeekSorted?.cpa)}
                       digits={2}
                     />
                   </td>
 
-                  <td className="p-3 text-right">
+                  <td className={TD_CLASS}>
                     <TrendCell
                       v={diffPct(lastWeekSorted?.revenue, prevWeekSorted?.revenue)}
                     />
                   </td>
 
-                  <td className="p-3 text-right">
+                  <td className={TD_CLASS}>
                     <TrendCell
                       v={diffPct(
                         toRoas01(lastWeekSorted?.roas),
@@ -249,46 +264,61 @@ export default function SummarySection(props: Props) {
               )}
 
               {sortedWeeks.map((w: any, idx: number) => (
-                <tr key={w?.weekKey ?? `${weekSortKey(w)}-${idx}`} className="border-t">
-                  <td className="p-3 font-medium">{w?.label}</td>
-                  <td className="p-3">
+                <tr
+                  key={w?.weekKey ?? `${weekSortKey(w)}-${idx}`}
+                  className="border-t border-gray-200"
+                >
+                  <td className={`${FIRST_TD_CLASS} truncate`} title={String(w?.label ?? "")}>
+                    {w?.label}
+                  </td>
+
+                  <td className={TD_CLASS}>
                     <DataBarCell
                       value={toNum(w?.impressions ?? w?.impr)}
                       max={maxImpr}
                     />
                   </td>
-                  <td className="p-3">
+
+                  <td className={TD_CLASS}>
                     <DataBarCell value={toNum(w?.clicks)} max={maxClicks} />
                   </td>
-                  <td className="p-3 text-right">
+
+                  <td className={TD_CLASS}>
                     {(toRate01(w?.ctr) * 100).toFixed(2)}%
                   </td>
-                  <td className="p-3 text-right">{KRW(toNum(w?.cpc))}</td>
-                  <td className="p-3">
+
+                  <td className={TD_CLASS}>{KRW(toNum(w?.cpc))}</td>
+
+                  <td className={TD_CLASS}>
                     <DataBarCell
                       value={toNum(w?.cost)}
                       max={maxCost}
                       label={KRW(toNum(w?.cost))}
                     />
                   </td>
-                  <td className="p-3">
+
+                  <td className={TD_CLASS}>
                     <DataBarCell
                       value={toNum(w?.conversions ?? w?.conv)}
                       max={maxConv}
                     />
                   </td>
-                  <td className="p-3 text-right">
+
+                  <td className={TD_CLASS}>
                     {(toRate01(w?.cvr) * 100).toFixed(2)}%
                   </td>
-                  <td className="p-3 text-right">{KRW(toNum(w?.cpa))}</td>
-                  <td className="p-3">
+
+                  <td className={TD_CLASS}>{KRW(toNum(w?.cpa))}</td>
+
+                  <td className={TD_CLASS}>
                     <DataBarCell
                       value={toNum(w?.revenue)}
                       max={maxRev}
                       label={KRW(toNum(w?.revenue))}
                     />
                   </td>
-                  <td className="p-3 text-right">
+
+                  <td className={TD_CLASS}>
                     {(toRoas01(w?.roas) * 100).toFixed(1)}%
                   </td>
                 </tr>
@@ -308,66 +338,95 @@ export default function SummarySection(props: Props) {
       <section className="mt-10">
         <h2 className="text-lg font-semibold mb-3">소스별 요약</h2>
 
-        <div className="overflow-auto border rounded-xl">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm">
+          <table className="w-full min-w-[1320px] table-fixed text-sm">
+            <colgroup>
+              <col className="w-[180px]" />
+              <col className="w-[90px]" />
+              <col className="w-[90px]" />
+              <col className="w-[90px]" />
+              <col className="w-[90px]" />
+              <col className="w-[110px]" />
+              <col className="w-[90px]" />
+              <col className="w-[90px]" />
+              <col className="w-[90px]" />
+              <col className="w-[120px]" />
+              <col className="w-[90px]" />
+            </colgroup>
+
             <thead className="bg-gray-50 text-gray-600">
               <tr>
-                <th className="text-left p-3">Source</th>
-                <th className="text-right p-3">Impr</th>
-                <th className="text-right p-3">Clicks</th>
-                <th className="text-right p-3">CTR</th>
-                <th className="text-right p-3">CPC</th>
-                <th className="text-right p-3">Cost</th>
-                <th className="text-right p-3">Conv</th>
-                <th className="text-right p-3">CVR</th>
-                <th className="text-right p-3">CPA</th>
-                <th className="text-right p-3">Revenue</th>
-                <th className="text-right p-3">ROAS</th>
+                <th className={FIRST_TH_CLASS}>Source</th>
+                <th className={TH_CLASS}>Impr</th>
+                <th className={TH_CLASS}>Clicks</th>
+                <th className={TH_CLASS}>CTR</th>
+                <th className={TH_CLASS}>CPC</th>
+                <th className={TH_CLASS}>Cost</th>
+                <th className={TH_CLASS}>Conv</th>
+                <th className={TH_CLASS}>CVR</th>
+                <th className={TH_CLASS}>CPA</th>
+                <th className={TH_CLASS}>Revenue</th>
+                <th className={TH_CLASS}>ROAS</th>
               </tr>
             </thead>
 
             <tbody>
               {sources.map((r: any, idx: number) => (
-                <tr key={r?.source ?? idx} className="border-t">
-                  <td className="p-3 font-medium">{r?.source}</td>
-                  <td className="p-3">
+                <tr key={r?.source ?? idx} className="border-t border-gray-200">
+                  <td
+                    className={`${FIRST_TD_CLASS} truncate`}
+                    title={String(r?.source ?? "")}
+                  >
+                    {r?.source}
+                  </td>
+
+                  <td className={TD_CLASS}>
                     <DataBarCell
                       value={toNum(r?.impressions ?? r?.impr)}
                       max={srcMaxImpr}
                     />
                   </td>
-                  <td className="p-3">
+
+                  <td className={TD_CLASS}>
                     <DataBarCell value={toNum(r?.clicks)} max={srcMaxClicks} />
                   </td>
-                  <td className="p-3 text-right">
+
+                  <td className={TD_CLASS}>
                     {(toRate01(r?.ctr) * 100).toFixed(2)}%
                   </td>
-                  <td className="p-3 text-right">{KRW(toNum(r?.cpc))}</td>
-                  <td className="p-3">
+
+                  <td className={TD_CLASS}>{KRW(toNum(r?.cpc))}</td>
+
+                  <td className={TD_CLASS}>
                     <DataBarCell
                       value={toNum(r?.cost)}
                       max={srcMaxCost}
                       label={KRW(toNum(r?.cost))}
                     />
                   </td>
-                  <td className="p-3">
+
+                  <td className={TD_CLASS}>
                     <DataBarCell
                       value={toNum(r?.conversions ?? r?.conv)}
                       max={srcMaxConv}
                     />
                   </td>
-                  <td className="p-3 text-right">
+
+                  <td className={TD_CLASS}>
                     {(toRate01(r?.cvr) * 100).toFixed(2)}%
                   </td>
-                  <td className="p-3 text-right">{KRW(toNum(r?.cpa))}</td>
-                  <td className="p-3">
+
+                  <td className={TD_CLASS}>{KRW(toNum(r?.cpa))}</td>
+
+                  <td className={TD_CLASS}>
                     <DataBarCell
                       value={toNum(r?.revenue)}
                       max={srcMaxRev}
                       label={KRW(toNum(r?.revenue))}
                     />
                   </td>
-                  <td className="p-3 text-right">
+
+                  <td className={TD_CLASS}>
                     {(toRoas01(r?.roas) * 100).toFixed(1)}%
                   </td>
                 </tr>
