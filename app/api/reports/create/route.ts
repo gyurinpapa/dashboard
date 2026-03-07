@@ -35,12 +35,15 @@ function safeObj(v: any) {
  * - 프론트에서 Authorization: Bearer ... 를 보내면 이걸 먼저 검증
  * - 없으면 sbAuth() 쿠키 세션으로 user 확인
  */
-async function getUserId(req: Request): Promise<
+async function getUserId(
+  req: Request
+): Promise<
   | { ok: true; userId: string }
   | { ok: false; status: number; message: string }
 > {
   // 1) Bearer 토큰
-  const authz = req.headers.get("authorization") || req.headers.get("Authorization") || "";
+  const authz =
+    req.headers.get("authorization") || req.headers.get("Authorization") || "";
   const m = authz.match(/^Bearer\s+(.+)$/i);
   const bearer = m?.[1]?.trim();
 
@@ -49,7 +52,11 @@ async function getUserId(req: Request): Promise<
     const userId = data?.user?.id ?? null;
 
     if (error || !userId) {
-      return { ok: false, status: 401, message: "Unauthorized (invalid bearer token)" };
+      return {
+        ok: false,
+        status: 401,
+        message: "Unauthorized (invalid bearer token)",
+      };
     }
     return { ok: true, userId };
   }
@@ -59,7 +66,11 @@ async function getUserId(req: Request): Promise<
   const user = auth?.user ?? null;
 
   if (!user) {
-    return { ok: false, status: 401, message: "Unauthorized (no session). Please sign in." };
+    return {
+      ok: false,
+      status: 401,
+      message: "Unauthorized (no session). Please sign in.",
+    };
   }
 
   return { ok: true, userId: user.id };
@@ -69,7 +80,7 @@ export async function POST(req: Request) {
   try {
     const body = (await req.json().catch(() => ({}))) as CreateBody;
 
-    const workspace_id = asString(body.workspace_id);
+    const workspace_id_in = asString(body.workspace_id);
     const advertiser_id_raw = asString(body.advertiser_id);
     const advertiser_id = advertiser_id_raw || null;
 
@@ -82,7 +93,6 @@ export async function POST(req: Request) {
     const period_start_in = body.period_start ?? null;
     const period_end_in = body.period_end ?? null;
 
-    if (!workspace_id) return jsonError(400, "workspace_id is required");
     if (!report_type_id) return jsonError(400, "report_type_id is required");
 
     // ✅ 1) Auth (Bearer 우선 + 쿠키 fallback)
@@ -91,24 +101,54 @@ export async function POST(req: Request) {
 
     const created_by = auth.userId;
 
-    // ✅ 2) 멤버십 체크 (workspace_members)
-    const { data: wm, error: wmErr } = await supabaseAdmin
-      .from("workspace_members")
-      .select("role")
-      .eq("workspace_id", workspace_id)
-      .eq("user_id", created_by)
-      .maybeSingle();
+    // ✅ 2) workspace 결정
+    // - advertiser_id가 있으면 advertiser.workspace_id를 우선 사용
+    // - advertiser_id가 없으면 body.workspace_id 사용
+    let resolved_workspace_id = workspace_id_in;
 
-    if (wmErr) return jsonError(500, wmErr.message);
-    if (!wm) return jsonError(403, "Forbidden: you are not a member of this workspace");
-
-    // ✅ 2-1) advertiser_id가 들어오면 같은 workspace 소속 광고주인지 검증
     if (advertiser_id) {
       const { data: adv, error: advErr } = await supabaseAdmin
         .from("advertisers")
         .select("id, workspace_id")
         .eq("id", advertiser_id)
-        .eq("workspace_id", workspace_id)
+        .maybeSingle();
+
+      if (advErr) return jsonError(500, advErr.message);
+      if (!adv) return jsonError(400, "Invalid advertiser_id");
+
+      resolved_workspace_id = asString(adv.workspace_id);
+
+      // body.workspace_id가 들어왔고 advertiser workspace와 다르면 차단
+      if (workspace_id_in && resolved_workspace_id !== workspace_id_in) {
+        return jsonError(400, "workspace_id does not match advertiser workspace");
+      }
+    }
+
+    if (!resolved_workspace_id) {
+      return jsonError(400, "workspace_id is required");
+    }
+
+    // ✅ 3) 멤버십 체크 (resolved workspace 기준)
+    const { data: wm, error: wmErr } = await supabaseAdmin
+      .from("workspace_members")
+      .select("workspace_id, role")
+      .eq("workspace_id", resolved_workspace_id)
+      .eq("user_id", created_by)
+      .limit(1)
+      .maybeSingle();
+
+    if (wmErr) return jsonError(500, wmErr.message);
+    if (!wm) {
+      return jsonError(403, "Forbidden: you are not a member of this workspace");
+    }
+
+    // ✅ 3-1) advertiser_id가 들어오면 같은 workspace 소속 광고주인지 최종 재검증
+    if (advertiser_id) {
+      const { data: adv, error: advErr } = await supabaseAdmin
+        .from("advertisers")
+        .select("id, workspace_id")
+        .eq("id", advertiser_id)
+        .eq("workspace_id", resolved_workspace_id)
         .maybeSingle();
 
       if (advErr) return jsonError(500, advErr.message);
@@ -117,7 +157,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // ✅ 3) period 자동세팅 (없을 때만)
+    // ✅ 4) period 자동세팅 (없을 때만)
     let period_start = period_start_in;
     let period_end = period_end_in;
 
@@ -127,13 +167,13 @@ export async function POST(req: Request) {
           supabaseAdmin
             .from("metrics_daily")
             .select("date")
-            .eq("workspace_id", workspace_id)
+            .eq("workspace_id", resolved_workspace_id)
             .order("date", { ascending: true })
             .limit(1),
           supabaseAdmin
             .from("metrics_daily")
             .select("date")
-            .eq("workspace_id", workspace_id)
+            .eq("workspace_id", resolved_workspace_id)
             .order("date", { ascending: false })
             .limit(1),
         ]);
@@ -147,11 +187,11 @@ export async function POST(req: Request) {
       }
     }
 
-    // ✅ 4) reports insert (advertiser_id 안전 반영)
+    // ✅ 5) reports insert
     const { data, error } = await supabaseAdmin
       .from("reports")
       .insert({
-        workspace_id,
+        workspace_id: resolved_workspace_id,
         advertiser_id,
         report_type_id,
         title: title || "New Report - Draft",

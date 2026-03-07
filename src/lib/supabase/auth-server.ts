@@ -1,5 +1,5 @@
 // src/lib/supabase/auth-server.ts
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 
 function mustEnv(name: string) {
@@ -8,42 +8,22 @@ function mustEnv(name: string) {
   return v;
 }
 
-function parseCookieHeader(raw: string | null): Array<{ name: string; value: string }> {
-  if (!raw) return [];
-  return raw
-    .split(";")
-    .map((p) => p.trim())
-    .filter(Boolean)
-    .map((kv) => {
-      const eq = kv.indexOf("=");
-      if (eq < 0) return { name: kv, value: "" };
-      const name = kv.slice(0, eq).trim();
-      const value = kv.slice(eq + 1).trim();
-      return { name, value };
-    });
-}
-
 function getAllCookiesSafe(): Array<{ name: string; value: string }> {
-  // ✅ 최신 Next: cookies().getAll() 존재
   try {
     const cs: any = cookies();
+
     if (cs && typeof cs.getAll === "function") {
       const all = cs.getAll();
-      // Next의 getAll()은 {name,value,...} 배열
-      return (all ?? []).map((c: any) => ({ name: c.name, value: c.value }));
+      return (all ?? []).map((c: any) => ({
+        name: String(c?.name ?? ""),
+        value: String(c?.value ?? ""),
+      }));
     }
   } catch {
     // ignore
   }
 
-  // ✅ 구버전/특수 런타임: headers().get("cookie")로 파싱
-  try {
-    const h = headers();
-    const raw = h.get("cookie");
-    return parseCookieHeader(raw);
-  } catch {
-    return [];
-  }
+  return [];
 }
 
 /**

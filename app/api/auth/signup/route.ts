@@ -9,6 +9,7 @@ type SignupType = "internal" | "client";
 type SafeRole = "staff" | "client";
 
 type SignupBody = {
+  full_name?: string;
   email?: string;
   password?: string;
   passwordConfirm?: string;
@@ -84,14 +85,45 @@ function normalizeOrg(
   };
 }
 
+function looksLikeDuplicateEmail(message: string) {
+  const msg = String(message || "").toLowerCase();
+  return (
+    msg.includes("already") ||
+    msg.includes("exists") ||
+    msg.includes("duplicate") ||
+    msg.includes("registered")
+  );
+}
+
+async function resolveCompanyId(admin: any) {
+  const { data, error } = await admin
+    .from("profiles")
+    .select("company_id")
+    .limit(1);
+
+  if (error) {
+    throw error;
+  }
+
+  const rows = (data ?? []) as Array<{ company_id: string | null }>;
+  return asString(rows[0]?.company_id);
+}
+
 export async function POST(req: Request) {
+  let createdUserId: string | null = null;
+
   try {
     const body = (await req.json().catch(() => ({}))) as SignupBody;
 
+    const fullName = asString(body.full_name);
     const email = asString(body.email).toLowerCase();
     const password = asString(body.password);
     const passwordConfirm = asString(body.passwordConfirm);
     const signupType = normalizeSignupType(asString(body.signup_type));
+
+    if (!fullName) {
+      return jsonError(400, "FULL_NAME_REQUIRED");
+    }
 
     if (!email) {
       return jsonError(400, "EMAIL_REQUIRED");
@@ -139,16 +171,27 @@ export async function POST(req: Request) {
 
     const admin = getAdminClient();
 
+    const companyId = await resolveCompanyId(admin);
+    if (!companyId) {
+      return jsonError(500, "COMPANY_ID_MISSING", {
+        detail:
+          "profiles.company_id에서 기존 회사 값을 찾지 못했습니다. COMPANY_ID 환경변수를 설정하거나 기존 profiles 데이터를 확인하세요.",
+      });
+    }
+
     const { data: createdUser, error: createUserError } =
       await admin.auth.admin.createUser({
         email,
         password,
         email_confirm: true,
+        user_metadata: {
+          full_name: fullName,
+          signup_type: signupType,
+        },
       });
 
     if (createUserError) {
       const rawMessage = String(createUserError.message || "");
-      const msg = rawMessage.toLowerCase();
 
       console.error("[signup] auth.admin.createUser failed", {
         email,
@@ -157,12 +200,7 @@ export async function POST(req: Request) {
         code: (createUserError as any)?.code ?? null,
       });
 
-      if (
-        msg.includes("already") ||
-        msg.includes("exists") ||
-        msg.includes("duplicate") ||
-        msg.includes("registered")
-      ) {
+      if (looksLikeDuplicateEmail(rawMessage)) {
         return jsonError(409, "EMAIL_ALREADY_EXISTS", {
           detail: rawMessage,
         });
@@ -177,6 +215,44 @@ export async function POST(req: Request) {
     if (!userId) {
       return jsonError(500, "AUTH_USER_CREATE_FAILED", {
         detail: "user id missing after createUser",
+      });
+    }
+
+    createdUserId = userId;
+
+    const now = new Date().toISOString();
+
+    const { error: profileError } = await admin.from("profiles").upsert(
+      {
+        id: userId,
+        company_id: companyId,
+        name: fullName,
+        email,
+        updated_at: now,
+      },
+      {
+        onConflict: "id",
+      }
+    );
+
+    if (profileError) {
+      console.error("[signup] profiles upsert failed", {
+        email,
+        userId,
+        company_id: companyId,
+        name: fullName,
+        message: profileError.message,
+        details: (profileError as any)?.details ?? null,
+        hint: (profileError as any)?.hint ?? null,
+        code: (profileError as any)?.code ?? null,
+      });
+
+      try {
+        await admin.auth.admin.deleteUser(userId);
+        } catch {}
+
+      return jsonError(500, "PROFILE_UPSERT_FAILED", {
+        detail: profileError.message,
       });
     }
 
@@ -198,6 +274,7 @@ export async function POST(req: Request) {
         email,
         userId,
         companyWorkspaceId,
+        companyId,
         role,
         division: org.division,
         department: org.department,
@@ -208,7 +285,13 @@ export async function POST(req: Request) {
         code: (memberError as any)?.code ?? null,
       });
 
-      await admin.auth.admin.deleteUser(userId);
+      try {
+        await admin.from("profiles").delete().eq("id", userId);
+      } catch {}
+
+      try {
+        await admin.auth.admin.deleteUser(userId);
+      } catch {}
 
       return jsonError(500, "WORKSPACE_MEMBER_CREATE_FAILED", {
         detail: memberError.message,
@@ -218,8 +301,11 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       user_id: userId,
+      company_id: companyId,
       workspace_id: companyWorkspaceId,
       role,
+      name: fullName,
+      email,
       division: org.division,
       department: org.department,
       team: org.team,
@@ -229,9 +315,31 @@ export async function POST(req: Request) {
 
     console.error("[signup] route failed", err);
 
+    if (createdUserId) {
+      try {
+        const admin = getAdminClient();
+
+        try {
+            await admin.from("profiles").delete().eq("id", createdUserId);
+        } catch {}
+
+        try {
+            await admin.auth.admin.deleteUser(createdUserId);
+        } catch {}
+        } catch {
+        // rollback best-effort
+        }
+    }
+
     if (msg === "SUPABASE_ENV_MISSING") {
       return jsonError(500, "SUPABASE_ENV_MISSING", {
         detail: "NEXT_PUBLIC_SUPABASE_URL 또는 SUPABASE_SERVICE_ROLE_KEY가 없습니다.",
+      });
+    }
+
+    if (String(msg).startsWith("COMPANY_ID_LOOKUP_FAILED:")) {
+      return jsonError(500, "COMPANY_ID_LOOKUP_FAILED", {
+        detail: String(msg).replace("COMPANY_ID_LOOKUP_FAILED:", ""),
       });
     }
 

@@ -41,6 +41,8 @@ function humanError(error?: string, detail?: string) {
   const suffix = detail ? ` (${detail})` : "";
 
   switch (error) {
+    case "FULL_NAME_REQUIRED":
+      return "이름을 입력해주세요.";
     case "EMAIL_REQUIRED":
       return "이메일을 입력해주세요.";
     case "PASSWORD_REQUIRED":
@@ -61,6 +63,8 @@ function humanError(error?: string, detail?: string) {
       return "이미 가입된 이메일입니다." + suffix;
     case "AUTH_USER_CREATE_FAILED":
       return "회원가입 중 계정 생성에 실패했습니다." + suffix;
+    case "PROFILE_UPSERT_FAILED":
+      return "회원가입 중 프로필 저장에 실패했습니다." + suffix;
     case "WORKSPACE_MEMBER_CREATE_FAILED":
       return "회원가입 중 소속 등록에 실패했습니다." + suffix;
     case "COMPANY_WORKSPACE_ID_MISSING":
@@ -79,6 +83,7 @@ export default function SignupPage() {
 
   const [signupType, setSignupType] = useState<SignupType>("internal");
 
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
@@ -131,6 +136,7 @@ export default function SignupPage() {
   const disabled = useMemo(() => {
     return (
       loading ||
+      !fullName.trim() ||
       !email.trim() ||
       !password.trim() ||
       !passwordConfirm.trim() ||
@@ -139,7 +145,17 @@ export default function SignupPage() {
       !department.trim() ||
       !team.trim()
     );
-  }, [loading, email, password, passwordConfirm, signupType, division, department, team]);
+  }, [
+    loading,
+    fullName,
+    email,
+    password,
+    passwordConfirm,
+    signupType,
+    division,
+    department,
+    team,
+  ]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -147,9 +163,15 @@ export default function SignupPage() {
     setErrorText("");
     setSuccessText("");
 
+    const fullNameTrimmed = fullName.trim();
     const emailTrimmed = email.trim().toLowerCase();
     const passwordTrimmed = password.trim();
     const passwordConfirmTrimmed = passwordConfirm.trim();
+
+    if (!fullNameTrimmed) {
+      setErrorText("이름을 입력해주세요.");
+      return;
+    }
 
     if (!emailTrimmed) {
       setErrorText("이메일을 입력해주세요.");
@@ -200,6 +222,7 @@ export default function SignupPage() {
           "content-type": "application/json",
         },
         body: JSON.stringify({
+          full_name: fullNameTrimmed,
           email: emailTrimmed,
           password: passwordTrimmed,
           passwordConfirm: passwordConfirmTrimmed,
@@ -237,6 +260,7 @@ export default function SignupPage() {
     } catch (err: any) {
       setErrorText(err?.message || "회원가입 처리 중 오류가 발생했습니다.");
       setLoading(false);
+      return;
     }
   }
 
@@ -320,6 +344,25 @@ export default function SignupPage() {
                     <option value="internal">내부 사용자</option>
                     <option value="client">광고주</option>
                   </select>
+                </div>
+
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <div style={{ marginBottom: 6, fontSize: 13 }}>이름</div>
+                  <input
+                    type="text"
+                    autoComplete="name"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="이름을 입력하세요"
+                    style={{
+                      width: "100%",
+                      padding: 14,
+                      borderRadius: 12,
+                      border: "1px solid #ddd",
+                      background: "#eaf2ff",
+                      fontSize: 18,
+                    }}
+                  />
                 </div>
 
                 <div style={{ gridColumn: "1 / -1" }}>
@@ -491,7 +534,12 @@ export default function SignupPage() {
                 </div>
               )}
 
-              <button type="submit" className="mainBtn" disabled={disabled} style={{ marginTop: 16 }}>
+              <button
+                type="submit"
+                className="mainBtn"
+                disabled={disabled}
+                style={{ marginTop: 16 }}
+              >
                 {loading ? "회원가입 중..." : "회원가입"}
               </button>
             </form>
