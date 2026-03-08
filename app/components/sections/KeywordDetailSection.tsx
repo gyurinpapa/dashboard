@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Row } from "../../../src/lib/report/types";
 
 import SummarySection from "./SummarySection";
@@ -64,7 +64,6 @@ function calcAvgRankWeighted(rows: Row[]) {
   let sCnt = 0;
 
   for (const r of rows) {
-    // ✅ CSV 원본이 rank 라면 normalize 단계에서 avgRank로 매핑되어 있어야 함
     const rank = Number((r as any).avgRank);
     if (!Number.isFinite(rank)) continue;
 
@@ -103,11 +102,11 @@ function filterByKeyword(rows: Row[], keyword: string | null) {
  */
 function buildKeywordDetailInsight(args: {
   keyword: string | null;
-  allRowsScope: Row[]; // (현재 상위 필터 적용된) 탭 범위 전체 rows
-  keywordRows: Row[]; // 선택 키워드 rows
-  byWeekOnly: any[]; // 최근5주 (키워드 기준)
-  bySource: any[]; // 소스별 (키워드 기준)
-  byDevice: any[]; // 기기별 (키워드 기준)
+  allRowsScope: Row[];
+  keywordRows: Row[];
+  byWeekOnly: any[];
+  bySource: any[];
+  byDevice: any[];
   avgRank: number | null;
 }) {
   const { keyword, allRowsScope, keywordRows, byWeekOnly, bySource, byDevice, avgRank } = args;
@@ -123,12 +122,10 @@ function buildKeywordDetailInsight(args: {
   const all = summarize(allRowsScope);
   const me = summarize(keywordRows);
 
-  // 기여도(탭 범위 대비)
   const shareCost = all.cost ? me.cost / all.cost : 0;
   const shareRev = all.revenue ? me.revenue / all.revenue : 0;
   const shareConv = all.conversions ? me.conversions / all.conversions : 0;
 
-  // 최근 5주 추세: 최신주 vs 직전주 (weekKey 기준 정렬)
   const weeks = [...(byWeekOnly || [])].sort((a, b) =>
     String(a.weekKey ?? "").localeCompare(String(b.weekKey ?? ""))
   );
@@ -140,17 +137,14 @@ function buildKeywordDetailInsight(args: {
   const convWoW = wLast && wPrev ? diffPct(safeNum(wLast.conversions), safeNum(wPrev.conversions)) : 0;
   const costWoW = wLast && wPrev ? diffPct(safeNum(wLast.cost), safeNum(wPrev.cost)) : 0;
 
-  // 소스별: 비용 상위 1~2개
   const sources = [...(bySource || [])].sort((a, b) => (b.cost ?? 0) - (a.cost ?? 0));
   const topS1 = sources[0] ?? null;
   const topS2 = sources[1] ?? null;
 
-  // 기기별: 비용 상위 1~2개
   const devices = [...(byDevice || [])].sort((a, b) => (b.cost ?? 0) - (a.cost ?? 0));
   const topD1 = devices[0] ?? null;
   const topD2 = devices[1] ?? null;
 
-  // 평가 라벨(간단 규칙)
   const efficiencyLabel =
     me.roas >= 1.0
       ? "ROAS가 100% 이상으로 효율이 양호"
@@ -171,7 +165,9 @@ function buildKeywordDetailInsight(args: {
       1
     )} / ROAS ${safePct0(me.roas)} · ${efficiencyLabel}`
   );
-  bullets.push(`기여도(현재 탭 범위 대비): 비용 ${safePct(shareCost)}, 전환 ${safePct(shareConv)}, 매출 ${safePct(shareRev)}`);
+  bullets.push(
+    `기여도(현재 탭 범위 대비): 비용 ${safePct(shareCost)}, 전환 ${safePct(shareConv)}, 매출 ${safePct(shareRev)}`
+  );
   bullets.push(trendLabel);
 
   if (avgRank != null) {
@@ -180,7 +176,6 @@ function buildKeywordDetailInsight(args: {
     bullets.push("평균노출순위(Avg.rank): 데이터 없음");
   }
 
-  // 기기 근거 문장
   if (topD1) {
     const d1 = pickDeviceLabel(String(topD1.device ?? "unknown"));
     const d1Roas = safeNum(topD1.roas);
@@ -200,7 +195,6 @@ function buildKeywordDetailInsight(args: {
     bullets.push("기기별: 데이터가 부족하여 비교가 제한적입니다.");
   }
 
-  // 액션 추천(클릭/전환/ROAS + 기기 기반)
   const actions: string[] = [];
 
   if (me.ctr < 0.02 && me.impressions > 0) {
@@ -231,6 +225,7 @@ function buildKeywordDetailInsight(args: {
       actions.push(`${s1} 효율이 평균 미만이면, 저효율 구간을 먼저 차단하고 예산을 분산하세요.`);
     }
   }
+
   if (topS2) {
     actions.push(
       `소스 비교: 2순위 “${String(topS2.source)}”(ROAS ${safePct0(
@@ -276,7 +271,6 @@ function buildKeywordDetailInsight(args: {
  * ========================= */
 
 type Props = {
-  /** page.tsx에서 넘어오는 현재 필터(월/주차/기기/채널) 적용된 rows */
   rows: Row[];
 };
 
@@ -286,20 +280,25 @@ export default function KeywordDetailSection(props: Props) {
   const keywords = useMemo(() => extractKeywords(rows), [rows]);
   const [selectedKeyword, setSelectedKeyword] = useState<string | null>(keywords[0] ?? null);
 
-  // ✅ 선택 키워드 rows
-  const filteredRows = useMemo(() => filterByKeyword(rows, selectedKeyword), [rows, selectedKeyword]);
+  useEffect(() => {
+    if (!keywords.length) {
+      if (selectedKeyword !== null) setSelectedKeyword(null);
+      return;
+    }
 
-  // ✅ 키워드 상세 탭 전용 Avg.rank
+    if (!selectedKeyword || !keywords.includes(selectedKeyword)) {
+      setSelectedKeyword(keywords[0]);
+    }
+  }, [keywords, selectedKeyword]);
+
+  const filteredRows = useMemo(() => filterByKeyword(rows, selectedKeyword), [rows, selectedKeyword]);
   const avgRank = useMemo(() => calcAvgRankWeighted(filteredRows), [filteredRows]);
 
-  // ✅ 선택 키워드 기준 집계
   const totals = useMemo(() => summarize(filteredRows), [filteredRows]);
   const bySource = useMemo(() => groupBySource(filteredRows), [filteredRows]);
   const byDevice = useMemo(() => groupByDevice(filteredRows), [filteredRows]);
-
   const byWeekOnly = useMemo(() => groupByWeekRecent5(filteredRows), [filteredRows]);
 
-  // ✅ 그래프는 과거 → 최신(오른쪽이 최신)으로 정렬
   const byWeekChart = useMemo(() => {
     const arr = [...byWeekOnly];
     arr.sort((a, b) => String(a.weekKey ?? "").localeCompare(String(b.weekKey ?? "")));
@@ -317,7 +316,6 @@ export default function KeywordDetailSection(props: Props) {
     [filteredRows]
   );
 
-  // ✅ 인사이트 생성(기기 근거 포함)
   const insight = useMemo(
     () =>
       buildKeywordDetailInsight({
@@ -333,18 +331,20 @@ export default function KeywordDetailSection(props: Props) {
   );
 
   return (
-    <section className="w-full">
+    <section className="w-full min-w-0">
       <h2 className="text-xl font-semibold">키워드 상세</h2>
 
-      <div className="mt-4 grid grid-cols-1 items-start gap-6 lg:grid-cols-[360px_1fr]">
+      <div className="mt-4 grid grid-cols-1 items-start gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
         {/* LEFT: 키워드 리스트 */}
-        <aside className="rounded-2xl border border-gray-200 bg-white p-4 flex flex-col sticky top-24 max-h-[calc(100vh-6rem)]">
-          <div className="flex items-center justify-between">
+        <aside className="min-w-0 rounded-2xl border border-gray-200 bg-white p-4 lg:sticky lg:top-24 lg:max-h-[calc(100vh-6rem)] lg:overflow-hidden">
+          <div className="flex items-center justify-between gap-3">
             <div className="text-sm font-semibold">키워드 리스트</div>
-            <div className="text-xs text-gray-500">{selectedKeyword ? `선택: ${selectedKeyword}` : "선택 없음"}</div>
+            <div className="min-w-0 truncate text-xs text-gray-500">
+              {selectedKeyword ? `선택: ${selectedKeyword}` : "선택 없음"}
+            </div>
           </div>
 
-          <div className="mt-3 flex-1 min-h-0 overflow-auto pr-1">
+          <div className="mt-3 lg:max-h-[calc(100vh-14rem)] overflow-auto pr-1">
             <div className="flex flex-col gap-2">
               {keywords.length === 0 ? (
                 <div className="rounded-xl bg-gray-50 p-4 text-sm text-gray-600">키워드 데이터가 없습니다.</div>
@@ -357,10 +357,11 @@ export default function KeywordDetailSection(props: Props) {
                       type="button"
                       onClick={() => setSelectedKeyword(k)}
                       className={[
-                        "w-full rounded-xl border px-3 py-2 text-left text-sm font-semibold transition",
+                        "block w-full rounded-xl border px-3 py-2 text-left text-sm font-semibold transition",
+                        "overflow-hidden text-ellipsis whitespace-nowrap",
                         active
-                          ? "bg-orange-700 text-white border-orange-700"
-                          : "bg-white text-gray-900 border-gray-200 hover:bg-orange-50 hover:border-orange-200",
+                          ? "border-orange-700 bg-orange-700 text-white"
+                          : "border-gray-200 bg-white text-gray-900 hover:border-orange-200 hover:bg-orange-50",
                       ].join(" ")}
                       title={k}
                     >
@@ -379,19 +380,17 @@ export default function KeywordDetailSection(props: Props) {
         </aside>
 
         {/* RIGHT */}
-        <div className="space-y-6">
-          {/* ✅ 상단: 선택 키워드 요약 인사이트(기기 근거 포함) */}
-          <section className="rounded-2xl border border-gray-200 bg-white p-6">
+        <div className="min-w-0 space-y-6">
+          <section className="min-w-0 rounded-2xl border border-gray-200 bg-white p-6">
             <div className="flex items-start justify-between gap-4">
-              <div>
+              <div className="min-w-0">
                 <h3 className="text-base font-semibold">{insight.title}</h3>
-                <div className="mt-1 text-xs text-gray-500">
+                <div className="mt-1 truncate text-xs text-gray-500">
                   {selectedKeyword ? `키워드: ${selectedKeyword}` : "키워드를 선택하세요"}
                 </div>
               </div>
 
-              {/* Avg.rank 강조 */}
-              <div className="text-right">
+              <div className="shrink-0 text-right">
                 <div className="text-xs text-gray-500">Avg.rank</div>
                 <div className="mt-1 text-lg font-semibold">{avgRank == null ? "-" : avgRank.toFixed(2)}</div>
               </div>
@@ -413,13 +412,10 @@ export default function KeywordDetailSection(props: Props) {
             </div>
           </section>
 
-          {/* ✅ A안 적용: 키워드 상세 탭에서만 Week 첫 컬럼 줄바꿈 금지 */}
-          <div className="keyword-detail-week-table-fix">
-            {/* ✅ Summary */}
+          <div className="keyword-detail-week-table-fix min-w-0">
             {(() => {
               const currentMonthKey = (totals as any)?.currentMonthKey ?? null;
               const currentMonthActual = (totals as any)?.currentMonthActual ?? totals;
-
               const monthGoal = (totals as any)?.monthGoal ?? null;
 
               const currentMonthGoalComputed =
@@ -427,7 +423,7 @@ export default function KeywordDetailSection(props: Props) {
                   imp: 0,
                   click: 0,
                   cost: 0,
-                  conv: 0,                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
+                  conv: 0,
                   revenue: 0,
                   ctr: 0,
                   cpc: 0,
@@ -440,33 +436,49 @@ export default function KeywordDetailSection(props: Props) {
               const monthGoalInsight = null;
 
               return (
-                <SummarySection
-                  totals={totals as any}
-                  byMonth={byMonth as any}
-                  byWeekOnly={byWeekOnly as any}
-                  byWeekChart={byWeekChart as any}
-                  bySource={bySource as any}
-                  currentMonthKey={currentMonthKey}
-                  currentMonthActual={currentMonthActual}
-                  currentMonthGoalComputed={currentMonthGoalComputed}
-                  monthGoal={monthGoal}
-                  setMonthGoal={setMonthGoal}
-                  monthGoalInsight={monthGoalInsight}
-                />
+                <div className="min-w-0">
+                  <SummarySection
+                    totals={totals as any}
+                    byMonth={byMonth as any}
+                    byWeekOnly={byWeekOnly as any}
+                    byWeekChart={byWeekChart as any}
+                    bySource={bySource as any}
+                    currentMonthKey={currentMonthKey}
+                    currentMonthActual={currentMonthActual}
+                    currentMonthGoalComputed={currentMonthGoalComputed}
+                    monthGoal={monthGoal}
+                    setMonthGoal={setMonthGoal}
+                    monthGoalInsight={monthGoalInsight}
+                  />
+                </div>
               );
             })()}
           </div>
         </div>
       </div>
 
-      {/* ✅ A안: 키워드 상세 탭에서만 적용되는 전용 CSS */}
       <style jsx global>{`
+        .keyword-detail-week-table-fix {
+          min-width: 0;
+          width: 100%;
+        }
+
+        .keyword-detail-week-table-fix > * {
+          min-width: 0;
+        }
+
+        .keyword-detail-week-table-fix table {
+          width: 100%;
+          table-layout: fixed;
+        }
+
         .keyword-detail-week-table-fix table th:first-child,
         .keyword-detail-week-table-fix table td:first-child {
           white-space: nowrap !important;
           width: 180px;
           max-width: 180px;
         }
+
         .keyword-detail-week-table-fix table td:first-child {
           overflow: hidden;
           text-overflow: ellipsis;
