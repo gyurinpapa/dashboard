@@ -19,7 +19,13 @@ type SignupBody = {
   team?: string;
 };
 
-const FALLBACK_COMPANY_WORKSPACE_ID = "ea9cd922-7591-485e-83b4-e3393736c42b";
+type WorkspaceRow = {
+  id: string;
+  name?: string | null;
+  workspace_type?: string | null;
+  workspace_kind?: string | null;
+  company_id?: string | null;
+};
 
 function jsonError(status: number, message: string, extra?: Record<string, any>) {
   return NextResponse.json(
@@ -47,11 +53,6 @@ function getAdminClient() {
       persistSession: false,
     },
   });
-}
-
-function getCompanyWorkspaceId() {
-  const fromEnv = asString(process.env.COMPANY_WORKSPACE_ID);
-  return fromEnv || FALLBACK_COMPANY_WORKSPACE_ID;
 }
 
 function normalizeSignupType(v: string): SignupType | "" {
@@ -96,9 +97,15 @@ function looksLikeDuplicateEmail(message: string) {
 }
 
 async function resolveCompanyId(admin: any) {
+  const envCompanyId = asString(process.env.COMPANY_ID);
+  if (envCompanyId) {
+    return envCompanyId;
+  }
+
   const { data, error } = await admin
     .from("profiles")
     .select("company_id")
+    .not("company_id", "is", null)
     .limit(1);
 
   if (error) {
@@ -107,6 +114,102 @@ async function resolveCompanyId(admin: any) {
 
   const rows = (data ?? []) as Array<{ company_id: string | null }>;
   return asString(rows[0]?.company_id);
+}
+
+async function resolveCompanyWorkspace(admin: any, companyId: string) {
+  const EINVENTION_WORKSPACE_ID = "27b1556f-9d42-496f-bd7e-5a59ebee71d4";
+
+  const { data, error } = await admin
+    .from("workspaces")
+    .select("id,name,workspace_type,workspace_kind,company_id")
+    .eq("id", EINVENTION_WORKSPACE_ID)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`COMPANY_WORKSPACE_LOOKUP_FAILED:${error.message}`);
+  }
+
+  const row = (data ?? null) as WorkspaceRow | null;
+
+  if (!row?.id) {
+    throw new Error("COMPANY_WORKSPACE_NOT_FOUND");
+  }
+
+  if (asString(row.name) !== "Einvention") {
+    throw new Error("COMPANY_WORKSPACE_NOT_FOUND");
+  }
+
+  return {
+    workspaceId: row.id,
+    workspaceName: asString(row.name),
+  };
+}
+
+  // 1) 가장 우선: 회사명 Einvention workspace 찾기
+  const { data: byName, error: byNameError } = await admin
+    .from("workspaces")
+    .select("id,name,workspace_type,workspace_kind,company_id")
+    .eq("company_id", companyId)
+    .eq("name", "Einvention")
+    .limit(1);
+
+  if (byNameError) {
+    throw new Error(`COMPANY_WORKSPACE_LOOKUP_FAILED:${byNameError.message}`);
+  }
+
+  const nameRows = (byName ?? []) as WorkspaceRow[];
+  if (nameRows[0]?.id) {
+    return {
+      workspaceId: nameRows[0].id,
+      workspaceName: asString(nameRows[0].name),
+    };
+  }
+
+  // 2) fallback: company/company_workspace 계열 workspace 찾기
+  const { data: byType, error: byTypeError } = await admin
+    .from("workspaces")
+    .select("id,name,workspace_type,workspace_kind,company_id")
+    .eq("company_id", companyId)
+    .or("workspace_type.eq.company,workspace_type.eq.company_workspace,workspace_kind.eq.company,workspace_kind.eq.company_workspace")
+    .limit(10);
+
+  if (byTypeError) {
+    throw new Error(`COMPANY_WORKSPACE_LOOKUP_FAILED:${byTypeError.message}`);
+  }
+
+  const typeRows = (byType ?? []) as WorkspaceRow[];
+  const validCompanyWorkspace = typeRows.find(
+    (row) => asString(row.name) !== "Test - Legacy"
+  );
+
+  if (validCompanyWorkspace?.id) {
+    return {
+      workspaceId: validCompanyWorkspace.id,
+      workspaceName: asString(validCompanyWorkspace.name),
+    };
+  }
+
+  // 3) 마지막 fallback: 미분류 workspace
+  const { data: fallbackRows, error: fallbackError } = await admin
+    .from("workspaces")
+    .select("id,name,workspace_type,workspace_kind,company_id")
+    .eq("company_id", companyId)
+    .eq("name", "미분류")
+    .limit(1);
+
+  if (fallbackError) {
+    throw new Error(`COMPANY_WORKSPACE_LOOKUP_FAILED:${fallbackError.message}`);
+  }
+
+  const uncategorizedRows = (fallbackRows ?? []) as WorkspaceRow[];
+  if (uncategorizedRows[0]?.id) {
+    return {
+      workspaceId: uncategorizedRows[0].id,
+      workspaceName: asString(uncategorizedRows[0].name),
+    };
+  }
+
+  throw new Error("COMPANY_WORKSPACE_NOT_FOUND");
 }
 
 export async function POST(req: Request) {
@@ -164,11 +267,6 @@ export async function POST(req: Request) {
       return jsonError(400, "TEAM_REQUIRED");
     }
 
-    const companyWorkspaceId = getCompanyWorkspaceId();
-    if (!companyWorkspaceId) {
-      return jsonError(500, "COMPANY_WORKSPACE_ID_MISSING");
-    }
-
     const admin = getAdminClient();
 
     const companyId = await resolveCompanyId(admin);
@@ -176,6 +274,15 @@ export async function POST(req: Request) {
       return jsonError(500, "COMPANY_ID_MISSING", {
         detail:
           "profiles.company_id에서 기존 회사 값을 찾지 못했습니다. COMPANY_ID 환경변수를 설정하거나 기존 profiles 데이터를 확인하세요.",
+      });
+    }
+
+    const { workspaceId: companyWorkspaceId, workspaceName: companyWorkspaceName } =
+      await resolveCompanyWorkspace(admin, companyId);
+
+    if (!companyWorkspaceId) {
+      return jsonError(500, "COMPANY_WORKSPACE_ID_MISSING", {
+        detail: "Einvention 기본 workspace를 찾지 못했습니다.",
       });
     }
 
@@ -249,7 +356,7 @@ export async function POST(req: Request) {
 
       try {
         await admin.auth.admin.deleteUser(userId);
-        } catch {}
+      } catch {}
 
       return jsonError(500, "PROFILE_UPSERT_FAILED", {
         detail: profileError.message,
@@ -274,6 +381,7 @@ export async function POST(req: Request) {
         email,
         userId,
         companyWorkspaceId,
+        companyWorkspaceName,
         companyId,
         role,
         division: org.division,
@@ -303,6 +411,7 @@ export async function POST(req: Request) {
       user_id: userId,
       company_id: companyId,
       workspace_id: companyWorkspaceId,
+      workspace_name: companyWorkspaceName,
       role,
       name: fullName,
       email,
@@ -320,20 +429,33 @@ export async function POST(req: Request) {
         const admin = getAdminClient();
 
         try {
-            await admin.from("profiles").delete().eq("id", createdUserId);
+          await admin.from("profiles").delete().eq("id", createdUserId);
         } catch {}
 
         try {
-            await admin.auth.admin.deleteUser(createdUserId);
+          await admin.auth.admin.deleteUser(createdUserId);
         } catch {}
-        } catch {
+      } catch {
         // rollback best-effort
-        }
+      }
     }
 
     if (msg === "SUPABASE_ENV_MISSING") {
       return jsonError(500, "SUPABASE_ENV_MISSING", {
         detail: "NEXT_PUBLIC_SUPABASE_URL 또는 SUPABASE_SERVICE_ROLE_KEY가 없습니다.",
+      });
+    }
+
+    if (msg === "COMPANY_WORKSPACE_NOT_FOUND") {
+      return jsonError(500, "COMPANY_WORKSPACE_NOT_FOUND", {
+        detail:
+          "Einvention 기본 workspace(또는 미분류 fallback)를 찾지 못했습니다. workspaces 테이블 데이터를 확인하세요.",
+      });
+    }
+
+    if (String(msg).startsWith("COMPANY_WORKSPACE_LOOKUP_FAILED:")) {
+      return jsonError(500, "COMPANY_WORKSPACE_LOOKUP_FAILED", {
+        detail: String(msg).replace("COMPANY_WORKSPACE_LOOKUP_FAILED:", ""),
       });
     }
 
