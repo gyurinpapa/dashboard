@@ -288,9 +288,6 @@ export async function GET(req: Request) {
     let actorMembership: any = null;
 
     if (actorIsPlatformOwner) {
-      // ✅ platform_owner는 전체 workspace 멤버 조회 가능
-      // - workspace_id가 있으면 그 workspace의 내 membership 우선 사용
-      // - 없거나 해당 workspace membership이 없으면 첫 membership 사용
       if (workspace_id) {
         const found = await getMembershipForWorkspace(actorResult.user.id, workspace_id);
         if (found.error) {
@@ -360,9 +357,6 @@ export async function GET(req: Request) {
     }
 
     if (isTrueMaster) {
-      // ✅ true master는 전체 계정 조회 가능
-      // - workspace_id가 있으면 그 workspace에서의 내 membership 우선 사용
-      // - 없거나 해당 workspace 행이 없으면 첫 master membership 사용
       if (workspace_id) {
         const found = await getMembershipForWorkspace(actorResult.user.id, workspace_id);
         if (found.error) {
@@ -427,7 +421,6 @@ export async function GET(req: Request) {
       });
     }
 
-    // ✅ 일반 director / 일반 master(정책상 거의 없음) 는 기존 workspace 범위 유지
     if (workspace_id) {
       const found = await getMembershipForWorkspace(actorResult.user.id, workspace_id);
       if (found.error || !found.data) {
@@ -523,9 +516,6 @@ export async function PATCH(req: Request) {
     let actorMembership: any = null;
 
     if (actorIsPlatformOwner) {
-      // ✅ platform_owner는 어떤 workspace row도 수정 가능
-      // - 요청 workspace의 내 membership이 있으면 그 row 사용
-      // - 없으면 첫 membership 사용
       const actorMembershipResult = await getMembershipForWorkspace(
         actorResult.user.id,
         workspace_id
@@ -554,9 +544,6 @@ export async function PATCH(req: Request) {
         return jsonError(403, "MEMBERS_UPDATE_FORBIDDEN");
       }
     } else if (isTrueMaster) {
-      // ✅ true master는 어떤 workspace row도 수정 가능
-      // - 요청 workspace의 내 membership이 있으면 그 row 사용
-      // - 없으면 첫 master membership 사용
       const actorMembershipResult = await getMembershipForWorkspace(
         actorResult.user.id,
         workspace_id
@@ -604,10 +591,6 @@ export async function PATCH(req: Request) {
       return jsonError(400, "SELF_ROLE_CHANGE_BLOCKED");
     }
 
-    /**
-     * ✅ actor / target 이메일 조회
-     * profiles.email 기준으로 master 허용 여부를 판단
-     */
     const profileMap = await getProfilesByUserIds([
       asString(actorMembership.user_id),
       member_user_id,
@@ -621,9 +604,6 @@ export async function PATCH(req: Request) {
     const isActorOnlyMasterEmail = actorEmail === ONLY_MASTER_EMAIL;
     const isTargetOnlyMasterEmail = targetEmail === ONLY_MASTER_EMAIL;
 
-    /**
-     * ✅ director 권한 제한 유지
-     */
     if (!actorIsPlatformOwner && !isTrueMaster && actorMembership.role === "director") {
       if (!canDirectorEditTarget(targetMembership.role)) {
         return jsonError(403, "DIRECTOR_CANNOT_EDIT_MASTER_OR_DIRECTOR");
@@ -634,13 +614,6 @@ export async function PATCH(req: Request) {
       }
     }
 
-    /**
-     * ✅ master 단일 사용자 정책
-     *
-     * 1) gyurinpapakimdh@gmail.com 이외에는 어떤 경우에도 master 불가
-     * 2) gyurinpapakimdh@gmail.com 은 master에서 내려가면 안 됨
-     * 3) 현재 DB에 잘못 master가 들어간 다른 사용자는 non-master로만 변경 가능
-     */
     if (role === "master" && !isTargetOnlyMasterEmail) {
       return jsonError(403, "ONLY_SPECIFIC_EMAIL_CAN_BE_MASTER", {
         allowed_master_email: ONLY_MASTER_EMAIL,
@@ -653,14 +626,6 @@ export async function PATCH(req: Request) {
       });
     }
 
-    /**
-     * ✅ master 변경은 더 엄격하게:
-     * 오직 gyurinpapakimdh@gmail.com 본인이 master 권한을 가진 상태에서만
-     * 다른 사용자 정리/수정 가능하도록 제한
-     *
-     * - target이 현재 master인 경우(잘못 master 포함) 일반 director는 손대지 못함
-     * - master 관련 상태를 건드리는 변경은 true master만 가능
-     */
     const isTargetCurrentlyMaster = targetMembership.role === "master";
     const isMasterSensitiveChange = isTargetCurrentlyMaster || role === "master";
 
@@ -703,6 +668,180 @@ export async function PATCH(req: Request) {
     return NextResponse.json({
       ok: true,
       member,
+    });
+  } catch (e: any) {
+    return jsonError(500, "INTERNAL_SERVER_ERROR", { detail: e?.message });
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const actorResult = await getActor(req);
+    if (!actorResult.user) {
+      return jsonError(401, actorResult.error || "UNAUTHORIZED");
+    }
+
+    const body = await req.json().catch(() => ({}));
+
+    const workspace_id = asString(body.workspace_id);
+    const member_user_id = asString(body.member_user_id);
+
+    if (!workspace_id) return jsonError(400, "workspace_id is required");
+    if (!member_user_id) return jsonError(400, "member_user_id is required");
+
+    const actorIsPlatformOwner = await isPlatformOwner(actorResult.user.id);
+
+    const trueMasterCheck = await isTrueMasterUser(actorResult.user.id);
+    if (!trueMasterCheck.ok) {
+      return jsonError(500, "FAILED_TO_RESOLVE_TRUE_MASTER", {
+        detail: (trueMasterCheck as any)?.error?.message ?? null,
+      });
+    }
+
+    const isTrueMaster = trueMasterCheck.isTrueMaster;
+
+    let actorMembership: any = null;
+
+    if (actorIsPlatformOwner) {
+      const actorMembershipResult = await getMembershipForWorkspace(
+        actorResult.user.id,
+        workspace_id
+      );
+
+      if (actorMembershipResult.error) {
+        return jsonError(500, "FAILED_TO_RESOLVE_ACTOR_MEMBERSHIP", {
+          detail: actorMembershipResult.error.message,
+        });
+      }
+
+      if (actorMembershipResult.data) {
+        actorMembership = actorMembershipResult.data;
+      } else {
+        const firstMembership = await getFirstAccessibleMembership(actorResult.user.id);
+        if (firstMembership.error) {
+          return jsonError(500, "FAILED_TO_RESOLVE_ACTOR_MEMBERSHIP", {
+            detail: firstMembership.error.message,
+          });
+        }
+        actorMembership =
+          firstMembership.data ?? trueMasterCheck.masterMembership ?? null;
+      }
+
+      if (!actorMembership) {
+        return jsonError(403, "MEMBERS_DELETE_FORBIDDEN");
+      }
+    } else if (isTrueMaster) {
+      const actorMembershipResult = await getMembershipForWorkspace(
+        actorResult.user.id,
+        workspace_id
+      );
+
+      if (actorMembershipResult.error) {
+        return jsonError(500, "FAILED_TO_RESOLVE_ACTOR_MEMBERSHIP", {
+          detail: actorMembershipResult.error.message,
+        });
+      }
+
+      actorMembership =
+        actorMembershipResult.data ?? trueMasterCheck.masterMembership ?? null;
+
+      if (!actorMembership || !canAccess(actorMembership?.role)) {
+        return jsonError(403, "MEMBERS_DELETE_FORBIDDEN");
+      }
+    } else {
+      const actorMembershipResult = await getMembershipForWorkspace(
+        actorResult.user.id,
+        workspace_id
+      );
+      if (actorMembershipResult.error || !actorMembershipResult.data) {
+        return jsonError(403, "WORKSPACE_ACCESS_DENIED");
+      }
+
+      actorMembership = actorMembershipResult.data;
+
+      if (!canAccess(actorMembership?.role)) {
+        return jsonError(403, "MEMBERS_DELETE_FORBIDDEN");
+      }
+    }
+
+    const targetResult = await getMembershipForWorkspace(member_user_id, workspace_id);
+    if (targetResult.error || !targetResult.data) {
+      return jsonError(404, "TARGET_MEMBER_NOT_FOUND");
+    }
+
+    const targetMembership = targetResult.data;
+
+    if (
+      asString(actorMembership.user_id) === member_user_id &&
+      asString(targetMembership.workspace_id) === asString(workspace_id)
+    ) {
+      return jsonError(400, "SELF_MEMBER_REMOVE_BLOCKED");
+    }
+
+    const profileMap = await getProfilesByUserIds([
+      asString(actorMembership.user_id),
+      member_user_id,
+    ]);
+
+    const actorEmail = normalizeEmail(
+      profileMap.get(asString(actorMembership.user_id))?.email
+    );
+    const targetEmail = normalizeEmail(profileMap.get(member_user_id)?.email);
+
+    const isActorOnlyMasterEmail = actorEmail === ONLY_MASTER_EMAIL;
+    const isTargetOnlyMasterEmail = targetEmail === ONLY_MASTER_EMAIL;
+
+    /**
+     * ✅ only master 이메일 계정은 workspace에서 제거 불가
+     */
+    if (isTargetOnlyMasterEmail) {
+      return jsonError(403, "ALLOWED_MASTER_CANNOT_BE_REMOVED", {
+        allowed_master_email: ONLY_MASTER_EMAIL,
+      });
+    }
+
+    /**
+     * ✅ director는 master/director 제거 불가
+     */
+    if (!actorIsPlatformOwner && !isTrueMaster && actorMembership.role === "director") {
+      if (!canDirectorEditTarget(targetMembership.role)) {
+        return jsonError(403, "DIRECTOR_CANNOT_REMOVE_MASTER_OR_DIRECTOR");
+      }
+    }
+
+    /**
+     * ✅ master 상태가 얽힌 제거는 true master만 가능
+     * - 잘못 들어간 master 정리도 true master 또는 platform_owner만
+     */
+    const isMasterSensitiveDelete = targetMembership.role === "master";
+
+    if (isMasterSensitiveDelete) {
+      if (
+        !actorIsPlatformOwner &&
+        (actorMembership.role !== "master" || !isActorOnlyMasterEmail || !isTrueMaster)
+      ) {
+        return jsonError(403, "ONLY_TRUE_MASTER_CAN_REMOVE_MASTER_STATE_MEMBER", {
+          allowed_master_email: ONLY_MASTER_EMAIL,
+        });
+      }
+    }
+
+    const { error: deleteErr } = await supabaseAdmin
+      .from("workspace_members")
+      .delete()
+      .eq("workspace_id", workspace_id)
+      .eq("user_id", member_user_id);
+
+    if (deleteErr) {
+      return jsonError(500, "FAILED_TO_DELETE_WORKSPACE_MEMBER", {
+        detail: deleteErr.message,
+      });
+    }
+
+    return NextResponse.json({
+      ok: true,
+      workspace_id,
+      member_user_id,
     });
   } catch (e: any) {
     return jsonError(500, "INTERNAL_SERVER_ERROR", { detail: e?.message });

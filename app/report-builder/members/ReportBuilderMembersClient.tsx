@@ -48,6 +48,13 @@ type ApiPatchResponse = {
   error?: string;
 };
 
+type ApiDeleteResponse = {
+  ok: boolean;
+  workspace_id?: string;
+  member_user_id?: string;
+  error?: string;
+};
+
 const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
 
 const NON_MASTER_ROLE_OPTIONS = ["director", "admin", "staff", "client"] as const;
@@ -120,6 +127,54 @@ function allowedRoleOptionsForTarget(
   return [];
 }
 
+function parseTeamNumber(name?: string | null) {
+  const raw = String(name ?? "").trim();
+  const m = raw.match(/^(\d+)\s*팀$/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) ? n : null;
+}
+
+function workspaceSortTuple(name?: string | null): [number, number, string] {
+  const raw = String(name ?? "").trim();
+
+  const teamNo = parseTeamNumber(raw);
+  if (teamNo != null) {
+    return [0, -teamNo, raw];
+  }
+
+  if (raw === "Einvention") {
+    return [1, 0, raw];
+  }
+
+  if (raw === "미분류") {
+    return [2, 0, raw];
+  }
+
+  return [3, 0, raw];
+}
+
+function compareMembersForDisplay(a: WorkspaceMember, b: WorkspaceMember) {
+  const [aGroup, aTeamOrder, aName] = workspaceSortTuple(a.workspace_name);
+  const [bGroup, bTeamOrder, bName] = workspaceSortTuple(b.workspace_name);
+
+  if (aGroup !== bGroup) return aGroup - bGroup;
+  if (aTeamOrder !== bTeamOrder) return aTeamOrder - bTeamOrder;
+
+  if (aGroup === 3) {
+    const workspaceCmp = bName.localeCompare(aName, "ko");
+    if (workspaceCmp !== 0) return workspaceCmp;
+  } else {
+    const workspaceCmp = aName.localeCompare(bName, "ko");
+    if (workspaceCmp !== 0) return workspaceCmp;
+  }
+
+  const displayCmp = displayNameOf(a).localeCompare(displayNameOf(b), "ko");
+  if (displayCmp !== 0) return displayCmp;
+
+  return a.user_id.localeCompare(b.user_id, "ko");
+}
+
 async function getAccessToken(): Promise<string | null> {
   try {
     const { data } = await supabase.auth.getSession();
@@ -152,6 +207,7 @@ export default function ReportBuilderMembersClient() {
 
   const [loading, setLoading] = useState(true);
   const [savingKey, setSavingKey] = useState<string>("");
+  const [removingKey, setRemovingKey] = useState<string>("");
   const [error, setError] = useState<string>("");
 
   const [workspaceId, setWorkspaceId] = useState<string>(workspaceIdFromQuery);
@@ -305,6 +361,10 @@ export default function ReportBuilderMembersClient() {
     [me?.role, me?.email]
   );
 
+  const sortedMembers = useMemo(() => {
+    return [...members].sort(compareMembersForDisplay);
+  }, [members]);
+
   async function saveMember(member: WorkspaceMember) {
     const memberKey = memberKeyOf(member);
     const draft = drafts[memberKey];
@@ -356,6 +416,54 @@ export default function ReportBuilderMembersClient() {
     }
   }
 
+  async function removeMember(member: WorkspaceMember) {
+    const memberKey = memberKeyOf(member);
+
+    if (!member.workspace_id || !member.user_id) return;
+
+    const confirmed = window.confirm(
+      `정말 "${displayNameOf(member)}" 멤버를 현재 workspace에서 제거하시겠습니까?\n\n계정 자체는 삭제되지 않습니다.`
+    );
+    if (!confirmed) return;
+
+    setRemovingKey(memberKey);
+    setError("");
+
+    try {
+      const res = await authFetch("/api/workspace-members", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workspace_id: member.workspace_id,
+          member_user_id: member.user_id,
+        }),
+      });
+
+      const json = (await res.json().catch(() => null)) as ApiDeleteResponse | null;
+
+      if (!res.ok || !json?.ok) {
+        alert(json?.error || "멤버를 제거하지 못했습니다.");
+        return;
+      }
+
+      setMembers((prev) =>
+        prev.filter((m) => memberKeyOf(m) !== memberKey)
+      );
+
+      setDrafts((prev) => {
+        const next = { ...prev };
+        delete next[memberKey];
+        return next;
+      });
+
+      alert("멤버가 현재 workspace에서 제거되었습니다.");
+    } catch (e: any) {
+      alert(e?.message || "멤버 제거 중 오류가 발생했습니다.");
+    } finally {
+      setRemovingKey("");
+    }
+  }
+
   function updateDraft(
     member: WorkspaceMember,
     key: "role" | "division" | "department" | "team",
@@ -389,7 +497,7 @@ export default function ReportBuilderMembersClient() {
     <div style={{ minHeight: "100vh", background: "#f7f7f8", padding: 24 }}>
       <div
         style={{
-          maxWidth: 1280,
+          maxWidth: 1400,
           margin: "0 auto",
           display: "flex",
           flexDirection: "column",
@@ -449,6 +557,7 @@ export default function ReportBuilderMembersClient() {
                   background: "#fff",
                   fontWeight: 700,
                   cursor: "pointer",
+                  whiteSpace: "nowrap",
                 }}
               >
                 새로고침
@@ -465,6 +574,7 @@ export default function ReportBuilderMembersClient() {
                   color: "#fff",
                   fontWeight: 800,
                   cursor: "pointer",
+                  whiteSpace: "nowrap",
                 }}
               >
                 report-builder로 돌아가기
@@ -618,7 +728,7 @@ export default function ReportBuilderMembersClient() {
                   color: "#111827",
                 }}
               >
-                멤버 목록 ({members.length}명)
+                멤버 목록 ({sortedMembers.length}명)
               </div>
 
               <div style={{ overflowX: "auto" }}>
@@ -626,9 +736,24 @@ export default function ReportBuilderMembersClient() {
                   style={{
                     width: "100%",
                     borderCollapse: "collapse",
-                    minWidth: isTrueMasterViewer ? 1260 : 1100,
+                    minWidth: isTrueMasterViewer ? 1470 : 1270,
+                    tableLayout: "fixed",
                   }}
                 >
+                  <colgroup>
+                    {isTrueMasterViewer ? (
+                      <col style={{ width: 260 }} />
+                    ) : null}
+                    <col style={{ width: 140 }} />
+                    <col style={{ width: 260 }} />
+                    <col style={{ width: 280 }} />
+                    <col style={{ width: 120 }} />
+                    <col style={{ width: 180 }} />
+                    <col style={{ width: 180 }} />
+                    <col style={{ width: 150 }} />
+                    <col style={{ width: 180 }} />
+                  </colgroup>
+
                   <thead>
                     <tr style={{ background: "#f9fafb" }}>
                       {isTrueMasterViewer ? <th style={thStyle}>workspace</th> : null}
@@ -639,12 +764,12 @@ export default function ReportBuilderMembersClient() {
                       <th style={thStyle}>division</th>
                       <th style={thStyle}>department</th>
                       <th style={thStyle}>team</th>
-                      <th style={thStyle}>저장</th>
+                      <th style={thStyle}>작업</th>
                     </tr>
                   </thead>
 
                   <tbody>
-                    {members.map((member) => {
+                    {sortedMembers.map((member) => {
                       const memberKey = memberKeyOf(member);
                       const isSelf = me?.user_id === member.user_id;
                       const editable = canEditTarget(me?.role, member.role, isSelf);
@@ -661,46 +786,62 @@ export default function ReportBuilderMembersClient() {
                         team: member.team || "",
                       };
 
+                      const removable =
+                        editable &&
+                        !isSelf &&
+                        !isOnlyMasterEmail(member.email) &&
+                        savingKey !== memberKey;
+
                       return (
                         <tr key={memberKey}>
                           {isTrueMasterViewer ? (
                             <td style={tdStyle}>
-                              <div style={{ fontWeight: 700 }}>
-                                {member.workspace_name || "-"}
-                              </div>
-                              <div
-                                style={{
-                                  fontSize: 12,
-                                  color: "#6b7280",
-                                  marginTop: 2,
-                                  fontFamily: "monospace",
-                                }}
-                              >
-                                {member.workspace_id}
+                              <div style={singleLineCellStyle}>
+                                <span style={{ fontWeight: 700, flexShrink: 0 }}>
+                                  {member.workspace_name || "-"}
+                                </span>
+                                <span
+                                  style={{
+                                    ...monoInlineStyle,
+                                    minWidth: 0,
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                  }}
+                                  title={member.workspace_id}
+                                >
+                                  {member.workspace_id}
+                                </span>
                               </div>
                             </td>
                           ) : null}
 
-                          <td style={tdStyle}>{displayNameOf(member)}</td>
-                          <td style={tdStyle}>{member.email || "-"}</td>
                           <td style={tdStyle}>
-                            <span
-                              style={{
-                                fontFamily: "monospace",
-                                fontSize: 12,
-                                color: "#374151",
-                              }}
+                            <div style={singleLineCellStyle} title={displayNameOf(member)}>
+                              {displayNameOf(member)}
+                            </div>
+                          </td>
+
+                          <td style={tdStyle}>
+                            <div style={singleLineCellStyle} title={member.email || "-"}>
+                              {member.email || "-"}
+                            </div>
+                          </td>
+
+                          <td style={tdStyle}>
+                            <div
+                              style={{ ...singleLineCellStyle, ...monoInlineStyle }}
+                              title={member.user_id}
                             >
                               {member.user_id}
-                            </span>
+                            </div>
                           </td>
 
                           <td style={tdStyle}>
                             <select
                               value={draft.role}
-                              disabled={!editable}
+                              disabled={!editable || removingKey === memberKey}
                               onChange={(e) => updateDraft(member, "role", e.target.value)}
-                              style={inputStyle(!editable)}
+                              style={inputStyle(!editable || removingKey === memberKey)}
                             >
                               {editable ? (
                                 roleOptions.map((r) => (
@@ -717,76 +858,118 @@ export default function ReportBuilderMembersClient() {
                           <td style={tdStyle}>
                             <input
                               value={draft.division}
-                              disabled={!editable}
+                              disabled={!editable || removingKey === memberKey}
                               onChange={(e) =>
                                 updateDraft(member, "division", e.target.value)
                               }
-                              style={inputStyle(!editable)}
+                              style={inputStyle(!editable || removingKey === memberKey)}
                               placeholder="-"
+                              title={draft.division || "-"}
                             />
                           </td>
 
                           <td style={tdStyle}>
                             <input
                               value={draft.department}
-                              disabled={!editable}
+                              disabled={!editable || removingKey === memberKey}
                               onChange={(e) =>
                                 updateDraft(member, "department", e.target.value)
                               }
-                              style={inputStyle(!editable)}
+                              style={inputStyle(!editable || removingKey === memberKey)}
                               placeholder="-"
+                              title={draft.department || "-"}
                             />
                           </td>
 
                           <td style={tdStyle}>
                             <input
                               value={draft.team}
-                              disabled={!editable}
+                              disabled={!editable || removingKey === memberKey}
                               onChange={(e) => updateDraft(member, "team", e.target.value)}
-                              style={inputStyle(!editable)}
+                              style={inputStyle(!editable || removingKey === memberKey)}
                               placeholder="-"
+                              title={draft.team || "-"}
                             />
                           </td>
 
                           <td style={tdStyle}>
-                            <button
-                              type="button"
-                              disabled={!editable || savingKey === memberKey}
-                              onClick={() => saveMember(member)}
-                              style={{
-                                height: 38,
-                                padding: "0 14px",
-                                borderRadius: 10,
-                                border: "1px solid #f59e0b",
-                                background:
-                                  !editable || savingKey === memberKey
-                                    ? "#f3f4f6"
-                                    : "#f59e0b",
-                                color:
-                                  !editable || savingKey === memberKey
-                                    ? "#9ca3af"
-                                    : "#fff",
-                                fontWeight: 800,
-                                cursor:
-                                  !editable || savingKey === memberKey
-                                    ? "default"
-                                    : "pointer",
-                              }}
-                            >
-                              {savingKey === memberKey
-                                ? "저장 중..."
-                                : editable
-                                  ? "저장"
+                            <div style={{ display: "flex", gap: 8 }}>
+                              <button
+                                type="button"
+                                disabled={!editable || savingKey === memberKey || removingKey === memberKey}
+                                onClick={() => saveMember(member)}
+                                style={{
+                                  height: 38,
+                                  minWidth: 76,
+                                  padding: "0 14px",
+                                  borderRadius: 10,
+                                  border: "1px solid #f59e0b",
+                                  background:
+                                    !editable || savingKey === memberKey || removingKey === memberKey
+                                      ? "#f3f4f6"
+                                      : "#f59e0b",
+                                  color:
+                                    !editable || savingKey === memberKey || removingKey === memberKey
+                                      ? "#9ca3af"
+                                      : "#fff",
+                                  fontWeight: 800,
+                                  cursor:
+                                    !editable || savingKey === memberKey || removingKey === memberKey
+                                      ? "default"
+                                      : "pointer",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {savingKey === memberKey
+                                  ? "저장 중..."
+                                  : editable
+                                    ? "저장"
+                                    : isSelf
+                                      ? "본인"
+                                      : "권한 없음"}
+                              </button>
+
+                              <button
+                                type="button"
+                                disabled={!removable || removingKey === memberKey}
+                                onClick={() => removeMember(member)}
+                                style={{
+                                  height: 38,
+                                  minWidth: 76,
+                                  padding: "0 14px",
+                                  borderRadius: 10,
+                                  border: "1px solid #ef4444",
+                                  background:
+                                    !removable || removingKey === memberKey
+                                      ? "#f3f4f6"
+                                      : "#ef4444",
+                                  color:
+                                    !removable || removingKey === memberKey
+                                      ? "#9ca3af"
+                                      : "#fff",
+                                  fontWeight: 800,
+                                  cursor:
+                                    !removable || removingKey === memberKey
+                                      ? "default"
+                                      : "pointer",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {removingKey === memberKey
+                                  ? "제거 중..."
                                   : isSelf
                                     ? "본인"
-                                    : "권한 없음"}
-                            </button>
+                                    : isOnlyMasterEmail(member.email)
+                                      ? "제거 불가"
+                                      : "제거"}
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
                     })}
 
-                    {members.length === 0 && (
+                    {sortedMembers.length === 0 && (
                       <tr>
                         <td
                           colSpan={isTrueMasterViewer ? 9 : 8}
@@ -827,6 +1010,23 @@ const tdStyle: React.CSSProperties = {
   fontSize: 14,
   color: "#111827",
   verticalAlign: "middle",
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+};
+
+const singleLineCellStyle: React.CSSProperties = {
+  display: "block",
+  width: "100%",
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+};
+
+const monoInlineStyle: React.CSSProperties = {
+  fontFamily:
+    'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+  fontSize: 12,
+  color: "#374151",
 };
 
 function inputStyle(disabled?: boolean): React.CSSProperties {
@@ -839,5 +1039,8 @@ function inputStyle(disabled?: boolean): React.CSSProperties {
     outline: "none",
     background: disabled ? "#f9fafb" : "#fff",
     color: disabled ? "#6b7280" : "#111827",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
   };
 }
