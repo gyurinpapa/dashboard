@@ -139,6 +139,10 @@ async function resolveCompanyWorkspace(admin: any, companyId: string) {
     throw new Error("COMPANY_WORKSPACE_NOT_FOUND");
   }
 
+  if (asString(row.company_id) !== asString(companyId)) {
+    throw new Error("COMPANY_WORKSPACE_NOT_FOUND");
+  }
+
   return {
     workspaceId: row.id,
     workspaceName: asString(row.name),
