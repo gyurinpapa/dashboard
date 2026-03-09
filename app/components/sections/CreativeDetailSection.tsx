@@ -322,8 +322,8 @@ type CreativePerf = {
   cost: number;
   conversions: number;
   revenue: number;
-  ctr: number; // 0~1
-  roas: number; // 0~1
+  ctr: number;
+  roas: number;
 };
 
 export default function CreativeDetailSection({ rows }: Props) {
@@ -339,8 +339,6 @@ export default function CreativeDetailSection({ rows }: Props) {
 
   /** =========================
    * ✅ Performance aggregation (전체 rows 기준)
-   * - TOP badge는 "탭 범위(월/주/기기/채널 적용된 rows)"에서 계산하는 게 자연스럽다
-   * - 지금 props.rows 자체가 이미 필터 적용된 상태로 넘어온 구조임
    * ========================= */
   const perfList: CreativePerf[] = useMemo(() => {
     const map = new Map<string, CreativePerf>();
@@ -396,7 +394,6 @@ export default function CreativeDetailSection({ rows }: Props) {
         return bv - av;
       });
 
-      // 성과 0만 잔뜩인 경우 방지: 0보다 큰 것만
       const picked = sorted.filter((x) => safeNum((x as any)[key]) > 0).slice(0, 3);
 
       for (const it of picked) {
@@ -431,7 +428,7 @@ export default function CreativeDetailSection({ rows }: Props) {
     return getCreativePreviewUrl(sampleRow);
   }, [rows, selectedCreative]);
 
-  // ✅ "리스트 순서대로" 5개 썸네일(선택 기준 다음 5개, 부족하면 앞에서 채움)
+  // ✅ "리스트 순서대로" 5개 썸네일
   const sideThumbs = useMemo(() => {
     if (!creatives.length) return [] as { creative: string; url: string }[];
 
@@ -439,7 +436,9 @@ export default function CreativeDetailSection({ rows }: Props) {
     const start = idx >= 0 ? idx + 1 : 0;
 
     const picked: string[] = [];
-    for (let i = start; i < creatives.length && picked.length < 5; i++) picked.push(creatives[i]);
+    for (let i = start; i < creatives.length && picked.length < 5; i++) {
+      picked.push(creatives[i]);
+    }
 
     for (let i = 0; i < creatives.length && picked.length < 5; i++) {
       const k = creatives[i];
@@ -457,7 +456,6 @@ export default function CreativeDetailSection({ rows }: Props) {
       .filter((x) => x.url);
   }, [creatives, selectedCreative, rows]);
 
-  // ✅ 여기서부터는 절대 안 터지게 safeCall로 감싼다
   const totals = useMemo(
     () =>
       safeCall(() => summarize(filteredRows as any), {
@@ -523,132 +521,20 @@ export default function CreativeDetailSection({ rows }: Props) {
   );
 
   return (
-    <section className="w-full">
+    <section className="w-full min-w-0">
       <h2 className="text-xl font-semibold">소재 상세</h2>
 
-      {/* ✅ 최상단: 선택 소재(좌측) + 5개 흑백 썸네일(우측) */}
-      <section className="mt-4 rounded-2xl border border-gray-200 bg-white p-6">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <div className="font-semibold">선택 소재</div>
-
-            {/* ✅ 선택 소재 TOP 배지 */}
-            {selectedBadges.length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {selectedBadges.map((b) => (
-                  <BadgePill key={b} k={b} />
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="text-xs text-gray-500">
-            {selectedCreative ? `선택: ${selectedCreative}` : "선택 없음"}
-          </div>
-        </div>
-
-        {!selectedCreative ? (
-          <div className="mt-3 text-sm text-gray-500">
-            차트/표에서 소재를 클릭하면 이미지가 표시됩니다.
-          </div>
-        ) : (
-          <div className="mt-4 grid grid-cols-1 gap-5 lg:grid-cols-[1fr_280px]">
-            {/* LEFT: 메인 프리뷰 (테두리 제거 + 중앙 정렬) */}
-            <div className="rounded-2xl bg-white h-[420px] flex items-center justify-center overflow-hidden">
-              {selectedPreviewUrl ? (
-                <img
-                  src={selectedPreviewUrl}
-                  alt={selectedCreative}
-                  className="max-w-[680px] max-h-[420px] object-contain rounded-xl"
-                  loading="lazy"
-                />
-              ) : (
-                <div className="text-sm text-gray-500 p-4">
-                  imagePath(또는 썸네일 URL) 데이터가 없어 이미지를 표시할 수 없습니다.
-                </div>
-              )}
-            </div>
-
-            {/* RIGHT: 리스트 순서 기반 5썸네일 (흑백) + TOP 배지 */}
-            <div className="flex flex-col gap-3">
-              <div className="text-xs font-semibold text-gray-600">다음 소재 미리보기</div>
-
-              {sideThumbs.length === 0 ? (
-                <div className="rounded-xl border bg-gray-50 p-4 text-xs text-gray-600">
-                  표시할 썸네일이 없습니다. (thumbnail/imagePath 매핑 확인)
-                </div>
-              ) : (
-                sideThumbs.map((t) => {
-                  const badges = badgeMap.get(t.creative) ?? [];
-                  return (
-                    <button
-                      key={t.creative}
-                      type="button"
-                      onClick={() => setSelectedCreative(t.creative)}
-                      className={[
-                        "w-full rounded-xl border bg-white p-2 text-left transition",
-                        "hover:border-orange-300 hover:bg-orange-50",
-                      ].join(" ")}
-                      title={t.creative}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="relative w-[92px] h-[64px] rounded-lg overflow-hidden border bg-white flex items-center justify-center">
-                          <img
-                            src={t.url}
-                            alt={t.creative}
-                            className={[
-                              "w-full h-full object-cover grayscale opacity-80",
-                              "transition hover:grayscale-0 hover:opacity-100",
-                            ].join(" ")}
-                            loading="lazy"
-                          />
-
-                        </div>
-
-                        <div className="min-w-0 flex-1">
-                          {/* ✅ 제목을 위로 (한 줄 더 확보) */}
-                          <div className="text-xs font-semibold text-gray-900 leading-4 break-words line-clamp-2">
-                            {t.creative}
-                          </div>
-
-                          {/* ✅ 뱃지는 아래 줄 */}
-                          {badges.length > 0 && (
-                            <div className="mt-1 flex flex-wrap gap-1">
-                              {badges.slice(0, 3).map((b) => (
-                                <span
-                                  key={b}
-                                  className={[
-                                    "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                                    BADGE_META[b].className,
-                                  ].join(" ")}
-                                >
-                                  {BADGE_META[b].label}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        )}
-      </section>
-
-      <div className="mt-6 grid grid-cols-1 items-start gap-6 lg:grid-cols-[360px_1fr]">
+      <div className="mt-4 grid grid-cols-1 items-start gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
         {/* LEFT: 소재 리스트 */}
-        <aside className="rounded-2xl border border-gray-200 bg-white p-4 flex flex-col sticky top-24 max-h-[calc(100vh-6rem)]">
-          <div className="flex items-center justify-between">
+        <aside className="min-w-0 rounded-2xl border border-gray-200 bg-white p-4 lg:sticky lg:top-24 lg:max-h-[calc(100vh-6rem)] lg:overflow-hidden">
+          <div className="flex items-center justify-between gap-3">
             <div className="text-sm font-semibold">소재 리스트</div>
-            <div className="text-xs text-gray-500">
+            <div className="min-w-0 truncate text-xs text-gray-500">
               {selectedCreative ? `선택: ${selectedCreative}` : "선택 없음"}
             </div>
           </div>
 
-          <div className="mt-3 flex-1 min-h-0 overflow-auto pr-1">
+          <div className="mt-3 lg:max-h-[calc(100vh-14rem)] overflow-auto pr-1">
             <div className="flex flex-col gap-2">
               {creatives.length === 0 ? (
                 <div className="rounded-xl bg-gray-50 p-4 text-sm text-gray-600">
@@ -665,32 +551,37 @@ export default function CreativeDetailSection({ rows }: Props) {
                       type="button"
                       onClick={() => setSelectedCreative(k)}
                       className={[
-                        "w-full rounded-xl border px-3 py-2 text-left text-sm font-semibold transition",
-                        "flex items-center justify-between gap-3",
+                        "block w-full rounded-xl border px-3 py-2 text-left text-sm font-semibold transition",
+                        "overflow-hidden text-ellipsis whitespace-nowrap",
                         active
                           ? "bg-orange-700 text-white border-orange-700"
                           : "bg-white text-gray-900 border-gray-200 hover:bg-orange-50 hover:border-orange-200",
                       ].join(" ")}
                       title={k}
                     >
-                      <span className="truncate">{k}</span>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="truncate">{k}</span>
 
-                      {/* ✅ TOP 배지 (최대 2개만) */}
-                      {badges.length > 0 && (
-                        <span className="flex shrink-0 gap-1">
-                          {badges.slice(0, 2).map((b) => (
-                            <span
-                              key={b}
-                              className={[
-                                "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold",
-                                active ? "bg-white/20 text-white" : BADGE_META[b].className,
-                              ].join(" ")}
-                            >
-                              {active ? `TOP ${b === "ctr" ? "CTR" : b === "roas" ? "ROAS" : "전환"}` : BADGE_META[b].label}
-                            </span>
-                          ))}
-                        </span>
-                      )}
+                        {badges.length > 0 && (
+                          <span className="flex shrink-0 gap-1">
+                            {badges.slice(0, 2).map((b) => (
+                              <span
+                                key={b}
+                                className={[
+                                  "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold",
+                                  active ? "bg-white/20 text-white" : BADGE_META[b].className,
+                                ].join(" ")}
+                              >
+                                {active
+                                  ? `TOP ${
+                                      b === "ctr" ? "CTR" : b === "roas" ? "ROAS" : "전환"
+                                    }`
+                                  : BADGE_META[b].label}
+                              </span>
+                            ))}
+                          </span>
+                        )}
+                      </div>
                     </button>
                   );
                 })
@@ -707,13 +598,115 @@ export default function CreativeDetailSection({ rows }: Props) {
         </aside>
 
         {/* RIGHT */}
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
+          {/* 선택 소재 카드 */}
+          <section className="min-w-0 rounded-2xl border border-gray-200 bg-white p-6">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0 flex items-center gap-2">
+                <div className="font-semibold">선택 소재</div>
+
+                {selectedBadges.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {selectedBadges.map((b) => (
+                      <BadgePill key={b} k={b} />
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="min-w-0 truncate text-xs text-gray-500">
+                {selectedCreative ? `선택: ${selectedCreative}` : "선택 없음"}
+              </div>
+            </div>
+
+            {!selectedCreative ? (
+              <div className="mt-3 text-sm text-gray-500">
+                차트/표에서 소재를 클릭하면 이미지가 표시됩니다.
+              </div>
+            ) : (
+              <div className="mt-4 grid min-w-0 grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+                {/* LEFT: 메인 프리뷰 */}
+                <div className="min-w-0 rounded-2xl bg-white h-[420px] flex items-center justify-center overflow-hidden">
+                  {selectedPreviewUrl ? (
+                    <img
+                      src={selectedPreviewUrl}
+                      alt={selectedCreative}
+                      className="max-w-[680px] max-h-[420px] object-contain rounded-xl"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="text-sm text-gray-500 p-4">
+                      imagePath(또는 썸네일 URL) 데이터가 없어 이미지를 표시할 수 없습니다.
+                    </div>
+                  )}
+                </div>
+
+                {/* RIGHT: 다음 소재 미리보기 */}
+                <div className="min-w-0 flex flex-col gap-3">
+                  <div className="text-xs font-semibold text-gray-600">다음 소재 미리보기</div>
+
+                  {sideThumbs.length === 0 ? (
+                    <div className="rounded-xl border bg-gray-50 p-4 text-xs text-gray-600">
+                      표시할 썸네일이 없습니다. (thumbnail/imagePath 매핑 확인)
+                    </div>
+                  ) : (
+                    sideThumbs.map((t) => {
+                      const badges = badgeMap.get(t.creative) ?? [];
+                      return (
+                        <button
+                          key={t.creative}
+                          type="button"
+                          onClick={() => setSelectedCreative(t.creative)}
+                          className="w-full rounded-xl border bg-white p-2 text-left transition hover:border-orange-300 hover:bg-orange-50"
+                          title={t.creative}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="relative w-[92px] h-[64px] rounded-lg overflow-hidden border bg-white flex items-center justify-center">
+                              <img
+                                src={t.url}
+                                alt={t.creative}
+                                className="w-full h-full object-cover grayscale opacity-80 transition hover:grayscale-0 hover:opacity-100"
+                                loading="lazy"
+                              />
+                            </div>
+
+                            <div className="min-w-0 flex-1">
+                              <div className="text-xs font-semibold text-gray-900 leading-4 break-words line-clamp-2">
+                                {t.creative}
+                              </div>
+
+                              {badges.length > 0 && (
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                  {badges.slice(0, 3).map((b) => (
+                                    <span
+                                      key={b}
+                                      className={[
+                                        "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                                        BADGE_META[b].className,
+                                      ].join(" ")}
+                                    >
+                                      {BADGE_META[b].label}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
+          </section>
+
           {/* 인사이트 */}
-          <section className="rounded-2xl border border-gray-200 bg-white p-6">
+          <section className="min-w-0 rounded-2xl border border-gray-200 bg-white p-6">
             <div className="flex items-start justify-between gap-4">
-              <div>
+              <div className="min-w-0">
                 <h3 className="text-base font-semibold">{insight.title}</h3>
-                <div className="mt-1 text-xs text-gray-500">
+                <div className="mt-1 truncate text-xs text-gray-500">
                   {selectedCreative ? `소재: ${selectedCreative}` : "소재를 선택하세요"}
                 </div>
               </div>
@@ -738,55 +731,73 @@ export default function CreativeDetailSection({ rows }: Props) {
           </section>
 
           {/* Summary */}
-          {(() => {
-            const currentMonthKey = (totals as any)?.currentMonthKey ?? null;
-            const currentMonthActual = (totals as any)?.currentMonthActual ?? totals;
-            const monthGoal = (totals as any)?.monthGoal ?? null;
+          <div className="creative-detail-week-table-fix min-w-0">
+            {(() => {
+              const currentMonthKey = (totals as any)?.currentMonthKey ?? null;
+              const currentMonthActual = (totals as any)?.currentMonthActual ?? totals;
+              const monthGoal = (totals as any)?.monthGoal ?? null;
 
-            const currentMonthGoalComputed =
-              (totals as any)?.currentMonthGoalComputed ?? {
-                imp: 0,
-                click: 0,
-                cost: 0,
-                conv: 0,
-                revenue: 0,
-                ctr: 0,
-                cpc: 0,
-                cvr: 0,
-                cpa: 0,
-                roas: 0,
-              };
+              const currentMonthGoalComputed =
+                (totals as any)?.currentMonthGoalComputed ?? {
+                  imp: 0,
+                  click: 0,
+                  cost: 0,
+                  conv: 0,
+                  revenue: 0,
+                  ctr: 0,
+                  cpc: 0,
+                  cvr: 0,
+                  cpa: 0,
+                  roas: 0,
+                };
 
-            // ✅ 추가로 필요한 props (안전 더미)
-            const setMonthGoal = () => {};
-            const monthGoalInsight = null;
+              const setMonthGoal = () => {};
+              const monthGoalInsight = null;
 
-            return (
-              <SummarySection
-                totals={totals as any}
-                byMonth={byMonth as any}
-                byWeekOnly={byWeekOnly as any}
-                byWeekChart={byWeekChart as any}
-                bySource={bySource as any}
-                currentMonthKey={currentMonthKey}
-                currentMonthActual={currentMonthActual}
-                currentMonthGoalComputed={currentMonthGoalComputed}
-                monthGoal={monthGoal}
-                setMonthGoal={setMonthGoal}
-                monthGoalInsight={monthGoalInsight}
-              />
-            );
-          })()}
+              return (
+                <div className="min-w-0">
+                  <SummarySection
+                    totals={totals as any}
+                    byMonth={byMonth as any}
+                    byWeekOnly={byWeekOnly as any}
+                    byWeekChart={byWeekChart as any}
+                    bySource={bySource as any}
+                    currentMonthKey={currentMonthKey}
+                    currentMonthActual={currentMonthActual}
+                    currentMonthGoalComputed={currentMonthGoalComputed}
+                    monthGoal={monthGoal}
+                    setMonthGoal={setMonthGoal}
+                    monthGoalInsight={monthGoalInsight}
+                  />
+                </div>
+              );
+            })()}
+          </div>
         </div>
       </div>
 
       <style jsx global>{`
+        .creative-detail-week-table-fix {
+          min-width: 0;
+          width: 100%;
+        }
+
+        .creative-detail-week-table-fix > * {
+          min-width: 0;
+        }
+
+        .creative-detail-week-table-fix table {
+          width: 100%;
+          table-layout: fixed;
+        }
+
         .creative-detail-week-table-fix table th:first-child,
         .creative-detail-week-table-fix table td:first-child {
           white-space: nowrap !important;
           width: 180px;
           max-width: 180px;
         }
+
         .creative-detail-week-table-fix table td:first-child {
           overflow: hidden;
           text-overflow: ellipsis;
