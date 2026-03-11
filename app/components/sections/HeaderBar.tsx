@@ -383,7 +383,7 @@ export default function HeaderBar(props: Props) {
 
             {/* RIGHT: Tabs + VAT */}
             <div className="flex flex-col items-end gap-2">
-              <div className="flex gap-3">
+              <div className="flex gap-3 flex-wrap justify-end">
                 <button
                   type="button"
                   onClick={() => setTab("summary")}
@@ -394,6 +394,18 @@ export default function HeaderBar(props: Props) {
                   }`}
                 >
                   요약
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setTab("summary2")}
+                  className={`px-5 py-2 rounded-xl border text-sm font-semibold transition ${
+                    tab === "summary2"
+                      ? "bg-black text-white border-black"
+                      : "bg-white text-black border-gray-300 hover:bg-gray-100"
+                  }`}
+                >
+                  요약2
                 </button>
 
                 <button

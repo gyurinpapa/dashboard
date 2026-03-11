@@ -24,6 +24,7 @@ import StructureSection from "@/app/components/sections/StructureSection";
 import KeywordSection from "@/app/components/sections/KeywordSection";
 import KeywordDetailSection from "@/app/components/sections/KeywordDetailSection";
 import SummarySection from "@/app/components/sections/SummarySection";
+import Summary2Section from "@/app/components/sections/Summary2Section";
 import CreativeSection from "@/app/components/sections/CreativeSection";
 import CreativeDetailSection from "@/app/components/sections/CreativeDetailSection";
 import MonthGoalSection from "@/app/components/sections/MonthGoalSection";
@@ -36,6 +37,7 @@ if (typeof window !== "undefined") {
     KeywordSection,
     KeywordDetailSection,
     SummarySection,
+    Summary2Section,
     CreativeSection,
     CreativeDetailSection,
     MonthGoalSection,
@@ -848,6 +850,10 @@ export default function ReportTemplate({
                 monthGoalInsight={monthGoalInsight as any}
               />
             </>
+          )}
+
+          {tab === "summary2" && (
+            <Summary2Section rows={filteredRows as any[]} />
           )}
 
           {tab === "structure" && (

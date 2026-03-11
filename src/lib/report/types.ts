@@ -3,12 +3,12 @@
 // ===== Tabs =====
 export type TabKey =
   | "summary"
+  | "summary2"
   | "structure"
   | "keyword"
   | "keywordDetail"
   | "creative"
   | "creativeDetail";
-
 
 // ===== FilterKey (HeaderBar에서 쓰는 상단 4버튼: 월/주차/기기/채널) =====
 // 지금 page.tsx에서 초기값을 null로 쓰고 있으니 null 포함
