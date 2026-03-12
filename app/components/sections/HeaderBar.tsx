@@ -94,10 +94,10 @@ export default function HeaderBar(props: Props) {
     const adv = cleanText(advertiserName);
     const typeName = cleanText(reportTypeName);
 
-    if (adv && typeName) return `${adv} ${typeName} 보고서`;
-    if (adv) return `${adv} 온라인광고 보고서`;
-    if (typeName) return `${typeName} 보고서`;
-    return "온라인광고 보고서";
+    if (adv && typeName) return `${adv} ${typeName} `;
+    if (adv) return `${adv} 온라인광고 `;
+    if (typeName) return `${typeName} `;
+    return "온라인광고 ";
   }, [advertiserName, reportTypeName]);
 
   // ✅ 키워드 탭에서만 display ad 비활성
