@@ -59,6 +59,8 @@ type FunnelItem = {
   widthPct: number;
   color: string;
   sharePctText: string;
+  peakPctText: string;
+  dayDiffText: string;
 };
 
 function asNum(v: any) {
@@ -313,10 +315,10 @@ function FunnelCard({
       const currentW = current.widthPct;
       const nextW = next.widthPct;
 
-      const currentLeft = 50 - currentW / 2;
-      const currentRight = 50 + currentW / 2;
-      const nextLeft = 50 - nextW / 2;
-      const nextRight = 50 + nextW / 2;
+      const currentLeft = 0;
+      const currentRight = currentW;
+      const nextLeft = 0;
+      const nextRight = nextW;
 
       const currentTop = i * (barH + gapH);
       const currentBottomY = currentTop + barH;
@@ -351,7 +353,7 @@ function FunnelCard({
         </p>
       </div>
 
-      <div className="px-6 py-4">
+      <div className="px-6 py-4 pb-3">
         {items.length > 0 ? (
           <div>
             <div className="mb-4 space-y-3">
@@ -411,7 +413,7 @@ function FunnelCard({
                 ))}
               </svg>
 
-              <div className="space-y-8">
+              <div className="space-y-4">
                 {items.map((item, idx) => (
                   <div key={item.key} className="space-y-2">
                     <div className="flex items-center justify-between gap-3">
@@ -419,37 +421,50 @@ function FunnelCard({
                       <span className="text-xs font-medium text-gray-500">{item.sharePctText}</span>
                     </div>
 
-                    <div className="flex justify-center">
-                      <div
-                        className="flex h-[54px] items-center justify-center rounded-2xl px-3 text-center shadow-sm transition-[width,transform] duration-700 ease-in-out"
-                        style={{
-                          width: `${item.widthPct}%`,
-                          maxWidth: "100%",
-                          backgroundColor: item.color,
-                        }}
-                        title={`${item.label}\n값: ${item.displayValue}\n비중: ${item.sharePctText}`}
-                      >
-                        <div className="text-base font-bold text-gray-900">{item.displayValue}</div>
+                    <div className="relative">
+                      <div className="rounded-[28px] border border-gray-200 bg-gray-50 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+                        <div
+                          className="flex h-[54px] items-center justify-center rounded-2xl px-3 text-center transition-[width,transform,box-shadow] duration-700 ease-in-out"
+                          style={{
+                            width: `${item.widthPct}%`,
+                            maxWidth: "100%",
+                            background: `linear-gradient(135deg, ${item.color} 0%, ${item.color} 72%, ${rgbaFromHex(
+                              item.color,
+                              0.78
+                            )} 100%)`,
+                            boxShadow: `0 10px 22px ${rgbaFromHex(item.color, 0.24)}`,
+                            transform: "translateZ(0)",
+                          }}
+                          title={[
+                            item.label,
+                            `값: ${item.displayValue}`,
+                            item.sharePctText,
+                            item.peakPctText,
+                            item.dayDiffText,
+                          ].join("\n")}
+                        >
+                          <div className="text-base font-bold tracking-tight text-gray-900">
+                            {item.displayValue}
+                          </div>
+                        </div>
                       </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-1 text-center sm:grid-cols-3">
+                      <div className="text-[11px] text-gray-500">{item.sharePctText}</div>
+                      <div className="text-[11px] text-gray-500">{item.peakPctText}</div>
+                      <div className="text-[11px] text-gray-500">{item.dayDiffText}</div>
                     </div>
 
                     {idx < items.length - 1 ? (
                       <div className="flex h-8 items-center justify-center">
-                        <span className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-[11px] font-semibold text-gray-600">
+                        <span className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-[11px] font-semibold text-gray-600 shadow-sm">
                           {transitionBadges[idx] ?? "-"}
                         </span>
                       </div>
                     ) : null}
                   </div>
                 ))}
-              </div>
-            </div>
-
-            <div className="mt-4 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
-              <div className="text-xs font-medium text-gray-500">퍼널 안내</div>
-              <div className="mt-2 text-sm leading-6 text-gray-700">
-                노출 → 클릭 → 전환 기준으로, 기간 첫날부터 마지막 날까지 누적 성과를
-                자동으로 확인할 수 있습니다.
               </div>
             </div>
           </div>
@@ -935,24 +950,7 @@ export default function Summary2Section({ rows }: Props) {
       map.set(key, prev);
     }
 
-    const sorted = Array.from(map.values()).sort((a, b) => a.dateKey.localeCompare(b.dateKey));
-
-    let runningImpressions = 0;
-    let runningClicks = 0;
-    let runningConversions = 0;
-
-    return sorted.map((item) => {
-      runningImpressions += item.impressions;
-      runningClicks += item.clicks;
-      runningConversions += item.conversions;
-
-      return {
-        dateKey: item.dateKey,
-        impressions: runningImpressions,
-        clicks: runningClicks,
-        conversions: runningConversions,
-      };
-    });
+    return Array.from(map.values()).sort((a, b) => a.dateKey.localeCompare(b.dateKey));
   }, [rows]);
 
   useEffect(() => {
@@ -990,23 +988,49 @@ export default function Summary2Section({ rows }: Props) {
 
   const funnelData = useMemo(() => {
     const point = currentFunnelPoint ?? {
-      impressions: (rows ?? []).reduce((acc, cur) => acc + asNum(cur?.impressions ?? cur?.impr), 0),
-      clicks: (rows ?? []).reduce((acc, cur) => acc + asNum(cur?.clicks ?? cur?.click ?? cur?.clk), 0),
-      conversions: (rows ?? []).reduce(
-        (acc, cur) => acc + asNum(cur?.conversions ?? cur?.conv ?? cur?.cv),
-        0
-      ),
+      impressions: 0,
+      clicks: 0,
+      conversions: 0,
     };
 
-    const fullPeriod = funnelTimeline.length ? funnelTimeline[funnelTimeline.length - 1] : point;
+    const safeIndex = Math.max(0, Math.min(playIndex, Math.max(0, funnelTimeline.length - 1)));
+    const prevPoint =
+      safeIndex > 0
+        ? funnelTimeline[safeIndex - 1]
+        : { impressions: 0, clicks: 0, conversions: 0 };
 
-    const raw = [
+    const maxImpressions = Math.max(...funnelTimeline.map((x) => x.impressions), 1);
+    const maxClicks = Math.max(...funnelTimeline.map((x) => x.clicks), 1);
+    const maxConversions = Math.max(...funnelTimeline.map((x) => x.conversions), 1);
+
+    const currentDayMax = Math.max(
+      point.impressions,
+      point.clicks,
+      point.conversions,
+      1
+    );
+
+    const diffText = (current: number, prev: number) => {
+      if (prev <= 0) {
+        if (current > 0) return "전일 대비 신규";
+        return "전일 대비 -";
+      }
+      const diff = ((current - prev) / prev) * 100;
+      const sign = diff > 0 ? "+" : "";
+      return `전일 대비 ${sign}${diff.toFixed(1)}%`;
+    };
+
+    return [
       {
         key: "impressions",
         label: "노출",
         value: point.impressions,
         displayValue: Math.round(point.impressions).toLocaleString(),
         color: "#3b82f6",
+        widthPct: Math.max(10, (point.impressions / currentDayMax) * 100),
+        sharePctText: `${((point.impressions / maxImpressions) * 100).toFixed(1)}%`,
+        peakPctText: `최고일 ${Math.round(maxImpressions).toLocaleString()}`,
+        dayDiffText: diffText(point.impressions, prevPoint.impressions),
       },
       {
         key: "clicks",
@@ -1014,6 +1038,10 @@ export default function Summary2Section({ rows }: Props) {
         value: point.clicks,
         displayValue: Math.round(point.clicks).toLocaleString(),
         color: "#4b9fad",
+        widthPct: Math.max(10, (point.clicks / currentDayMax) * 100),
+        sharePctText: `${((point.clicks / maxClicks) * 100).toFixed(1)}%`,
+        peakPctText: `최고일 ${Math.round(maxClicks).toLocaleString()}`,
+        dayDiffText: diffText(point.clicks, prevPoint.clicks),
       },
       {
         key: "conversions",
@@ -1021,29 +1049,13 @@ export default function Summary2Section({ rows }: Props) {
         value: point.conversions,
         displayValue: Math.round(point.conversions).toLocaleString(),
         color: "#f2995a",
+        widthPct: Math.max(10, (point.conversions / currentDayMax) * 100),
+        sharePctText: `${((point.conversions / maxConversions) * 100).toFixed(1)}%`,
+        peakPctText: `최고일 ${Math.round(maxConversions).toLocaleString()}`,
+        dayDiffText: diffText(point.conversions, prevPoint.conversions),
       },
     ];
-
-    const maxReal = Math.max(
-      fullPeriod.impressions,
-      fullPeriod.clicks,
-      fullPeriod.conversions,
-      1
-    );
-
-    const maxVisual = Math.sqrt(maxReal);
-
-    return raw.map((item) => {
-      const realRatio = item.value / maxReal;
-      const visualRatio = Math.sqrt(item.value) / maxVisual;
-
-      return {
-        ...item,
-        widthPct: Math.max(18, visualRatio * 100),
-        sharePctText: `${(realRatio * 100).toFixed(1)}%`,
-      };
-    });
-  }, [currentFunnelPoint, funnelTimeline, rows]);
+  }, [currentFunnelPoint, funnelTimeline, playIndex]);
 
   const funnelTransitionBadges = useMemo(() => {
     const point = currentFunnelPoint ?? {
@@ -1318,7 +1330,7 @@ export default function Summary2Section({ rows }: Props) {
   return (
     <section className="mt-4">
       <div className="space-y-10 pt-4">
-        <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+        <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
           <div className="border-b border-gray-200 px-6 py-5">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div>
@@ -1517,7 +1529,7 @@ export default function Summary2Section({ rows }: Props) {
             transitionBadges={funnelTransitionBadges}
           />
 
-          <div className="min-w-0 rounded-2xl border border-gray-200 bg-white shadow-sm flex flex-col">
+          <div className="flex min-w-0 flex-col rounded-2xl border border-gray-200 bg-white shadow-sm">
             <div className="border-b border-gray-200 px-6 py-4">
               <h3 className="text-base font-semibold text-gray-900">
                 채널 → 기기 → 매출 흐름
@@ -1534,154 +1546,154 @@ export default function Summary2Section({ rows }: Props) {
               ) : null}
             </div>
 
-            <div className="px-6 py-4 flex-1 flex flex-col justify-between">
-  {sankeyData.totalRevenue > 0 ? (
-    <div className="flex justify-center pt-22 pb-6">
-      <div className="w-full max-w-[800px]">
-        <svg
-          viewBox="0 0 800 270"
-          className="h-auto w-full"
-          role="img"
-          aria-label="채널에서 기기로 이어지는 매출 Sankey 차트"
-        >
-          <text x="80" y="18" fontSize="13" fontWeight="700" fill="#374151">
-            Channel
-          </text>
-          <text x="355" y="18" fontSize="13" fontWeight="700" fill="#374151">
-            Device
-          </text>
-          <text x="690" y="18" fontSize="13" fontWeight="700" fill="#374151">
-            Revenue
-          </text>
+            <div className="flex flex-1 flex-col justify-between px-6 py-4">
+              {sankeyData.totalRevenue > 0 ? (
+                <div className="flex justify-center pt-22 pb-6">
+                  <div className="w-full max-w-[800px]">
+                    <svg
+                      viewBox="0 0 800 270"
+                      className="h-auto w-full"
+                      role="img"
+                      aria-label="채널에서 기기로 이어지는 매출 Sankey 차트"
+                    >
+                      <text x="80" y="18" fontSize="13" fontWeight="700" fill="#374151">
+                        Channel
+                      </text>
+                      <text x="355" y="18" fontSize="13" fontWeight="700" fill="#374151">
+                        Device
+                      </text>
+                      <text x="690" y="18" fontSize="13" fontWeight="700" fill="#374151">
+                        Revenue
+                      </text>
 
-          {sankeyLayout.links.map((link, idx) => (
-            <path
-              key={`${link.source}-${link.target}-${idx}`}
-              d={link.path}
-              fill={link.fill}
-            >
-              <title>
-                {`${link.source} → ${link.target}\n매출: ${KRW(link.value)}`}
-              </title>
-            </path>
-          ))}
+                      {sankeyLayout.links.map((link, idx) => (
+                        <path
+                          key={`${link.source}-${link.target}-${idx}`}
+                          d={link.path}
+                          fill={link.fill}
+                        >
+                          <title>
+                            {`${link.source} → ${link.target}\n매출: ${KRW(link.value)}`}
+                          </title>
+                        </path>
+                      ))}
 
-          {sankeyLayout.channels.map((node) => (
-            <g key={`channel-${node.key}`}>
-              <rect
-                x={node.x}
-                y={node.y}
-                width={node.width}
-                height={node.height}
-                rx="4"
-                fill={node.color}
-              />
-              <text
-                x={node.x - 10}
-                y={node.centerY}
-                textAnchor="end"
-                dominantBaseline="middle"
-                fontSize="13"
-                fill="#111827"
-                fontWeight="600"
-              >
-                {node.label}
-              </text>
-              <title>{`${node.label}\n매출: ${KRW(node.value)}`}</title>
-            </g>
-          ))}
+                      {sankeyLayout.channels.map((node) => (
+                        <g key={`channel-${node.key}`}>
+                          <rect
+                            x={node.x}
+                            y={node.y}
+                            width={node.width}
+                            height={node.height}
+                            rx="4"
+                            fill={node.color}
+                          />
+                          <text
+                            x={node.x - 10}
+                            y={node.centerY}
+                            textAnchor="end"
+                            dominantBaseline="middle"
+                            fontSize="13"
+                            fill="#111827"
+                            fontWeight="600"
+                          >
+                            {node.label}
+                          </text>
+                          <title>{`${node.label}\n매출: ${KRW(node.value)}`}</title>
+                        </g>
+                      ))}
 
-          {sankeyLayout.devices.map((node) => (
-            <g key={`device-${node.key}`}>
-              <rect
-                x={node.x}
-                y={node.y}
-                width={node.width}
-                height={node.height}
-                rx="4"
-                fill={node.color}
-              />
-              <text
-                x={node.x + node.width + 10}
-                y={node.centerY}
-                textAnchor="start"
-                dominantBaseline="middle"
-                fontSize="13"
-                fill="#111827"
-                fontWeight="600"
-              >
-                {node.label}
-              </text>
-              <title>{`${node.label}\n매출: ${KRW(node.value)}`}</title>
-            </g>
-          ))}
+                      {sankeyLayout.devices.map((node) => (
+                        <g key={`device-${node.key}`}>
+                          <rect
+                            x={node.x}
+                            y={node.y}
+                            width={node.width}
+                            height={node.height}
+                            rx="4"
+                            fill={node.color}
+                          />
+                          <text
+                            x={node.x + node.width + 10}
+                            y={node.centerY}
+                            textAnchor="start"
+                            dominantBaseline="middle"
+                            fontSize="13"
+                            fill="#111827"
+                            fontWeight="600"
+                          >
+                            {node.label}
+                          </text>
+                          <title>{`${node.label}\n매출: ${KRW(node.value)}`}</title>
+                        </g>
+                      ))}
 
-          {sankeyLayout.revenueNode.map((node) => (
-            <g key={`revenue-${node.key}`}>
-              <rect
-                x={node.x}
-                y={node.y}
-                width={node.width}
-                height={node.height}
-                rx="4"
-                fill={node.color}
-              />
-              <text
-                x={node.x + node.width + 10}
-                y={node.centerY}
-                textAnchor="start"
-                dominantBaseline="middle"
-                fontSize="13"
-                fill="#111827"
-                fontWeight="700"
-              >
-                {KRW(node.value)}
-              </text>
-              <title>{`총 매출\n${KRW(node.value)}`}</title>
-            </g>
-          ))}
-        </svg>
-      </div>
-    </div>
-  ) : (
-    <div className="rounded-2xl border border-gray-200 bg-gray-50 px-6 py-10 text-sm text-gray-500">
-      Sankey에 표시할 매출 데이터가 없습니다.
-    </div>
-  )}
+                      {sankeyLayout.revenueNode.map((node) => (
+                        <g key={`revenue-${node.key}`}>
+                          <rect
+                            x={node.x}
+                            y={node.y}
+                            width={node.width}
+                            height={node.height}
+                            rx="4"
+                            fill={node.color}
+                          />
+                          <text
+                            x={node.x + node.width + 10}
+                            y={node.centerY}
+                            textAnchor="start"
+                            dominantBaseline="middle"
+                            fontSize="13"
+                            fill="#111827"
+                            fontWeight="700"
+                          >
+                            {KRW(node.value)}
+                          </text>
+                          <title>{`총 매출\n${KRW(node.value)}`}</title>
+                        </g>
+                      ))}
+                    </svg>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-gray-200 bg-gray-50 px-6 py-10 text-sm text-gray-500">
+                  Sankey에 표시할 매출 데이터가 없습니다.
+                </div>
+              )}
 
-  {channelRevenue.length > 0 ? (
-    <div className="flex justify-center pt-6">
-      <div className="grid w-full max-w-[800px] gap-4 md:grid-cols-2">
-        {channelRevenue.slice(0, 2).map((item) => {
-          const total = sankeyData.totalRevenue || 1;
-          const pct = (item.revenue / total) * 100;
-          return (
-            <div
-              key={item.channel}
-              className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4"
-            >
-              <div className="flex items-center gap-2">
-                <span
-                  className="inline-block h-3 w-3 rounded-full"
-                  style={{ backgroundColor: channelColor(item.channel) }}
-                />
-                <span className="text-sm font-semibold text-gray-900">
-                  {item.channel}
-                </span>
-              </div>
-              <div className="mt-2 text-lg font-semibold text-gray-900">
-                {KRW(item.revenue)}
-              </div>
-              <div className="mt-1 text-xs text-gray-500">
-                전체 매출의 {pct.toFixed(1)}%
-              </div>
+              {channelRevenue.length > 0 ? (
+                <div className="flex justify-center pt-6">
+                  <div className="grid w-full max-w-[800px] gap-4 md:grid-cols-2">
+                    {channelRevenue.slice(0, 2).map((item) => {
+                      const total = sankeyData.totalRevenue || 1;
+                      const pct = (item.revenue / total) * 100;
+                      return (
+                        <div
+                          key={item.channel}
+                          className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="inline-block h-3 w-3 rounded-full"
+                              style={{ backgroundColor: channelColor(item.channel) }}
+                            />
+                            <span className="text-sm font-semibold text-gray-900">
+                              {item.channel}
+                            </span>
+                          </div>
+                          <div className="mt-2 text-lg font-semibold text-gray-900">
+                            {KRW(item.revenue)}
+                          </div>
+                          <div className="mt-1 text-xs text-gray-500">
+                            전체 매출의 {pct.toFixed(1)}%
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
             </div>
-          );
-        })}
-      </div>
-    </div>
-  ) : null}
-</div>
           </div>
         </div>
 
