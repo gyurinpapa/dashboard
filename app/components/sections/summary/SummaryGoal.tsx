@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { progressRate, formatNumber, KRW, parseNumberInput } from "../../../../src/lib/report/format";
+import {
+  progressRate,
+  formatNumber,
+  KRW,
+  parseNumberInput,
+} from "../../../../src/lib/report/format";
 
 type Props = {
   currentMonthKey: string;
@@ -22,7 +27,6 @@ export default function SummaryGoal({
   setMonthGoal,
   monthGoalInsight,
 }: Props) {
-  // ✅ Hydration mismatch 방지: 첫 렌더(SSR/초기)에서는 0으로 통일, 마운트 후 계산
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -50,36 +54,55 @@ export default function SummaryGoal({
     return (safe * 100).toFixed(1) + "%";
   };
 
+  const thClass =
+    "whitespace-nowrap px-4 py-3 text-right text-sm font-semibold text-slate-600";
+  const tdClass =
+    "whitespace-nowrap px-4 py-3 text-right text-sm text-slate-800 align-middle";
+  const firstThClass =
+    "whitespace-nowrap px-4 py-3 text-left text-sm font-semibold text-slate-600";
+  const firstTdClass =
+    "whitespace-nowrap px-4 py-3 text-left text-sm font-medium text-slate-900 align-middle";
+
+  const inputClass =
+    "h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-right text-sm font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400";
+
   return (
     <section>
-      <h2 className="text-lg font-semibold mb-3">목표 입력 &amp; 달성 현황</h2>
+      <div className="mb-4">
+        <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+          목표 입력 &amp; 달성 현황
+        </h2>
+        <p className="mt-1 text-sm text-slate-500">
+          월 목표값을 입력하고 현재 실적 및 달성률을 확인합니다.
+        </p>
+      </div>
 
-      <div className="overflow-auto border-3 border-gray-900 rounded-xl">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-gray-600">
+      <div className="overflow-auto rounded-[24px] border border-slate-200 bg-white shadow-sm">
+        <table className="w-full min-w-[1320px] text-sm">
+          <thead className="border-b border-slate-200 bg-slate-50/80">
             <tr>
-              <th className="text-left p-3 w-[120px]">구분</th>
-              <th className="text-right p-3">Impr</th>
-              <th className="text-right p-3">Clicks</th>
-              <th className="text-right p-3">CTR</th>
-              <th className="text-right p-3">CPC</th>
-              <th className="text-right p-3">Cost</th>
-              <th className="text-right p-3">Conv</th>
-              <th className="text-right p-3">CVR</th>
-              <th className="text-right p-3">CPA</th>
-              <th className="text-right p-3">Revenue</th>
-              <th className="text-right p-3">ROAS</th>
+              <th className={`${firstThClass} w-[120px]`}>구분</th>
+              <th className={thClass}>Impr</th>
+              <th className={thClass}>Clicks</th>
+              <th className={thClass}>CTR</th>
+              <th className={thClass}>CPC</th>
+              <th className={thClass}>Cost</th>
+              <th className={thClass}>Conv</th>
+              <th className={thClass}>CVR</th>
+              <th className={thClass}>CPA</th>
+              <th className={thClass}>Revenue</th>
+              <th className={thClass}>ROAS</th>
             </tr>
           </thead>
 
           <tbody>
             {/* 1) 목표 (수기입력) */}
-            <tr className="border-t">
-              <td className="p-3 font-medium">목표</td>
+            <tr className="border-t border-slate-200">
+              <td className={firstTdClass}>목표</td>
 
-              <td className="p-3 text-right align-middle">
+              <td className={tdClass}>
                 <input
-                  className="w-full text-right border rounded-md px-2 py-1"
+                  className={inputClass}
                   value={formatNumber(monthGoal?.impressions ?? 0)}
                   onChange={(e) =>
                     setMonthGoal((p: any) => ({
@@ -90,9 +113,9 @@ export default function SummaryGoal({
                 />
               </td>
 
-              <td className="p-3 text-right align-middle">
+              <td className={tdClass}>
                 <input
-                  className="w-full text-right border rounded-md px-2 py-1"
+                  className={inputClass}
                   value={formatNumber(monthGoal?.clicks ?? 0)}
                   onChange={(e) =>
                     setMonthGoal((p: any) => ({
@@ -103,14 +126,19 @@ export default function SummaryGoal({
                 />
               </td>
 
-              <td className="p-3 text-right">{((mounted ? goalCTR : 0) * 100).toFixed(2)}%</td>
-              <td className="p-3 text-right">{KRW(goalCPC)}</td>
+              <td className={tdClass}>
+                {((mounted ? goalCTR : 0) * 100).toFixed(2)}%
+              </td>
 
-              <td className="p-3 text-right align-middle">
+              <td className={tdClass}>{KRW(goalCPC)}</td>
+
+              <td className={tdClass}>
                 <div className="relative">
-                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500">₩</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">
+                    ₩
+                  </span>
                   <input
-                    className="w-full text-right border rounded-md pl-6 pr-2 py-1"
+                    className={`${inputClass} pl-7`}
                     value={formatNumber(monthGoal?.cost ?? 0)}
                     onChange={(e) =>
                       setMonthGoal((p: any) => ({
@@ -122,9 +150,9 @@ export default function SummaryGoal({
                 </div>
               </td>
 
-              <td className="p-3 text-right align-middle">
+              <td className={tdClass}>
                 <input
-                  className="w-full text-right border rounded-md px-2 py-1"
+                  className={inputClass}
                   value={formatNumber(monthGoal?.conversions ?? 0)}
                   onChange={(e) =>
                     setMonthGoal((p: any) => ({
@@ -135,14 +163,19 @@ export default function SummaryGoal({
                 />
               </td>
 
-              <td className="p-3 text-right">{((mounted ? goalCVR : 0) * 100).toFixed(2)}%</td>
-              <td className="p-3 text-right">{KRW(goalCPA)}</td>
+              <td className={tdClass}>
+                {((mounted ? goalCVR : 0) * 100).toFixed(2)}%
+              </td>
 
-              <td className="p-3 text-right align-middle">
+              <td className={tdClass}>{KRW(goalCPA)}</td>
+
+              <td className={tdClass}>
                 <div className="relative">
-                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500">₩</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">
+                    ₩
+                  </span>
                   <input
-                    className="w-full text-right border rounded-md pl-6 pr-2 py-1"
+                    className={`${inputClass} pl-7`}
                     value={formatNumber(monthGoal?.revenue ?? 0)}
                     onChange={(e) =>
                       setMonthGoal((p: any) => ({
@@ -154,82 +187,124 @@ export default function SummaryGoal({
                 </div>
               </td>
 
-              <td className="p-3 text-right">{((mounted ? goalROAS : 0) * 100).toFixed(1)}%</td>
+              <td className={tdClass}>
+                {((mounted ? goalROAS : 0) * 100).toFixed(1)}%
+              </td>
             </tr>
 
             {/* 2) 결과(실적) */}
-            <tr className="border-t bg-gray-50">
-              <td className="p-3 font-bold text-gray-900">결과</td>
+            <tr className="border-t border-slate-200 bg-slate-50/60">
+              <td className="whitespace-nowrap px-4 py-3 text-left text-sm font-bold text-slate-900">
+                결과
+              </td>
 
-              <td className="p-3 text-right font-semibold text-gray-900">
+              <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold text-slate-900">
                 {formatNumber(currentMonthActual?.impressions ?? 0)}
               </td>
 
-              <td className="p-3 text-right font-semibold text-gray-900">
+              <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold text-slate-900">
                 {formatNumber(currentMonthActual?.clicks ?? 0)}
               </td>
 
-              <td className="p-3 text-right font-semibold text-blue-600">
+              <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold text-blue-600">
                 {pct2(currentMonthActual?.ctr ?? 0)}
               </td>
 
-              <td className="p-3 text-right font-semibold text-gray-900">
+              <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold text-slate-900">
                 {KRW(currentMonthActual?.cpc ?? 0)}
               </td>
 
-              <td className="p-3 text-right font-semibold text-gray-900">
+              <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold text-slate-900">
                 {KRW(currentMonthActual?.cost ?? 0)}
               </td>
 
-              <td className="p-3 text-right font-semibold text-gray-900">
+              <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold text-slate-900">
                 {formatNumber(currentMonthActual?.conversions ?? 0)}
               </td>
 
-              <td className="p-3 text-right font-semibold text-blue-600">
+              <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold text-blue-600">
                 {pct2(currentMonthActual?.cvr ?? 0)}
               </td>
 
-              <td className="p-3 text-right font-semibold text-gray-900">
+              <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold text-slate-900">
                 {KRW(currentMonthActual?.cpa ?? 0)}
               </td>
 
-              <td className="p-3 text-right font-semibold text-green-600">
+              <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold text-emerald-600">
                 {KRW(currentMonthActual?.revenue ?? 0)}
               </td>
 
-              <td className="p-3 text-right font-bold text-orange-600">
+              <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-bold text-orange-600">
                 {pct1(currentMonthActual?.roas ?? 0)}
               </td>
             </tr>
 
-            {/* 3) 달성률 (결과 / 목표) */}
-            <tr className="border-t bg-gray-50">
-              <td className="p-3 font-medium">달성률</td>
-              <td className="p-3 text-right">{pct1(progressRate(currentMonthActual?.impressions, currentMonthGoalComputed?.impressions))}</td>
-              <td className="p-3 text-right">{pct1(progressRate(currentMonthActual?.clicks, currentMonthGoalComputed?.clicks))}</td>
-              <td className="p-3 text-right text-gray-400">-</td>
-              <td className="p-3 text-right text-gray-400">-</td>
-              <td className="p-3 text-right">{pct1(progressRate(currentMonthActual?.cost, currentMonthGoalComputed?.cost))}</td>
-              <td className="p-3 text-right">{pct1(progressRate(currentMonthActual?.conversions, currentMonthGoalComputed?.conversions))}</td>
-              <td className="p-3 text-right text-gray-400">-</td>
-              <td className="p-3 text-right text-gray-400">-</td>
-              <td className="p-3 text-right">{pct1(progressRate(currentMonthActual?.revenue, currentMonthGoalComputed?.revenue))}</td>
-              <td className="p-3 text-right text-gray-400">-</td>
+            {/* 3) 달성률 */}
+            <tr className="border-t border-slate-200 bg-slate-50/60">
+              <td className={firstTdClass}>달성률</td>
+              <td className={tdClass}>
+                {pct1(
+                  progressRate(
+                    currentMonthActual?.impressions,
+                    currentMonthGoalComputed?.impressions
+                  )
+                )}
+              </td>
+              <td className={tdClass}>
+                {pct1(
+                  progressRate(
+                    currentMonthActual?.clicks,
+                    currentMonthGoalComputed?.clicks
+                  )
+                )}
+              </td>
+              <td className={`${tdClass} text-slate-400`}>-</td>
+              <td className={`${tdClass} text-slate-400`}>-</td>
+              <td className={tdClass}>
+                {pct1(
+                  progressRate(
+                    currentMonthActual?.cost,
+                    currentMonthGoalComputed?.cost
+                  )
+                )}
+              </td>
+              <td className={tdClass}>
+                {pct1(
+                  progressRate(
+                    currentMonthActual?.conversions,
+                    currentMonthGoalComputed?.conversions
+                  )
+                )}
+              </td>
+              <td className={`${tdClass} text-slate-400`}>-</td>
+              <td className={`${tdClass} text-slate-400`}>-</td>
+              <td className={tdClass}>
+                {pct1(
+                  progressRate(
+                    currentMonthActual?.revenue,
+                    currentMonthGoalComputed?.revenue
+                  )
+                )}
+              </td>
+              <td className={`${tdClass} text-slate-400`}>-</td>
             </tr>
           </tbody>
         </table>
       </div>
 
-      <p className="text-xs text-gray-500 mt-2">
-  * 목표&달성현황은 필터의 영향을 받지 않습니다.
-</p>
+      <p className="mt-3 text-xs text-slate-500">
+        * 목표&달성현황은 필터의 영향을 받지 않습니다.
+      </p>
 
-      {/* 인사이트*/}
       {monthGoalInsight ? (
         <div className="mt-6">
-          <div className="border rounded-xl p-4 bg-white">
-            <div className="text-sm text-gray-600 mb-1">요약 인사이트</div>
-            <div className="text-gray-900 whitespace-pre-wrap">{monthGoalInsight}</div>
+          <div className="rounded-[20px] border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-2 text-sm font-semibold text-slate-600">
+              요약 인사이트
+            </div>
+            <div className="whitespace-pre-wrap text-[15px] leading-7 text-slate-900">
+              {monthGoalInsight}
+            </div>
           </div>
         </div>
       ) : null}

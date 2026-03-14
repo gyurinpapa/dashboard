@@ -34,19 +34,16 @@ const toNum = (v: any) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-// CTR/CVR: 2.42(%) 또는 0.0242(비율) 모두 허용
 const toRate01 = (v: any) => {
   const n = toNum(v);
   return n > 1 ? n / 100 : n;
 };
 
-// ROAS: 1.246(비율)도 정상. 10 초과면 퍼센트(124.6)로 보고 /100
 const toRoas01 = (v: any) => {
   const n = toNum(v);
   return n > 10 ? n / 100 : n;
 };
 
-// 증감율(%). 분모 0이면 null
 const diffPct = (cur: any, prev: any) => {
   const c = toNum(cur);
   const p = toNum(prev);
@@ -55,30 +52,36 @@ const diffPct = (cur: any, prev: any) => {
 };
 
 const TH_CLASS =
-  "px-4 py-3 text-right text-sm font-semibold text-gray-700 whitespace-nowrap";
+  "px-4 py-3.5 text-right text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-600 whitespace-nowrap";
+
 const TD_CLASS =
-  "px-4 py-4 text-right text-sm text-gray-800 whitespace-nowrap align-middle";
+  "px-4 py-3.5 text-right text-sm text-gray-700 whitespace-nowrap align-middle";
+
 const FIRST_TH_CLASS =
-  "px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap";
+  "px-4 py-3.5 text-left text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-600 whitespace-nowrap";
+
 const FIRST_TD_CLASS =
-  "px-4 py-4 text-left text-sm font-medium text-gray-800 whitespace-nowrap align-middle";
+  "px-4 py-3.5 text-left text-sm font-medium text-gray-900 whitespace-nowrap align-middle";
+
+const SECTION_TITLE_CLASS =
+  "mb-4 text-lg font-semibold tracking-tight text-gray-900";
+
+const SURFACE_CLASS =
+  "rounded-2xl border border-gray-200 bg-white shadow-sm";
+
+const TABLE_SURFACE_CLASS =
+  "overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm";
+
+const CHART_SURFACE_CLASS = "mt-0";
 
 export default function SummarySection(props: Props) {
-  const {
-    totals,
-    byMonth,
-    byWeekOnly,
-    byWeekChart,
-    bySource,
-  } = props;
+  const { totals, byMonth, byWeekOnly, byWeekChart, bySource } = props;
 
-  // ✅ 안전 배열 처리
   const months = Array.isArray(byMonth) ? byMonth : [];
   const weeks = Array.isArray(byWeekOnly) ? byWeekOnly : [];
   const weekChartData = Array.isArray(byWeekChart) ? byWeekChart : [];
   const sources = Array.isArray(bySource) ? bySource : [];
 
-  // label이 "2022년 7월 4주차" 형태면 정렬용 키를 만들어줌
   const weekSortKey = (w: any) => {
     const k = w?.weekKey ?? w?.startDate ?? w?.weekStart ?? w?.dateKey;
     if (k) return String(k);
@@ -91,7 +94,6 @@ export default function SummarySection(props: Props) {
     return `${y}-${mo}-${wk}`;
   };
 
-  // ✅ 표 렌더/증감 계산 모두 같은 정렬 배열 사용
   const sortedWeeks = [...weeks].sort((a, b) =>
     weekSortKey(a).localeCompare(weekSortKey(b))
   );
@@ -99,7 +101,6 @@ export default function SummarySection(props: Props) {
   const prevWeekSorted = sortedWeeks.at(-2);
   const lastWeekSorted = sortedWeeks.at(-1);
 
-  // ✅ 주차표 막대그래프용 Max
   const maxImpr = Math.max(
     0,
     ...sortedWeeks.map((r: any) => toNum(r?.impressions ?? r?.impr))
@@ -112,7 +113,6 @@ export default function SummarySection(props: Props) {
   );
   const maxRev = Math.max(0, ...sortedWeeks.map((r: any) => toNum(r?.revenue)));
 
-  // ✅ 소스별 표 막대그래프용 Max
   const srcMaxImpr = Math.max(
     0,
     ...sources.map((r: any) => toNum(r?.impressions ?? r?.impr))
@@ -127,22 +127,30 @@ export default function SummarySection(props: Props) {
 
   return (
     <>
-      {/* 기간 성과 */}
-      <div className="mt-10 mb-3">
-        <h2 className="text-lg font-semibold">기간 성과</h2>
-      </div>
+      {/* 상단 제품형 리듬: MonthGoalSection 아래에서 너무 뜨지 않도록 시작 간격만 정리 */}
+      <section className="mt-6 space-y-10">
+        <div>
+          <h2 className={SECTION_TITLE_CLASS}>기간 성과</h2>
 
-      {/* KPI */}
-      <SummaryKPI totals={totals} />
+          <div className="mt-0">
+            <SummaryKPI totals={totals} />
+          </div>
+        </div>
 
-      {/* 월별 성과 */}
-      <SummaryTable byMonth={months} />
+        <div>
+          <SummaryTable byMonth={months} />
+        </div>
+      </section>
 
       {/* 주차별 표 */}
-      <section className="mt-10">
-        <h2 className="text-lg font-semibold mb-3">주차별 성과 (최근 5주)</h2>
+      <section className="mt-14">
+        <div className="mb-4">
+          <h2 className="text-lg font-semibold tracking-tight text-gray-900">
+            주차별 성과 (최근 5주)
+          </h2>
+        </div>
 
-        <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm">
+        <div className={TABLE_SURFACE_CLASS}>
           <table className="w-full min-w-[1320px] table-fixed text-sm">
             <colgroup>
               <col className="w-[180px]" />
@@ -158,7 +166,7 @@ export default function SummarySection(props: Props) {
               <col className="w-[90px]" />
             </colgroup>
 
-            <thead className="bg-gray-50">
+            <thead className="sticky top-0 z-10 border-b border-gray-200 bg-gray-50/95 backdrop-blur">
               <tr>
                 <th className={FIRST_TH_CLASS}>Week</th>
                 <th className={TH_CLASS}>Impr</th>
@@ -176,7 +184,7 @@ export default function SummarySection(props: Props) {
 
             <tbody>
               {lastWeekSorted && prevWeekSorted && (
-                <tr className="bg-gray-100 font-medium border-t border-gray-200">
+                <tr className="border-b border-gray-200 bg-slate-50/90 font-medium text-gray-800">
                   <td className={`${FIRST_TD_CLASS} truncate`}>
                     증감(최근주-전주)
                   </td>
@@ -266,9 +274,12 @@ export default function SummarySection(props: Props) {
               {sortedWeeks.map((w: any, idx: number) => (
                 <tr
                   key={w?.weekKey ?? `${weekSortKey(w)}-${idx}`}
-                  className="border-t border-gray-200"
+                  className="border-t border-gray-200 even:bg-gray-50/60 hover:bg-blue-50/40 transition-colors"
                 >
-                  <td className={`${FIRST_TD_CLASS} truncate`} title={String(w?.label ?? "")}>
+                  <td
+                    className={`${FIRST_TD_CLASS} truncate`}
+                    title={String(w?.label ?? "")}
+                  >
                     {w?.label}
                   </td>
 
@@ -329,16 +340,27 @@ export default function SummarySection(props: Props) {
       </section>
 
       {/* 주간 차트 */}
-      <section className="mt-10">
-        <h2 className="text-lg font-semibold mb-3">최근 5주 주간 성과</h2>
-        <SummaryChart data={weekChartData} />
+      <section className="mt-14">
+        <div className="mb-4">
+          <h2 className="text-lg font-semibold tracking-tight text-gray-900">
+            최근 5주 주간 성과
+          </h2>
+        </div>
+
+        <div className={CHART_SURFACE_CLASS}>
+          <SummaryChart data={weekChartData} />
+        </div>
       </section>
 
       {/* 소스별 */}
-      <section className="mt-10">
-        <h2 className="text-lg font-semibold mb-3">소스별 요약</h2>
+      <section className="mt-14">
+        <div className="mb-4">
+          <h2 className="text-lg font-semibold tracking-tight text-gray-900">
+            소스별 요약
+          </h2>
+        </div>
 
-        <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm">
+        <div className={TABLE_SURFACE_CLASS}>
           <table className="w-full min-w-[1320px] table-fixed text-sm">
             <colgroup>
               <col className="w-[180px]" />
@@ -354,7 +376,7 @@ export default function SummarySection(props: Props) {
               <col className="w-[90px]" />
             </colgroup>
 
-            <thead className="bg-gray-50 text-gray-600">
+            <thead className="sticky top-0 z-10 border-b border-gray-200 bg-gray-50/95 backdrop-blur">
               <tr>
                 <th className={FIRST_TH_CLASS}>Source</th>
                 <th className={TH_CLASS}>Impr</th>
@@ -372,7 +394,10 @@ export default function SummarySection(props: Props) {
 
             <tbody>
               {sources.map((r: any, idx: number) => (
-                <tr key={r?.source ?? idx} className="border-t border-gray-200">
+                <tr
+                  key={r?.source ?? idx}
+                  className="border-t border-gray-200 even:bg-gray-50/60 hover:bg-blue-50/40 transition-colors"
+                >
                   <td
                     className={`${FIRST_TD_CLASS} truncate`}
                     title={String(r?.source ?? "")}

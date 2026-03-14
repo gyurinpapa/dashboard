@@ -122,6 +122,18 @@ async function deleteReports(args: {
   return deletedIds;
 }
 
+function statusBadgeClass(status: string) {
+  const s = String(status || "").toLowerCase();
+
+  if (s === "ready") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  }
+  if (s === "archived") {
+    return "border-slate-200 bg-slate-100 text-slate-600";
+  }
+  return "border-amber-200 bg-amber-50 text-amber-700";
+}
+
 export default function ReportsHomePage() {
   const router = useRouter();
 
@@ -134,25 +146,37 @@ export default function ReportsHomePage() {
   const [reports, setReports] = useState<ReportRow[]>([]);
   const [advertisers, setAdvertisers] = useState<AdvertiserRow[]>([]);
 
-  // 폴더 open/close
   const [openMap, setOpenMap] = useState<Record<string, boolean>>({
     __none__: true,
   });
 
-  // 검색
   const [q, setQ] = useState("");
 
-  // 선택 삭제 관련
   const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
   const [deleting, setDeleting] = useState(false);
 
-  // report type cards
   const reportTypes = useMemo(
     () => [
-      { title: "DB 획득 리포트", key: "db" },
-      { title: "영상 조회 리포트", key: "video" },
-      { title: "커머스 매출 리포트", key: "commerce" },
-      { title: "트래픽 리포트", key: "traffic" },
+      {
+        title: "DB 획득 리포트",
+        key: "db",
+        desc: "리드/DB 성과 중심 보고서",
+      },
+      {
+        title: "영상 조회 리포트",
+        key: "video",
+        desc: "영상 조회·도달 중심 보고서",
+      },
+      {
+        title: "커머스 매출 리포트",
+        key: "commerce",
+        desc: "매출·ROAS 중심 커머스 리포트",
+      },
+      {
+        title: "트래픽 리포트",
+        key: "traffic",
+        desc: "유입·클릭 중심 트래픽 리포트",
+      },
     ],
     []
   );
@@ -162,7 +186,6 @@ export default function ReportsHomePage() {
     setMsg("");
 
     try {
-      // 1) session
       const { data: sess } = await supabase.auth.getSession();
       const email = sess?.session?.user?.email ?? "";
       const uid = sess?.session?.user?.id ?? "";
@@ -174,7 +197,6 @@ export default function ReportsHomePage() {
         return;
       }
 
-      // 2) workspace_id 찾기
       const { data: prof, error: profErr } = await supabase
         .from("profiles")
         .select("id, workspace_id, current_workspace_id")
@@ -194,7 +216,6 @@ export default function ReportsHomePage() {
       }
       setWorkspaceId(ws);
 
-      // 3) advertisers
       const { data: advs, error: advErr } = await supabase
         .from("advertisers")
         .select("id, name, workspace_id")
@@ -205,7 +226,6 @@ export default function ReportsHomePage() {
       const advRows = (advs ?? []) as AdvertiserRow[];
       setAdvertisers(advRows);
 
-      // 4) reports
       const { data: reps, error: repErr } = await supabase
         .from("reports")
         .select("id, title, status, created_at, workspace_id, advertiser_id")
@@ -215,7 +235,6 @@ export default function ReportsHomePage() {
       if (repErr) throw new Error(repErr.message);
       setReports((reps ?? []) as ReportRow[]);
 
-      // openMap 초기값
       setOpenMap((prev) => {
         const next = { ...prev };
         next.__none__ = prev.__none__ ?? true;
@@ -225,7 +244,6 @@ export default function ReportsHomePage() {
         return next;
       });
 
-      // 현재 존재하지 않는 선택값 정리
       setSelectedIds((prev) => {
         const next: Record<string, boolean> = {};
         const reportIdSet = new Set((reps ?? []).map((r: any) => String(r.id)));
@@ -411,7 +429,6 @@ export default function ReportsHomePage() {
 
       setMsg(`${deletedIds.length}개 리포트를 삭제했습니다.`);
 
-      // 최종 동기화 한 번 더
       await loadAll();
     } catch (e: any) {
       setMsg(e?.message || "선택 삭제 실패");
@@ -421,238 +438,286 @@ export default function ReportsHomePage() {
   }
 
   return (
-    <div className="p-8">
-      <div className="text-3xl font-extrabold text-center">
-        Automated Online Ads Reporting
-      </div>
+    <div className="min-h-screen bg-slate-50 px-4 py-8 sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-[1440px]">
+        <div className="mb-8 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <div className="mb-2 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold tracking-[0.12em] text-slate-500">
+                NATURE REPORT
+              </div>
 
-      {/* 상단 인사/로그아웃 */}
-      <div className="mt-6 rounded-2xl border bg-[#f7e8cf] p-6">
-        <div className="text-center text-lg font-semibold">
-          {userEmail ? `${userEmail}님 반갑습니다 👋` : "로그인 확인중..."}
+              <div className="text-3xl font-bold tracking-tight text-slate-900">
+                Automated Online Ads Reporting
+              </div>
+
+              <div className="mt-2 text-sm text-slate-500">
+                보고서 생성, 관리, 분석을 하나의 워크스페이스에서 운영합니다.
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
+              <div className="text-sm text-slate-500">현재 사용자</div>
+              <div className="mt-1 text-base font-semibold text-slate-900 break-all">
+                {userEmail ? `${userEmail}` : "로그인 확인중..."}
+              </div>
+
+              {workspaceId ? (
+                <div className="mt-2 text-xs text-slate-500 break-all">
+                  workspace_id: <span className="font-medium text-slate-700">{workspaceId}</span>
+                </div>
+              ) : null}
+
+              <div className="mt-4 flex justify-end">
+                <button
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+                  onClick={async () => {
+                    await supabase.auth.signOut();
+                    location.href = "/";
+                  }}
+                >
+                  로그아웃
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="mt-4 flex justify-center">
-          <button
-            className="rounded-md border bg-white px-4 py-2 text-sm font-semibold hover:border-gray-400"
-            onClick={async () => {
-              await supabase.auth.signOut();
-              location.href = "/";
-            }}
-          >
-            로그아웃
-          </button>
+        <div className="mb-10">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <div className="text-lg font-bold text-slate-900">보고서 유형 선택</div>
+              <div className="mt-1 text-sm text-slate-500">
+                생성할 리포트 템플릿을 선택하면 draft가 생성됩니다.
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {reportTypes.map((x) => (
+              <button
+                key={x.key}
+                className="group rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition-all duration-200 hover:-translate-y-[2px] hover:border-slate-300 hover:shadow-md"
+                onClick={() => handleCreateDraft(x.key, `${x.title} - Draft`)}
+              >
+                <div className="mb-3 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-500">
+                  {x.key}
+                </div>
+
+                <div className="text-base font-semibold text-slate-900">
+                  {x.title}
+                </div>
+
+                <div className="mt-2 text-sm text-slate-500">{x.desc}</div>
+
+                <div className="mt-4 text-xs font-medium text-slate-400 transition group-hover:text-slate-600">
+                  클릭하여 Draft 생성
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
 
-        {workspaceId ? (
-          <div className="mt-3 text-center text-xs text-gray-600">
-            workspace_id: {workspaceId}
+        {msg ? (
+          <div className="mb-6 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm">
+            {msg}
           </div>
         ) : null}
-      </div>
 
-      {/* 보고서 유형 선택 */}
-      <div className="mt-10">
-        <div className="text-lg font-extrabold mb-3">보고서 유형 선택</div>
-
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          {reportTypes.map((x) => (
-            <button
-              key={x.key}
-              className="rounded-xl border bg-white p-4 text-left hover:border-gray-400"
-              onClick={() => handleCreateDraft(x.key, `${x.title} - Draft`)}
-            >
-              <div className="font-semibold">{x.title}</div>
-              <div className="text-xs text-gray-600 mt-1">key: {x.key}</div>
-              <div className="text-xs text-gray-500 mt-2">
-                클릭하면 draft report 생성(API 사용)
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* 메시지 */}
-      {msg ? (
-        <div className="mt-6 rounded-md border bg-white p-3 text-sm text-gray-700">
-          {msg}
-        </div>
-      ) : null}
-
-      {/* 내 리포트 목록(광고주별 폴더) */}
-      <div className="mt-10">
-        <div className="flex flex-col gap-3 mb-3">
-          <div className="flex items-center justify-between gap-3">
-           <div className="text-lg font-extrabold text-red-600">
-  내 리포트 목록 - PATCH TEST 777
-</div>
-
-            <div className="flex items-center gap-2 flex-wrap">
-              <input
-                className="rounded-md border px-3 py-2 text-sm w-64"
-                placeholder="검색: 광고주/제목/ID"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-              />
-              <button
-                className="rounded-md border px-3 py-2 text-sm hover:border-gray-400"
-                onClick={openAll}
-                type="button"
-              >
-                전체 펼치기
-              </button>
-              <button
-                className="rounded-md border px-3 py-2 text-sm hover:border-gray-400"
-                onClick={closeAll}
-                type="button"
-              >
-                전체 접기
-              </button>
-              <button
-                className="rounded-md border px-3 py-2 text-sm hover:border-gray-400"
-                onClick={loadAll}
-                type="button"
-              >
-                새로고침
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between gap-3 rounded-xl border bg-white px-4 py-3">
-            <div className="text-sm text-gray-700">
-              선택됨 <span className="font-extrabold">{selectedCount}</span>개
-              {filteredReportIds.length > 0 ? (
-                <span className="text-gray-500">
-                  {" "}
-                  · 현재 목록 기준 {selectedFilteredCount}/{filteredReportIds.length}
-                </span>
-              ) : null}
-            </div>
-
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                type="button"
-                className="rounded-md border px-3 py-2 text-sm hover:border-gray-400 disabled:opacity-50"
-                onClick={allFilteredSelected ? unselectAllFiltered : selectAllFiltered}
-                disabled={filteredReportIds.length === 0 || deleting}
-              >
-                {allFilteredSelected ? "현재 목록 선택해제" : "현재 목록 전체선택"}
-              </button>
-
-              <button
-                type="button"
-                className="rounded-md border px-3 py-2 text-sm hover:border-gray-400 disabled:opacity-50"
-                onClick={clearAllSelection}
-                disabled={selectedCount === 0 || deleting}
-              >
-                전체 해제
-              </button>
-
-              <button
-                type="button"
-                className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 hover:border-red-300 disabled:opacity-50"
-                onClick={handleDeleteSelected}
-                disabled={selectedCount === 0 || deleting}
-              >
-                {deleting ? "삭제 중..." : `선택 삭제 (${selectedCount})`}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {loading ? (
-          <div className="rounded-xl border bg-white p-6 text-sm text-gray-600">
-            로딩중...
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {grouped.orderedKeys.length === 0 ? (
-              <div className="rounded-xl border bg-white p-6 text-sm text-gray-600">
-                리포트가 없습니다.
-              </div>
-            ) : null}
-
-            {grouped.orderedKeys.map((key) => {
-              const list = grouped.map.get(key) ?? [];
-              const isNone = key === "__none__";
-              const folderName = isNone
-                ? "광고주 미지정"
-                : advNameById.get(key) ?? "(광고주)";
-              const open = openMap[key] ?? true;
-
-              return (
-                <div key={key} className="rounded-xl border bg-white">
-                  <button
-                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 rounded-xl"
-                    onClick={() => toggleFolder(key)}
-                    type="button"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-extrabold">
-                        {open ? "▼" : "▶"}
-                      </span>
-                      <span className="font-semibold">{folderName}</span>
-                      <span className="text-xs text-gray-500">
-                        ({list.length})
-                      </span>
-                    </div>
-
-                    <div className="text-xs text-gray-500">
-                      {isNone ? "" : key}
-                    </div>
-                  </button>
-
-                  {open ? (
-                    <div className="border-t">
-                      {list.map((r) => {
-                        const checked = !!selectedIds[String(r.id)];
-
-                        return (
-                          <div
-                            key={r.id}
-                            className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50"
-                          >
-                            <input
-                              type="checkbox"
-                              className="h-4 w-4"
-                              checked={checked}
-                              onChange={() => toggleSelectOne(String(r.id))}
-                              onClick={(e) => e.stopPropagation()}
-                            />
-
-                            <button
-                              type="button"
-                              className="min-w-0 flex-1 text-left"
-                              onClick={() => router.push(`/reports/${r.id}`)}
-                            >
-                              <div className="font-semibold truncate">
-                                {r.title || "제목 없음"}{" "}
-                                <span className="text-gray-500">
-                                  · {String(r.status || "").toUpperCase()}
-                                </span>
-                              </div>
-                              <div className="text-xs text-gray-500">
-                                {fmtDate(r.created_at)}
-                              </div>
-                            </button>
-
-                            <button
-                              type="button"
-                              className="rounded-md border px-3 py-2 text-xs font-semibold hover:border-gray-400"
-                              onClick={() => router.push(`/reports/${r.id}`)}
-                            >
-                              열기
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : null}
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="mb-5 flex flex-col gap-4">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div>
+                <div className="text-lg font-bold text-slate-900">내 리포트 목록</div>
+                <div className="mt-1 text-sm text-slate-500">
+                  광고주별로 리포트를 관리하고, 선택 삭제 및 검색이 가능합니다.
                 </div>
-              );
-            })}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  className="h-10 w-64 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-slate-400"
+                  placeholder="검색: 광고주/제목/ID"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                />
+                <button
+                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                  onClick={openAll}
+                  type="button"
+                >
+                  전체 펼치기
+                </button>
+                <button
+                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                  onClick={closeAll}
+                  type="button"
+                >
+                  전체 접기
+                </button>
+                <button
+                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                  onClick={loadAll}
+                  type="button"
+                >
+                  새로고침
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 xl:flex-row xl:items-center xl:justify-between">
+              <div className="text-sm text-slate-700">
+                선택됨 <span className="font-extrabold">{selectedCount}</span>개
+                {filteredReportIds.length > 0 ? (
+                  <span className="text-slate-500">
+                    {" "}
+                    · 현재 목록 기준 {selectedFilteredCount}/{filteredReportIds.length}
+                  </span>
+                ) : null}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-100 disabled:opacity-50"
+                  onClick={allFilteredSelected ? unselectAllFiltered : selectAllFiltered}
+                  disabled={filteredReportIds.length === 0 || deleting}
+                >
+                  {allFilteredSelected ? "현재 목록 선택해제" : "현재 목록 전체선택"}
+                </button>
+
+                <button
+                  type="button"
+                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-100 disabled:opacity-50"
+                  onClick={clearAllSelection}
+                  disabled={selectedCount === 0 || deleting}
+                >
+                  전체 해제
+                </button>
+
+                <button
+                  type="button"
+                  className="h-10 rounded-xl border border-red-200 bg-red-50 px-3 text-sm font-semibold text-red-700 transition hover:border-red-300 hover:bg-red-100 disabled:opacity-50"
+                  onClick={handleDeleteSelected}
+                  disabled={selectedCount === 0 || deleting}
+                >
+                  {deleting ? "삭제 중..." : `선택 삭제 (${selectedCount})`}
+                </button>
+              </div>
+            </div>
           </div>
-        )}
+
+          {loading ? (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">
+              로딩중...
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {grouped.orderedKeys.length === 0 ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">
+                  리포트가 없습니다.
+                </div>
+              ) : null}
+
+              {grouped.orderedKeys.map((key) => {
+                const list = grouped.map.get(key) ?? [];
+                const isNone = key === "__none__";
+                const folderName = isNone
+                  ? "광고주 미지정"
+                  : advNameById.get(key) ?? "(광고주)";
+                const open = openMap[key] ?? true;
+
+                return (
+                  <div
+                    key={key}
+                    className="overflow-hidden rounded-2xl border border-slate-200 bg-white"
+                  >
+                    <button
+                      className="flex w-full items-center justify-between px-4 py-4 transition hover:bg-slate-50"
+                      onClick={() => toggleFolder(key)}
+                      type="button"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="text-sm font-extrabold text-slate-700">
+                          {open ? "▼" : "▶"}
+                        </span>
+
+                        <div className="min-w-0 text-left">
+                          <div className="font-semibold text-slate-900 truncate">
+                            {folderName}
+                          </div>
+                          <div className="text-xs text-slate-500">
+                            {list.length}개 리포트
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="text-xs text-slate-400">
+                        {isNone ? "" : key}
+                      </div>
+                    </button>
+
+                    {open ? (
+                      <div className="border-t border-slate-200">
+                        {list.map((r) => {
+                          const checked = !!selectedIds[String(r.id)];
+
+                          return (
+                            <div
+                              key={r.id}
+                              className="flex items-center gap-3 px-4 py-3 transition hover:bg-slate-50"
+                            >
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 rounded border-slate-300"
+                                checked={checked}
+                                onChange={() => toggleSelectOne(String(r.id))}
+                                onClick={(e) => e.stopPropagation()}
+                              />
+
+                              <button
+                                type="button"
+                                className="min-w-0 flex-1 text-left"
+                                onClick={() => router.push(`/reports/${r.id}`)}
+                              >
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <div className="truncate font-semibold text-slate-900">
+                                    {r.title || "제목 없음"}
+                                  </div>
+
+                                  <span
+                                    className={[
+                                      "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+                                      statusBadgeClass(String(r.status || "")),
+                                    ].join(" ")}
+                                  >
+                                    {String(r.status || "").toUpperCase()}
+                                  </span>
+                                </div>
+
+                                <div className="mt-1 text-xs text-slate-500">
+                                  {fmtDate(r.created_at)}
+                                </div>
+                              </button>
+
+                              <button
+                                type="button"
+                                className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+                                onClick={() => router.push(`/reports/${r.id}`)}
+                              >
+                                열기
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

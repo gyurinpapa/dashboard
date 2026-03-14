@@ -34,7 +34,7 @@ export default function SummaryKPI({ totals }: Props) {
   const roas = toRate01(totals?.roas);
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+    <div className="mb-10 grid grid-cols-2 gap-4 sm:grid-cols-2 lg:grid-cols-5">
       <KPI title="노출" value={impressions.toLocaleString()} />
       <KPI title="클릭" value={clicks.toLocaleString()} />
       <KPI title="CTR" value={(ctr * 100).toFixed(2) + "%"} />
@@ -43,19 +43,77 @@ export default function SummaryKPI({ totals }: Props) {
 
       <KPI title="전환수" value={conversions.toLocaleString()} />
       <KPI title="CVR" value={(cvr * 100).toFixed(2) + "%"} />
-      <KPI title="전환매출" value={KRW(revenue)} />
+      <KPI
+        title="전환매출"
+        value={KRW(revenue)}
+        valueClass="text-emerald-600"
+      />
       <KPI title="CPA" value={KRW(cpa)} />
-      <KPI title="ROAS" value={(roas * 100).toFixed(1) + "%"} />
+      <KPI
+        title="ROAS"
+        value={(roas * 100).toFixed(1) + "%"}
+        valueClass="text-emerald-600"
+      />
     </div>
   );
 }
 
-/** 같은 모양 KPI 카드 */
-function KPI({ title, value }: { title: string; value: string }) {
+/** SaaS KPI 카드 */
+function KPI({
+  title,
+  value,
+  valueClass,
+}: {
+  title: string;
+  value: string;
+  valueClass?: string;
+}) {
   return (
-    <div className="border rounded-xl p-4">
-      <div className="text-sm text-gray-500">{title}</div>
-      <div className="text-xl font-semibold">{value}</div>
+    <div
+      className="
+        group
+        relative
+        min-h-[88px]
+        rounded-2xl
+        border border-gray-200
+        bg-white
+        px-5 py-4
+        shadow-sm
+        transition-all
+        duration-200
+        hover:-translate-y-[2px]
+        hover:border-blue-200
+        hover:shadow-md
+        hover:ring-1 hover:ring-blue-100
+      "
+    >
+      <div className="flex items-start justify-between gap-3 border-b border-gray-100 pb-2">
+        <div className="text-[12px] font-semibold tracking-[0.02em] text-gray-500">
+          {title}
+        </div>
+      </div>
+
+      <div
+        className={`mt-3 text-[24px] font-semibold leading-none tracking-[-0.02em] ${
+          valueClass ?? "text-gray-900"
+        }`}
+      >
+        {value}
+      </div>
+
+      <div
+        className="
+          pointer-events-none
+          absolute inset-0
+          rounded-2xl
+          bg-gradient-to-br
+          from-blue-50
+          to-transparent
+          opacity-0
+          transition
+          group-hover:opacity-100
+        "
+      />
     </div>
   );
 }

@@ -14,9 +14,10 @@ export default function FilterBtn({
       type="button"
       onClick={onClick}
       className={[
-        "px-4 py-2 rounded-xl border text-sm font-semibold transition",
-        "border-orange-900/40",
-        active ? "bg-orange-700 text-white shadow" : "bg-orange-600 text-white/90 hover:bg-orange-700",
+        "inline-flex h-11 items-center justify-center rounded-full border px-4 text-sm font-semibold tracking-tight transition-all duration-200",
+        active
+          ? "border-slate-900 bg-slate-900 text-white shadow-sm ring-2 ring-slate-900/10"
+          : "border-slate-200 bg-white text-slate-700 hover:-translate-y-[1px] hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900",
       ].join(" ")}
     >
       {children}

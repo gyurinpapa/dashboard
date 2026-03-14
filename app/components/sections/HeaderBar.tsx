@@ -45,7 +45,6 @@ type Props = {
 
   period: string;
 
-  // ✅ 안전 확장: 넘겨주면 제목에 반영, 안 넘겨주면 기존 기본 제목 유지
   advertiserName?: string | null;
   reportTypeName?: string | null;
 };
@@ -56,6 +55,29 @@ function cleanText(v?: string | null) {
   if (s.toLowerCase() === "null") return "";
   if (s.toLowerCase() === "undefined") return "";
   return s;
+}
+
+function tabClass(active: boolean) {
+  return [
+    "inline-flex h-11 items-center justify-center rounded-full border px-4 text-sm font-semibold tracking-tight transition-all duration-200",
+    active
+      ? "border-slate-900 bg-slate-900 text-white shadow-sm ring-2 ring-slate-900/10"
+      : "border-transparent bg-white text-slate-600 hover:border-slate-200 hover:bg-slate-100 hover:text-slate-900 hover:-translate-y-[1px]",
+  ].join(" ");
+}
+
+function optionBtnClass(active: boolean, dim = false, disabled = false) {
+  return [
+    "px-3 py-1.5 rounded-lg border text-sm font-semibold transition-all duration-200",
+    !disabled ? "hover:-translate-y-[1px] hover:shadow-md" : "",
+    active
+      ? "bg-slate-900 text-white border-slate-900 shadow-sm"
+      : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50",
+    dim ? "opacity-40" : "",
+    disabled
+      ? "opacity-40 cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-100 hover:translate-y-0 hover:shadow-none"
+      : "",
+  ].join(" ");
 }
 
 export default function HeaderBar(props: Props) {
@@ -87,23 +109,28 @@ export default function HeaderBar(props: Props) {
     setFilterKey(filterKey === k ? null : k);
   };
 
-  // ✅ 상단 제목 계산
-  // - advertiserName / reportTypeName이 비어 있거나 "null"/"undefined"여도 안전 처리
-  // - 기존 UI 구조는 유지
   const headerTitle = useMemo(() => {
     const adv = cleanText(advertiserName);
     const typeName = cleanText(reportTypeName);
 
-    if (adv && typeName) return `${adv} ${typeName} `;
-    if (adv) return `${adv} 온라인광고 `;
-    if (typeName) return `${typeName} `;
-    return "온라인광고 ";
+    if (adv && typeName) return `${adv} ${typeName}`;
+    if (adv) return `${adv} 온라인광고`;
+    if (typeName) return typeName;
+    return "온라인광고";
   }, [advertiserName, reportTypeName]);
 
-  // ✅ 키워드 탭에서만 display ad 비활성
+  const headerSubTitle = useMemo(() => {
+    const adv = cleanText(advertiserName);
+    const typeName = cleanText(reportTypeName);
+
+    if (adv && typeName) return "광고 성과 리포트";
+    if (adv) return "광고 성과 리포트";
+    if (typeName) return "리포트";
+    return "광고 성과 리포트";
+  }, [advertiserName, reportTypeName]);
+
   const disableDisplayChannel = tab === "keyword" || tab === "keywordDetail";
 
-  // ✅ 바깥 클릭하면 필터 패널 닫기
   const filterRootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -134,21 +161,43 @@ export default function HeaderBar(props: Props) {
   }, [filterKey, setFilterKey]);
 
   return (
-    <header className="sticky top-0 z-50 bg-white/95 backdrop-blur border-b">
-      <div className="p-8 pb-4">
-        <div className="mx-auto w-full max-w-[1400px]">
-          <div className="mb-6 text-center pt-4">
-            <h1 className="text-3xl font-semibold tracking-tight">
-              {headerTitle}
-            </h1>
-            <div className="mt-4 border-t border-gray-400" />
-            <div className="mt-1 border-t border-gray-300" />
+    <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/90 backdrop-blur-xl">
+      <div className="px-4 pb-4 pt-6 sm:px-6 lg:px-8">
+        <div className="mx-auto w-full max-w-[1440px]">
+          <div className="mb-6 rounded-3xl border border-slate-200/80 bg-white px-6 py-6 shadow-sm">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+              <div className="min-w-0">
+                <div className="mb-2 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold tracking-[0.12em] text-slate-500">
+                  E-COMMERCE
+                </div>
+
+                <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+                  {headerTitle}
+                </h1>
+
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500">
+                  <span>{headerSubTitle}</span>
+                  {period ? (
+                    <>
+                      <span className="hidden sm:inline">•</span>
+                      <span>
+                        기간{" "}
+                        <span className="font-semibold text-slate-700">{period}</span>
+                      </span>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div className="flex items-start justify-between mb-2">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-stretch">
             {/* LEFT: Filters */}
-            <div ref={filterRootRef} className="relative inline-block">
-              <div className="flex gap-2">
+            <div
+              ref={filterRootRef}
+              className="relative flex min-h-[116px] flex-col justify-between rounded-[24px] border border-slate-200 bg-white px-4 py-4 shadow-sm"
+            >
+              <div className="flex flex-wrap gap-2">
                 <FilterBtn
                   active={filterKey === "month"}
                   onClick={() => toggleFilter("month")}
@@ -175,29 +224,28 @@ export default function HeaderBar(props: Props) {
                 </FilterBtn>
               </div>
 
-              {period && (
-                <div className="mt-3 mb-2 text-sm text-gray-600">
-                  기간:{" "}
-                  <span className="font-semibold text-gray-900">{period}</span>
-                </div>
-              )}
+              <div className="mt-4 min-h-[24px] border-t border-slate-100 pt-3 text-sm text-slate-500">
+                {period ? (
+                  <>
+                    조회 기간{" "}
+                    <span className="font-semibold text-slate-800">{period}</span>
+                  </>
+                ) : (
+                  <span className="text-slate-400">조회 기간 정보 없음</span>
+                )}
+              </div>
 
-              {/* 월 패널 */}
               {filterKey === "month" && (
-                <div className="absolute left-0 top-full mt-2 z-50 w-[520px] rounded-xl border bg-white shadow-lg p-3">
-                  <div className="flex flex-wrap gap-2 max-h-[220px] overflow-auto">
+                <div className="absolute left-0 top-full z-50 mt-3 w-[520px] max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl shadow-slate-900/8">
+                  <div className="mb-3 text-sm font-semibold text-slate-800">월 선택</div>
+                  <div className="flex max-h-[220px] flex-wrap gap-2 overflow-auto">
                     <button
                       type="button"
                       onClick={() => {
                         setSelectedMonth("all");
                         setFilterKey(null);
                       }}
-                      className={[
-                        "px-3 py-1 rounded-lg border text-sm font-semibold transition",
-                        selectedMonth === "all"
-                          ? "bg-orange-700 text-white border-orange-700"
-                          : "bg-white text-orange-700 border-orange-300 hover:bg-orange-50",
-                      ].join(" ")}
+                      className={optionBtnClass(selectedMonth === "all")}
                     >
                       전체
                     </button>
@@ -213,13 +261,7 @@ export default function HeaderBar(props: Props) {
                             setSelectedMonth(m);
                             setFilterKey(null);
                           }}
-                          className={[
-                            "px-3 py-1 rounded-lg border text-sm font-semibold transition",
-                            selectedMonth === m
-                              ? "bg-orange-700 text-white border-orange-700"
-                              : "bg-white text-orange-700 border-orange-300 hover:bg-orange-50",
-                            dim ? "opacity-40" : "",
-                          ].join(" ")}
+                          className={optionBtnClass(selectedMonth === m, dim)}
                         >
                           {monthLabelOf(m)}
                         </button>
@@ -229,22 +271,17 @@ export default function HeaderBar(props: Props) {
                 </div>
               )}
 
-              {/* 주차 패널 */}
               {filterKey === "week" && (
-                <div className="absolute left-0 top-full mt-2 z-50 w-[520px] rounded-xl border bg-white shadow-lg p-3">
-                  <div className="flex flex-wrap gap-2 max-h-[220px] overflow-auto">
+                <div className="absolute left-0 top-full z-50 mt-3 w-[520px] max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl shadow-slate-900/8">
+                  <div className="mb-3 text-sm font-semibold text-slate-800">주차 선택</div>
+                  <div className="flex max-h-[220px] flex-wrap gap-2 overflow-auto">
                     <button
                       type="button"
                       onClick={() => {
                         setSelectedWeek("all");
                         setFilterKey(null);
                       }}
-                      className={[
-                        "px-3 py-1 rounded-lg border text-sm font-semibold transition",
-                        selectedWeek === "all"
-                          ? "bg-orange-700 text-white border-orange-700"
-                          : "bg-white text-orange-700 border-orange-300 hover:bg-orange-50",
-                      ].join(" ")}
+                      className={optionBtnClass(selectedWeek === "all")}
                     >
                       전체
                     </button>
@@ -261,13 +298,7 @@ export default function HeaderBar(props: Props) {
                             setSelectedWeek(wk);
                             setFilterKey(null);
                           }}
-                          className={[
-                            "px-3 py-1 rounded-lg border text-sm font-semibold transition",
-                            selectedWeek === wk
-                              ? "bg-orange-700 text-white border-orange-700"
-                              : "bg-white text-orange-700 border-orange-300 hover:bg-orange-50",
-                            dim ? "opacity-40" : "",
-                          ].join(" ")}
+                          className={optionBtnClass(selectedWeek === wk, dim)}
                         >
                           {w.label}
                         </button>
@@ -277,22 +308,17 @@ export default function HeaderBar(props: Props) {
                 </div>
               )}
 
-              {/* 기기 패널 */}
               {filterKey === "device" && (
-                <div className="absolute left-0 top-full mt-2 z-50 w-[520px] rounded-xl border bg-white shadow-lg p-3">
-                  <div className="flex flex-wrap gap-2 max-h-[220px] overflow-auto">
+                <div className="absolute left-0 top-full z-50 mt-3 w-[520px] max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl shadow-slate-900/8">
+                  <div className="mb-3 text-sm font-semibold text-slate-800">기기 선택</div>
+                  <div className="flex max-h-[220px] flex-wrap gap-2 overflow-auto">
                     <button
                       type="button"
                       onClick={() => {
                         setSelectedDevice("all");
                         setFilterKey(null);
                       }}
-                      className={[
-                        "px-3 py-1 rounded-lg border text-sm font-semibold transition",
-                        selectedDevice === "all"
-                          ? "bg-orange-700 text-white border-orange-700"
-                          : "bg-white text-orange-700 border-orange-300 hover:bg-orange-50",
-                      ].join(" ")}
+                      className={optionBtnClass(selectedDevice === "all")}
                     >
                       전체
                     </button>
@@ -305,12 +331,7 @@ export default function HeaderBar(props: Props) {
                           setSelectedDevice(d);
                           setFilterKey(null);
                         }}
-                        className={[
-                          "px-3 py-1 rounded-lg border text-sm font-semibold transition",
-                          selectedDevice === d
-                            ? "bg-orange-700 text-white border-orange-700"
-                            : "bg-white text-orange-700 border-orange-300 hover:bg-orange-50",
-                        ].join(" ")}
+                        className={optionBtnClass(selectedDevice === d)}
                       >
                         {d}
                       </button>
@@ -319,22 +340,17 @@ export default function HeaderBar(props: Props) {
                 </div>
               )}
 
-              {/* 채널 패널 */}
               {filterKey === "channel" && (
-                <div className="absolute left-0 top-full mt-2 z-50 w-[520px] rounded-xl border bg-white shadow-lg p-3">
-                  <div className="flex flex-wrap gap-2 max-h-[220px] overflow-auto">
+                <div className="absolute left-0 top-full z-50 mt-3 w-[520px] max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl shadow-slate-900/8">
+                  <div className="mb-3 text-sm font-semibold text-slate-800">채널 선택</div>
+                  <div className="flex max-h-[220px] flex-wrap gap-2 overflow-auto">
                     <button
                       type="button"
                       onClick={() => {
                         setSelectedChannel("all");
                         setFilterKey(null);
                       }}
-                      className={[
-                        "px-3 py-1 rounded-lg border text-sm font-semibold transition",
-                        selectedChannel === "all"
-                          ? "bg-orange-700 text-white border-orange-700"
-                          : "bg-white text-orange-700 border-orange-300 hover:bg-orange-50",
-                      ].join(" ")}
+                      className={optionBtnClass(selectedChannel === "all")}
                     >
                       전체
                     </button>
@@ -362,15 +378,7 @@ export default function HeaderBar(props: Props) {
                               ? "키워드 탭에서는 display ad를 선택할 수 없습니다."
                               : String(c)
                           }
-                          className={[
-                            "px-3 py-1 rounded-lg border text-sm font-semibold transition",
-                            selectedChannel === c
-                              ? "bg-orange-700 text-white border-orange-700"
-                              : "bg-white text-orange-700 border-orange-300 hover:bg-orange-50",
-                            disabled
-                              ? "opacity-40 cursor-not-allowed bg-gray-100 text-gray-400 border-gray-200 hover:bg-gray-100"
-                              : "",
-                          ].join(" ")}
+                          className={optionBtnClass(selectedChannel === c, false, disabled)}
                         >
                           {c}
                         </button>
@@ -381,17 +389,13 @@ export default function HeaderBar(props: Props) {
               )}
             </div>
 
-            {/* RIGHT: Tabs + VAT */}
-            <div className="flex flex-col items-end gap-2">
-              <div className="flex gap-3 flex-wrap justify-end">
+            {/* RIGHT: Product-style pill tabs */}
+            <div className="flex min-h-[116px] flex-col justify-between rounded-[24px] border border-slate-200 bg-slate-50/90 px-3 py-3 shadow-sm">
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={() => setTab("summary")}
-                  className={`px-5 py-2 rounded-xl border text-sm font-semibold transition ${
-                    tab === "summary"
-                      ? "bg-black text-white border-black"
-                      : "bg-white text-black border-gray-300 hover:bg-gray-100"
-                  }`}
+                  className={tabClass(tab === "summary")}
                 >
                   요약
                 </button>
@@ -399,11 +403,7 @@ export default function HeaderBar(props: Props) {
                 <button
                   type="button"
                   onClick={() => setTab("summary2")}
-                  className={`px-5 py-2 rounded-xl border text-sm font-semibold transition ${
-                    tab === "summary2"
-                      ? "bg-black text-white border-black"
-                      : "bg-white text-black border-gray-300 hover:bg-gray-100"
-                  }`}
+                  className={tabClass(tab === "summary2")}
                 >
                   요약2
                 </button>
@@ -411,11 +411,7 @@ export default function HeaderBar(props: Props) {
                 <button
                   type="button"
                   onClick={() => setTab("structure")}
-                  className={`px-5 py-2 rounded-xl border text-sm font-semibold transition ${
-                    tab === "structure"
-                      ? "bg-black text-white border-black"
-                      : "bg-white text-black border-gray-300 hover:bg-gray-100"
-                  }`}
+                  className={tabClass(tab === "structure")}
                 >
                   구조
                 </button>
@@ -423,11 +419,7 @@ export default function HeaderBar(props: Props) {
                 <button
                   type="button"
                   onClick={() => setTab("keyword")}
-                  className={`px-5 py-2 rounded-xl border text-sm font-semibold transition ${
-                    tab === "keyword"
-                      ? "bg-black text-white border-black"
-                      : "bg-white text-black border-gray-300 hover:bg-gray-100"
-                  }`}
+                  className={tabClass(tab === "keyword")}
                 >
                   키워드
                 </button>
@@ -435,11 +427,7 @@ export default function HeaderBar(props: Props) {
                 <button
                   type="button"
                   onClick={() => setTab("keywordDetail")}
-                  className={`px-5 py-2 rounded-xl border text-sm font-semibold transition ${
-                    tab === "keywordDetail"
-                      ? "bg-black text-white border-black"
-                      : "bg-white text-black border-gray-300 hover:bg-gray-100"
-                  }`}
+                  className={tabClass(tab === "keywordDetail")}
                 >
                   키워드(상세)
                 </button>
@@ -447,11 +435,7 @@ export default function HeaderBar(props: Props) {
                 <button
                   type="button"
                   onClick={() => setTab("creative")}
-                  className={`px-5 py-2 rounded-xl border text-sm font-semibold transition ${
-                    tab === "creative"
-                      ? "bg-black text-white border-black"
-                      : "bg-white text-black border-gray-300 hover:bg-gray-100"
-                  }`}
+                  className={tabClass(tab === "creative")}
                 >
                   소재
                 </button>
@@ -459,17 +443,17 @@ export default function HeaderBar(props: Props) {
                 <button
                   type="button"
                   onClick={() => setTab("creativeDetail")}
-                  className={`px-5 py-2 rounded-xl border text-sm font-semibold transition ${
-                    tab === "creativeDetail"
-                      ? "bg-black text-white border-black"
-                      : "bg-white text-black border-gray-300 hover:bg-gray-100"
-                  }`}
+                  className={tabClass(tab === "creativeDetail")}
                 >
                   소재(상세)
                 </button>
               </div>
 
-              <div className="text-sm text-gray-600">[+VAT]</div>
+              <div className="mt-4 flex min-h-[24px] items-end justify-end border-t border-slate-200/70 pt-3">
+                <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600">
+                  +VAT
+                </div>
+              </div>
             </div>
           </div>
         </div>

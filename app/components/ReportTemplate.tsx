@@ -444,6 +444,7 @@ function minMaxYmd(rows: any[]) {
     if (!min || d < min) min = d;
     if (!max || d > max) max = d;
   }
+
   return { min, max };
 }
 
@@ -794,90 +795,123 @@ export default function ReportTemplate({
   }, [tab, creativeBaseRows, creativesMapNormalized]);
 
   return (
-    <main key={templateRenderKey} className="min-h-screen bg-white">
-      <HeaderBar
-        tab={tab}
-        setTab={setTab}
-        filterKey={filterKey}
-        setFilterKey={setFilterKey}
-        selectedMonth={selectedMonth}
-        setSelectedMonth={setSelectedMonth}
-        selectedWeek={selectedWeek}
-        setSelectedWeek={setSelectedWeek}
-        selectedDevice={selectedDevice}
-        setSelectedDevice={setSelectedDevice}
-        selectedChannel={selectedChannel}
-        setSelectedChannel={setSelectedChannel}
-        monthOptions={monthOptions}
-        weekOptions={weekOptions}
-        deviceOptions={deviceOptions}
-        channelOptions={channelOptions}
-        enabledMonthKeySet={enabledMonthKeySet}
-        enabledWeekKeySet={enabledWeekKeySet}
-        period={periodFixed}
-        advertiserName={effectiveAdvertiserName}
-        reportTypeName={effectiveReportTypeName}
-      />
+    <main
+      key={templateRenderKey}
+      className="min-h-screen bg-slate-50 text-slate-900"
+    >
+      <div className="relative">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-slate-100/90 via-slate-50/70 to-transparent" />
+        <div className="relative z-10 border-b border-slate-200/80 bg-white/85 backdrop-blur-md shadow-[0_1px_0_rgba(15,23,42,0.03)]">
+          <HeaderBar
+            tab={tab}
+            setTab={setTab}
+            filterKey={filterKey}
+            setFilterKey={setFilterKey}
+            selectedMonth={selectedMonth}
+            setSelectedMonth={setSelectedMonth}
+            selectedWeek={selectedWeek}
+            setSelectedWeek={setSelectedWeek}
+            selectedDevice={selectedDevice}
+            setSelectedDevice={setSelectedDevice}
+            selectedChannel={selectedChannel}
+            setSelectedChannel={setSelectedChannel}
+            monthOptions={monthOptions}
+            weekOptions={weekOptions}
+            deviceOptions={deviceOptions}
+            channelOptions={channelOptions}
+            enabledMonthKeySet={enabledMonthKeySet}
+            enabledWeekKeySet={enabledWeekKeySet}
+            period={periodFixed}
+            advertiserName={effectiveAdvertiserName}
+            reportTypeName={effectiveReportTypeName}
+          />
+        </div>
+      </div>
 
-      <div className="px-8 pt-10 pb-8">
-        <div className="mx-auto w-full max-w-[1400px]">
+      <div className="px-4 pb-10 pt-8 sm:px-6 lg:px-8 lg:pt-10">
+        <div className="mx-auto w-full max-w-[1440px]">
           {isLoading ? (
-            <div style={{ padding: 12, opacity: 0.7 }}>Loading rows...</div>
+            <div className="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="flex items-center gap-3 px-5 py-4">
+                <div className="h-2.5 w-2.5 rounded-full bg-blue-500 animate-pulse" />
+                <div className="text-sm font-medium text-slate-600">Loading rows...</div>
+              </div>
+            </div>
           ) : null}
 
-          {tab === "summary" && (
-            <>
-              <MonthGoalSection
-                currentMonthKey={currentMonthKey}
-                currentMonthActual={currentMonthActual}
-                currentMonthGoalComputed={currentMonthGoalComputed}
-                monthGoal={monthGoal}
-                setMonthGoal={setMonthGoal}
-                monthGoalInsight={monthGoalInsight}
-              />
+          <div className="space-y-8">
+            {tab === "summary" && (
+              <>
+                <div className="rounded-2xl">
+                  <MonthGoalSection
+                    currentMonthKey={currentMonthKey}
+                    currentMonthActual={currentMonthActual}
+                    currentMonthGoalComputed={currentMonthGoalComputed}
+                    monthGoal={monthGoal}
+                    setMonthGoal={setMonthGoal}
+                    monthGoalInsight={monthGoalInsight}
+                  />
+                </div>
 
-              <SummarySection
-                totals={totals as any}
-                byMonth={byMonth as any}
-                byWeekOnly={byWeekOnly as any}
-                byWeekChart={byWeekChart as any}
-                bySource={bySource as any}
-                currentMonthKey={currentMonthKey as any}
-                currentMonthActual={currentMonthActual as any}
-                currentMonthGoalComputed={currentMonthGoalComputed as any}
-                monthGoal={monthGoal as any}
-                setMonthGoal={setMonthGoal as any}
-                monthGoalInsight={monthGoalInsight as any}
-              />
-            </>
-          )}
+                <div className="rounded-2xl">
+                  <SummarySection
+                    totals={totals as any}
+                    byMonth={byMonth as any}
+                    byWeekOnly={byWeekOnly as any}
+                    byWeekChart={byWeekChart as any}
+                    bySource={bySource as any}
+                    currentMonthKey={currentMonthKey as any}
+                    currentMonthActual={currentMonthActual as any}
+                    currentMonthGoalComputed={currentMonthGoalComputed as any}
+                    monthGoal={monthGoal as any}
+                    setMonthGoal={setMonthGoal as any}
+                    monthGoalInsight={monthGoalInsight as any}
+                  />
+                </div>
+              </>
+            )}
 
-          {tab === "summary2" && (
-            <Summary2Section rows={filteredRows as any[]} />
-          )}
+            {tab === "summary2" && (
+              <div className="rounded-2xl">
+                <Summary2Section rows={filteredRows as any[]} />
+              </div>
+            )}
 
-          {tab === "structure" && (
-            <StructureSection
-              bySource={bySource}
-              byCampaign={byCampaign}
-              rows={filteredRowsWithCreatives}
-              monthGoal={monthGoal}
-            />
-          )}
+            {tab === "structure" && (
+              <div className="rounded-2xl">
+                <StructureSection
+                  bySource={bySource}
+                  byCampaign={byCampaign}
+                  rows={filteredRowsWithCreatives}
+                  monthGoal={monthGoal}
+                />
+              </div>
+            )}
 
-          {tab === "keyword" && (
-            <KeywordSection keywordAgg={keywordAgg} keywordInsight={keywordInsight} />
-          )}
+            {tab === "keyword" && (
+              <div className="rounded-2xl">
+                <KeywordSection keywordAgg={keywordAgg} keywordInsight={keywordInsight} />
+              </div>
+            )}
 
-          {tab === "keywordDetail" && (
-            <KeywordDetailSection rows={filteredRowsWithCreatives as any[]} />
-          )}
+            {tab === "keywordDetail" && (
+              <div className="rounded-2xl">
+                <KeywordDetailSection rows={filteredRowsWithCreatives as any[]} />
+              </div>
+            )}
 
-          {tab === "creative" && <CreativeSection rows={creativeBaseRows} />}
+            {tab === "creative" && (
+              <div className="rounded-2xl">
+                <CreativeSection rows={creativeBaseRows} />
+              </div>
+            )}
 
-          {tab === "creativeDetail" && (
-            <CreativeDetailSection rows={creativeBaseRows as any[]} />
-          )}
+            {tab === "creativeDetail" && (
+              <div className="rounded-2xl">
+                <CreativeDetailSection rows={creativeBaseRows as any[]} />
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </main>
