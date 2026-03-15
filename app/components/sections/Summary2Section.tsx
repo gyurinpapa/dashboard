@@ -1,7 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { KRW } from "../../../src/lib/report/format";
+import {
+  KRW,
+  toSafeNumber,
+  formatPercentFromRate,
+  formatPercentFromRoas,
+  formatCount,
+  diffRatio,
+  formatDeltaPercentFromRatio,
+} from "../../../src/lib/report/format";
 
 type Props = {
   rows: any[];
@@ -63,11 +71,6 @@ type FunnelItem = {
   dayDiffText: string;
 };
 
-function asNum(v: any) {
-  const n = Number(String(v ?? "").replace(/[%₩,\s]/g, ""));
-  return Number.isFinite(n) ? n : 0;
-}
-
 function asStr(v: any) {
   if (v == null) return "";
   const s = String(v).trim();
@@ -127,13 +130,16 @@ function dayLabelKor(idx: number) {
 }
 
 function formatMetricValue(metric: HeatmapMetricKey | "ctr" | "cvr" | "cpa", v: number) {
-  if (metric === "roas" || metric === "ctr" || metric === "cvr") {
-    return `${(v * 100).toFixed(1)}%`;
+  if (metric === "roas") {
+    return formatPercentFromRoas(v, 1);
+  }
+  if (metric === "ctr" || metric === "cvr") {
+    return formatPercentFromRate(v, 1);
   }
   if (metric === "cost" || metric === "revenue" || metric === "cpa") {
     return KRW(v);
   }
-  return Math.round(v).toLocaleString();
+  return formatCount(v);
 }
 
 function quantize(value: number, values: number[]) {
@@ -273,10 +279,6 @@ function describeArc(
     `A ${rInner} ${rInner} 0 ${largeArcFlag} 1 ${innerEnd.x} ${innerEnd.y}`,
     "Z",
   ].join(" ");
-}
-
-function pctText(v: number) {
-  return `${v.toFixed(1)}%`;
 }
 
 function FunnelCard({
@@ -537,8 +539,9 @@ function DonutCard({
                       }}
                     >
                       <title>
-                        {`${item.label}\n값: ${valueFormatter(item.value)}\n비중: ${pctText(
-                          item.pct * 100
+                        {`${item.label}\n값: ${valueFormatter(item.value)}\n비중: ${formatPercentFromRate(
+                          item.pct,
+                          1
                         )}`}
                       </title>
                     </path>
@@ -601,7 +604,7 @@ function DonutCard({
                       </div>
 
                       <div className="shrink-0 text-sm font-semibold text-gray-900">
-                        {pctText(item.pct * 100)}
+                        {formatPercentFromRate(item.pct, 1)}
                       </div>
                     </div>
 
@@ -660,7 +663,7 @@ function RoasBarCard({
                       </span>
                     </div>
                     <span className="text-sm font-semibold text-gray-900">
-                      {(item.roas * 100).toFixed(1)}%
+                      {formatPercentFromRoas(item.roas, 1)}
                     </span>
                   </div>
 
@@ -690,7 +693,7 @@ function RoasBarCard({
                     <div>
                       <div>전환수</div>
                       <div className="mt-1 font-semibold text-gray-900">
-                        {Math.round(item.conversions).toLocaleString()}
+                        {formatCount(item.conversions)}
                       </div>
                     </div>
                   </div>
@@ -748,11 +751,11 @@ export default function Summary2Section({ rows }: Props) {
           roas: 0,
         } as DayAgg);
 
-      nextBase.impressions += asNum(r?.impressions ?? r?.impr);
-      nextBase.clicks += asNum(r?.clicks ?? r?.click ?? r?.clk);
-      nextBase.cost += asNum(r?.cost ?? r?.spend ?? r?.ad_cost);
-      nextBase.conversions += asNum(r?.conversions ?? r?.conv ?? r?.cv);
-      nextBase.revenue += asNum(r?.revenue ?? r?.sales ?? r?.purchase_amount ?? r?.gmv);
+      nextBase.impressions += toSafeNumber(r?.impressions ?? r?.impr);
+      nextBase.clicks += toSafeNumber(r?.clicks ?? r?.click ?? r?.clk);
+      nextBase.cost += toSafeNumber(r?.cost ?? r?.spend ?? r?.ad_cost);
+      nextBase.conversions += toSafeNumber(r?.conversions ?? r?.conv ?? r?.cv);
+      nextBase.revenue += toSafeNumber(r?.revenue ?? r?.sales ?? r?.purchase_amount ?? r?.gmv);
 
       map.set(key, nextBase);
     }
@@ -842,7 +845,7 @@ export default function Summary2Section({ rows }: Props) {
     for (const r of rows ?? []) {
       const channel = normalizeChannel(r?.channel ?? r?.source ?? r?.platform);
       const device = normalizeDevice(r?.device);
-      const revenue = asNum(r?.revenue ?? r?.sales ?? r?.purchase_amount ?? r?.gmv);
+      const revenue = toSafeNumber(r?.revenue ?? r?.sales ?? r?.purchase_amount ?? r?.gmv);
 
       if (revenue <= 0) continue;
 
@@ -888,9 +891,9 @@ export default function Summary2Section({ rows }: Props) {
 
     for (const r of rows ?? []) {
       const channel = normalizeChannel(r?.channel ?? r?.source ?? r?.platform);
-      const revenue = asNum(r?.revenue ?? r?.sales ?? r?.purchase_amount ?? r?.gmv);
-      const conversions = asNum(r?.conversions ?? r?.conv ?? r?.cv);
-      const cost = asNum(r?.cost ?? r?.spend ?? r?.ad_cost);
+      const revenue = toSafeNumber(r?.revenue ?? r?.sales ?? r?.purchase_amount ?? r?.gmv);
+      const conversions = toSafeNumber(r?.conversions ?? r?.conv ?? r?.cv);
+      const cost = toSafeNumber(r?.cost ?? r?.spend ?? r?.ad_cost);
 
       const prev = map.get(channel);
 
@@ -943,9 +946,9 @@ export default function Summary2Section({ rows }: Props) {
         conversions: 0,
       };
 
-      prev.impressions += asNum(r?.impressions ?? r?.impr);
-      prev.clicks += asNum(r?.clicks ?? r?.click ?? r?.clk);
-      prev.conversions += asNum(r?.conversions ?? r?.conv ?? r?.cv);
+      prev.impressions += toSafeNumber(r?.impressions ?? r?.impr);
+      prev.clicks += toSafeNumber(r?.clicks ?? r?.click ?? r?.clk);
+      prev.conversions += toSafeNumber(r?.conversions ?? r?.conv ?? r?.cv);
 
       map.set(key, prev);
     }
@@ -1015,9 +1018,7 @@ export default function Summary2Section({ rows }: Props) {
         if (current > 0) return "전일 대비 신규";
         return "전일 대비 -";
       }
-      const diff = ((current - prev) / prev) * 100;
-      const sign = diff > 0 ? "+" : "";
-      return `전일 대비 ${sign}${diff.toFixed(1)}%`;
+      return `전일 대비 ${formatDeltaPercentFromRatio(diffRatio(current, prev), 1)}`;
     };
 
     return [
@@ -1025,33 +1026,33 @@ export default function Summary2Section({ rows }: Props) {
         key: "impressions",
         label: "노출",
         value: point.impressions,
-        displayValue: Math.round(point.impressions).toLocaleString(),
+        displayValue: formatCount(point.impressions),
         color: "#3b82f6",
         widthPct: Math.max(10, (point.impressions / currentDayMax) * 100),
-        sharePctText: `${((point.impressions / maxImpressions) * 100).toFixed(1)}%`,
-        peakPctText: `최고일 ${Math.round(maxImpressions).toLocaleString()}`,
+        sharePctText: formatPercentFromRate(point.impressions / maxImpressions, 1),
+        peakPctText: `최고일 ${formatCount(maxImpressions)}`,
         dayDiffText: diffText(point.impressions, prevPoint.impressions),
       },
       {
         key: "clicks",
         label: "클릭",
         value: point.clicks,
-        displayValue: Math.round(point.clicks).toLocaleString(),
+        displayValue: formatCount(point.clicks),
         color: "#4b9fad",
         widthPct: Math.max(10, (point.clicks / currentDayMax) * 100),
-        sharePctText: `${((point.clicks / maxClicks) * 100).toFixed(1)}%`,
-        peakPctText: `최고일 ${Math.round(maxClicks).toLocaleString()}`,
+        sharePctText: formatPercentFromRate(point.clicks / maxClicks, 1),
+        peakPctText: `최고일 ${formatCount(maxClicks)}`,
         dayDiffText: diffText(point.clicks, prevPoint.clicks),
       },
       {
         key: "conversions",
         label: "전환",
         value: point.conversions,
-        displayValue: Math.round(point.conversions).toLocaleString(),
+        displayValue: formatCount(point.conversions),
         color: "#f2995a",
         widthPct: Math.max(10, (point.conversions / currentDayMax) * 100),
-        sharePctText: `${((point.conversions / maxConversions) * 100).toFixed(1)}%`,
-        peakPctText: `최고일 ${Math.round(maxConversions).toLocaleString()}`,
+        sharePctText: formatPercentFromRate(point.conversions / maxConversions, 1),
+        peakPctText: `최고일 ${formatCount(maxConversions)}`,
         dayDiffText: diffText(point.conversions, prevPoint.conversions),
       },
     ];
@@ -1068,8 +1069,8 @@ export default function Summary2Section({ rows }: Props) {
     const cvr = point.clicks > 0 ? point.conversions / point.clicks : 0;
 
     return [
-      `CTR ${(ctr * 100).toFixed(2)}%`,
-      `CVR ${(cvr * 100).toFixed(2)}%`,
+      `CTR ${formatPercentFromRate(ctr, 2)}`,
+      `CVR ${formatPercentFromRate(cvr, 2)}`,
     ];
   }, [currentFunnelPoint]);
 
@@ -1380,7 +1381,7 @@ export default function Summary2Section({ rows }: Props) {
             <div className="rounded-2xl border border-gray-200 bg-gray-50 px-5 py-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
               <div className="text-xs font-medium text-gray-500">활성 일수</div>
               <div className="mt-3 text-xl font-semibold text-gray-900">
-                {heatmapSummary.activeDays.toLocaleString()}일
+                {formatCount(heatmapSummary.activeDays)}일
               </div>
             </div>
 
@@ -1666,7 +1667,7 @@ export default function Summary2Section({ rows }: Props) {
                   <div className="grid w-full max-w-[800px] gap-4 md:grid-cols-2">
                     {channelRevenue.slice(0, 2).map((item) => {
                       const total = sankeyData.totalRevenue || 1;
-                      const pct = (item.revenue / total) * 100;
+                      const pct = item.revenue / total;
                       return (
                         <div
                           key={item.channel}
@@ -1685,7 +1686,7 @@ export default function Summary2Section({ rows }: Props) {
                             {KRW(item.revenue)}
                           </div>
                           <div className="mt-1 text-xs text-gray-500">
-                            전체 매출의 {pct.toFixed(1)}%
+                            전체 매출의 {formatPercentFromRate(pct, 1)}
                           </div>
                         </div>
                       );
@@ -1713,7 +1714,7 @@ export default function Summary2Section({ rows }: Props) {
             totalLabel="Total Conv"
             totalValue={totalConversions}
             items={conversionDonutData}
-            valueFormatter={(v) => Math.round(v).toLocaleString()}
+            valueFormatter={(v) => formatCount(v)}
           />
 
           <RoasBarCard items={roasBarData} />

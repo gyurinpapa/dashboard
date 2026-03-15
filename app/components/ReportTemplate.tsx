@@ -29,7 +29,6 @@ import CreativeSection from "@/app/components/sections/CreativeSection";
 import CreativeDetailSection from "@/app/components/sections/CreativeDetailSection";
 import MonthGoalSection from "@/app/components/sections/MonthGoalSection";
 
-// ✅ 어떤 컴포넌트가 object인지 즉시 찾기 (dev에서만)
 if (typeof window !== "undefined") {
   const checks: Record<string, any> = {
     HeaderBar,
@@ -67,14 +66,7 @@ const DEFAULT_GOAL: GoalState = {
 type Props = {
   rows: any[];
   isLoading?: boolean;
-
-  /**
-   * key = report_creatives.creative_key (일반적으로 "파일명.확장자")
-   * value = signed_url
-   */
   creativesMap?: Record<string, string>;
-
-  // ✅ 부모에서 넘겨주는 제목 정보
   advertiserName?: string | null;
   reportTypeName?: string | null;
 };
@@ -106,9 +98,6 @@ function firstNonEmpty(...values: any[]) {
   return "";
 }
 
-/**
- * ✅ 핵심: "눈에 같은 파일명"인데 매칭이 안 되는 가장 큰 원인 = 유니코드 정규화(NFD/NFC)
- */
 function normalizeKey(s: any) {
   let v = String(s ?? "");
   v = safeDecode(v);
@@ -169,7 +158,6 @@ function normalizeIncomingRow(rec: any) {
 
   const base = rowObj ? { ...rowObj } : { ...(rec ?? {}) };
 
-  // ✅ 날짜/기본 축 alias 흡수
   if (base.date == null) {
     base.date =
       rec?.date ??
@@ -198,7 +186,6 @@ function normalizeIncomingRow(rec: any) {
     base.platform = rec?.platform ?? base?.media_source ?? base?.ad_platform ?? null;
   }
 
-  // ✅ 이름 alias 흡수
   if (base.campaign_name == null && base.campaign != null) base.campaign_name = base.campaign;
   if (base.campaign_name == null && base.campaignName != null) base.campaign_name = base.campaignName;
 
@@ -209,7 +196,6 @@ function normalizeIncomingRow(rec: any) {
   if (base.keyword == null && base.keyword_name != null) base.keyword = base.keyword_name;
   if (base.keyword == null && base.search_term != null) base.keyword = base.search_term;
 
-  // ✅ 이미지/creative alias 흡수
   if (base.imagepath == null && base.imagePath != null) base.imagepath = base.imagePath;
   if (base.imagePath == null && base.imagepath != null) base.imagePath = base.imagepath;
   if (base.image_path == null && base.imagepath != null) base.image_path = base.imagepath;
@@ -218,7 +204,6 @@ function normalizeIncomingRow(rec: any) {
   if (base.creative_file == null && base.creativeFile != null) base.creative_file = base.creativeFile;
   if (base.creativeFile == null && base.creative_file != null) base.creativeFile = base.creative_file;
 
-  // ✅ 수치 alias 흡수
   if (base.impressions == null && base.impr != null) base.impressions = base.impr;
   if (base.clicks == null && base.click != null) base.clicks = base.click;
   if (base.clicks == null && base.clk != null) base.clicks = base.clk;
@@ -276,33 +261,25 @@ function pickHeaderFallbackFromRows(rows: any[]) {
   };
 }
 
-/**
- * ✅ row에서 creative 후보 수집 (매칭용)
- */
 function creativeCandidatesOfRow(row: any): string[] {
   const rawCandidates: any[] = [
     row?.creative_key,
     row?.creativeKey,
-
     row?.creative_file,
     row?.creativeFile,
-
     row?.creative,
-
     row?.imagepath_raw,
     row?.imagepath,
     row?.imagePath,
     row?.image_path,
     row?.image_url,
     row?.imageUrl,
-
     row?.thumbnail?.imagePath,
     row?.thumbnail?.imagepath,
     row?.thumbUrl,
     row?.thumb_url,
     row?.thumbnailUrl,
     row?.thumbnail_url,
-
     row?.extras?.creative_key,
     row?.extras?.creativeKey,
     row?.extras?.creative_file,
@@ -380,7 +357,6 @@ function normalizeCreativesMap(map: Record<string, string>) {
       p1n,
       c1,
       c1n,
-
       kRaw.startsWith("C:") ? normalizeKey(kRaw.slice(2)) : normalizeKey(`C:${kRaw}`),
       base ? (base.startsWith("C:") ? normalizeKey(base.slice(2)) : normalizeKey(`C:${base}`)) : "",
       noext ? (noext.startsWith("C:") ? normalizeKey(noext.slice(2)) : normalizeKey(`C:${noext}`)) : "",
@@ -398,7 +374,6 @@ function normalizeCreativesMap(map: Record<string, string>) {
   return out;
 }
 
-/** ✅ rows 기반 period 재계산 */
 function pickDateStrLoose(r: any) {
   const v =
     r?.date ??
@@ -444,7 +419,6 @@ function minMaxYmd(rows: any[]) {
     if (!min || d < min) min = d;
     if (!max || d > max) max = d;
   }
-
   return { min, max };
 }
 
@@ -515,7 +489,6 @@ export default function ReportTemplate({
     creativesMap,
   ]);
 
-  // ✅ 디버깅 편의
   useEffect(() => {
     try {
       const sp = new URLSearchParams(window.location.search);
@@ -569,14 +542,11 @@ export default function ReportTemplate({
     channelOptions,
     enabledMonthKeySet,
     enabledWeekKeySet,
-
     filteredRows,
     period,
-
     currentMonthKey,
     currentMonthActual,
     currentMonthGoalComputed,
-
     totals,
     bySource,
     byCampaign,
@@ -594,7 +564,6 @@ export default function ReportTemplate({
     onInvalidWeek: () => setSelectedWeek("all"),
   });
 
-  // ✅ 필터가 새 데이터셋과 안 맞으면 자동 복구
   useEffect(() => {
     if (selectedMonth !== "all" && !enabledMonthKeySet.has(selectedMonth)) {
       setSelectedMonth("all");
@@ -607,7 +576,6 @@ export default function ReportTemplate({
     }
   }, [selectedWeek, enabledWeekKeySet]);
 
-  // ✅ deviceOptions / channelOptions 는 문자열 배열이므로 직접 Set 구성
   useEffect(() => {
     const allowed = new Set((deviceOptions ?? []).map((x: any) => String(x)));
     if (selectedDevice !== "all" && !allowed.has(String(selectedDevice))) {
@@ -622,7 +590,14 @@ export default function ReportTemplate({
     }
   }, [selectedChannel, channelOptions]);
 
-  // ✅ period 재계산
+  // ✅ 상단 제목 아래 기간 = 업로드된 CSV 전체 기간
+  const fullPeriod = useMemo(() => {
+    const mm = minMaxYmd(normalizedRows as any[]);
+    if (!mm.min || !mm.max) return "";
+    return `${formatYmd(mm.min)} ~ ${formatYmd(mm.max)}`;
+  }, [normalizedRows]);
+
+  // ✅ 아래 조회 기간 = 월/주차/기기/채널 필터 적용 결과 기간
   const periodFixed = useMemo(() => {
     const mm = minMaxYmd(filteredRows as any[]);
     if (!mm.min || !mm.max) return period;
@@ -697,12 +672,10 @@ export default function ReportTemplate({
 
       const out: any = {
         ...r,
-
         creative_key: matchedKey,
         creative_url: matchedUrl,
         creativeKey: matchedKey,
         creativeUrl: matchedUrl,
-
         __dbg_used_orig: !!orig,
         __imagepath_raw:
           baseForCandidates?.imagepath_raw ??
@@ -715,7 +688,6 @@ export default function ReportTemplate({
           baseForCandidates?.creativeFile ??
           undefined,
         __creative_candidates: candidates,
-
         __dbg_hit_candidates: candidates
           .map((x: any) => normalizeKey(x))
           .filter((x: string) => !!map[x])
@@ -728,28 +700,22 @@ export default function ReportTemplate({
         out.imagePath = displayUrl;
         out.imagepath = displayUrl;
         out.image_path = displayUrl;
-
         out.thumbnail = thumbObj;
-
         out.thumbUrl = displayUrl;
         out.thumb_url = displayUrl;
         out.thumbnailUrl = displayUrl;
         out.thumbnail_url = displayUrl;
-
         out.image_url = displayUrl;
         out.imageUrl = displayUrl;
       } else {
         out.imagePath = null;
         out.imagepath = null;
         out.image_path = null;
-
         out.thumbnail = null;
-
         out.thumbUrl = null;
         out.thumb_url = null;
         out.thumbnailUrl = null;
         out.thumbnail_url = null;
-
         out.image_url = null;
         out.imageUrl = null;
       }
@@ -776,13 +742,10 @@ export default function ReportTemplate({
         creative: r?.__creative_raw,
         creative_file: r?.__creative_file_raw,
         imagepath_raw: r?.__imagepath_raw,
-
         matchedKey: r?.creative_key,
         matchedUrl: r?.creative_url,
-
         imagePath_for_display: r?.imagePath ?? null,
         thumbnail_for_display: r?.thumbnail?.imagePath ?? null,
-
         candidates: r?.__creative_candidates?.slice(0, 20) ?? [],
         hitCandidates: r?.__dbg_hit_candidates ?? [],
       }));
@@ -821,6 +784,7 @@ export default function ReportTemplate({
             channelOptions={channelOptions}
             enabledMonthKeySet={enabledMonthKeySet}
             enabledWeekKeySet={enabledWeekKeySet}
+            fullPeriod={fullPeriod}
             period={periodFixed}
             advertiserName={effectiveAdvertiserName}
             reportTypeName={effectiveReportTypeName}

@@ -17,44 +17,23 @@ import {
   Tooltip,
   LabelList,
 } from "recharts";
-import { KRW, formatNumber } from "../../../src/lib/report/format";
+import {
+  KRW,
+  toSafeNumber,
+  normalizeRate01,
+  normalizeRoas01,
+  formatPercentFromRate,
+  formatPercentFromRoas,
+  formatCount,
+  formatCurrencyAxisCompact,
+  formatPercentAxisFromRoas,
+} from "../../../src/lib/report/format";
 import DataBarCell from "../ui/DataBarCell";
 
 type Props = {
   keywordAgg: any[];
   keywordInsight: string;
 };
-
-// ===== 숫자/비율 안전 유틸 (StructureSection 톤과 동일 계열) =====
-const toNum = (v: any) => {
-  if (v == null) return 0;
-  if (typeof v === "number") return v;
-  const s = String(v).replace(/[%₩,\s]/g, "");
-  const n = Number(s);
-  return Number.isFinite(n) ? n : 0;
-};
-
-const toRate01 = (v: any) => {
-  const n = toNum(v);
-  return n > 1 ? n / 100 : n; // 12.3 -> 0.123
-};
-
-const toRoas01 = (v: any) => {
-  const n = toNum(v);
-  return n > 10 ? n / 100 : n; // 115 -> 1.15
-};
-
-const pctText = (rate01: number, digits = 1) =>
-  `${(rate01 * 100).toFixed(digits)}%`;
-
-function fmtComma(n: any) {
-  const v = toNum(n);
-  return Math.round(v).toLocaleString();
-}
-function fmtRoasPct(roas01: any) {
-  const v = toRoas01(roas01);
-  return `${(v * 100).toFixed(1)}%`;
-}
 
 /* =========================
    ✅ 캠페인/그룹명 추출 강화 유틸
@@ -331,9 +310,7 @@ type Row = {
   cvr: number; // 0~1
   cpa: number;
   revenue: number;
-  roas: number; // 0~1
-
-  // ✅ 필터용
+  roas: number; // ratio
   campaign?: string | null;
   group?: string | null;
 };
@@ -368,24 +345,27 @@ const SORT_LABEL: Record<SortKey, string> = {
 
 export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
   // ===== keywordAgg normalize (표/차트 공용) =====
-  // ✅ FIX: campaign/group 추출 강화
   const rows: Row[] = useMemo(() => {
     return (Array.isArray(keywordAgg) ? keywordAgg : []).map((r: any) => {
       const keyword = String(r.keyword ?? r.label ?? r.name ?? "");
 
-      const impressions = toNum(r.impressions ?? r.impr);
-      const clicks = toNum(r.clicks);
-      const cost = toNum(r.cost);
-      const conversions = toNum(r.conversions ?? r.conv);
-      const revenue = toNum(r.revenue);
+      const impressions = toSafeNumber(r.impressions ?? r.impr);
+      const clicks = toSafeNumber(r.clicks);
+      const cost = toSafeNumber(r.cost);
+      const conversions = toSafeNumber(r.conversions ?? r.conv);
+      const revenue = toSafeNumber(r.revenue);
 
-      const ctr = toRate01(
+      const ctr = normalizeRate01(
         r.ctr ?? (impressions > 0 ? clicks / impressions : 0)
       );
-      const cvr = toRate01(r.cvr ?? (clicks > 0 ? conversions / clicks : 0));
-      const cpc = toNum(r.cpc ?? (clicks > 0 ? cost / clicks : 0));
-      const cpa = toNum(r.cpa ?? (conversions > 0 ? cost / conversions : 0));
-      const roas = toRoas01(r.roas ?? (cost > 0 ? revenue / cost : 0));
+      const cvr = normalizeRate01(
+        r.cvr ?? (clicks > 0 ? conversions / clicks : 0)
+      );
+      const cpc = toSafeNumber(r.cpc ?? (clicks > 0 ? cost / clicks : 0));
+      const cpa = toSafeNumber(r.cpa ?? (conversions > 0 ? cost / conversions : 0));
+      const roas = normalizeRoas01(
+        r.roas ?? (cost > 0 ? revenue / cost : 0)
+      );
 
       const campaign = extractCampaignName(r);
       const group = extractGroupName(r);
@@ -409,21 +389,26 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
   }, [keywordAgg]);
 
   useEffect(() => {
-  console.log("campaign raw", keywordAgg?.[0]);
-  console.log("[KeywordSection] keywordAgg length:", Array.isArray(keywordAgg) ? keywordAgg.length : "not array");
-  console.log("[KeywordSection] keywordAgg[0] keys:", keywordAgg?.[0] ? Object.keys(keywordAgg[0]) : null);
-  console.log("[KeywordSection] sample campaign/group from keywordAgg[0]:", {
+    console.log("campaign raw", keywordAgg?.[0]);
+    console.log(
+      "[KeywordSection] keywordAgg length:",
+      Array.isArray(keywordAgg) ? keywordAgg.length : "not array"
+    );
+    console.log(
+      "[KeywordSection] keywordAgg[0] keys:",
+      keywordAgg?.[0] ? Object.keys(keywordAgg[0]) : null
+    );
+    console.log("[KeywordSection] sample campaign/group from keywordAgg[0]:", {
+      campaign_name: keywordAgg?.[0]?.campaign_name,
+      campaign: keywordAgg?.[0]?.campaign,
+      group_name: keywordAgg?.[0]?.group_name,
+      group: keywordAgg?.[0]?.group,
+      campaignObj: keywordAgg?.[0]?.campaign,
+      groupObj: keywordAgg?.[0]?.group,
+    });
+  }, [keywordAgg]);
 
-    campaign_name: keywordAgg?.[0]?.campaign_name,
-    campaign: keywordAgg?.[0]?.campaign,
-    group_name: keywordAgg?.[0]?.group_name,
-    group: keywordAgg?.[0]?.group,
-    campaignObj: keywordAgg?.[0]?.campaign,
-    groupObj: keywordAgg?.[0]?.group,
-  });
-}, [keywordAgg]);
-
-  // ===== 차트 Top20 ===== (원본 rows 기준 그대로 유지)
+  // ===== 차트 Top20 =====
   const topClicks = useMemo(
     () =>
       [...rows]
@@ -450,7 +435,7 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
   );
 
   // ==========================
-  // ✅ 표 정렬(오름/내림) 상태 (기존 그대로)
+  // ✅ 표 정렬 상태
   // ==========================
   const [sortKey, setSortKey] = useState<SortKey>("clicks");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -490,12 +475,10 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
 
   /* =========================
      ✅ 캠페인/그룹 필터 (표에만 적용)
-     - 그래프/인사이트는 기존 rows 그대로 유지
   ========================= */
   const [campaignFilter, setCampaignFilter] = useState<string | null>(null);
   const [groupFilter, setGroupFilter] = useState<string | null>(null);
 
-  // ✅ rows에 campaign이 이제 들어오므로 캠페인 옵션이 반드시 나와야 함
   const campaignOptions = useMemo(() => {
     const set = new Set<string>();
     rows.forEach((r) => {
@@ -517,7 +500,6 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
     return Array.from(set).sort((a, b) => a.localeCompare(b, "ko"));
   }, [rows, campaignFilter]);
 
-  // ✅ 표용 rows만 필터 (중요)
   const tableScopeRows = useMemo(() => {
     return rows.filter((r) => {
       if (campaignFilter && (r.campaign ?? "") !== campaignFilter) return false;
@@ -538,31 +520,31 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
       const av = (a as any)[sortKey] as number;
       const bv = (b as any)[sortKey] as number;
 
-      return dir * (toNum(av) - toNum(bv));
+      return dir * (toSafeNumber(av) - toSafeNumber(bv));
     });
 
     return sorted.slice(0, 50);
   }, [tableScopeRows, sortKey, sortDir]);
 
-  // ✅ (키워드 표 막대그래프용) max 계산: "표에 보여주는 50개 기준" (기존 그대로)
+  // ✅ 표 막대그래프용 max
   const kwMaxImpr = useMemo(
-    () => Math.max(0, ...tableRows.map((r) => toNum(r.impressions))),
+    () => Math.max(0, ...tableRows.map((r) => toSafeNumber(r.impressions))),
     [tableRows]
   );
   const kwMaxClicks = useMemo(
-    () => Math.max(0, ...tableRows.map((r) => toNum(r.clicks))),
+    () => Math.max(0, ...tableRows.map((r) => toSafeNumber(r.clicks))),
     [tableRows]
   );
   const kwMaxCost = useMemo(
-    () => Math.max(0, ...tableRows.map((r) => toNum(r.cost))),
+    () => Math.max(0, ...tableRows.map((r) => toSafeNumber(r.cost))),
     [tableRows]
   );
   const kwMaxConv = useMemo(
-    () => Math.max(0, ...tableRows.map((r) => toNum(r.conversions))),
+    () => Math.max(0, ...tableRows.map((r) => toSafeNumber(r.conversions))),
     [tableRows]
   );
   const kwMaxRev = useMemo(
-    () => Math.max(0, ...tableRows.map((r) => toNum(r.revenue))),
+    () => Math.max(0, ...tableRows.map((r) => toSafeNumber(r.revenue))),
     [tableRows]
   );
 
@@ -586,7 +568,6 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
     pendingRestoreScrollTop.current = null;
   });
 
-  // ✅ 배지 텍스트: “전체” 또는 “캠페인: X / 그룹: Y”
   const filterBadge = useMemo(() => {
     if (!campaignFilter && !groupFilter) return "전체";
     const parts: string[] = [];
@@ -597,16 +578,14 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
 
   return (
     <section className="mt-1">
-      {/* 타이틀 */}
       <div className="mb-0.5">
         <h2 className="text-xl font-semibold">키워드 현황</h2>
       </div>
 
-      {/* 3개 차트: 한 줄 3개 */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* 클릭수 */}
-        <div className="border rounded-2xl p-3 bg-white">
-          <div className="text-xs font-semibold mb-2">클릭수 TOP20 키워드</div>
+        <div className="rounded-2xl border bg-white p-3">
+          <div className="mb-2 text-xs font-semibold">클릭수 TOP20 키워드</div>
           <div style={{ width: "100%", height: 340 }}>
             <ResponsiveContainer>
               <BarChart
@@ -618,7 +597,7 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
                 <XAxis
                   type="number"
                   tick={{ fontSize: 11 }}
-                  tickFormatter={(v) => formatNumber(toNum(v))}
+                  tickFormatter={(v) => formatCurrencyAxisCompact(v)}
                 />
                 <YAxis
                   type="category"
@@ -628,13 +607,13 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
                 />
                 <Tooltip
                   wrapperStyle={{ fontSize: 11 }}
-                  formatter={(v: any) => fmtComma(v)}
+                  formatter={(v: any) => formatCount(v)}
                 />
                 <Bar dataKey="clicks">
                   <LabelList
                     dataKey="clicks"
                     position="right"
-                    formatter={(v: any) => fmtComma(v)}
+                    formatter={(v: any) => formatCount(v)}
                     style={{
                       fontSize: 11,
                       fontWeight: 700,
@@ -648,8 +627,8 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
         </div>
 
         {/* 전환수 */}
-        <div className="border rounded-2xl p-3 bg-white">
-          <div className="text-xs font-semibold mb-2">전환수 TOP20 키워드</div>
+        <div className="rounded-2xl border bg-white p-3">
+          <div className="mb-2 text-xs font-semibold">전환수 TOP20 키워드</div>
           <div style={{ width: "100%", height: 340 }}>
             <ResponsiveContainer>
               <BarChart
@@ -661,7 +640,7 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
                 <XAxis
                   type="number"
                   tick={{ fontSize: 11 }}
-                  tickFormatter={(v) => formatNumber(toNum(v))}
+                  tickFormatter={(v) => formatCurrencyAxisCompact(v)}
                 />
                 <YAxis
                   type="category"
@@ -671,13 +650,13 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
                 />
                 <Tooltip
                   wrapperStyle={{ fontSize: 11 }}
-                  formatter={(v: any) => fmtComma(v)}
+                  formatter={(v: any) => formatCount(v)}
                 />
                 <Bar dataKey="conversions">
                   <LabelList
                     dataKey="conversions"
                     position="right"
-                    formatter={(v: any) => fmtComma(v)}
+                    formatter={(v: any) => formatCount(v)}
                     style={{
                       fontSize: 11,
                       fontWeight: 700,
@@ -691,8 +670,8 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
         </div>
 
         {/* ROAS */}
-        <div className="border rounded-2xl p-3 bg-white">
-          <div className="text-xs font-semibold mb-2">ROAS TOP20 키워드</div>
+        <div className="rounded-2xl border bg-white p-3">
+          <div className="mb-2 text-xs font-semibold">ROAS TOP20 키워드</div>
           <div style={{ width: "100%", height: 340 }}>
             <ResponsiveContainer>
               <BarChart
@@ -704,7 +683,7 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
                 <XAxis
                   type="number"
                   tick={{ fontSize: 11 }}
-                  tickFormatter={(v) => fmtRoasPct(v)}
+                  tickFormatter={(v) => formatPercentAxisFromRoas(v)}
                 />
                 <YAxis
                   type="category"
@@ -714,13 +693,13 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
                 />
                 <Tooltip
                   wrapperStyle={{ fontSize: 11 }}
-                  formatter={(v: any) => fmtRoasPct(v)}
+                  formatter={(v: any) => formatPercentFromRoas(v, 1)}
                 />
                 <Bar dataKey="roas">
                   <LabelList
                     dataKey="roas"
                     position="right"
-                    formatter={(v: any) => fmtRoasPct(v)}
+                    formatter={(v: any) => formatPercentFromRoas(v, 1)}
                     style={{
                       fontSize: 11,
                       fontWeight: 700,
@@ -734,12 +713,12 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
         </div>
       </div>
 
-      {/* ✅ 인사이트 요약 */}
+      {/* 인사이트 요약 */}
       <section className="mt-6">
-        <div className="border rounded-xl p-6 bg-white">
-          <div className="font-semibold mb-3">요약 인사이트</div>
+        <div className="rounded-xl border bg-white p-6">
+          <div className="mb-3 font-semibold">요약 인사이트</div>
           {keywordInsight ? (
-            <div className="text-sm text-gray-800 whitespace-pre-wrap">
+            <div className="whitespace-pre-wrap text-sm text-gray-800">
               {keywordInsight}
             </div>
           ) : (
@@ -750,12 +729,12 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
         </div>
       </section>
 
-      {/* ✅ 키워드 요약표 */}
+      {/* 키워드 요약표 */}
       <section className="mt-10">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2 min-w-0">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="flex min-w-0 items-center gap-2">
             <h2 className="text-lg font-semibold">키워드 요약</h2>
-            <span className="text-[11px] px-2 py-0.5 rounded-full border bg-white shrink-0">
+            <span className="shrink-0 rounded-full border bg-white px-2 py-0.5 text-[11px]">
               {filterBadge}
             </span>
           </div>
@@ -787,7 +766,7 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
         </div>
 
         <div ref={tableScrollRef} className="overflow-auto rounded-xl border">
-          <table className="w-full text-sm border-collapse">
+          <table className="w-full border-collapse text-sm">
             <thead className="bg-gray-50 text-gray-600">
               <tr>
                 <Th k="keyword" align="left" />
@@ -814,32 +793,34 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
               ) : (
                 tableRows.map((r, idx) => (
                   <tr key={`${r.keyword}-${idx}`} className="border-t">
-                    <td className="p-3 font-medium whitespace-nowrap text-left">
+                    <td className="whitespace-nowrap p-3 text-left font-medium">
                       {r.keyword || "(empty)"}
                     </td>
 
                     <td className="p-3">
                       <DataBarCell
-                        value={toNum(r.impressions)}
+                        value={toSafeNumber(r.impressions)}
                         max={kwMaxImpr}
-                        label={fmtComma(r.impressions)}
+                        label={formatCount(r.impressions)}
                       />
                     </td>
 
                     <td className="p-3">
                       <DataBarCell
-                        value={toNum(r.clicks)}
+                        value={toSafeNumber(r.clicks)}
                         max={kwMaxClicks}
-                        label={fmtComma(r.clicks)}
+                        label={formatCount(r.clicks)}
                       />
                     </td>
 
-                    <td className="p-3 text-right">{pctText(r.ctr, 2)}</td>
+                    <td className="p-3 text-right">
+                      {formatPercentFromRate(r.ctr, 2)}
+                    </td>
                     <td className="p-3 text-right">{KRW(r.cpc)}</td>
 
                     <td className="p-3">
                       <DataBarCell
-                        value={toNum(r.cost)}
+                        value={toSafeNumber(r.cost)}
                         max={kwMaxCost}
                         label={KRW(r.cost)}
                       />
@@ -847,24 +828,28 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
 
                     <td className="p-3">
                       <DataBarCell
-                        value={toNum(r.conversions)}
+                        value={toSafeNumber(r.conversions)}
                         max={kwMaxConv}
-                        label={fmtComma(r.conversions)}
+                        label={formatCount(r.conversions)}
                       />
                     </td>
 
-                    <td className="p-3 text-right">{pctText(r.cvr, 2)}</td>
+                    <td className="p-3 text-right">
+                      {formatPercentFromRate(r.cvr, 2)}
+                    </td>
                     <td className="p-3 text-right">{KRW(r.cpa)}</td>
 
                     <td className="p-3">
                       <DataBarCell
-                        value={toNum(r.revenue)}
+                        value={toSafeNumber(r.revenue)}
                         max={kwMaxRev}
                         label={KRW(r.revenue)}
                       />
                     </td>
 
-                    <td className="p-3 text-right">{pctText(r.roas, 1)}</td>
+                    <td className="p-3 text-right">
+                      {formatPercentFromRoas(r.roas, 1)}
+                    </td>
                   </tr>
                 ))
               )}

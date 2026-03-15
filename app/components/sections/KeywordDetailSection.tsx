@@ -13,33 +13,31 @@ import {
   groupByMonthRecent3,
 } from "../../../src/lib/report/aggregate";
 
+import {
+  toSafeNumber,
+  diffRatio,
+  formatDeltaPercentFromRatio,
+  formatPercentFromRate,
+  formatPercentFromRoas,
+} from "../../../src/lib/report/format";
+
 /** =========================
  * Utils
  * ========================= */
-function safeNum(n: any) {
-  const v = Number(n);
-  return Number.isFinite(v) ? v : 0;
-}
-
-function diffPct(a: number, b: number) {
-  if (!b) return 0;
-  return (a - b) / b;
-}
-
-function signPct(n: number) {
-  const v = n * 100;
-  const s = v >= 0 ? "+" : "";
-  return `${s}${v.toFixed(1)}%`;
-}
-
 function safePct(n: number) {
-  if (!Number.isFinite(n)) return "0%";
-  return `${(n * 100).toFixed(1)}%`;
+  return formatPercentFromRate(n, 1);
 }
 
 function safePct0(n: number) {
-  if (!Number.isFinite(n)) return "0%";
-  return `${(n * 100).toFixed(0)}%`;
+  return formatPercentFromRate(n, 0);
+}
+
+function safeRoasPct0(n: number) {
+  return formatPercentFromRoas(n, 0);
+}
+
+function signPct(n: number) {
+  return formatDeltaPercentFromRatio(n, 1, "0.0%");
 }
 
 function pickDeviceLabel(raw: string) {
@@ -67,7 +65,7 @@ function calcAvgRankWeighted(rows: Row[]) {
     const rank = Number((r as any).avgRank);
     if (!Number.isFinite(rank)) continue;
 
-    const imp = safeNum((r as any).impressions);
+    const imp = toSafeNumber((r as any).impressions);
     if (imp > 0) {
       wSum += rank * imp;
       w += imp;
@@ -132,10 +130,11 @@ function buildKeywordDetailInsight(args: {
   const wLast = weeks.length ? weeks[weeks.length - 1] : null;
   const wPrev = weeks.length >= 2 ? weeks[weeks.length - 2] : null;
 
-  const roasWoW = wLast && wPrev ? diffPct(safeNum(wLast.roas), safeNum(wPrev.roas)) : 0;
-  const clickWoW = wLast && wPrev ? diffPct(safeNum(wLast.clicks), safeNum(wPrev.clicks)) : 0;
-  const convWoW = wLast && wPrev ? diffPct(safeNum(wLast.conversions), safeNum(wPrev.conversions)) : 0;
-  const costWoW = wLast && wPrev ? diffPct(safeNum(wLast.cost), safeNum(wPrev.cost)) : 0;
+  const roasWoW = wLast && wPrev ? diffRatio(toSafeNumber(wLast.roas), toSafeNumber(wPrev.roas)) ?? 0 : 0;
+  const clickWoW = wLast && wPrev ? diffRatio(toSafeNumber(wLast.clicks), toSafeNumber(wPrev.clicks)) ?? 0 : 0;
+  const convWoW =
+    wLast && wPrev ? diffRatio(toSafeNumber(wLast.conversions), toSafeNumber(wPrev.conversions)) ?? 0 : 0;
+  const costWoW = wLast && wPrev ? diffRatio(toSafeNumber(wLast.cost), toSafeNumber(wPrev.cost)) ?? 0 : 0;
 
   const sources = [...(bySource || [])].sort((a, b) => (b.cost ?? 0) - (a.cost ?? 0));
   const topS1 = sources[0] ?? null;
@@ -161,9 +160,9 @@ function buildKeywordDetailInsight(args: {
 
   const bullets: string[] = [];
   bullets.push(
-    `선택 키워드 “${keyword}” 성과: 클릭 ${Math.round(me.clicks)} / 전환 ${safeNum(me.conversions).toFixed(
+    `선택 키워드 “${keyword}” 성과: 클릭 ${Math.round(me.clicks)} / 전환 ${toSafeNumber(me.conversions).toFixed(
       1
-    )} / ROAS ${safePct0(me.roas)} · ${efficiencyLabel}`
+    )} / ROAS ${safeRoasPct0(me.roas)} · ${efficiencyLabel}`
   );
   bullets.push(
     `기여도(현재 탭 범위 대비): 비용 ${safePct(shareCost)}, 전환 ${safePct(shareConv)}, 매출 ${safePct(shareRev)}`
@@ -178,16 +177,18 @@ function buildKeywordDetailInsight(args: {
 
   if (topD1) {
     const d1 = pickDeviceLabel(String(topD1.device ?? "unknown"));
-    const d1Roas = safeNum(topD1.roas);
-    const d1Cvr = safeNum(topD1.cvr);
-    const d1Ctr = safeNum(topD1.ctr);
+    const d1Roas = toSafeNumber(topD1.roas);
+    const d1Cvr = toSafeNumber(topD1.cvr);
+    const d1Ctr = toSafeNumber(topD1.ctr);
 
-    let deviceLine = `기기별: “${d1}” 비중이 가장 큽니다(ROAS ${safePct0(d1Roas)}, CTR ${safePct(d1Ctr)}, CVR ${safePct(d1Cvr)}).`;
+    let deviceLine = `기기별: “${d1}” 비중이 가장 큽니다(ROAS ${safeRoasPct0(d1Roas)}, CTR ${safePct(
+      d1Ctr
+    )}, CVR ${safePct(d1Cvr)}).`;
 
     if (topD2) {
       const d2 = pickDeviceLabel(String(topD2.device ?? "unknown"));
-      const d2Roas = safeNum(topD2.roas);
-      deviceLine += ` 비교: “${d2}” ROAS ${safePct0(d2Roas)}.`;
+      const d2Roas = toSafeNumber(topD2.roas);
+      deviceLine += ` 비교: “${d2}” ROAS ${safeRoasPct0(d2Roas)}.`;
     }
 
     bullets.push(deviceLine);
@@ -218,8 +219,10 @@ function buildKeywordDetailInsight(args: {
   }
 
   if (topS1) {
-    const s1 = `소스: 비용 상위 “${String(topS1.source)}”(ROAS ${safePct0(safeNum(topS1.roas))}).`;
-    if (safeNum(topS1.roas) >= me.roas) {
+    const s1 = `소스: 비용 상위 “${String(topS1.source)}”(ROAS ${safeRoasPct0(
+      toSafeNumber(topS1.roas)
+    )}).`;
+    if (toSafeNumber(topS1.roas) >= me.roas) {
       actions.push(`${s1} 효율이 평균 이상이면, 동일 소스 내 세분화(기기/시간대) 후 증액이 안전합니다.`);
     } else {
       actions.push(`${s1} 효율이 평균 미만이면, 저효율 구간을 먼저 차단하고 예산을 분산하세요.`);
@@ -228,8 +231,8 @@ function buildKeywordDetailInsight(args: {
 
   if (topS2) {
     actions.push(
-      `소스 비교: 2순위 “${String(topS2.source)}”(ROAS ${safePct0(
-        safeNum(topS2.roas)
+      `소스 비교: 2순위 “${String(topS2.source)}”(ROAS ${safeRoasPct0(
+        toSafeNumber(topS2.roas)
       )})와 함께 증액/유지/축소 기준을 명확히 하세요.`
     );
   }
@@ -237,8 +240,8 @@ function buildKeywordDetailInsight(args: {
   if (topD1 && topD2) {
     const d1 = String(topD1.device ?? "unknown");
     const d2 = String(topD2.device ?? "unknown");
-    const d1Roas = safeNum(topD1.roas);
-    const d2Roas = safeNum(topD2.roas);
+    const d1Roas = toSafeNumber(topD1.roas);
+    const d2Roas = toSafeNumber(topD2.roas);
 
     if (d1Roas > d2Roas * 1.1) {
       actions.push(
@@ -344,7 +347,7 @@ export default function KeywordDetailSection(props: Props) {
             </div>
           </div>
 
-          <div className="mt-3 lg:max-h-[calc(100vh-14rem)] overflow-auto pr-1">
+          <div className="mt-3 overflow-auto pr-1 lg:max-h-[calc(100vh-14rem)]">
             <div className="flex flex-col gap-2">
               {keywords.length === 0 ? (
                 <div className="rounded-xl bg-gray-50 p-4 text-sm text-gray-600">키워드 데이터가 없습니다.</div>

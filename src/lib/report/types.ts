@@ -31,6 +31,24 @@ export type GoalState = {
   revenue: number;
 };
 
+// ===== Aggregate Metrics =====
+// summarize() 기준 공통 집계 타입
+// ctr / cvr / roas 는 모두 "0~1 ratio" 기준으로 다룬다.
+// 예: 215% => 2.15
+export type AggregateMetrics = {
+  impressions: number;
+  clicks: number;
+  cost: number;
+  conversions: number;
+  revenue: number;
+
+  ctr: number;
+  cpc: number;
+  cvr: number;
+  cpa: number;
+  roas: number;
+};
+
 // ===== Row (CSV 한 줄의 최소 요구 스키마) =====
 // aggregate/normalize/filter에서 실제로 더 많은 컬럼을 쓸 수 있으니
 // "필수만 타입으로 고정 + 나머지는 확장 가능" 형태로 안전하게 설계

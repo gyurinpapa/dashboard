@@ -1,4 +1,6 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { formatDeltaPercentFromRatio } from "../../../src/lib/report/format";
 
 export default function TrendCell({
   v,
@@ -7,12 +9,13 @@ export default function TrendCell({
   v: number | null;
   digits?: number;
 }) {
-  if (v === null || !isFinite(v))
+  if (v === null || !isFinite(v)) {
     return (
       <span className="inline-flex items-center rounded-xl border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-semibold tracking-[-0.01em] text-gray-400">
         -
       </span>
     );
+  }
 
   const up = v > 0;
   const down = v < 0;
@@ -47,7 +50,9 @@ export default function TrendCell({
       <span className="inline-flex w-3 items-center justify-center text-[10px] leading-none">
         {arrow}
       </span>
-      <span className="leading-none">{(v * 100).toFixed(digits)}%</span>
+      <span className="leading-none">
+        {formatDeltaPercentFromRatio(v, digits)}
+      </span>
     </span>
   );
 }

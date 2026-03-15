@@ -1,6 +1,14 @@
 "use client";
 
-import { KRW } from "../../../src/lib/report/format";
+import {
+  KRW,
+  toSafeNumber,
+  normalizeRate01,
+  normalizeRoas01,
+  formatPercentFromRate,
+  formatPercentFromRoas,
+  diffRatio,
+} from "../../../src/lib/report/format";
 
 import SummaryChart from "./summary/SummaryChart";
 import SummaryKPI from "./summary/SummaryKPI";
@@ -25,32 +33,6 @@ type Props = {
   bySource: any;
 };
 
-// ===== 숫자/비율 안전 유틸 =====
-const toNum = (v: any) => {
-  if (v == null) return 0;
-  if (typeof v === "number") return v;
-  const s = String(v).replace(/[%₩,\s]/g, "");
-  const n = Number(s);
-  return Number.isFinite(n) ? n : 0;
-};
-
-const toRate01 = (v: any) => {
-  const n = toNum(v);
-  return n > 1 ? n / 100 : n;
-};
-
-const toRoas01 = (v: any) => {
-  const n = toNum(v);
-  return n > 10 ? n / 100 : n;
-};
-
-const diffPct = (cur: any, prev: any) => {
-  const c = toNum(cur);
-  const p = toNum(prev);
-  if (p === 0) return null;
-  return (c - p) / p;
-};
-
 const TH_CLASS =
   "px-4 py-3.5 text-right text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-600 whitespace-nowrap";
 
@@ -65,9 +47,6 @@ const FIRST_TD_CLASS =
 
 const SECTION_TITLE_CLASS =
   "mb-4 text-lg font-semibold tracking-tight text-gray-900";
-
-const SURFACE_CLASS =
-  "rounded-2xl border border-gray-200 bg-white shadow-sm";
 
 const TABLE_SURFACE_CLASS =
   "overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm";
@@ -103,31 +82,30 @@ export default function SummarySection(props: Props) {
 
   const maxImpr = Math.max(
     0,
-    ...sortedWeeks.map((r: any) => toNum(r?.impressions ?? r?.impr))
+    ...sortedWeeks.map((r: any) => toSafeNumber(r?.impressions ?? r?.impr))
   );
-  const maxClicks = Math.max(0, ...sortedWeeks.map((r: any) => toNum(r?.clicks)));
-  const maxCost = Math.max(0, ...sortedWeeks.map((r: any) => toNum(r?.cost)));
+  const maxClicks = Math.max(0, ...sortedWeeks.map((r: any) => toSafeNumber(r?.clicks)));
+  const maxCost = Math.max(0, ...sortedWeeks.map((r: any) => toSafeNumber(r?.cost)));
   const maxConv = Math.max(
     0,
-    ...sortedWeeks.map((r: any) => toNum(r?.conversions ?? r?.conv))
+    ...sortedWeeks.map((r: any) => toSafeNumber(r?.conversions ?? r?.conv))
   );
-  const maxRev = Math.max(0, ...sortedWeeks.map((r: any) => toNum(r?.revenue)));
+  const maxRev = Math.max(0, ...sortedWeeks.map((r: any) => toSafeNumber(r?.revenue)));
 
   const srcMaxImpr = Math.max(
     0,
-    ...sources.map((r: any) => toNum(r?.impressions ?? r?.impr))
+    ...sources.map((r: any) => toSafeNumber(r?.impressions ?? r?.impr))
   );
-  const srcMaxClicks = Math.max(0, ...sources.map((r: any) => toNum(r?.clicks)));
-  const srcMaxCost = Math.max(0, ...sources.map((r: any) => toNum(r?.cost)));
+  const srcMaxClicks = Math.max(0, ...sources.map((r: any) => toSafeNumber(r?.clicks)));
+  const srcMaxCost = Math.max(0, ...sources.map((r: any) => toSafeNumber(r?.cost)));
   const srcMaxConv = Math.max(
     0,
-    ...sources.map((r: any) => toNum(r?.conversions ?? r?.conv))
+    ...sources.map((r: any) => toSafeNumber(r?.conversions ?? r?.conv))
   );
-  const srcMaxRev = Math.max(0, ...sources.map((r: any) => toNum(r?.revenue)));
+  const srcMaxRev = Math.max(0, ...sources.map((r: any) => toSafeNumber(r?.revenue)));
 
   return (
     <>
-      {/* 상단 제품형 리듬: MonthGoalSection 아래에서 너무 뜨지 않도록 시작 간격만 정리 */}
       <section className="mt-6 space-y-10">
         <div>
           <h2 className={SECTION_TITLE_CLASS}>기간 성과</h2>
@@ -142,7 +120,6 @@ export default function SummarySection(props: Props) {
         </div>
       </section>
 
-      {/* 주차별 표 */}
       <section className="mt-14">
         <div className="mb-4">
           <h2 className="text-lg font-semibold tracking-tight text-gray-900">
@@ -191,7 +168,7 @@ export default function SummarySection(props: Props) {
 
                   <td className={TD_CLASS}>
                     <TrendCell
-                      v={diffPct(
+                      v={diffRatio(
                         lastWeekSorted?.impressions,
                         prevWeekSorted?.impressions
                       )}
@@ -200,15 +177,15 @@ export default function SummarySection(props: Props) {
 
                   <td className={TD_CLASS}>
                     <TrendCell
-                      v={diffPct(lastWeekSorted?.clicks, prevWeekSorted?.clicks)}
+                      v={diffRatio(lastWeekSorted?.clicks, prevWeekSorted?.clicks)}
                     />
                   </td>
 
                   <td className={TD_CLASS}>
                     <TrendCell
-                      v={diffPct(
-                        toRate01(lastWeekSorted?.ctr),
-                        toRate01(prevWeekSorted?.ctr)
+                      v={diffRatio(
+                        normalizeRate01(lastWeekSorted?.ctr),
+                        normalizeRate01(prevWeekSorted?.ctr)
                       )}
                       digits={2}
                     />
@@ -216,20 +193,20 @@ export default function SummarySection(props: Props) {
 
                   <td className={TD_CLASS}>
                     <TrendCell
-                      v={diffPct(lastWeekSorted?.cpc, prevWeekSorted?.cpc)}
+                      v={diffRatio(lastWeekSorted?.cpc, prevWeekSorted?.cpc)}
                       digits={2}
                     />
                   </td>
 
                   <td className={TD_CLASS}>
                     <TrendCell
-                      v={diffPct(lastWeekSorted?.cost, prevWeekSorted?.cost)}
+                      v={diffRatio(lastWeekSorted?.cost, prevWeekSorted?.cost)}
                     />
                   </td>
 
                   <td className={TD_CLASS}>
                     <TrendCell
-                      v={diffPct(
+                      v={diffRatio(
                         lastWeekSorted?.conversions,
                         prevWeekSorted?.conversions
                       )}
@@ -238,9 +215,9 @@ export default function SummarySection(props: Props) {
 
                   <td className={TD_CLASS}>
                     <TrendCell
-                      v={diffPct(
-                        toRate01(lastWeekSorted?.cvr),
-                        toRate01(prevWeekSorted?.cvr)
+                      v={diffRatio(
+                        normalizeRate01(lastWeekSorted?.cvr),
+                        normalizeRate01(prevWeekSorted?.cvr)
                       )}
                       digits={2}
                     />
@@ -248,22 +225,22 @@ export default function SummarySection(props: Props) {
 
                   <td className={TD_CLASS}>
                     <TrendCell
-                      v={diffPct(lastWeekSorted?.cpa, prevWeekSorted?.cpa)}
+                      v={diffRatio(lastWeekSorted?.cpa, prevWeekSorted?.cpa)}
                       digits={2}
                     />
                   </td>
 
                   <td className={TD_CLASS}>
                     <TrendCell
-                      v={diffPct(lastWeekSorted?.revenue, prevWeekSorted?.revenue)}
+                      v={diffRatio(lastWeekSorted?.revenue, prevWeekSorted?.revenue)}
                     />
                   </td>
 
                   <td className={TD_CLASS}>
                     <TrendCell
-                      v={diffPct(
-                        toRoas01(lastWeekSorted?.roas),
-                        toRoas01(prevWeekSorted?.roas)
+                      v={diffRatio(
+                        normalizeRoas01(lastWeekSorted?.roas),
+                        normalizeRoas01(prevWeekSorted?.roas)
                       )}
                       digits={2}
                     />
@@ -285,52 +262,52 @@ export default function SummarySection(props: Props) {
 
                   <td className={TD_CLASS}>
                     <DataBarCell
-                      value={toNum(w?.impressions ?? w?.impr)}
+                      value={toSafeNumber(w?.impressions ?? w?.impr)}
                       max={maxImpr}
                     />
                   </td>
 
                   <td className={TD_CLASS}>
-                    <DataBarCell value={toNum(w?.clicks)} max={maxClicks} />
+                    <DataBarCell value={toSafeNumber(w?.clicks)} max={maxClicks} />
                   </td>
 
                   <td className={TD_CLASS}>
-                    {(toRate01(w?.ctr) * 100).toFixed(2)}%
+                    {formatPercentFromRate(w?.ctr, 2)}
                   </td>
 
-                  <td className={TD_CLASS}>{KRW(toNum(w?.cpc))}</td>
+                  <td className={TD_CLASS}>{KRW(toSafeNumber(w?.cpc))}</td>
 
                   <td className={TD_CLASS}>
                     <DataBarCell
-                      value={toNum(w?.cost)}
+                      value={toSafeNumber(w?.cost)}
                       max={maxCost}
-                      label={KRW(toNum(w?.cost))}
+                      label={KRW(toSafeNumber(w?.cost))}
                     />
                   </td>
 
                   <td className={TD_CLASS}>
                     <DataBarCell
-                      value={toNum(w?.conversions ?? w?.conv)}
+                      value={toSafeNumber(w?.conversions ?? w?.conv)}
                       max={maxConv}
                     />
                   </td>
 
                   <td className={TD_CLASS}>
-                    {(toRate01(w?.cvr) * 100).toFixed(2)}%
+                    {formatPercentFromRate(w?.cvr, 2)}
                   </td>
 
-                  <td className={TD_CLASS}>{KRW(toNum(w?.cpa))}</td>
+                  <td className={TD_CLASS}>{KRW(toSafeNumber(w?.cpa))}</td>
 
                   <td className={TD_CLASS}>
                     <DataBarCell
-                      value={toNum(w?.revenue)}
+                      value={toSafeNumber(w?.revenue)}
                       max={maxRev}
-                      label={KRW(toNum(w?.revenue))}
+                      label={KRW(toSafeNumber(w?.revenue))}
                     />
                   </td>
 
                   <td className={TD_CLASS}>
-                    {(toRoas01(w?.roas) * 100).toFixed(1)}%
+                    {formatPercentFromRoas(w?.roas, 1)}
                   </td>
                 </tr>
               ))}
@@ -339,7 +316,6 @@ export default function SummarySection(props: Props) {
         </div>
       </section>
 
-      {/* 주간 차트 */}
       <section className="mt-14">
         <div className="mb-4">
           <h2 className="text-lg font-semibold tracking-tight text-gray-900">
@@ -352,7 +328,6 @@ export default function SummarySection(props: Props) {
         </div>
       </section>
 
-      {/* 소스별 */}
       <section className="mt-14">
         <div className="mb-4">
           <h2 className="text-lg font-semibold tracking-tight text-gray-900">
@@ -407,52 +382,52 @@ export default function SummarySection(props: Props) {
 
                   <td className={TD_CLASS}>
                     <DataBarCell
-                      value={toNum(r?.impressions ?? r?.impr)}
+                      value={toSafeNumber(r?.impressions ?? r?.impr)}
                       max={srcMaxImpr}
                     />
                   </td>
 
                   <td className={TD_CLASS}>
-                    <DataBarCell value={toNum(r?.clicks)} max={srcMaxClicks} />
+                    <DataBarCell value={toSafeNumber(r?.clicks)} max={srcMaxClicks} />
                   </td>
 
                   <td className={TD_CLASS}>
-                    {(toRate01(r?.ctr) * 100).toFixed(2)}%
+                    {formatPercentFromRate(r?.ctr, 2)}
                   </td>
 
-                  <td className={TD_CLASS}>{KRW(toNum(r?.cpc))}</td>
+                  <td className={TD_CLASS}>{KRW(toSafeNumber(r?.cpc))}</td>
 
                   <td className={TD_CLASS}>
                     <DataBarCell
-                      value={toNum(r?.cost)}
+                      value={toSafeNumber(r?.cost)}
                       max={srcMaxCost}
-                      label={KRW(toNum(r?.cost))}
+                      label={KRW(toSafeNumber(r?.cost))}
                     />
                   </td>
 
                   <td className={TD_CLASS}>
                     <DataBarCell
-                      value={toNum(r?.conversions ?? r?.conv)}
+                      value={toSafeNumber(r?.conversions ?? r?.conv)}
                       max={srcMaxConv}
                     />
                   </td>
 
                   <td className={TD_CLASS}>
-                    {(toRate01(r?.cvr) * 100).toFixed(2)}%
+                    {formatPercentFromRate(r?.cvr, 2)}
                   </td>
 
-                  <td className={TD_CLASS}>{KRW(toNum(r?.cpa))}</td>
+                  <td className={TD_CLASS}>{KRW(toSafeNumber(r?.cpa))}</td>
 
                   <td className={TD_CLASS}>
                     <DataBarCell
-                      value={toNum(r?.revenue)}
+                      value={toSafeNumber(r?.revenue)}
                       max={srcMaxRev}
-                      label={KRW(toNum(r?.revenue))}
+                      label={KRW(toSafeNumber(r?.revenue))}
                     />
                   </td>
 
                   <td className={TD_CLASS}>
-                    {(toRoas01(r?.roas) * 100).toFixed(1)}%
+                    {formatPercentFromRoas(r?.roas, 1)}
                   </td>
                 </tr>
               ))}

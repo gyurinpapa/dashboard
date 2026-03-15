@@ -12,48 +12,25 @@ import {
   LabelList,
 } from "recharts";
 
-import { KRW, formatNumber } from "../../../src/lib/report/format";
+import {
+  KRW,
+  toSafeNumber,
+  normalizeRate01,
+  normalizeRoas01,
+  formatPercentFromRate,
+  formatPercentFromRoas,
+  formatCount,
+  formatCurrencyAxisCompact,
+  formatPercentAxisFromRoas,
+} from "../../../src/lib/report/format";
 import DataBarCell from "../ui/DataBarCell";
 
-// ✅ 소재 집계 유틸 (너가 만든 것)
-// - groupByCreative(rows): creative별 합계(+ imagePath 포함)
-// ⚠️ buildCreativeFilters / filterByCampaignGroup 는 이제 안 씀
+// ✅ 소재 집계 유틸
 import { groupByCreative } from "../../../src/lib/report/creative";
 
 type Props = {
-  rows: any[]; // ✅ (월/주/기기/채널)까지 적용된 rows를 page.tsx에서 넘겨주기
+  rows: any[];
 };
-
-// ===== 숫자/비율 안전 유틸 =====
-const toNum = (v: any) => {
-  if (v == null) return 0;
-  if (typeof v === "number") return v;
-  const s = String(v).replace(/[%₩,\s]/g, "");
-  const n = Number(s);
-  return Number.isFinite(n) ? n : 0;
-};
-
-const toRate01 = (v: any) => {
-  const n = toNum(v);
-  return n > 1 ? n / 100 : n;
-};
-
-const toRoas01 = (v: any) => {
-  const n = toNum(v);
-  return n > 10 ? n / 100 : n;
-};
-
-const pctText = (rate01: number, digits = 1) => `${(rate01 * 100).toFixed(digits)}%`;
-
-function fmtComma(n: any) {
-  const v = toNum(n);
-  return Math.round(v).toLocaleString();
-}
-
-function fmtRoasPct(roas01: any) {
-  const v = toRoas01(roas01);
-  return `${(v * 100).toFixed(1)}%`;
-}
 
 const short = (s: any, n = 7) => {
   const t = String(s ?? "");
@@ -72,7 +49,7 @@ type CreativeAgg = {
   cvr: number; // 0~1
   cpa: number;
   revenue: number;
-  roas: number; // 0~1 (1.15 = 115%)
+  roas: number; // ratio
 };
 
 type SortDir = "asc" | "desc";
@@ -108,9 +85,6 @@ export default function CreativeSection({ rows }: Props) {
 
   // =========================
   // ✅ 소스 필터 옵션 만들기
-  // - "소재(creative) 데이터가 있는 소스"만 노출
-  // - 판단 기준: 해당 소스 rows로 groupByCreative를 돌렸을 때
-  //   creative 값이 비어있지 않은 agg가 1개 이상 존재
   // =========================
   const sourceOptions = useMemo(() => {
     const srcSet = new Set<string>();
@@ -124,19 +98,20 @@ export default function CreativeSection({ rows }: Props) {
     const validSources: string[] = [];
 
     for (const s of sources) {
-      const srcRows = (rows ?? []).filter((r) => String(r.source ?? r.platform ?? "").trim() === s);
+      const srcRows = (rows ?? []).filter(
+        (r) => String(r.source ?? r.platform ?? "").trim() === s
+      );
       const agg = groupByCreative(srcRows) ?? [];
-      const hasCreative = agg.some((a: any) => String(a?.creative ?? "").trim().length > 0);
+      const hasCreative = agg.some(
+        (a: any) => String(a?.creative ?? "").trim().length > 0
+      );
       if (hasCreative) validSources.push(s);
     }
 
     validSources.sort((a, b) => a.localeCompare(b, "ko"));
-
-    // ✅ 옵션이 하나도 없더라도 "all"은 유지
     return ["all", ...validSources];
   }, [rows]);
 
-  // ✅ 현재 선택된 소스가 "유효 옵션"에서 사라지면 자동 보정
   useEffect(() => {
     if (selectedSource === "all") return;
     if (!sourceOptions.includes(selectedSource)) {
@@ -162,17 +137,25 @@ export default function CreativeSection({ rows }: Props) {
     const rawAgg = groupByCreative(scopedRows);
 
     return (rawAgg ?? []).map((r: any) => {
-      const impressions = toNum(r.impressions ?? r.impr);
-      const clicks = toNum(r.clicks);
-      const cost = toNum(r.cost);
-      const conversions = toNum(r.conversions ?? r.conv);
-      const revenue = toNum(r.revenue);
+      const impressions = toSafeNumber(r.impressions ?? r.impr);
+      const clicks = toSafeNumber(r.clicks);
+      const cost = toSafeNumber(r.cost);
+      const conversions = toSafeNumber(r.conversions ?? r.conv);
+      const revenue = toSafeNumber(r.revenue);
 
-      const ctr = toRate01(r.ctr ?? (impressions > 0 ? clicks / impressions : 0));
-      const cvr = toRate01(r.cvr ?? (clicks > 0 ? conversions / clicks : 0));
-      const cpc = toNum(r.cpc ?? (clicks > 0 ? cost / clicks : 0));
-      const cpa = toNum(r.cpa ?? (conversions > 0 ? cost / conversions : 0));
-      const roas = toRoas01(r.roas ?? (cost > 0 ? revenue / cost : 0));
+      const ctr = normalizeRate01(
+        r.ctr ?? (impressions > 0 ? clicks / impressions : 0)
+      );
+      const cvr = normalizeRate01(
+        r.cvr ?? (clicks > 0 ? conversions / clicks : 0)
+      );
+      const cpc = toSafeNumber(r.cpc ?? (clicks > 0 ? cost / clicks : 0));
+      const cpa = toSafeNumber(
+        r.cpa ?? (conversions > 0 ? cost / conversions : 0)
+      );
+      const roas = normalizeRoas01(
+        r.roas ?? (cost > 0 ? revenue / cost : 0)
+      );
 
       return {
         creative: String(r.creative ?? ""),
@@ -195,15 +178,27 @@ export default function CreativeSection({ rows }: Props) {
   // ✅ Top20 차트 데이터
   // =========================
   const topClicks = useMemo(
-    () => [...creativeAgg].sort((a, b) => b.clicks - a.clicks).slice(0, 20).reverse(),
+    () =>
+      [...creativeAgg]
+        .sort((a, b) => b.clicks - a.clicks)
+        .slice(0, 20)
+        .reverse(),
     [creativeAgg]
   );
   const topConv = useMemo(
-    () => [...creativeAgg].sort((a, b) => b.conversions - a.conversions).slice(0, 20).reverse(),
+    () =>
+      [...creativeAgg]
+        .sort((a, b) => b.conversions - a.conversions)
+        .slice(0, 20)
+        .reverse(),
     [creativeAgg]
   );
   const topRoas = useMemo(
-    () => [...creativeAgg].sort((a, b) => b.roas - a.roas).slice(0, 20).reverse(),
+    () =>
+      [...creativeAgg]
+        .sort((a, b) => b.roas - a.roas)
+        .slice(0, 20)
+        .reverse(),
     [creativeAgg]
   );
 
@@ -224,7 +219,11 @@ export default function CreativeSection({ rows }: Props) {
 
   const SortArrow = ({ k }: { k: SortKey }) => {
     if (sortKey !== k) return null;
-    return <span className="ml-1 inline-block align-middle">{sortDir === "asc" ? "▲" : "▼"}</span>;
+    return (
+      <span className="ml-1 inline-block align-middle">
+        {sortDir === "asc" ? "▲" : "▼"}
+      </span>
+    );
   };
 
   const Th = ({ k, align = "right" }: { k: SortKey; align?: "left" | "right" }) => (
@@ -246,23 +245,40 @@ export default function CreativeSection({ rows }: Props) {
     const sorted = [...creativeAgg].sort((a, b) => {
       const dir = sortDir === "asc" ? 1 : -1;
 
-      if (sortKey === "creative") return dir * a.creative.localeCompare(b.creative, "ko");
+      if (sortKey === "creative") {
+        return dir * a.creative.localeCompare(b.creative, "ko");
+      }
       const av = (a as any)[sortKey] as number;
       const bv = (b as any)[sortKey] as number;
-      return dir * (toNum(av) - toNum(bv));
+      return dir * (toSafeNumber(av) - toSafeNumber(bv));
     });
 
     return sorted.slice(0, 50);
   }, [creativeAgg, sortKey, sortDir]);
 
   // =========================
-  // ✅ 막대 max (표 50개 기준)
+  // ✅ 막대 max
   // =========================
-  const maxImpr = useMemo(() => Math.max(0, ...tableRows.map((r) => toNum(r.impressions))), [tableRows]);
-  const maxClicks = useMemo(() => Math.max(0, ...tableRows.map((r) => toNum(r.clicks))), [tableRows]);
-  const maxCost = useMemo(() => Math.max(0, ...tableRows.map((r) => toNum(r.cost))), [tableRows]);
-  const maxConv = useMemo(() => Math.max(0, ...tableRows.map((r) => toNum(r.conversions))), [tableRows]);
-  const maxRev = useMemo(() => Math.max(0, ...tableRows.map((r) => toNum(r.revenue))), [tableRows]);
+  const maxImpr = useMemo(
+    () => Math.max(0, ...tableRows.map((r) => toSafeNumber(r.impressions))),
+    [tableRows]
+  );
+  const maxClicks = useMemo(
+    () => Math.max(0, ...tableRows.map((r) => toSafeNumber(r.clicks))),
+    [tableRows]
+  );
+  const maxCost = useMemo(
+    () => Math.max(0, ...tableRows.map((r) => toSafeNumber(r.cost))),
+    [tableRows]
+  );
+  const maxConv = useMemo(
+    () => Math.max(0, ...tableRows.map((r) => toSafeNumber(r.conversions))),
+    [tableRows]
+  );
+  const maxRev = useMemo(
+    () => Math.max(0, ...tableRows.map((r) => toSafeNumber(r.revenue))),
+    [tableRows]
+  );
 
   // =========================
   // ✅ 선택 소재 프리뷰
@@ -275,11 +291,20 @@ export default function CreativeSection({ rows }: Props) {
   const creativeInsightText = useMemo(() => {
     if (!scopedRows?.length) return "";
 
-    const totalImpr = scopedRows.reduce((a, r) => a + toNum(r.impressions), 0);
-    const totalClicks = scopedRows.reduce((a, r) => a + toNum(r.clicks), 0);
-    const totalCost = scopedRows.reduce((a, r) => a + toNum(r.cost), 0);
-    const totalConv = scopedRows.reduce((a, r) => a + toNum(r.conversions), 0);
-    const totalRev = scopedRows.reduce((a, r) => a + toNum(r.revenue), 0);
+    const totalImpr = scopedRows.reduce(
+      (a, r) => a + toSafeNumber(r.impressions),
+      0
+    );
+    const totalClicks = scopedRows.reduce(
+      (a, r) => a + toSafeNumber(r.clicks),
+      0
+    );
+    const totalCost = scopedRows.reduce((a, r) => a + toSafeNumber(r.cost), 0);
+    const totalConv = scopedRows.reduce(
+      (a, r) => a + toSafeNumber(r.conversions),
+      0
+    );
+    const totalRev = scopedRows.reduce((a, r) => a + toSafeNumber(r.revenue), 0);
 
     if (totalImpr <= 0) return "";
 
@@ -295,40 +320,45 @@ export default function CreativeSection({ rows }: Props) {
     const bottomN = sortedByCtr.slice(-Math.min(10, sortedByCtr.length));
 
     const sum = (arr: CreativeAgg[], key: keyof CreativeAgg) =>
-      arr.reduce((acc, cur) => acc + toNum(cur[key] as any), 0);
+      arr.reduce((acc, cur) => acc + toSafeNumber(cur[key] as any), 0);
 
     const topImpr = sum(topN, "impressions");
-    const topClicks = sum(topN, "clicks");
+    const topClicksSum = sum(topN, "clicks");
     const bottomImpr = sum(bottomN, "impressions");
-    const bottomClicks = sum(bottomN, "clicks");
+    const bottomClicksSum = sum(bottomN, "clicks");
 
-    const topCtr = topImpr > 0 ? topClicks / topImpr : 0;
-    const bottomCtr = bottomImpr > 0 ? bottomClicks / bottomImpr : 0;
+    const topCtr = topImpr > 0 ? topClicksSum / topImpr : 0;
+    const bottomCtr = bottomImpr > 0 ? bottomClicksSum / bottomImpr : 0;
 
-    // 하위가 “전체 평균 CTR”까지 회복 가정
     const expectedBottomClicks = bottomImpr * totalCtr;
-    const deltaClicks = Math.max(0, expectedBottomClicks - bottomClicks);
+    const deltaClicks = Math.max(0, expectedBottomClicks - bottomClicksSum);
 
     const expectedDeltaConv = deltaClicks * totalCvr;
     const expectedDeltaRev = deltaClicks * revPerClick;
     const expectedDeltaCost = deltaClicks * totalCpc;
 
-    const topClickShare = totalClicks > 0 ? topClicks / totalClicks : 0;
+    const topClickShare = totalClicks > 0 ? topClicksSum / totalClicks : 0;
 
     return [
-      `- 현재(선택 소스: ${selectedSource === "all" ? "전체" : selectedSource}) CTR은 ${pctText(
+      `- 현재(선택 소스: ${selectedSource === "all" ? "전체" : selectedSource}) CTR은 ${formatPercentFromRate(
         totalCtr,
         2
-      )}입니다. CTR 상위 소재(Top10)의 CTR은 ${pctText(topCtr, 2)}이며, 전체 클릭의 ${(
-        topClickShare * 100
-      ).toFixed(1)}%를 만들고 있습니다.`,
-      `- CTR 하위 소재(하위10)의 CTR은 ${pctText(bottomCtr, 2)}입니다. 하위10의 노출을 유지한 채 CTR이 평균(${pctText(
+      )}입니다. CTR 상위 소재(Top10)의 CTR은 ${formatPercentFromRate(
+        topCtr,
+        2
+      )}이며, 전체 클릭의 ${formatPercentFromRate(topClickShare, 1)}를 만들고 있습니다.`,
+      `- CTR 하위 소재(하위10)의 CTR은 ${formatPercentFromRate(
+        bottomCtr,
+        2
+      )}입니다. 하위10의 노출을 유지한 채 CTR이 평균(${formatPercentFromRate(
         totalCtr,
         2
-      )}) 수준만 회복해도 클릭이 약 ${fmtComma(deltaClicks)} 증가할 수 있습니다.`,
-      `- 동일 CVR·매출/클릭이 유지된다고 가정하면, 추가 전환 약 ${fmtComma(
+      )}) 수준만 회복해도 클릭이 약 ${formatCount(deltaClicks)} 증가할 수 있습니다.`,
+      `- 동일 CVR·매출/클릭이 유지된다고 가정하면, 추가 전환 약 ${formatCount(
         expectedDeltaConv
-      )}건 / 추가 매출 약 ${KRW(expectedDeltaRev)} 기대(추가비용 약 ${KRW(expectedDeltaCost)})입니다.`,
+      )}건 / 추가 매출 약 ${KRW(expectedDeltaRev)} 기대(추가비용 약 ${KRW(
+        expectedDeltaCost
+      )})입니다.`,
       `- 실행 제안: (1) 첫 프레임/썸네일 대비 강화 (2) 헤드라인 1문장 명확화 (3) CTA 버튼/문구 선명화 3가지를 우선 A/B 테스트하세요.`,
     ].join("\n");
   }, [scopedRows, creativeAgg, selectedSource]);
@@ -340,10 +370,10 @@ export default function CreativeSection({ rows }: Props) {
       </div>
 
       {/* ✅ 소스 필터만 */}
-      <div className="flex flex-wrap gap-2 items-center my-4">
-        <div className="text-sm text-gray-600 mr-2">소스</div>
+      <div className="my-4 flex flex-wrap items-center gap-2">
+        <div className="mr-2 text-sm text-gray-600">소스</div>
         <select
-          className="border rounded-lg px-3 py-2 text-sm bg-white"
+          className="rounded-lg border bg-white px-3 py-2 text-sm"
           value={selectedSource}
           onChange={(e) => setSelectedSource(e.target.value as any)}
         >
@@ -356,15 +386,23 @@ export default function CreativeSection({ rows }: Props) {
       </div>
 
       {/* ✅ 3개 차트 */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* 클릭수 */}
-        <div className="border rounded-2xl p-3 bg-white">
-          <div className="text-xs font-semibold mb-2">클릭수 TOP20 소재</div>
+        <div className="rounded-2xl border bg-white p-3">
+          <div className="mb-2 text-xs font-semibold">클릭수 TOP20 소재</div>
           <div style={{ width: "100%", height: 340 }}>
             <ResponsiveContainer>
-              <BarChart data={topClicks} layout="vertical" margin={{ top: 6, right: 18, left: 6, bottom: 6 }}>
+              <BarChart
+                data={topClicks}
+                layout="vertical"
+                margin={{ top: 6, right: 18, left: 6, bottom: 6 }}
+              >
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => formatNumber(toNum(v))} />
+                <XAxis
+                  type="number"
+                  tick={{ fontSize: 11 }}
+                  tickFormatter={(v) => formatCurrencyAxisCompact(v)}
+                />
                 <YAxis
                   type="category"
                   dataKey="creative"
@@ -372,7 +410,10 @@ export default function CreativeSection({ rows }: Props) {
                   tick={{ fontSize: 11 }}
                   tickFormatter={(v) => short(v, 7)}
                 />
-                <Tooltip wrapperStyle={{ fontSize: 11 }} formatter={(v: any) => fmtComma(v)} />
+                <Tooltip
+                  wrapperStyle={{ fontSize: 11 }}
+                  formatter={(v: any) => formatCount(v)}
+                />
                 <Bar
                   dataKey="clicks"
                   onClick={(_: any, idx: number) => {
@@ -383,7 +424,7 @@ export default function CreativeSection({ rows }: Props) {
                   <LabelList
                     dataKey="clicks"
                     position="insideRight"
-                    formatter={(v: any) => fmtComma(v)}
+                    formatter={(v: any) => formatCount(v)}
                     style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
                   />
                 </Bar>
@@ -393,13 +434,21 @@ export default function CreativeSection({ rows }: Props) {
         </div>
 
         {/* 전환수 */}
-        <div className="border rounded-2xl p-3 bg-white">
-          <div className="text-xs font-semibold mb-2">전환수 TOP20 소재</div>
+        <div className="rounded-2xl border bg-white p-3">
+          <div className="mb-2 text-xs font-semibold">전환수 TOP20 소재</div>
           <div style={{ width: "100%", height: 340 }}>
             <ResponsiveContainer>
-              <BarChart data={topConv} layout="vertical" margin={{ top: 6, right: 18, left: 6, bottom: 6 }}>
+              <BarChart
+                data={topConv}
+                layout="vertical"
+                margin={{ top: 6, right: 18, left: 6, bottom: 6 }}
+              >
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => formatNumber(toNum(v))} />
+                <XAxis
+                  type="number"
+                  tick={{ fontSize: 11 }}
+                  tickFormatter={(v) => formatCurrencyAxisCompact(v)}
+                />
                 <YAxis
                   type="category"
                   dataKey="creative"
@@ -407,7 +456,10 @@ export default function CreativeSection({ rows }: Props) {
                   tick={{ fontSize: 11 }}
                   tickFormatter={(v) => short(v, 7)}
                 />
-                <Tooltip wrapperStyle={{ fontSize: 11 }} formatter={(v: any) => fmtComma(v)} />
+                <Tooltip
+                  wrapperStyle={{ fontSize: 11 }}
+                  formatter={(v: any) => formatCount(v)}
+                />
                 <Bar
                   dataKey="conversions"
                   onClick={(_: any, idx: number) => {
@@ -418,7 +470,7 @@ export default function CreativeSection({ rows }: Props) {
                   <LabelList
                     dataKey="conversions"
                     position="insideRight"
-                    formatter={(v: any) => fmtComma(v)}
+                    formatter={(v: any) => formatCount(v)}
                     style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
                   />
                 </Bar>
@@ -428,13 +480,21 @@ export default function CreativeSection({ rows }: Props) {
         </div>
 
         {/* ROAS */}
-        <div className="border rounded-2xl p-3 bg-white">
-          <div className="text-xs font-semibold mb-2">ROAS TOP20 소재</div>
+        <div className="rounded-2xl border bg-white p-3">
+          <div className="mb-2 text-xs font-semibold">ROAS TOP20 소재</div>
           <div style={{ width: "100%", height: 340 }}>
             <ResponsiveContainer>
-              <BarChart data={topRoas} layout="vertical" margin={{ top: 6, right: 22, left: 6, bottom: 6 }}>
+              <BarChart
+                data={topRoas}
+                layout="vertical"
+                margin={{ top: 6, right: 22, left: 6, bottom: 6 }}
+              >
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => fmtRoasPct(v)} />
+                <XAxis
+                  type="number"
+                  tick={{ fontSize: 11 }}
+                  tickFormatter={(v) => formatPercentAxisFromRoas(v)}
+                />
                 <YAxis
                   type="category"
                   dataKey="creative"
@@ -442,7 +502,10 @@ export default function CreativeSection({ rows }: Props) {
                   tick={{ fontSize: 11 }}
                   tickFormatter={(v) => short(v, 7)}
                 />
-                <Tooltip wrapperStyle={{ fontSize: 11 }} formatter={(v: any) => fmtRoasPct(v)} />
+                <Tooltip
+                  wrapperStyle={{ fontSize: 11 }}
+                  formatter={(v: any) => formatPercentFromRoas(v, 1)}
+                />
                 <Bar
                   dataKey="roas"
                   onClick={(_: any, idx: number) => {
@@ -453,7 +516,7 @@ export default function CreativeSection({ rows }: Props) {
                   <LabelList
                     dataKey="roas"
                     position="insideRight"
-                    formatter={(v: any) => fmtRoasPct(v)}
+                    formatter={(v: any) => formatPercentFromRoas(v, 1)}
                     style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
                   />
                 </Bar>
@@ -465,21 +528,25 @@ export default function CreativeSection({ rows }: Props) {
 
       {/* ✅ 인사이트 요약 */}
       <section className="mt-6">
-        <div className="border rounded-xl p-6 bg-white">
-          <div className="font-semibold mb-3">요약 인사이트</div>
+        <div className="rounded-xl border bg-white p-6">
+          <div className="mb-3 font-semibold">요약 인사이트</div>
 
           {creativeInsightText ? (
-            <div className="text-sm text-gray-800 whitespace-pre-wrap">{creativeInsightText}</div>
+            <div className="whitespace-pre-wrap text-sm text-gray-800">
+              {creativeInsightText}
+            </div>
           ) : (
-            <div className="text-sm text-gray-500">소재 데이터가 없어 인사이트를 생성할 수 없습니다.</div>
+            <div className="text-sm text-gray-500">
+              소재 데이터가 없어 인사이트를 생성할 수 없습니다.
+            </div>
           )}
         </div>
       </section>
 
       {/* ✅ 선택 소재 프리뷰 */}
       <section className="mt-6">
-        <div className="border rounded-xl p-4 bg-white">
-          <div className="font-semibold mb-3">선택 소재</div>
+        <div className="rounded-xl border bg-white p-4">
+          <div className="mb-3 font-semibold">선택 소재</div>
 
           {!selectedCreative ? (
             <div className="text-sm text-gray-500">
@@ -487,16 +554,16 @@ export default function CreativeSection({ rows }: Props) {
             </div>
           ) : (
             <div className="flex flex-col items-center gap-3">
-              <div className="text-sm font-semibold text-center">
+              <div className="text-center text-sm font-semibold">
                 {selectedCreative.creative}
               </div>
 
               {selectedCreative.imagePath ? (
-                <div className="w-full flex justify-center">
+                <div className="flex w-full justify-center">
                   <img
                     src={selectedCreative.imagePath}
                     alt={selectedCreative.creative}
-                    className="w-full max-w-[680px] max-h-[360px] object-contain rounded-xl bg-white"
+                    className="max-h-[360px] w-full max-w-[680px] rounded-xl bg-white object-contain"
                   />
                 </div>
               ) : (
@@ -511,10 +578,10 @@ export default function CreativeSection({ rows }: Props) {
 
       {/* ✅ 소재 요약표 */}
       <section className="mt-10">
-        <h2 className="text-lg font-semibold mb-3">소재 요약</h2>
+        <h2 className="mb-3 text-lg font-semibold">소재 요약</h2>
 
         <div className="overflow-auto rounded-xl border">
-          <table className="w-full text-sm border-collapse">
+          <table className="w-full border-collapse text-sm">
             <thead className="bg-gray-50 text-gray-600">
               <tr>
                 <Th k="creative" align="left" />
@@ -542,38 +609,66 @@ export default function CreativeSection({ rows }: Props) {
                 tableRows.map((r, idx) => (
                   <tr
                     key={`${r.creative}-${idx}`}
-                    className="border-t hover:bg-orange-50 cursor-pointer"
+                    className="cursor-pointer border-t hover:bg-orange-50"
                     onClick={() => setSelectedCreative(r)}
                   >
-                    <td className="p-3 font-medium whitespace-nowrap text-left">{r.creative || "(empty)"}</td>
-
-                    <td className="p-3">
-                      <DataBarCell value={toNum(r.impressions)} max={maxImpr} label={fmtComma(r.impressions)} />
+                    <td className="whitespace-nowrap p-3 text-left font-medium">
+                      {r.creative || "(empty)"}
                     </td>
 
                     <td className="p-3">
-                      <DataBarCell value={toNum(r.clicks)} max={maxClicks} label={fmtComma(r.clicks)} />
+                      <DataBarCell
+                        value={toSafeNumber(r.impressions)}
+                        max={maxImpr}
+                        label={formatCount(r.impressions)}
+                      />
                     </td>
 
-                    <td className="p-3 text-right">{pctText(r.ctr, 2)}</td>
+                    <td className="p-3">
+                      <DataBarCell
+                        value={toSafeNumber(r.clicks)}
+                        max={maxClicks}
+                        label={formatCount(r.clicks)}
+                      />
+                    </td>
+
+                    <td className="p-3 text-right">
+                      {formatPercentFromRate(r.ctr, 2)}
+                    </td>
                     <td className="p-3 text-right">{KRW(r.cpc)}</td>
 
                     <td className="p-3">
-                      <DataBarCell value={toNum(r.cost)} max={maxCost} label={KRW(r.cost)} />
+                      <DataBarCell
+                        value={toSafeNumber(r.cost)}
+                        max={maxCost}
+                        label={KRW(r.cost)}
+                      />
                     </td>
 
                     <td className="p-3">
-                      <DataBarCell value={toNum(r.conversions)} max={maxConv} label={fmtComma(r.conversions)} />
+                      <DataBarCell
+                        value={toSafeNumber(r.conversions)}
+                        max={maxConv}
+                        label={formatCount(r.conversions)}
+                      />
                     </td>
 
-                    <td className="p-3 text-right">{pctText(r.cvr, 2)}</td>
+                    <td className="p-3 text-right">
+                      {formatPercentFromRate(r.cvr, 2)}
+                    </td>
                     <td className="p-3 text-right">{KRW(r.cpa)}</td>
 
                     <td className="p-3">
-                      <DataBarCell value={toNum(r.revenue)} max={maxRev} label={KRW(r.revenue)} />
+                      <DataBarCell
+                        value={toSafeNumber(r.revenue)}
+                        max={maxRev}
+                        label={KRW(r.revenue)}
+                      />
                     </td>
 
-                    <td className="p-3 text-right">{pctText(r.roas, 1)}</td>
+                    <td className="p-3 text-right">
+                      {formatPercentFromRoas(r.roas, 1)}
+                    </td>
                   </tr>
                 ))
               )}

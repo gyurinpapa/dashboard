@@ -1,13 +1,13 @@
 "use client";
 
+import { formatCount } from "../../../src/lib/report/format";
+
 type Props = {
   value: number;
   max: number;
   label?: string;
   height?: number;
 };
-
-const format = (n: number) => n.toLocaleString("ko-KR");
 
 export default function DataBarCell({
   value,
@@ -16,7 +16,7 @@ export default function DataBarCell({
   height = 18,
 }: Props) {
   const pct = max > 0 ? (value / max) * 100 : 0;
-  const text = label ?? format(value);
+  const text = label ?? formatCount(value);
 
   const isSmall = pct < 18;
 
@@ -30,7 +30,8 @@ export default function DataBarCell({
             height: `${height}px`,
             background:
               "linear-gradient(90deg,#fb923c 0%,#f97316 60%,#ea580c 100%)",
-            boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.18), 0 1px 2px rgba(15,23,42,0.08)",
+            boxShadow:
+              "inset 0 0 0 1px rgba(255,255,255,0.18), 0 1px 2px rgba(15,23,42,0.08)",
           }}
         />
 

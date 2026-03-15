@@ -43,6 +43,7 @@ type Props = {
   enabledMonthKeySet: Set<string>;
   enabledWeekKeySet: Set<string>;
 
+  fullPeriod: string;
   period: string;
 
   advertiserName?: string | null;
@@ -100,6 +101,7 @@ export default function HeaderBar(props: Props) {
     channelOptions,
     enabledMonthKeySet,
     enabledWeekKeySet,
+    fullPeriod,
     period,
     advertiserName,
     reportTypeName,
@@ -177,12 +179,12 @@ export default function HeaderBar(props: Props) {
 
                 <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500">
                   <span>{headerSubTitle}</span>
-                  {period ? (
+                  {fullPeriod ? (
                     <>
                       <span className="hidden sm:inline">•</span>
                       <span>
                         기간{" "}
-                        <span className="font-semibold text-slate-700">{period}</span>
+                        <span className="font-semibold text-slate-700">{fullPeriod}</span>
                       </span>
                     </>
                   ) : null}
@@ -192,7 +194,6 @@ export default function HeaderBar(props: Props) {
           </div>
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-stretch">
-            {/* LEFT: Filters */}
             <div
               ref={filterRootRef}
               className="relative flex min-h-[116px] flex-col justify-between rounded-[24px] border border-slate-200 bg-white px-4 py-4 shadow-sm"
@@ -389,7 +390,6 @@ export default function HeaderBar(props: Props) {
               )}
             </div>
 
-            {/* RIGHT: Product-style pill tabs */}
             <div className="flex min-h-[116px] flex-col justify-between rounded-[24px] border border-slate-200 bg-slate-50/90 px-3 py-3 shadow-sm">
               <div className="flex flex-wrap gap-2">
                 <button

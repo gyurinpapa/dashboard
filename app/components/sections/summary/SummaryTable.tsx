@@ -1,33 +1,23 @@
 "use client";
 
 import TrendCell from "../../ui/TrendCell";
-import { KRW } from "../../../../src/lib/report/format";
+import {
+  KRW,
+  toSafeNumber,
+  normalizeRate01,
+  normalizeRoas01,
+  formatPercentFromRate,
+  formatPercentFromRoas,
+  diffRatio,
+} from "../../../../src/lib/report/format";
 import DataBarCell from "../../ui/DataBarCell";
 
 type Props = {
   byMonth: any[];
 };
 
-const toNum = (v: any) => {
-  if (v == null) return 0;
-  if (typeof v === "number") return v;
-  const s = String(v).replace(/[%₩,\s]/g, "");
-  const n = Number(s);
-  return isFinite(n) ? n : 0;
-};
-
-const toRate01 = (v: any) => {
-  const n = toNum(v);
-  return n > 1 ? n / 100 : n;
-};
-
-const toRoas01 = (v: any) => {
-  const n = toNum(v);
-  return n > 10 ? n / 100 : n;
-};
-
 const monthKey = (m: any) => {
-  const k = m.monthKey ?? m.month ?? m.key ?? m.label;
+  const k = m?.monthKey ?? m?.month ?? m?.key ?? m?.label;
   if (!k) return "";
   const s = String(k);
   const match = s.match(/^(\d{4})[-/.](\d{1,2})$/);
@@ -35,12 +25,29 @@ const monthKey = (m: any) => {
   return `${match[1]}-${match[2].padStart(2, "0")}`;
 };
 
-const diffPctRatio = (cur: any, prev: any) => {
-  const c = toNum(cur);
-  const p = toNum(prev);
-  if (!isFinite(c) || !isFinite(p) || p === 0) return null;
-  return (c - p) / p;
-};
+function HeaderChip({
+  label,
+  tone = "neutral",
+}: {
+  label: string;
+  tone?: "neutral" | "cost" | "revenue" | "roas";
+}) {
+  const dotClass =
+    tone === "cost"
+      ? "bg-amber-500"
+      : tone === "revenue"
+      ? "bg-sky-500"
+      : tone === "roas"
+      ? "bg-rose-500"
+      : "bg-slate-400";
+
+  return (
+    <div className="inline-flex h-7 items-center gap-2 rounded-full border border-gray-200 bg-white px-3 text-[11px] font-semibold tracking-[-0.01em] text-gray-700 shadow-sm">
+      <span className={`inline-block h-2.5 w-2.5 rounded-full ${dotClass}`} />
+      <span>{label}</span>
+    </div>
+  );
+}
 
 export default function SummaryTable({ byMonth }: Props) {
   const months = Array.isArray(byMonth) ? byMonth : [];
@@ -52,99 +59,166 @@ export default function SummaryTable({ byMonth }: Props) {
   const lastMonth = sortedMonths[0];
   const prevMonth = sortedMonths[1];
 
-  const maxImpr = Math.max(...byMonth.map((r) => r.impressions || 0));
-  const maxClicks = Math.max(...byMonth.map((r) => r.clicks || 0));
-  const maxCost = Math.max(...byMonth.map((r) => r.cost || 0));
-  const maxConv = Math.max(...byMonth.map((r) => r.conversions || 0));
-  const maxRev = Math.max(...byMonth.map((r) => r.revenue || 0));
+  const maxImpr = Math.max(
+    0,
+    ...sortedMonths.map((r: any) => toSafeNumber(r?.impressions ?? r?.impr))
+  );
+  const maxClicks = Math.max(
+    0,
+    ...sortedMonths.map((r: any) => toSafeNumber(r?.clicks))
+  );
+  const maxCost = Math.max(
+    0,
+    ...sortedMonths.map((r: any) => toSafeNumber(r?.cost))
+  );
+  const maxConv = Math.max(
+    0,
+    ...sortedMonths.map((r: any) => toSafeNumber(r?.conversions ?? r?.conv))
+  );
+  const maxRev = Math.max(
+    0,
+    ...sortedMonths.map((r: any) => toSafeNumber(r?.revenue))
+  );
 
   return (
-    <section className="mt-12">
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-gray-900">
+    <section className="mt-12 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+      <div className="border-b border-gray-200 px-5 py-4 sm:px-6 sm:py-5">
+        <div className="text-[15px] font-semibold tracking-[-0.01em] text-gray-900 sm:text-[16px]">
           월별 성과 (최근 3개월)
-        </h2>
+        </div>
+        <div className="mt-1 text-xs font-medium text-gray-500 sm:text-[12px]">
+          최근 월별 핵심 성과 비교
+        </div>
       </div>
 
-      <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
-        <div className="overflow-auto rounded-2xl">
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 z-10 border-b border-gray-200 bg-gray-50/95 text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-600 backdrop-blur">
+      <div className="px-4 pt-4 sm:px-6 sm:pt-5">
+        <div className="rounded-2xl border border-gray-200/80 bg-gray-50/55 px-3 py-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <HeaderChip label="ROAS" tone="roas" />
+            <HeaderChip label="비용" tone="cost" />
+            <HeaderChip label="전환매출" tone="revenue" />
+          </div>
+        </div>
+      </div>
+
+      <div className="px-4 pb-4 pt-3 sm:px-6 sm:pb-5 sm:pt-4">
+        <div className="overflow-auto rounded-2xl border border-gray-200/80">
+          <table className="w-full min-w-[1120px] text-sm">
+            <thead className="sticky top-0 z-10 border-b border-gray-200 bg-gray-50/95 backdrop-blur">
               <tr>
-                <th className="text-left px-4 py-3.5 font-semibold">Month</th>
-                <th className="text-right px-4 py-3.5 font-semibold">Impr</th>
-                <th className="text-right px-4 py-3.5 font-semibold">Clicks</th>
-                <th className="text-right px-4 py-3.5 font-semibold">CTR</th>
-                <th className="text-right px-4 py-3.5 font-semibold">CPC</th>
-                <th className="text-right px-4 py-3.5 font-semibold">Cost</th>
-                <th className="text-right px-4 py-3.5 font-semibold">Conv</th>
-                <th className="text-right px-4 py-3.5 font-semibold">CVR</th>
-                <th className="text-right px-4 py-3.5 font-semibold">CPA</th>
-                <th className="text-right px-4 py-3.5 font-semibold">Revenue</th>
-                <th className="text-right px-4 py-3.5 font-semibold">ROAS</th>
+                <th className="whitespace-nowrap px-4 py-3.5 text-left text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-600">
+                  Month
+                </th>
+                <th className="whitespace-nowrap px-4 py-3.5 text-right text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-600">
+                  Impr
+                </th>
+                <th className="whitespace-nowrap px-4 py-3.5 text-right text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-600">
+                  Clicks
+                </th>
+                <th className="whitespace-nowrap px-4 py-3.5 text-right text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-600">
+                  CTR
+                </th>
+                <th className="whitespace-nowrap px-4 py-3.5 text-right text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-600">
+                  CPC
+                </th>
+                <th className="whitespace-nowrap px-4 py-3.5 text-right text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-600">
+                  Cost
+                </th>
+                <th className="whitespace-nowrap px-4 py-3.5 text-right text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-600">
+                  Conv
+                </th>
+                <th className="whitespace-nowrap px-4 py-3.5 text-right text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-600">
+                  CVR
+                </th>
+                <th className="whitespace-nowrap px-4 py-3.5 text-right text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-600">
+                  CPA
+                </th>
+                <th className="whitespace-nowrap px-4 py-3.5 text-right text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-600">
+                  Revenue
+                </th>
+                <th className="whitespace-nowrap px-4 py-3.5 text-right text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-600">
+                  ROAS
+                </th>
               </tr>
             </thead>
 
             <tbody>
               {lastMonth && prevMonth && (
                 <tr className="border-b border-gray-200 bg-slate-50/90 font-medium text-gray-800">
-                  <td className="px-4 py-3.5">증감(최근월-전월)</td>
+                  <td className="whitespace-nowrap px-4 py-3.5 text-left font-semibold text-gray-900">
+                    증감(최근월-전월)
+                  </td>
 
-                  <td className="px-4 py-3.5 text-right">
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right">
                     <TrendCell
-                      v={diffPctRatio(lastMonth.impressions, prevMonth.impressions)}
+                      v={diffRatio(lastMonth?.impressions, prevMonth?.impressions)}
                     />
                   </td>
 
-                  <td className="px-4 py-3.5 text-right">
-                    <TrendCell v={diffPctRatio(lastMonth.clicks, prevMonth.clicks)} />
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right">
+                    <TrendCell
+                      v={diffRatio(lastMonth?.clicks, prevMonth?.clicks)}
+                    />
                   </td>
 
-                  <td className="px-4 py-3.5 text-right">
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right">
                     <TrendCell
-                      v={diffPctRatio(toRate01(lastMonth.ctr), toRate01(prevMonth.ctr))}
+                      v={diffRatio(
+                        normalizeRate01(lastMonth?.ctr),
+                        normalizeRate01(prevMonth?.ctr)
+                      )}
                       digits={2}
                     />
                   </td>
 
-                  <td className="px-4 py-3.5 text-right">
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right">
                     <TrendCell
-                      v={diffPctRatio(lastMonth.cpc, prevMonth.cpc)}
+                      v={diffRatio(lastMonth?.cpc, prevMonth?.cpc)}
                       digits={2}
                     />
                   </td>
 
-                  <td className="px-4 py-3.5 text-right">
-                    <TrendCell v={diffPctRatio(lastMonth.cost, prevMonth.cost)} />
-                  </td>
-
-                  <td className="px-4 py-3.5 text-right">
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right">
                     <TrendCell
-                      v={diffPctRatio(lastMonth.conversions, prevMonth.conversions)}
+                      v={diffRatio(lastMonth?.cost, prevMonth?.cost)}
                     />
                   </td>
 
-                  <td className="px-4 py-3.5 text-right">
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right">
                     <TrendCell
-                      v={diffPctRatio(toRate01(lastMonth.cvr), toRate01(prevMonth.cvr))}
+                      v={diffRatio(lastMonth?.conversions, prevMonth?.conversions)}
+                    />
+                  </td>
+
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right">
+                    <TrendCell
+                      v={diffRatio(
+                        normalizeRate01(lastMonth?.cvr),
+                        normalizeRate01(prevMonth?.cvr)
+                      )}
                       digits={2}
                     />
                   </td>
 
-                  <td className="px-4 py-3.5 text-right">
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right">
                     <TrendCell
-                      v={diffPctRatio(lastMonth.cpa, prevMonth.cpa)}
+                      v={diffRatio(lastMonth?.cpa, prevMonth?.cpa)}
                       digits={2}
                     />
                   </td>
 
-                  <td className="px-4 py-3.5 text-right">
-                    <TrendCell v={diffPctRatio(lastMonth.revenue, prevMonth.revenue)} />
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right">
+                    <TrendCell
+                      v={diffRatio(lastMonth?.revenue, prevMonth?.revenue)}
+                    />
                   </td>
 
-                  <td className="px-4 py-3.5 text-right">
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right">
                     <TrendCell
-                      v={diffPctRatio(toRoas01(lastMonth.roas), toRoas01(prevMonth.roas))}
+                      v={diffRatio(
+                        normalizeRoas01(lastMonth?.roas),
+                        normalizeRoas01(prevMonth?.roas)
+                      )}
                       digits={2}
                     />
                   </td>
@@ -154,67 +228,81 @@ export default function SummaryTable({ byMonth }: Props) {
               {sortedMonths.map((row: any, idx: number) => (
                 <tr
                   key={row?.monthKey ?? row?.month ?? row?.label ?? idx}
-                  className="border-t border-gray-200 even:bg-gray-50/60 hover:bg-blue-50/40 transition-colors"
+                  className="border-t border-gray-200 even:bg-gray-50/60 transition-colors hover:bg-blue-50/40"
                 >
-                  <td className="text-left px-4 py-3.5 font-medium text-gray-900">
+                  <td className="whitespace-nowrap px-4 py-3.5 text-left font-medium text-gray-900">
                     {row?.month ?? row?.label ?? "-"}
                   </td>
 
-                  <td className="px-4 py-3.5">
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right align-middle">
                     <DataBarCell
-                      value={row?.impressions ?? row?.impr ?? 0}
+                      value={toSafeNumber(row?.impressions ?? row?.impr)}
                       max={maxImpr}
                     />
                   </td>
 
-                  <td className="px-4 py-3.5">
-                    <DataBarCell value={row?.clicks ?? 0} max={maxClicks} />
-                  </td>
-
-                  <td className="px-4 py-3.5 text-right text-gray-700">
-                    {(toRate01(row?.ctr) * 100).toFixed(2)}%
-                  </td>
-
-                  <td className="text-right px-4 py-3.5 text-gray-700">
-                    {KRW(row?.cpc)}
-                  </td>
-
-                  <td className="px-4 py-3.5">
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right align-middle">
                     <DataBarCell
-                      value={row?.cost ?? 0}
-                      max={maxCost}
-                      label={KRW(row?.cost)}
+                      value={toSafeNumber(row?.clicks)}
+                      max={maxClicks}
                     />
                   </td>
 
-                  <td className="px-4 py-3.5">
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right text-gray-700">
+                    {formatPercentFromRate(row?.ctr, 2)}
+                  </td>
+
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right text-gray-700">
+                    {KRW(toSafeNumber(row?.cpc))}
+                  </td>
+
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right align-middle">
                     <DataBarCell
-                      value={row?.conversions ?? row?.conv ?? 0}
+                      value={toSafeNumber(row?.cost)}
+                      max={maxCost}
+                      label={KRW(toSafeNumber(row?.cost))}
+                    />
+                  </td>
+
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right align-middle">
+                    <DataBarCell
+                      value={toSafeNumber(row?.conversions ?? row?.conv)}
                       max={maxConv}
                     />
                   </td>
 
-                  <td className="px-4 py-3.5 text-right text-gray-700">
-                    {(toRate01(row?.cvr) * 100).toFixed(2)}%
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right text-gray-700">
+                    {formatPercentFromRate(row?.cvr, 2)}
                   </td>
 
-                  <td className="text-right px-4 py-3.5 text-gray-700">
-                    {KRW(row?.cpa)}
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right text-gray-700">
+                    {KRW(toSafeNumber(row?.cpa))}
                   </td>
 
-                  <td className="px-4 py-3.5">
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right align-middle">
                     <DataBarCell
-                      value={row?.revenue ?? 0}
+                      value={toSafeNumber(row?.revenue)}
                       max={maxRev}
-                      label={KRW(row?.revenue)}
+                      label={KRW(toSafeNumber(row?.revenue))}
                     />
                   </td>
 
-                  <td className="px-4 py-3.5 text-right text-gray-700">
-                    {(toRoas01(row?.roas) * 100).toFixed(1)}%
+                  <td className="whitespace-nowrap px-4 py-3.5 text-right font-semibold text-rose-600">
+                    {formatPercentFromRoas(row?.roas, 1)}
                   </td>
                 </tr>
               ))}
+
+              {!sortedMonths.length && (
+                <tr>
+                  <td
+                    colSpan={11}
+                    className="px-4 py-10 text-center text-sm font-medium text-gray-400"
+                  >
+                    표시할 월별 데이터가 없습니다.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

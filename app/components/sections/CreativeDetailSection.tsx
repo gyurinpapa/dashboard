@@ -13,33 +13,31 @@ import {
   groupByMonthRecent3,
 } from "../../../src/lib/report/aggregate";
 
+import {
+  toSafeNumber,
+  diffRatio,
+  formatDeltaPercentFromRatio,
+  formatPercentFromRate,
+  formatPercentFromRoas,
+} from "../../../src/lib/report/format";
+
 /** =========================
  * Utils (안전 방어)
  * ========================= */
-function safeNum(n: any) {
-  const v = Number(n);
-  return Number.isFinite(v) ? v : 0;
-}
-
-function diffPct(a: number, b: number) {
-  if (!b) return 0;
-  return (a - b) / b;
-}
-
-function signPct(n: number) {
-  const v = n * 100;
-  const s = v >= 0 ? "+" : "";
-  return `${s}${v.toFixed(1)}%`;
-}
-
 function safePct(n: number) {
-  if (!Number.isFinite(n)) return "0%";
-  return `${(n * 100).toFixed(1)}%`;
+  return formatPercentFromRate(n, 1);
 }
 
 function safePct0(n: number) {
-  if (!Number.isFinite(n)) return "0%";
-  return `${(n * 100).toFixed(0)}%`;
+  return formatPercentFromRate(n, 0);
+}
+
+function safeRoasPct0(n: number) {
+  return formatPercentFromRoas(n, 0);
+}
+
+function signPct(n: number) {
+  return formatDeltaPercentFromRatio(n, 1, "0.0%");
 }
 
 function pickDeviceLabel(raw: string) {
@@ -162,36 +160,42 @@ function buildCreativeDetailInsight(args: {
     };
   }
 
-  const all = safeCall(() => summarize(allRowsScope as any), {
-    impressions: 0,
-    clicks: 0,
-    cost: 0,
-    conversions: 0,
-    revenue: 0,
-    ctr: 0,
-    cpc: 0,
-    cvr: 0,
-    cpa: 0,
-    roas: 0,
-  } as any);
+  const all = safeCall(
+    () => summarize(allRowsScope as any),
+    {
+      impressions: 0,
+      clicks: 0,
+      cost: 0,
+      conversions: 0,
+      revenue: 0,
+      ctr: 0,
+      cpc: 0,
+      cvr: 0,
+      cpa: 0,
+      roas: 0,
+    } as any
+  );
 
-  const me = safeCall(() => summarize(creativeRows as any), {
-    impressions: 0,
-    clicks: 0,
-    cost: 0,
-    conversions: 0,
-    revenue: 0,
-    ctr: 0,
-    cpc: 0,
-    cvr: 0,
-    cpa: 0,
-    roas: 0,
-  } as any);
+  const me = safeCall(
+    () => summarize(creativeRows as any),
+    {
+      impressions: 0,
+      clicks: 0,
+      cost: 0,
+      conversions: 0,
+      revenue: 0,
+      ctr: 0,
+      cpc: 0,
+      cvr: 0,
+      cpa: 0,
+      roas: 0,
+    } as any
+  );
 
-  const shareCost = all.cost ? safeNum(me.cost) / safeNum(all.cost) : 0;
-  const shareRev = all.revenue ? safeNum(me.revenue) / safeNum(all.revenue) : 0;
+  const shareCost = all.cost ? toSafeNumber(me.cost) / toSafeNumber(all.cost) : 0;
+  const shareRev = all.revenue ? toSafeNumber(me.revenue) / toSafeNumber(all.revenue) : 0;
   const shareConv = all.conversions
-    ? safeNum(me.conversions) / safeNum(all.conversions)
+    ? toSafeNumber(me.conversions) / toSafeNumber(all.conversions)
     : 0;
 
   const weeks = [...(byWeekOnly || [])].sort((a, b) =>
@@ -201,34 +205,41 @@ function buildCreativeDetailInsight(args: {
   const wPrev = weeks.length >= 2 ? weeks[weeks.length - 2] : null;
 
   const roasWoW =
-    wLast && wPrev ? diffPct(safeNum(wLast.roas), safeNum(wPrev.roas)) : 0;
+    wLast && wPrev
+      ? diffRatio(toSafeNumber(wLast.roas), toSafeNumber(wPrev.roas)) ?? 0
+      : 0;
   const clickWoW =
     wLast && wPrev
-      ? diffPct(safeNum(wLast.clicks), safeNum(wPrev.clicks))
+      ? diffRatio(toSafeNumber(wLast.clicks), toSafeNumber(wPrev.clicks)) ?? 0
       : 0;
   const convWoW =
     wLast && wPrev
-      ? diffPct(safeNum(wLast.conversions), safeNum(wPrev.conversions))
+      ? diffRatio(
+          toSafeNumber(wLast.conversions),
+          toSafeNumber(wPrev.conversions)
+        ) ?? 0
       : 0;
   const costWoW =
-    wLast && wPrev ? diffPct(safeNum(wLast.cost), safeNum(wPrev.cost)) : 0;
+    wLast && wPrev
+      ? diffRatio(toSafeNumber(wLast.cost), toSafeNumber(wPrev.cost)) ?? 0
+      : 0;
 
   const sources = [...(bySource || [])].sort(
-    (a, b) => safeNum(b.cost) - safeNum(a.cost)
+    (a, b) => toSafeNumber(b.cost) - toSafeNumber(a.cost)
   );
   const topS1 = sources[0] ?? null;
   const topS2 = sources[1] ?? null;
 
   const devices = [...(byDevice || [])].sort(
-    (a, b) => safeNum(b.cost) - safeNum(a.cost)
+    (a, b) => toSafeNumber(b.cost) - toSafeNumber(a.cost)
   );
   const topD1 = devices[0] ?? null;
   const topD2 = devices[1] ?? null;
 
   const efficiencyLabel =
-    safeNum(me.roas) >= 1.0
+    toSafeNumber(me.roas) >= 1.0
       ? "ROAS가 100% 이상으로 효율이 양호"
-      : safeNum(me.roas) >= 0.7
+      : toSafeNumber(me.roas) >= 0.7
       ? "ROAS가 70~100% 구간으로 개선 여지"
       : "ROAS가 70% 미만으로 효율 개선이 우선";
 
@@ -242,9 +253,9 @@ function buildCreativeDetailInsight(args: {
   const bullets: string[] = [];
   bullets.push(
     `선택 소재 “${creative}” 성과: 클릭 ${Math.round(
-      safeNum(me.clicks)
-    )} / 전환 ${safeNum(me.conversions).toFixed(1)} / ROAS ${safePct0(
-      safeNum(me.roas)
+      toSafeNumber(me.clicks)
+    )} / 전환 ${toSafeNumber(me.conversions).toFixed(1)} / ROAS ${safeRoasPct0(
+      toSafeNumber(me.roas)
     )} · ${efficiencyLabel}`
   );
   bullets.push(
@@ -256,12 +267,14 @@ function buildCreativeDetailInsight(args: {
 
   if (topD1) {
     const d1 = pickDeviceLabel(String(topD1.device ?? "unknown"));
-    let deviceLine = `기기별: “${d1}” 비중이 가장 큽니다(ROAS ${safePct0(
-      safeNum(topD1.roas)
+    let deviceLine = `기기별: “${d1}” 비중이 가장 큽니다(ROAS ${safeRoasPct0(
+      toSafeNumber(topD1.roas)
     )}).`;
     if (topD2) {
       const d2 = pickDeviceLabel(String(topD2.device ?? "unknown"));
-      deviceLine += ` 비교: “${d2}” ROAS ${safePct0(safeNum(topD2.roas))}.`;
+      deviceLine += ` 비교: “${d2}” ROAS ${safeRoasPct0(
+        toSafeNumber(topD2.roas)
+      )}.`;
     }
     bullets.push(deviceLine);
   } else {
@@ -270,7 +283,7 @@ function buildCreativeDetailInsight(args: {
 
   const actions: string[] = [];
 
-  if (safeNum(me.ctr) < 0.02 && safeNum(me.impressions) > 0) {
+  if (toSafeNumber(me.ctr) < 0.02 && toSafeNumber(me.impressions) > 0) {
     actions.push(
       "클릭 개선: CTR이 낮습니다. 썸네일/첫 프레임/헤드라인/CTA 훅을 2~3종으로 분리 테스트하고, 저반응 소재는 빠르게 교체하세요."
     );
@@ -280,7 +293,7 @@ function buildCreativeDetailInsight(args: {
     );
   }
 
-  if (safeNum(me.cvr) < 0.01 && safeNum(me.clicks) >= 30) {
+  if (toSafeNumber(me.cvr) < 0.01 && toSafeNumber(me.clicks) >= 30) {
     actions.push(
       "전환 개선: CVR이 낮습니다. 랜딩 첫 화면(USP+신뢰+CTA) 간소화, 폼 필드 축소, 상담/전화 CTA 가시성 개선을 우선 적용하세요."
     );
@@ -292,15 +305,15 @@ function buildCreativeDetailInsight(args: {
 
   if (topS1) {
     actions.push(
-      `소스 기준: 비용 상위 “${String(topS1.source)}”(ROAS ${safePct0(
-        safeNum(topS1.roas)
+      `소스 기준: 비용 상위 “${String(topS1.source)}”(ROAS ${safeRoasPct0(
+        toSafeNumber(topS1.roas)
       )})를 중심으로 예산/세팅 최적화를 우선하세요.`
     );
   }
   if (topS2) {
     actions.push(
-      `소스 비교: 2순위 “${String(topS2.source)}”(ROAS ${safePct0(
-        safeNum(topS2.roas)
+      `소스 비교: 2순위 “${String(topS2.source)}”(ROAS ${safeRoasPct0(
+        toSafeNumber(topS2.roas)
       )})와 함께 유지/축소 기준을 명확히 하세요.`
     );
   }
@@ -330,7 +343,6 @@ export default function CreativeDetailSection({ rows }: Props) {
   const creatives = useMemo(() => extractCreatives(rows), [rows]);
   const [selectedCreative, setSelectedCreative] = useState<string | null>(null);
 
-  // ✅ creatives가 생기면 자동으로 첫 항목 선택
   useEffect(() => {
     if (!selectedCreative && creatives.length > 0) {
       setSelectedCreative(creatives[0]);
@@ -338,7 +350,7 @@ export default function CreativeDetailSection({ rows }: Props) {
   }, [creatives, selectedCreative]);
 
   /** =========================
-   * ✅ Performance aggregation (전체 rows 기준)
+   * ✅ Performance aggregation
    * ========================= */
   const perfList: CreativePerf[] = useMemo(() => {
     const map = new Map<string, CreativePerf>();
@@ -348,11 +360,11 @@ export default function CreativeDetailSection({ rows }: Props) {
       if (!k) continue;
 
       const anyR = r as any;
-      const impr = safeNum(anyR.impressions ?? anyR.impr ?? anyR.imp ?? 0);
-      const clk = safeNum(anyR.clicks ?? anyR.clk ?? 0);
-      const cost = safeNum(anyR.cost ?? 0);
-      const conv = safeNum(anyR.conversions ?? anyR.conv ?? 0);
-      const rev = safeNum(anyR.revenue ?? 0);
+      const impr = toSafeNumber(anyR.impressions ?? anyR.impr ?? anyR.imp ?? 0);
+      const clk = toSafeNumber(anyR.clicks ?? anyR.clk ?? 0);
+      const cost = toSafeNumber(anyR.cost ?? 0);
+      const conv = toSafeNumber(anyR.conversions ?? anyR.conv ?? 0);
+      const rev = toSafeNumber(anyR.revenue ?? 0);
 
       const prev = map.get(k) ?? {
         creative: k,
@@ -383,18 +395,19 @@ export default function CreativeDetailSection({ rows }: Props) {
     return arr;
   }, [rows]);
 
-  // ✅ badgeMap: creative -> BadgeKey[]
   const badgeMap = useMemo(() => {
     const map = new Map<string, BadgeKey[]>();
 
     const top3 = (key: BadgeKey) => {
       const sorted = [...perfList].sort((a, b) => {
-        const av = safeNum((a as any)[key]);
-        const bv = safeNum((b as any)[key]);
+        const av = toSafeNumber((a as any)[key]);
+        const bv = toSafeNumber((b as any)[key]);
         return bv - av;
       });
 
-      const picked = sorted.filter((x) => safeNum((x as any)[key]) > 0).slice(0, 3);
+      const picked = sorted
+        .filter((x) => toSafeNumber((x as any)[key]) > 0)
+        .slice(0, 3);
 
       for (const it of picked) {
         const prev = map.get(it.creative) ?? [];
@@ -420,7 +433,6 @@ export default function CreativeDetailSection({ rows }: Props) {
     [rows, selectedCreative]
   );
 
-  /** ✅ 최상단 프리뷰용 URL (선택 소재 이미지) */
   const selectedPreviewUrl = useMemo(() => {
     if (!selectedCreative) return "";
     const sampleRow = rows.find((r) => getCreativeKey(r) === selectedCreative);
@@ -428,7 +440,6 @@ export default function CreativeDetailSection({ rows }: Props) {
     return getCreativePreviewUrl(sampleRow);
   }, [rows, selectedCreative]);
 
-  // ✅ "리스트 순서대로" 5개 썸네일
   const sideThumbs = useMemo(() => {
     if (!creatives.length) return [] as { creative: string; url: string }[];
 
@@ -458,18 +469,21 @@ export default function CreativeDetailSection({ rows }: Props) {
 
   const totals = useMemo(
     () =>
-      safeCall(() => summarize(filteredRows as any), {
-        impressions: 0,
-        clicks: 0,
-        cost: 0,
-        conversions: 0,
-        revenue: 0,
-        ctr: 0,
-        cpc: 0,
-        cvr: 0,
-        cpa: 0,
-        roas: 0,
-      } as any),
+      safeCall(
+        () => summarize(filteredRows as any),
+        {
+          impressions: 0,
+          clicks: 0,
+          cost: 0,
+          conversions: 0,
+          revenue: 0,
+          ctr: 0,
+          cpc: 0,
+          cvr: 0,
+          cpa: 0,
+          roas: 0,
+        } as any
+      ),
     [filteredRows]
   );
 
@@ -534,7 +548,7 @@ export default function CreativeDetailSection({ rows }: Props) {
             </div>
           </div>
 
-          <div className="mt-3 lg:max-h-[calc(100vh-14rem)] overflow-auto pr-1">
+          <div className="mt-3 overflow-auto pr-1 lg:max-h-[calc(100vh-14rem)]">
             <div className="flex flex-col gap-2">
               {creatives.length === 0 ? (
                 <div className="rounded-xl bg-gray-50 p-4 text-sm text-gray-600">
@@ -626,23 +640,23 @@ export default function CreativeDetailSection({ rows }: Props) {
             ) : (
               <div className="mt-4 grid min-w-0 grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
                 {/* LEFT: 메인 프리뷰 */}
-                <div className="min-w-0 rounded-2xl bg-white h-[420px] flex items-center justify-center overflow-hidden">
+                <div className="flex h-[420px] min-w-0 items-center justify-center overflow-hidden rounded-2xl bg-white">
                   {selectedPreviewUrl ? (
                     <img
                       src={selectedPreviewUrl}
                       alt={selectedCreative}
-                      className="max-w-[680px] max-h-[420px] object-contain rounded-xl"
+                      className="max-h-[420px] max-w-[680px] rounded-xl object-contain"
                       loading="lazy"
                     />
                   ) : (
-                    <div className="text-sm text-gray-500 p-4">
+                    <div className="p-4 text-sm text-gray-500">
                       imagePath(또는 썸네일 URL) 데이터가 없어 이미지를 표시할 수 없습니다.
                     </div>
                   )}
                 </div>
 
                 {/* RIGHT: 다음 소재 미리보기 */}
-                <div className="min-w-0 flex flex-col gap-3">
+                <div className="flex min-w-0 flex-col gap-3">
                   <div className="text-xs font-semibold text-gray-600">다음 소재 미리보기</div>
 
                   {sideThumbs.length === 0 ? (
@@ -661,17 +675,17 @@ export default function CreativeDetailSection({ rows }: Props) {
                           title={t.creative}
                         >
                           <div className="flex items-center gap-3">
-                            <div className="relative w-[92px] h-[64px] rounded-lg overflow-hidden border bg-white flex items-center justify-center">
+                            <div className="relative flex h-[64px] w-[92px] items-center justify-center overflow-hidden rounded-lg border bg-white">
                               <img
                                 src={t.url}
                                 alt={t.creative}
-                                className="w-full h-full object-cover grayscale opacity-80 transition hover:grayscale-0 hover:opacity-100"
+                                className="h-full w-full object-cover grayscale opacity-80 transition hover:grayscale-0 hover:opacity-100"
                                 loading="lazy"
                               />
                             </div>
 
                             <div className="min-w-0 flex-1">
-                              <div className="text-xs font-semibold text-gray-900 leading-4 break-words line-clamp-2">
+                              <div className="line-clamp-2 break-words text-xs font-semibold leading-4 text-gray-900">
                                 {t.creative}
                               </div>
 
