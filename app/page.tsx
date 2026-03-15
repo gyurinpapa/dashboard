@@ -343,7 +343,7 @@ export default function Page() {
         </div>
       </div>
 
-      <HeaderBar
+        <HeaderBar
         tab={tab}
         setTab={setTab}
         filterKey={filterKey}
@@ -362,6 +362,7 @@ export default function Page() {
         channelOptions={channelOptions}
         enabledMonthKeySet={enabledMonthKeySet}
         enabledWeekKeySet={enabledWeekKeySet}
+        fullPeriod={period}
         period={period}
       />
 

@@ -365,6 +365,7 @@ export default function CommerceDashboard({
         channelOptions={channelOptions}
         enabledMonthKeySet={enabledMonthKeySet}
         enabledWeekKeySet={enabledWeekKeySet}
+        fullPeriod={period}
         period={period}
       />
 
