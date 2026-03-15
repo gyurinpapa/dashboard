@@ -25,30 +25,6 @@ const monthKey = (m: any) => {
   return `${match[1]}-${match[2].padStart(2, "0")}`;
 };
 
-function HeaderChip({
-  label,
-  tone = "neutral",
-}: {
-  label: string;
-  tone?: "neutral" | "cost" | "revenue" | "roas";
-}) {
-  const dotClass =
-    tone === "cost"
-      ? "bg-amber-500"
-      : tone === "revenue"
-      ? "bg-sky-500"
-      : tone === "roas"
-      ? "bg-rose-500"
-      : "bg-slate-400";
-
-  return (
-    <div className="inline-flex h-7 items-center gap-2 rounded-full border border-gray-200 bg-white px-3 text-[11px] font-semibold tracking-[-0.01em] text-gray-700 shadow-sm">
-      <span className={`inline-block h-2.5 w-2.5 rounded-full ${dotClass}`} />
-      <span>{label}</span>
-    </div>
-  );
-}
-
 export default function SummaryTable({ byMonth }: Props) {
   const months = Array.isArray(byMonth) ? byMonth : [];
 
@@ -91,17 +67,7 @@ export default function SummaryTable({ byMonth }: Props) {
         </div>
       </div>
 
-      <div className="px-4 pt-4 sm:px-6 sm:pt-5">
-        <div className="rounded-2xl border border-gray-200/80 bg-gray-50/55 px-3 py-2.5">
-          <div className="flex flex-wrap items-center gap-2">
-            <HeaderChip label="ROAS" tone="roas" />
-            <HeaderChip label="비용" tone="cost" />
-            <HeaderChip label="전환매출" tone="revenue" />
-          </div>
-        </div>
-      </div>
-
-      <div className="px-4 pb-4 pt-3 sm:px-6 sm:pb-5 sm:pt-4">
+      <div className="px-4 pb-4 pt-4 sm:px-6 sm:pb-5 sm:pt-5">
         <div className="overflow-auto rounded-2xl border border-gray-200/80">
           <table className="w-full min-w-[1120px] text-sm">
             <thead className="sticky top-0 z-10 border-b border-gray-200 bg-gray-50/95 backdrop-blur">

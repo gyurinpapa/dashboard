@@ -1307,8 +1307,8 @@ export default function Summary2Section({ rows }: Props) {
 
   if (!rows?.length) {
     return (
-      <section className="mt-10 pt-14">
-        <div className="rounded-2xl border border-gray-200 bg-white px-6 py-10 text-sm text-gray-500 shadow-sm">
+      <section className="mt-0 pt-8">
+        <div className="rounded-2xl border border-gray-200 bg-white px-2 py-10 text-sm text-gray-500 shadow-sm">
           표시할 데이터가 없습니다.
         </div>
       </section>
@@ -1329,7 +1329,7 @@ export default function Summary2Section({ rows }: Props) {
   const totalConversions = channelMetricAgg.reduce((acc, cur) => acc + cur.conversions, 0);
 
   return (
-    <section className="mt-4">
+    <section className="mt-2">
       <div className="space-y-10 pt-4">
         <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
           <div className="border-b border-gray-200 px-6 py-5">

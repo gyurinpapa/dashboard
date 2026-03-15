@@ -108,7 +108,6 @@ export default function SummarySection(props: Props) {
     <>
       <section className="mt-6 space-y-10">
         <div>
-          <h2 className={SECTION_TITLE_CLASS}>기간 성과</h2>
 
           <div className="mt-0">
             <SummaryKPI totals={totals} />
@@ -122,9 +121,6 @@ export default function SummarySection(props: Props) {
 
       <section className="mt-14">
         <div className="mb-4">
-          <h2 className="text-lg font-semibold tracking-tight text-gray-900">
-            주차별 성과 (최근 5주)
-          </h2>
         </div>
 
         <div className={TABLE_SURFACE_CLASS}>
@@ -318,9 +314,6 @@ export default function SummarySection(props: Props) {
 
       <section className="mt-14">
         <div className="mb-4">
-          <h2 className="text-lg font-semibold tracking-tight text-gray-900">
-            최근 5주 주간 성과
-          </h2>
         </div>
 
         <div className={CHART_SURFACE_CLASS}>
@@ -330,9 +323,6 @@ export default function SummarySection(props: Props) {
 
       <section className="mt-14">
         <div className="mb-4">
-          <h2 className="text-lg font-semibold tracking-tight text-gray-900">
-            소스별 요약
-          </h2>
         </div>
 
         <div className={TABLE_SURFACE_CLASS}>

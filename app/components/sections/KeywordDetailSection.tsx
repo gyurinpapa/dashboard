@@ -335,8 +335,6 @@ export default function KeywordDetailSection(props: Props) {
 
   return (
     <section className="w-full min-w-0">
-      <h2 className="text-xl font-semibold">키워드 상세</h2>
-
       <div className="mt-4 grid grid-cols-1 items-start gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
         {/* LEFT: 키워드 리스트 */}
         <aside className="min-w-0 rounded-2xl border border-gray-200 bg-white p-4 lg:sticky lg:top-24 lg:max-h-[calc(100vh-6rem)] lg:overflow-hidden">

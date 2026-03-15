@@ -35,24 +35,17 @@ type Props = {
   keywordInsight: string;
 };
 
-/* =========================
-   ✅ 캠페인/그룹명 추출 강화 유틸
-   - keywordAgg가 어떤 키/중첩 형태로 오든 최대한 이름을 뽑아냄
-========================= */
 function cleanName(v: any): string | null {
   if (v == null) return null;
   const s = String(v).trim();
   return s ? s : null;
 }
 
-// ✅ 객체/배열까지 커버해서 "표시용 이름"을 뽑아내는 범용 extractor
 function extractDisplayName(v: any, depth = 0): string | null {
   if (v == null) return null;
 
-  // string/number
   if (typeof v === "string" || typeof v === "number") return cleanName(v);
 
-  // array: 첫 요소부터 탐색
   if (Array.isArray(v)) {
     for (const it of v) {
       const got = extractDisplayName(it, depth + 1);
@@ -61,9 +54,7 @@ function extractDisplayName(v: any, depth = 0): string | null {
     return null;
   }
 
-  // object
   if (typeof v === "object") {
-    // 1) 우선순위 키들
     const preferKeys = [
       "name",
       "title",
@@ -84,7 +75,6 @@ function extractDisplayName(v: any, depth = 0): string | null {
       if (got) return got;
     }
 
-    // 2) 흔한 id-only 객체를 위해: key 전체 훑어서 "문자열" 먼저 찾기
     for (const k of Object.keys(v)) {
       const val = (v as any)[k];
       if (typeof val === "string") {
@@ -93,7 +83,6 @@ function extractDisplayName(v: any, depth = 0): string | null {
       }
     }
 
-    // 3) (마지막) depth 제한 내에서 재귀 탐색
     if (depth < 2) {
       for (const k of Object.keys(v)) {
         const got = extractDisplayName((v as any)[k], depth + 1);
@@ -123,7 +112,6 @@ function pickFirstByPaths(obj: any, paths: string[]): string | null {
 
 function extractCampaignName(r: any): string | null {
   return pickFirstByPaths(r, [
-    // 문자열 케이스
     "campaign_name",
     "campaign",
     "campaignName",
@@ -132,7 +120,6 @@ function extractCampaignName(r: any): string | null {
     "campaign_title",
     "cmp_name",
     "cmp_nm",
-    // 객체/중첩 케이스
     "campaign.name",
     "campaign.title",
     "campaign.label",
@@ -152,7 +139,6 @@ function extractGroupName(r: any): string | null {
     "adgroupName",
     "grp_name",
     "grp_nm",
-    // 객체/중첩 케이스
     "group.name",
     "group.title",
     "group.label",
@@ -161,13 +147,7 @@ function extractGroupName(r: any): string | null {
     "adgroup.title",
   ]);
 }
-/* =========================
-   ✅ 주황 둥근사각 드롭다운 (캠페인/그룹) - UX 보완 반영
-   - 버튼 바로 아래(left-0) + 오름차순 목록
-   - 현재 선택 체크/강조
-   - ellipsis + title
-   - 그룹: 캠페인 선택 전 disabled
-========================= */
+
 function FilterDropdown({
   label,
   options,
@@ -255,17 +235,11 @@ function FilterDropdown({
             }}
           >
             <span className="truncate whitespace-nowrap">{`전체 ${label}`}</span>
-            {!value ? (
-              <span className="text-orange-600 font-bold">✓</span>
-            ) : (
-              <span />
-            )}
+            {!value ? <span className="text-orange-600 font-bold">✓</span> : <span />}
           </button>
 
           {sortedOptions.length === 0 ? (
-            <div className="px-4 py-2 text-sm text-gray-500">
-              옵션이 없습니다.
-            </div>
+            <div className="px-4 py-2 text-sm text-gray-500">옵션이 없습니다.</div>
           ) : (
             sortedOptions.map((opt) => {
               const active = value === opt;
@@ -284,11 +258,7 @@ function FilterDropdown({
                   }}
                 >
                   <span className="truncate whitespace-nowrap">{opt}</span>
-                  {active ? (
-                    <span className="text-orange-600 font-bold">✓</span>
-                  ) : (
-                    <span />
-                  )}
+                  {active ? <span className="text-orange-600 font-bold">✓</span> : <span />}
                 </button>
               );
             })
@@ -303,14 +273,14 @@ type Row = {
   keyword: string;
   impressions: number;
   clicks: number;
-  ctr: number; // 0~1
+  ctr: number;
   cpc: number;
   cost: number;
   conversions: number;
-  cvr: number; // 0~1
+  cvr: number;
   cpa: number;
   revenue: number;
-  roas: number; // ratio
+  roas: number;
   campaign?: string | null;
   group?: string | null;
 };
@@ -344,7 +314,6 @@ const SORT_LABEL: Record<SortKey, string> = {
 };
 
 export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
-  // ===== keywordAgg normalize (표/차트 공용) =====
   const rows: Row[] = useMemo(() => {
     return (Array.isArray(keywordAgg) ? keywordAgg : []).map((r: any) => {
       const keyword = String(r.keyword ?? r.label ?? r.name ?? "");
@@ -363,9 +332,7 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
       );
       const cpc = toSafeNumber(r.cpc ?? (clicks > 0 ? cost / clicks : 0));
       const cpa = toSafeNumber(r.cpa ?? (conversions > 0 ? cost / conversions : 0));
-      const roas = normalizeRoas01(
-        r.roas ?? (cost > 0 ? revenue / cost : 0)
-      );
+      const roas = normalizeRoas01(r.roas ?? (cost > 0 ? revenue / cost : 0));
 
       const campaign = extractCampaignName(r);
       const group = extractGroupName(r);
@@ -408,35 +375,20 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
     });
   }, [keywordAgg]);
 
-  // ===== 차트 Top20 =====
   const topClicks = useMemo(
-    () =>
-      [...rows]
-        .sort((a, b) => b.clicks - a.clicks)
-        .slice(0, 20)
-        .reverse(),
+    () => [...rows].sort((a, b) => b.clicks - a.clicks).slice(0, 20).reverse(),
     [rows]
   );
   const topConv = useMemo(
     () =>
-      [...rows]
-        .sort((a, b) => b.conversions - a.conversions)
-        .slice(0, 20)
-        .reverse(),
+      [...rows].sort((a, b) => b.conversions - a.conversions).slice(0, 20).reverse(),
     [rows]
   );
   const topRoas = useMemo(
-    () =>
-      [...rows]
-        .sort((a, b) => b.roas - a.roas)
-        .slice(0, 20)
-        .reverse(),
+    () => [...rows].sort((a, b) => b.roas - a.roas).slice(0, 20).reverse(),
     [rows]
   );
 
-  // ==========================
-  // ✅ 표 정렬 상태
-  // ==========================
   const [sortKey, setSortKey] = useState<SortKey>("clicks");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
@@ -451,11 +403,7 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
 
   const SortArrow = ({ k }: { k: SortKey }) => {
     if (sortKey !== k) return null;
-    return (
-      <span className="ml-1 inline-block align-middle">
-        {sortDir === "asc" ? "▲" : "▼"}
-      </span>
-    );
+    return <span className="ml-1 inline-block align-middle">{sortDir === "asc" ? "▲" : "▼"}</span>;
   };
 
   const Th = ({ k, align = "right" }: { k: SortKey; align?: "left" | "right" }) => (
@@ -473,9 +421,6 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
     </th>
   );
 
-  /* =========================
-     ✅ 캠페인/그룹 필터 (표에만 적용)
-  ========================= */
   const [campaignFilter, setCampaignFilter] = useState<string | null>(null);
   const [groupFilter, setGroupFilter] = useState<string | null>(null);
 
@@ -508,7 +453,6 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
     });
   }, [rows, campaignFilter, groupFilter]);
 
-  // ===== 표: 선택한 컬럼 정렬 → Top50 =====
   const tableRows = useMemo(() => {
     const sorted = [...tableScopeRows].sort((a, b) => {
       const dir = sortDir === "asc" ? 1 : -1;
@@ -526,7 +470,6 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
     return sorted.slice(0, 50);
   }, [tableScopeRows, sortKey, sortDir]);
 
-  // ✅ 표 막대그래프용 max
   const kwMaxImpr = useMemo(
     () => Math.max(0, ...tableRows.map((r) => toSafeNumber(r.impressions))),
     [tableRows]
@@ -548,9 +491,6 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
     [tableRows]
   );
 
-  // ==========================
-  // ✅ 캠페인 변경 시: 그룹 자동 초기화 + 표 스크롤 위치 유지
-  // ==========================
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
   const pendingRestoreScrollTop = useRef<number | null>(null);
 
@@ -578,13 +518,8 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
 
   return (
     <section className="mt-1">
-      <div className="mb-0.5">
-        <h2 className="text-xl font-semibold">키워드 현황</h2>
-      </div>
-
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        {/* 클릭수 */}
-        <div className="rounded-2xl border bg-white p-3">
+        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
           <div className="mb-2 text-xs font-semibold">클릭수 TOP20 키워드</div>
           <div style={{ width: "100%", height: 340 }}>
             <ResponsiveContainer>
@@ -599,26 +534,14 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
                   tick={{ fontSize: 11 }}
                   tickFormatter={(v) => formatCurrencyAxisCompact(v)}
                 />
-                <YAxis
-                  type="category"
-                  dataKey="keyword"
-                  width={100}
-                  tick={{ fontSize: 11 }}
-                />
-                <Tooltip
-                  wrapperStyle={{ fontSize: 11 }}
-                  formatter={(v: any) => formatCount(v)}
-                />
+                <YAxis type="category" dataKey="keyword" width={100} tick={{ fontSize: 11 }} />
+                <Tooltip wrapperStyle={{ fontSize: 11 }} formatter={(v: any) => formatCount(v)} />
                 <Bar dataKey="clicks">
                   <LabelList
                     dataKey="clicks"
                     position="right"
                     formatter={(v: any) => formatCount(v)}
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 700,
-                      fill: "#F97316",
-                    }}
+                    style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
                   />
                 </Bar>
               </BarChart>
@@ -626,8 +549,7 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
           </div>
         </div>
 
-        {/* 전환수 */}
-        <div className="rounded-2xl border bg-white p-3">
+        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
           <div className="mb-2 text-xs font-semibold">전환수 TOP20 키워드</div>
           <div style={{ width: "100%", height: 340 }}>
             <ResponsiveContainer>
@@ -642,26 +564,14 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
                   tick={{ fontSize: 11 }}
                   tickFormatter={(v) => formatCurrencyAxisCompact(v)}
                 />
-                <YAxis
-                  type="category"
-                  dataKey="keyword"
-                  width={100}
-                  tick={{ fontSize: 11 }}
-                />
-                <Tooltip
-                  wrapperStyle={{ fontSize: 11 }}
-                  formatter={(v: any) => formatCount(v)}
-                />
+                <YAxis type="category" dataKey="keyword" width={100} tick={{ fontSize: 11 }} />
+                <Tooltip wrapperStyle={{ fontSize: 11 }} formatter={(v: any) => formatCount(v)} />
                 <Bar dataKey="conversions">
                   <LabelList
                     dataKey="conversions"
                     position="right"
                     formatter={(v: any) => formatCount(v)}
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 700,
-                      fill: "#F97316",
-                    }}
+                    style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
                   />
                 </Bar>
               </BarChart>
@@ -669,8 +579,7 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
           </div>
         </div>
 
-        {/* ROAS */}
-        <div className="rounded-2xl border bg-white p-3">
+        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
           <div className="mb-2 text-xs font-semibold">ROAS TOP20 키워드</div>
           <div style={{ width: "100%", height: 340 }}>
             <ResponsiveContainer>
@@ -685,12 +594,7 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
                   tick={{ fontSize: 11 }}
                   tickFormatter={(v) => formatPercentAxisFromRoas(v)}
                 />
-                <YAxis
-                  type="category"
-                  dataKey="keyword"
-                  width={100}
-                  tick={{ fontSize: 11 }}
-                />
+                <YAxis type="category" dataKey="keyword" width={100} tick={{ fontSize: 11 }} />
                 <Tooltip
                   wrapperStyle={{ fontSize: 11 }}
                   formatter={(v: any) => formatPercentFromRoas(v, 1)}
@@ -700,11 +604,7 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
                     dataKey="roas"
                     position="right"
                     formatter={(v: any) => formatPercentFromRoas(v, 1)}
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 700,
-                      fill: "#F97316",
-                    }}
+                    style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
                   />
                 </Bar>
               </BarChart>
@@ -713,14 +613,11 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
         </div>
       </div>
 
-      {/* 인사이트 요약 */}
       <section className="mt-6">
-        <div className="rounded-xl border bg-white p-6">
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
           <div className="mb-3 font-semibold">요약 인사이트</div>
           {keywordInsight ? (
-            <div className="whitespace-pre-wrap text-sm text-gray-800">
-              {keywordInsight}
-            </div>
+            <div className="whitespace-pre-wrap text-sm text-gray-800">{keywordInsight}</div>
           ) : (
             <div className="text-sm text-gray-500">
               키워드 데이터가 없어 인사이트를 생성할 수 없습니다.
@@ -729,12 +626,10 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
         </div>
       </section>
 
-      {/* 키워드 요약표 */}
       <section className="mt-10">
         <div className="mb-3 flex items-center justify-between">
           <div className="flex min-w-0 items-center gap-2">
-            <h2 className="text-lg font-semibold">키워드 요약</h2>
-            <span className="shrink-0 rounded-full border bg-white px-2 py-0.5 text-[11px]">
+            <span className="shrink-0 rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[11px]">
               {filterBadge}
             </span>
           </div>
@@ -765,9 +660,12 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
           </div>
         </div>
 
-        <div ref={tableScrollRef} className="overflow-auto rounded-xl border">
+        <div
+          ref={tableScrollRef}
+          className="overflow-auto rounded-2xl border border-gray-200/80 bg-white shadow-sm"
+        >
           <table className="w-full border-collapse text-sm">
-            <thead className="bg-gray-50 text-gray-600">
+            <thead className="bg-gray-50/95 text-gray-600">
               <tr>
                 <Th k="keyword" align="left" />
                 <Th k="impressions" />
@@ -785,14 +683,14 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
 
             <tbody>
               {tableRows.length === 0 ? (
-                <tr className="border-t">
+                <tr className="border-t border-gray-200">
                   <td className="p-3 text-gray-500" colSpan={11}>
                     표시할 키워드 데이터가 없습니다. (필터 조건/컬럼명을 확인해 주세요)
                   </td>
                 </tr>
               ) : (
                 tableRows.map((r, idx) => (
-                  <tr key={`${r.keyword}-${idx}`} className="border-t">
+                  <tr key={`${r.keyword}-${idx}`} className="border-t border-gray-200">
                     <td className="whitespace-nowrap p-3 text-left font-medium">
                       {r.keyword || "(empty)"}
                     </td>
@@ -813,9 +711,7 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
                       />
                     </td>
 
-                    <td className="p-3 text-right">
-                      {formatPercentFromRate(r.ctr, 2)}
-                    </td>
+                    <td className="p-3 text-right">{formatPercentFromRate(r.ctr, 2)}</td>
                     <td className="p-3 text-right">{KRW(r.cpc)}</td>
 
                     <td className="p-3">
@@ -834,9 +730,7 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
                       />
                     </td>
 
-                    <td className="p-3 text-right">
-                      {formatPercentFromRate(r.cvr, 2)}
-                    </td>
+                    <td className="p-3 text-right">{formatPercentFromRate(r.cvr, 2)}</td>
                     <td className="p-3 text-right">{KRW(r.cpa)}</td>
 
                     <td className="p-3">
@@ -847,9 +741,7 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
                       />
                     </td>
 
-                    <td className="p-3 text-right">
-                      {formatPercentFromRoas(r.roas, 1)}
-                    </td>
+                    <td className="p-3 text-right">{formatPercentFromRoas(r.roas, 1)}</td>
                   </tr>
                 ))
               )}

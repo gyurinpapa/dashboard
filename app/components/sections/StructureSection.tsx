@@ -138,14 +138,10 @@ export default function StructureSection({
   monthGoal,
   allRowsLoading,
 }: Props) {
-  // ✅ 전역필터가 반영된 “원천 rows”
   const scopedRows = Array.isArray(rows) ? rows : [];
-
-  // ✅ 소스/캠페인/그룹 배열 안전 처리
   const sourceRows = Array.isArray(bySource) ? bySource : [];
   const campaignRows = Array.isArray(byCampaign) ? byCampaign : [];
 
-  // ✅ 막대그래프용 Max (빈 배열 안전)
   const srcMaxImpr = Math.max(0, ...sourceRows.map((r: any) => toNum(r.impressions ?? r.impr)));
   const srcMaxClicks = Math.max(0, ...sourceRows.map((r: any) => toNum(r.clicks)));
   const srcMaxCost = Math.max(0, ...sourceRows.map((r: any) => toNum(r.cost)));
@@ -158,7 +154,6 @@ export default function StructureSection({
   const campMaxConv = Math.max(0, ...campaignRows.map((r: any) => toNum(r.conversions ?? r.conv)));
   const campMaxRev = Math.max(0, ...campaignRows.map((r: any) => toNum(r.revenue)));
 
-  // ✅ 인사이트 상태
   const insightLoading = (allRowsLoading ?? false) && sourceRows.length === 0;
   const [sentences, setSentences] = useState<string[]>([]);
 
@@ -167,11 +162,9 @@ export default function StructureSection({
     else setSentences([]);
   }, [sourceRows, monthGoal]);
 
-  // ✅ (그룹표 전용) 캠페인명 필터
   const [selectedCampaign, setSelectedCampaign] = useState<string | null>(null);
   const [campaignOpen, setCampaignOpen] = useState(false);
 
-  // ✅ 캠페인 옵션: 전역필터(scopedRows)에 존재하는 캠페인만
   const campaignOptions = useMemo(() => {
     const set = new Set<string>();
     scopedRows.forEach((r: any) => {
@@ -181,7 +174,6 @@ export default function StructureSection({
     return Array.from(set).sort();
   }, [scopedRows]);
 
-  // ✅ 그룹표에만 적용되는 캠페인 선택 필터
   const groupRows = useMemo(() => {
     if (!selectedCampaign) return scopedRows;
     return scopedRows.filter(
@@ -200,13 +192,10 @@ export default function StructureSection({
 
   return (
     <>
-      {/* ✅ 최상단: 소스별 요약 */}
       <section>
-        <h2 className="text-lg font-semibold mb-3">소스별 요약</h2>
-
-        <div className="overflow-auto border rounded-xl">
+        <div className="overflow-auto rounded-2xl border border-gray-200/80 bg-white shadow-sm">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-gray-600">
+            <thead className="bg-gray-50/95 text-gray-600">
               <tr>
                 <th className="text-left p-3">Source</th>
                 <th className="text-right p-3">Impr</th>
@@ -224,7 +213,7 @@ export default function StructureSection({
 
             <tbody>
               {sourceRows.length === 0 ? (
-                <tr className="border-t">
+                <tr className="border-t border-gray-200">
                   <td className="p-3 text-gray-500" colSpan={11}>
                     {(allRowsLoading ?? false)
                       ? "데이터 로딩 중..."
@@ -233,7 +222,7 @@ export default function StructureSection({
                 </tr>
               ) : (
                 sourceRows.map((r: any, idx: number) => (
-                  <tr key={r.source ?? idx} className="border-t">
+                  <tr key={r.source ?? idx} className="border-t border-gray-200">
                     <td className="p-3 font-medium whitespace-nowrap">{r.source}</td>
 
                     <td className="p-3">
@@ -279,10 +268,9 @@ export default function StructureSection({
         </div>
       </section>
 
-      {/* ✅ 요약 인사이트 */}
       <section className="mt-6">
-        <div className="border rounded-xl p-6 bg-white">
-          <div className="font-semibold mb-3">요약 인사이트</div>
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
+          <div className="mb-3 font-semibold">요약 인사이트</div>
 
           {insightLoading ? (
             <div className="text-sm text-gray-500">인사이트 생성 중...</div>
@@ -304,13 +292,10 @@ export default function StructureSection({
         </div>
       </section>
 
-      {/* ✅ 캠페인 요약 */}
-      <section className="mt-10">
-        <h2 className="text-lg font-semibold mb-3">캠페인 요약</h2>
-
-        <div className="overflow-auto rounded-xl border">
+      <section className="mt-6">
+        <div className="overflow-auto rounded-2xl border border-gray-200/80 bg-white shadow-sm">
           <table className="w-full text-sm border-collapse">
-            <thead className="bg-gray-50 text-gray-600">
+            <thead className="bg-gray-50/95 text-gray-600">
               <tr>
                 <th className="text-left p-3">Campaign</th>
                 <th className="text-right p-3">Impr</th>
@@ -328,7 +313,7 @@ export default function StructureSection({
 
             <tbody>
               {campaignRows.map((r: any, idx: number) => (
-                <tr key={r.campaign ?? idx} className="border-t">
+                <tr key={r.campaign ?? idx} className="border-t border-gray-200">
                   <td className="p-3 font-medium whitespace-nowrap">{r.campaign}</td>
 
                   <td className="p-3">
@@ -370,7 +355,7 @@ export default function StructureSection({
               ))}
 
               {campaignRows.length === 0 && (
-                <tr className="border-t">
+                <tr className="border-t border-gray-200">
                   <td className="p-3 text-gray-500" colSpan={11}>
                     표시할 캠페인 데이터가 없습니다. (필터/컬럼명을 확인)
                   </td>
@@ -381,11 +366,8 @@ export default function StructureSection({
         </div>
       </section>
 
-      {/* ✅ 그룹 요약 + (우측) 캠페인명 “단일 버튼 + 1열 리스트” */}
-      <section className="mt-10 relative">
-        <div className="mb-4 flex items-center justify-between gap-4">
-          <h3 className="text-lg font-semibold">그룹 요약</h3>
-
+      <section className="mt-6 relative">
+        <div className="mb-2 flex items-center justify-end gap-4">
           <div className="relative">
             <button
               type="button"
@@ -413,12 +395,11 @@ export default function StructureSection({
                       setSelectedCampaign(null);
                       setCampaignOpen(false);
                     }}
-                    className={`w-full text-left px-3 py-2 rounded-lg text-sm transition
-                      ${
-                        selectedCampaign == null
-                          ? "bg-orange-600 text-white"
-                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                      }`}
+                    className={`w-full text-left px-3 py-2 rounded-lg text-sm transition ${
+                      selectedCampaign == null
+                        ? "bg-orange-600 text-white"
+                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
                   >
                     전체
                   </button>
@@ -431,12 +412,11 @@ export default function StructureSection({
                         setSelectedCampaign(c);
                         setCampaignOpen(false);
                       }}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition
-                        ${
-                          selectedCampaign === c
-                            ? "bg-orange-600 text-white"
-                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                        }`}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition ${
+                        selectedCampaign === c
+                          ? "bg-orange-600 text-white"
+                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      }`}
                     >
                       {c}
                     </button>
@@ -447,9 +427,9 @@ export default function StructureSection({
           </div>
         </div>
 
-        <div className="overflow-auto rounded-xl border">
+        <div className="overflow-auto rounded-2xl border border-gray-200/80 bg-white shadow-sm">
           <table className="w-full text-sm border-collapse">
-            <thead className="bg-gray-50 text-gray-600">
+            <thead className="bg-gray-50/95 text-gray-600">
               <tr>
                 <th className="text-left p-3">Group</th>
                 <th className="text-right p-3">Impr</th>
@@ -467,7 +447,7 @@ export default function StructureSection({
 
             <tbody>
               {groupAggRows.map((r: any, idx: number) => (
-                <tr key={r.group ?? idx} className="border-t">
+                <tr key={r.group ?? idx} className="border-t border-gray-200">
                   <td className="p-3 font-medium whitespace-nowrap">{r.group}</td>
 
                   <td className="p-3">
@@ -509,7 +489,7 @@ export default function StructureSection({
               ))}
 
               {groupAggRows.length === 0 && (
-                <tr className="border-t">
+                <tr className="border-t border-gray-200">
                   <td className="p-3 text-gray-500" colSpan={11}>
                     표시할 그룹 데이터가 없습니다. (필터/캠페인 선택/컬럼명을 확인)
                   </td>

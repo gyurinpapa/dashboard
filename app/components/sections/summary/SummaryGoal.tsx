@@ -54,14 +54,14 @@ export default function SummaryGoal({
     return (safe * 100).toFixed(1) + "%";
   };
 
-  const thClass =
-    "whitespace-nowrap px-4 py-3 text-right text-sm font-semibold text-slate-600";
+  const headClass =
+    "whitespace-nowrap px-4 py-3.5 text-right text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-600";
+  const firstHeadClass =
+    "whitespace-nowrap px-4 py-3.5 text-left text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-600";
   const tdClass =
-    "whitespace-nowrap px-4 py-3 text-right text-sm text-slate-800 align-middle";
-  const firstThClass =
-    "whitespace-nowrap px-4 py-3 text-left text-sm font-semibold text-slate-600";
+    "whitespace-nowrap px-4 py-3.5 text-right text-sm text-slate-800 align-middle";
   const firstTdClass =
-    "whitespace-nowrap px-4 py-3 text-left text-sm font-medium text-slate-900 align-middle";
+    "whitespace-nowrap px-4 py-3.5 text-left text-sm font-medium text-slate-900 align-middle";
 
   const inputClass =
     "h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-right text-sm font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400";
@@ -79,24 +79,23 @@ export default function SummaryGoal({
 
       <div className="overflow-auto rounded-[24px] border border-slate-200 bg-white shadow-sm">
         <table className="w-full min-w-[1320px] text-sm">
-          <thead className="border-b border-slate-200 bg-slate-50/80">
+          <thead className="border-b border-slate-200 bg-gray-50/95">
             <tr>
-              <th className={`${firstThClass} w-[120px]`}>구분</th>
-              <th className={thClass}>Impr</th>
-              <th className={thClass}>Clicks</th>
-              <th className={thClass}>CTR</th>
-              <th className={thClass}>CPC</th>
-              <th className={thClass}>Cost</th>
-              <th className={thClass}>Conv</th>
-              <th className={thClass}>CVR</th>
-              <th className={thClass}>CPA</th>
-              <th className={thClass}>Revenue</th>
-              <th className={thClass}>ROAS</th>
+              <th className={`${firstHeadClass} w-[120px]`}>구분</th>
+              <th className={headClass}>Impr</th>
+              <th className={headClass}>Clicks</th>
+              <th className={headClass}>CTR</th>
+              <th className={headClass}>CPC</th>
+              <th className={headClass}>Cost</th>
+              <th className={headClass}>Conv</th>
+              <th className={headClass}>CVR</th>
+              <th className={headClass}>CPA</th>
+              <th className={headClass}>Revenue</th>
+              <th className={headClass}>ROAS</th>
             </tr>
           </thead>
 
           <tbody>
-            {/* 1) 목표 (수기입력) */}
             <tr className="border-t border-slate-200">
               <td className={firstTdClass}>목표</td>
 
@@ -192,54 +191,52 @@ export default function SummaryGoal({
               </td>
             </tr>
 
-            {/* 2) 결과(실적) */}
             <tr className="border-t border-slate-200 bg-slate-50/60">
-              <td className="whitespace-nowrap px-4 py-3 text-left text-sm font-bold text-slate-900">
+              <td className="whitespace-nowrap px-4 py-3.5 text-left text-sm font-bold text-slate-900">
                 결과
               </td>
 
-              <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold text-slate-900">
+              <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-semibold text-slate-900">
                 {formatNumber(currentMonthActual?.impressions ?? 0)}
               </td>
 
-              <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold text-slate-900">
+              <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-semibold text-slate-900">
                 {formatNumber(currentMonthActual?.clicks ?? 0)}
               </td>
 
-              <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold text-blue-600">
+              <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-semibold text-blue-600">
                 {pct2(currentMonthActual?.ctr ?? 0)}
               </td>
 
-              <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold text-slate-900">
+              <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-semibold text-slate-900">
                 {KRW(currentMonthActual?.cpc ?? 0)}
               </td>
 
-              <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold text-slate-900">
+              <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-semibold text-slate-900">
                 {KRW(currentMonthActual?.cost ?? 0)}
               </td>
 
-              <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold text-slate-900">
+              <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-semibold text-slate-900">
                 {formatNumber(currentMonthActual?.conversions ?? 0)}
               </td>
 
-              <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold text-blue-600">
+              <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-semibold text-blue-600">
                 {pct2(currentMonthActual?.cvr ?? 0)}
               </td>
 
-              <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold text-slate-900">
+              <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-semibold text-slate-900">
                 {KRW(currentMonthActual?.cpa ?? 0)}
               </td>
 
-              <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold text-emerald-600">
+              <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-semibold text-emerald-600">
                 {KRW(currentMonthActual?.revenue ?? 0)}
               </td>
 
-              <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-bold text-orange-600">
+              <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-bold text-orange-600">
                 {pct1(currentMonthActual?.roas ?? 0)}
               </td>
             </tr>
 
-            {/* 3) 달성률 */}
             <tr className="border-t border-slate-200 bg-slate-50/60">
               <td className={firstTdClass}>달성률</td>
               <td className={tdClass}>

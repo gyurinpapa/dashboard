@@ -24,8 +24,6 @@ import {
   formatPercentAxisFromRoas,
 } from "../../../src/lib/report/format";
 import DataBarCell from "../ui/DataBarCell";
-
-// ✅ 소재 집계 유틸
 import { groupByCreative } from "../../../src/lib/report/creative";
 
 type Props = {
@@ -42,14 +40,14 @@ type CreativeAgg = {
   imagePath?: string;
   impressions: number;
   clicks: number;
-  ctr: number; // 0~1
+  ctr: number;
   cpc: number;
   cost: number;
   conversions: number;
-  cvr: number; // 0~1
+  cvr: number;
   cpa: number;
   revenue: number;
-  roas: number; // ratio
+  roas: number;
 };
 
 type SortDir = "asc" | "desc";
@@ -83,9 +81,6 @@ const SORT_LABEL: Record<SortKey, string> = {
 export default function CreativeSection({ rows }: Props) {
   const [selectedSource, setSelectedSource] = useState<string | "all">("all");
 
-  // =========================
-  // ✅ 소스 필터 옵션 만들기
-  // =========================
   const sourceOptions = useMemo(() => {
     const srcSet = new Set<string>();
 
@@ -119,9 +114,6 @@ export default function CreativeSection({ rows }: Props) {
     }
   }, [sourceOptions, selectedSource]);
 
-  // =========================
-  // ✅ 소스 필터 적용
-  // =========================
   const scopedRows = useMemo(() => {
     if (selectedSource === "all") return rows ?? [];
     return (rows ?? []).filter((r) => {
@@ -130,9 +122,6 @@ export default function CreativeSection({ rows }: Props) {
     });
   }, [rows, selectedSource]);
 
-  // =========================
-  // ✅ creativeAgg 만들기
-  // =========================
   const creativeAgg: CreativeAgg[] = useMemo(() => {
     const rawAgg = groupByCreative(scopedRows);
 
@@ -153,9 +142,7 @@ export default function CreativeSection({ rows }: Props) {
       const cpa = toSafeNumber(
         r.cpa ?? (conversions > 0 ? cost / conversions : 0)
       );
-      const roas = normalizeRoas01(
-        r.roas ?? (cost > 0 ? revenue / cost : 0)
-      );
+      const roas = normalizeRoas01(r.roas ?? (cost > 0 ? revenue / cost : 0));
 
       return {
         creative: String(r.creative ?? ""),
@@ -174,37 +161,20 @@ export default function CreativeSection({ rows }: Props) {
     });
   }, [scopedRows]);
 
-  // =========================
-  // ✅ Top20 차트 데이터
-  // =========================
   const topClicks = useMemo(
-    () =>
-      [...creativeAgg]
-        .sort((a, b) => b.clicks - a.clicks)
-        .slice(0, 20)
-        .reverse(),
+    () => [...creativeAgg].sort((a, b) => b.clicks - a.clicks).slice(0, 20).reverse(),
     [creativeAgg]
   );
   const topConv = useMemo(
     () =>
-      [...creativeAgg]
-        .sort((a, b) => b.conversions - a.conversions)
-        .slice(0, 20)
-        .reverse(),
+      [...creativeAgg].sort((a, b) => b.conversions - a.conversions).slice(0, 20).reverse(),
     [creativeAgg]
   );
   const topRoas = useMemo(
-    () =>
-      [...creativeAgg]
-        .sort((a, b) => b.roas - a.roas)
-        .slice(0, 20)
-        .reverse(),
+    () => [...creativeAgg].sort((a, b) => b.roas - a.roas).slice(0, 20).reverse(),
     [creativeAgg]
   );
 
-  // =========================
-  // ✅ 표 정렬
-  // =========================
   const [sortKey, setSortKey] = useState<SortKey>("clicks");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
@@ -219,11 +189,7 @@ export default function CreativeSection({ rows }: Props) {
 
   const SortArrow = ({ k }: { k: SortKey }) => {
     if (sortKey !== k) return null;
-    return (
-      <span className="ml-1 inline-block align-middle">
-        {sortDir === "asc" ? "▲" : "▼"}
-      </span>
-    );
+    return <span className="ml-1 inline-block align-middle">{sortDir === "asc" ? "▲" : "▼"}</span>;
   };
 
   const Th = ({ k, align = "right" }: { k: SortKey; align?: "left" | "right" }) => (
@@ -256,9 +222,6 @@ export default function CreativeSection({ rows }: Props) {
     return sorted.slice(0, 50);
   }, [creativeAgg, sortKey, sortDir]);
 
-  // =========================
-  // ✅ 막대 max
-  // =========================
   const maxImpr = useMemo(
     () => Math.max(0, ...tableRows.map((r) => toSafeNumber(r.impressions))),
     [tableRows]
@@ -280,30 +243,15 @@ export default function CreativeSection({ rows }: Props) {
     [tableRows]
   );
 
-  // =========================
-  // ✅ 선택 소재 프리뷰
-  // =========================
   const [selectedCreative, setSelectedCreative] = useState<CreativeAgg | null>(null);
 
-  // =========================
-  // ✅ CTR 중심 요약 인사이트 자동 생성
-  // =========================
   const creativeInsightText = useMemo(() => {
     if (!scopedRows?.length) return "";
 
-    const totalImpr = scopedRows.reduce(
-      (a, r) => a + toSafeNumber(r.impressions),
-      0
-    );
-    const totalClicks = scopedRows.reduce(
-      (a, r) => a + toSafeNumber(r.clicks),
-      0
-    );
+    const totalImpr = scopedRows.reduce((a, r) => a + toSafeNumber(r.impressions), 0);
+    const totalClicks = scopedRows.reduce((a, r) => a + toSafeNumber(r.clicks), 0);
     const totalCost = scopedRows.reduce((a, r) => a + toSafeNumber(r.cost), 0);
-    const totalConv = scopedRows.reduce(
-      (a, r) => a + toSafeNumber(r.conversions),
-      0
-    );
+    const totalConv = scopedRows.reduce((a, r) => a + toSafeNumber(r.conversions), 0);
     const totalRev = scopedRows.reduce((a, r) => a + toSafeNumber(r.revenue), 0);
 
     if (totalImpr <= 0) return "";
@@ -365,15 +313,10 @@ export default function CreativeSection({ rows }: Props) {
 
   return (
     <section className="mt-1">
-      <div className="mb-0.5">
-        <h2 className="text-xl font-semibold">소재 현황</h2>
-      </div>
-
-      {/* ✅ 소스 필터만 */}
       <div className="my-4 flex flex-wrap items-center gap-2">
         <div className="mr-2 text-sm text-gray-600">소스</div>
         <select
-          className="rounded-lg border bg-white px-3 py-2 text-sm"
+          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm shadow-sm"
           value={selectedSource}
           onChange={(e) => setSelectedSource(e.target.value as any)}
         >
@@ -385,10 +328,8 @@ export default function CreativeSection({ rows }: Props) {
         </select>
       </div>
 
-      {/* ✅ 3개 차트 */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        {/* 클릭수 */}
-        <div className="rounded-2xl border bg-white p-3">
+        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
           <div className="mb-2 text-xs font-semibold">클릭수 TOP20 소재</div>
           <div style={{ width: "100%", height: 340 }}>
             <ResponsiveContainer>
@@ -410,10 +351,7 @@ export default function CreativeSection({ rows }: Props) {
                   tick={{ fontSize: 11 }}
                   tickFormatter={(v) => short(v, 7)}
                 />
-                <Tooltip
-                  wrapperStyle={{ fontSize: 11 }}
-                  formatter={(v: any) => formatCount(v)}
-                />
+                <Tooltip wrapperStyle={{ fontSize: 11 }} formatter={(v: any) => formatCount(v)} />
                 <Bar
                   dataKey="clicks"
                   onClick={(_: any, idx: number) => {
@@ -433,8 +371,7 @@ export default function CreativeSection({ rows }: Props) {
           </div>
         </div>
 
-        {/* 전환수 */}
-        <div className="rounded-2xl border bg-white p-3">
+        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
           <div className="mb-2 text-xs font-semibold">전환수 TOP20 소재</div>
           <div style={{ width: "100%", height: 340 }}>
             <ResponsiveContainer>
@@ -456,10 +393,7 @@ export default function CreativeSection({ rows }: Props) {
                   tick={{ fontSize: 11 }}
                   tickFormatter={(v) => short(v, 7)}
                 />
-                <Tooltip
-                  wrapperStyle={{ fontSize: 11 }}
-                  formatter={(v: any) => formatCount(v)}
-                />
+                <Tooltip wrapperStyle={{ fontSize: 11 }} formatter={(v: any) => formatCount(v)} />
                 <Bar
                   dataKey="conversions"
                   onClick={(_: any, idx: number) => {
@@ -479,8 +413,7 @@ export default function CreativeSection({ rows }: Props) {
           </div>
         </div>
 
-        {/* ROAS */}
-        <div className="rounded-2xl border bg-white p-3">
+        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
           <div className="mb-2 text-xs font-semibold">ROAS TOP20 소재</div>
           <div style={{ width: "100%", height: 340 }}>
             <ResponsiveContainer>
@@ -526,9 +459,8 @@ export default function CreativeSection({ rows }: Props) {
         </div>
       </div>
 
-      {/* ✅ 인사이트 요약 */}
       <section className="mt-6">
-        <div className="rounded-xl border bg-white p-6">
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
           <div className="mb-3 font-semibold">요약 인사이트</div>
 
           {creativeInsightText ? (
@@ -543,9 +475,8 @@ export default function CreativeSection({ rows }: Props) {
         </div>
       </section>
 
-      {/* ✅ 선택 소재 프리뷰 */}
       <section className="mt-6">
-        <div className="rounded-xl border bg-white p-4">
+        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
           <div className="mb-3 font-semibold">선택 소재</div>
 
           {!selectedCreative ? (
@@ -576,13 +507,10 @@ export default function CreativeSection({ rows }: Props) {
         </div>
       </section>
 
-      {/* ✅ 소재 요약표 */}
       <section className="mt-10">
-        <h2 className="mb-3 text-lg font-semibold">소재 요약</h2>
-
-        <div className="overflow-auto rounded-xl border">
+        <div className="overflow-auto rounded-2xl border border-gray-200/80 bg-white shadow-sm">
           <table className="w-full border-collapse text-sm">
-            <thead className="bg-gray-50 text-gray-600">
+            <thead className="bg-gray-50/95 text-gray-600">
               <tr>
                 <Th k="creative" align="left" />
                 <Th k="impressions" />
@@ -600,7 +528,7 @@ export default function CreativeSection({ rows }: Props) {
 
             <tbody>
               {tableRows.length === 0 ? (
-                <tr className="border-t">
+                <tr className="border-t border-gray-200">
                   <td className="p-3 text-gray-500" colSpan={11}>
                     표시할 소재 데이터가 없습니다. (creative 컬럼을 확인해 주세요)
                   </td>
@@ -609,7 +537,7 @@ export default function CreativeSection({ rows }: Props) {
                 tableRows.map((r, idx) => (
                   <tr
                     key={`${r.creative}-${idx}`}
-                    className="cursor-pointer border-t hover:bg-orange-50"
+                    className="cursor-pointer border-t border-gray-200 hover:bg-orange-50"
                     onClick={() => setSelectedCreative(r)}
                   >
                     <td className="whitespace-nowrap p-3 text-left font-medium">
@@ -632,9 +560,7 @@ export default function CreativeSection({ rows }: Props) {
                       />
                     </td>
 
-                    <td className="p-3 text-right">
-                      {formatPercentFromRate(r.ctr, 2)}
-                    </td>
+                    <td className="p-3 text-right">{formatPercentFromRate(r.ctr, 2)}</td>
                     <td className="p-3 text-right">{KRW(r.cpc)}</td>
 
                     <td className="p-3">
@@ -653,9 +579,7 @@ export default function CreativeSection({ rows }: Props) {
                       />
                     </td>
 
-                    <td className="p-3 text-right">
-                      {formatPercentFromRate(r.cvr, 2)}
-                    </td>
+                    <td className="p-3 text-right">{formatPercentFromRate(r.cvr, 2)}</td>
                     <td className="p-3 text-right">{KRW(r.cpa)}</td>
 
                     <td className="p-3">
@@ -666,9 +590,7 @@ export default function CreativeSection({ rows }: Props) {
                       />
                     </td>
 
-                    <td className="p-3 text-right">
-                      {formatPercentFromRoas(r.roas, 1)}
-                    </td>
+                    <td className="p-3 text-right">{formatPercentFromRoas(r.roas, 1)}</td>
                   </tr>
                 ))
               )}
