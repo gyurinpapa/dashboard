@@ -116,6 +116,45 @@ function chunk<T>(arr: T[], size: number) {
   return out;
 }
 
+// ✅ CSV 선택용 timestamp 유틸
+function toMs(v: any) {
+  if (!v) return 0;
+  const t = Date.parse(String(v));
+  return Number.isFinite(t) ? t : 0;
+}
+
+// ✅ 최신 CSV 엔트리 선택
+// - timestamp가 있으면 가장 최신 시간 우선
+// - timestamp가 전혀 없으면 append 구조를 가정해 마지막 항목 사용
+function pickLatestCsvEntry(csvArr: any[]) {
+  if (!Array.isArray(csvArr) || !csvArr.length) return null;
+
+  const scored = csvArr.map((item, index) => {
+    const ts = Math.max(
+      toMs(item?.uploaded_at),
+      toMs(item?.created_at),
+      toMs(item?.updated_at),
+      toMs(item?.added_at),
+      toMs(item?.last_modified),
+      toMs(item?.timestamp)
+    );
+
+    return { item, index, ts };
+  });
+
+  const hasTimestamp = scored.some((x) => x.ts > 0);
+
+  if (hasTimestamp) {
+    scored.sort((a, b) => {
+      if (b.ts !== a.ts) return b.ts - a.ts;
+      return b.index - a.index;
+    });
+    return scored[0].item;
+  }
+
+  return csvArr[csvArr.length - 1] ?? null;
+}
+
 // channel/device/source 자동 추출(있으면 쓰고, 없으면 null)
 function pickDim(obj: any, keys: string[]) {
   for (const k of keys) {
@@ -240,7 +279,8 @@ async function getUserId(req: Request) {
   const admin = getSupabaseAdmin();
 
   // 1) Bearer 우선
-  const authz = req.headers.get("authorization") || req.headers.get("Authorization") || "";
+  const authz =
+    req.headers.get("authorization") || req.headers.get("Authorization") || "";
   const m = authz.match(/^Bearer\s+(.+)$/i);
   const bearer = m?.[1]?.trim();
 
@@ -249,7 +289,11 @@ async function getUserId(req: Request) {
     const userId = data?.user?.id ?? null;
 
     if (error || !userId) {
-      return { ok: false as const, status: 401, message: "Unauthorized (invalid bearer token)" };
+      return {
+        ok: false as const,
+        status: 401,
+        message: "Unauthorized (invalid bearer token)",
+      };
     }
 
     return { ok: true as const, userId };
@@ -267,7 +311,9 @@ async function getUserId(req: Request) {
 export async function POST(req: Request, ctx: Ctx) {
   // ✅ auth (Bearer 우선 + 쿠키 fallback)
   const auth = await getUserId(req);
-  if (!auth.ok) return jsonError(auth.status, "UNAUTHORIZED", { detail: auth.message });
+  if (!auth.ok) {
+    return jsonError(auth.status, "UNAUTHORIZED", { detail: auth.message });
+  }
 
   const userId = auth.userId;
 
@@ -290,7 +336,7 @@ export async function POST(req: Request, ctx: Ctx) {
   if (repErr) return jsonError(500, repErr.message || "DB error");
   if (!report) return jsonError(404, "Report not found");
 
-  // ✅ (보안 통일) workspace membership 체크
+  // ✅ workspace membership 체크
   const { data: wm, error: wmErr } = await sb
     .from("workspace_members")
     .select("role")
@@ -302,14 +348,34 @@ export async function POST(req: Request, ctx: Ctx) {
   if (!wm) return jsonError(403, "FORBIDDEN");
 
   const meta: any = (report as any).meta ?? {};
-  const csvArr: any[] = meta?.upload?.csv ?? [];
-  const latestCsv = csvArr.length ? csvArr[0] : null;
+  const csvArr: any[] = Array.isArray(meta?.upload?.csv) ? meta.upload.csv : [];
+  const latestCsv = pickLatestCsvEntry(csvArr);
+
+  console.log("[ingestion:csv-source]", {
+    reportId,
+    csvCount: csvArr.length,
+    selectedName: asString(latestCsv?.name),
+    selectedPath: asString(latestCsv?.path),
+    candidates: csvArr.map((x, i) => ({
+      i,
+      name: asString(x?.name),
+      path: asString(x?.path),
+      uploaded_at: asString(x?.uploaded_at),
+      created_at: asString(x?.created_at),
+      updated_at: asString(x?.updated_at),
+      added_at: asString(x?.added_at),
+      timestamp: asString(x?.timestamp),
+    })),
+  });
 
   const bucket = asString(latestCsv?.bucket) || "report_uploads";
   const path = asString(latestCsv?.path);
 
   if (!path) {
-    return jsonError(400, "No CSV uploaded yet (reports.meta.upload.csv[path] missing)");
+    return jsonError(
+      400,
+      "No CSV uploaded yet (reports.meta.upload.csv[path] missing)"
+    );
   }
 
   // ✅ 이번 ingestion 세션 id 발급
@@ -317,8 +383,14 @@ export async function POST(req: Request, ctx: Ctx) {
 
   // 2) replace면 기존 rows 삭제 (report_id 기준 그대로 유지)
   if (mode === "replace") {
-    const { error: delErr } = await sb.from("report_rows").delete().eq("report_id", reportId);
-    if (delErr) return jsonError(500, delErr.message || "Failed to delete old rows");
+    const { error: delErr } = await sb
+      .from("report_rows")
+      .delete()
+      .eq("report_id", reportId);
+
+    if (delErr) {
+      return jsonError(500, delErr.message || "Failed to delete old rows");
+    }
   }
 
   // 3) storage download → parse
@@ -368,6 +440,7 @@ export async function POST(req: Request, ctx: Ctx) {
       "cpa",
       "roas",
     ];
+
     for (const k of numericKeys) {
       if (obj[k] != null && String(obj[k]).trim() !== "") {
         obj[k] = toNumber(obj[k]);
@@ -458,7 +531,9 @@ export async function POST(req: Request, ctx: Ctx) {
     .update({ meta: nextMeta, current_ingestion_id: ingestionId })
     .eq("id", reportId);
 
-  if (upRepErr) return jsonError(500, upRepErr.message || "Failed to update report session");
+  if (upRepErr) {
+    return jsonError(500, upRepErr.message || "Failed to update report session");
+  }
 
   const dates = rowObjects.map((r) => r.ymd).sort();
   const min_date = dates[0];

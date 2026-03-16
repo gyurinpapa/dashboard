@@ -4,6 +4,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/src/lib/supabase/client";
+import ReportDownloadButtons from "@/app/components/report/ReportDownloadButtons";
+import { buildReportFileName } from "@/src/lib/report/download/file-name";
+import { downloadCsvFile } from "@/src/lib/report/download/export-csv";
+import { prepareElementForExport } from "@/src/lib/report/download/export-helpers";
+import { downloadPngFromElement } from "@/src/lib/report/download/export-png";
+import { downloadPdfFromElement } from "@/src/lib/report/download/export-pdf";
 
 import ReportTemplate from "../../components/ReportTemplate";
 
@@ -337,6 +343,11 @@ export default function ReportDetailPage() {
   const [lastUploadedCreativeCount, setLastUploadedCreativeCount] =
     useState<number>(0);
 
+  const reportCaptureRef = useRef<HTMLDivElement | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pngLoading, setPngLoading] = useState(false);
+  const [csvLoading, setCsvLoading] = useState(false);
+
   const displayRows = rows;
   const displayCreativesMap = creativesMap;
 
@@ -428,6 +439,10 @@ export default function ReportDetailPage() {
 
   const canPublish = sessionIngested && !publishing;
 
+  const reportTitleForDownload = effectivePreviewReportTypeName || "report";
+  const advertiserNameForDownload =
+    effectivePreviewAdvertiserName || "advertiser";
+
   async function refreshRows() {
     if (!reportId) return;
 
@@ -438,15 +453,36 @@ export default function ReportDetailPage() {
 
     try {
       try {
-        const rws = await fetchRows(reportId);
-        const nextRows = Array.isArray(rws) ? [...rws] : [];
-        setRows(nextRows);
+  const rws = await fetchRows(reportId);
+  const nextRows = Array.isArray(rws) ? [...rws] : [];
+  setRows(nextRows);
 
-        console.log("[refreshRows] rows ok", {
-          rowsLen: nextRows.length,
-          sampleRow: nextRows[0] ?? null,
-        });
-      } catch (e: any) {
+  console.log("[refreshRows] rows ok", {
+    rowsLen: nextRows.length,
+    sampleRow: nextRows[0] ?? null,
+    firstDate:
+      nextRows[0]?.date ??
+      nextRows[0]?.report_date ??
+      nextRows[0]?.day ??
+      null,
+    lastDate:
+      nextRows[nextRows.length - 1]?.date ??
+      nextRows[nextRows.length - 1]?.report_date ??
+      nextRows[nextRows.length - 1]?.day ??
+      null,
+    monthKeys: Array.from(
+      new Set(
+        nextRows
+          .map((r) => {
+            const raw = r?.date ?? r?.report_date ?? r?.day;
+            if (!raw) return "";
+            return String(raw).slice(0, 7);
+          })
+          .filter(Boolean)
+      )
+    ),
+  });
+} catch (e: any) {
         console.error("[refreshRows] rows failed", e);
         setRows([]);
         nextMsg += `rows 조회 실패: ${e?.message || "unknown"}\n`;
@@ -623,6 +659,118 @@ export default function ReportDetailPage() {
       setPublishing(false);
     }
   }
+
+  async function handleDownloadPdf() {
+  try {
+    setPdfLoading(true);
+
+    const el = reportCaptureRef.current;
+
+    if (!el) {
+      console.warn("[download:pdf] reportCaptureRef not found");
+      setMsg("PDF 다운로드 준비 중 대상 영역을 찾지 못했습니다.");
+      return;
+    }
+
+    const fileName = buildReportFileName({
+      advertiserName: advertiserNameForDownload,
+      reportTitle: reportTitleForDownload,
+      ext: "pdf",
+    });
+
+    await prepareElementForExport(el);
+
+    const result = await downloadPdfFromElement({
+      element: el,
+      fileName,
+    });
+
+    console.log("[download:pdf:done]", {
+      fileName: result.fileName,
+      width: result.width,
+      height: result.height,
+      pages: result.pages,
+    });
+
+    setMsg(`PDF 다운로드 완료: ${result.fileName} / ${result.pages} page`);
+  } catch (e: any) {
+    console.error("[download:pdf:error]", e);
+    setMsg(e?.message || "PDF 다운로드 중 오류가 발생했습니다.");
+  } finally {
+    setPdfLoading(false);
+  }
+}
+
+async function handleDownloadPng() {
+  try {
+    setPngLoading(true);
+
+    const el = reportCaptureRef.current;
+
+    if (!el) {
+      console.warn("[download:png] reportCaptureRef not found");
+      setMsg("PNG 다운로드 준비 중 대상 영역을 찾지 못했습니다.");
+      return;
+    }
+
+    const fileName = buildReportFileName({
+      advertiserName: advertiserNameForDownload,
+      reportTitle: reportTitleForDownload,
+      ext: "png",
+    });
+
+    await prepareElementForExport(el);
+
+    const result = await downloadPngFromElement({
+      element: el,
+      fileName,
+    });
+
+    console.log("[download:png:done]", {
+      fileName: result.fileName,
+      width: result.width,
+      height: result.height,
+    });
+
+    setMsg(`PNG 다운로드 완료: ${result.fileName}`);
+  } catch (e: any) {
+    console.error("[download:png:error]", e);
+    setMsg(e?.message || "PNG 다운로드 중 오류가 발생했습니다.");
+  } finally {
+    setPngLoading(false);
+  }
+}
+
+function handleDownloadCsv() {
+  try {
+    setCsvLoading(true);
+
+    const fileName = buildReportFileName({
+      advertiserName: advertiserNameForDownload,
+      reportTitle: reportTitleForDownload,
+      ext: "csv",
+    });
+
+    const result = downloadCsvFile({
+      fileName,
+      rows: Array.isArray(displayRows) ? displayRows : [],
+    });
+
+    console.log("[download:csv:done]", {
+      fileName: result.fileName,
+      rowCount: result.rowCount,
+    });
+
+    setMsg(
+      `CSV 다운로드 완료: ${result.fileName} / ${result.rowCount}개 row`
+    );
+  } catch (e: any) {
+    console.error("[download:csv:error]", e);
+    setMsg(e?.message || "CSV 다운로드 중 오류가 발생했습니다.");
+  } finally {
+    setCsvLoading(false);
+  }
+}
 
   const shareUrl = sharePath ? fullUrl(sharePath) : "";
 
@@ -968,28 +1116,43 @@ export default function ReportDetailPage() {
 
         <div className="col-span-12 lg:col-span-8">
           <div className="rounded-lg border">
-            <div className="flex items-center justify-between px-4 py-3 border-b">
-              <div className="text-sm font-semibold">미리보기</div>
-              <div className="text-xs text-gray-500">
-                compact + scale(0.9) + right scroll
+            <div className="flex items-center justify-between px-4 py-3 border-b gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold">미리보기</div>
+                <div className="text-xs text-gray-500">
+                  compact + scale(0.9) + right scroll
+                </div>
+              </div>
+
+              <div className="shrink-0">
+                <ReportDownloadButtons
+                  onDownloadPdf={handleDownloadPdf}
+                  onDownloadPng={handleDownloadPng}
+                  onDownloadCsv={handleDownloadCsv}
+                  pdfLoading={pdfLoading}
+                  pngLoading={pngLoading}
+                  csvLoading={csvLoading}
+                />
               </div>
             </div>
 
             <div className="max-h-[78vh] overflow-y-auto p-4">
-              <div
-                style={{
-                  transform: "scale(0.9)",
-                  transformOrigin: "top center",
-                }}
-              >
-                <ReportTemplate
-                  key={previewKey}
-                  rows={displayRows}
-                  isLoading={loadingRows}
-                  creativesMap={displayCreativesMap}
-                  advertiserName={effectivePreviewAdvertiserName}
-                  reportTypeName={effectivePreviewReportTypeName}
-                />
+              <div ref={reportCaptureRef}>
+                <div
+                  style={{
+                    transform: "scale(0.9)",
+                    transformOrigin: "top center",
+                  }}
+                >
+                  <ReportTemplate
+                    key={previewKey}
+                    rows={displayRows}
+                    isLoading={loadingRows}
+                    creativesMap={displayCreativesMap}
+                    advertiserName={effectivePreviewAdvertiserName}
+                    reportTypeName={effectivePreviewReportTypeName}
+                  />
+                </div>
               </div>
             </div>
           </div>

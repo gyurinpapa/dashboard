@@ -123,20 +123,47 @@ function flattenRow(rec: any) {
   return out;
 }
 
+/**
+ * ✅ ingestion_id 기준 rows 전체 조회
+ * - Supabase select 기본 1000개 제한을 피하기 위해 range pagination 사용
+ * - 기존 정렬/반환 구조는 유지
+ */
 async function fetchRowsByIngestion(
   admin: ReturnType<typeof getSupabaseAdmin>,
   reportId: string,
   ingestionId: string
 ) {
-  const { data, error } = await admin
-    .from("report_rows")
-    .select("id, report_id, ingestion_id, row, created_at")
-    .eq("report_id", reportId)
-    .eq("ingestion_id", ingestionId)
-    .order("created_at", { ascending: true });
+  const pageSize = 1000;
+  let from = 0;
+  const all: any[] = [];
 
-  if (error) throw new Error(error.message);
-  return data ?? [];
+  while (true) {
+    const to = from + pageSize - 1;
+
+    const { data, error } = await admin
+      .from("report_rows")
+      .select("id, report_id, ingestion_id, row, created_at")
+      .eq("report_id", reportId)
+      .eq("ingestion_id", ingestionId)
+      .order("created_at", { ascending: true })
+      .range(from, to);
+
+    if (error) throw new Error(error.message);
+
+    if (!data || data.length === 0) {
+      break;
+    }
+
+    all.push(...data);
+
+    if (data.length < pageSize) {
+      break;
+    }
+
+    from += pageSize;
+  }
+
+  return all;
 }
 
 async function findLatestIngestionId(
@@ -230,6 +257,25 @@ export async function GET(req: Request, ctx: Ctx) {
 
     // 6) ✅ row 펼쳐서 반환
     const rows = rawRows.map(flattenRow);
+
+    const dates = rows
+      .map((r: any) => r?.date ?? r?.report_date ?? r?.day ?? "")
+      .filter(Boolean)
+      .map((v: any) => String(v));
+
+    const uniqueMonths = Array.from(new Set(dates.map((d) => d.slice(0, 7))));
+
+    console.log("[rows:route]", {
+      reportId: id,
+      currentIngestionId,
+      ingestionIdUsed,
+      fallbackUsed,
+      rawRowsLen: rawRows.length,
+      rowsLen: rows.length,
+      firstDate: dates[0] ?? null,
+      lastDate: dates[dates.length - 1] ?? null,
+      uniqueMonths,
+    });
 
     return NextResponse.json({
       ok: true,
