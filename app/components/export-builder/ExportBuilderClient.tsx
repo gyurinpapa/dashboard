@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ExportPageView from "./ExportPageView";
 import {
   cloneExportPage,
@@ -83,50 +83,21 @@ export default function ExportBuilderClient({
   meta,
   sectionPayloads,
 }: Props) {
-  const [builder, setBuilder] = useState<BuilderState>(() =>
-    createInitialBuilderState(initialInput)
-  );
+  const [builder, setBuilder] = useState<BuilderState | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
 
-  const { doc, selectedPageId } = builder;
+  useEffect(() => {
+    setBuilder(createInitialBuilderState(initialInput));
+  }, [initialInput]);
 
-  const selectedPage = useMemo(
-    () => doc.pages.find((page) => page.id === selectedPageId) ?? doc.pages[0] ?? null,
-    [doc.pages, selectedPageId]
-  );
-
-  /**
-   * Step 17-9
-   * Export section 공통 meta 주입용
-   * - route/page.tsx에서 넘어온 meta 우선
-   * - 없으면 doc.meta / initialInput 기준 fallback
-   */
   const slotMeta = useMemo<Partial<ExportSectionMeta>>(() => {
     return {
-      advertiserName:
-        meta?.advertiserName ??
-        doc.meta.advertiserName ??
-        initialInput.advertiserName ??
-        "",
-      reportTitle:
-        meta?.reportTitle ??
-        "광고 성과 리포트",
-      reportTypeName:
-        meta?.reportTypeName ??
-        doc.meta.reportTypeName ??
-        initialInput.reportTypeName ??
-        "",
-      periodLabel:
-        meta?.periodLabel ??
-        doc.meta.periodLabel ??
-        initialInput.periodLabel ??
-        "",
-      generatedAtLabel:
-        meta?.generatedAtLabel,
-      preset:
-        meta?.preset ??
-        initialInput.preset ??
-        "starter",
+      advertiserName: meta?.advertiserName ?? initialInput.advertiserName ?? "",
+      reportTitle: meta?.reportTitle ?? "광고 성과 리포트",
+      reportTypeName: meta?.reportTypeName ?? initialInput.reportTypeName ?? "",
+      periodLabel: meta?.periodLabel ?? initialInput.periodLabel ?? "",
+      generatedAtLabel: meta?.generatedAtLabel,
+      preset: meta?.preset ?? initialInput.preset ?? "starter",
     };
   }, [
     meta?.advertiserName,
@@ -135,14 +106,30 @@ export default function ExportBuilderClient({
     meta?.preset,
     meta?.reportTitle,
     meta?.reportTypeName,
-    doc.meta.advertiserName,
-    doc.meta.periodLabel,
-    doc.meta.reportTypeName,
     initialInput.advertiserName,
     initialInput.periodLabel,
     initialInput.preset,
     initialInput.reportTypeName,
   ]);
+
+  if (!builder) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <div className="mx-auto flex w-full max-w-[1800px] items-center justify-center px-4 py-10 xl:px-6">
+          <div className="rounded-[28px] border border-slate-200 bg-white px-6 py-8 text-sm text-slate-500 shadow-sm">
+            Export Builder 불러오는 중...
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const { doc, selectedPageId } = builder;
+
+  const selectedPage = useMemo(
+    () => doc.pages.find((page) => page.id === selectedPageId) ?? doc.pages[0] ?? null,
+    [doc.pages, selectedPageId]
+  );
 
   const documentTitle = useMemo(() => {
     const advertiser = doc.meta.advertiserName?.trim() || "광고주";
@@ -158,22 +145,37 @@ export default function ExportBuilderClient({
   ) {
     const touched = touchExportDocument(nextDoc);
 
-    setBuilder((prev) => ({
-      doc: touched,
-      selectedPageId:
-        nextSelectedPageId !== undefined
-          ? nextSelectedPageId
-          : prev.selectedPageId,
-    }));
+    setBuilder((prev) => {
+      if (!prev) {
+        return {
+          doc: touched,
+          selectedPageId:
+            nextSelectedPageId !== undefined
+              ? nextSelectedPageId
+              : touched.pages[0]?.id ?? null,
+        };
+      }
+
+      return {
+        doc: touched,
+        selectedPageId:
+          nextSelectedPageId !== undefined
+            ? nextSelectedPageId
+            : prev.selectedPageId,
+      };
+    });
 
     if (nextToast) setToast(nextToast);
   }
 
   function handleSelectPage(pageId: string) {
-    setBuilder((prev) => ({
-      ...prev,
-      selectedPageId: pageId,
-    }));
+    setBuilder((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        selectedPageId: pageId,
+      };
+    });
   }
 
   function handleAddPage(templateKey: ExportTemplateKey = "full-single") {
