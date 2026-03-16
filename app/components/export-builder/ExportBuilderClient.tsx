@@ -112,11 +112,7 @@ export default function ExportBuilderClient({
     initialInput.reportTypeName,
   ]);
 
-  /**
-   * ✅ Hook 순서 고정
-   * - builder가 null이어도 항상 동일한 순서로 hook이 호출되도록
-   * - 아래 memo들을 early return 위로 이동
-   */
+  // Hook 순서 고정
   const doc = builder?.doc ?? null;
   const selectedPageId = builder?.selectedPageId ?? null;
 
@@ -155,6 +151,10 @@ export default function ExportBuilderClient({
       </div>
     );
   }
+
+  // 아래부터는 doc / selectedPageId가 null 아님을 명시적으로 고정
+  const currentDoc: ExportDocument = doc;
+  const currentSelectedPageId: string | null = selectedPageId;
 
   function updateBuilder(
     nextDoc: ExportDocument,
@@ -197,28 +197,26 @@ export default function ExportBuilderClient({
   }
 
   function handleAddPage(templateKey: ExportTemplateKey = "full-single") {
-  if (!doc) return;
+    const newPage = createBlankPageForTemplate(
+      templateKey,
+      `페이지 ${currentDoc.pages.length + 1}`
+    );
 
-  const newPage = createBlankPageForTemplate(
-    templateKey,
-    `페이지 ${doc.pages.length + 1}`
-  );
-
-  updateBuilder(
-    {
-      ...doc,
-      pages: [...doc.pages, newPage],
-    },
-    newPage.id,
-    {
-      type: "success",
-      message: "새 페이지가 추가되었어.",
-    }
-  );
-}
+    updateBuilder(
+      {
+        ...currentDoc,
+        pages: [...currentDoc.pages, newPage],
+      },
+      newPage.id,
+      {
+        type: "success",
+        message: "새 페이지가 추가되었어.",
+      }
+    );
+  }
 
   function handleDeletePage(pageId: string) {
-    if (doc.pages.length <= 1) {
+    if (currentDoc.pages.length <= 1) {
       setToast({
         type: "error",
         message: "최소 1개의 페이지는 유지되어야 해.",
@@ -226,13 +224,13 @@ export default function ExportBuilderClient({
       return;
     }
 
-    const nextPages = doc.pages.filter((page) => page.id !== pageId);
+    const nextPages = currentDoc.pages.filter((page) => page.id !== pageId);
     const nextSelectedPageId =
-      selectedPageId === pageId ? nextPages[0]?.id ?? null : selectedPageId;
+      currentSelectedPageId === pageId ? nextPages[0]?.id ?? null : currentSelectedPageId;
 
     updateBuilder(
       {
-        ...doc,
+        ...currentDoc,
         pages: nextPages,
       },
       nextSelectedPageId,
@@ -244,7 +242,7 @@ export default function ExportBuilderClient({
   }
 
   function handleDuplicatePage(pageId: string) {
-    const target = doc.pages.find((page) => page.id === pageId);
+    const target = currentDoc.pages.find((page) => page.id === pageId);
     if (!target) return;
 
     const cloned = cloneExportPage({
@@ -252,13 +250,13 @@ export default function ExportBuilderClient({
       title: `${target.title || "페이지"} 복사본`,
     });
 
-    const targetIndex = doc.pages.findIndex((page) => page.id === pageId);
-    const nextPages = [...doc.pages];
+    const targetIndex = currentDoc.pages.findIndex((page) => page.id === pageId);
+    const nextPages = [...currentDoc.pages];
     nextPages.splice(targetIndex + 1, 0, cloned);
 
     updateBuilder(
       {
-        ...doc,
+        ...currentDoc,
         pages: nextPages,
       },
       cloned.id,
@@ -270,24 +268,24 @@ export default function ExportBuilderClient({
   }
 
   function handleChangePageTitle(pageId: string, title: string) {
-    const page = doc.pages.find((item) => item.id === pageId);
+    const page = currentDoc.pages.find((item) => item.id === pageId);
     if (!page) return;
 
     updateBuilder({
-      ...doc,
-      pages: doc.pages.map((item) =>
+      ...currentDoc,
+      pages: currentDoc.pages.map((item) =>
         item.id === pageId ? { ...item, title } : item
       ),
     });
   }
 
   function handleChangeTemplate(pageId: string, templateKey: ExportTemplateKey) {
-    const page = doc.pages.find((item) => item.id === pageId);
+    const page = currentDoc.pages.find((item) => item.id === pageId);
     if (!page) return;
 
     const nextPage = resetPageTemplate(page, templateKey);
 
-    updateBuilder(replacePage(doc, nextPage), selectedPageId, {
+    updateBuilder(replacePage(currentDoc, nextPage), currentSelectedPageId, {
       type: "info",
       message: "템플릿이 변경되었고, 기존 슬롯 배치는 초기화되었어.",
     });
@@ -298,24 +296,24 @@ export default function ExportBuilderClient({
     slotId: string,
     sectionKey: ExportSectionKey
   ) {
-    const page = doc.pages.find((item) => item.id === pageId);
+    const page = currentDoc.pages.find((item) => item.id === pageId);
     if (!page) return;
 
     const nextPage = upsertBlockForSlot(page, slotId, sectionKey);
 
-    updateBuilder(replacePage(doc, nextPage), selectedPageId, {
+    updateBuilder(replacePage(currentDoc, nextPage), currentSelectedPageId, {
       type: "success",
       message: "섹션이 배치되었어.",
     });
   }
 
   function handleRemoveBlock(pageId: string, blockId: string) {
-    const page = doc.pages.find((item) => item.id === pageId);
+    const page = currentDoc.pages.find((item) => item.id === pageId);
     if (!page) return;
 
     const nextPage = removeBlockById(page, blockId);
 
-    updateBuilder(replacePage(doc, nextPage), selectedPageId, {
+    updateBuilder(replacePage(currentDoc, nextPage), currentSelectedPageId, {
       type: "success",
       message: "섹션이 제거되었어.",
     });
@@ -337,13 +335,13 @@ export default function ExportBuilderClient({
 
               <div className="mt-4 flex flex-wrap gap-2">
                 <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
-                  페이지 {doc.pages.length}장
+                  페이지 {currentDoc.pages.length}장
                 </div>
                 <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
                   비율 16:9
                 </div>
                 <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
-                  Report ID: {doc.meta.reportId}
+                  Report ID: {currentDoc.meta.reportId}
                 </div>
               </div>
             </div>
@@ -404,7 +402,7 @@ export default function ExportBuilderClient({
             </div>
 
             <div className="space-y-3">
-              {doc.pages.map((page, index) => {
+              {currentDoc.pages.map((page, index) => {
                 const isSelected = selectedPage?.id === page.id;
 
                 return (
@@ -542,7 +540,7 @@ export default function ExportBuilderClient({
                   pageNumber={
                     Math.max(
                       0,
-                      doc.pages.findIndex((page) => page.id === selectedPage.id)
+                      currentDoc.pages.findIndex((page) => page.id === selectedPage.id)
                     ) + 1
                   }
                   onAssignSection={handleAssignSection}
