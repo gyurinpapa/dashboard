@@ -197,23 +197,25 @@ export default function ExportBuilderClient({
   }
 
   function handleAddPage(templateKey: ExportTemplateKey = "full-single") {
-    const newPage = createBlankPageForTemplate(
-      templateKey,
-      `페이지 ${doc.pages.length + 1}`
-    );
+  if (!doc) return;
 
-    updateBuilder(
-      {
-        ...doc,
-        pages: [...doc.pages, newPage],
-      },
-      newPage.id,
-      {
-        type: "success",
-        message: "새 페이지가 추가되었어.",
-      }
-    );
-  }
+  const newPage = createBlankPageForTemplate(
+    templateKey,
+    `페이지 ${doc.pages.length + 1}`
+  );
+
+  updateBuilder(
+    {
+      ...doc,
+      pages: [...doc.pages, newPage],
+    },
+    newPage.id,
+    {
+      type: "success",
+      message: "새 페이지가 추가되었어.",
+    }
+  );
+}
 
   function handleDeletePage(pageId: string) {
     if (doc.pages.length <= 1) {
