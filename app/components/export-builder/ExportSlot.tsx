@@ -45,6 +45,14 @@ type Props = {
   sectionPayloads?: ExportSectionPayloadMap;
 };
 
+type PickerFilterKey =
+  | "recommended"
+  | "all"
+  | "summary"
+  | "summary2"
+  | "keyword"
+  | "creative";
+
 function getCategoryLabel(category: string) {
   switch (category) {
     case "summary":
@@ -57,6 +65,25 @@ function getCategoryLabel(category: string) {
       return "소재";
     default:
       return category;
+  }
+}
+
+function getViewTypeLabel(viewType?: string) {
+  switch (viewType) {
+    case "kpi":
+      return "KPI";
+    case "chart":
+      return "차트";
+    case "heatmap":
+      return "히트맵";
+    case "funnel":
+      return "퍼널";
+    case "goal":
+      return "목표";
+    case "table":
+      return "표";
+    default:
+      return "섹션";
   }
 }
 
@@ -396,6 +423,7 @@ export default function ExportSlot({
   sectionPayloads,
 }: Props) {
   const [openPicker, setOpenPicker] = useState(false);
+  const [filterKey, setFilterKey] = useState<PickerFilterKey>("recommended");
 
   const assignedBlock = useMemo(
     () => page.blocks.find((block) => block.slotId === slot.id) ?? null,
@@ -407,6 +435,34 @@ export default function ExportSlot({
       section.recommendedTemplates.includes(page.templateKey)
     );
   }, [page.templateKey]);
+
+  const filteredSections = useMemo(() => {
+    if (filterKey === "recommended") {
+      return recommendedSections;
+    }
+
+    if (filterKey === "all") {
+      return EXPORT_SECTION_REGISTRY;
+    }
+
+    return EXPORT_SECTION_REGISTRY.filter(
+      (section) => section.category === filterKey
+    );
+  }, [filterKey, recommendedSections]);
+
+  function handleAssign(sectionKey: ExportSectionKey) {
+    onAssignSection(page.id, slot.id, sectionKey);
+    setOpenPicker(false);
+  }
+
+  const filterTabs: Array<{ key: PickerFilterKey; label: string }> = [
+    { key: "recommended", label: "추천" },
+    { key: "all", label: "전체" },
+    { key: "summary", label: "요약" },
+    { key: "summary2", label: "요약2" },
+    { key: "keyword", label: "키워드" },
+    { key: "creative", label: "소재" },
+  ];
 
   return (
     <div className="flex h-full min-h-[180px] flex-col rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
@@ -426,7 +482,7 @@ export default function ExportSlot({
             onClick={() => setOpenPicker((v) => !v)}
             className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
           >
-            섹션 선택
+            {openPicker ? "선택창 닫기" : "섹션 선택"}
           </button>
         ) : null}
       </div>
@@ -442,63 +498,156 @@ export default function ExportSlot({
         </div>
       ) : (
         <div className="flex flex-1 flex-col overflow-hidden rounded-2xl border border-dashed border-slate-300 bg-white/70 p-3">
-          <div className="mb-3 text-xs text-slate-500">
-            이 슬롯에 넣을 섹션을 선택해줘.
-          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0">
+                <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+                  Empty Slot
+                </div>
+                <div className="mt-1 text-sm font-semibold text-slate-900">
+                  이 슬롯에 섹션을 배치해줘
+                </div>
+                <div className="mt-1 text-xs text-slate-500">
+                  현재 템플릿 <span className="font-medium text-slate-700">{page.templateKey}</span> 에
+                  잘 맞는 추천 섹션부터 빠르게 넣을 수 있어.
+                </div>
+              </div>
 
-          <div className="grid gap-2 sm:grid-cols-2">
-            {recommendedSections.map((section) => (
-              <button
-                key={section.key}
-                type="button"
-                onClick={() => {
-                  onAssignSection(page.id, slot.id, section.key);
-                  setOpenPicker(false);
-                }}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-left transition hover:border-slate-300 hover:bg-slate-50"
-              >
-                <div className="text-xs font-semibold text-slate-800">
-                  {section.label}
+              <div className="flex shrink-0 items-center gap-2">
+                <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-600">
+                  추천 {recommendedSections.length}개
                 </div>
-                <div className="mt-1 line-clamp-2 text-[11px] text-slate-500">
-                  {section.description}
+                <button
+                  type="button"
+                  onClick={() => setOpenPicker((v) => !v)}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                >
+                  {openPicker ? "선택 패널 닫기" : "전체 섹션 보기"}
+                </button>
+              </div>
+            </div>
+
+            {recommendedSections.length > 0 ? (
+              <div className="mt-4">
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                  Quick Picks
                 </div>
-              </button>
-            ))}
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {recommendedSections.map((section) => (
+                    <button
+                      key={section.key}
+                      type="button"
+                      onClick={() => handleAssign(section.key)}
+                      className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-left transition hover:border-slate-300 hover:bg-white"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="truncate text-xs font-semibold text-slate-900">
+                          {section.label}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                            {getCategoryLabel(section.category)}
+                          </span>
+                          <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                            {getViewTypeLabel(section.viewType)}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="mt-1 line-clamp-2 text-[11px] text-slate-500">
+                        {section.description}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
 
           {openPicker ? (
-            <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              <div className="mb-2 text-xs font-semibold text-slate-700">
-                전체 섹션
+            <div className="mt-3 flex min-h-0 flex-1 flex-col rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <div className="mb-3 flex flex-wrap gap-2">
+                {filterTabs.map((tab) => {
+                  const isActive = filterKey === tab.key;
+
+                  return (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      onClick={() => setFilterKey(tab.key)}
+                      className={[
+                        "rounded-full px-3 py-1.5 text-[11px] font-medium transition",
+                        isActive
+                          ? "border border-slate-900 bg-slate-900 text-white"
+                          : "border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
+                      ].join(" ")}
+                    >
+                      {tab.label}
+                    </button>
+                  );
+                })}
               </div>
+
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="text-xs font-semibold text-slate-700">
+                  {filterKey === "recommended"
+                    ? "추천 섹션"
+                    : filterKey === "all"
+                    ? "전체 섹션"
+                    : `${getCategoryLabel(filterKey)} 섹션`}
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  {filteredSections.length}개
+                </div>
+              </div>
+
               <div className="grid gap-2 sm:grid-cols-2">
-                {EXPORT_SECTION_REGISTRY.map((section) => (
-                  <button
-                    key={section.key}
-                    type="button"
-                    onClick={() => {
-                      onAssignSection(page.id, slot.id, section.key);
-                      setOpenPicker(false);
-                    }}
-                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-left transition hover:border-slate-300 hover:bg-white"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-xs font-semibold text-slate-800">
-                        {section.label}
+                {filteredSections.map((section) => {
+                  const isRecommended = recommendedSections.some(
+                    (item) => item.key === section.key
+                  );
+
+                  return (
+                    <button
+                      key={section.key}
+                      type="button"
+                      onClick={() => handleAssign(section.key)}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-left transition hover:border-slate-300 hover:bg-white"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-xs font-semibold text-slate-900">
+                            {section.label}
+                          </div>
+                          <div className="mt-1 flex flex-wrap items-center gap-1">
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                              {getCategoryLabel(section.category)}
+                            </span>
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                              {getViewTypeLabel(section.viewType)}
+                            </span>
+                            {isRecommended ? (
+                              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                                추천
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
                       </div>
-                      <div className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
-                        {getCategoryLabel(section.category)}
+
+                      <div className="mt-2 line-clamp-2 text-[11px] text-slate-500">
+                        {section.description}
                       </div>
-                    </div>
-                    <div className="mt-1 line-clamp-2 text-[11px] text-slate-500">
-                      {section.description}
-                    </div>
-                  </button>
-                ))}
+                    </button>
+                  );
+                })}
               </div>
             </div>
-          ) : null}
+          ) : (
+            <div className="mt-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-[11px] text-slate-500">
+              추천 섹션에서 바로 선택하거나, <span className="font-medium text-slate-700">전체 섹션 보기</span>로
+              카테고리별 탐색을 할 수 있어.
+            </div>
+          )}
         </div>
       )}
     </div>

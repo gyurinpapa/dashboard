@@ -112,7 +112,39 @@ export default function ExportBuilderClient({
     initialInput.reportTypeName,
   ]);
 
-  if (!builder) {
+  /**
+   * ✅ Hook 순서 고정
+   * - builder가 null이어도 항상 동일한 순서로 hook이 호출되도록
+   * - 아래 memo들을 early return 위로 이동
+   */
+  const doc = builder?.doc ?? null;
+  const selectedPageId = builder?.selectedPageId ?? null;
+
+  const selectedPage = useMemo(() => {
+    if (!doc) return null;
+    return doc.pages.find((page) => page.id === selectedPageId) ?? doc.pages[0] ?? null;
+  }, [doc, selectedPageId]);
+
+  const documentTitle = useMemo(() => {
+    if (!doc) {
+      const advertiser = initialInput.advertiserName?.trim() || "광고주";
+      const reportType = initialInput.reportTypeName?.trim() || "리포트";
+      const period = initialInput.periodLabel?.trim() || "기간미정";
+      return `${advertiser} / ${reportType} / ${period}`;
+    }
+
+    const advertiser = doc.meta.advertiserName?.trim() || "광고주";
+    const reportType = doc.meta.reportTypeName?.trim() || "리포트";
+    const period = doc.meta.periodLabel?.trim() || "기간미정";
+    return `${advertiser} / ${reportType} / ${period}`;
+  }, [
+    doc,
+    initialInput.advertiserName,
+    initialInput.reportTypeName,
+    initialInput.periodLabel,
+  ]);
+
+  if (!builder || !doc) {
     return (
       <div className="min-h-screen bg-slate-50">
         <div className="mx-auto flex w-full max-w-[1800px] items-center justify-center px-4 py-10 xl:px-6">
@@ -123,20 +155,6 @@ export default function ExportBuilderClient({
       </div>
     );
   }
-
-  const { doc, selectedPageId } = builder;
-
-  const selectedPage = useMemo(
-    () => doc.pages.find((page) => page.id === selectedPageId) ?? doc.pages[0] ?? null,
-    [doc.pages, selectedPageId]
-  );
-
-  const documentTitle = useMemo(() => {
-    const advertiser = doc.meta.advertiserName?.trim() || "광고주";
-    const reportType = doc.meta.reportTypeName?.trim() || "리포트";
-    const period = doc.meta.periodLabel?.trim() || "기간미정";
-    return `${advertiser} / ${reportType} / ${period}`;
-  }, [doc.meta.advertiserName, doc.meta.reportTypeName, doc.meta.periodLabel]);
 
   function updateBuilder(
     nextDoc: ExportDocument,
