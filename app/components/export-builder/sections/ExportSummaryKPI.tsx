@@ -15,6 +15,8 @@ type KPIItem = {
   subValue?: string;
 };
 
+type LayoutMode = "full" | "wide" | "compact" | "side-compact";
+
 type Props = {
   /**
    * Step 17 이전 호환용
@@ -27,6 +29,12 @@ type Props = {
    */
   meta?: Partial<ExportSectionMeta>;
   data?: Partial<ExportSummaryKPIData>;
+
+  /**
+   * Step 19-6
+   * 슬롯 크기별 렌더 밀도 분기
+   */
+  layoutMode?: LayoutMode;
 };
 
 const DEFAULT_ITEMS: KPIItem[] = [
@@ -67,6 +75,7 @@ export default function ExportSummaryKPI({
   items,
   meta,
   data,
+  layoutMode = "wide",
 }: Props) {
   const resolvedMeta = buildSectionMeta(meta);
 
@@ -76,21 +85,101 @@ export default function ExportSummaryKPI({
     ...(!items && !data ? { cards: normalizeLegacyItems(DEFAULT_ITEMS) } : {}),
   });
 
-  const safeCards = (resolvedData.cards ?? []).slice(0, 6);
+  const safeCards = (resolvedData.cards ?? []).slice(0, 4);
   const displayTitle = title || "핵심 KPI 요약";
 
+  const isFull = layoutMode === "full";
+  const isWide = layoutMode === "wide";
+  const isCompact = layoutMode === "compact";
+  const isSideCompact = layoutMode === "side-compact";
+
+  const sectionClass = [
+    "flex h-full min-h-0 flex-col overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm",
+    isFull
+      ? "px-5 py-4"
+      : isWide
+      ? "px-4 py-3.5"
+      : isCompact
+      ? "px-3 py-2.5"
+      : "px-2.5 py-2",
+  ].join(" ");
+
+  const headerWrapClass = [
+    "flex items-start justify-between gap-3",
+    isSideCompact ? "mb-1.5" : isCompact ? "mb-2" : "mb-3",
+  ].join(" ");
+
+  const eyebrowClass = [
+    "font-semibold uppercase tracking-[0.18em] text-slate-400",
+    isSideCompact ? "text-[9px]" : "text-[10px]",
+  ].join(" ");
+
+  const titleClass = [
+    "mt-1 truncate font-semibold tracking-tight text-slate-900",
+    isFull
+      ? "text-[20px]"
+      : isWide
+      ? "text-[18px]"
+      : isCompact
+      ? "text-[15px]"
+      : "text-[13px]",
+  ].join(" ");
+
+  const metaClass = [
+    "mt-1 truncate text-slate-500",
+    isSideCompact ? "text-[9px]" : isCompact ? "text-[10px]" : "text-[11px]",
+  ].join(" ");
+
+  const badgeClass = [
+    "shrink-0 rounded-full border border-slate-200 bg-slate-50 font-medium text-slate-500",
+    isSideCompact ? "px-2 py-0.5 text-[9px]" : "px-2.5 py-1 text-[10px]",
+  ].join(" ");
+
+  const gridClass = [
+    "grid flex-1 min-h-0 grid-cols-2 items-stretch",
+    isSideCompact ? "gap-1.5" : isCompact ? "gap-2" : "gap-3",
+  ].join(" ");
+
+  const cardClass = [
+    "flex h-full min-h-0 flex-col justify-between rounded-[18px] border border-slate-200 bg-gradient-to-b from-white to-slate-50",
+    isFull
+      ? "px-4 py-3.5"
+      : isWide
+      ? "px-4 py-3"
+      : isCompact
+      ? "px-2.5 py-2"
+      : "px-2 py-1.5",
+  ].join(" ");
+
+  const labelClass = [
+    "truncate font-semibold uppercase tracking-[0.12em] text-slate-500",
+    isSideCompact ? "text-[8px]" : isCompact ? "text-[9px]" : "text-[10px]",
+  ].join(" ");
+
+  const valueClass = [
+    "truncate font-semibold tracking-tight text-slate-900",
+    isFull
+      ? "text-[28px] leading-none"
+      : isWide
+      ? "text-[22px] leading-none"
+      : isCompact
+      ? "text-[16px] leading-tight"
+      : "text-[13px] leading-tight",
+  ].join(" ");
+
+  const subValueClass = [
+    "mt-1 truncate font-medium text-slate-500",
+    isSideCompact ? "text-[8px]" : isCompact ? "text-[9px]" : "text-[11px]",
+  ].join(" ");
+
   return (
-    <section className="flex h-full min-h-[220px] flex-col rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-            Summary
-          </div>
-          <h3 className="mt-1 text-base font-semibold tracking-tight text-slate-900">
-            {displayTitle}
-          </h3>
-          {(resolvedMeta.reportTypeName || resolvedMeta.periodLabel) ? (
-            <div className="mt-1 text-xs text-slate-500">
+    <section className={sectionClass}>
+      <div className={headerWrapClass}>
+        <div className="min-w-0">
+          <div className={eyebrowClass}>Summary</div>
+          <h3 className={titleClass}>{displayTitle}</h3>
+          {resolvedMeta.reportTypeName || resolvedMeta.periodLabel ? (
+            <div className={metaClass}>
               {[resolvedMeta.reportTypeName, resolvedMeta.periodLabel]
                 .filter(Boolean)
                 .join(" · ")}
@@ -98,43 +187,29 @@ export default function ExportSummaryKPI({
           ) : null}
         </div>
 
-        <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-500">
-          KPI
-        </div>
+        {!isSideCompact ? <div className={badgeClass}>KPI</div> : null}
       </div>
 
-      <div
-        className={[
-          "grid flex-1 gap-3",
-          safeCards.length <= 2
-            ? "grid-cols-2"
-            : safeCards.length <= 4
-            ? "grid-cols-2 xl:grid-cols-4"
-            : "grid-cols-2 xl:grid-cols-3",
-        ].join(" ")}
-      >
+      <div className={gridClass}>
         {safeCards.map((item, index) => (
           <div
             key={item.key || `${item.label}-${index}`}
-            className="flex min-h-[120px] flex-col justify-between rounded-[20px] border border-slate-200 bg-slate-50 p-4"
+            className={cardClass}
           >
-            <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-              {item.label}
-            </div>
+            <div className={labelClass}>{item.label}</div>
 
-            <div className="mt-3">
-              <div className="text-xl font-semibold tracking-tight text-slate-900">
-                {item.value}
-              </div>
+            <div className="mt-1.5 flex min-h-0 flex-1 flex-col justify-end overflow-hidden">
+              <div className={valueClass}>{item.value}</div>
+
               {item.subValue ? (
-                <div className="mt-2 text-xs font-medium text-slate-500">
-                  {item.subValue}
-                </div>
+                <div className={subValueClass}>{item.subValue}</div>
               ) : item.changeLabel ? (
-                <div className="mt-2 text-xs font-medium text-slate-500">
-                  {item.changeLabel}
+                <div className={subValueClass}>{item.changeLabel}</div>
+              ) : (
+                <div className={subValueClass} style={{ color: "transparent" }}>
+                  .
                 </div>
-              ) : null}
+              )}
             </div>
           </div>
         ))}
