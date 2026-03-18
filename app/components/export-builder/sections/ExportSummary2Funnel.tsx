@@ -1,5 +1,9 @@
 "use client";
 
+import Summary2FunnelView, {
+  type Summary2FunnelDensity,
+  type Summary2FunnelStepViewItem,
+} from "@/app/components/sections/summary/Summary2FunnelView";
 import type {
   ExportSectionMeta,
   ExportSummary2FunnelData,
@@ -16,6 +20,8 @@ type FunnelStep = {
   subLabel?: string;
 };
 
+type LayoutMode = "full" | "wide" | "compact" | "side-compact";
+
 type Props = {
   /**
    * Step 17 이전 호환용
@@ -29,6 +35,11 @@ type Props = {
    */
   meta?: Partial<ExportSectionMeta>;
   data?: Partial<ExportSummary2FunnelData>;
+
+  /**
+   * 안전한 density 확장
+   */
+  layoutMode?: LayoutMode;
 };
 
 const DEFAULT_STEPS: FunnelStep[] = [
@@ -94,12 +105,20 @@ function normalizeLegacySteps(
   }));
 }
 
+function toFunnelDensity(layoutMode: LayoutMode): Summary2FunnelDensity {
+  if (layoutMode === "wide") return "export-wide";
+  if (layoutMode === "compact") return "export-compact";
+  if (layoutMode === "side-compact") return "export-side-compact";
+  return "export-full";
+}
+
 export default function ExportSummary2Funnel({
   title = "성과 퍼널",
   subtitle = "노출 → 클릭 → 전환 흐름",
   steps,
   meta,
   data,
+  layoutMode = "full",
 }: Props) {
   const resolvedMeta = buildSectionMeta(meta);
 
@@ -139,81 +158,37 @@ export default function ExportSummary2Funnel({
       .join(" · ") ||
     "노출 → 클릭 → 전환 흐름";
 
+  const stepItems: Summary2FunnelStepViewItem[] = safeSteps.map((step, index) => {
+    const numericValue = Number(step.value || 0);
+
+    const widthPercent =
+      safeSteps.length <= 1
+        ? 100
+        : clampWidth((numericValue / maxValue) * 100);
+
+    return {
+      key: step.key || `${step.label}-${index}`,
+      label: step.label,
+      value: step.displayValue || formatNumber(numericValue),
+      widthPercent,
+      subLabel:
+        step.ratioFromPrev != null
+          ? `전단계 대비 ${(step.ratioFromPrev * 100).toFixed(2)}%`
+          : undefined,
+    };
+  });
+
   return (
-    <section className="flex h-full min-h-[260px] flex-col rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-            Summary 2
-          </div>
-          <h3 className="mt-1 text-base font-semibold tracking-tight text-slate-900">
-            {displayTitle}
-          </h3>
-          <p className="mt-1 text-xs text-slate-500">{displaySubtitle}</p>
-        </div>
-
-        <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-500">
-          Funnel
-        </div>
-      </div>
-
-      <div className="flex flex-1 flex-col items-center justify-center gap-4 rounded-[20px] border border-slate-200 bg-slate-50 p-4">
-        {safeSteps.map((step, index) => {
-          const numericValue = Number(step.value || 0);
-          const width =
-            safeSteps.length <= 1
-              ? 100
-              : clampWidth((numericValue / maxValue) * 100);
-
-          return (
-            <div
-              key={step.key || `${step.label}-${index}`}
-              className="flex min-h-[72px] items-center justify-between rounded-[20px] border border-slate-300 bg-white px-5 py-4 shadow-sm"
-              style={{ width: `${width}%` }}
-            >
-              <div className="min-w-0">
-                <div className="text-sm font-semibold text-slate-900">
-                  {step.label}
-                </div>
-                {step.ratioFromPrev != null ? (
-                  <div className="mt-1 text-xs text-slate-500">
-                    전단계 대비 {(step.ratioFromPrev * 100).toFixed(2)}%
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="pl-4 text-right">
-                <div className="text-base font-semibold tracking-tight text-slate-900">
-                  {step.displayValue || formatNumber(numericValue)}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="mt-4 grid grid-cols-3 gap-3">
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-          <div className="text-[11px] text-slate-500">CTR</div>
-          <div className="mt-1 text-sm font-semibold text-slate-900">
-            {Number.isFinite(ctr) ? formatPercent(ctr) : "2.74%"}
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-          <div className="text-[11px] text-slate-500">CVR</div>
-          <div className="mt-1 text-sm font-semibold text-slate-900">
-            {Number.isFinite(cvr) ? formatPercent(cvr) : "3.75%"}
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-          <div className="text-[11px] text-slate-500">CPA</div>
-          <div className="mt-1 text-sm font-semibold text-slate-900">
-            {Number.isFinite(Number(cpa)) ? formatCurrency(Number(cpa)) : "₩9,720"}
-          </div>
-        </div>
-      </div>
-    </section>
+    <Summary2FunnelView
+      title={displayTitle}
+      subtitle={displaySubtitle}
+      steps={stepItems}
+      density={toFunnelDensity(layoutMode)}
+      stats={{
+        ctrLabel: Number.isFinite(ctr) ? formatPercent(ctr) : "2.74%",
+        cvrLabel: Number.isFinite(cvr) ? formatPercent(cvr) : "3.75%",
+        cpaLabel: Number.isFinite(Number(cpa)) ? formatCurrency(Number(cpa)) : "₩9,720",
+      }}
+    />
   );
 }

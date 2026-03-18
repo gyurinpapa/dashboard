@@ -1,5 +1,9 @@
 "use client";
 
+import Summary2HeatmapView, {
+  type Summary2HeatmapCell,
+  type Summary2HeatmapDensity,
+} from "@/app/components/sections/summary/Summary2HeatmapView";
 import type {
   ExportSectionMeta,
   ExportSummary2HeatmapData,
@@ -14,6 +18,8 @@ type HeatCell = {
   level: 0 | 1 | 2 | 3 | 4;
 };
 
+type LayoutMode = "full" | "wide" | "compact" | "side-compact";
+
 type Props = {
   /**
    * Step 17 이전 호환용
@@ -26,6 +32,11 @@ type Props = {
    * Step 17-9 표준 props
    */
   meta?: Partial<ExportSectionMeta>;
+
+  /**
+   * 안전한 density 확장
+   */
+  layoutMode?: LayoutMode;
 };
 
 const DEFAULT_DATA: HeatCell[] = [
@@ -66,22 +77,6 @@ const DEFAULT_DATA: HeatCell[] = [
   { day: "31", level: 2 },
 ];
 
-function getLevelClass(level: 0 | 1 | 2 | 3 | 4) {
-  switch (level) {
-    case 4:
-      return "bg-slate-700 text-white border-slate-700";
-    case 3:
-      return "bg-slate-500 text-white border-slate-500";
-    case 2:
-      return "bg-slate-300 text-slate-800 border-slate-300";
-    case 1:
-      return "bg-slate-200 text-slate-700 border-slate-200";
-    case 0:
-    default:
-      return "bg-slate-100 text-slate-400 border-slate-200";
-  }
-}
-
 function isLegacyHeatCellArray(
   value: Props["data"]
 ): value is HeatCell[] {
@@ -117,11 +112,19 @@ function normalizeIntensityToLevel(intensity?: number, value?: number): 0 | 1 | 
   return 0;
 }
 
+function toHeatmapDensity(layoutMode: LayoutMode): Summary2HeatmapDensity {
+  if (layoutMode === "wide") return "export-wide";
+  if (layoutMode === "compact") return "export-compact";
+  if (layoutMode === "side-compact") return "export-side-compact";
+  return "export-full";
+}
+
 export default function ExportSummary2Heatmap({
   title = "일자별 성과 히트맵",
   subtitle = "일 단위 성과 강도 요약",
   data,
   meta,
+  layoutMode = "full",
 }: Props) {
   const resolvedMeta = buildSectionMeta(meta);
 
@@ -169,87 +172,29 @@ export default function ExportSummary2Heatmap({
       .join(" · ") ||
     "일 단위 성과 강도 요약";
 
+  const cells: Summary2HeatmapCell[] = safeDays.map((item, index) => ({
+    key: `${item.dayLabel}-${index}`,
+    label: item.dayLabel,
+    level: normalizeIntensityToLevel(item.intensity, item.value),
+  }));
+
   return (
-    <section className="flex h-full min-h-[320px] flex-col rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-            Summary 2
-          </div>
-          <h3 className="mt-1 text-base font-semibold tracking-tight text-slate-900">
-            {displayTitle}
-          </h3>
-          <p className="mt-1 text-xs text-slate-500">{displaySubtitle}</p>
-        </div>
-
-        <div className="flex items-center gap-2 text-[11px] text-slate-500">
-          <div className="flex items-center gap-1">
-            <span className="inline-block h-3 w-3 rounded border border-slate-200 bg-slate-100" />
-            낮음
-          </div>
-          <div className="flex items-center gap-1">
-            <span className="inline-block h-3 w-3 rounded border border-slate-400 bg-slate-500" />
-            높음
-          </div>
-        </div>
-      </div>
-
-      <div className="flex-1 rounded-[20px] border border-slate-200 bg-slate-50 p-4">
-        <div className="mb-3 grid grid-cols-7 gap-2 text-center text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-          <div>Mon</div>
-          <div>Tue</div>
-          <div>Wed</div>
-          <div>Thu</div>
-          <div>Fri</div>
-          <div>Sat</div>
-          <div>Sun</div>
-        </div>
-
-        <div className="grid grid-cols-7 gap-2">
-          {safeDays.map((item, index) => {
-            const level = normalizeIntensityToLevel(item.intensity, item.value);
-
-            return (
-              <div
-                key={`${item.dayLabel}-${index}`}
-                className={[
-                  "flex aspect-square items-center justify-center rounded-xl border text-xs font-semibold transition",
-                  getLevelClass(level),
-                ].join(" ")}
-              >
-                {item.dayLabel}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="mt-4 grid grid-cols-3 gap-3">
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-          <div className="text-[11px] text-slate-500">최고 성과일</div>
-          <div className="mt-1 text-sm font-semibold text-slate-900">
-            {bestDay?.dayLabel ? `${bestDay.dayLabel}일` : "24일"}
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-          <div className="text-[11px] text-slate-500">안정 구간</div>
-          <div className="mt-1 text-sm font-semibold text-slate-900">
-            {highDays.length > 0
-              ? `${highDays[0]}~${highDays[highDays.length - 1]}일`
-              : "17~26일"}
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-          <div className="text-[11px] text-slate-500">집중 관리 필요</div>
-          <div className="mt-1 text-sm font-semibold text-slate-900">
-            {lowDays.length > 0
-              ? `${lowDays[0]}~${lowDays[lowDays.length - 1]}일`
-              : "6~7일"}
-          </div>
-        </div>
-      </div>
-    </section>
+    <Summary2HeatmapView
+      title={displayTitle}
+      subtitle={displaySubtitle}
+      cells={cells}
+      density={toHeatmapDensity(layoutMode)}
+      summary={{
+        bestDayLabel: bestDay?.dayLabel ? `${bestDay.dayLabel}일` : "24일",
+        stableRangeLabel:
+          highDays.length > 0
+            ? `${highDays[0]}~${highDays[highDays.length - 1]}일`
+            : "17~26일",
+        lowRangeLabel:
+          lowDays.length > 0
+            ? `${lowDays[0]}~${lowDays[lowDays.length - 1]}일`
+            : "6~7일",
+      }}
+    />
   );
 }

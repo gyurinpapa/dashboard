@@ -1,5 +1,9 @@
 "use client";
 
+import SummaryKPICardView, {
+  type SummaryKPICardDensity,
+  type SummaryKPICardTone,
+} from "@/app/components/sections/summary/SummaryKPICardView";
 import type {
   ExportSectionMeta,
   ExportSummaryKPIData,
@@ -70,6 +74,20 @@ function normalizeLegacyItems(items: KPIItem[]): ExportSummaryKPIData["cards"] {
   }));
 }
 
+function toCardDensity(layoutMode: LayoutMode): SummaryKPICardDensity {
+  if (layoutMode === "full") return "export-full";
+  if (layoutMode === "wide") return "export-wide";
+  if (layoutMode === "compact") return "export-compact";
+  return "export-side-compact";
+}
+
+function toSafeTone(tone: unknown): SummaryKPICardTone {
+  if (tone === "cost") return "cost";
+  if (tone === "revenue") return "revenue";
+  if (tone === "roas") return "roas";
+  return "neutral";
+}
+
 export default function ExportSummaryKPI({
   title = "핵심 KPI 요약",
   items,
@@ -87,6 +105,7 @@ export default function ExportSummaryKPI({
 
   const safeCards = (resolvedData.cards ?? []).slice(0, 4);
   const displayTitle = title || "핵심 KPI 요약";
+  const cardDensity = toCardDensity(layoutMode);
 
   const isFull = layoutMode === "full";
   const isWide = layoutMode === "wide";
@@ -140,38 +159,6 @@ export default function ExportSummaryKPI({
     isSideCompact ? "gap-1.5" : isCompact ? "gap-2" : "gap-3",
   ].join(" ");
 
-  const cardClass = [
-    "flex h-full min-h-0 flex-col justify-between rounded-[18px] border border-slate-200 bg-gradient-to-b from-white to-slate-50",
-    isFull
-      ? "px-4 py-3.5"
-      : isWide
-      ? "px-4 py-3"
-      : isCompact
-      ? "px-2.5 py-2"
-      : "px-2 py-1.5",
-  ].join(" ");
-
-  const labelClass = [
-    "truncate font-semibold uppercase tracking-[0.12em] text-slate-500",
-    isSideCompact ? "text-[8px]" : isCompact ? "text-[9px]" : "text-[10px]",
-  ].join(" ");
-
-  const valueClass = [
-    "truncate font-semibold tracking-tight text-slate-900",
-    isFull
-      ? "text-[28px] leading-none"
-      : isWide
-      ? "text-[22px] leading-none"
-      : isCompact
-      ? "text-[16px] leading-tight"
-      : "text-[13px] leading-tight",
-  ].join(" ");
-
-  const subValueClass = [
-    "mt-1 truncate font-medium text-slate-500",
-    isSideCompact ? "text-[8px]" : isCompact ? "text-[9px]" : "text-[11px]",
-  ].join(" ");
-
   return (
     <section className={sectionClass}>
       <div className={headerWrapClass}>
@@ -192,26 +179,14 @@ export default function ExportSummaryKPI({
 
       <div className={gridClass}>
         {safeCards.map((item, index) => (
-          <div
+          <SummaryKPICardView
             key={item.key || `${item.label}-${index}`}
-            className={cardClass}
-          >
-            <div className={labelClass}>{item.label}</div>
-
-            <div className="mt-1.5 flex min-h-0 flex-1 flex-col justify-end overflow-hidden">
-              <div className={valueClass}>{item.value}</div>
-
-              {item.subValue ? (
-                <div className={subValueClass}>{item.subValue}</div>
-              ) : item.changeLabel ? (
-                <div className={subValueClass}>{item.changeLabel}</div>
-              ) : (
-                <div className={subValueClass} style={{ color: "transparent" }}>
-                  .
-                </div>
-              )}
-            </div>
-          </div>
+            title={item.label}
+            value={item.value}
+            subValue={item.subValue ?? item.changeLabel}
+            tone={toSafeTone(item.tone)}
+            density={cardDensity}
+          />
         ))}
       </div>
     </section>

@@ -1,5 +1,8 @@
 "use client";
 
+import SummaryGoalMetricCardView, {
+  type SummaryGoalMetricCardDensity,
+} from "@/app/components/sections/summary/SummaryGoalMetricCardView";
 import type {
   ExportSectionMeta,
   ExportSummaryGoalData,
@@ -16,6 +19,8 @@ type GoalMetric = {
   rate: number; // 0 ~ 100
 };
 
+type LayoutMode = "full" | "wide" | "compact" | "side-compact";
+
 type Props = {
   /**
    * Step 17 이전 호환용
@@ -29,6 +34,12 @@ type Props = {
    */
   meta?: Partial<ExportSectionMeta>;
   data?: Partial<ExportSummaryGoalData>;
+
+  /**
+   * 향후 layout 대응을 위한 안전 확장
+   * 기존 호출부가 없어도 기본값으로 안전 동작
+   */
+  layoutMode?: LayoutMode;
 };
 
 const DEFAULT_METRICS: GoalMetric[] = [
@@ -103,12 +114,20 @@ function normalizeLegacyMetrics(
   }));
 }
 
+function toCardDensity(layoutMode: LayoutMode): SummaryGoalMetricCardDensity {
+  if (layoutMode === "full") return "export-full";
+  if (layoutMode === "wide") return "export-wide";
+  if (layoutMode === "compact") return "export-compact";
+  return "export-side-compact";
+}
+
 export default function ExportSummaryGoal({
   title = "목표 / 달성현황",
   subtitle = "월 목표 대비 현재 실적 요약",
   metrics,
   meta,
   data,
+  layoutMode = "full",
 }: Props) {
   const resolvedMeta = buildSectionMeta(meta);
 
@@ -128,25 +147,70 @@ export default function ExportSummaryGoal({
       .join(" · ") ||
     "월 목표 대비 현재 실적 요약";
 
+  const cardDensity = toCardDensity(layoutMode);
+
+  const sectionClass = [
+    "flex h-full min-h-[240px] flex-col rounded-[24px] border border-slate-200 bg-white shadow-sm",
+    layoutMode === "full"
+      ? "p-5"
+      : layoutMode === "wide"
+      ? "p-4"
+      : layoutMode === "compact"
+      ? "p-3"
+      : "p-2.5",
+  ].join(" ");
+
+  const headerWrapClass = [
+    "flex items-start justify-between gap-3",
+    layoutMode === "side-compact" ? "mb-2" : "mb-4",
+  ].join(" ");
+
+  const eyebrowClass = [
+    "font-semibold uppercase tracking-[0.16em] text-slate-400",
+    layoutMode === "side-compact" ? "text-[9px]" : "text-[11px]",
+  ].join(" ");
+
+  const titleClass = [
+    "mt-1 font-semibold tracking-tight text-slate-900",
+    layoutMode === "full"
+      ? "text-base"
+      : layoutMode === "wide"
+      ? "text-[15px]"
+      : layoutMode === "compact"
+      ? "text-[14px]"
+      : "text-[12px]",
+  ].join(" ");
+
+  const subtitleClass = [
+    "mt-1 text-slate-500",
+    layoutMode === "side-compact" ? "text-[9px]" : "text-xs",
+  ].join(" ");
+
+  const badgeClass = [
+    "rounded-full border border-slate-200 bg-slate-50 font-medium text-slate-500",
+    layoutMode === "side-compact"
+      ? "px-2 py-0.5 text-[9px]"
+      : "px-3 py-1 text-[11px]",
+  ].join(" ");
+
+  const gridClass = [
+    "grid flex-1",
+    layoutMode === "side-compact" ? "gap-2" : "gap-3",
+  ].join(" ");
+
   return (
-    <section className="flex h-full min-h-[240px] flex-col rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="mb-4 flex items-start justify-between gap-3">
+    <section className={sectionClass}>
+      <div className={headerWrapClass}>
         <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-            Summary
-          </div>
-          <h3 className="mt-1 text-base font-semibold tracking-tight text-slate-900">
-            {displayTitle}
-          </h3>
-          <p className="mt-1 text-xs text-slate-500">{displaySubtitle}</p>
+          <div className={eyebrowClass}>Summary</div>
+          <h3 className={titleClass}>{displayTitle}</h3>
+          <p className={subtitleClass}>{displaySubtitle}</p>
         </div>
 
-        <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-500">
-          Goal
-        </div>
+        <div className={badgeClass}>Goal</div>
       </div>
 
-      <div className="grid flex-1 gap-3">
+      <div className={gridClass}>
         {safeGoals.map((goal, index) => {
           const rate = clampRate(
             normalizeProgressToPercent(goal.progress, goal.actual, goal.goal)
@@ -158,48 +222,14 @@ export default function ExportSummaryGoal({
             goal.actualLabel || formatFallbackValue(goal.actual, goal.unit);
 
           return (
-            <div
+            <SummaryGoalMetricCardView
               key={goal.key || `${goal.label}-${index}`}
-              className="rounded-[20px] border border-slate-200 bg-slate-50 p-4"
-            >
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div className="text-sm font-semibold text-slate-900">
-                  {goal.label}
-                </div>
-                <div className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">
-                  {Math.round(rate)}%
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3">
-                  <div className="text-[11px] text-slate-500">목표</div>
-                  <div className="mt-1 text-sm font-semibold text-slate-900">
-                    {displayGoal}
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3">
-                  <div className="text-[11px] text-slate-500">실적</div>
-                  <div className="mt-1 text-sm font-semibold text-slate-900">
-                    {displayActual}
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-3">
-                <div className="mb-1 flex items-center justify-between text-[11px] text-slate-500">
-                  <span>달성률</span>
-                  <span>{Math.round(rate)}%</span>
-                </div>
-                <div className="h-3 overflow-hidden rounded-full bg-slate-200">
-                  <div
-                    className="h-full rounded-full bg-slate-500 transition-none"
-                    style={{ width: `${rate}%` }}
-                  />
-                </div>
-              </div>
-            </div>
+              label={goal.label}
+              goalLabel={displayGoal}
+              actualLabel={displayActual}
+              rate={rate}
+              density={cardDensity}
+            />
           );
         })}
       </div>

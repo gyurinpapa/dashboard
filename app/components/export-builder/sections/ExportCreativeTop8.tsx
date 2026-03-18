@@ -1,5 +1,9 @@
 "use client";
 
+import CreativeTopCardGridView, {
+  type CreativeTopCardGridDensity,
+  type CreativeTopCardItem,
+} from "@/app/components/sections/summary/CreativeTopCardGridView";
 import type {
   ExportCreativeTop8Data,
   ExportSectionMeta,
@@ -17,6 +21,8 @@ type CreativeCard = {
   roas: string;
 };
 
+type LayoutMode = "full" | "wide" | "compact" | "side-compact";
+
 type Props = {
   /**
    * Step 17 이전 호환용
@@ -30,6 +36,11 @@ type Props = {
    */
   meta?: Partial<ExportSectionMeta>;
   data?: Partial<ExportCreativeTop8Data>;
+
+  /**
+   * 안전한 density 확장
+   */
+  layoutMode?: LayoutMode;
 };
 
 const DEFAULT_ITEMS: CreativeCard[] = [
@@ -81,12 +92,20 @@ function getLegacyChannel(items: CreativeCard[] | undefined, index: number) {
   return items[index]?.channel || "";
 }
 
+function toGridDensity(layoutMode: LayoutMode): CreativeTopCardGridDensity {
+  if (layoutMode === "wide") return "export-wide";
+  if (layoutMode === "compact") return "export-compact";
+  if (layoutMode === "side-compact") return "export-side-compact";
+  return "export-full";
+}
+
 export default function ExportCreativeTop8({
   title = "소재 TOP8",
   subtitle = "성과 상위 소재 요약",
   items,
   meta,
   data,
+  layoutMode = "full",
 }: Props) {
   const resolvedMeta = buildSectionMeta(meta);
 
@@ -113,108 +132,29 @@ export default function ExportCreativeTop8({
       .join(" · ") ||
     "성과 상위 소재 요약";
 
+  const cardItems: CreativeTopCardItem[] = safeRows.map((item, index) => ({
+    key: `${item.name}-${index}`,
+    rank: item.rank || index + 1,
+    name: item.name,
+    channel: getLegacyChannel(items, index) || "-",
+    imageUrl: item.imageUrl || null,
+    cost: formatCurrency(item.cost),
+    revenue: formatCurrency(item.revenue),
+    roas: formatPercent(item.roas),
+  }));
+
   return (
-    <section className="flex h-full min-h-[360px] flex-col rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-            Creative
-          </div>
-          <h3 className="mt-1 text-base font-semibold tracking-tight text-slate-900">
-            {displayTitle}
-          </h3>
-          <p className="mt-1 text-xs text-slate-500">{displaySubtitle}</p>
-        </div>
-
-        <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-500">
-          Top 8
-        </div>
-      </div>
-
-      <div className="grid flex-1 grid-cols-1 gap-3 xl:grid-cols-2">
-        {safeRows.map((item, index) => {
-          const legacyChannel = getLegacyChannel(items, index);
-
-          return (
-            <div
-              key={`${item.name}-${index}`}
-              className="flex min-h-[120px] gap-4 rounded-[20px] border border-slate-200 bg-slate-50 p-4"
-            >
-              <div className="flex h-[88px] w-[88px] shrink-0 items-center justify-center overflow-hidden rounded-[18px] border border-slate-200 bg-white text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                {item.imageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={item.imageUrl}
-                    alt={item.name}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  "IMG"
-                )}
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-semibold text-slate-900">
-                      {item.name}
-                    </div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      {legacyChannel || "-"}
-                    </div>
-                  </div>
-
-                  <div className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-semibold text-slate-600">
-                    #{item.rank || index + 1}
-                  </div>
-                </div>
-
-                <div className="mt-3 grid grid-cols-3 gap-2">
-                  <div className="rounded-xl border border-slate-200 bg-white px-2.5 py-2">
-                    <div className="text-[10px] text-slate-500">광고비</div>
-                    <div className="mt-1 truncate text-xs font-semibold text-slate-900">
-                      {formatCurrency(item.cost)}
-                    </div>
-                  </div>
-                  <div className="rounded-xl border border-slate-200 bg-white px-2.5 py-2">
-                    <div className="text-[10px] text-slate-500">매출</div>
-                    <div className="mt-1 truncate text-xs font-semibold text-slate-900">
-                      {formatCurrency(item.revenue)}
-                    </div>
-                  </div>
-                  <div className="rounded-xl border border-slate-200 bg-white px-2.5 py-2">
-                    <div className="text-[10px] text-slate-500">ROAS</div>
-                    <div className="mt-1 truncate text-xs font-semibold text-slate-900">
-                      {formatPercent(item.roas)}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="mt-4 grid grid-cols-3 gap-3">
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-          <div className="text-[11px] text-slate-500">상위 소재 광고비</div>
-          <div className="mt-1 text-sm font-semibold text-slate-900">
-            {totalCost > 0 ? formatCurrency(totalCost) : "₩5.08M"}
-          </div>
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-          <div className="text-[11px] text-slate-500">상위 소재 매출</div>
-          <div className="mt-1 text-sm font-semibold text-slate-900">
-            {totalRevenue > 0 ? formatCurrency(totalRevenue) : "₩16.57M"}
-          </div>
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-          <div className="text-[11px] text-slate-500">평균 ROAS</div>
-          <div className="mt-1 text-sm font-semibold text-slate-900">
-            {Number.isFinite(Number(avgRoas)) ? formatPercent(Number(avgRoas)) : "326%"}
-          </div>
-        </div>
-      </div>
-    </section>
+    <CreativeTopCardGridView
+      title={displayTitle}
+      subtitle={displaySubtitle}
+      items={cardItems}
+      density={toGridDensity(layoutMode)}
+      summary={{
+        totalCostLabel: totalCost > 0 ? formatCurrency(totalCost) : "₩5.08M",
+        totalRevenueLabel: totalRevenue > 0 ? formatCurrency(totalRevenue) : "₩16.57M",
+        avgRoasLabel:
+          Number.isFinite(Number(avgRoas)) ? formatPercent(Number(avgRoas)) : "326%",
+      }}
+    />
   );
 }
