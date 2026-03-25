@@ -222,6 +222,27 @@ function toInputDate(v?: string | null) {
   return String(v).slice(0, 10);
 }
 
+function getStringOptionValue(
+  item: unknown,
+  candidateKeys: string[]
+): string | null {
+  if (typeof item === "string") {
+    const v = item.trim();
+    return v || null;
+  }
+
+  if (!item || typeof item !== "object") return null;
+
+  for (const key of candidateKeys) {
+    const value = (item as Record<string, unknown>)[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return null;
+}
+
 export default function ExportBuilderClient({
   initialInput,
   meta,
@@ -298,25 +319,52 @@ export default function ExportBuilderClient({
   useEffect(() => {
     const monthValid =
       sourceFilters.selectedMonth === "all" ||
-      optionState.monthOptions.some(
-        (item) => item.monthKey === sourceFilters.selectedMonth
-      );
+      optionState.monthOptions.some((item) => {
+        const value = getStringOptionValue(item, [
+          "monthKey",
+          "value",
+          "key",
+          "label",
+        ]);
+        return value === sourceFilters.selectedMonth;
+      });
 
     const deviceValid =
       sourceFilters.selectedDevice === "all" ||
-      optionState.deviceOptions.some(
-        (item) => item.value === sourceFilters.selectedDevice
-      );
+      optionState.deviceOptions.some((item) => {
+        const value = getStringOptionValue(item, [
+          "value",
+          "deviceKey",
+          "key",
+          "label",
+        ]);
+        return value === sourceFilters.selectedDevice;
+      });
 
     const channelValid =
       sourceFilters.selectedChannel === "all" ||
-      optionState.channelOptions.some(
-        (item) => item.value === sourceFilters.selectedChannel
-      );
+      optionState.channelOptions.some((item) => {
+        const value = getStringOptionValue(item, [
+          "value",
+          "channelKey",
+          "sourceKey",
+          "key",
+          "label",
+        ]);
+        return value === sourceFilters.selectedChannel;
+      });
 
     const weekValid =
       sourceFilters.selectedWeek === "all" ||
-      weekOptions.some((item) => item.weekKey === sourceFilters.selectedWeek);
+      weekOptions.some((item) => {
+        const value = getStringOptionValue(item, [
+          "weekKey",
+          "value",
+          "key",
+          "label",
+        ]);
+        return value === sourceFilters.selectedWeek;
+      });
 
     if (monthValid && deviceValid && channelValid && weekValid) return;
 

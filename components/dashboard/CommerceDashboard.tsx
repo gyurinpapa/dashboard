@@ -13,6 +13,9 @@ import type {
   WeekKey,
 } from "../../src/lib/report/types";
 
+import type { ReportPeriod } from "../../src/lib/report/period";
+import { resolvePresetPeriod } from "../../src/lib/report/period";
+
 import { groupByKeyword } from "../../src/lib/report/keyword";
 
 import { useLocalStorageState } from "../../src/useLocalStorageState";
@@ -50,10 +53,9 @@ type DashboardInit = {
   period?: { from?: string; to?: string };
 };
 
-// ✅ rows 단계 필터 옵션
 type RowOptions = {
-  from?: string; // e.g. "2026-02-01" or "2026. 02. 01."
-  to?: string; // e.g. "2026-02-29" or "2026. 02. 29."
+  from?: string;
+  to?: string;
   channels?: ("search" | "display")[];
 };
 
@@ -61,21 +63,12 @@ type Props = {
   dataUrl?: string;
   init?: DashboardInit;
   rowOptions?: RowOptions;
-
-  /**
-   * ✅ NEW: DB(metrics_daily) 등에서 만든 "Row 배열"을 주입하는 통로
-   * - 값이 있으면 CSV rows 대신 이것을 우선 사용
-   */
   rowsOverride?: any[];
 };
 
-/** =========================
- * RowOptions filtering (safe, dashboard-level guarantee)
- * ========================= */
-
 function toDateOrNull(v?: string) {
   if (!v) return null;
-  const d = parseDateLoose(v); // ✅ 점(.) 포맷까지 안전 처리
+  const d = parseDateLoose(v);
   return d && Number.isFinite(d.getTime()) ? d : null;
 }
 
@@ -91,7 +84,6 @@ function endOfDay(d: Date) {
   return x;
 }
 
-// row에서 날짜 필드 후보들을 최대한 안전하게 탐색
 function getRowDate(row: any): Date | null {
   const candidates = [
     row?.date,
@@ -106,7 +98,6 @@ function getRowDate(row: any): Date | null {
   for (const c of candidates) {
     if (!c) continue;
 
-    // Date 객체면 그대로 사용
     if (c instanceof Date && Number.isFinite(c.getTime())) return c;
 
     const d = parseDateLoose(String(c));
@@ -115,9 +106,7 @@ function getRowDate(row: any): Date | null {
   return null;
 }
 
-// row에서 채널 그룹(search/display) 필드 후보 탐색
 function getRowChannelGroup(row: any): "search" | "display" | null {
-  // ✅ 가장 가능성 높은 후보들
   const direct =
     row?.channelGroup ??
     row?.channel_group ??
@@ -130,7 +119,6 @@ function getRowChannelGroup(row: any): "search" | "display" | null {
 
   if (direct === "search" || direct === "display") return direct;
 
-  // ✅ 혹시 문자열에 힌트가 들어있는 경우(너무 공격적이지 않게)
   const maybe = String(
     row?.channel ??
       row?.source ??
@@ -142,17 +130,15 @@ function getRowChannelGroup(row: any): "search" | "display" | null {
 
   if (!maybe) return null;
 
-  // search 힌트
   if (
     maybe.includes("search") ||
-    maybe.includes("sa") || // naver sa 같은 케이스
+    maybe.includes("sa") ||
     maybe.includes("powerlink") ||
     maybe.includes("shopping")
   ) {
     return "search";
   }
 
-  // display 힌트
   if (
     maybe.includes("display") ||
     maybe.includes("gdn") ||
@@ -184,22 +170,17 @@ function applyRowOptions<T extends any>(rows: T[], options?: RowOptions) {
   const toD = toDateOrNull(options.to);
   const channels = options.channels?.length ? options.channels : null;
 
-  // 옵션이 사실상 비어있으면 그대로 반환
   if (!fromD && !toD && !channels) return rows;
 
   return rows.filter((row: any) => {
-    // 기간 필터
     if (fromD || toD) {
       const d = getRowDate(row);
-      // 날짜 필드가 없으면 "기간필터 적용 불가" → 안전하게 제외(=필터 의도에 맞춤)
       if (!d) return false;
       if (!isWithinRangeInclusive(d, fromD, toD)) return false;
     }
 
-    // 채널 그룹 필터(search/display)
     if (channels) {
       const g = getRowChannelGroup(row);
-      // 채널 구분이 불가능하면 안전하게 제외
       if (!g) return false;
       if (!channels.includes(g)) return false;
     }
@@ -212,15 +193,13 @@ export default function CommerceDashboard({
   dataUrl = "/data/TEST_ver1.csv",
   init,
   rowOptions,
-  rowsOverride, // ✅ NEW
+  rowsOverride,
 }: Props) {
-  // ✅ rowOptions 우선, 없으면 init.period fallback
   const effectiveRowOptions: RowOptions | undefined = useMemo(() => {
     const from = rowOptions?.from ?? init?.period?.from;
     const to = rowOptions?.to ?? init?.period?.to;
     const channels = rowOptions?.channels;
 
-    // 모두 없으면 undefined로 (불필요한 리렌더/필터 방지)
     if (!from && !to && (!channels || channels.length === 0)) return undefined;
 
     return { from, to, channels };
@@ -232,25 +211,21 @@ export default function CommerceDashboard({
     init?.period?.to,
   ]);
 
-  // ✅ CSV rows도 로드(테스트/백업). 실제 운영은 rowsOverride로 주입
   const { rows: csvRows, isLoading } = useReportRows(dataUrl, {
     from: effectiveRowOptions?.from,
     to: effectiveRowOptions?.to,
     channels: effectiveRowOptions?.channels,
   });
 
-  // ✅ rows source 선택: rowsOverride가 있으면 우선 사용
   const baseRows = useMemo(() => {
     if (rowsOverride && rowsOverride.length > 0) return rowsOverride;
     return csvRows;
   }, [rowsOverride, csvRows]);
 
-  // ✅ Dashboard 레벨에서 필터 보장
   const rowsByRowOptions = useMemo(() => {
     return applyRowOptions(baseRows as any[], effectiveRowOptions);
   }, [baseRows, effectiveRowOptions]);
 
-  // ===== state =====
   const [tab, setTab] = useState<TabKey>(init?.tab ?? "summary");
 
   const [filterKey, setFilterKey] = useState<FilterKey>(null);
@@ -270,6 +245,10 @@ export default function CommerceDashboard({
   const [monthGoal, setMonthGoal] = useLocalStorageState<GoalState>(
     MONTH_GOAL_KEY,
     DEFAULT_GOAL
+  );
+
+  const [reportPeriod, setReportPeriod] = useState<ReportPeriod>(() =>
+    resolvePresetPeriod()
   );
 
   const {
@@ -324,7 +303,6 @@ export default function CommerceDashboard({
     currentMonthGoalComputed,
   });
 
-  // Keyword 탭 데이터
   const keywordBaseRows = useMemo(() => filteredRows, [filteredRows]);
   const keywordAgg = useMemo(
     () => groupByKeyword(keywordBaseRows as any[]),
@@ -340,7 +318,6 @@ export default function CommerceDashboard({
     });
   }, [keywordAgg, keywordBaseRows, currentMonthActual, currentMonthGoalComputed]);
 
-  // Creative 탭 데이터
   const creativeBaseRows = useMemo(() => filteredRows, [filteredRows]);
   const creativeInsight = useMemo(() => "", []);
 
@@ -367,6 +344,8 @@ export default function CommerceDashboard({
         enabledWeekKeySet={enabledWeekKeySet}
         fullPeriod={period}
         period={period}
+        reportPeriod={reportPeriod}
+        onChangeReportPeriod={setReportPeriod}
       />
 
       <div className="px-8 pt-10 pb-8">
@@ -382,7 +361,6 @@ export default function CommerceDashboard({
                 monthGoalInsight={monthGoalInsight}
               />
 
-              {/* Summary */}
               {(() => {
                 const currentMonthKey = (totals as any)?.currentMonthKey ?? null;
                 const currentMonthActual = (totals as any)?.currentMonthActual ?? totals;
@@ -445,9 +423,7 @@ export default function CommerceDashboard({
             <KeywordDetailSection rows={filteredRows as any[]} />
           )}
 
-          {tab === "creative" && (
-            <CreativeSection rows={creativeBaseRows} />
-          )}
+          {tab === "creative" && <CreativeSection rows={creativeBaseRows} />}
 
           {tab === "creativeDetail" && (
             <CreativeDetailSection rows={filteredRows as any[]} />

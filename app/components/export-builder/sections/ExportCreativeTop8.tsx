@@ -154,20 +154,6 @@ function getVisibleItemCount(layoutMode: LayoutMode) {
   return 2;
 }
 
-function getBestCreativeLabel(
-  rows: Array<{ name?: string; revenue?: number; roas?: number }>
-) {
-  if (!rows.length) return "-";
-
-  const sorted = [...rows].sort((a, b) => {
-    const revenueDiff = Number(b.revenue || 0) - Number(a.revenue || 0);
-    if (revenueDiff !== 0) return revenueDiff;
-    return Number(b.roas || 0) - Number(a.roas || 0);
-  });
-
-  return sorted[0]?.name || "-";
-}
-
 export default function ExportCreativeTop8({
   title,
   subtitle,
@@ -221,8 +207,6 @@ export default function ExportCreativeTop8({
     roas: formatPercent(item.roas),
   }));
 
-  const bestCreativeLabel = getBestCreativeLabel(safeRows);
-
   return (
     <CreativeTopCardGridView
       title={displayTitle}
@@ -234,7 +218,6 @@ export default function ExportCreativeTop8({
         totalRevenueLabel: totalRevenue > 0 ? formatCurrency(totalRevenue) : "-",
         avgRoasLabel:
           Number.isFinite(Number(avgRoas)) ? formatPercent(Number(avgRoas)) : "-",
-        bestCreativeLabel,
       }}
     />
   );

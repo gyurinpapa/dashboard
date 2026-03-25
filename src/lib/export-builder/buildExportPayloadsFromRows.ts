@@ -21,7 +21,9 @@ function toNumber(v: any) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function pickString(row: AnyRow, keys: string[]) {
+function pickString(row: AnyRow | undefined, keys: string[]) {
+  if (!row) return "";
+
   for (const key of keys) {
     const value = row?.[key];
     if (value != null && String(value).trim() !== "") {
@@ -95,9 +97,7 @@ function normalizeDateValue(value: any) {
 }
 
 function getDateKey(row: AnyRow) {
-  return normalizeDateValue(
-    pickString(row, ["date", "report_date", "day"])
-  );
+  return normalizeDateValue(pickString(row, ["date", "report_date", "day"]));
 }
 
 function getDateLabel(dateKey: string) {
@@ -135,16 +135,17 @@ function getMonthLabel(monthKey: string) {
   return `${yyyy}.${mm}`;
 }
 
-function getWeekLabel(row: AnyRow) {
-  return pickString(row, [
-    "weekLabel",
-    "week_label",
-    "label",
-  ]);
+function getWeekLabel(row?: AnyRow) {
+  return pickString(row, ["weekLabel", "week_label", "label"]);
 }
 
 function getWeekKey(row: AnyRow) {
-  const explicit = pickString(row, ["weekKey", "week_key", "weekStart", "week_start"]);
+  const explicit = pickString(row, [
+    "weekKey",
+    "week_key",
+    "weekStart",
+    "week_start",
+  ]);
   if (explicit) return explicit;
 
   const dateKey = getDateKey(row);
@@ -153,7 +154,7 @@ function getWeekKey(row: AnyRow) {
   const date = new Date(`${dateKey}T00:00:00`);
   if (Number.isNaN(date.getTime())) return "";
 
-  const day = date.getDay(); // 0 Sunday
+  const day = date.getDay();
   const diffToMonday = day === 0 ? -6 : 1 - day;
 
   const monday = new Date(date);
@@ -334,7 +335,10 @@ function buildWeekRows(rows: AnyRow[]) {
   return weekKeys
     .slice(-5)
     .map((weekKey) =>
-      toMetricRow(buildWeekDisplayLabel(weekKey, grouped[weekKey]?.[0]), grouped[weekKey])
+      toMetricRow(
+        buildWeekDisplayLabel(weekKey, grouped[weekKey]?.[0]),
+        grouped[weekKey]
+      )
     );
 }
 

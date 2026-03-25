@@ -17,6 +17,12 @@ type ReportRow = {
   title: string;
   status: "draft" | "ready" | "archived";
 
+  created_at?: string | null;
+
+  advertiser_id?: string | null;
+  advertiser_name?: string | null;
+  share_token?: string | null;
+
   period_start?: string | null;
   period_end?: string | null;
   period_preset?: string | null;
@@ -106,7 +112,7 @@ function isArchivedReport(r: ReportRow) {
   return norm(r.status) === "archived";
 }
 
-function fmtDate(iso?: string) {
+function fmtDate(iso?: string | null) {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return String(iso);
@@ -1368,7 +1374,7 @@ export default function ReportBuilderPage() {
                                     </span>
                                   </div>
                                   <div style={{ fontSize: 13, opacity: 0.6 }}>
-                                    {fmtDate(r.created_at)}
+                                    {fmtDate(r.created_at ?? null)}
                                   </div>
                                 </button>
                               </div>

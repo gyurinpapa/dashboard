@@ -14,6 +14,12 @@ import type {
   WeekKey,
 } from "../src/lib/report/types";
 
+import type { ReportPeriod } from "../src/lib/report/period";
+import {
+  getRowsDateRange,
+  resolvePresetPeriod,
+} from "../src/lib/report/period";
+
 import { groupByKeyword } from "../src/lib/report/keyword";
 
 import { useLocalStorageState } from "../src/useLocalStorageState";
@@ -55,25 +61,18 @@ function extractShareTokenFromText(input: string) {
   const raw = String(input ?? "").trim();
   if (!raw) return "";
 
-  // 1) 혹시 전체 URL이 들어오는 경우 ( /share/{token} or /api/share/{token} )
-  //    - querystring 제거 후 경로에서 token 추출
   const noHash = raw.split("#")[0];
   const noQs = noHash.split("?")[0];
 
-  // /share/<token>
   const m1 = noQs.match(/\/share\/([^\/\s]+)\s*$/i);
   if (m1?.[1]) return safeDecodeURIComponent(m1[1]).trim();
 
-  // /api/share/<token>
   const m2 = noQs.match(/\/api\/share\/([^\/\s]+)\s*$/i);
   if (m2?.[1]) return safeDecodeURIComponent(m2[1]).trim();
 
-  // 2) token=... 형태로 들어오는 경우
   const m3 = raw.match(/[?&]token=([^&\s#]+)/i);
   if (m3?.[1]) return safeDecodeURIComponent(m3[1]).trim();
 
-  // 3) 그냥 token만 들어오는 경우
-  //    - 공백/따옴표 제거
   return raw.replace(/^["'\s]+|["'\s]+$/g, "").trim();
 }
 
@@ -100,10 +99,8 @@ function setLastShareToken(token: string) {
 export default function Page() {
   const router = useRouter();
 
-  // ✅ CSV rows 로딩 (나중에 DB로 교체 가능)
   const { rows, isLoading } = useReportRows("/data/TEST_ver1.csv");
 
-  // ===== state =====
   const [tab, setTab] = useState<TabKey>("summary");
 
   const [filterKey, setFilterKey] = useState<FilterKey>(null);
@@ -117,14 +114,35 @@ export default function Page() {
     DEFAULT_GOAL
   );
 
-  // ============================
-  // ✅ 홈: 공유 링크 입력 UI 상태
-  // ============================
+  /**
+   * HeaderBar 최신 Props 호환용
+   * - 현재 홈 화면의 기존 로직은 유지
+   * - 빌드 안전성을 위해 reportPeriod 상태만 최소 연결
+   * - 이 페이지에서 실제 rows 기반 기본 기간만 한번 세팅
+   */
+  const [reportPeriod, setReportPeriod] = useState<ReportPeriod>(() =>
+    resolvePresetPeriod()
+  );
+
+  useEffect(() => {
+    const range = getRowsDateRange(rows as any[]);
+    if (!range?.startDate || !range?.endDate) return;
+
+    setReportPeriod((prev) => {
+      if (prev?.startDate && prev?.endDate) return prev;
+
+      return {
+        preset: "custom",
+        startDate: range.startDate,
+        endDate: range.endDate,
+      };
+    });
+  }, [rows]);
+
   const [shareInput, setShareInput] = useState("");
   const [lastShareToken, setLastShareTokenState] = useState("");
 
   useEffect(() => {
-    // 최초 로드 시 최근 토큰 로드
     setLastShareTokenState(getLastShareToken());
   }, []);
 
@@ -138,22 +156,14 @@ export default function Page() {
     router.push(`/share/${encodeURIComponent(t)}`);
   };
 
-  // ============================
-  // ✅ Keyword 탭에서는 "display" 채널 선택을 막는다 (상태 가드)
-  // - UI(회색/disabled)는 HeaderBar에서 처리
-  // - 여기서는 "선택되어버리는 상황" 자체를 방지/자동해제
-  // ============================
   useEffect(() => {
     if (tab !== "keyword") return;
 
-    // ChannelKey가 "all" | "search" | "display" 구조라고 가정
-    // 키워드 탭에서는 display 단독 선택을 허용하지 않음
     if (selectedChannel === ("display" as ChannelKey)) {
       setSelectedChannel("search" as ChannelKey);
     }
   }, [tab, selectedChannel, setSelectedChannel]);
 
-  // ✅ 집계/옵션/기간/그룹핑은 전부 훅에서
   const {
     monthOptions,
     weekOptions,
@@ -206,9 +216,6 @@ export default function Page() {
     currentMonthGoalComputed,
   });
 
-  // ============================
-  // ✅ Keyword 탭 데이터 (좌측 필터만 적용)
-  // ============================
   const keywordBaseRows = useMemo(() => filteredRows, [filteredRows]);
 
   const keywordAgg = useMemo(
@@ -225,15 +232,11 @@ export default function Page() {
     });
   }, [keywordAgg, keywordBaseRows, currentMonthActual, currentMonthGoalComputed]);
 
-  // ============================
-  // ✅ Creative 탭 데이터
-  // ============================
   const creativeBaseRows = useMemo(() => filteredRows, [filteredRows]);
   const creativeInsight = useMemo(() => "", []);
 
   return (
     <main className="min-h-screen">
-      {/* ✅ 홈: 공유 링크 입력 (기존 구조/기능에 영향 최소) */}
       <div className="px-8 pt-6">
         <div
           className="mx-auto w-full max-w-[1400px]"
@@ -253,7 +256,6 @@ export default function Page() {
               value={shareInput}
               onChange={(e) => setShareInput(e.target.value)}
               onPaste={(e) => {
-                // 붙여넣기 즉시 token 추출해서 입력칸을 깔끔하게 정리
                 const text = e.clipboardData?.getData("text") ?? "";
                 const t = extractShareTokenFromText(text);
                 if (t) {
@@ -334,7 +336,10 @@ export default function Page() {
           <div style={{ marginTop: 6, fontSize: 12, color: "#666" }}>
             {lastShareToken ? (
               <>
-                최근 토큰: <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>{lastShareToken}</span>
+                최근 토큰:{" "}
+                <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+                  {lastShareToken}
+                </span>
               </>
             ) : (
               <>최근 토큰: 없음</>
@@ -343,7 +348,7 @@ export default function Page() {
         </div>
       </div>
 
-        <HeaderBar
+      <HeaderBar
         tab={tab}
         setTab={setTab}
         filterKey={filterKey}
@@ -364,6 +369,8 @@ export default function Page() {
         enabledWeekKeySet={enabledWeekKeySet}
         fullPeriod={period}
         period={period}
+        reportPeriod={reportPeriod}
+        onChangeReportPeriod={setReportPeriod}
       />
 
       <div className="px-8 pt-10 pb-8">
@@ -379,13 +386,11 @@ export default function Page() {
                 monthGoalInsight={monthGoalInsight}
               />
 
-              {/* Summary */}
               {(() => {
                 const currentMonthKey = (totals as any)?.currentMonthKey ?? null;
                 const currentMonthActual =
                   (totals as any)?.currentMonthActual ?? totals;
 
-                // page.tsx는 totals가 typed object일 가능성이 높아서 monthGoal은 없을 수 있음 → null로 안전 처리
                 const monthGoal = (totals as any)?.monthGoal ?? null;
 
                 const currentMonthGoalComputed =

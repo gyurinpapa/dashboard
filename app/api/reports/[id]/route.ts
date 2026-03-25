@@ -15,6 +15,11 @@ function jsonError(status: number, message: string, extra?: any) {
   return NextResponse.json({ ok: false, error: message, ...extra }, { status });
 }
 
+function getWorkspaceIdFromReport(report: any): string | undefined {
+  if (!report || typeof report !== "object") return undefined;
+  return asString((report as any).workspace_id);
+}
+
 async function getUserFromSbAuth() {
   const auth = await sbAuth();
   const user = (auth as any)?.user ?? null;
@@ -71,10 +76,15 @@ export async function GET(_req: Request, ctx: Ctx) {
     if (rErr) return jsonError(400, rErr.message);
     if (!report) return jsonError(404, "Report not found");
 
+    const workspaceId = getWorkspaceIdFromReport(report);
+    if (!workspaceId) {
+      return jsonError(500, "Report workspace_id is missing");
+    }
+
     const { data: wm, error: wmErr } = await supabaseAdmin
       .from("workspace_members")
       .select("workspace_id, role")
-      .eq("workspace_id", report.workspace_id)
+      .eq("workspace_id", workspaceId)
       .eq("user_id", user.id)
       .maybeSingle();
 
@@ -112,10 +122,15 @@ export async function PATCH(req: Request, ctx: Ctx) {
     if (rErr) return jsonError(400, rErr.message);
     if (!report) return jsonError(404, "Report not found");
 
+    const workspaceId = getWorkspaceIdFromReport(report);
+    if (!workspaceId) {
+      return jsonError(500, "Report workspace_id is missing");
+    }
+
     const { data: wm, error: wmErr } = await supabaseAdmin
       .from("workspace_members")
       .select("workspace_id, role")
-      .eq("workspace_id", report.workspace_id)
+      .eq("workspace_id", workspaceId)
       .eq("user_id", user.id)
       .maybeSingle();
 

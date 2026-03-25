@@ -101,20 +101,6 @@ function getVisibleRowCount(layoutMode: LayoutMode) {
   return 4;
 }
 
-function getBestKeywordLabel(
-  rows: Array<{ keyword?: string; revenue?: number; roas?: number }>
-) {
-  if (!rows.length) return "-";
-
-  const sorted = [...rows].sort((a, b) => {
-    const revenueDiff = Number(b.revenue || 0) - Number(a.revenue || 0);
-    if (revenueDiff !== 0) return revenueDiff;
-    return Number(b.roas || 0) - Number(a.roas || 0);
-  });
-
-  return sorted[0]?.keyword || "-";
-}
-
 export default function ExportKeywordTop10({
   title,
   subtitle,
@@ -166,8 +152,6 @@ export default function ExportKeywordTop10({
     roas: formatPercent(row.roas),
   }));
 
-  const bestKeywordLabel = getBestKeywordLabel(safeRows);
-
   return (
     <KeywordTopTableView
       title={displayTitle}
@@ -179,7 +163,6 @@ export default function ExportKeywordTop10({
         totalRevenueLabel: totalRevenue > 0 ? formatCurrency(totalRevenue) : "-",
         avgRoasLabel:
           Number.isFinite(Number(avgRoas)) ? formatPercent(Number(avgRoas)) : "-",
-        bestKeywordLabel,
       }}
     />
   );
