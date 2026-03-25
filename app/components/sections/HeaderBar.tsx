@@ -132,21 +132,17 @@ function HeaderIntro({
     const adv = cleanText(advertiserName);
     const typeName = cleanText(reportTypeName);
 
-    if (adv && typeName) return `${adv} ${typeName}`;
-    if (adv) return `${adv} 온라인광고`;
+    if (adv) return `${adv} 광고 리포트`;
     if (typeName) return typeName;
     return "온라인광고";
   }, [advertiserName, reportTypeName]);
 
   const headerSubTitle = useMemo(() => {
-    const adv = cleanText(advertiserName);
     const typeName = cleanText(reportTypeName);
 
-    if (adv && typeName) return "광고 성과 리포트";
-    if (adv) return "광고 성과 리포트";
-    if (typeName) return "리포트";
+    if (typeName) return typeName;
     return "광고 성과 리포트";
-  }, [advertiserName, reportTypeName]);
+  }, [reportTypeName]);
 
   return (
     <div className="mb-6 rounded-3xl border border-slate-200/80 bg-white px-6 py-6 shadow-sm">

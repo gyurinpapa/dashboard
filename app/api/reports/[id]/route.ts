@@ -27,6 +27,55 @@ async function getUserFromSbAuth() {
   return { user, authErr };
 }
 
+async function enrichReportWithAdvertiserName(report: any) {
+  if (!report || typeof report !== "object") return report;
+
+  const meta =
+    report?.meta && typeof report.meta === "object" ? report.meta : {};
+
+  const existingAdvertiserName =
+    asString(report?.advertiser_name) ||
+    asString(report?.advertiserName) ||
+    asString(report?.advertiser) ||
+    asString(meta?.advertiser_name) ||
+    asString(meta?.advertiserName) ||
+    asString(meta?.advertiser);
+
+  if (existingAdvertiserName) {
+    return {
+      ...report,
+      advertiser_name: existingAdvertiserName,
+      advertiserName: existingAdvertiserName,
+    };
+  }
+
+  const advertiserId = asString(report?.advertiser_id);
+  if (!advertiserId) {
+    return report;
+  }
+
+  const { data: advertiser, error: advErr } = await supabaseAdmin
+    .from("advertisers")
+    .select("id, name")
+    .eq("id", advertiserId)
+    .maybeSingle();
+
+  if (advErr) {
+    return report;
+  }
+
+  const advertiserName = asString(advertiser?.name);
+  if (!advertiserName) {
+    return report;
+  }
+
+  return {
+    ...report,
+    advertiser_name: advertiserName,
+    advertiserName: advertiserName,
+  };
+}
+
 export async function GET(_req: Request, ctx: Ctx) {
   try {
     const { id: idRaw } = await ctx.params;
@@ -47,6 +96,7 @@ export async function GET(_req: Request, ctx: Ctx) {
         [
           "id",
           "workspace_id",
+          "advertiser_id",
           "report_type_id",
           "title",
           "status",
@@ -93,7 +143,9 @@ export async function GET(_req: Request, ctx: Ctx) {
       return jsonError(403, "Forbidden: you are not a member of this workspace");
     }
 
-    return NextResponse.json({ ok: true, report });
+    const enrichedReport = await enrichReportWithAdvertiserName(report);
+
+    return NextResponse.json({ ok: true, report: enrichedReport });
   } catch (e: any) {
     return jsonError(500, e?.message ?? String(e));
   }
@@ -115,7 +167,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
 
     const { data: report, error: rErr } = await supabaseAdmin
       .from("reports")
-      .select("id, workspace_id, created_by")
+      .select("id, workspace_id, advertiser_id, created_by")
       .eq("id", id)
       .maybeSingle();
 
@@ -193,6 +245,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
         [
           "id",
           "workspace_id",
+          "advertiser_id",
           "report_type_id",
           "title",
           "status",
@@ -216,7 +269,9 @@ export async function PATCH(req: Request, ctx: Ctx) {
     if (uErr) return jsonError(400, uErr.message);
     if (!updated) return jsonError(404, "Report not found");
 
-    return NextResponse.json({ ok: true, report: updated });
+    const enrichedUpdated = await enrichReportWithAdvertiserName(updated);
+
+    return NextResponse.json({ ok: true, report: enrichedUpdated });
   } catch (e: any) {
     return jsonError(500, e?.message ?? String(e));
   }

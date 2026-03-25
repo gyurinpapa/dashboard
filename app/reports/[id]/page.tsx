@@ -23,6 +23,7 @@ import {
   getRowsDateRange,
   resolvePresetPeriod,
 } from "@/src/lib/report/period";
+import { extractAdvertiserName } from "@/src/lib/report/utils";
 
 import ReportTemplate from "../../components/ReportTemplate";
 
@@ -70,6 +71,15 @@ type ReportDetail = {
   title?: string | null;
   status?: string | null;
   meta?: any;
+
+  advertiser_name?: string | null;
+  advertiserName?: string | null;
+  advertiser?: string | null;
+
+  report_type_name?: string | null;
+  reportTypeName?: string | null;
+  report_type_key?: string | null;
+  reportTypeKey?: string | null;
 
   // legacy
   period_start?: string | null;
@@ -376,12 +386,17 @@ async function fetchReportHeaderInfo(
     return {
       advertiserName:
         asStr((report as any)?.advertiser_name) ||
+        asStr((report as any)?.advertiserName) ||
+        asStr((report as any)?.advertiser) ||
         asStr(meta?.advertiser_name) ||
         asStr(meta?.advertiserName) ||
+        asStr(meta?.advertiser) ||
         "",
       reportTypeName:
         asStr((report as any)?.report_type_name) ||
+        asStr((report as any)?.reportTypeName) ||
         asStr((report as any)?.report_type_key) ||
+        asStr((report as any)?.reportTypeKey) ||
         asStr(meta?.report_type_name) ||
         asStr(meta?.reportTypeName) ||
         asStr(meta?.report_type_key) ||
@@ -639,6 +654,10 @@ export default function ReportDetailPage() {
     ].join("||");
   }, [displayRows]);
 
+  const advertiserNameFromRows = useMemo(() => {
+    return extractAdvertiserName(rows);
+  }, [rows]);
+
   const headerFallbackFromRows = useMemo(() => {
     let advertiserName = "";
     let reportTypeName = "";
@@ -649,6 +668,7 @@ export default function ReportDetailPage() {
           asStr(r?.advertiser_name) ||
           asStr(r?.advertiserName) ||
           asStr(r?.advertiser) ||
+          asStr(r?.account) ||
           asStr(r?.brand_name) ||
           asStr(r?.client_name);
       }
@@ -669,7 +689,10 @@ export default function ReportDetailPage() {
   }, [rows]);
 
   const effectivePreviewAdvertiserName =
-    headerInfo.advertiserName || headerFallbackFromRows.advertiserName || "";
+    headerInfo.advertiserName ||
+    advertiserNameFromRows ||
+    headerFallbackFromRows.advertiserName ||
+    "";
 
   const effectivePreviewReportTypeName =
     headerInfo.reportTypeName || headerFallbackFromRows.reportTypeName || "";
@@ -703,8 +726,7 @@ export default function ReportDetailPage() {
   }, [reportPeriod]);
 
   const canPublish = sessionIngested && !publishing;
-  const canOpenExportBuilder =
-    ENABLE_EXPORT_BUILDER_ENTRY && canPublish;
+  const canOpenExportBuilder = ENABLE_EXPORT_BUILDER_ENTRY && canPublish;
 
   const reportTitleForDownload = effectivePreviewReportTypeName || "report";
   const advertiserNameForDownload =
