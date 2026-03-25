@@ -1,5 +1,6 @@
+// app/components/ReportTemplate.tsx
 "use client";
-
+console.log("🔥 ReportTemplate RENDERED");
 import { useEffect, useMemo, useState } from "react";
 
 import type {
@@ -11,6 +12,9 @@ import type {
   TabKey,
   WeekKey,
 } from "@/src/lib/report/types";
+
+import type { ReportPeriod } from "@/src/lib/report/period";
+import { filterRowsByReportPeriod } from "@/src/lib/report/period";
 
 import { groupByKeyword } from "@/src/lib/report/keyword";
 import { useLocalStorageState } from "@/src/useLocalStorageState";
@@ -69,6 +73,15 @@ type Props = {
   creativesMap?: Record<string, string>;
   advertiserName?: string | null;
   reportTypeName?: string | null;
+  reportPeriod: ReportPeriod;
+  onChangeReportPeriod: (next: ReportPeriod) => void;
+  readOnlyHeader?: boolean;
+
+  // ✅ 직접 선택 / 날짜 입력 UI만 숨김
+  hidePeriodEditor?: boolean;
+
+  // ✅ 오른쪽 하단 "기준 기간 ..." 텍스트만 숨김 (+VAT 유지)
+  hideTabPeriodText?: boolean;
 };
 
 function asStr(v: any) {
@@ -171,7 +184,8 @@ function normalizeIncomingRow(rec: any) {
   }
 
   if (base.channel == null) {
-    base.channel = rec?.channel ?? base?.ad_channel ?? base?.media ?? base?.media_type ?? null;
+    base.channel =
+      rec?.channel ?? base?.ad_channel ?? base?.media ?? base?.media_type ?? null;
   }
 
   if (base.device == null) {
@@ -186,23 +200,35 @@ function normalizeIncomingRow(rec: any) {
     base.platform = rec?.platform ?? base?.media_source ?? base?.ad_platform ?? null;
   }
 
-  if (base.campaign_name == null && base.campaign != null) base.campaign_name = base.campaign;
-  if (base.campaign_name == null && base.campaignName != null) base.campaign_name = base.campaignName;
+  if (base.campaign_name == null && base.campaign != null)
+    base.campaign_name = base.campaign;
+  if (base.campaign_name == null && base.campaignName != null)
+    base.campaign_name = base.campaignName;
 
   if (base.group_name == null && base.group != null) base.group_name = base.group;
-  if (base.group_name == null && base.groupName != null) base.group_name = base.groupName;
-  if (base.group_name == null && base.adgroup_name != null) base.group_name = base.adgroup_name;
+  if (base.group_name == null && base.groupName != null)
+    base.group_name = base.groupName;
+  if (base.group_name == null && base.adgroup_name != null)
+    base.group_name = base.adgroup_name;
 
-  if (base.keyword == null && base.keyword_name != null) base.keyword = base.keyword_name;
-  if (base.keyword == null && base.search_term != null) base.keyword = base.search_term;
+  if (base.keyword == null && base.keyword_name != null)
+    base.keyword = base.keyword_name;
+  if (base.keyword == null && base.search_term != null)
+    base.keyword = base.search_term;
 
-  if (base.imagepath == null && base.imagePath != null) base.imagepath = base.imagePath;
-  if (base.imagePath == null && base.imagepath != null) base.imagePath = base.imagepath;
-  if (base.image_path == null && base.imagepath != null) base.image_path = base.imagepath;
-  if (base.imagepath_raw == null && base.image_raw != null) base.imagepath_raw = base.image_raw;
+  if (base.imagepath == null && base.imagePath != null)
+    base.imagepath = base.imagePath;
+  if (base.imagePath == null && base.imagepath != null)
+    base.imagePath = base.imagepath;
+  if (base.image_path == null && base.imagepath != null)
+    base.image_path = base.imagepath;
+  if (base.imagepath_raw == null && base.image_raw != null)
+    base.imagepath_raw = base.image_raw;
 
-  if (base.creative_file == null && base.creativeFile != null) base.creative_file = base.creativeFile;
-  if (base.creativeFile == null && base.creative_file != null) base.creativeFile = base.creative_file;
+  if (base.creative_file == null && base.creativeFile != null)
+    base.creative_file = base.creativeFile;
+  if (base.creativeFile == null && base.creative_file != null)
+    base.creativeFile = base.creative_file;
 
   if (base.impressions == null && base.impr != null) base.impressions = base.impr;
   if (base.clicks == null && base.click != null) base.clicks = base.click;
@@ -212,7 +238,8 @@ function normalizeIncomingRow(rec: any) {
   if (base.conversions == null && base.conv != null) base.conversions = base.conv;
   if (base.conversions == null && base.cv != null) base.conversions = base.cv;
   if (base.revenue == null && base.sales != null) base.revenue = base.sales;
-  if (base.revenue == null && base.purchase_amount != null) base.revenue = base.purchase_amount;
+  if (base.revenue == null && base.purchase_amount != null)
+    base.revenue = base.purchase_amount;
   if (base.revenue == null && base.gmv != null) base.revenue = base.gmv;
 
   if (base.__row_id == null && rec?.id != null) base.__row_id = rec.id;
@@ -357,11 +384,29 @@ function normalizeCreativesMap(map: Record<string, string>) {
       p1n,
       c1,
       c1n,
-      kRaw.startsWith("C:") ? normalizeKey(kRaw.slice(2)) : normalizeKey(`C:${kRaw}`),
-      base ? (base.startsWith("C:") ? normalizeKey(base.slice(2)) : normalizeKey(`C:${base}`)) : "",
-      noext ? (noext.startsWith("C:") ? normalizeKey(noext.slice(2)) : normalizeKey(`C:${noext}`)) : "",
-      p1 ? (p1.startsWith("C:") ? normalizeKey(p1.slice(2)) : normalizeKey(`C:${p1}`)) : "",
-      c1 ? (c1.startsWith("C:") ? normalizeKey(c1.slice(2)) : normalizeKey(`C:${c1}`)) : "",
+      kRaw.startsWith("C:")
+        ? normalizeKey(kRaw.slice(2))
+        : normalizeKey(`C:${kRaw}`),
+      base
+        ? base.startsWith("C:")
+          ? normalizeKey(base.slice(2))
+          : normalizeKey(`C:${base}`)
+        : "",
+      noext
+        ? noext.startsWith("C:")
+          ? normalizeKey(noext.slice(2))
+          : normalizeKey(`C:${noext}`)
+        : "",
+      p1
+        ? p1.startsWith("C:")
+          ? normalizeKey(p1.slice(2))
+          : normalizeKey(`C:${p1}`)
+        : "",
+      c1
+        ? c1.startsWith("C:")
+          ? normalizeKey(c1.slice(2))
+          : normalizeKey(`C:${c1}`)
+        : "",
     ])
       .map(normalizeKey)
       .filter(Boolean);
@@ -428,6 +473,11 @@ export default function ReportTemplate({
   creativesMap,
   advertiserName,
   reportTypeName,
+  reportPeriod,
+  onChangeReportPeriod,
+  readOnlyHeader = false,
+  hidePeriodEditor = false,
+  hideTabPeriodText = false,
 }: Props) {
   const [tab, setTab] = useState<TabKey>("summary");
 
@@ -445,6 +495,10 @@ export default function ReportTemplate({
   const normalizedRows = useMemo(() => {
     return (rows ?? []).map(normalizeIncomingRow);
   }, [rows]);
+
+  const reportPeriodRows = useMemo(() => {
+    return filterRowsByReportPeriod(normalizedRows as any[], reportPeriod);
+  }, [normalizedRows, reportPeriod]);
 
   const headerFallback = useMemo(() => {
     return pickHeaderFallbackFromRows(normalizedRows);
@@ -529,11 +583,13 @@ export default function ReportTemplate({
   }, [normalizedRows, effectiveAdvertiserName, effectiveReportTypeName]);
 
   useEffect(() => {
+    if (readOnlyHeader) return;
+
     if (tab !== "keyword" && tab !== "keywordDetail") return;
     if (selectedChannel === ("display" as ChannelKey)) {
       setSelectedChannel("search" as ChannelKey);
     }
-  }, [tab, selectedChannel]);
+  }, [tab, selectedChannel, readOnlyHeader]);
 
   const {
     monthOptions,
@@ -555,7 +611,7 @@ export default function ReportTemplate({
     byWeekChart,
     byMonth,
   } = useReportAggregates({
-    rows: normalizedRows,
+    rows: reportPeriodRows as any,
     selectedMonth,
     selectedWeek,
     selectedDevice,
@@ -565,39 +621,41 @@ export default function ReportTemplate({
   });
 
   useEffect(() => {
+    if (readOnlyHeader) return;
     if (selectedMonth !== "all" && !enabledMonthKeySet.has(selectedMonth)) {
       setSelectedMonth("all");
     }
-  }, [selectedMonth, enabledMonthKeySet]);
+  }, [selectedMonth, enabledMonthKeySet, readOnlyHeader]);
 
   useEffect(() => {
+    if (readOnlyHeader) return;
     if (selectedWeek !== "all" && !enabledWeekKeySet.has(selectedWeek)) {
       setSelectedWeek("all");
     }
-  }, [selectedWeek, enabledWeekKeySet]);
+  }, [selectedWeek, enabledWeekKeySet, readOnlyHeader]);
 
   useEffect(() => {
+    if (readOnlyHeader) return;
     const allowed = new Set((deviceOptions ?? []).map((x: any) => String(x)));
     if (selectedDevice !== "all" && !allowed.has(String(selectedDevice))) {
       setSelectedDevice("all");
     }
-  }, [selectedDevice, deviceOptions]);
+  }, [selectedDevice, deviceOptions, readOnlyHeader]);
 
   useEffect(() => {
+    if (readOnlyHeader) return;
     const allowed = new Set((channelOptions ?? []).map((x: any) => String(x)));
     if (selectedChannel !== "all" && !allowed.has(String(selectedChannel))) {
       setSelectedChannel("all");
     }
-  }, [selectedChannel, channelOptions]);
+  }, [selectedChannel, channelOptions, readOnlyHeader]);
 
-  // ✅ 상단 제목 아래 기간 = 업로드된 CSV 전체 기간
   const fullPeriod = useMemo(() => {
     const mm = minMaxYmd(normalizedRows as any[]);
     if (!mm.min || !mm.max) return "";
     return `${formatYmd(mm.min)} ~ ${formatYmd(mm.max)}`;
   }, [normalizedRows]);
 
-  // ✅ 아래 조회 기간 = 월/주차/기기/채널 필터 적용 결과 기간
   const periodFixed = useMemo(() => {
     const mm = minMaxYmd(filteredRows as any[]);
     if (!mm.min || !mm.max) return period;
@@ -606,7 +664,7 @@ export default function ReportTemplate({
 
   const { monthGoalInsight } = useInsights({
     byMonth,
-    rowsLength: normalizedRows.length,
+    rowsLength: reportPeriodRows.length,
     currentMonthKey,
     monthGoal,
     currentMonthActual: {
@@ -751,7 +809,10 @@ export default function ReportTemplate({
       }));
 
       console.log("===== CREATIVE DEBUG =====");
-      console.log("creativesMap keys =", Object.keys(creativesMapNormalized).slice(0, 200));
+      console.log(
+        "creativesMap keys =",
+        Object.keys(creativesMapNormalized).slice(0, 200)
+      );
       console.log("creativeBaseRows len =", creativeBaseRows.length);
       console.log("rows sample =", first);
     } catch {}
@@ -788,6 +849,11 @@ export default function ReportTemplate({
             period={periodFixed}
             advertiserName={effectiveAdvertiserName}
             reportTypeName={effectiveReportTypeName}
+            reportPeriod={reportPeriod}
+            onChangeReportPeriod={onChangeReportPeriod}
+            readOnlyHeader={readOnlyHeader}
+            hidePeriodEditor={hidePeriodEditor}
+            hideTabPeriodText={hideTabPeriodText}
           />
         </div>
       </div>
@@ -798,7 +864,9 @@ export default function ReportTemplate({
             <div className="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
               <div className="flex items-center gap-3 px-5 py-4">
                 <div className="h-2.5 w-2.5 rounded-full bg-blue-500 animate-pulse" />
-                <div className="text-sm font-medium text-slate-600">Loading rows...</div>
+                <div className="text-sm font-medium text-slate-600">
+                  Loading rows...
+                </div>
               </div>
             </div>
           ) : null}
@@ -854,7 +922,10 @@ export default function ReportTemplate({
 
             {tab === "keyword" && (
               <div className="rounded-2xl">
-                <KeywordSection keywordAgg={keywordAgg} keywordInsight={keywordInsight} />
+                <KeywordSection
+                  keywordAgg={keywordAgg}
+                  keywordInsight={keywordInsight}
+                />
               </div>
             )}
 

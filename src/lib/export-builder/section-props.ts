@@ -25,10 +25,33 @@ export type ExportKpiCardItem = {
   subValue?: string;
   changeLabel?: string;
   tone?: "neutral" | "good" | "bad" | "accent";
+  footerText?: string;
+};
+
+export type ExportSummaryMetricRow = {
+  label: string;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  cpc: number;
+  cost: number;
+  conversions: number;
+  cvr: number;
+  cpa: number;
+  revenue: number;
+  roas: number;
 };
 
 export type ExportSummaryKPIData = {
   cards: ExportKpiCardItem[];
+
+  /**
+   * 다음 단계에서 Summary 확장 렌더에 사용할 보조 payload
+   * - 기존 KPI 카드 렌더에는 영향 없음
+   */
+  monthRows?: ExportSummaryMetricRow[];
+  weekRows?: ExportSummaryMetricRow[];
+  sourceRows?: ExportSummaryMetricRow[];
 };
 
 export type ExportChartMetricKey =
@@ -54,6 +77,14 @@ export type ExportSummaryChartData = {
   leftMetric?: ExportChartMetricKey;
   rightMetric?: ExportChartMetricKey;
   points: ExportChartPoint[];
+
+  /**
+   * 다음 단계에서 Summary 확장 렌더에 사용할 보조 payload
+   * - 기존 차트 렌더에는 영향 없음
+   */
+  monthRows?: ExportSummaryMetricRow[];
+  weekRows?: ExportSummaryMetricRow[];
+  sourceRows?: ExportSummaryMetricRow[];
 };
 
 export type ExportGoalItem = {

@@ -13,24 +13,32 @@ function jsonError(status: number, message: string, extra?: any) {
 }
 
 function randToken(len = 32) {
-  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  const chars =
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   let s = "";
-  for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  for (let i = 0; i < len; i++) {
+    s += chars[Math.floor(Math.random() * chars.length)];
+  }
   return s;
 }
 
 function asString(v: any) {
   if (v == null) return "";
-  return String(v).trim();
+  const s = String(v).trim();
+  if (!s) return "";
+  if (s.toLowerCase() === "null") return "";
+  if (s.toLowerCase() === "undefined") return "";
+  return s;
 }
 
 /**
- * ✅ Bearer 우선 + 쿠키(session) fallback
+ * Bearer 우선 + 쿠키(session) fallback
  */
 async function getUserId(req: Request) {
   const sb = getSupabaseAdmin();
 
-  const authz = req.headers.get("authorization") || req.headers.get("Authorization") || "";
+  const authz =
+    req.headers.get("authorization") || req.headers.get("Authorization") || "";
   const m = authz.match(/^Bearer\s+(.+)$/i);
   const bearer = m?.[1]?.trim();
 
@@ -39,7 +47,11 @@ async function getUserId(req: Request) {
     const userId = data?.user?.id ?? null;
 
     if (error || !userId) {
-      return { ok: false as const, status: 401, message: "Unauthorized (invalid bearer token)" };
+      return {
+        ok: false as const,
+        status: 401,
+        message: "Unauthorized (invalid bearer token)",
+      };
     }
 
     return { ok: true as const, userId };
@@ -50,16 +62,21 @@ async function getUserId(req: Request) {
   const authErr = (auth as any)?.error ?? null;
 
   if (authErr || !user?.id) {
-    return { ok: false as const, status: 401, message: "Unauthorized (no session)" };
+    return {
+      ok: false as const,
+      status: 401,
+      message: "Unauthorized (no session)",
+    };
   }
 
   return { ok: true as const, userId: user.id };
 }
 
 export async function POST(req: Request, ctx: Ctx) {
-  // ✅ auth (Bearer 우선 + 쿠키 fallback)
   const auth = await getUserId(req);
-  if (!auth.ok) return jsonError(auth.status, "UNAUTHORIZED", { detail: auth.message });
+  if (!auth.ok) {
+    return jsonError(auth.status, "UNAUTHORIZED", { detail: auth.message });
+  }
 
   const userId = auth.userId;
 
@@ -69,11 +86,20 @@ export async function POST(req: Request, ctx: Ctx) {
 
   const sb = getSupabaseAdmin();
 
-  // ✅ 리포트 조회: current_ingestion_id / current_creatives_batch_id 필요 (+ workspace_id for membership)
   const { data: report, error: repErr } = await sb
     .from("reports")
     .select(
-      "id, workspace_id, share_token, status, meta, current_ingestion_id, current_creatives_batch_id"
+      [
+        "id",
+        "workspace_id",
+        "share_token",
+        "status",
+        "meta",
+        "current_ingestion_id",
+        "current_creatives_batch_id",
+        "draft_period_start",
+        "draft_period_end",
+      ].join(", ")
     )
     .eq("id", reportId)
     .maybeSingle();
@@ -81,7 +107,6 @@ export async function POST(req: Request, ctx: Ctx) {
   if (repErr) return jsonError(500, repErr.message || "DB error");
   if (!report) return jsonError(404, "REPORT_NOT_FOUND");
 
-  // ✅ workspace membership 체크 (통일)
   const { data: wm, error: wmErr } = await sb
     .from("workspace_members")
     .select("role")
@@ -89,12 +114,12 @@ export async function POST(req: Request, ctx: Ctx) {
     .eq("user_id", userId)
     .maybeSingle();
 
-  if (wmErr) return jsonError(500, wmErr.message || "WORKSPACE_MEMBER_CHECK_FAILED");
+  if (wmErr) {
+    return jsonError(500, wmErr.message || "WORKSPACE_MEMBER_CHECK_FAILED");
+  }
   if (!wm) return jsonError(403, "FORBIDDEN");
 
-  const currentIngestionId = (report as any).current_ingestion_id
-    ? String((report as any).current_ingestion_id)
-    : "";
+  const currentIngestionId = asString((report as any).current_ingestion_id);
 
   if (!currentIngestionId) {
     return jsonError(400, "PUBLISH_BLOCKED_NO_CURRENT_SESSION", {
@@ -102,7 +127,6 @@ export async function POST(req: Request, ctx: Ctx) {
     });
   }
 
-  // ✅ '이번 세션' row count로 검증
   const { count, error: cntErr } = await sb
     .from("report_rows")
     .select("id", { count: "exact", head: true })
@@ -120,14 +144,16 @@ export async function POST(req: Request, ctx: Ctx) {
     });
   }
 
-  const token = (report as any).share_token || randToken(32);
+  const token = asString((report as any).share_token) || randToken(32);
   const now = new Date().toISOString();
 
-  const currentCreativesBatchId = (report as any).current_creatives_batch_id
-    ? String((report as any).current_creatives_batch_id)
-    : null;
+  const currentCreativesBatchId = asString(
+    (report as any).current_creatives_batch_id
+  ) || null;
 
-  // ✅ 발행 스냅샷 고정: published_* = current_*
+  const draftPeriodStart = asString((report as any).draft_period_start) || null;
+  const draftPeriodEnd = asString((report as any).draft_period_end) || null;
+
   const { error: upErr } = await sb
     .from("reports")
     .update({
@@ -138,6 +164,14 @@ export async function POST(req: Request, ctx: Ctx) {
 
       published_ingestion_id: currentIngestionId,
       published_creatives_batch_id: currentCreativesBatchId,
+
+      // draft -> published 복사 (안전 버전: start/end만)
+      published_period_start: draftPeriodStart,
+      published_period_end: draftPeriodEnd,
+
+      // 과도기 호환용 legacy 동기화
+      period_start: draftPeriodStart,
+      period_end: draftPeriodEnd,
     })
     .eq("id", reportId);
 
@@ -150,6 +184,8 @@ export async function POST(req: Request, ctx: Ctx) {
       status: "ready",
       published_ingestion_id: currentIngestionId,
       published_creatives_batch_id: currentCreativesBatchId,
+      published_period_start: draftPeriodStart,
+      published_period_end: draftPeriodEnd,
     },
     { status: 200 }
   );

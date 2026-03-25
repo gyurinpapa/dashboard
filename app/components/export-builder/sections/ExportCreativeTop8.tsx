@@ -44,21 +44,69 @@ type Props = {
 };
 
 const DEFAULT_ITEMS: CreativeCard[] = [
-  { name: "세럼 메인 비주얼 A", channel: "Naver SA", cost: "₩820,000", revenue: "₩2,940,000", roas: "358%" },
-  { name: "크림 프로모션 썸네일", channel: "Google Ads", cost: "₩760,000", revenue: "₩2,610,000", roas: "343%" },
-  { name: "민감성 케어 배너", channel: "Meta Ads", cost: "₩690,000", revenue: "₩2,220,000", roas: "322%" },
-  { name: "수분 크림 카드뉴스", channel: "Naver SA", cost: "₩650,000", revenue: "₩2,040,000", roas: "314%" },
-  { name: "브랜드 검색 소재 A", channel: "Google Ads", cost: "₩610,000", revenue: "₩1,960,000", roas: "321%" },
-  { name: "프로모션 정사각 썸네일", channel: "Meta Ads", cost: "₩560,000", revenue: "₩1,760,000", roas: "314%" },
-  { name: "세럼 상세 이미지형", channel: "Naver SA", cost: "₩510,000", revenue: "₩1,580,000", roas: "310%" },
-  { name: "신규 런칭 키비주얼", channel: "Google Ads", cost: "₩480,000", revenue: "₩1,460,000", roas: "304%" },
+  {
+    name: "세럼 메인 비주얼 A",
+    channel: "Naver SA",
+    cost: "₩820,000",
+    revenue: "₩2,940,000",
+    roas: "358%",
+  },
+  {
+    name: "크림 프로모션 썸네일",
+    channel: "Google Ads",
+    cost: "₩760,000",
+    revenue: "₩2,610,000",
+    roas: "343%",
+  },
+  {
+    name: "민감성 케어 배너",
+    channel: "Meta Ads",
+    cost: "₩690,000",
+    revenue: "₩2,220,000",
+    roas: "322%",
+  },
+  {
+    name: "수분 크림 카드뉴스",
+    channel: "Naver SA",
+    cost: "₩650,000",
+    revenue: "₩2,040,000",
+    roas: "314%",
+  },
+  {
+    name: "브랜드 검색 소재 A",
+    channel: "Google Ads",
+    cost: "₩610,000",
+    revenue: "₩1,960,000",
+    roas: "321%",
+  },
+  {
+    name: "프로모션 정사각 썸네일",
+    channel: "Meta Ads",
+    cost: "₩560,000",
+    revenue: "₩1,760,000",
+    roas: "314%",
+  },
+  {
+    name: "세럼 상세 이미지형",
+    channel: "Naver SA",
+    cost: "₩510,000",
+    revenue: "₩1,580,000",
+    roas: "310%",
+  },
+  {
+    name: "신규 런칭 키비주얼",
+    channel: "Google Ads",
+    cost: "₩480,000",
+    revenue: "₩1,460,000",
+    roas: "304%",
+  },
 ];
 
 function parseLooseNumber(value?: string) {
-  if (!value) return NaN;
+  if (!value) return Number.NaN;
   const cleaned = String(value).replace(/[^\d.-]/g, "");
   const parsed = Number(cleaned);
-  return Number.isFinite(parsed) ? parsed : NaN;
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
 }
 
 function formatCurrency(value?: number) {
@@ -99,9 +147,30 @@ function toGridDensity(layoutMode: LayoutMode): CreativeTopCardGridDensity {
   return "export-full";
 }
 
+function getVisibleItemCount(layoutMode: LayoutMode) {
+  if (layoutMode === "full") return 8;
+  if (layoutMode === "wide") return 6;
+  if (layoutMode === "compact") return 4;
+  return 2;
+}
+
+function getBestCreativeLabel(
+  rows: Array<{ name?: string; revenue?: number; roas?: number }>
+) {
+  if (!rows.length) return "-";
+
+  const sorted = [...rows].sort((a, b) => {
+    const revenueDiff = Number(b.revenue || 0) - Number(a.revenue || 0);
+    if (revenueDiff !== 0) return revenueDiff;
+    return Number(b.roas || 0) - Number(a.roas || 0);
+  });
+
+  return sorted[0]?.name || "-";
+}
+
 export default function ExportCreativeTop8({
-  title = "소재 TOP8",
-  subtitle = "성과 상위 소재 요약",
+  title,
+  subtitle,
   items,
   meta,
   data,
@@ -115,22 +184,31 @@ export default function ExportCreativeTop8({
     ...(!items && !data ? { rows: normalizeLegacyItems(DEFAULT_ITEMS) } : {}),
   });
 
-  const safeRows = (resolvedData.rows ?? []).slice(0, 8);
+  const visibleCount = getVisibleItemCount(layoutMode);
+  const safeRows = (resolvedData.rows ?? []).slice(0, visibleCount);
 
-  const totalCost = safeRows.reduce((sum, row) => sum + (row.cost || 0), 0);
-  const totalRevenue = safeRows.reduce((sum, row) => sum + (row.revenue || 0), 0);
+  const totalCost = safeRows.reduce((sum, row) => sum + Number(row.cost || 0), 0);
+  const totalRevenue = safeRows.reduce(
+    (sum, row) => sum + Number(row.revenue || 0),
+    0
+  );
+
   const avgRoas =
     safeRows.length > 0
-      ? safeRows.reduce((sum, row) => sum + (row.roas || 0), 0) / safeRows.length
+      ? safeRows.reduce((sum, row) => sum + Number(row.roas || 0), 0) /
+        safeRows.length
       : undefined;
+
+  const metaText = [resolvedMeta.reportTypeName, resolvedMeta.periodLabel]
+    .filter(Boolean)
+    .join(" · ");
 
   const displayTitle = title || "소재 TOP8";
   const displaySubtitle =
     subtitle ||
-    [resolvedMeta.reportTypeName, resolvedMeta.periodLabel]
-      .filter(Boolean)
-      .join(" · ") ||
-    "성과 상위 소재 요약";
+    (metaText
+      ? `현재 필터가 적용된 데이터 기준 성과 상위 소재 · ${metaText}`
+      : "현재 필터가 적용된 데이터 기준 성과 상위 소재");
 
   const cardItems: CreativeTopCardItem[] = safeRows.map((item, index) => ({
     key: `${item.name}-${index}`,
@@ -143,6 +221,8 @@ export default function ExportCreativeTop8({
     roas: formatPercent(item.roas),
   }));
 
+  const bestCreativeLabel = getBestCreativeLabel(safeRows);
+
   return (
     <CreativeTopCardGridView
       title={displayTitle}
@@ -150,10 +230,11 @@ export default function ExportCreativeTop8({
       items={cardItems}
       density={toGridDensity(layoutMode)}
       summary={{
-        totalCostLabel: totalCost > 0 ? formatCurrency(totalCost) : "₩5.08M",
-        totalRevenueLabel: totalRevenue > 0 ? formatCurrency(totalRevenue) : "₩16.57M",
+        totalCostLabel: totalCost > 0 ? formatCurrency(totalCost) : "-",
+        totalRevenueLabel: totalRevenue > 0 ? formatCurrency(totalRevenue) : "-",
         avgRoasLabel:
-          Number.isFinite(Number(avgRoas)) ? formatPercent(Number(avgRoas)) : "326%",
+          Number.isFinite(Number(avgRoas)) ? formatPercent(Number(avgRoas)) : "-",
+        bestCreativeLabel,
       }}
     />
   );

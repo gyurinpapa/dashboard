@@ -22,22 +22,10 @@ type KPIItem = {
 type LayoutMode = "full" | "wide" | "compact" | "side-compact";
 
 type Props = {
-  /**
-   * Step 17 이전 호환용
-   */
   title?: string;
   items?: KPIItem[];
-
-  /**
-   * Step 17-9 표준 props
-   */
   meta?: Partial<ExportSectionMeta>;
   data?: Partial<ExportSummaryKPIData>;
-
-  /**
-   * Step 19-6
-   * 슬롯 크기별 렌더 밀도 분기
-   */
   layoutMode?: LayoutMode;
 };
 
@@ -88,8 +76,28 @@ function toSafeTone(tone: unknown): SummaryKPICardTone {
   return "neutral";
 }
 
+function getVisibleCardCount(layoutMode: LayoutMode) {
+  if (layoutMode === "full") return 10;
+  if (layoutMode === "wide") return 6;
+  if (layoutMode === "compact") return 4;
+  return 4;
+}
+
+function getGridClass(layoutMode: LayoutMode) {
+  if (layoutMode === "full") {
+    return "grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-5";
+  }
+  if (layoutMode === "wide") {
+    return "grid grid-cols-2 gap-3 sm:grid-cols-3";
+  }
+  if (layoutMode === "compact") {
+    return "grid grid-cols-2 gap-2";
+  }
+  return "grid grid-cols-2 gap-1.5";
+}
+
 export default function ExportSummaryKPI({
-  title = "핵심 KPI 요약",
+  title,
   items,
   meta,
   data,
@@ -100,94 +108,104 @@ export default function ExportSummaryKPI({
   const resolvedData = buildSectionData("summary-kpi", {
     ...(items ? { cards: normalizeLegacyItems(items) } : {}),
     ...(data ?? {}),
-    ...(!items && !data ? { cards: normalizeLegacyItems(DEFAULT_ITEMS) } : {}),
   });
 
-  const safeCards = (resolvedData.cards ?? []).slice(0, 4);
-  const displayTitle = title || "핵심 KPI 요약";
+  const fallbackCards = normalizeLegacyItems(DEFAULT_ITEMS);
+  const baseCards =
+    Array.isArray(resolvedData.cards) && resolvedData.cards.length > 0
+      ? resolvedData.cards
+      : fallbackCards;
+
+  const visibleCount = getVisibleCardCount(layoutMode);
+  const safeCards = baseCards.slice(0, visibleCount);
   const cardDensity = toCardDensity(layoutMode);
 
-  const isFull = layoutMode === "full";
-  const isWide = layoutMode === "wide";
-  const isCompact = layoutMode === "compact";
+  const displayTitle = title || "기간 성과 요약";
+  const displaySubtitle = "현재 조회 조건 기준 핵심 지표";
+
+  const metaText = [resolvedMeta.reportTypeName, resolvedMeta.periodLabel]
+    .filter(Boolean)
+    .join(" · ");
+
   const isSideCompact = layoutMode === "side-compact";
-
-  const sectionClass = [
-    "flex h-full min-h-0 flex-col overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm",
-    isFull
-      ? "px-5 py-4"
-      : isWide
-      ? "px-4 py-3.5"
-      : isCompact
-      ? "px-3 py-2.5"
-      : "px-2.5 py-2",
-  ].join(" ");
-
-  const headerWrapClass = [
-    "flex items-start justify-between gap-3",
-    isSideCompact ? "mb-1.5" : isCompact ? "mb-2" : "mb-3",
-  ].join(" ");
-
-  const eyebrowClass = [
-    "font-semibold uppercase tracking-[0.18em] text-slate-400",
-    isSideCompact ? "text-[9px]" : "text-[10px]",
-  ].join(" ");
-
-  const titleClass = [
-    "mt-1 truncate font-semibold tracking-tight text-slate-900",
-    isFull
-      ? "text-[20px]"
-      : isWide
-      ? "text-[18px]"
-      : isCompact
-      ? "text-[15px]"
-      : "text-[13px]",
-  ].join(" ");
-
-  const metaClass = [
-    "mt-1 truncate text-slate-500",
-    isSideCompact ? "text-[9px]" : isCompact ? "text-[10px]" : "text-[11px]",
-  ].join(" ");
-
-  const badgeClass = [
-    "shrink-0 rounded-full border border-slate-200 bg-slate-50 font-medium text-slate-500",
-    isSideCompact ? "px-2 py-0.5 text-[9px]" : "px-2.5 py-1 text-[10px]",
-  ].join(" ");
-
-  const gridClass = [
-    "grid flex-1 min-h-0 grid-cols-2 items-stretch",
-    isSideCompact ? "gap-1.5" : isCompact ? "gap-2" : "gap-3",
-  ].join(" ");
+  const isCompact = layoutMode === "compact";
+  const isWide = layoutMode === "wide";
+  const isFull = layoutMode === "full";
 
   return (
-    <section className={sectionClass}>
-      <div className={headerWrapClass}>
-        <div className="min-w-0">
-          <div className={eyebrowClass}>Summary</div>
-          <h3 className={titleClass}>{displayTitle}</h3>
-          {resolvedMeta.reportTypeName || resolvedMeta.periodLabel ? (
-            <div className={metaClass}>
-              {[resolvedMeta.reportTypeName, resolvedMeta.periodLabel]
-                .filter(Boolean)
-                .join(" · ")}
-            </div>
-          ) : null}
+    <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+      <div
+        className={[
+          "border-b border-gray-200",
+          isFull
+            ? "px-5 py-4 sm:px-6 sm:py-5"
+            : isWide
+            ? "px-4 py-3.5"
+            : isCompact
+            ? "px-3 py-3"
+            : "px-2.5 py-2.5",
+        ].join(" ")}
+      >
+        <div
+          className={[
+            "font-semibold tracking-[-0.01em] text-gray-900",
+            isFull
+              ? "text-[15px] sm:text-[16px]"
+              : isWide
+              ? "text-[15px]"
+              : isCompact
+              ? "text-[13px]"
+              : "text-[12px]",
+          ].join(" ")}
+        >
+          {displayTitle}
         </div>
 
-        {!isSideCompact ? <div className={badgeClass}>KPI</div> : null}
+        <div
+          className={[
+            "mt-1 font-medium text-gray-500",
+            isSideCompact ? "text-[10px]" : "text-xs sm:text-[12px]",
+          ].join(" ")}
+        >
+          {displaySubtitle}
+        </div>
+
+        {metaText ? (
+          <div
+            className={[
+              "mt-1 text-gray-400",
+              isSideCompact ? "text-[9px]" : "text-[11px]",
+            ].join(" ")}
+          >
+            {metaText}
+          </div>
+        ) : null}
       </div>
 
-      <div className={gridClass}>
-        {safeCards.map((item, index) => (
-          <SummaryKPICardView
-            key={item.key || `${item.label}-${index}`}
-            title={item.label}
-            value={item.value}
-            subValue={item.subValue ?? item.changeLabel}
-            tone={toSafeTone(item.tone)}
-            density={cardDensity}
-          />
-        ))}
+      <div
+        className={[
+          isFull
+            ? "px-4 py-4 sm:px-6 sm:py-5"
+            : isWide
+            ? "px-4 py-4"
+            : isCompact
+            ? "px-3 py-3"
+            : "px-2.5 py-2.5",
+        ].join(" ")}
+      >
+        <div className={getGridClass(layoutMode)}>
+          {safeCards.map((card, index) => (
+            <SummaryKPICardView
+              key={card.key || `${card.label}-${index}`}
+              title={card.label}
+              value={card.value}
+              subValue={card.subValue ?? card.changeLabel}
+              tone={toSafeTone(card.tone)}
+              density={cardDensity}
+              footerText={card.footerText}
+            />
+          ))}
+        </div>
       </div>
     </section>
   );

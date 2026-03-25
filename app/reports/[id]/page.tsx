@@ -2,7 +2,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import {
+  useParams,
+  usePathname,
+  useRouter,
+  useSearchParams,
+} from "next/navigation";
 import { supabase } from "@/src/lib/supabase/client";
 import ReportDownloadButtons from "@/app/components/report/ReportDownloadButtons";
 import { buildReportFileName } from "@/src/lib/report/download/file-name";
@@ -10,6 +15,14 @@ import { downloadCsvFile } from "@/src/lib/report/download/export-csv";
 import { prepareElementForExport } from "@/src/lib/report/download/export-helpers";
 import { downloadPngFromElement } from "@/src/lib/report/download/export-png";
 import { downloadPdfFromElement } from "@/src/lib/report/download/export-pdf";
+import { ENABLE_EXPORT_BUILDER_ENTRY } from "@/src/lib/export-builder/feature";
+
+import type { ReportPeriod } from "@/src/lib/report/period";
+import {
+  getPeriodLabel,
+  getRowsDateRange,
+  resolvePresetPeriod,
+} from "@/src/lib/report/period";
 
 import ReportTemplate from "../../components/ReportTemplate";
 
@@ -23,7 +36,7 @@ async function safeJson(res: Response) {
 }
 
 /* =========================================================
- * ✅ Bearer 우선 + 쿠키 fallback
+ * Bearer 우선 + 쿠키 fallback
  * ========================================================= */
 
 async function getAccessToken(): Promise<string | null> {
@@ -51,6 +64,61 @@ async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
 /* =========================================================
  * API helpers
  * ========================================================= */
+
+type ReportDetail = {
+  id: string;
+  title?: string | null;
+  status?: string | null;
+  meta?: any;
+
+  // legacy
+  period_start?: string | null;
+  period_end?: string | null;
+
+  // draft
+  draft_period_start?: string | null;
+  draft_period_end?: string | null;
+
+  // published
+  published_period_start?: string | null;
+  published_period_end?: string | null;
+  published_at?: string | null;
+
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+async function fetchReportDetail(reportId: string): Promise<ReportDetail> {
+  const res = await authFetch(`/api/reports/${reportId}`);
+  const json = await safeJson(res);
+  if (!res.ok || !json?.ok) {
+    throw new Error(json?.error || `Failed to fetch report (${res.status})`);
+  }
+  return (json.report ?? {}) as ReportDetail;
+}
+
+async function patchReportPeriodDraft(
+  reportId: string,
+  next: ReportPeriod
+): Promise<ReportDetail> {
+  const res = await authFetch(`/api/reports/${reportId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      draft_period_start: next.startDate || null,
+      draft_period_end: next.endDate || null,
+    }),
+  });
+
+  const json = await safeJson(res);
+  if (!res.ok || !json?.ok) {
+    throw new Error(
+      json?.error || `Failed to save report period (${res.status})`
+    );
+  }
+
+  return (json.report ?? {}) as ReportDetail;
+}
 
 async function fetchRows(reportId: string): Promise<any[]> {
   const res = await authFetch(`/api/reports/${reportId}/rows`);
@@ -164,7 +232,7 @@ async function uploadCreatives(reportId: string, files: File[]) {
 }
 
 /* =========================================================
- * ✅ Publish
+ * Publish
  * ========================================================= */
 
 function looksLikePublishedAtIssue(msg: string) {
@@ -298,15 +366,135 @@ function rowFingerprint(row: any) {
 }
 
 async function fetchReportHeaderInfo(
-  _reportId: string
+  reportId: string
 ): Promise<ReportHeaderInfo> {
-  return {
-    advertiserName: "",
-    reportTypeName: "",
-  };
+  try {
+    const report = await fetchReportDetail(reportId);
+    const meta =
+      report?.meta && typeof report.meta === "object" ? report.meta : {};
+
+    return {
+      advertiserName:
+        asStr((report as any)?.advertiser_name) ||
+        asStr(meta?.advertiser_name) ||
+        asStr(meta?.advertiserName) ||
+        "",
+      reportTypeName:
+        asStr((report as any)?.report_type_name) ||
+        asStr((report as any)?.report_type_key) ||
+        asStr(meta?.report_type_name) ||
+        asStr(meta?.reportTypeName) ||
+        asStr(meta?.report_type_key) ||
+        asStr(meta?.reportTypeKey) ||
+        "",
+    };
+  } catch {
+    return {
+      advertiserName: "",
+      reportTypeName: "",
+    };
+  }
+}
+
+/* =========================================================
+ * localStorage helpers
+ * ========================================================= */
+
+function getReportPeriodStorageKey(reportId: string) {
+  return `nature_report_period_${reportId}`;
+}
+
+function parseStoredReportPeriod(raw: string | null): ReportPeriod | null {
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+
+    const preset = asStr((parsed as any).preset);
+    const startDate = asStr((parsed as any).startDate);
+    const endDate = asStr((parsed as any).endDate);
+
+    const validPreset =
+      preset === "this_month" ||
+      preset === "last_month" ||
+      preset === "last_7_days" ||
+      preset === "last_30_days" ||
+      preset === "custom";
+
+    if (!validPreset) return null;
+    if (!startDate || !endDate) return null;
+
+    return {
+      preset: preset as ReportPeriod["preset"],
+      startDate,
+      endDate,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function reportPeriodToStableKey(v: ReportPeriod | null | undefined) {
+  if (!v) return "";
+  return JSON.stringify({
+    preset: v.preset || "custom",
+    startDate: v.startDate || "",
+    endDate: v.endDate || "",
+  });
+}
+
+function buildInitialReportPeriod(args: {
+  report: ReportDetail | null;
+  reportId: string;
+  rowsRange: { startDate: string; endDate: string } | null;
+}): ReportPeriod | null {
+  const { report, reportId, rowsRange } = args;
+
+  const draftStart = asStr(report?.draft_period_start);
+  const draftEnd = asStr(report?.draft_period_end);
+
+  if (draftStart && draftEnd) {
+    return {
+      preset: "custom",
+      startDate: draftStart,
+      endDate: draftEnd,
+    };
+  }
+
+  if (typeof window !== "undefined" && reportId) {
+    const stored = parseStoredReportPeriod(
+      window.localStorage.getItem(getReportPeriodStorageKey(reportId))
+    );
+    if (stored) return stored;
+  }
+
+  const legacyStart = asStr(report?.period_start);
+  const legacyEnd = asStr(report?.period_end);
+
+  if (legacyStart && legacyEnd) {
+    return {
+      preset: "custom",
+      startDate: legacyStart,
+      endDate: legacyEnd,
+    };
+  }
+
+  if (rowsRange?.startDate && rowsRange?.endDate) {
+    return {
+      preset: "custom",
+      startDate: rowsRange.startDate,
+      endDate: rowsRange.endDate,
+    };
+  }
+
+  return null;
 }
 
 export default function ReportDetailPage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const params = useParams<{ id: string }>();
   const reportId = normalizeReportId(params?.id);
 
@@ -317,6 +505,7 @@ export default function ReportDetailPage() {
   const [sessionCreativesUploaded, setSessionCreativesUploaded] =
     useState(false);
 
+  const [report, setReport] = useState<ReportDetail | null>(null);
   const [rows, setRows] = useState<any[]>([]);
   const [loadingRows, setLoadingRows] = useState(true);
   const [msg, setMsg] = useState<string>("");
@@ -348,6 +537,16 @@ export default function ReportDetailPage() {
   const [pngLoading, setPngLoading] = useState(false);
   const [csvLoading, setCsvLoading] = useState(false);
 
+  const didInitReportPeriodFromSourceRef = useRef(false);
+  const saveDraftPeriodTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const lastSavedReportPeriodKeyRef = useRef<string>("");
+
+  const [reportPeriod, setReportPeriod] = useState<ReportPeriod>(() =>
+    resolvePresetPeriod()
+  );
+
   const displayRows = rows;
   const displayCreativesMap = creativesMap;
 
@@ -366,6 +565,62 @@ export default function ReportDetailPage() {
     });
     return uniqCount(paths);
   }, [displayCreativesMap]);
+
+  const rowsRange = useMemo(() => {
+    return getRowsDateRange(displayRows as any[]);
+  }, [displayRows]);
+
+  useEffect(() => {
+    const initial = buildInitialReportPeriod({
+      report,
+      reportId,
+      rowsRange: rowsRange?.startDate && rowsRange?.endDate ? rowsRange : null,
+    });
+
+    if (!initial) return;
+    if (didInitReportPeriodFromSourceRef.current) return;
+
+    setReportPeriod(initial);
+    didInitReportPeriodFromSourceRef.current = true;
+    lastSavedReportPeriodKeyRef.current = reportPeriodToStableKey(initial);
+  }, [report, reportId, rowsRange]);
+
+  useEffect(() => {
+    if (!reportId || typeof window === "undefined") return;
+    const key = getReportPeriodStorageKey(reportId);
+    window.localStorage.setItem(key, JSON.stringify(reportPeriod));
+  }, [reportId, reportPeriod]);
+
+  useEffect(() => {
+    if (!reportId) return;
+    if (!didInitReportPeriodFromSourceRef.current) return;
+
+    const nextKey = reportPeriodToStableKey(reportPeriod);
+    if (!nextKey) return;
+    if (nextKey === lastSavedReportPeriodKeyRef.current) return;
+
+    if (saveDraftPeriodTimerRef.current) {
+      clearTimeout(saveDraftPeriodTimerRef.current);
+      saveDraftPeriodTimerRef.current = null;
+    }
+
+    saveDraftPeriodTimerRef.current = setTimeout(async () => {
+      try {
+        const updated = await patchReportPeriodDraft(reportId, reportPeriod);
+        setReport((prev) => ({ ...(prev ?? {}), ...(updated ?? {}) }));
+        lastSavedReportPeriodKeyRef.current = nextKey;
+      } catch (e: any) {
+        console.error("[reportPeriod save failed]", e);
+      }
+    }, 500);
+
+    return () => {
+      if (saveDraftPeriodTimerRef.current) {
+        clearTimeout(saveDraftPeriodTimerRef.current);
+        saveDraftPeriodTimerRef.current = null;
+      }
+    };
+  }, [reportId, reportPeriod]);
 
   const rowsSignature = useMemo(() => {
     if (!displayRows.length) return "rows:0";
@@ -427,6 +682,9 @@ export default function ReportDetailPage() {
       rowsSignature,
       creativesUrlCount,
       previewVersion,
+      reportPeriod.startDate,
+      reportPeriod.endDate,
+      reportPeriod.preset,
     ].join("|");
   }, [
     reportId,
@@ -435,9 +693,18 @@ export default function ReportDetailPage() {
     rowsSignature,
     creativesUrlCount,
     previewVersion,
+    reportPeriod.startDate,
+    reportPeriod.endDate,
+    reportPeriod.preset,
   ]);
 
+  const previewPeriodLabel = useMemo(() => {
+    return getPeriodLabel(reportPeriod);
+  }, [reportPeriod]);
+
   const canPublish = sessionIngested && !publishing;
+  const canOpenExportBuilder =
+    ENABLE_EXPORT_BUILDER_ENTRY && canPublish;
 
   const reportTitleForDownload = effectivePreviewReportTypeName || "report";
   const advertiserNameForDownload =
@@ -453,36 +720,44 @@ export default function ReportDetailPage() {
 
     try {
       try {
-  const rws = await fetchRows(reportId);
-  const nextRows = Array.isArray(rws) ? [...rws] : [];
-  setRows(nextRows);
+        const detail = await fetchReportDetail(reportId);
+        setReport(detail);
+      } catch (e: any) {
+        console.error("[refreshRows] report detail failed", e);
+        nextMsg += `report 조회 실패: ${e?.message || "unknown"}\n`;
+      }
 
-  console.log("[refreshRows] rows ok", {
-    rowsLen: nextRows.length,
-    sampleRow: nextRows[0] ?? null,
-    firstDate:
-      nextRows[0]?.date ??
-      nextRows[0]?.report_date ??
-      nextRows[0]?.day ??
-      null,
-    lastDate:
-      nextRows[nextRows.length - 1]?.date ??
-      nextRows[nextRows.length - 1]?.report_date ??
-      nextRows[nextRows.length - 1]?.day ??
-      null,
-    monthKeys: Array.from(
-      new Set(
-        nextRows
-          .map((r) => {
-            const raw = r?.date ?? r?.report_date ?? r?.day;
-            if (!raw) return "";
-            return String(raw).slice(0, 7);
-          })
-          .filter(Boolean)
-      )
-    ),
-  });
-} catch (e: any) {
+      try {
+        const rws = await fetchRows(reportId);
+        const nextRows = Array.isArray(rws) ? [...rws] : [];
+        setRows(nextRows);
+
+        console.log("[refreshRows] rows ok", {
+          rowsLen: nextRows.length,
+          sampleRow: nextRows[0] ?? null,
+          firstDate:
+            nextRows[0]?.date ??
+            nextRows[0]?.report_date ??
+            nextRows[0]?.day ??
+            null,
+          lastDate:
+            nextRows[nextRows.length - 1]?.date ??
+            nextRows[nextRows.length - 1]?.report_date ??
+            nextRows[nextRows.length - 1]?.day ??
+            null,
+          monthKeys: Array.from(
+            new Set(
+              nextRows
+                .map((r) => {
+                  const raw = r?.date ?? r?.report_date ?? r?.day;
+                  if (!raw) return "";
+                  return String(raw).slice(0, 7);
+                })
+                .filter(Boolean)
+            )
+          ),
+        });
+      } catch (e: any) {
         console.error("[refreshRows] rows failed", e);
         setRows([]);
         nextMsg += `rows 조회 실패: ${e?.message || "unknown"}\n`;
@@ -539,6 +814,7 @@ export default function ReportDetailPage() {
     setSharePath("");
     setMsg("");
 
+    setReport(null);
     setCreativeUploadLog([]);
     setLastUploadedCreativeCount(0);
     setRows([]);
@@ -549,12 +825,36 @@ export default function ReportDetailPage() {
     });
     setPreviewVersion(0);
 
+    didInitReportPeriodFromSourceRef.current = false;
+    lastSavedReportPeriodKeyRef.current = "";
+    if (saveDraftPeriodTimerRef.current) {
+      clearTimeout(saveDraftPeriodTimerRef.current);
+      saveDraftPeriodTimerRef.current = null;
+    }
+
+    setReportPeriod(resolvePresetPeriod());
+
     refreshRows();
 
     const d = new Date(sessionStartedAtRef.current);
     setSessionStartedText(d.toLocaleString());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reportId]);
+
+  useEffect(() => {
+    const notice = searchParams?.get("eb_notice");
+    if (!notice) return;
+
+    setMsg(notice);
+
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete("eb_notice");
+
+    const nextUrl = next.toString()
+      ? `${pathname}?${next.toString()}`
+      : pathname;
+    router.replace(nextUrl, { scroll: false });
+  }, [pathname, router, searchParams]);
 
   async function handleUploadCsv() {
     if (!reportId) return;
@@ -653,6 +953,8 @@ export default function ReportDetailPage() {
       } else {
         setMsg("발행 완료. 아래 URL로 실제 보고서를 볼 수 있습니다.");
       }
+
+      await refreshRows();
     } catch (e: any) {
       setMsg(e?.message || "발행 실패");
     } finally {
@@ -660,117 +962,143 @@ export default function ReportDetailPage() {
     }
   }
 
+  function handleOpenExportBuilder() {
+    if (!reportId) return;
+
+    if (!ENABLE_EXPORT_BUILDER_ENTRY) {
+      return;
+    }
+
+    if (!canOpenExportBuilder) {
+      setMsg(
+        "이번 세션에서 CSV 업로드 + 파싱을 완료한 뒤 Export Builder를 열 수 있습니다."
+      );
+      return;
+    }
+
+    const qs = new URLSearchParams();
+    qs.set("advertiserName", effectivePreviewAdvertiserName || "광고주");
+    qs.set("reportTypeName", effectivePreviewReportTypeName || "리포트");
+    qs.set("periodLabel", previewPeriodLabel || "기간 미정");
+    qs.set("periodStart", reportPeriod.startDate || "");
+    qs.set("periodEnd", reportPeriod.endDate || "");
+    qs.set("periodPreset", reportPeriod.preset || "custom");
+    qs.set("preset", "starter-default");
+
+    router.push(`/report-builder/${reportId}/export-builder?${qs.toString()}`);
+  }
+
   async function handleDownloadPdf() {
-  try {
-    setPdfLoading(true);
+    try {
+      setPdfLoading(true);
 
-    const el = reportCaptureRef.current;
+      const el = reportCaptureRef.current;
 
-    if (!el) {
-      console.warn("[download:pdf] reportCaptureRef not found");
-      setMsg("PDF 다운로드 준비 중 대상 영역을 찾지 못했습니다.");
-      return;
+      if (!el) {
+        console.warn("[download:pdf] reportCaptureRef not found");
+        setMsg("PDF 다운로드 준비 중 대상 영역을 찾지 못했습니다.");
+        return;
+      }
+
+      const fileName = buildReportFileName({
+        advertiserName: advertiserNameForDownload,
+        reportTitle: reportTitleForDownload,
+        ext: "pdf",
+      });
+
+      await prepareElementForExport(el);
+
+      const result = await downloadPdfFromElement({
+        element: el,
+        fileName,
+      });
+
+      console.log("[download:pdf:done]", {
+        fileName: result.fileName,
+        width: result.width,
+        height: result.height,
+        pages: result.pages,
+      });
+
+      setMsg(`PDF 다운로드 완료: ${result.fileName} / ${result.pages} page`);
+    } catch (e: any) {
+      console.error("[download:pdf:error]", e);
+      setMsg(e?.message || "PDF 다운로드 중 오류가 발생했습니다.");
+    } finally {
+      setPdfLoading(false);
     }
-
-    const fileName = buildReportFileName({
-      advertiserName: advertiserNameForDownload,
-      reportTitle: reportTitleForDownload,
-      ext: "pdf",
-    });
-
-    await prepareElementForExport(el);
-
-    const result = await downloadPdfFromElement({
-      element: el,
-      fileName,
-    });
-
-    console.log("[download:pdf:done]", {
-      fileName: result.fileName,
-      width: result.width,
-      height: result.height,
-      pages: result.pages,
-    });
-
-    setMsg(`PDF 다운로드 완료: ${result.fileName} / ${result.pages} page`);
-  } catch (e: any) {
-    console.error("[download:pdf:error]", e);
-    setMsg(e?.message || "PDF 다운로드 중 오류가 발생했습니다.");
-  } finally {
-    setPdfLoading(false);
   }
-}
 
-async function handleDownloadPng() {
-  try {
-    setPngLoading(true);
+  async function handleDownloadPng() {
+    try {
+      setPngLoading(true);
 
-    const el = reportCaptureRef.current;
+      const el = reportCaptureRef.current;
 
-    if (!el) {
-      console.warn("[download:png] reportCaptureRef not found");
-      setMsg("PNG 다운로드 준비 중 대상 영역을 찾지 못했습니다.");
-      return;
+      if (!el) {
+        console.warn("[download:png] reportCaptureRef not found");
+        setMsg("PNG 다운로드 준비 중 대상 영역을 찾지 못했습니다.");
+        return;
+      }
+
+      const fileName = buildReportFileName({
+        advertiserName: advertiserNameForDownload,
+        reportTitle: reportTitleForDownload,
+        ext: "png",
+      });
+
+      await prepareElementForExport(el);
+
+      const result = await downloadPngFromElement({
+        element: el,
+        fileName,
+      });
+
+      console.log("[download:png:done]", {
+        fileName: result.fileName,
+        width: result.width,
+        height: result.height,
+      });
+
+      setMsg(`PNG 다운로드 완료: ${result.fileName}`);
+    } catch (e: any) {
+      console.error("[download:png:error]", e);
+      setMsg(e?.message || "PNG 다운로드 중 오류가 발생했습니다.");
+    } finally {
+      setPngLoading(false);
     }
-
-    const fileName = buildReportFileName({
-      advertiserName: advertiserNameForDownload,
-      reportTitle: reportTitleForDownload,
-      ext: "png",
-    });
-
-    await prepareElementForExport(el);
-
-    const result = await downloadPngFromElement({
-      element: el,
-      fileName,
-    });
-
-    console.log("[download:png:done]", {
-      fileName: result.fileName,
-      width: result.width,
-      height: result.height,
-    });
-
-    setMsg(`PNG 다운로드 완료: ${result.fileName}`);
-  } catch (e: any) {
-    console.error("[download:png:error]", e);
-    setMsg(e?.message || "PNG 다운로드 중 오류가 발생했습니다.");
-  } finally {
-    setPngLoading(false);
   }
-}
 
-function handleDownloadCsv() {
-  try {
-    setCsvLoading(true);
+  function handleDownloadCsv() {
+    try {
+      setCsvLoading(true);
 
-    const fileName = buildReportFileName({
-      advertiserName: advertiserNameForDownload,
-      reportTitle: reportTitleForDownload,
-      ext: "csv",
-    });
+      const fileName = buildReportFileName({
+        advertiserName: advertiserNameForDownload,
+        reportTitle: reportTitleForDownload,
+        ext: "csv",
+      });
 
-    const result = downloadCsvFile({
-      fileName,
-      rows: Array.isArray(displayRows) ? displayRows : [],
-    });
+      const result = downloadCsvFile({
+        fileName,
+        rows: Array.isArray(displayRows) ? displayRows : [],
+      });
 
-    console.log("[download:csv:done]", {
-      fileName: result.fileName,
-      rowCount: result.rowCount,
-    });
+      console.log("[download:csv:done]", {
+        fileName: result.fileName,
+        rowCount: result.rowCount,
+      });
 
-    setMsg(
-      `CSV 다운로드 완료: ${result.fileName} / ${result.rowCount}개 row`
-    );
-  } catch (e: any) {
-    console.error("[download:csv:error]", e);
-    setMsg(e?.message || "CSV 다운로드 중 오류가 발생했습니다.");
-  } finally {
-    setCsvLoading(false);
+      setMsg(
+        `CSV 다운로드 완료: ${result.fileName} / ${result.rowCount}개 row`
+      );
+    } catch (e: any) {
+      console.error("[download:csv:error]", e);
+      setMsg(e?.message || "CSV 다운로드 중 오류가 발생했습니다.");
+    } finally {
+      setCsvLoading(false);
+    }
   }
-}
 
   const shareUrl = sharePath ? fullUrl(sharePath) : "";
 
@@ -801,7 +1129,7 @@ function handleDownloadCsv() {
 
   return (
     <div className="p-6">
-      <div className="rounded-lg border p-4 mb-4">
+      <div className="mb-4 rounded-lg border p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="text-sm font-semibold">실제 보고서 URL</div>
@@ -822,7 +1150,7 @@ function handleDownloadCsv() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
               className={`rounded-md px-3 py-2 text-sm font-semibold ${
@@ -844,6 +1172,26 @@ function handleDownloadCsv() {
             >
               새로고침
             </button>
+
+            {ENABLE_EXPORT_BUILDER_ENTRY ? (
+              <button
+                type="button"
+                className={`rounded-md px-3 py-2 text-sm font-semibold ${
+                  canOpenExportBuilder
+                    ? "border bg-white hover:border-gray-400 hover:bg-gray-50"
+                    : "cursor-not-allowed border bg-gray-100 text-gray-400"
+                }`}
+                onClick={handleOpenExportBuilder}
+                disabled={!canOpenExportBuilder}
+                title={
+                  canOpenExportBuilder
+                    ? "Export Builder 열기"
+                    : "이번 세션에서 CSV 업로드 + 파싱 완료 후 사용 가능합니다."
+                }
+              >
+                Export Builder
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -857,7 +1205,7 @@ function handleDownloadCsv() {
 
             <button
               type="button"
-              className="rounded-md border px-3 py-2 text-sm font-semibold bg-white hover:border-gray-400 hover:bg-gray-50 active:bg-gray-100"
+              className="rounded-md border bg-white px-3 py-2 text-sm font-semibold hover:border-gray-400 hover:bg-gray-50 active:bg-gray-100"
               style={{ minWidth: 74 }}
               onClick={() => window.open(shareUrl, "_blank")}
               title="새 탭에서 열기"
@@ -867,7 +1215,7 @@ function handleDownloadCsv() {
 
             <button
               type="button"
-              className="rounded-md border px-3 py-2 text-sm font-semibold bg-white hover:border-gray-400 hover:bg-gray-50 active:bg-gray-100"
+              className="rounded-md border bg-white px-3 py-2 text-sm font-semibold hover:border-gray-400 hover:bg-gray-50 active:bg-gray-100"
               style={{ minWidth: 74 }}
               onClick={async () => {
                 try {
@@ -897,16 +1245,16 @@ function handleDownloadCsv() {
       </div>
 
       {msg ? (
-        <div className="mt-3 rounded-md border bg-white p-3 text-sm text-gray-700 whitespace-pre-line">
+        <div className="mt-3 whitespace-pre-line rounded-md border bg-white p-3 text-sm text-gray-700">
           {msg}
         </div>
       ) : null}
 
       <div className="mt-6 grid grid-cols-12 gap-4">
-        <div className="col-span-12 lg:col-span-4 space-y-4">
+        <div className="col-span-12 space-y-4 lg:col-span-4">
           <div className="rounded-lg border p-4">
-            <div className="text-sm font-semibold mb-2">CSV 업로드</div>
-            <div className="text-xs text-gray-600 mb-3">
+            <div className="mb-2 text-sm font-semibold">CSV 업로드</div>
+            <div className="mb-3 text-xs text-gray-600">
               업로드 후 서버 파서(ingestion/run)가 실행되어 rows가 갱신됩니다.
             </div>
 
@@ -921,7 +1269,7 @@ function handleDownloadCsv() {
             <label
               htmlFor={undefined as any}
               onClick={() => csvInputRef.current?.click()}
-              className="block w-full rounded-md border px-4 py-3 cursor-pointer bg-gray-50 hover:bg-gray-100"
+              className="block w-full cursor-pointer rounded-md border bg-gray-50 px-4 py-3 hover:bg-gray-100"
               style={{ userSelect: "none" }}
               title="클릭해서 CSV 파일을 선택하세요"
             >
@@ -944,7 +1292,7 @@ function handleDownloadCsv() {
                 {csvFile ? (
                   <button
                     type="button"
-                    className="rounded-md border px-2 py-1 text-xs font-semibold hover:border-gray-400 bg-white"
+                    className="rounded-md border bg-white px-2 py-1 text-xs font-semibold hover:border-gray-400"
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -984,8 +1332,8 @@ function handleDownloadCsv() {
           </div>
 
           <div className="rounded-lg border p-4">
-            <div className="text-sm font-semibold mb-2">소재 업로드</div>
-            <div className="text-xs text-gray-600 mb-3">
+            <div className="mb-2 text-sm font-semibold">소재 업로드</div>
+            <div className="mb-3 text-xs text-gray-600">
               CSV의 <b>creative_file</b> 값과 업로드 파일명이 매칭됩니다.
               <br />
               예: CSV <b>CR_001.png</b> → 업로드도 <b>CR_001.png</b>
@@ -1003,7 +1351,7 @@ function handleDownloadCsv() {
             <label
               htmlFor={undefined as any}
               onClick={() => creativesInputRef.current?.click()}
-              className="block w-full rounded-md border px-4 py-3 cursor-pointer bg-gray-50 hover:bg-gray-100"
+              className="block w-full cursor-pointer rounded-md border bg-gray-50 px-4 py-3 hover:bg-gray-100"
               style={{ userSelect: "none" }}
               title="클릭해서 이미지 파일을 선택하세요"
             >
@@ -1022,14 +1370,17 @@ function handleDownloadCsv() {
                 >
                   {creativesStatusText}
                   {creativesNamePreview ? (
-                    <span className="text-gray-500"> · {creativesNamePreview}</span>
+                    <span className="text-gray-500">
+                      {" "}
+                      · {creativesNamePreview}
+                    </span>
                   ) : null}
                 </div>
 
                 {creativeFiles.length > 0 ? (
                   <button
                     type="button"
-                    className="rounded-md border px-2 py-1 text-xs font-semibold hover:border-gray-400 bg-white"
+                    className="rounded-md border bg-white px-2 py-1 text-xs font-semibold hover:border-gray-400"
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -1070,11 +1421,11 @@ function handleDownloadCsv() {
             </div>
 
             {creativeUploadLog.length > 0 ? (
-              <div className="mt-3 rounded-md border p-2 bg-white">
-                <div className="text-xs font-semibold mb-2">
+              <div className="mt-3 rounded-md border bg-white p-2">
+                <div className="mb-2 text-xs font-semibold">
                   업로드 결과(이번 세션)
                 </div>
-                <div className="max-h-40 overflow-auto space-y-1">
+                <div className="max-h-40 space-y-1 overflow-auto">
                   {creativeUploadLog.map((it, idx) => (
                     <div key={idx} className="text-xs text-gray-700">
                       {it.ok ? "✅" : "❌"}{" "}
@@ -1092,7 +1443,7 @@ function handleDownloadCsv() {
           </div>
 
           <div className="rounded-lg border p-4">
-            <div className="text-sm font-semibold mb-1">매칭된 소재</div>
+            <div className="mb-1 text-sm font-semibold">매칭된 소재</div>
 
             <div className="text-sm text-gray-700">
               고유 URL: <b>{creativesUrlCount}</b>개{" "}
@@ -1116,11 +1467,11 @@ function handleDownloadCsv() {
 
         <div className="col-span-12 lg:col-span-8">
           <div className="rounded-lg border">
-            <div className="flex items-center justify-between px-4 py-3 border-b gap-3">
+            <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
               <div className="min-w-0">
                 <div className="text-sm font-semibold">미리보기</div>
                 <div className="text-xs text-gray-500">
-                  compact + scale(0.9) + right scroll
+                  draft period 기준 편집 미리보기
                 </div>
               </div>
 
@@ -1136,11 +1487,11 @@ function handleDownloadCsv() {
               </div>
             </div>
 
-            <div className="max-h-[78vh] overflow-y-auto p-4">
+            <div className="p-4">
               <div ref={reportCaptureRef}>
                 <div
                   style={{
-                    transform: "scale(0.9)",
+                    transform: "scale(1)",
                     transformOrigin: "top center",
                   }}
                 >
@@ -1151,6 +1502,10 @@ function handleDownloadCsv() {
                     creativesMap={displayCreativesMap}
                     advertiserName={effectivePreviewAdvertiserName}
                     reportTypeName={effectivePreviewReportTypeName}
+                    reportPeriod={reportPeriod}
+                    onChangeReportPeriod={setReportPeriod}
+                    hidePeriodEditor={true}
+                    hideTabPeriodText={true}
                   />
                 </div>
               </div>
@@ -1164,7 +1519,9 @@ function handleDownloadCsv() {
             <span className="text-gray-400">·</span> 광고주:{" "}
             {effectivePreviewAdvertiserName || "-"}{" "}
             <span className="text-gray-400">·</span> 유형:{" "}
-            {effectivePreviewReportTypeName || "-"}
+            {effectivePreviewReportTypeName || "-"}{" "}
+            <span className="text-gray-400">·</span> 기준 기간:{" "}
+            {previewPeriodLabel || "-"}
           </div>
         </div>
       </div>

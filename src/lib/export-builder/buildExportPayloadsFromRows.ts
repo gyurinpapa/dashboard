@@ -122,6 +122,78 @@ function getDayLabel(dateKey: string) {
   return dateKey;
 }
 
+function getMonthKey(row: AnyRow) {
+  const dateKey = getDateKey(row);
+  if (!dateKey || dateKey.length < 7) return "";
+  return dateKey.slice(0, 7);
+}
+
+function getMonthLabel(monthKey: string) {
+  if (!monthKey) return "-";
+  const [yyyy, mm] = monthKey.split("-");
+  if (!yyyy || !mm) return monthKey;
+  return `${yyyy}.${mm}`;
+}
+
+function getWeekLabel(row: AnyRow) {
+  return pickString(row, [
+    "weekLabel",
+    "week_label",
+    "label",
+  ]);
+}
+
+function getWeekKey(row: AnyRow) {
+  const explicit = pickString(row, ["weekKey", "week_key", "weekStart", "week_start"]);
+  if (explicit) return explicit;
+
+  const dateKey = getDateKey(row);
+  if (!dateKey) return "";
+
+  const date = new Date(`${dateKey}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const day = date.getDay(); // 0 Sunday
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+
+  const monday = new Date(date);
+  monday.setDate(date.getDate() + diffToMonday);
+
+  const yyyy = monday.getFullYear();
+  const mm = String(monday.getMonth() + 1).padStart(2, "0");
+  const dd = String(monday.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function buildWeekDisplayLabel(weekKey: string, sampleRow?: AnyRow) {
+  const direct = getWeekLabel(sampleRow);
+  if (direct) return direct;
+
+  if (!weekKey) return "-";
+
+  const date = new Date(`${weekKey}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return weekKey;
+
+  const y = date.getFullYear();
+  const m = date.getMonth() + 1;
+
+  const firstDay = new Date(date.getFullYear(), date.getMonth(), 1);
+  const offset = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
+  const firstMonday = new Date(firstDay);
+  firstMonday.setDate(firstDay.getDate() - offset);
+
+  const diffDays = Math.floor(
+    (date.getTime() - firstMonday.getTime()) / (1000 * 60 * 60 * 24)
+  );
+  const weekNo = Math.floor(diffDays / 7) + 1;
+
+  return `${y}년 ${m}월 ${weekNo}주차`;
+}
+
+function getSource(row: AnyRow) {
+  return pickString(row, ["source", "platform", "channel"]);
+}
+
 function getImageUrlCandidate(row: AnyRow) {
   const value = pickString(row, ["imageUrl", "image_url", "imagePath", "imagepath"]);
   if (!value) return null;
@@ -218,6 +290,65 @@ function groupBy<T>(items: T[], getKey: (item: T) => string) {
   }, {});
 }
 
+function toMetricRow(label: string, rows: AnyRow[]) {
+  const totals = aggregateRows(rows);
+
+  const ctr = totals.impressions > 0 ? totals.clicks / totals.impressions : 0;
+  const cvr = totals.clicks > 0 ? totals.conversions / totals.clicks : 0;
+  const cpc = totals.clicks > 0 ? totals.cost / totals.clicks : 0;
+  const cpa = totals.conversions > 0 ? totals.cost / totals.conversions : 0;
+  const roas = totals.cost > 0 ? totals.revenue / totals.cost : 0;
+
+  return {
+    label,
+    impressions: totals.impressions,
+    clicks: totals.clicks,
+    ctr,
+    cpc,
+    cost: totals.cost,
+    conversions: totals.conversions,
+    cvr,
+    cpa,
+    revenue: totals.revenue,
+    roas,
+  };
+}
+
+function buildMonthRows(rows: AnyRow[]) {
+  const grouped = groupBy(rows, (row) => getMonthKey(row));
+  const monthKeys = Object.keys(grouped).sort();
+
+  if (!monthKeys.length) return [];
+
+  return monthKeys
+    .slice(-3)
+    .map((monthKey) => toMetricRow(getMonthLabel(monthKey), grouped[monthKey]));
+}
+
+function buildWeekRows(rows: AnyRow[]) {
+  const grouped = groupBy(rows, (row) => getWeekKey(row));
+  const weekKeys = Object.keys(grouped).sort();
+
+  if (!weekKeys.length) return [];
+
+  return weekKeys
+    .slice(-5)
+    .map((weekKey) =>
+      toMetricRow(buildWeekDisplayLabel(weekKey, grouped[weekKey]?.[0]), grouped[weekKey])
+    );
+}
+
+function buildSourceRows(rows: AnyRow[]) {
+  const grouped = groupBy(rows, (row) => getSource(row));
+  const sourceKeys = Object.keys(grouped);
+
+  if (!sourceKeys.length) return [];
+
+  return sourceKeys
+    .map((sourceKey) => toMetricRow(sourceKey, grouped[sourceKey]))
+    .sort((a, b) => b.cost - a.cost);
+}
+
 function buildSummaryKpiPayload(rows: AnyRow[]) {
   const totals = aggregateRows(rows);
 
@@ -225,6 +356,10 @@ function buildSummaryKpiPayload(rows: AnyRow[]) {
   const ctr = totals.impressions > 0 ? totals.clicks / totals.impressions : 0;
   const cvr = totals.clicks > 0 ? totals.conversions / totals.clicks : 0;
   const cpc = totals.clicks > 0 ? totals.cost / totals.clicks : 0;
+
+  const monthRows = buildMonthRows(rows);
+  const weekRows = buildWeekRows(rows);
+  const sourceRows = buildSourceRows(rows);
 
   return {
     cards: [
@@ -271,6 +406,9 @@ function buildSummaryKpiPayload(rows: AnyRow[]) {
         tone: "neutral" as const,
       },
     ],
+    monthRows,
+    weekRows,
+    sourceRows,
   };
 }
 
@@ -278,7 +416,19 @@ function buildSummaryChartPayload(rows: AnyRow[]) {
   const grouped = groupBy(rows, (row) => getDateKey(row));
   const dateKeys = Object.keys(grouped).sort();
 
-  if (!dateKeys.length) return undefined;
+  const monthRows = buildMonthRows(rows);
+  const weekRows = buildWeekRows(rows);
+  const sourceRows = buildSourceRows(rows);
+
+  if (!dateKeys.length) {
+    return {
+      title: "기간 성과 추이",
+      points: [],
+      monthRows,
+      weekRows,
+      sourceRows,
+    };
+  }
 
   return {
     title: "기간 성과 추이",
@@ -296,6 +446,9 @@ function buildSummaryChartPayload(rows: AnyRow[]) {
         conversions: totals.conversions,
       };
     }),
+    monthRows,
+    weekRows,
+    sourceRows,
   };
 }
 
@@ -544,18 +697,12 @@ export function buildExportPayloadsFromRows(
   }
 
   /**
-   * summary-goal 은 현재 대화에서
-   * "검증된 goal 데이터 소스"를 아직 확인하지 못했다.
-   * 억지 목표값을 만들지 않고 fallback 유지가 가장 안전하다.
+   * summary-goal 은 의도적으로 rows 기반 자동 연결을 하지 않는다.
+   * 외부 payload가 있으면 ExportBuilderClient에서 merge되어 유지된다.
    */
   return payloads;
 }
 
-/**
- * Step18 preview 보조 요약
- * - 현재 summary-goal fallback 유지 여부 판단 등에 활용 가능
- * - 아직 외부에서 쓰지 않아도 안전하게 둔다.
- */
 export function summarizeRowsForExport(inputRows?: AnyRow[] | null) {
   const rows = Array.isArray(inputRows) ? inputRows : [];
   const totals = aggregateRows(rows);

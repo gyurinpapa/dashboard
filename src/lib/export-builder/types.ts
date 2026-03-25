@@ -26,10 +26,41 @@ export type ExportCategory =
 
 export type ExportSlotId = string;
 
+export type ExportSlotRole =
+  | "hero-main"
+  | "hero-summary"
+  | "detail-main"
+  | "wide-primary"
+  | "split-main-a"
+  | "split-main-b"
+  | "compact-support-top"
+  | "compact-support-bottom"
+  | "compact-grid";
+
+export type ExportInsightPolicy = "normal" | "short" | "hidden";
+export type ExportInsightMode = "manual" | "auto";
+
 export type ExportBlock = {
   id: string;
   sectionKey: ExportSectionKey;
   slotId: ExportSlotId;
+
+  /**
+   * Step19-2
+   * 슬롯 Inspector 최소 override
+   */
+  title?: string;
+  subtitle?: string;
+  hidden?: boolean;
+
+  /**
+   * Step18-1 / Step20-1
+   * 장표별 직접작성/자동작성 인사이트 확장용 최소 필드
+   * - auto: 다음 단계에서 자동 생성 인사이트 사용
+   * - manual: insightText 직접 작성본 사용
+   */
+  insightMode?: ExportInsightMode;
+  insightText?: string;
 };
 
 export type ExportPage = {
@@ -59,6 +90,15 @@ export type ExportTemplateSlotDefinition = {
   id: ExportSlotId;
   label: string;
   description?: string;
+
+  /**
+   * Step20-2
+   * 템플릿-슬롯 계약 기반 builder 강화를 위한 최소 메타
+   */
+  slotRole?: ExportSlotRole;
+  insightPolicy?: ExportInsightPolicy;
+  preferredSections?: ExportSectionKey[];
+  allowedSections?: ExportSectionKey[];
 };
 
 export type ExportTemplateDefinition = {

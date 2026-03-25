@@ -11,6 +11,16 @@ import type {
   WeekKey,
 } from "../../../src/lib/report/types";
 
+import type {
+  ReportPeriod,
+  ReportPeriodPreset,
+} from "../../../src/lib/report/period";
+
+import {
+  REPORT_PERIOD_PRESETS,
+  resolvePresetPeriod,
+} from "../../../src/lib/report/period";
+
 import { monthLabelOf } from "../../../src/lib/report/date";
 import FilterBtn from "../ui/FilterBtn";
 
@@ -48,6 +58,17 @@ type Props = {
 
   advertiserName?: string | null;
   reportTypeName?: string | null;
+
+  reportPeriod: ReportPeriod;
+  onChangeReportPeriod: (next: ReportPeriod) => void;
+
+  readOnlyHeader?: boolean;
+
+  // ✅ 미리보기에서 "직접 선택/시작일/종료일"만 숨기기
+  hidePeriodEditor?: boolean;
+
+  // ✅ 미리보기에서 오른쪽 하단 "기준 기간 ..." 텍스트만 숨기기 (+VAT는 유지)
+  hideTabPeriodText?: boolean;
 };
 
 function cleanText(v?: string | null) {
@@ -81,7 +102,123 @@ function optionBtnClass(active: boolean, dim = false, disabled = false) {
   ].join(" ");
 }
 
-export default function HeaderBar(props: Props) {
+function periodPresetLabel(preset: ReportPeriodPreset) {
+  switch (preset) {
+    case "this_month":
+      return "이번 달";
+    case "last_month":
+      return "지난달";
+    case "last_7_days":
+      return "최근 7일";
+    case "last_30_days":
+      return "최근 30일";
+    case "custom":
+      return "직접 선택";
+    default:
+      return preset;
+  }
+}
+
+function HeaderIntro({
+  advertiserName,
+  reportTypeName,
+  fullPeriod,
+}: {
+  advertiserName?: string | null;
+  reportTypeName?: string | null;
+  fullPeriod: string;
+}) {
+  const headerTitle = useMemo(() => {
+    const adv = cleanText(advertiserName);
+    const typeName = cleanText(reportTypeName);
+
+    if (adv && typeName) return `${adv} ${typeName}`;
+    if (adv) return `${adv} 온라인광고`;
+    if (typeName) return typeName;
+    return "온라인광고";
+  }, [advertiserName, reportTypeName]);
+
+  const headerSubTitle = useMemo(() => {
+    const adv = cleanText(advertiserName);
+    const typeName = cleanText(reportTypeName);
+
+    if (adv && typeName) return "광고 성과 리포트";
+    if (adv) return "광고 성과 리포트";
+    if (typeName) return "리포트";
+    return "광고 성과 리포트";
+  }, [advertiserName, reportTypeName]);
+
+  return (
+    <div className="mb-6 rounded-3xl border border-slate-200/80 bg-white px-6 py-6 shadow-sm">
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0">
+          <div className="mb-2 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold tracking-[0.12em] text-slate-500">
+            E-COMMERCE
+          </div>
+
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+            {headerTitle}
+          </h1>
+
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500">
+            <span>{headerSubTitle}</span>
+            {fullPeriod ? (
+              <>
+                <span className="hidden sm:inline">•</span>
+                <span>
+                  데이터 전체 기간{" "}
+                  <span className="font-semibold text-slate-700">{fullPeriod}</span>
+                </span>
+              </>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReadOnlyHeaderBar({
+  advertiserName,
+  reportTypeName,
+  fullPeriod,
+  period,
+  reportPeriod,
+}: {
+  advertiserName?: string | null;
+  reportTypeName?: string | null;
+  fullPeriod: string;
+  period: string;
+  reportPeriod: ReportPeriod;
+}) {
+  return (
+    <div className="grid gap-4">
+      <HeaderIntro
+        advertiserName={advertiserName}
+        reportTypeName={reportTypeName}
+        fullPeriod={fullPeriod}
+      />
+
+      <div className="rounded-[24px] border border-slate-200 bg-white px-4 py-4 shadow-sm">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-slate-800">기준 기간</div>
+            <div className="mt-1 text-sm text-slate-600">
+              {reportPeriod.startDate || "-"} ~ {reportPeriod.endDate || "-"}
+            </div>
+          </div>
+
+          <div className="min-w-0 sm:text-right">
+            <div className="text-sm font-semibold text-slate-800">조회 기간</div>
+            <div className="mt-1 text-sm text-slate-600">{period || "-"}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditorHeaderBar(props: Props) {
   const {
     tab,
     setTab,
@@ -105,35 +242,18 @@ export default function HeaderBar(props: Props) {
     period,
     advertiserName,
     reportTypeName,
+    reportPeriod,
+    onChangeReportPeriod,
+    hidePeriodEditor = false,
+    hideTabPeriodText = false,
   } = props;
+
+  const disableDisplayChannel = tab === "keyword" || tab === "keywordDetail";
+  const filterRootRef = useRef<HTMLDivElement | null>(null);
 
   const toggleFilter = (k: Exclude<FilterKey, null>) => {
     setFilterKey(filterKey === k ? null : k);
   };
-
-  const headerTitle = useMemo(() => {
-    const adv = cleanText(advertiserName);
-    const typeName = cleanText(reportTypeName);
-
-    if (adv && typeName) return `${adv} ${typeName}`;
-    if (adv) return `${adv} 온라인광고`;
-    if (typeName) return typeName;
-    return "온라인광고";
-  }, [advertiserName, reportTypeName]);
-
-  const headerSubTitle = useMemo(() => {
-    const adv = cleanText(advertiserName);
-    const typeName = cleanText(reportTypeName);
-
-    if (adv && typeName) return "광고 성과 리포트";
-    if (adv) return "광고 성과 리포트";
-    if (typeName) return "리포트";
-    return "광고 성과 리포트";
-  }, [advertiserName, reportTypeName]);
-
-  const disableDisplayChannel = tab === "keyword" || tab === "keywordDetail";
-
-  const filterRootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const onPointerDown = (e: MouseEvent | TouchEvent) => {
@@ -162,300 +282,401 @@ export default function HeaderBar(props: Props) {
     };
   }, [filterKey, setFilterKey]);
 
+  const handlePresetChange = (preset: ReportPeriodPreset) => {
+    if (preset === "custom") {
+      onChangeReportPeriod({
+        preset: "custom",
+        startDate: reportPeriod.startDate,
+        endDate: reportPeriod.endDate,
+      });
+      return;
+    }
+
+    onChangeReportPeriod(resolvePresetPeriod({ preset }));
+  };
+
+  const handleStartDateChange = (nextStartDate: string) => {
+    onChangeReportPeriod({
+      preset: "custom",
+      startDate: nextStartDate,
+      endDate: reportPeriod.endDate,
+    });
+  };
+
+  const handleEndDateChange = (nextEndDate: string) => {
+    onChangeReportPeriod({
+      preset: "custom",
+      startDate: reportPeriod.startDate,
+      endDate: nextEndDate,
+    });
+  };
+
+  return (
+    <div className="grid gap-4">
+      <HeaderIntro
+        advertiserName={advertiserName}
+        reportTypeName={reportTypeName}
+        fullPeriod={fullPeriod}
+      />
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-stretch">
+        <div
+          ref={filterRootRef}
+          className="relative flex min-h-[116px] min-w-0 flex-col justify-between rounded-[24px] border border-slate-200 bg-white px-4 py-4 shadow-sm"
+        >
+          <div className="flex min-w-0 flex-col gap-4">
+            {!hidePeriodEditor ? (
+              <div className="grid gap-3 xl:grid-cols-[140px_minmax(0,1fr)] xl:items-start">
+                <div className="pt-2 text-sm font-semibold text-slate-800">
+                  보고서 기간
+                </div>
+
+                <div className="min-w-0">
+                  <div className="flex flex-col gap-3 xl:flex-row xl:flex-wrap xl:items-center">
+                    <div className="shrink-0">
+                      <select
+                        value={reportPeriod.preset}
+                        onChange={(e) =>
+                          handlePresetChange(e.target.value as ReportPeriodPreset)
+                        }
+                        className="h-11 w-full min-w-[160px] rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-slate-400 xl:w-[168px]"
+                      >
+                        {REPORT_PERIOD_PRESETS.map((preset) => (
+                          <option key={preset} value={preset}>
+                            {periodPresetLabel(preset)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          type="date"
+                          value={reportPeriod.startDate}
+                          onChange={(e) => handleStartDateChange(e.target.value)}
+                          className="h-11 w-[190px] max-w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400"
+                        />
+                        <span className="shrink-0 text-sm font-medium text-slate-400">
+                          ~
+                        </span>
+                        <input
+                          type="date"
+                          value={reportPeriod.endDate}
+                          onChange={(e) => handleEndDateChange(e.target.value)}
+                          className="h-11 w-[190px] max-w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="flex flex-wrap gap-2">
+              <FilterBtn
+                active={filterKey === "month"}
+                onClick={() => toggleFilter("month")}
+              >
+                월
+              </FilterBtn>
+              <FilterBtn
+                active={filterKey === "week"}
+                onClick={() => toggleFilter("week")}
+              >
+                주차
+              </FilterBtn>
+              <FilterBtn
+                active={filterKey === "device"}
+                onClick={() => toggleFilter("device")}
+              >
+                기기
+              </FilterBtn>
+              <FilterBtn
+                active={filterKey === "channel"}
+                onClick={() => toggleFilter("channel")}
+              >
+                채널
+              </FilterBtn>
+            </div>
+          </div>
+
+          <div className="mt-4 min-h-[24px] border-t border-slate-100 pt-3 text-sm text-slate-500">
+            {period ? (
+              <>
+                조회 기간{" "}
+                <span className="font-semibold text-slate-800">{period}</span>
+              </>
+            ) : (
+              <span className="text-slate-400">조회 기간 정보 없음</span>
+            )}
+          </div>
+
+          {filterKey === "month" && (
+            <div className="absolute left-0 top-full z-50 mt-3 w-[520px] max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl shadow-slate-900/8">
+              <div className="mb-3 text-sm font-semibold text-slate-800">
+                월 선택
+              </div>
+              <div className="flex max-h-[220px] flex-wrap gap-2 overflow-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedMonth("all");
+                    setFilterKey(null);
+                  }}
+                  className={optionBtnClass(selectedMonth === "all")}
+                >
+                  전체
+                </button>
+
+                {monthOptions.map((m) => {
+                  const dim = !enabledMonthKeySet.has(m);
+
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => {
+                        setSelectedMonth(m);
+                        setFilterKey(null);
+                      }}
+                      className={optionBtnClass(selectedMonth === m, dim)}
+                    >
+                      {monthLabelOf(m)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {filterKey === "week" && (
+            <div className="absolute left-0 top-full z-50 mt-3 w-[520px] max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl shadow-slate-900/8">
+              <div className="mb-3 text-sm font-semibold text-slate-800">
+                주차 선택
+              </div>
+              <div className="flex max-h-[220px] flex-wrap gap-2 overflow-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedWeek("all");
+                    setFilterKey(null);
+                  }}
+                  className={optionBtnClass(selectedWeek === "all")}
+                >
+                  전체
+                </button>
+
+                {weekOptions.map((w) => {
+                  const wk = w.weekKey;
+                  const dim = !enabledWeekKeySet.has(wk);
+
+                  return (
+                    <button
+                      key={wk}
+                      type="button"
+                      onClick={() => {
+                        setSelectedWeek(wk);
+                        setFilterKey(null);
+                      }}
+                      className={optionBtnClass(selectedWeek === wk, dim)}
+                    >
+                      {w.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {filterKey === "device" && (
+            <div className="absolute left-0 top-full z-50 mt-3 w-[520px] max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl shadow-slate-900/8">
+              <div className="mb-3 text-sm font-semibold text-slate-800">
+                기기 선택
+              </div>
+              <div className="flex max-h-[220px] flex-wrap gap-2 overflow-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedDevice("all");
+                    setFilterKey(null);
+                  }}
+                  className={optionBtnClass(selectedDevice === "all")}
+                >
+                  전체
+                </button>
+
+                {deviceOptions.map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => {
+                      setSelectedDevice(d);
+                      setFilterKey(null);
+                    }}
+                    className={optionBtnClass(selectedDevice === d)}
+                  >
+                    {d}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {filterKey === "channel" && (
+            <div className="absolute left-0 top-full z-50 mt-3 w-[520px] max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl shadow-slate-900/8">
+              <div className="mb-3 text-sm font-semibold text-slate-800">
+                채널 선택
+              </div>
+              <div className="flex max-h-[220px] flex-wrap gap-2 overflow-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedChannel("all");
+                    setFilterKey(null);
+                  }}
+                  className={optionBtnClass(selectedChannel === "all")}
+                >
+                  전체
+                </button>
+
+                {channelOptions.map((c) => {
+                  const isDisplay =
+                    c === "display" ||
+                    c === ("display ad" as any) ||
+                    c === ("display_ad" as any);
+
+                  const disabled = disableDisplayChannel && isDisplay;
+
+                  return (
+                    <button
+                      key={c}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => {
+                        if (disabled) return;
+                        setSelectedChannel(c);
+                        setFilterKey(null);
+                      }}
+                      title={
+                        disabled
+                          ? "키워드 탭에서는 display ad를 선택할 수 없습니다."
+                          : String(c)
+                      }
+                      className={optionBtnClass(
+                        selectedChannel === c,
+                        false,
+                        disabled
+                      )}
+                    >
+                      {c}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex min-h-[116px] min-w-0 flex-col justify-between rounded-[24px] border border-slate-200 bg-slate-50/90 px-3 py-3 shadow-sm">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setTab("summary")}
+              className={tabClass(tab === "summary")}
+            >
+              요약
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTab("summary2")}
+              className={tabClass(tab === "summary2")}
+            >
+              요약2
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTab("structure")}
+              className={tabClass(tab === "structure")}
+            >
+              구조
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTab("keyword")}
+              className={tabClass(tab === "keyword")}
+            >
+              키워드
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTab("keywordDetail")}
+              className={tabClass(tab === "keywordDetail")}
+            >
+              키워드(상세)
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTab("creative")}
+              className={tabClass(tab === "creative")}
+            >
+              소재
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTab("creativeDetail")}
+              className={tabClass(tab === "creativeDetail")}
+            >
+              소재(상세)
+            </button>
+          </div>
+
+          <div className="mt-4 flex min-h-[24px] items-end justify-between gap-3 border-t border-slate-200/70 pt-3">
+            <div className="text-xs text-slate-500">
+              {!hideTabPeriodText ? (
+                <>
+                  기준 기간{" "}
+                  <span className="font-semibold text-slate-700">
+                    {reportPeriod.startDate || "-"} ~ {reportPeriod.endDate || "-"}
+                  </span>
+                </>
+              ) : null}
+            </div>
+
+            <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600">
+              +VAT
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function HeaderBar(props: Props) {
+  const { readOnlyHeader = false } = props;
+
   return (
     <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/90 backdrop-blur-xl">
       <div className="px-4 pb-4 pt-6 sm:px-6 lg:px-8">
         <div className="mx-auto w-full max-w-[1440px]">
-          <div className="mb-6 rounded-3xl border border-slate-200/80 bg-white px-6 py-6 shadow-sm">
-            <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-              <div className="min-w-0">
-                <div className="mb-2 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold tracking-[0.12em] text-slate-500">
-                  E-COMMERCE
-                </div>
-
-                <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
-                  {headerTitle}
-                </h1>
-
-                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500">
-                  <span>{headerSubTitle}</span>
-                  {fullPeriod ? (
-                    <>
-                      <span className="hidden sm:inline">•</span>
-                      <span>
-                        기간{" "}
-                        <span className="font-semibold text-slate-700">{fullPeriod}</span>
-                      </span>
-                    </>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-stretch">
-            <div
-              ref={filterRootRef}
-              className="relative flex min-h-[116px] flex-col justify-between rounded-[24px] border border-slate-200 bg-white px-4 py-4 shadow-sm"
-            >
-              <div className="flex flex-wrap gap-2">
-                <FilterBtn
-                  active={filterKey === "month"}
-                  onClick={() => toggleFilter("month")}
-                >
-                  월
-                </FilterBtn>
-                <FilterBtn
-                  active={filterKey === "week"}
-                  onClick={() => toggleFilter("week")}
-                >
-                  주차
-                </FilterBtn>
-                <FilterBtn
-                  active={filterKey === "device"}
-                  onClick={() => toggleFilter("device")}
-                >
-                  기기
-                </FilterBtn>
-                <FilterBtn
-                  active={filterKey === "channel"}
-                  onClick={() => toggleFilter("channel")}
-                >
-                  채널
-                </FilterBtn>
-              </div>
-
-              <div className="mt-4 min-h-[24px] border-t border-slate-100 pt-3 text-sm text-slate-500">
-                {period ? (
-                  <>
-                    조회 기간{" "}
-                    <span className="font-semibold text-slate-800">{period}</span>
-                  </>
-                ) : (
-                  <span className="text-slate-400">조회 기간 정보 없음</span>
-                )}
-              </div>
-
-              {filterKey === "month" && (
-                <div className="absolute left-0 top-full z-50 mt-3 w-[520px] max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl shadow-slate-900/8">
-                  <div className="mb-3 text-sm font-semibold text-slate-800">월 선택</div>
-                  <div className="flex max-h-[220px] flex-wrap gap-2 overflow-auto">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedMonth("all");
-                        setFilterKey(null);
-                      }}
-                      className={optionBtnClass(selectedMonth === "all")}
-                    >
-                      전체
-                    </button>
-
-                    {monthOptions.map((m) => {
-                      const dim = !enabledMonthKeySet.has(m);
-
-                      return (
-                        <button
-                          key={m}
-                          type="button"
-                          onClick={() => {
-                            setSelectedMonth(m);
-                            setFilterKey(null);
-                          }}
-                          className={optionBtnClass(selectedMonth === m, dim)}
-                        >
-                          {monthLabelOf(m)}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {filterKey === "week" && (
-                <div className="absolute left-0 top-full z-50 mt-3 w-[520px] max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl shadow-slate-900/8">
-                  <div className="mb-3 text-sm font-semibold text-slate-800">주차 선택</div>
-                  <div className="flex max-h-[220px] flex-wrap gap-2 overflow-auto">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedWeek("all");
-                        setFilterKey(null);
-                      }}
-                      className={optionBtnClass(selectedWeek === "all")}
-                    >
-                      전체
-                    </button>
-
-                    {weekOptions.map((w) => {
-                      const wk = w.weekKey;
-                      const dim = !enabledWeekKeySet.has(wk);
-
-                      return (
-                        <button
-                          key={wk}
-                          type="button"
-                          onClick={() => {
-                            setSelectedWeek(wk);
-                            setFilterKey(null);
-                          }}
-                          className={optionBtnClass(selectedWeek === wk, dim)}
-                        >
-                          {w.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {filterKey === "device" && (
-                <div className="absolute left-0 top-full z-50 mt-3 w-[520px] max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl shadow-slate-900/8">
-                  <div className="mb-3 text-sm font-semibold text-slate-800">기기 선택</div>
-                  <div className="flex max-h-[220px] flex-wrap gap-2 overflow-auto">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedDevice("all");
-                        setFilterKey(null);
-                      }}
-                      className={optionBtnClass(selectedDevice === "all")}
-                    >
-                      전체
-                    </button>
-
-                    {deviceOptions.map((d) => (
-                      <button
-                        key={d}
-                        type="button"
-                        onClick={() => {
-                          setSelectedDevice(d);
-                          setFilterKey(null);
-                        }}
-                        className={optionBtnClass(selectedDevice === d)}
-                      >
-                        {d}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {filterKey === "channel" && (
-                <div className="absolute left-0 top-full z-50 mt-3 w-[520px] max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl shadow-slate-900/8">
-                  <div className="mb-3 text-sm font-semibold text-slate-800">채널 선택</div>
-                  <div className="flex max-h-[220px] flex-wrap gap-2 overflow-auto">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedChannel("all");
-                        setFilterKey(null);
-                      }}
-                      className={optionBtnClass(selectedChannel === "all")}
-                    >
-                      전체
-                    </button>
-
-                    {channelOptions.map((c) => {
-                      const isDisplay =
-                        c === "display" ||
-                        c === ("display ad" as any) ||
-                        c === ("display_ad" as any);
-
-                      const disabled = disableDisplayChannel && isDisplay;
-
-                      return (
-                        <button
-                          key={c}
-                          type="button"
-                          disabled={disabled}
-                          onClick={() => {
-                            if (disabled) return;
-                            setSelectedChannel(c);
-                            setFilterKey(null);
-                          }}
-                          title={
-                            disabled
-                              ? "키워드 탭에서는 display ad를 선택할 수 없습니다."
-                              : String(c)
-                          }
-                          className={optionBtnClass(selectedChannel === c, false, disabled)}
-                        >
-                          {c}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="flex min-h-[116px] flex-col justify-between rounded-[24px] border border-slate-200 bg-slate-50/90 px-3 py-3 shadow-sm">
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setTab("summary")}
-                  className={tabClass(tab === "summary")}
-                >
-                  요약
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setTab("summary2")}
-                  className={tabClass(tab === "summary2")}
-                >
-                  요약2
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setTab("structure")}
-                  className={tabClass(tab === "structure")}
-                >
-                  구조
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setTab("keyword")}
-                  className={tabClass(tab === "keyword")}
-                >
-                  키워드
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setTab("keywordDetail")}
-                  className={tabClass(tab === "keywordDetail")}
-                >
-                  키워드(상세)
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setTab("creative")}
-                  className={tabClass(tab === "creative")}
-                >
-                  소재
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setTab("creativeDetail")}
-                  className={tabClass(tab === "creativeDetail")}
-                >
-                  소재(상세)
-                </button>
-              </div>
-
-              <div className="mt-4 flex min-h-[24px] items-end justify-end border-t border-slate-200/70 pt-3">
-                <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600">
-                  +VAT
-                </div>
-              </div>
-            </div>
-          </div>
+          {readOnlyHeader ? (
+            <ReadOnlyHeaderBar
+              advertiserName={props.advertiserName}
+              reportTypeName={props.reportTypeName}
+              fullPeriod={props.fullPeriod}
+              period={props.period}
+              reportPeriod={props.reportPeriod}
+            />
+          ) : (
+            <EditorHeaderBar {...props} />
+          )}
         </div>
       </div>
     </header>

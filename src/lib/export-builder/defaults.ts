@@ -37,6 +37,14 @@ export function createExportBlock(
     id: createId("block"),
     sectionKey,
     slotId,
+
+    /**
+     * Step18-1
+     * 신규 block은 자동 인사이트 모드를 기본값으로 둔다.
+     * 아직 auto insight generator가 없으므로 현재 화면에서는 빈 상태가 정상이다.
+     */
+    insightMode: "auto",
+    insightText: "",
   };
 }
 

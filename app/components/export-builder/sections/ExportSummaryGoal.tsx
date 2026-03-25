@@ -22,23 +22,11 @@ type GoalMetric = {
 type LayoutMode = "full" | "wide" | "compact" | "side-compact";
 
 type Props = {
-  /**
-   * Step 17 이전 호환용
-   */
   title?: string;
   subtitle?: string;
   metrics?: GoalMetric[];
-
-  /**
-   * Step 17-9 표준 props
-   */
   meta?: Partial<ExportSectionMeta>;
   data?: Partial<ExportSummaryGoalData>;
-
-  /**
-   * 향후 layout 대응을 위한 안전 확장
-   * 기존 호출부가 없어도 기본값으로 안전 동작
-   */
   layoutMode?: LayoutMode;
 };
 
@@ -68,7 +56,11 @@ function clampRate(rate: number) {
   return Math.max(0, Math.min(100, rate));
 }
 
-function normalizeProgressToPercent(progress?: number, actual?: number, goal?: number) {
+function normalizeProgressToPercent(
+  progress?: number,
+  actual?: number,
+  goal?: number
+) {
   const safeProgress = Number(progress);
   if (Number.isFinite(safeProgress)) {
     return safeProgress <= 1 ? safeProgress * 100 : safeProgress;
@@ -77,7 +69,11 @@ function normalizeProgressToPercent(progress?: number, actual?: number, goal?: n
   const safeActual = Number(actual);
   const safeGoal = Number(goal);
 
-  if (Number.isFinite(safeActual) && Number.isFinite(safeGoal) && safeGoal > 0) {
+  if (
+    Number.isFinite(safeActual) &&
+    Number.isFinite(safeGoal) &&
+    safeGoal > 0
+  ) {
     return (safeActual / safeGoal) * 100;
   }
 
@@ -121,9 +117,29 @@ function toCardDensity(layoutMode: LayoutMode): SummaryGoalMetricCardDensity {
   return "export-side-compact";
 }
 
+function getVisibleGoalCount(layoutMode: LayoutMode) {
+  if (layoutMode === "full") return 4;
+  if (layoutMode === "wide") return 4;
+  if (layoutMode === "compact") return 3;
+  return 2;
+}
+
+function getGridClass(layoutMode: LayoutMode) {
+  if (layoutMode === "full") {
+    return "grid gap-3 md:grid-cols-2";
+  }
+  if (layoutMode === "wide") {
+    return "grid gap-3 md:grid-cols-2";
+  }
+  if (layoutMode === "compact") {
+    return "grid gap-2";
+  }
+  return "grid gap-1.5";
+}
+
 export default function ExportSummaryGoal({
-  title = "목표 / 달성현황",
-  subtitle = "월 목표 대비 현재 실적 요약",
+  title,
+  subtitle,
   metrics,
   meta,
   data,
@@ -134,104 +150,114 @@ export default function ExportSummaryGoal({
   const resolvedData = buildSectionData("summary-goal", {
     ...(metrics ? { goals: normalizeLegacyMetrics(metrics) } : {}),
     ...(data ?? {}),
-    ...(!metrics && !data ? { goals: normalizeLegacyMetrics(DEFAULT_METRICS) } : {}),
   });
 
-  const safeGoals = (resolvedData.goals ?? []).slice(0, 4);
+  const fallbackGoals = normalizeLegacyMetrics(DEFAULT_METRICS);
+  const baseGoals =
+    Array.isArray(resolvedData.goals) && resolvedData.goals.length > 0
+      ? resolvedData.goals
+      : fallbackGoals;
 
-  const displayTitle = title || "목표 / 달성현황";
+  const visibleCount = getVisibleGoalCount(layoutMode);
+  const safeGoals = baseGoals.slice(0, visibleCount);
+
+  const metaText = [resolvedMeta.reportTypeName, resolvedMeta.periodLabel]
+    .filter(Boolean)
+    .join(" · ");
+
+  const displayTitle = title || "목표 입력 & 달성 현황";
   const displaySubtitle =
     subtitle ||
-    [resolvedMeta.reportTypeName, resolvedMeta.periodLabel]
-      .filter(Boolean)
-      .join(" · ") ||
-    "월 목표 대비 현재 실적 요약";
+    (metaText
+      ? `월 목표 대비 현재 실적 및 달성률 · ${metaText}`
+      : "월 목표 대비 현재 실적 및 달성률");
 
   const cardDensity = toCardDensity(layoutMode);
 
-  const sectionClass = [
-    "flex h-full min-h-[240px] flex-col rounded-[24px] border border-slate-200 bg-white shadow-sm",
-    layoutMode === "full"
-      ? "p-5"
-      : layoutMode === "wide"
-      ? "p-4"
-      : layoutMode === "compact"
-      ? "p-3"
-      : "p-2.5",
-  ].join(" ");
-
-  const headerWrapClass = [
-    "flex items-start justify-between gap-3",
-    layoutMode === "side-compact" ? "mb-2" : "mb-4",
-  ].join(" ");
-
-  const eyebrowClass = [
-    "font-semibold uppercase tracking-[0.16em] text-slate-400",
-    layoutMode === "side-compact" ? "text-[9px]" : "text-[11px]",
-  ].join(" ");
-
-  const titleClass = [
-    "mt-1 font-semibold tracking-tight text-slate-900",
-    layoutMode === "full"
-      ? "text-base"
-      : layoutMode === "wide"
-      ? "text-[15px]"
-      : layoutMode === "compact"
-      ? "text-[14px]"
-      : "text-[12px]",
-  ].join(" ");
-
-  const subtitleClass = [
-    "mt-1 text-slate-500",
-    layoutMode === "side-compact" ? "text-[9px]" : "text-xs",
-  ].join(" ");
-
-  const badgeClass = [
-    "rounded-full border border-slate-200 bg-slate-50 font-medium text-slate-500",
-    layoutMode === "side-compact"
-      ? "px-2 py-0.5 text-[9px]"
-      : "px-3 py-1 text-[11px]",
-  ].join(" ");
-
-  const gridClass = [
-    "grid flex-1",
-    layoutMode === "side-compact" ? "gap-2" : "gap-3",
-  ].join(" ");
+  const isSideCompact = layoutMode === "side-compact";
+  const isCompact = layoutMode === "compact";
+  const isWide = layoutMode === "wide";
+  const isFull = layoutMode === "full";
 
   return (
-    <section className={sectionClass}>
-      <div className={headerWrapClass}>
-        <div>
-          <div className={eyebrowClass}>Summary</div>
-          <h3 className={titleClass}>{displayTitle}</h3>
-          <p className={subtitleClass}>{displaySubtitle}</p>
-        </div>
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div
+        className={[
+          "border-b border-slate-200",
+          isFull
+            ? "px-5 py-4"
+            : isWide
+            ? "px-4 py-3.5"
+            : isCompact
+            ? "px-3 py-3"
+            : "px-2.5 py-2.5",
+        ].join(" ")}
+      >
+        <h3
+          className={[
+            "font-semibold tracking-tight text-slate-900",
+            isFull
+              ? "text-lg"
+              : isWide
+              ? "text-[16px]"
+              : isCompact
+              ? "text-[14px]"
+              : "text-[12px]",
+          ].join(" ")}
+        >
+          {displayTitle}
+        </h3>
 
-        <div className={badgeClass}>Goal</div>
+        <p
+          className={[
+            "mt-1 text-slate-500",
+            isSideCompact ? "text-[9px]" : "text-sm",
+          ].join(" ")}
+        >
+          {displaySubtitle}
+        </p>
       </div>
 
-      <div className={gridClass}>
-        {safeGoals.map((goal, index) => {
-          const rate = clampRate(
-            normalizeProgressToPercent(goal.progress, goal.actual, goal.goal)
-          );
+      <div
+        className={[
+          isFull
+            ? "px-5 py-4"
+            : isWide
+            ? "px-4 py-4"
+            : isCompact
+            ? "px-3 py-3"
+            : "px-2.5 py-2.5",
+        ].join(" ")}
+      >
+        <div className={getGridClass(layoutMode)}>
+          {safeGoals.map((goal, index) => {
+            const rate = clampRate(
+              normalizeProgressToPercent(goal.progress, goal.actual, goal.goal)
+            );
 
-          const displayGoal =
-            goal.goalLabel || formatFallbackValue(goal.goal, goal.unit);
-          const displayActual =
-            goal.actualLabel || formatFallbackValue(goal.actual, goal.unit);
+            const displayGoal =
+              goal.goalLabel || formatFallbackValue(goal.goal, goal.unit);
+            const displayActual =
+              goal.actualLabel || formatFallbackValue(goal.actual, goal.unit);
 
-          return (
-            <SummaryGoalMetricCardView
-              key={goal.key || `${goal.label}-${index}`}
-              label={goal.label}
-              goalLabel={displayGoal}
-              actualLabel={displayActual}
-              rate={rate}
-              density={cardDensity}
-            />
-          );
-        })}
+            return (
+              <SummaryGoalMetricCardView
+                key={goal.key || `${goal.label}-${index}`}
+                label={goal.label}
+                goalLabel={displayGoal}
+                actualLabel={displayActual}
+                rate={rate}
+                density={cardDensity}
+              />
+            );
+          })}
+        </div>
+
+        {!isSideCompact ? (
+          <p className="mt-3 text-xs text-slate-500">
+            * 목표/달성 현황은 슬라이드용 요약 뷰입니다.
+          </p>
+        ) : null}
       </div>
     </section>
   );

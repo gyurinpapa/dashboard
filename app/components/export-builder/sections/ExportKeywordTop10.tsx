@@ -94,9 +94,30 @@ function toTableDensity(layoutMode: LayoutMode): KeywordTopTableDensity {
   return "export-full";
 }
 
+function getVisibleRowCount(layoutMode: LayoutMode) {
+  if (layoutMode === "full") return 10;
+  if (layoutMode === "wide") return 8;
+  if (layoutMode === "compact") return 6;
+  return 4;
+}
+
+function getBestKeywordLabel(
+  rows: Array<{ keyword?: string; revenue?: number; roas?: number }>
+) {
+  if (!rows.length) return "-";
+
+  const sorted = [...rows].sort((a, b) => {
+    const revenueDiff = Number(b.revenue || 0) - Number(a.revenue || 0);
+    if (revenueDiff !== 0) return revenueDiff;
+    return Number(b.roas || 0) - Number(a.roas || 0);
+  });
+
+  return sorted[0]?.keyword || "-";
+}
+
 export default function ExportKeywordTop10({
-  title = "키워드 TOP10",
-  subtitle = "성과 상위 키워드 요약",
+  title,
+  subtitle,
   rows,
   meta,
   data,
@@ -110,22 +131,31 @@ export default function ExportKeywordTop10({
     ...(!rows && !data ? { rows: normalizeLegacyRows(DEFAULT_ROWS) } : {}),
   });
 
-  const safeRows = (resolvedData.rows ?? []).slice(0, 10);
+  const visibleCount = getVisibleRowCount(layoutMode);
+  const safeRows = (resolvedData.rows ?? []).slice(0, visibleCount);
 
-  const totalCost = safeRows.reduce((sum, row) => sum + (row.cost || 0), 0);
-  const totalRevenue = safeRows.reduce((sum, row) => sum + (row.revenue || 0), 0);
+  const totalCost = safeRows.reduce((sum, row) => sum + Number(row.cost || 0), 0);
+  const totalRevenue = safeRows.reduce(
+    (sum, row) => sum + Number(row.revenue || 0),
+    0
+  );
+
   const avgRoas =
     safeRows.length > 0
-      ? safeRows.reduce((sum, row) => sum + (row.roas || 0), 0) / safeRows.length
+      ? safeRows.reduce((sum, row) => sum + Number(row.roas || 0), 0) /
+        safeRows.length
       : undefined;
+
+  const metaText = [resolvedMeta.reportTypeName, resolvedMeta.periodLabel]
+    .filter(Boolean)
+    .join(" · ");
 
   const displayTitle = title || "키워드 TOP10";
   const displaySubtitle =
     subtitle ||
-    [resolvedMeta.reportTypeName, resolvedMeta.periodLabel]
-      .filter(Boolean)
-      .join(" · ") ||
-    "성과 상위 키워드 요약";
+    (metaText
+      ? `현재 필터가 적용된 데이터 기준 성과 상위 키워드 · ${metaText}`
+      : "현재 필터가 적용된 데이터 기준 성과 상위 키워드");
 
   const tableRows: KeywordTopTableRow[] = safeRows.map((row, index) => ({
     key: `${row.keyword}-${index}`,
@@ -136,6 +166,8 @@ export default function ExportKeywordTop10({
     roas: formatPercent(row.roas),
   }));
 
+  const bestKeywordLabel = getBestKeywordLabel(safeRows);
+
   return (
     <KeywordTopTableView
       title={displayTitle}
@@ -143,10 +175,11 @@ export default function ExportKeywordTop10({
       rows={tableRows}
       density={toTableDensity(layoutMode)}
       summary={{
-        totalCostLabel: totalCost > 0 ? formatCurrency(totalCost) : "₩9.99M",
-        totalRevenueLabel: totalRevenue > 0 ? formatCurrency(totalRevenue) : "₩31.99M",
+        totalCostLabel: totalCost > 0 ? formatCurrency(totalCost) : "-",
+        totalRevenueLabel: totalRevenue > 0 ? formatCurrency(totalRevenue) : "-",
         avgRoasLabel:
-          Number.isFinite(Number(avgRoas)) ? formatPercent(Number(avgRoas)) : "320%",
+          Number.isFinite(Number(avgRoas)) ? formatPercent(Number(avgRoas)) : "-",
+        bestKeywordLabel,
       }}
     />
   );

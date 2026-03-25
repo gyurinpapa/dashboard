@@ -10,6 +10,7 @@ import type {
   ExportSectionMeta,
   ExportSectionPayloadMap,
 } from "@/src/lib/export-builder/section-props";
+import type { SourceBrowserFilterState } from "@/src/lib/export-builder/source-browser-types";
 
 type Props = {
   page: ExportPage;
@@ -20,13 +21,17 @@ type Props = {
     sectionKey: ExportSectionKey
   ) => void;
   onRemoveBlock: (pageId: string, blockId: string) => void;
-
-  /**
-   * Step 17-9
-   * Export section 공통 입력
-   */
+  selectedSlotId?: string | null;
+  onSelectSlot?: (pageId: string, slotId: string) => void;
   meta?: Partial<ExportSectionMeta>;
   sectionPayloads?: ExportSectionPayloadMap;
+
+  sourceFilters: SourceBrowserFilterState;
+  monthOptions: string[];
+  weekOptions: Array<{ weekKey: string; label: string }>;
+  deviceOptions: string[];
+  channelOptions: string[];
+  onChangeSourceFilters: (next: SourceBrowserFilterState) => void;
 };
 
 function getGridClass(templateKey: ExportPage["templateKey"]) {
@@ -85,8 +90,16 @@ export default function ExportPageView({
   pageNumber,
   onAssignSection,
   onRemoveBlock,
+  selectedSlotId,
+  onSelectSlot,
   meta,
   sectionPayloads,
+  sourceFilters,
+  monthOptions,
+  weekOptions,
+  deviceOptions,
+  channelOptions,
+  onChangeSourceFilters,
 }: Props) {
   const template = getExportTemplate(page.templateKey);
 
@@ -131,8 +144,16 @@ export default function ExportPageView({
                   slot={slot}
                   onAssignSection={onAssignSection}
                   onRemoveBlock={onRemoveBlock}
+                  selectedSlotId={selectedSlotId}
+                  onSelectSlot={onSelectSlot}
                   meta={meta}
                   sectionPayloads={sectionPayloads}
+                  sourceFilters={sourceFilters}
+                  monthOptions={monthOptions}
+                  weekOptions={weekOptions}
+                  deviceOptions={deviceOptions}
+                  channelOptions={channelOptions}
+                  onChangeSourceFilters={onChangeSourceFilters}
                 />
               </div>
             ))}

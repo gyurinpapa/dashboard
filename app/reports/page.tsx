@@ -12,6 +12,18 @@ type ReportRow = {
   created_at: string | null;
   workspace_id: string | null;
   advertiser_id: string | null;
+
+  // ✅ 추가 (draft/published)
+  draft_period_start?: string | null;
+  draft_period_end?: string | null;
+  draft_period_preset?: string | null;
+  draft_period_label?: string | null;
+
+  published_period_start?: string | null;
+  published_period_end?: string | null;
+  published_period_preset?: string | null;
+  published_period_label?: string | null;
+  published_at?: string | null;
 };
 
 type AdvertiserRow = {
@@ -19,6 +31,8 @@ type AdvertiserRow = {
   name: string | null;
   workspace_id: string | null;
 };
+
+// 이하 전체 코드 그대로 유지 (❗ 절대 변경 없음)
 
 async function safeJson(res: Response) {
   const raw = await res.text().catch(() => "");

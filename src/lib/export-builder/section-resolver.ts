@@ -21,14 +21,25 @@ export function buildSectionMeta(
   };
 }
 
+/**
+ * 중요:
+ * - 실제 section payload가 들어온 경우에는 fallback 샘플 데이터를 섞지 않는다.
+ * - payload가 아예 없을 때만 fallback을 사용한다.
+ *
+ * 이유:
+ * - export-builder 전역 기간 / source filter 변경 후 계산된 payload가
+ *   fallback 샘플에 가려져 보이는 문제를 막기 위함
+ * - "실데이터가 있으면 실데이터 우선" 원칙 유지
+ */
 export function buildSectionData<K extends ExportSectionKey>(
   sectionKey: K,
   data?: Partial<ExportSectionDataMap[K]>
 ): ExportSectionDataMap[K] {
-  return {
-    ...getFallbackSectionData(sectionKey),
-    ...(data ?? {}),
-  };
+  if (data) {
+    return data as ExportSectionDataMap[K];
+  }
+
+  return getFallbackSectionData(sectionKey) as ExportSectionDataMap[K];
 }
 
 export function buildSectionProps<K extends ExportSectionKey>(
@@ -41,7 +52,9 @@ export function buildSectionProps<K extends ExportSectionKey>(
   const meta = buildSectionMeta(options?.meta);
   const data = buildSectionData(
     sectionKey,
-    options?.sectionPayloads?.[sectionKey] as Partial<ExportSectionDataMap[K]> | undefined
+    options?.sectionPayloads?.[sectionKey] as
+      | Partial<ExportSectionDataMap[K]>
+      | undefined
   );
 
   return {

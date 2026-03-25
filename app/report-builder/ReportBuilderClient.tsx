@@ -15,11 +15,23 @@ type ReportType = {
 type ReportRow = {
   id: string;
   title: string;
-  status: string;
-  created_at?: string;
-  advertiser_id?: string | null;
-  advertiser_name?: string | null;
-  share_token?: string | null;
+  status: "draft" | "ready" | "archived";
+
+  period_start?: string | null;
+  period_end?: string | null;
+  period_preset?: string | null;
+  period_label?: string | null;
+
+  draft_period_start?: string | null;
+  draft_period_end?: string | null;
+  draft_period_preset?: string | null;
+  draft_period_label?: string | null;
+
+  published_period_start?: string | null;
+  published_period_end?: string | null;
+  published_period_preset?: string | null;
+  published_period_label?: string | null;
+  published_at?: string | null;
 };
 
 type AdvertiserRow = {

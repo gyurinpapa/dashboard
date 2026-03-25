@@ -5,6 +5,13 @@ import ExportBuilderClient from "@/app/components/export-builder/ExportBuilderCl
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
 import { buildExportPayloadsFromRows } from "@/src/lib/export-builder/buildExportPayloadsFromRows";
+import type { ExportPeriod } from "@/src/lib/export-builder/period";
+import {
+  buildExportPeriodLabel,
+  createInitialExportPeriod,
+  filterRowsByExportPeriod,
+  normalizeExportPeriod,
+} from "@/src/lib/export-builder/period";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +24,14 @@ type PageProps = {
     advertiserName?: string;
     reportTypeName?: string;
     periodLabel?: string;
+    periodStart?: string;
+    periodEnd?: string;
+    periodPreset?:
+      | "this_month"
+      | "last_month"
+      | "last_7_days"
+      | "last_30_days"
+      | "custom";
     preset?: "starter-default" | "starter-summary-focused" | "starter-executive";
   }>;
 };
@@ -139,6 +154,72 @@ async function findLatestIngestionId(
   return asString((latest as any)?.ingestion_id);
 }
 
+function buildRedirectToReportDetail(reportId: string, message: string) {
+  const qs = new URLSearchParams();
+  qs.set("eb_notice", message);
+  return `/reports/${reportId}?${qs.toString()}`;
+}
+
+function buildPeriodLabelFromInputs(args: {
+  periodLabel?: string;
+  periodStart?: string;
+  periodEnd?: string;
+}) {
+  const periodLabel = asString(args.periodLabel);
+  if (periodLabel) return periodLabel;
+
+  const periodStart = asString(args.periodStart);
+  const periodEnd = asString(args.periodEnd);
+
+  if (periodStart && periodEnd) return `${periodStart} ~ ${periodEnd}`;
+  if (periodStart) return periodStart;
+  if (periodEnd) return periodEnd;
+
+  return "기간 미정";
+}
+
+function normalizePeriodPreset(
+  value: unknown
+):
+  | "this_month"
+  | "last_month"
+  | "last_7_days"
+  | "last_30_days"
+  | "custom" {
+  return value === "this_month" ||
+    value === "last_month" ||
+    value === "last_7_days" ||
+    value === "last_30_days" ||
+    value === "custom"
+    ? value
+    : "custom";
+}
+
+function createInitialExportPeriodFromSearch(args: {
+  rows: any[];
+  periodStart?: string;
+  periodEnd?: string;
+  periodPreset?: "this_month" | "last_month" | "last_7_days" | "last_30_days" | "custom";
+  periodLabel?: string;
+}): ExportPeriod {
+  const periodStart = asString(args.periodStart);
+  const periodEnd = asString(args.periodEnd);
+  const preset = normalizePeriodPreset(args.periodPreset);
+
+  if (periodStart || periodEnd) {
+    return normalizeExportPeriod({
+      preset,
+      start: periodStart || null,
+      end: periodEnd || null,
+      label:
+        asString(args.periodLabel) ||
+        buildExportPeriodLabel(periodStart || null, periodEnd || null),
+    });
+  }
+
+  return createInitialExportPeriod(args.rows ?? []);
+}
+
 export default async function ReportExportBuilderPage({
   params,
   searchParams,
@@ -155,7 +236,16 @@ export default async function ReportExportBuilderPage({
 
   const advertiserName = asString(sp?.advertiserName) || "광고주";
   const reportTypeName = asString(sp?.reportTypeName) || "리포트";
-  const periodLabel = asString(sp?.periodLabel) || "기간 미정";
+
+  const periodStart = asString(sp?.periodStart);
+  const periodEnd = asString(sp?.periodEnd);
+  const periodPreset = normalizePeriodPreset(sp?.periodPreset);
+
+  const periodLabel = buildPeriodLabelFromInputs({
+    periodLabel: sp?.periodLabel,
+    periodStart,
+    periodEnd,
+  });
 
   const preset =
     sp?.preset === "starter-summary-focused" ||
@@ -277,15 +367,78 @@ export default async function ReportExportBuilderPage({
     }
   }
 
+  if (!rawRows.length) {
+    const notice =
+      "Export Builder를 열 수 없습니다. 먼저 보고서 상세 페이지에서 CSV 업로드 + 파싱을 완료해 실제 rows를 생성해 주세요.";
+
+    console.log("[export-builder redirect] no rows found -> /reports/[id]", {
+      reportId,
+      currentIngestionId: currentIngestionId || null,
+      ingestionIdUsed: ingestionIdUsed || null,
+      fallbackUsed,
+      notice,
+    });
+
+    redirect(buildRedirectToReportDetail(reportId, notice));
+  }
+
   const rows = rawRows.map(flattenRow);
-  const sectionPayloads = buildExportPayloadsFromRows(rows);
+
+  /**
+   * export-builder 초기 진입 시점의 초기 export 기간
+   * - searchParams 기간이 있으면 그것을 우선 사용
+   * - 없으면 실제 rows date range 기준으로 custom 초기화
+   */
+  const initialExportPeriod = createInitialExportPeriodFromSearch({
+    rows,
+    periodStart,
+    periodEnd,
+    periodPreset,
+    periodLabel,
+  });
+
+  /**
+   * 초기 렌더용 rows
+   * - client 내부와 동일하게 export-builder period 유틸 기준으로 맞춤
+   * - 이후 실제 편집 중 재계산 기준 원본은 ExportBuilderClient의 allRows + exportPeriod
+   */
+  const rowsForInitialExport = filterRowsByExportPeriod(
+    rows ?? [],
+    initialExportPeriod
+  );
+
+  if ((periodStart || periodEnd) && !rowsForInitialExport.length) {
+    console.log(
+      "[export-builder period filter] rows became empty after initial period filter",
+      {
+        reportId,
+        rawRowsLen: rows.length,
+        rowsForInitialExportLen: rowsForInitialExport.length,
+        periodStart: periodStart || null,
+        periodEnd: periodEnd || null,
+        periodPreset,
+      }
+    );
+  }
+
+  const initialSectionPayloads = buildExportPayloadsFromRows(
+    rowsForInitialExport ?? []
+  );
+
+  const reportTitle = `${advertiserName} 광고 성과 리포트`;
+  const generatedAtLabel = ingestionIdUsed ? `ingestion ${ingestionIdUsed}` : undefined;
 
   console.log("[export-builder payloads]", {
     reportId,
-    rowsLen: rows.length,
+    rawRowsLen: rows.length,
+    rowsForInitialExportLen: rowsForInitialExport.length,
     ingestionIdUsed: ingestionIdUsed || null,
     fallbackUsed,
-    payloadKeys: Object.keys(sectionPayloads ?? {}),
+    payloadKeys: Object.keys(initialSectionPayloads ?? {}),
+    periodStart: initialExportPeriod.start || null,
+    periodEnd: initialExportPeriod.end || null,
+    periodPreset: initialExportPeriod.preset,
+    periodLabel: initialExportPeriod.label || null,
   });
 
   return (
@@ -294,20 +447,20 @@ export default async function ReportExportBuilderPage({
         reportId,
         advertiserName,
         reportTypeName,
-        periodLabel,
+        periodLabel: initialExportPeriod.label || periodLabel,
         preset,
       }}
       meta={{
         advertiserName,
-        reportTitle: `${advertiserName} 광고 성과 리포트`,
+        reportTitle,
         reportTypeName,
-        periodLabel,
+        periodLabel: initialExportPeriod.label || periodLabel,
         preset,
-        generatedAtLabel: ingestionIdUsed
-          ? `ingestion ${ingestionIdUsed}`
-          : undefined,
+        generatedAtLabel,
       }}
-      sectionPayloads={sectionPayloads}
+      sectionPayloads={initialSectionPayloads}
+      allRows={rows}
+      initialExportPeriod={initialExportPeriod}
     />
   );
 }

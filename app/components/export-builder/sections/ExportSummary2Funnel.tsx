@@ -16,7 +16,7 @@ import {
 type FunnelStep = {
   label: string;
   value: string;
-  widthPercent: number; // 25 ~ 100 권장
+  widthPercent: number;
   subLabel?: string;
 };
 
@@ -112,9 +112,16 @@ function toFunnelDensity(layoutMode: LayoutMode): Summary2FunnelDensity {
   return "export-full";
 }
 
+function safeRatioToPercent(ratio?: number) {
+  const safe = Number(ratio);
+  if (!Number.isFinite(safe)) return NaN;
+  if (safe <= 1) return safe * 100;
+  return safe;
+}
+
 export default function ExportSummary2Funnel({
-  title = "성과 퍼널",
-  subtitle = "노출 → 클릭 → 전환 흐름",
+  title,
+  subtitle,
   steps,
   meta,
   data,
@@ -133,31 +140,6 @@ export default function ExportSummary2Funnel({
   const stepValues = safeSteps.map((step) => Number(step.value || 0));
   const maxValue = Math.max(1, ...stepValues);
 
-  const ctr =
-    safeSteps.length >= 2 && Number(safeSteps[0].value) > 0
-      ? (Number(safeSteps[1].value) / Number(safeSteps[0].value)) * 100
-      : NaN;
-
-  const cvr =
-    safeSteps.length >= 3 && Number(safeSteps[1].value) > 0
-      ? (Number(safeSteps[2].value) / Number(safeSteps[1].value)) * 100
-      : NaN;
-
-  /**
-   * 현재 이 section 데이터만으로는 cost가 없어서
-   * CPA를 정확 계산할 수 없다.
-   * 따라서 지금 단계에서는 undefined로 두고 fallback 표시를 유지한다.
-   */
-  const cpa: number | undefined = undefined;
-
-  const displayTitle = title || "성과 퍼널";
-  const displaySubtitle =
-    subtitle ||
-    [resolvedMeta.reportTypeName, resolvedMeta.periodLabel]
-      .filter(Boolean)
-      .join(" · ") ||
-    "노출 → 클릭 → 전환 흐름";
-
   const stepItems: Summary2FunnelStepViewItem[] = safeSteps.map((step, index) => {
     const numericValue = Number(step.value || 0);
 
@@ -166,17 +148,54 @@ export default function ExportSummary2Funnel({
         ? 100
         : clampWidth((numericValue / maxValue) * 100);
 
+    let subLabel = step.ratioFromPrev != null
+      ? `전단계 대비 ${safeRatioToPercent(step.ratioFromPrev).toFixed(2)}%`
+      : undefined;
+
+    if (!subLabel && step.displayValue) {
+      subLabel = undefined;
+    }
+
     return {
       key: step.key || `${step.label}-${index}`,
       label: step.label,
       value: step.displayValue || formatNumber(numericValue),
       widthPercent,
-      subLabel:
-        step.ratioFromPrev != null
-          ? `전단계 대비 ${(step.ratioFromPrev * 100).toFixed(2)}%`
-          : undefined,
+      subLabel,
     };
   });
+
+  const impressionValue = Number(safeSteps[0]?.value ?? 0);
+  const clickValue = Number(safeSteps[1]?.value ?? 0);
+  const conversionValue = Number(safeSteps[2]?.value ?? 0);
+
+  const ctr =
+    safeSteps.length >= 2 && impressionValue > 0
+      ? (clickValue / impressionValue) * 100
+      : NaN;
+
+  const cvr =
+    safeSteps.length >= 3 && clickValue > 0
+      ? (conversionValue / clickValue) * 100
+      : NaN;
+
+  /**
+   * 현재 section payload에는 cost가 없으므로
+   * CPA는 계산 불가.
+   * share 기준으로는 stats 위치를 유지하되 값은 fallback 처리.
+   */
+  const cpa: number | undefined = undefined;
+
+  const metaText = [resolvedMeta.reportTypeName, resolvedMeta.periodLabel]
+    .filter(Boolean)
+    .join(" · ");
+
+  const displayTitle = title || "성과 퍼널";
+  const displaySubtitle =
+    subtitle ||
+    (metaText
+      ? `현재 필터가 적용된 데이터 기준 노출 → 클릭 → 전환 흐름 · ${metaText}`
+      : "현재 필터가 적용된 데이터 기준 노출 → 클릭 → 전환 흐름");
 
   return (
     <Summary2FunnelView
@@ -185,9 +204,11 @@ export default function ExportSummary2Funnel({
       steps={stepItems}
       density={toFunnelDensity(layoutMode)}
       stats={{
-        ctrLabel: Number.isFinite(ctr) ? formatPercent(ctr) : "2.74%",
-        cvrLabel: Number.isFinite(cvr) ? formatPercent(cvr) : "3.75%",
-        cpaLabel: Number.isFinite(Number(cpa)) ? formatCurrency(Number(cpa)) : "₩9,720",
+        ctrLabel: Number.isFinite(ctr) ? formatPercent(ctr) : "-",
+        cvrLabel: Number.isFinite(cvr) ? formatPercent(cvr) : "-",
+        cpaLabel: Number.isFinite(Number(cpa))
+          ? formatCurrency(Number(cpa))
+          : "-",
       }}
     />
   );

@@ -127,3 +127,126 @@ export function getRecommendedSectionKeysForTemplate(templateKey: ExportTemplate
     section.recommendedTemplates.includes(templateKey)
   ).map((section) => section.key);
 }
+
+/**
+ * Step19-5
+ * 템플릿/슬롯 적합 규칙
+ *
+ * 원칙:
+ * - 큰 차트/히트맵/테이블은 큰 슬롯 위주
+ * - KPI/Goal/Funnel은 중소형 슬롯 위주
+ * - 망가지는 조합은 picker에서 처음부터 숨긴다
+ */
+const TEMPLATE_SLOT_FIT_RULES: Record<
+  ExportTemplateKey,
+  Record<string, ExportSectionKey[]>
+> = {
+  "full-single": {
+    main: [
+      "summary-kpi",
+      "summary-chart",
+      "summary-goal",
+      "summary2-heatmap",
+      "summary2-funnel",
+      "keyword-top10",
+      "creative-top8",
+    ],
+  },
+
+  "top-bottom": {
+    top: [
+      "summary-kpi",
+      "summary-goal",
+      "summary2-funnel",
+    ],
+    bottom: [
+      "summary-chart",
+      "summary2-heatmap",
+    ],
+  },
+
+  "two-column-equal": {
+    left: [
+      "summary-kpi",
+      "summary-goal",
+      "summary2-funnel",
+    ],
+    right: [
+      "summary-kpi",
+      "summary-goal",
+      "summary2-funnel",
+    ],
+  },
+
+  "left-wide-right-stack": {
+    left: [
+      "summary-chart",
+      "summary2-heatmap",
+      "summary2-funnel",
+      "keyword-top10",
+      "creative-top8",
+    ],
+    "right-top": [
+      "summary-kpi",
+      "summary-goal",
+      "summary2-funnel",
+    ],
+    "right-bottom": [
+      "summary-kpi",
+      "summary-goal",
+      "summary2-funnel",
+    ],
+  },
+
+  "grid-2x2": {
+    "top-left": [
+      "summary-kpi",
+      "summary-goal",
+      "summary2-funnel",
+    ],
+    "top-right": [
+      "summary-kpi",
+      "summary-goal",
+      "summary2-funnel",
+    ],
+    "bottom-left": [
+      "summary-kpi",
+      "summary-goal",
+      "summary2-funnel",
+    ],
+    "bottom-right": [
+      "summary-kpi",
+      "summary-goal",
+      "summary2-funnel",
+    ],
+  },
+};
+
+export function getAllowedSectionKeysForTemplateSlot(
+  templateKey: ExportTemplateKey,
+  slotId: string
+): ExportSectionKey[] {
+  const templateRule = TEMPLATE_SLOT_FIT_RULES[templateKey];
+  if (!templateRule) return [];
+  return templateRule[slotId] ?? [];
+}
+
+export function isSectionAllowedForTemplateSlot(
+  templateKey: ExportTemplateKey,
+  slotId: string,
+  sectionKey: ExportSectionKey
+): boolean {
+  return getAllowedSectionKeysForTemplateSlot(templateKey, slotId).includes(
+    sectionKey
+  );
+}
+
+export function getFittedSectionsForTemplateSlot(
+  templateKey: ExportTemplateKey,
+  slotId: string
+): ExportSectionDefinition[] {
+  const allowedKeys = getAllowedSectionKeysForTemplateSlot(templateKey, slotId);
+  return EXPORT_SECTION_REGISTRY.filter((section) =>
+    allowedKeys.includes(section.key)
+  );
+}

@@ -77,9 +77,7 @@ const DEFAULT_DATA: HeatCell[] = [
   { day: "31", level: 2 },
 ];
 
-function isLegacyHeatCellArray(
-  value: Props["data"]
-): value is HeatCell[] {
+function isLegacyHeatCellArray(value: Props["data"]): value is HeatCell[] {
   return Array.isArray(value);
 }
 
@@ -89,7 +87,9 @@ function clampLevel(level: number): 0 | 1 | 2 | 3 | 4 {
   return safe as 0 | 1 | 2 | 3 | 4;
 }
 
-function normalizeLegacyData(data: HeatCell[]): ExportSummary2HeatmapData["days"] {
+function normalizeLegacyData(
+  data: HeatCell[]
+): ExportSummary2HeatmapData["days"] {
   return data.map((item) => ({
     dayLabel: item.day,
     value: item.level,
@@ -97,7 +97,10 @@ function normalizeLegacyData(data: HeatCell[]): ExportSummary2HeatmapData["days"
   }));
 }
 
-function normalizeIntensityToLevel(intensity?: number, value?: number): 0 | 1 | 2 | 3 | 4 {
+function normalizeIntensityToLevel(
+  intensity?: number,
+  value?: number
+): 0 | 1 | 2 | 3 | 4 {
   const safeIntensity = Number(intensity);
   if (Number.isFinite(safeIntensity)) {
     return clampLevel(safeIntensity * 4);
@@ -119,9 +122,35 @@ function toHeatmapDensity(layoutMode: LayoutMode): Summary2HeatmapDensity {
   return "export-full";
 }
 
+function toDayNumber(label?: string) {
+  const raw = String(label ?? "").trim();
+  const matched = raw.match(/\d+/);
+  if (!matched) return Number.NaN;
+  return Number(matched[0]);
+}
+
+function toSortedDayLabels(dayLabels: string[]) {
+  return [...dayLabels].sort((a, b) => {
+    const na = toDayNumber(a);
+    const nb = toDayNumber(b);
+
+    if (Number.isFinite(na) && Number.isFinite(nb)) {
+      return na - nb;
+    }
+    return String(a).localeCompare(String(b), "ko");
+  });
+}
+
+function toRangeLabel(dayLabels: string[], fallback: string) {
+  const sorted = toSortedDayLabels(dayLabels);
+  if (!sorted.length) return fallback;
+  if (sorted.length === 1) return `${sorted[0]}일`;
+  return `${sorted[0]}~${sorted[sorted.length - 1]}일`;
+}
+
 export default function ExportSummary2Heatmap({
-  title = "일자별 성과 히트맵",
-  subtitle = "일 단위 성과 강도 요약",
+  title,
+  subtitle,
   data,
   meta,
   layoutMode = "full",
@@ -137,24 +166,23 @@ export default function ExportSummary2Heatmap({
 
   const safeDays = (resolvedData.days ?? []).slice(0, 35);
 
-  const bestDay =
-    safeDays.reduce<{
-      dayLabel: string;
-      score: number;
-    } | null>((best, item) => {
-      const safeIntensity = Number(item.intensity);
-      const score = Number.isFinite(safeIntensity)
-        ? safeIntensity
-        : Number(item.value || 0);
+  const cells: Summary2HeatmapCell[] = safeDays.map((item, index) => ({
+    key: `${item.dayLabel}-${index}`,
+    label: item.dayLabel,
+    level: normalizeIntensityToLevel(item.intensity, item.value),
+  }));
 
-      if (!best || score > best.score) {
-        return {
-          dayLabel: item.dayLabel,
-          score,
-        };
-      }
-      return best;
-    }, null) ?? null;
+  const sortedByScore = [...safeDays].sort((a, b) => {
+    const aScore = Number.isFinite(Number(a.intensity))
+      ? Number(a.intensity)
+      : Number(a.value || 0);
+    const bScore = Number.isFinite(Number(b.intensity))
+      ? Number(b.intensity)
+      : Number(b.value || 0);
+    return bScore - aScore;
+  });
+
+  const bestDay = sortedByScore[0] ?? null;
 
   const highDays = safeDays
     .filter((item) => normalizeIntensityToLevel(item.intensity, item.value) >= 3)
@@ -164,19 +192,20 @@ export default function ExportSummary2Heatmap({
     .filter((item) => normalizeIntensityToLevel(item.intensity, item.value) <= 1)
     .map((item) => item.dayLabel);
 
+  const activeDays = safeDays.filter(
+    (item) => normalizeIntensityToLevel(item.intensity, item.value) > 0
+  ).length;
+
+  const metaText = [resolvedMeta.reportTypeName, resolvedMeta.periodLabel]
+    .filter(Boolean)
+    .join(" · ");
+
   const displayTitle = title || "일자별 성과 히트맵";
   const displaySubtitle =
     subtitle ||
-    [resolvedMeta.reportTypeName, resolvedMeta.periodLabel]
-      .filter(Boolean)
-      .join(" · ") ||
-    "일 단위 성과 강도 요약";
-
-  const cells: Summary2HeatmapCell[] = safeDays.map((item, index) => ({
-    key: `${item.dayLabel}-${index}`,
-    label: item.dayLabel,
-    level: normalizeIntensityToLevel(item.intensity, item.value),
-  }));
+    (metaText
+      ? `현재 필터가 적용된 데이터 기준 일자별 성과 강도 · ${metaText}`
+      : "현재 필터가 적용된 데이터 기준 일자별 성과 강도");
 
   return (
     <Summary2HeatmapView
@@ -185,15 +214,12 @@ export default function ExportSummary2Heatmap({
       cells={cells}
       density={toHeatmapDensity(layoutMode)}
       summary={{
-        bestDayLabel: bestDay?.dayLabel ? `${bestDay.dayLabel}일` : "24일",
-        stableRangeLabel:
-          highDays.length > 0
-            ? `${highDays[0]}~${highDays[highDays.length - 1]}일`
-            : "17~26일",
-        lowRangeLabel:
-          lowDays.length > 0
-            ? `${lowDays[0]}~${lowDays[lowDays.length - 1]}일`
-            : "6~7일",
+        bestDayLabel: bestDay?.dayLabel ? `${bestDay.dayLabel}일` : "-",
+        stableRangeLabel: toRangeLabel(
+          highDays,
+          activeDays > 0 ? `${activeDays}일 활성` : "-"
+        ),
+        lowRangeLabel: toRangeLabel(lowDays, "낮은 구간 없음"),
       }}
     />
   );

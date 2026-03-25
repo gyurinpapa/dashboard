@@ -23,22 +23,10 @@ type ChartPoint = {
 type LayoutMode = "full" | "wide" | "compact" | "side-compact";
 
 type Props = {
-  /**
-   * Step 17 이전 호환용
-   */
   title?: string;
   subtitle?: string;
   data?: ChartPoint[] | Partial<ExportSummaryChartData>;
-
-  /**
-   * Step 17-9 표준 props
-   */
   meta?: Partial<ExportSectionMeta>;
-
-  /**
-   * Step 19-6
-   * 슬롯 크기별 렌더 밀도 분기
-   */
   layoutMode?: LayoutMode;
 };
 
@@ -56,7 +44,9 @@ function isLegacyChartPointArray(
   return Array.isArray(value);
 }
 
-function normalizeLegacyData(data: ChartPoint[]): ExportSummaryChartData["points"] {
+function normalizeLegacyData(
+  data: ChartPoint[]
+): ExportSummaryChartData["points"] {
   return data.map((item) => ({
     label: item.label,
     cost: item.cost,
@@ -71,9 +61,39 @@ function toChartDensity(layoutMode: LayoutMode): SummaryChartViewDensity {
   return "export-side-compact";
 }
 
+function buildInsight(chartData: SummaryChartViewPoint[]) {
+  if (!chartData.length) {
+    return {
+      currentLabel: "-",
+      maxRevenueLabel: "-",
+      minCostLabel: "-",
+    };
+  }
+
+  const latest = chartData[chartData.length - 1];
+
+  const maxRevenueRow = chartData.reduce((best, row) =>
+    toSafeNumber(row?.revenue) > toSafeNumber(best?.revenue) ? row : best
+  );
+
+  const minCostRow = chartData.reduce((best, row) =>
+    toSafeNumber(row?.cost) < toSafeNumber(best?.cost) ? row : best
+  );
+
+  return {
+    currentLabel: String(latest?.label || "-"),
+    maxRevenueLabel: `${String(maxRevenueRow?.label || "-")} · ${KRW(
+      toSafeNumber(maxRevenueRow?.revenue)
+    )}`,
+    minCostLabel: `${String(minCostRow?.label || "-")} · ${KRW(
+      toSafeNumber(minCostRow?.cost)
+    )}`,
+  };
+}
+
 export default function ExportSummaryChart({
-  title = "기간 성과 추이",
-  subtitle = "광고비 / 매출 흐름",
+  title,
+  subtitle,
   data,
   meta,
   layoutMode = "full",
@@ -84,10 +104,15 @@ export default function ExportSummaryChart({
     ...(isLegacyChartPointArray(data)
       ? { points: normalizeLegacyData(data) }
       : (data ?? {})),
-    ...(!data ? { points: normalizeLegacyData(DEFAULT_DATA) } : {}),
   });
 
-  const safeData = (resolvedData.points ?? []).slice(0, 8);
+  const fallbackPoints = normalizeLegacyData(DEFAULT_DATA);
+  const sourcePoints =
+    Array.isArray(resolvedData.points) && resolvedData.points.length > 0
+      ? resolvedData.points
+      : fallbackPoints;
+
+  const safeData = sourcePoints.slice(0, 8);
 
   const chartData: SummaryChartViewPoint[] = safeData.map((item) => ({
     label: String(item?.label || ""),
@@ -96,43 +121,16 @@ export default function ExportSummaryChart({
     roas: toSafeNumber(item?.roas),
   }));
 
-  const displayTitle = resolvedData.title || title;
+  const baseSubtitle = "최근 월별 핵심 성과 흐름";
+  const metaText = [resolvedMeta.reportTypeName, resolvedMeta.periodLabel]
+    .filter(Boolean)
+    .join(" · ");
+
+  const displayTitle =
+    resolvedData.title || title || "월별 비용 · 전환매출 · ROAS";
+
   const displaySubtitle =
-    subtitle ||
-    [resolvedMeta.reportTypeName, resolvedMeta.periodLabel]
-      .filter(Boolean)
-      .join(" · ") ||
-    "광고비 / 매출 흐름";
-
-  const insight = (() => {
-    if (!chartData.length) {
-      return {
-        currentLabel: "-",
-        maxRevenueLabel: "-",
-        minCostLabel: "-",
-      };
-    }
-
-    const latest = chartData[chartData.length - 1];
-
-    const maxRevenueRow = chartData.reduce((best, row) =>
-      toSafeNumber(row?.revenue) > toSafeNumber(best?.revenue) ? row : best
-    );
-
-    const minCostRow = chartData.reduce((best, row) =>
-      toSafeNumber(row?.cost) < toSafeNumber(best?.cost) ? row : best
-    );
-
-    return {
-      currentLabel: String(latest?.label || "-"),
-      maxRevenueLabel: `${String(maxRevenueRow?.label || "-")} · ${KRW(
-        toSafeNumber(maxRevenueRow?.revenue)
-      )}`,
-      minCostLabel: `${String(minCostRow?.label || "-")} · ${KRW(
-        toSafeNumber(minCostRow?.cost)
-      )}`,
-    };
-  })();
+    subtitle || (metaText ? `${baseSubtitle} · ${metaText}` : baseSubtitle);
 
   return (
     <SummaryChartView
@@ -140,7 +138,7 @@ export default function ExportSummaryChart({
       subtitle={displaySubtitle}
       data={chartData}
       density={toChartDensity(layoutMode)}
-      insight={insight}
+      insight={buildInsight(chartData)}
     />
   );
 }

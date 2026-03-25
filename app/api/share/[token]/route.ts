@@ -37,23 +37,35 @@ function asIsoOrNull(v: any): string | null {
 
 function asStr(v: any) {
   if (v == null) return "";
-  return String(v).trim();
+  const s = String(v).trim();
+  if (!s) return "";
+  if (s.toLowerCase() === "null") return "";
+  if (s.toLowerCase() === "undefined") return "";
+  return s;
 }
 
 /** ===== row extractor ===== */
+function tryParseJson(v: any) {
+  if (!v) return null;
+  if (typeof v === "object") return v;
+  if (typeof v === "string") {
+    try {
+      const parsed = JSON.parse(v);
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 function extractRowObject(rec: any) {
   if (!rec) return null;
 
   const candidates = ["row", "data", "row_data", "payload", "json", "raw", "value"];
   for (const k of candidates) {
-    const v = rec?.[k];
-    if (v && typeof v === "object") return v;
-    if (typeof v === "string") {
-      try {
-        const parsed = JSON.parse(v);
-        if (parsed && typeof parsed === "object") return parsed;
-      } catch {}
-    }
+    const parsed = tryParseJson(rec?.[k]);
+    if (parsed) return parsed;
   }
 
   const copy: any = { ...rec };
@@ -63,21 +75,30 @@ function extractRowObject(rec: any) {
   delete copy.advertiser_id;
   delete copy.created_at;
   delete copy.updated_at;
+  delete copy.ingestion_id;
+
   return copy;
 }
 
-async function fetchAllReportRows(sb: any, reportId: string) {
+async function fetchAllReportRows(
+  sb: any,
+  reportId: string,
+  publishedIngestionId?: string | null
+) {
   const pageSize = 1000;
   let from = 0;
   const all: any[] = [];
 
   while (true) {
     const to = from + pageSize - 1;
-    const { data, error } = await sb
-      .from("report_rows")
-      .select("*")
-      .eq("report_id", reportId)
-      .range(from, to);
+
+    let query = sb.from("report_rows").select("*").eq("report_id", reportId);
+
+    if (publishedIngestionId) {
+      query = query.eq("ingestion_id", publishedIngestionId);
+    }
+
+    const { data, error } = await query.range(from, to);
 
     if (error) throw new Error(error.message || "Rows DB error");
     if (!data || data.length === 0) break;
@@ -91,7 +112,15 @@ async function fetchAllReportRows(sb: any, reportId: string) {
 }
 
 function pickDateStr(r: any) {
-  const v = r?.date ?? r?.ymd ?? r?.day ?? r?.dt ?? r?.report_date;
+  const v =
+    r?.date ??
+    r?.ymd ??
+    r?.day ??
+    r?.dt ??
+    r?.report_date ??
+    r?.segment_date ??
+    r?.stat_date;
+
   if (v == null) return "";
   return String(v).slice(0, 10);
 }
@@ -109,11 +138,35 @@ function minMaxDate(rows: any[]) {
 }
 
 /** ===== key normalize helpers ===== */
+function safeDecode(s: string) {
+  const v = String(s ?? "");
+  if (!v) return "";
+  try {
+    return decodeURIComponent(v);
+  } catch {
+    return v;
+  }
+}
+
+function normalizeKey(v: any) {
+  let s = String(v ?? "");
+  s = safeDecode(s);
+  s = s.replace(/\\/g, "/");
+  s = s.replace(/\u00A0/g, " ");
+  s = s.trim();
+  s = s.replace(/\s+/g, " ");
+  try {
+    s = s.normalize("NFC");
+  } catch {}
+  return s;
+}
+
 function basenameOf(v: string) {
   const s = String(v ?? "").trim();
   if (!s) return "";
-  const base = s.split("?")[0].split("#")[0].split("/").pop() || s;
-  return String(base).trim();
+  const noQs = s.split("?")[0].split("#")[0];
+  const base = noQs.split("/").pop() || noQs;
+  return normalizeKey(base);
 }
 
 function stripExt(name: string) {
@@ -125,61 +178,159 @@ function stripExt(name: string) {
 function uniq(arr: string[]) {
   const out: string[] = [];
   const seen = new Set<string>();
+
   for (const x of arr) {
-    const s = String(x ?? "").trim();
+    const s = normalizeKey(x);
     if (!s) continue;
     if (seen.has(s)) continue;
     seen.add(s);
     out.push(s);
   }
+
   return out;
 }
 
 function normalizeCreativesMap(map: Record<string, string>) {
   const out: Record<string, string> = {};
+
   for (const [k0, url] of Object.entries(map || {})) {
     if (!url) continue;
 
-    const k = String(k0 ?? "").trim();
-    if (!k) continue;
+    const kRaw = normalizeKey(k0);
+    if (!kRaw) continue;
 
-    const base = basenameOf(k);
-    const noext = stripExt(base);
+    const base = normalizeKey(basenameOf(kRaw));
+    const noext = normalizeKey(stripExt(base));
 
-    const creativesPrefBase = base ? `/creatives/${base}` : "";
-    const creativesPrefNoext = noext ? `/creatives/${noext}` : "";
+    const p1 = base ? normalizeKey(`/creatives/${base}`) : "";
+    const p1n = noext ? normalizeKey(`/creatives/${noext}`) : "";
+    const c1 = base ? normalizeKey(`C:/creatives/${base}`) : "";
+    const c1n = noext ? normalizeKey(`C:/creatives/${noext}`) : "";
 
     const keys = uniq([
-      k,
+      kRaw,
       base,
       noext,
-      creativesPrefBase,
-      creativesPrefNoext,
-      k.startsWith("C:") ? k.slice(2) : `C:${k}`,
-      base.startsWith("C:") ? base.slice(2) : `C:${base}`,
-      noext.startsWith("C:") ? noext.slice(2) : `C:${noext}`,
+      p1,
+      p1n,
+      c1,
+      c1n,
+      kRaw.startsWith("C:") ? normalizeKey(kRaw.slice(2)) : normalizeKey(`C:${kRaw}`),
+      base ? (base.startsWith("C:") ? normalizeKey(base.slice(2)) : normalizeKey(`C:${base}`)) : "",
+      noext
+        ? noext.startsWith("C:")
+          ? normalizeKey(noext.slice(2))
+          : normalizeKey(`C:${noext}`)
+        : "",
+      p1 ? (p1.startsWith("C:") ? normalizeKey(p1.slice(2)) : normalizeKey(`C:${p1}`)) : "",
+      c1 ? (c1.startsWith("C:") ? normalizeKey(c1.slice(2)) : normalizeKey(`C:${c1}`)) : "",
     ]);
 
     for (const kk of keys) {
-      if (!kk) continue;
       if (!out[kk]) out[kk] = url;
     }
   }
+
   return out;
 }
 
 function makeCreativeKeyCandidates(c: any) {
-  const creativeKey = String(c?.creative_key ?? "").trim();
-  const fileName = String(c?.file_name ?? "").trim();
-  const storagePath = String(c?.storage_path ?? "").trim();
+  const creativeKey = normalizeKey(c?.creative_key);
+  const fileName = normalizeKey(c?.file_name);
+  const storagePath = normalizeKey(c?.storage_path);
 
   const baseFile = fileName ? basenameOf(fileName) : "";
   const basePath = storagePath ? basenameOf(storagePath) : "";
 
-  const prefFile = baseFile ? `/creatives/${baseFile}` : "";
-  const prefPath = basePath ? `/creatives/${basePath}` : "";
+  const prefFile = baseFile ? normalizeKey(`/creatives/${baseFile}`) : "";
+  const prefPath = basePath ? normalizeKey(`/creatives/${basePath}`) : "";
+  const noextFile = baseFile ? stripExt(baseFile) : "";
+  const noextPath = basePath ? stripExt(basePath) : "";
 
-  return uniq([creativeKey, fileName, baseFile, prefFile, storagePath, basePath, prefPath]);
+  return uniq([
+    creativeKey,
+    fileName,
+    baseFile,
+    noextFile,
+    prefFile,
+    noextFile ? normalizeKey(`/creatives/${noextFile}`) : "",
+    storagePath,
+    basePath,
+    noextPath,
+    prefPath,
+    noextPath ? normalizeKey(`/creatives/${noextPath}`) : "",
+  ]);
+}
+
+function makeRowCreativeCandidates(r: any) {
+  const rawCandidates: any[] = [
+    r?.creative_key,
+    r?.creativeKey,
+    r?.creative_file,
+    r?.creativeFile,
+    r?.creative,
+    r?.imagepath_raw,
+    r?.imagepath,
+    r?.imagePath,
+    r?.image_path,
+    r?.image_url,
+    r?.imageUrl,
+    r?.thumbnail?.imagePath,
+    r?.thumbnail?.imagepath,
+    r?.thumbUrl,
+    r?.thumb_url,
+    r?.thumbnailUrl,
+    r?.thumbnail_url,
+    r?.extras?.creative_key,
+    r?.extras?.creativeKey,
+    r?.extras?.creative_file,
+    r?.extras?.creativeFile,
+    r?.extras?.creative,
+    r?.extras?.imagepath_raw,
+    r?.extras?.imagepath,
+    r?.extras?.imagePath,
+    r?.extras?.image_path,
+  ];
+
+  const rawStrs = uniq(
+    rawCandidates
+      .filter(Boolean)
+      .map((v) => normalizeKey(v))
+      .map((v) => String(v).trim())
+  );
+
+  const baseNames: string[] = [];
+  for (const s of rawStrs) {
+    const b = basenameOf(s);
+    if (!b) continue;
+    baseNames.push(normalizeKey(b));
+    baseNames.push(normalizeKey(stripExt(b)));
+  }
+
+  const pathForms: string[] = [];
+  for (const b of baseNames) {
+    if (!b) continue;
+    pathForms.push(normalizeKey(`/creatives/${b}`));
+    pathForms.push(normalizeKey(`C:/creatives/${b}`));
+  }
+
+  const all = uniq([...rawStrs, ...baseNames, ...pathForms]).map(normalizeKey);
+
+  const withPrefix: string[] = [];
+  for (const k of all) {
+    const kk = normalizeKey(k);
+    if (!kk) continue;
+
+    if (kk.startsWith("C:")) {
+      withPrefix.push(kk);
+      withPrefix.push(normalizeKey(kk.slice(2)));
+    } else {
+      withPrefix.push(normalizeKey(`C:${kk}`));
+      withPrefix.push(kk);
+    }
+  }
+
+  return uniq(withPrefix.map(normalizeKey));
 }
 
 async function fetchReportNames(sb: any, report: any) {
@@ -251,13 +402,11 @@ export async function GET(req: Request, ctx: Ctx) {
   const debugOn = url.searchParams.get("debug") === "1";
   const expiresIn = asInt(url.searchParams.get("expiresIn"), 3600);
   const attachImagePath = url.searchParams.get("attachImagePath") === "1";
-
-  // ✅ strict=1 이면 meta 일관성까지 체크해서, 꼬인 publish/share를 원천 차단
   const strict = asBool(url.searchParams.get("strict"));
 
   const sb = getSupabaseAdmin();
 
-  // 1) report 조회
+  // ✅ 안전 버전: preset/label 컬럼 제거 유지
   const { data: report, error: repErr } = await sb
     .from("reports")
     .select(
@@ -273,8 +422,12 @@ export async function GET(req: Request, ctx: Ctx) {
         "meta",
         "period_start",
         "period_end",
-        "share_token",
+        "published_period_start",
+        "published_period_end",
         "published_at",
+        "published_ingestion_id",
+        "published_creatives_batch_id",
+        "share_token",
         "advertiser_id",
       ].join(",")
     )
@@ -289,8 +442,8 @@ export async function GET(req: Request, ctx: Ctx) {
 
   const reportId = String((report as any).id);
   const meta: any = (report as any)?.meta ?? {};
+  const publishedIngestionId = asStr((report as any)?.published_ingestion_id) || null;
 
-  // ✅ 제목용 이름 보강
   const names = await fetchReportNames(sb, report);
 
   const reportForResponse = {
@@ -300,7 +453,6 @@ export async function GET(req: Request, ctx: Ctx) {
     report_type_key: names.report_type_key || null,
   };
 
-  // ✅ (옵션) strict 모드에서만 publish 정합성 검사
   if (strict) {
     const lastCsvUploadedAt = asIsoOrNull(
       meta?.last_csv_uploaded_at ??
@@ -321,12 +473,14 @@ export async function GET(req: Request, ctx: Ctx) {
         ...(debugOn ? { meta } : {}),
       });
     }
+
     if (!lastIngestedAt) {
       return jsonError(409, "SHARE_BLOCKED_NO_INGESTION_META", {
         hint: "reports.meta.last_ingested_at missing",
         ...(debugOn ? { meta } : {}),
       });
     }
+
     if (Date.parse(lastIngestedAt) < Date.parse(lastCsvUploadedAt)) {
       return jsonError(409, "SHARE_BLOCKED_INGESTION_OUTDATED", {
         lastCsvUploadedAt,
@@ -336,10 +490,9 @@ export async function GET(req: Request, ctx: Ctx) {
     }
   }
 
-  // 2) rows 전량 fetch
   let rawRows: any[] = [];
   try {
-    rawRows = await fetchAllReportRows(sb, reportId);
+    rawRows = await fetchAllReportRows(sb, reportId, publishedIngestionId);
   } catch (e: any) {
     return jsonError(500, e?.message || "Failed to fetch rows");
   }
@@ -350,7 +503,6 @@ export async function GET(req: Request, ctx: Ctx) {
 
   const mm = minMaxDate(rows);
 
-  // 3) creatives fetch + signed url
   const { data: creatives, error: creErr } = await sb
     .from("report_creatives")
     .select("creative_key, file_name, storage_bucket, storage_path, mime_type, bytes")
@@ -398,8 +550,8 @@ export async function GET(req: Request, ctx: Ctx) {
     }
 
     const signedUrl = signed.signedUrl;
-
     const keys = makeCreativeKeyCandidates(c);
+
     for (const k of keys) {
       if (!k) continue;
       if (!creativesUrlMap[k]) creativesUrlMap[k] = signedUrl;
@@ -408,55 +560,19 @@ export async function GET(req: Request, ctx: Ctx) {
 
   const creativesMapNormalized = normalizeCreativesMap(creativesUrlMap);
 
-  // (옵션) rows에 imagePath/thumbnail 강제 주입
   if (attachImagePath && Object.keys(creativesMapNormalized).length > 0) {
     rows = rows.map((r: any) => {
-      const cand0 =
-        r?.creative_key ??
-        r?.creativeKey ??
-        r?.creative_file ??
-        r?.creativeFile ??
-        r?.creative ??
-        r?.imagepath_raw ??
-        r?.imagePath ??
-        r?.imagepath ??
-        r?.image_path ??
-        null;
-
-      const cand1 = r?.imagePath ?? r?.imagepath ?? null;
-      const cand2 = r?.imagepath_raw ?? null;
-
-      const rawCandidates = uniq(
-        [cand0, cand1, cand2].map((x) => String(x ?? "").trim()).filter(Boolean)
-      );
-
-      const expanded: string[] = [];
-      for (const raw of rawCandidates) {
-        const base = basenameOf(raw);
-        const noext = stripExt(base);
-
-        expanded.push(raw);
-        expanded.push(base);
-        expanded.push(noext);
-
-        if (base) expanded.push(`/creatives/${base}`);
-        if (noext) expanded.push(`/creatives/${noext}`);
-
-        expanded.push(raw.startsWith("C:") ? raw.slice(2) : `C:${raw}`);
-        expanded.push(base.startsWith("C:") ? base.slice(2) : `C:${base}`);
-        expanded.push(noext.startsWith("C:") ? noext.slice(2) : `C:${noext}`);
-      }
-
-      const candidates = uniq(expanded);
+      const candidates = makeRowCreativeCandidates(r);
 
       let matchedUrl: string | null = null;
       let matchedKey: string | null = null;
 
       for (const k of candidates) {
-        const u = creativesMapNormalized[k];
+        const kk = normalizeKey(k);
+        const u = creativesMapNormalized[kk];
         if (u) {
           matchedUrl = u;
-          matchedKey = k;
+          matchedKey = kk;
           break;
         }
       }
@@ -465,10 +581,28 @@ export async function GET(req: Request, ctx: Ctx) {
 
       return {
         ...r,
-        imagepath_raw: r?.imagepath_raw ?? basenameOf(String(r?.imagePath ?? r?.imagepath ?? "")),
+        imagepath_raw:
+          r?.imagepath_raw ??
+          basenameOf(
+            String(
+              r?.imagePath ??
+                r?.imagepath ??
+                r?.image_path ??
+                r?.creative_file ??
+                r?.creativeFile ??
+                ""
+            )
+          ),
         imagePath: matchedUrl,
         imagepath: matchedUrl,
-        thumbnail: { imagePath: matchedUrl },
+        image_path: matchedUrl,
+        image_url: matchedUrl,
+        imageUrl: matchedUrl,
+        thumbnail: { imagePath: matchedUrl, imagepath: matchedUrl },
+        thumbUrl: matchedUrl,
+        thumb_url: matchedUrl,
+        thumbnailUrl: matchedUrl,
+        thumbnail_url: matchedUrl,
         __matchedKey: matchedKey,
       };
     });
@@ -501,6 +635,7 @@ export async function GET(req: Request, ctx: Ctx) {
         min_date: mm.min_date,
         max_date: mm.max_date,
         strict,
+        published_ingestion_id: publishedIngestionId,
         ...(debugOn
           ? {
               creativeErrors,
