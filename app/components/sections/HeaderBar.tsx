@@ -46,14 +46,14 @@ type Props = {
   selectedChannel: ChannelKey;
   setSelectedChannel: (c: ChannelKey) => void;
 
-  selectedSource: SourceKey;
-  setSelectedSource: (s: SourceKey) => void;
+  selectedSource?: SourceKey;
+  setSelectedSource?: (s: SourceKey) => void;
 
   monthOptions: MonthKey[];
   weekOptions: WeekOption[];
   deviceOptions: DeviceKey[];
   channelOptions: ChannelKey[];
-  sourceOptions: SourceKey[];
+  sourceOptions?: SourceKey[];
 
   enabledMonthKeySet: Set<string>;
   enabledWeekKeySet: Set<string>;
@@ -233,13 +233,13 @@ function EditorHeaderBar(props: Props) {
     setSelectedDevice,
     selectedChannel,
     setSelectedChannel,
-    selectedSource,
-    setSelectedSource,
+    selectedSource = "all",
+    setSelectedSource = () => {},
     monthOptions,
     weekOptions,
     deviceOptions,
     channelOptions,
-    sourceOptions,
+    sourceOptions = [],
     enabledMonthKeySet,
     enabledWeekKeySet,
     fullPeriod,
