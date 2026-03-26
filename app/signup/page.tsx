@@ -265,7 +265,14 @@ export default function SignupPage() {
   }
 
   return (
-    <main style={{ display: "flex", justifyContent: "center" }}>
+    <main
+      style={{
+        display: "flex",
+        justifyContent: "center",
+        background: "#f3f4f6",
+        minHeight: "100vh",
+      }}
+    >
       <div
         style={{
           width: "100%",
@@ -279,6 +286,8 @@ export default function SignupPage() {
             fontWeight: 900,
             textAlign: "center",
             marginBottom: 20,
+            color: "#111827",
+            letterSpacing: "-0.02em",
           }}
         >
           Automated Online Ads Reporting
@@ -286,23 +295,27 @@ export default function SignupPage() {
 
         <div
           style={{
-            background: "#f5a62333",
-            border: "1px solid rgba(0,0,0,0.08)",
-            borderRadius: 20,
+            background: "#e5e7eb",
+            border: "1px solid #cfd4dc",
+            borderRadius: 24,
             padding: 32,
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
             gap: 16,
+            boxShadow:
+              "18px 18px 36px rgba(55, 65, 81, 0.14), -12px -12px 24px rgba(255, 255, 255, 0.82)",
           }}
         >
-          <div style={{ width: "100%", maxWidth: 680 }}>
+          <div style={{ width: "100%", maxWidth: 720 }}>
             <div
               style={{
-                fontSize: 24,
+                fontSize: 26,
                 fontWeight: 900,
                 textAlign: "center",
                 marginBottom: 8,
+                color: "#111827",
+                letterSpacing: "-0.02em",
               }}
             >
               회원가입
@@ -310,10 +323,11 @@ export default function SignupPage() {
 
             <div
               style={{
+                color: "#4b5563",
                 textAlign: "center",
-                fontSize: 13,
-                opacity: 0.7,
-                marginBottom: 20,
+                fontSize: 15,
+                lineHeight: 1.6,
+                marginBottom: 24,
               }}
             >
               회사 workspace에 소속 등록됩니다.
@@ -324,22 +338,15 @@ export default function SignupPage() {
                 style={{
                   display: "grid",
                   gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                  gap: 16,
+                  gap: 18,
                 }}
               >
                 <div style={{ gridColumn: "1 / -1" }}>
-                  <div style={{ marginBottom: 6, fontSize: 13 }}>가입 유형</div>
+                  <div className="fieldLabel">가입 유형</div>
                   <select
                     value={signupType}
                     onChange={(e) => setSignupType(e.target.value as SignupType)}
-                    style={{
-                      width: "100%",
-                      padding: 14,
-                      borderRadius: 12,
-                      border: "1px solid #ddd",
-                      background: "#eaf2ff",
-                      fontSize: 16,
-                    }}
+                    className="neoField"
                   >
                     <option value="internal">내부 사용자</option>
                     <option value="client">광고주</option>
@@ -347,108 +354,62 @@ export default function SignupPage() {
                 </div>
 
                 <div style={{ gridColumn: "1 / -1" }}>
-                  <div style={{ marginBottom: 6, fontSize: 13 }}>이름</div>
+                  <div className="fieldLabel">이름</div>
                   <input
                     type="text"
                     autoComplete="name"
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     placeholder="이름을 입력하세요"
-                    style={{
-                      width: "100%",
-                      padding: 14,
-                      borderRadius: 12,
-                      border: "1px solid #ddd",
-                      background: "#eaf2ff",
-                      fontSize: 18,
-                    }}
+                    className="neoField"
                   />
                 </div>
 
                 <div style={{ gridColumn: "1 / -1" }}>
-                  <div style={{ marginBottom: 6, fontSize: 13 }}>이메일</div>
+                  <div className="fieldLabel">이메일</div>
                   <input
                     type="email"
                     autoComplete="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="name@example.com"
-                    style={{
-                      width: "100%",
-                      padding: 14,
-                      borderRadius: 12,
-                      border: "1px solid #ddd",
-                      background: "#eaf2ff",
-                      fontSize: 18,
-                    }}
+                    className="neoField"
                   />
                 </div>
 
                 <div>
-                  <div style={{ marginBottom: 6, fontSize: 13 }}>비밀번호</div>
+                  <div className="fieldLabel">비밀번호</div>
                   <input
                     type="password"
                     autoComplete="new-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="6자 이상 입력"
-                    style={{
-                      width: "100%",
-                      padding: 14,
-                      borderRadius: 12,
-                      border: "1px solid #ddd",
-                      background: "#eaf2ff",
-                      fontSize: 18,
-                    }}
+                    className="neoField"
                   />
                 </div>
 
                 <div>
-                  <div style={{ marginBottom: 6, fontSize: 13 }}>비밀번호 확인</div>
+                  <div className="fieldLabel">비밀번호 확인</div>
                   <input
                     type="password"
                     autoComplete="new-password"
                     value={passwordConfirm}
                     onChange={(e) => setPasswordConfirm(e.target.value)}
                     placeholder="비밀번호를 다시 입력"
-                    style={{
-                      width: "100%",
-                      padding: 14,
-                      borderRadius: 12,
-                      border: "1px solid #ddd",
-                      background: "#eaf2ff",
-                      fontSize: 18,
-                    }}
+                    className="neoField"
                   />
                 </div>
 
                 <div>
-                  <div style={{ marginBottom: 6, fontSize: 13 }}>본부</div>
+                  <div className="fieldLabel">본부</div>
                   {signupType === "client" ? (
-                    <input
-                      value="외부"
-                      readOnly
-                      style={{
-                        width: "100%",
-                        padding: 14,
-                        borderRadius: 12,
-                        border: "1px solid #ddd",
-                        background: "#f3f4f6",
-                        fontSize: 16,
-                      }}
-                    />
+                    <input value="외부" readOnly className="neoField neoFieldDisabled" />
                   ) : (
                     <select
                       value={division}
                       onChange={(e) => setDivision(e.target.value)}
-                      style={{
-                        width: "100%",
-                        padding: 14,
-                        borderRadius: 12,
-                        border: "1px solid #ddd",
-                        background: "#eaf2ff",
-                        fontSize: 16,
-                      }}
+                      className="neoField"
                     >
                       {DIVISION_OPTIONS.map((x) => (
                         <option key={x} value={x}>
@@ -460,19 +421,12 @@ export default function SignupPage() {
                 </div>
 
                 <div>
-                  <div style={{ marginBottom: 6, fontSize: 13 }}>부서</div>
+                  <div className="fieldLabel">부서</div>
                   <select
                     value={department}
                     onChange={(e) => setDepartment(e.target.value)}
                     disabled={signupType === "client"}
-                    style={{
-                      width: "100%",
-                      padding: 14,
-                      borderRadius: 12,
-                      border: "1px solid #ddd",
-                      background: signupType === "client" ? "#f3f4f6" : "#eaf2ff",
-                      fontSize: 16,
-                    }}
+                    className={`neoField ${signupType === "client" ? "neoFieldDisabled" : ""}`}
                   >
                     {departmentOptions.map((x) => (
                       <option key={x} value={x}>
@@ -483,19 +437,12 @@ export default function SignupPage() {
                 </div>
 
                 <div>
-                  <div style={{ marginBottom: 6, fontSize: 13 }}>팀</div>
+                  <div className="fieldLabel">팀</div>
                   <select
                     value={team}
                     onChange={(e) => setTeam(e.target.value)}
                     disabled={signupType === "client"}
-                    style={{
-                      width: "100%",
-                      padding: 14,
-                      borderRadius: 12,
-                      border: "1px solid #ddd",
-                      background: signupType === "client" ? "#f3f4f6" : "#eaf2ff",
-                      fontSize: 16,
-                    }}
+                    className={`neoField ${signupType === "client" ? "neoFieldDisabled" : ""}`}
                   >
                     {teamOptions.map((x) => (
                       <option key={x} value={x}>
@@ -506,30 +453,19 @@ export default function SignupPage() {
                 </div>
 
                 <div>
-                  <div style={{ marginBottom: 6, fontSize: 13 }}>가입 후 기본 역할</div>
-                  <input
-                    value={effectiveRole}
-                    readOnly
-                    style={{
-                      width: "100%",
-                      padding: 14,
-                      borderRadius: 12,
-                      border: "1px solid #ddd",
-                      background: "#f3f4f6",
-                      fontSize: 16,
-                    }}
-                  />
+                  <div className="fieldLabel">가입 후 기본 역할</div>
+                  <input value={effectiveRole} readOnly className="neoField neoFieldDisabled" />
                 </div>
               </div>
 
               {!!errorText && (
-                <div className="infoMsg errorBox" style={{ marginTop: 14 }}>
+                <div className="infoMsg errorBox" style={{ marginTop: 16 }}>
                   {errorText}
                 </div>
               )}
 
               {!!successText && (
-                <div className="infoMsg" style={{ marginTop: 14 }}>
+                <div className="infoMsg" style={{ marginTop: 16 }}>
                   {successText}
                 </div>
               )}
@@ -538,36 +474,108 @@ export default function SignupPage() {
                 type="submit"
                 className="mainBtn"
                 disabled={disabled}
-                style={{ marginTop: 16 }}
+                style={{ marginTop: 18 }}
               >
                 {loading ? "회원가입 중..." : "회원가입"}
               </button>
             </form>
 
-            <Link href="/report-builder" className="signupBtn" style={{ marginTop: 12 }}>
-              로그인으로 돌아가기
-            </Link>
+            <div
+              style={{
+                marginTop: 14,
+                display: "flex",
+                justifyContent: "center",
+              }}
+            >
+              <Link href="/report-builder" className="signupBtn">
+                로그인으로 돌아가기
+              </Link>
+            </div>
           </div>
         </div>
 
         <style jsx>{`
+          .fieldLabel {
+            margin-bottom: 8px;
+            font-size: 15px;
+            font-weight: 800;
+            color: #1f2937;
+            letter-spacing: 0.01em;
+          }
+
+          .neoField {
+            width: 100%;
+            padding: 16px;
+            border-radius: 16px;
+            border: 1px solid #bfc6cf;
+            outline: none;
+            background: linear-gradient(145deg, #f8fafc, #d9dde3);
+            color: #111827;
+            font-size: 17px;
+            font-weight: 600;
+            box-shadow:
+              inset 1px 1px 0 rgba(255, 255, 255, 0.95),
+              inset -1px -1px 0 rgba(148, 163, 184, 0.28),
+              8px 8px 16px rgba(107, 114, 128, 0.14),
+              -6px -6px 12px rgba(255, 255, 255, 0.9);
+            transition: box-shadow 0.15s ease, transform 0.15s ease,
+              border-color 0.15s ease;
+            appearance: none;
+            -webkit-appearance: none;
+          }
+
+          .neoField::placeholder {
+            color: #6b7280;
+            font-weight: 500;
+          }
+
+          .neoField:focus {
+            border-color: #6b7280;
+            box-shadow:
+              inset 1px 1px 0 rgba(255, 255, 255, 0.98),
+              inset -1px -1px 0 rgba(148, 163, 184, 0.24),
+              0 0 0 2px rgba(55, 65, 81, 0.12),
+              8px 8px 16px rgba(107, 114, 128, 0.16),
+              -6px -6px 12px rgba(255, 255, 255, 0.92);
+          }
+
+          .neoFieldDisabled {
+            color: #4b5563;
+            background: linear-gradient(145deg, #eceff3, #d7dbe1);
+            border-color: #c7cdd6;
+            cursor: not-allowed;
+          }
+
           .mainBtn {
             width: 100%;
-            padding: 14px;
-            border-radius: 14px;
-            border: none;
-            background: black;
-            color: white;
-            font-weight: 800;
+            padding: 16px;
+            border-radius: 18px;
+            border: 1px solid #374151;
+            background: linear-gradient(145deg, #374151, #111827);
+            color: #f9fafb;
+            font-weight: 900;
+            font-size: 17px;
             cursor: pointer;
-            box-shadow: 0 10px 18px rgba(0, 0, 0, 0.15);
-            transition: 0.15s;
+            box-shadow:
+              10px 10px 20px rgba(75, 85, 99, 0.22),
+              -6px -6px 12px rgba(255, 255, 255, 0.38);
+            transition: 0.15s ease;
             text-align: center;
+            letter-spacing: 0.01em;
           }
 
           .mainBtn:hover:not(:disabled) {
             transform: translateY(-1px);
-            box-shadow: 0 14px 22px rgba(0, 0, 0, 0.18);
+            box-shadow:
+              12px 12px 22px rgba(75, 85, 99, 0.24),
+              -6px -6px 12px rgba(255, 255, 255, 0.4);
+          }
+
+          .mainBtn:active:not(:disabled) {
+            transform: translateY(0);
+            box-shadow:
+              inset 4px 4px 8px rgba(17, 24, 39, 0.28),
+              inset -2px -2px 6px rgba(255, 255, 255, 0.08);
           }
 
           .mainBtn:disabled {
@@ -576,41 +584,48 @@ export default function SignupPage() {
           }
 
           .signupBtn {
-            width: 100%;
-            padding: 14px;
-            border-radius: 14px;
-            border: 1px solid #ddd;
-            background: rgba(255, 255, 255, 0.9);
-            color: black;
+            min-width: 220px;
+            padding: 12px 18px;
+            border-radius: 16px;
+            border: 1px solid #c2c8d0;
+            background: linear-gradient(145deg, #f8fafc, #dde2e8);
+            color: #111827;
             font-weight: 800;
+            font-size: 15px;
             cursor: pointer;
-            transition: 0.15s;
+            transition: 0.15s ease;
             text-align: center;
             text-decoration: none;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 10px 18px rgba(0, 0, 0, 0.05);
+            box-shadow:
+              8px 8px 18px rgba(107, 114, 128, 0.14),
+              -6px -6px 14px rgba(255, 255, 255, 0.88);
           }
 
           .signupBtn:hover {
             transform: translateY(-1px);
-            box-shadow: 0 14px 22px rgba(0, 0, 0, 0.08);
           }
 
           .infoMsg {
-            padding: 12px 14px;
-            border-radius: 12px;
-            border: 1px solid #eee;
-            background: white;
+            padding: 13px 15px;
+            border-radius: 14px;
+            border: 1px solid #d1d5db;
+            background: linear-gradient(145deg, #f9fafb, #eceff3);
             font-size: 14px;
             white-space: pre-wrap;
             word-break: break-word;
+            color: #111827;
+            box-shadow:
+              8px 8px 16px rgba(107, 114, 128, 0.12),
+              -6px -6px 12px rgba(255, 255, 255, 0.88);
           }
 
           .errorBox {
-            border-color: #f3d4d4;
-            background: #fff7f7;
+            border-color: #e5b9b9;
+            background: linear-gradient(145deg, #fff7f7, #fbe9e9);
+            color: #b42318;
           }
 
           @media (max-width: 860px) {

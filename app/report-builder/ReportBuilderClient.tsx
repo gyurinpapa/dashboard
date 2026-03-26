@@ -1,4 +1,3 @@
-// app/report-builder/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -185,7 +184,6 @@ export default function ReportBuilderPage() {
   const canDeleteReports = hasMinRole(memberRole, "staff");
   const canManageMembers = hasMinRole(memberRole, "director");
   const canDeleteAdvertisers = memberRole === "master";
-  
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -785,16 +783,16 @@ export default function ReportBuilderPage() {
   }
 
   function changeWorkspace(nextWorkspaceId: string) {
-  if (!nextWorkspaceId) return;
-  if (nextWorkspaceId === workspaceId) return;
+    if (!nextWorkspaceId) return;
+    if (nextWorkspaceId === workspaceId) return;
 
-  setSelectedAdvertiserId("");
-  setSelectedAdvertiserIds([]);
-  setSelectedReportIds([]);
-  setSearch("");
-  setLocalMsg("");
-  router.replace(`/report-builder?workspace_id=${encodeURIComponent(nextWorkspaceId)}`);
-}
+    setSelectedAdvertiserId("");
+    setSelectedAdvertiserIds([]);
+    setSelectedReportIds([]);
+    setSearch("");
+    setLocalMsg("");
+    router.replace(`/report-builder?workspace_id=${encodeURIComponent(nextWorkspaceId)}`);
+  }
 
   const advNameById = useMemo(() => {
     const m = new Map<string, string>();
@@ -922,7 +920,14 @@ export default function ReportBuilderPage() {
   };
 
   return (
-    <main style={{ display: "flex", justifyContent: "center" }}>
+    <main
+      style={{
+        display: "flex",
+        justifyContent: "center",
+        background: "#f3f4f6",
+        minHeight: "100vh",
+      }}
+    >
       <div style={containerStyle}>
         <h1
           style={{
@@ -930,6 +935,8 @@ export default function ReportBuilderPage() {
             fontWeight: 900,
             textAlign: "center",
             marginBottom: 20,
+            color: "#111827",
+            letterSpacing: "-0.02em",
           }}
         >
           Automated Online Ads Reporting
@@ -937,62 +944,108 @@ export default function ReportBuilderPage() {
 
         <div
           style={{
-            background: "#f5a62333",
-            border: "1px solid rgba(0,0,0,0.08)",
-            borderRadius: 20,
-            padding: 32,
+            background: "#e5e7eb",
+            border: "1px solid #cfd4dc",
+            borderRadius: 24,
+            padding: 40,
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
             gap: 16,
+            boxShadow:
+              "18px 18px 36px rgba(55, 65, 81, 0.14), -12px -12px 24px rgba(255, 255, 255, 0.82)",
           }}
         >
           {!userId ? (
             <>
-              <div style={{ width: "100%", maxWidth: 520 }}>
-                <div style={{ marginBottom: 6, fontSize: 13 }}>이메일</div>
-                <input
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+              <div
+                style={{
+                  width: "100%",
+                  maxWidth: 760,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  textAlign: "center",
+                  gap: 14,
+                }}
+              >
+                <div
                   style={{
-                    width: "100%",
-                    padding: 14,
-                    borderRadius: 12,
-                    border: "1px solid #ddd",
-                    background: "#eaf2ff",
-                    fontSize: 18,
+                    fontSize: 34,
+                    lineHeight: 1.2,
+                    fontWeight: 900,
+                    color: "#111827",
+                    letterSpacing: "-0.02em",
                   }}
-                />
+                >
+                  온라인 광고 리포트를 더 빠르고 정확하게
+                </div>
+
+                <div
+                  style={{
+                    maxWidth: 680,
+                    fontSize: 16,
+                    lineHeight: 1.7,
+                    color: "#4b5563",
+                  }}
+                >
+                  광고 성과 데이터를 업로드하고, KPI 요약과 시각화를 거쳐
+                  공유 가능한 리포트까지 한 번에 관리하세요.
+                </div>
               </div>
 
-              <div style={{ width: "100%", maxWidth: 520 }}>
-                <div style={{ marginBottom: 6, fontSize: 13 }}>비밀번호</div>
-                <input
-                  value={password}
-                  type="password"
-                  onChange={(e) => setPassword(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: 14,
-                    borderRadius: 12,
-                    border: "1px solid #ddd",
-                    background: "#eaf2ff",
-                    fontSize: 18,
-                  }}
-                />
+              <div
+                style={{
+                  width: "100%",
+                  maxWidth: 420,
+                  marginTop: 10,
+                }}
+              >
+                <div className="authCard">
+                  <div className="fieldLabel">이메일</div>
+                  <input
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="neoField"
+                  />
+
+                  <div className="fieldLabel" style={{ marginTop: 14 }}>
+                    비밀번호
+                  </div>
+                  <input
+                    value={password}
+                    type="password"
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="neoField"
+                  />
+
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 12,
+                      marginTop: 16,
+                    }}
+                  >
+                    <button
+                      className="mainBtn"
+                      onClick={signIn}
+                      style={{ maxWidth: "none" }}
+                    >
+                      로그인하기
+                    </button>
+
+                    <Link href="/signup" className="signupBtn">
+                      회원가입
+                    </Link>
+                  </div>
+                </div>
               </div>
-
-              <button className="mainBtn" onClick={signIn}>
-                로그인
-              </button>
-
-              <Link href="/signup" className="signupBtn">
-                회원가입
-              </Link>
             </>
           ) : (
             <>
-              <div style={{ fontSize: 22, fontWeight: 800 }}>
+              <div style={{ fontSize: 22, fontWeight: 800, color: "#111827" }}>
                 {userEmail ?? "사용자"}님 반갑습니다 👋
               </div>
 
@@ -1000,9 +1053,10 @@ export default function ReportBuilderPage() {
                 <div
                   style={{
                     fontSize: 13,
-                    opacity: 0.78,
+                    opacity: 0.92,
                     textAlign: "center",
                     lineHeight: 1.6,
+                    color: "#4b5563",
                   }}
                 >
                   {memberInfoText}
@@ -1019,21 +1073,22 @@ export default function ReportBuilderPage() {
                     gap: 6,
                   }}
                 >
-                  <div style={{ fontSize: 13, opacity: 0.7, textAlign: "left" }}>
+                  <div
+                    style={{
+                      fontSize: 13,
+                      textAlign: "left",
+                      color: "#374151",
+                      fontWeight: 700,
+                    }}
+                  >
                     현재 workspace 선택
                   </div>
                   <select
                     value={workspaceId ?? ""}
                     onChange={(e) => changeWorkspace(e.target.value)}
                     disabled={!workspaceMemberships.length}
-                    style={{
-                      width: "100%",
-                      padding: 14,
-                      borderRadius: 12,
-                      border: "1px solid #ddd",
-                      background: "white",
-                      fontSize: 15,
-                    }}
+                    className="neoField"
+                    style={{ fontSize: 15 }}
                   >
                     {workspaceMemberships.map((wm) => (
                       <option key={wm.workspace_id} value={wm.workspace_id}>
@@ -1072,7 +1127,12 @@ export default function ReportBuilderPage() {
             </>
           )}
 
-          <div style={{ fontSize: 13, opacity: 0.7 }}>
+          <div
+            style={{
+              fontSize: 13,
+              color: "#6b7280",
+            }}
+          >
             workspace_id: {workspaceId ?? "(없음)"}
             {workspaceName ? ` / ${workspaceName}` : ""}
           </div>
@@ -1119,75 +1179,83 @@ export default function ReportBuilderPage() {
                 <div style={{ marginTop: 10, fontSize: 12, opacity: 0.65 }}>
                   현재 선택: {selectedAdvertiserName || "광고주 미지정"}
                 </div>
+
                 {canDeleteAdvertisers ? (
-                <div style={{ marginTop: 14 }}>
-                  <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 8, opacity: 0.8 }}>
-                    삭제할 광고주 선택
+                  <div style={{ marginTop: 14 }}>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 800,
+                        marginBottom: 8,
+                        opacity: 0.8,
+                      }}
+                    >
+                      삭제할 광고주 선택
+                    </div>
+
+                    <div
+                      style={{
+                        border: "1px solid #eee",
+                        borderRadius: 12,
+                        background: "white",
+                        padding: 10,
+                        maxHeight: 180,
+                        overflowY: "auto",
+                      }}
+                    >
+                      {advertisers.length === 0 ? (
+                        <div style={{ fontSize: 12, opacity: 0.6 }}>
+                          삭제할 광고주가 없습니다.
+                        </div>
+                      ) : (
+                        advertisers.map((a) => {
+                          const checked = selectedAdvertiserIds.includes(a.id);
+
+                          return (
+                            <label
+                              key={a.id}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                                padding: "6px 4px",
+                                cursor: "pointer",
+                                fontSize: 14,
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleAdvertiserSelection(a.id)}
+                              />
+                              <span>{a.name}</span>
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    <button
+                      className="subBtn deleteBtn"
+                      onClick={deleteSelectedAdvertisers}
+                      disabled={selectedAdvertiserIds.length === 0 || deletingAdvertisers}
+                      style={{ marginTop: 10 }}
+                      title={
+                        selectedAdvertiserIds.length === 0
+                          ? "삭제할 광고주를 먼저 선택하세요"
+                          : `선택된 ${selectedAdvertiserIds.length}개 삭제`
+                      }
+                    >
+                      {deletingAdvertisers
+                        ? "삭제 중..."
+                        : `선택 삭제${
+                            selectedAdvertiserIds.length > 0
+                              ? ` (${selectedAdvertiserIds.length})`
+                              : ""
+                          }`}
+                    </button>
                   </div>
-
-                  <div
-                    style={{
-                      border: "1px solid #eee",
-                      borderRadius: 12,
-                      background: "white",
-                      padding: 10,
-                      maxHeight: 180,
-                      overflowY: "auto",
-                    }}
-                  >
-                    {advertisers.length === 0 ? (
-                      <div style={{ fontSize: 12, opacity: 0.6 }}>
-                        삭제할 광고주가 없습니다.
-                      </div>
-                    ) : (
-                      advertisers.map((a) => {
-                        const checked = selectedAdvertiserIds.includes(a.id);
-
-                        return (
-                          <label
-                            key={a.id}
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 8,
-                              padding: "6px 4px",
-                              cursor: "pointer",
-                              fontSize: 14,
-                            }}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => toggleAdvertiserSelection(a.id)}
-                            />
-                            <span>{a.name}</span>
-                          </label>
-                        );
-                      })
-                    )}
-                  </div>
-
-                  <button
-                    className="subBtn deleteBtn"
-                    onClick={deleteSelectedAdvertisers}
-                    disabled={selectedAdvertiserIds.length === 0 || deletingAdvertisers}
-                    style={{ marginTop: 10 }}
-                    title={
-                      selectedAdvertiserIds.length === 0
-                        ? "삭제할 광고주를 먼저 선택하세요"
-                        : `선택된 ${selectedAdvertiserIds.length}개 삭제`
-                    }
-                  >
-                    {deletingAdvertisers
-                      ? "삭제 중..."
-                      : `선택 삭제${
-                          selectedAdvertiserIds.length > 0
-                            ? ` (${selectedAdvertiserIds.length})`
-                            : ""
-                        }`}
-                  </button>
-                </div>
-              ) : null}
+                ) : null}
               </div>
 
               <div className="panelCard">
@@ -1285,331 +1353,395 @@ export default function ReportBuilderPage() {
           </section>
         ) : null}
 
-        <section style={{ marginTop: 40 }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "baseline",
-              justifyContent: "space-between",
-              gap: 12,
-              flexWrap: "wrap",
-            }}
-          >
-            <h2 style={{ fontSize: 20, fontWeight: 800 }}>내 리포트 목록</h2>
+        {userId ? (
+          <section style={{ marginTop: 40 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "baseline",
+                justifyContent: "space-between",
+                gap: 12,
+                flexWrap: "wrap",
+              }}
+            >
+              <h2 style={{ fontSize: 20, fontWeight: 800 }}>내 리포트 목록</h2>
 
-            <div style={topActionsStyle}>
-              <div
-                style={{
-                  display: "flex",
-                  gap: 8,
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                }}
-              >
-                <button
-                  className={`filterBtn ${
-                    reportFilter === "all" ? "filterBtnActive" : ""
-                  }`}
-                  onClick={() => setReportFilter("all")}
-                  disabled={!userId}
+              <div style={topActionsStyle}>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                  }}
                 >
-                  전체
-                </button>
-                <button
-                  className={`filterBtn ${
-                    reportFilter === "published" ? "filterBtnActive" : ""
-                  }`}
-                  onClick={() => setReportFilter("published")}
-                  disabled={!userId}
-                >
-                  발행됨
-                </button>
-                <button
-                  className={`filterBtn ${
-                    reportFilter === "draft" ? "filterBtnActive" : ""
-                  }`}
-                  onClick={() => setReportFilter("draft")}
-                  disabled={!userId}
-                >
-                  초안
-                </button>
-              </div>
-
-              <button
-                className="subBtn"
-                onClick={fetchReports}
-                disabled={!userId || !workspaceId}
-                style={{ padding: "10px 14px" }}
-              >
-                새로고침
-              </button>
-
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="검색(광고주/제목/ID)"
-                style={{
-                  width: 320,
-                  maxWidth: "100%",
-                  padding: "10px 12px",
-                  borderRadius: 12,
-                  border: "1px solid #ddd",
-                  background: "white",
-                  fontSize: 14,
-                }}
-                disabled={!userId}
-              />
-            </div>
-          </div>
-
-          {canDeleteReports ? (
-            <div className="selectionBar" style={{ marginTop: 12 }}>
-              <div style={{ fontSize: 14, opacity: 0.8 }}>
-                선택됨 <b>{selectedCount}</b>개
-                {visibleReportIds.length > 0 ? (
-                  <span style={{ opacity: 0.7 }}>
-                    {" "}
-                    · 현재 목록 기준 {selectedVisibleCount}/{visibleReportIds.length}
-                  </span>
-                ) : null}
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  gap: 8,
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                }}
-              >
-                <button
-                  className="subBtn"
-                  onClick={
-                    allVisibleSelected
-                      ? unselectAllVisibleReports
-                      : selectAllVisibleReports
-                  }
-                  disabled={!userId || visibleReportIds.length === 0 || deletingReports}
-                  style={{ padding: "10px 14px" }}
-                >
-                  {allVisibleSelected ? "현재 목록 선택해제" : "현재 목록 전체선택"}
-                </button>
+                  <button
+                    className={`filterBtn ${
+                      reportFilter === "all" ? "filterBtnActive" : ""
+                    }`}
+                    onClick={() => setReportFilter("all")}
+                    disabled={!userId}
+                  >
+                    전체
+                  </button>
+                  <button
+                    className={`filterBtn ${
+                      reportFilter === "published" ? "filterBtnActive" : ""
+                    }`}
+                    onClick={() => setReportFilter("published")}
+                    disabled={!userId}
+                  >
+                    발행됨
+                  </button>
+                  <button
+                    className={`filterBtn ${
+                      reportFilter === "draft" ? "filterBtnActive" : ""
+                    }`}
+                    onClick={() => setReportFilter("draft")}
+                    disabled={!userId}
+                  >
+                    초안
+                  </button>
+                </div>
 
                 <button
                   className="subBtn"
-                  onClick={clearAllSelectedReports}
-                  disabled={!userId || selectedCount === 0 || deletingReports}
+                  onClick={fetchReports}
+                  disabled={!userId || !workspaceId}
                   style={{ padding: "10px 14px" }}
                 >
-                  전체 해제
+                  새로고침
                 </button>
 
-                <button
-                  className="subBtn deleteBtn"
-                  onClick={deleteSelectedReports}
-                  disabled={!userId || deletingReports || selectedCount === 0}
-                  style={{ padding: "10px 14px" }}
-                  title={
-                    selectedCount === 0
-                      ? "삭제할 리포트를 먼저 선택하세요"
-                      : `선택된 ${selectedCount}개 삭제`
-                  }
-                >
-                  {deletingReports
-                    ? "삭제 중..."
-                    : `선택 삭제${selectedCount > 0 ? ` (${selectedCount})` : ""}`}
-                </button>
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="검색(광고주/제목/ID)"
+                  style={{
+                    width: 320,
+                    maxWidth: "100%",
+                    padding: "10px 12px",
+                    borderRadius: 12,
+                    border: "1px solid #ddd",
+                    background: "white",
+                    fontSize: 14,
+                  }}
+                  disabled={!userId}
+                />
               </div>
             </div>
-          ) : null}
 
-          {!userId && (
-            <p style={{ marginTop: 10, opacity: 0.7 }}>
-              로그인하면 목록이 보입니다.
-            </p>
-          )}
+            {canDeleteReports ? (
+              <div className="selectionBar" style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 14, opacity: 0.8 }}>
+                  선택됨 <b>{selectedCount}</b>개
+                  {visibleReportIds.length > 0 ? (
+                    <span style={{ opacity: 0.7 }}>
+                      {" "}
+                      · 현재 목록 기준 {selectedVisibleCount}/{visibleReportIds.length}
+                    </span>
+                  ) : null}
+                </div>
 
-          {userId && filteredReports.length === 0 && (
-            <p style={{ marginTop: 10, opacity: 0.7 }}>
-              조건에 맞는 리포트가 없습니다.
-            </p>
-          )}
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <button
+                    className="subBtn"
+                    onClick={
+                      allVisibleSelected
+                        ? unselectAllVisibleReports
+                        : selectAllVisibleReports
+                    }
+                    disabled={!userId || visibleReportIds.length === 0 || deletingReports}
+                    style={{ padding: "10px 14px" }}
+                  >
+                    {allVisibleSelected ? "현재 목록 선택해제" : "현재 목록 전체선택"}
+                  </button>
 
-          <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
-            {userId
-              ? grouped.orderedKeys.map((key) => {
-                  const list = grouped.map.get(key) ?? [];
-                  const isNone = key === "__none__";
-                  const folderName = isNone
-                    ? "광고주 미지정"
-                    : advNameById.get(key) ||
-                      (list.find((x) => x.advertiser_name)?.advertiser_name ??
-                        "(광고주)");
+                  <button
+                    className="subBtn"
+                    onClick={clearAllSelectedReports}
+                    disabled={!userId || selectedCount === 0 || deletingReports}
+                    style={{ padding: "10px 14px" }}
+                  >
+                    전체 해제
+                  </button>
 
-                  const open = openMap[key] ?? true;
+                  <button
+                    className="subBtn deleteBtn"
+                    onClick={deleteSelectedReports}
+                    disabled={!userId || deletingReports || selectedCount === 0}
+                    style={{ padding: "10px 14px" }}
+                    title={
+                      selectedCount === 0
+                        ? "삭제할 리포트를 먼저 선택하세요"
+                        : `선택된 ${selectedCount}개 삭제`
+                    }
+                  >
+                    {deletingReports
+                      ? "삭제 중..."
+                      : `선택 삭제${selectedCount > 0 ? ` (${selectedCount})` : ""}`}
+                  </button>
+                </div>
+              </div>
+            ) : null}
 
-                  return (
-                    <div key={key} className="folderBox">
-                      <button
-                        className="folderHeader"
-                        onClick={() => toggleFolder(key)}
+            {filteredReports.length === 0 && (
+              <p style={{ marginTop: 10, opacity: 0.7 }}>
+                조건에 맞는 리포트가 없습니다.
+              </p>
+            )}
+
+            <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+              {grouped.orderedKeys.map((key) => {
+                const list = grouped.map.get(key) ?? [];
+                const isNone = key === "__none__";
+                const folderName = isNone
+                  ? "광고주 미지정"
+                  : advNameById.get(key) ||
+                    (list.find((x) => x.advertiser_name)?.advertiser_name ??
+                      "(광고주)");
+
+                const open = openMap[key] ?? true;
+
+                return (
+                  <div key={key} className="folderBox">
+                    <button
+                      className="folderHeader"
+                      onClick={() => toggleFolder(key)}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          minWidth: 0,
+                        }}
                       >
-                        <div
+                        <span
                           style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 10,
-                            minWidth: 0,
+                            fontWeight: 900,
+                            width: 18,
+                            display: "inline-block",
                           }}
                         >
-                          <span
-                            style={{
-                              fontWeight: 900,
-                              width: 18,
-                              display: "inline-block",
-                            }}
-                          >
-                            {open ? "▼" : "▶"}
-                          </span>
-                          <div
-                            style={{
-                              fontWeight: 900,
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {folderName}
-                          </div>
-                          <div style={{ fontSize: 12, opacity: 0.65 }}>
-                            ({list.length})
-                          </div>
+                          {open ? "▼" : "▶"}
+                        </span>
+                        <div
+                          style={{
+                            fontWeight: 900,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {folderName}
                         </div>
-
-                        <div style={{ fontSize: 12, opacity: 0.45 }}>
-                          {isNone ? "" : key}
+                        <div style={{ fontSize: 12, opacity: 0.65 }}>
+                          ({list.length})
                         </div>
-                      </button>
+                      </div>
 
-                      {open ? (
-                        <div className="folderBody">
-                          {list.map((r, idx) => {
-                            const checked = selectedReportIds.includes(r.id);
+                      <div style={{ fontSize: 12, opacity: 0.45 }}>
+                        {isNone ? "" : key}
+                      </div>
+                    </button>
 
-                            return (
-                              <div
-                                key={r.id}
-                                className="reportRow"
+                    {open ? (
+                      <div className="folderBody">
+                        {list.map((r, idx) => {
+                          const checked = selectedReportIds.includes(r.id);
+
+                          return (
+                            <div
+                              key={r.id}
+                              className="reportRow"
+                              style={{
+                                borderBottom:
+                                  idx === list.length - 1
+                                    ? "none"
+                                    : "1px solid #eee",
+                              }}
+                            >
+                              {canDeleteReports ? (
+                                <label
+                                  className="reportCheckWrap"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => toggleReportSelection(r.id)}
+                                  />
+                                </label>
+                              ) : null}
+
+                              <button
+                                onClick={() => router.push(`/reports/${r.id}`)}
+                                className={`reportItem reportItemMain ${
+                                  checked ? "reportItemSelected" : ""
+                                }`}
                                 style={{
-                                  borderBottom:
-                                    idx === list.length - 1
-                                      ? "none"
-                                      : "1px solid #eee",
+                                  width: "100%",
                                 }}
                               >
-                                {canDeleteReports ? (
-                                  <label
-                                    className="reportCheckWrap"
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={checked}
-                                      onChange={() => toggleReportSelection(r.id)}
-                                    />
-                                  </label>
-                                ) : null}
-
-                                <button
-                                  onClick={() => router.push(`/reports/${r.id}`)}
-                                  className={`reportItem reportItemMain ${
-                                    checked ? "reportItemSelected" : ""
-                                  }`}
-                                  style={{
-                                    width: "100%",
-                                  }}
-                                >
-                                  <div style={{ fontWeight: 700 }}>
-                                    {r.title}
-                                    <span style={{ fontSize: 12, opacity: 0.55 }}>
-                                      {" "}
-                                      · {String(r.status ?? "").toUpperCase()}
-                                    </span>
-                                  </div>
-                                  <div style={{ fontSize: 13, opacity: 0.6 }}>
-                                    {fmtDate(r.created_at ?? null)}
-                                  </div>
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : null}
-                    </div>
-                  );
-                })
-              : null}
-          </div>
-        </section>
+                                <div style={{ fontWeight: 700 }}>
+                                  {r.title}
+                                  <span style={{ fontSize: 12, opacity: 0.55 }}>
+                                    {" "}
+                                    · {String(r.status ?? "").toUpperCase()}
+                                  </span>
+                                </div>
+                                <div style={{ fontSize: 13, opacity: 0.6 }}>
+                                  {fmtDate(r.created_at ?? null)}
+                                </div>
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
 
         <style jsx>{`
+          .fieldLabel {
+            margin-bottom: 8px;
+            font-size: 14px;
+            font-weight: 800;
+            color: #1f2937;
+            letter-spacing: 0.01em;
+          }
+
+          .authCard {
+            border: 1px solid #c7cdd6;
+            border-radius: 20px;
+            background: linear-gradient(145deg, #eef1f4, #dde2e8);
+            padding: 20px;
+            box-shadow:
+              10px 10px 20px rgba(107, 114, 128, 0.14),
+              -8px -8px 16px rgba(255, 255, 255, 0.88);
+          }
+
+          .neoField {
+            width: 100%;
+            padding: 14px;
+            border-radius: 14px;
+            border: 1px solid #bfc6cf;
+            outline: none;
+            background: linear-gradient(145deg, #f8fafc, #d9dde3);
+            color: #111827;
+            font-size: 16px;
+            font-weight: 600;
+            box-shadow:
+              inset 1px 1px 0 rgba(255, 255, 255, 0.95),
+              inset -1px -1px 0 rgba(148, 163, 184, 0.28),
+              8px 8px 16px rgba(107, 114, 128, 0.14),
+              -6px -6px 12px rgba(255, 255, 255, 0.9);
+            transition: box-shadow 0.15s ease, transform 0.15s ease,
+              border-color 0.15s ease;
+            appearance: none;
+            -webkit-appearance: none;
+          }
+
+          .neoField::placeholder {
+            color: #6b7280;
+            font-weight: 500;
+          }
+
+          .neoField:focus {
+            border-color: #6b7280;
+            box-shadow:
+              inset 1px 1px 0 rgba(255, 255, 255, 0.98),
+              inset -1px -1px 0 rgba(148, 163, 184, 0.24),
+              0 0 0 2px rgba(55, 65, 81, 0.12),
+              8px 8px 16px rgba(107, 114, 128, 0.16),
+              -6px -6px 12px rgba(255, 255, 255, 0.92);
+          }
+
           .mainBtn {
             width: 100%;
             max-width: 520px;
             padding: 14px;
-            border-radius: 14px;
-            border: none;
-            background: black;
-            color: white;
-            font-weight: 800;
+            border-radius: 16px;
+            border: 1px solid #374151;
+            background: linear-gradient(145deg, #374151, #111827);
+            color: #f9fafb;
+            font-weight: 900;
+            font-size: 16px;
             cursor: pointer;
-            box-shadow: 0 10px 18px rgba(0, 0, 0, 0.15);
-            transition: 0.15s;
+            box-shadow:
+              10px 10px 20px rgba(75, 85, 99, 0.22),
+              -6px -6px 12px rgba(255, 255, 255, 0.38);
+            transition: 0.15s ease;
             text-align: center;
+            letter-spacing: 0.01em;
           }
 
           .mainBtn:hover {
             transform: translateY(-1px);
-            box-shadow: 0 14px 22px rgba(0, 0, 0, 0.18);
+            box-shadow:
+              12px 12px 22px rgba(75, 85, 99, 0.24),
+              -6px -6px 12px rgba(255, 255, 255, 0.4);
           }
 
           .signupBtn {
-            width: 100%;
-            max-width: 520px;
-            padding: 14px;
-            border-radius: 14px;
-            border: 1px solid #ddd;
-            background: rgba(255, 255, 255, 0.9);
-            color: black;
+            min-width: 180px;
+            padding: 12px 18px;
+            border-radius: 16px;
+            border: 1px solid #c2c8d0;
+            background: linear-gradient(145deg, #f8fafc, #dde2e8);
+            color: #111827;
             font-weight: 800;
+            font-size: 15px;
             cursor: pointer;
-            transition: 0.15s;
+            transition: 0.15s ease;
             text-align: center;
             text-decoration: none;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 10px 18px rgba(0, 0, 0, 0.05);
+            box-shadow:
+              8px 8px 18px rgba(107, 114, 128, 0.14),
+              -6px -6px 14px rgba(255, 255, 255, 0.88);
           }
 
           .signupBtn:hover {
             transform: translateY(-1px);
-            box-shadow: 0 14px 22px rgba(0, 0, 0, 0.08);
           }
 
           .subBtn {
             padding: 10px 18px;
             border-radius: 12px;
-            border: 1px solid #ddd;
-            background: rgba(255, 255, 255, 0.85);
+            border: 1px solid #d1d5db;
+            background: linear-gradient(145deg, #ffffff, #eceff3);
             cursor: pointer;
             font-weight: 800;
             transition: 0.15s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow:
+              6px 6px 14px rgba(107, 114, 128, 0.12),
+              -4px -4px 10px rgba(255, 255, 255, 0.88);
+            color: #111827;
           }
 
           .subBtn:hover:not(:disabled) {
             transform: translateY(-1px);
-            box-shadow: 0 10px 18px rgba(0, 0, 0, 0.08);
+            box-shadow:
+              8px 8px 16px rgba(107, 114, 128, 0.14),
+              -4px -4px 10px rgba(255, 255, 255, 0.9);
           }
 
           .subBtn:disabled {
@@ -1619,7 +1751,7 @@ export default function ReportBuilderPage() {
 
           .deleteBtn {
             border-color: #f0cfcf;
-            background: #fff7f7;
+            background: linear-gradient(145deg, #fff7f7, #fbecec);
             color: #b42318;
           }
 
@@ -1630,22 +1762,31 @@ export default function ReportBuilderPage() {
           .filterBtn {
             padding: 10px 14px;
             border-radius: 12px;
-            border: 1px solid #ddd;
-            background: white;
+            border: 1px solid #d1d5db;
+            background: linear-gradient(145deg, #ffffff, #eceff3);
             cursor: pointer;
             font-weight: 800;
             transition: 0.15s;
+            color: #111827;
+            box-shadow:
+              6px 6px 14px rgba(107, 114, 128, 0.1),
+              -4px -4px 10px rgba(255, 255, 255, 0.86);
           }
 
           .filterBtn:hover {
             transform: translateY(-1px);
-            box-shadow: 0 10px 18px rgba(0, 0, 0, 0.06);
+            box-shadow:
+              8px 8px 16px rgba(107, 114, 128, 0.12),
+              -4px -4px 10px rgba(255, 255, 255, 0.88);
           }
 
           .filterBtnActive {
-            background: black;
+            background: linear-gradient(145deg, #374151, #111827);
             color: white;
-            border-color: black;
+            border-color: #374151;
+            box-shadow:
+              8px 8px 18px rgba(75, 85, 99, 0.22),
+              -4px -4px 10px rgba(255, 255, 255, 0.2);
           }
 
           .panelCard {
