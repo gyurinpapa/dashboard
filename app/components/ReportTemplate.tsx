@@ -254,21 +254,21 @@ function pickHeaderFallbackFromRows(rows: any[]) {
 
   for (const r of rows ?? []) {
     advertiser =
-    advertiser ||
-    firstNonEmpty(
-      r?.advertiser_name,
-      r?.advertiserName,
-      r?.advertiser,
-      r?.account,
-      r?.account_name,
-      r?.accountName,
-      r?.campaign_name,
-      r?.campaignName,
-      r?.brand_name,
-      r?.brandName,
-      r?.client_name,
-      r?.clientName
-    );
+      advertiser ||
+      firstNonEmpty(
+        r?.advertiser_name,
+        r?.advertiserName,
+        r?.advertiser,
+        r?.account,
+        r?.account_name,
+        r?.accountName,
+        r?.campaign_name,
+        r?.campaignName,
+        r?.brand_name,
+        r?.brandName,
+        r?.client_name,
+        r?.clientName
+      );
 
     reportType =
       reportType ||
@@ -491,6 +491,7 @@ export default function ReportTemplate({
   const [selectedWeek, setSelectedWeek] = useState<WeekKey>("all");
   const [selectedDevice, setSelectedDevice] = useState<DeviceKey>("all");
   const [selectedChannel, setSelectedChannel] = useState<ChannelKey>("all");
+  const [selectedSource, setSelectedSource] = useState<string>("all");
 
   const [monthGoal, setMonthGoal] = useLocalStorageState<GoalState>(
     MONTH_GOAL_KEY,
@@ -601,6 +602,7 @@ export default function ReportTemplate({
     weekOptions,
     deviceOptions,
     channelOptions,
+    sourceOptions,
     enabledMonthKeySet,
     enabledWeekKeySet,
     filteredRows,
@@ -621,6 +623,7 @@ export default function ReportTemplate({
     selectedWeek,
     selectedDevice,
     selectedChannel,
+    selectedSource,
     monthGoal,
     onInvalidWeek: () => setSelectedWeek("all"),
   });
@@ -654,6 +657,14 @@ export default function ReportTemplate({
       setSelectedChannel("all");
     }
   }, [selectedChannel, channelOptions, readOnlyHeader]);
+
+  useEffect(() => {
+    if (readOnlyHeader) return;
+    const allowed = new Set((sourceOptions ?? []).map((x: any) => String(x)));
+    if (selectedSource !== "all" && !allowed.has(String(selectedSource))) {
+      setSelectedSource("all");
+    }
+  }, [selectedSource, sourceOptions, readOnlyHeader]);
 
   const fullPeriod = useMemo(() => {
     const mm = minMaxYmd(normalizedRows as any[]);
@@ -844,10 +855,13 @@ export default function ReportTemplate({
             setSelectedDevice={setSelectedDevice}
             selectedChannel={selectedChannel}
             setSelectedChannel={setSelectedChannel}
+            selectedSource={selectedSource}
+            setSelectedSource={setSelectedSource}
             monthOptions={monthOptions}
             weekOptions={weekOptions}
             deviceOptions={deviceOptions}
             channelOptions={channelOptions}
+            sourceOptions={sourceOptions}
             enabledMonthKeySet={enabledMonthKeySet}
             enabledWeekKeySet={enabledWeekKeySet}
             fullPeriod={fullPeriod}

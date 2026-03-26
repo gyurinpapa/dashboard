@@ -10,17 +10,24 @@ export type TabKey =
   | "creative"
   | "creativeDetail";
 
-// ===== FilterKey (HeaderBar에서 쓰는 상단 4버튼: 월/주차/기기/채널) =====
+// ===== FilterKey (HeaderBar에서 쓰는 상단 버튼: 월/주차/기기/채널/소스) =====
 // 지금 page.tsx에서 초기값을 null로 쓰고 있으니 null 포함
-export type FilterKey = "month" | "week" | "device" | "channel" | null;
+export type FilterKey =
+  | "month"
+  | "week"
+  | "device"
+  | "channel"
+  | "source"
+  | null;
 
 // ===== Period keys =====
 export type MonthKey = "all" | string; // 예: "2022.07"
-export type WeekKey = "all" | string;  // 예: "2022.07 1주차" 또는 "2022-07-W1" 등(프로젝트 데이터 포맷에 따라 string)
+export type WeekKey = "all" | string; // 예: "2022.07 1주차" 또는 "2022-07-W1" 등(프로젝트 데이터 포맷에 따라 string)
 
 // ===== Dimension keys =====
-export type DeviceKey = "all" | string;  // 예: "pc" | "mobile" | ...
-export type ChannelKey = "all" | string; // 예: "naver" | "google" | ...
+export type DeviceKey = "all" | string; // 예: "pc" | "mobile" | ...
+export type ChannelKey = "all" | string; // 예: "search" | "display" | ...
+export type SourceKey = "all" | string; // 예: "naver" | "google" | "kakao" | "meta" | ...
 
 // ===== Goals =====
 export type GoalState = {

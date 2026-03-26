@@ -56,6 +56,71 @@ function firstNum(...values: any[]) {
 }
 
 // =========================
+// ✅ source normalize
+// =========================
+export function normalizeSource(v: any): string {
+  const s = asStr(v).toLowerCase();
+  if (!s) return "";
+
+  if (
+    s.includes("naver") ||
+    s.includes("네이버") ||
+    s.includes("nvr")
+  ) {
+    return "naver";
+  }
+
+  if (
+    s.includes("google") ||
+    s.includes("gdn") ||
+    s.includes("adwords") ||
+    s.includes("youtube")
+  ) {
+    return "google";
+  }
+
+  if (
+    s.includes("kakao") ||
+    s.includes("카카오") ||
+    s.includes("daum")
+  ) {
+    return "kakao";
+  }
+
+  if (
+    s.includes("facebook") ||
+    s.includes("meta") ||
+    s.includes("instagram") ||
+    s.includes("fb")
+  ) {
+    return "meta";
+  }
+
+  return s;
+}
+
+// =========================
+// ✅ source 추출 함수
+// =========================
+export function getRowSource(row: any): string {
+  const candidates = [
+    row?.source,
+    row?.media_source,
+    row?.platform,
+    row?.publisher,
+    row?.site_source,
+    row?.inventory_source,
+  ];
+
+  for (const v of candidates) {
+    const s = String(v ?? "").trim();
+    if (s) return normalizeSource(s);
+  }
+
+  return "";
+}
+
+// =========================
 // ✅ 집계 결과에 "대표 row"의 creative/imagePath 등을 싣기 위한 유틸
 // =========================
 function getImagePathAny(r: any) {
@@ -156,11 +221,13 @@ export function normalizeCsvRows(rawRows: any[]) {
       base.media_type
     );
 
-    const source = firstStr(
-      base.source,
-      base.site_source,
-      base.publisher,
-      base.inventory_source
+    const source = normalizeSource(
+      firstStr(
+        base.source,
+        base.site_source,
+        base.publisher,
+        base.inventory_source
+      )
     );
 
     const platform = firstStr(
@@ -278,6 +345,7 @@ export function buildOptions(rows: Row[]) {
   const monthSet = new Set<string>();
   const deviceSet = new Set<string>();
   const channelSet = new Set<string>();
+  const sourceSet = new Set<string>();
 
   for (const raw of rows ?? []) {
     const r: any = raw ?? {};
@@ -291,12 +359,16 @@ export function buildOptions(rows: Row[]) {
 
     const cv = asStr(r.channel ?? r.media ?? r.ad_channel);
     if (cv) channelSet.add(cv);
+
+    const sv = getRowSource(r);
+    if (sv) sourceSet.add(sv);
   }
 
   return {
     monthOptions: Array.from(monthSet).sort((a, b) => b.localeCompare(a)),
     deviceOptions: Array.from(deviceSet).sort((a, b) => a.localeCompare(b)),
     channelOptions: Array.from(channelSet).sort((a, b) => a.localeCompare(b)),
+    sourceOptions: Array.from(sourceSet).sort((a, b) => a.localeCompare(b)),
   };
 }
 
@@ -339,9 +411,16 @@ export function filterRows(args: {
   selectedWeek: string | "all";
   selectedDevice: string | "all";
   selectedChannel: string | "all";
+  selectedSource?: string | "all";
 }) {
-  const { rows, selectedMonth, selectedWeek, selectedDevice, selectedChannel } =
-    args;
+  const {
+    rows,
+    selectedMonth,
+    selectedWeek,
+    selectedDevice,
+    selectedChannel,
+    selectedSource = "all",
+  } = args;
 
   return (rows ?? []).filter((r: any) => {
     const d = parseDateLoose(
@@ -366,17 +445,17 @@ export function filterRows(args: {
         return false;
     }
 
+    if (selectedSource !== "all") {
+      if (getRowSource(r) !== selectedSource) return false;
+    }
+
     return true;
   });
 }
 
 export function groupBySource(rows: Row[]) {
   const keyOf = (r: Row) =>
-    (
-      asStr((r as any)?.source) ||
-      asStr((r as any)?.platform) ||
-      "unknown"
-    ).toLowerCase();
+    getRowSource(r) || normalizeSource(asStr((r as any)?.platform) || "unknown");
 
   const map = new Map<string, Row[]>();
   for (const r of rows ?? []) {

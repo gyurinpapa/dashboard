@@ -36,10 +36,9 @@ type Args = {
   selectedWeek: WeekKey;
   selectedDevice: DeviceKey;
   selectedChannel: ChannelKey;
+  selectedSource?: string | "all";
 
   monthGoal: GoalState;
-
-  // 주차가 사라졌을 때 page 쪽에서 selectedWeek를 "all"로 리셋하도록 호출
   onInvalidWeek?: () => void;
 };
 
@@ -51,6 +50,7 @@ function asStr(v: any) {
   if (s.toLowerCase() === "undefined") return "";
   return s;
 }
+
 function asNum(v: any) {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
@@ -66,6 +66,7 @@ function getImagePathAny(r: any) {
     ""
   );
 }
+
 function hasCreativeAny(r: any) {
   return (
     !!asStr(r?.creative) ||
@@ -75,9 +76,6 @@ function hasCreativeAny(r: any) {
   );
 }
 
-/**
- * ✅ Row를 “원본 매칭용 signature”로 만드는 함수
- */
 function sigOfRow(r: any) {
   const rid = asStr(r?.__row_id ?? r?.id);
   if (rid) return `ID:${rid}`;
@@ -90,6 +88,7 @@ function sigOfRow(r: any) {
       r?.stat_date ??
       r?.period_start
   );
+
   const ymd = d
     ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
         d.getDate()
@@ -141,11 +140,9 @@ function sigOfRow(r: any) {
   ].join("|");
 }
 
-/**
- * ✅ filterRows가 “새 객체”를 만들어 원본 필드(id/creative/imagePath 등)를 날리는 경우를 복구(hydrate)
- */
 function hydrateFilteredRows(filteredRows: any[], originalRows: any[]) {
   const origBySig = new Map<string, any>();
+
   for (const o of originalRows ?? []) {
     const sig = sigOfRow(o);
     if (!origBySig.has(sig)) origBySig.set(sig, o);
@@ -191,6 +188,7 @@ function hydrateFilteredRows(filteredRows: any[], originalRows: any[]) {
         : asStr(origImagePath)
         ? origImagePath
         : fr?.imagePath,
+
       imagepath: asStr(fr?.imagepath)
         ? fr.imagepath
         : asStr(frImagePath)
@@ -198,6 +196,7 @@ function hydrateFilteredRows(filteredRows: any[], originalRows: any[]) {
         : asStr(origImagePath)
         ? origImagePath
         : fr?.imagepath,
+
       image_path: asStr(fr?.image_path)
         ? fr.image_path
         : asStr(frImagePath)
@@ -221,21 +220,17 @@ export function useReportAggregates({
   selectedWeek,
   selectedDevice,
   selectedChannel,
+  selectedSource = "all",
   monthGoal,
   onInvalidWeek,
 }: Args) {
-  // ============================================================
-  // ✅ 가장 중요한 보강
-  // raw rows를 먼저 normalize 한 뒤,
-  // 모든 옵션/필터/집계가 같은 기준으로 계산되게 통일
-  // ============================================================
   const normalizedRows = useMemo(
     () => normalizeCsvRows((rows ?? []) as any[]),
     [rows]
   );
 
-  // ===== options =====
-  const { monthOptions, deviceOptions, channelOptions } = useMemo(
+  // ===== 전체 기준 옵션 중 month/device만 사용 =====
+  const { monthOptions, deviceOptions } = useMemo(
     () => buildOptions(normalizedRows as any),
     [normalizedRows]
   );
@@ -297,7 +292,65 @@ export function useReportAggregates({
     if (!exists) onInvalidWeek();
   }, [onInvalidWeek, selectedMonth, weekOptions, selectedWeek]);
 
-  // ===== filtered rows (좌측 필터 적용) =====
+  // ============================================================
+  // 채널 옵션용 base rows
+  // month / week / device / source 까지만 적용
+  // channel 은 아직 적용하지 않음
+  // ============================================================
+  const channelBaseRows = useMemo(
+    () =>
+      filterRows({
+        rows: normalizedRows as any,
+        selectedMonth,
+        selectedWeek,
+        selectedDevice,
+        selectedChannel: "all",
+        selectedSource,
+      }),
+    [
+      normalizedRows,
+      selectedMonth,
+      selectedWeek,
+      selectedDevice,
+      selectedSource,
+    ]
+  );
+
+  const { channelOptions } = useMemo(
+    () => buildOptions(channelBaseRows as any),
+    [channelBaseRows]
+  );
+
+  // ============================================================
+  // 소스 옵션용 base rows
+  // month / week / device / channel 까지만 적용
+  // source 는 아직 적용하지 않음
+  // ============================================================
+  const sourceBaseRows = useMemo(
+    () =>
+      filterRows({
+        rows: normalizedRows as any,
+        selectedMonth,
+        selectedWeek,
+        selectedDevice,
+        selectedChannel,
+        selectedSource: "all",
+      }),
+    [
+      normalizedRows,
+      selectedMonth,
+      selectedWeek,
+      selectedDevice,
+      selectedChannel,
+    ]
+  );
+
+  const { sourceOptions } = useMemo(
+    () => buildOptions(sourceBaseRows as any),
+    [sourceBaseRows]
+  );
+
+  // ===== 최종 filtered rows (channel + source 둘 다 적용) =====
   const filteredRowsRaw = useMemo(
     () =>
       filterRows({
@@ -306,20 +359,24 @@ export function useReportAggregates({
         selectedWeek,
         selectedDevice,
         selectedChannel,
+        selectedSource,
       }),
-    [normalizedRows, selectedMonth, selectedWeek, selectedDevice, selectedChannel]
+    [
+      normalizedRows,
+      selectedMonth,
+      selectedWeek,
+      selectedDevice,
+      selectedChannel,
+      selectedSource,
+    ]
   );
 
-  // ✅ 집계용 row는 normalize 기준이지만,
-  // creative/imagePath/id 매칭은 원본 rows 기준으로 다시 hydrate
   const filteredRows = useMemo(
     () => hydrateFilteredRows(filteredRowsRaw as any[], rows as any[]),
     [filteredRowsRaw, rows]
   );
 
-  // ============================================================
-  // ✅ DEBUG (유지)
-  // ============================================================
+  // ===== DEBUG =====
   useEffect(() => {
     if (!rows?.length) return;
 
@@ -334,6 +391,7 @@ export function useReportAggregates({
       selectedWeek,
       selectedDevice,
       selectedChannel,
+      selectedSource,
     });
 
     if (sample) {
@@ -343,6 +401,7 @@ export function useReportAggregates({
         __row_id: sample.__row_id,
         date: sample.date,
         channel: sample.channel,
+        source: sample.source,
         creative: sample.creative,
         imagePath: sample.imagePath,
         imagepath: sample.imagepath,
@@ -352,7 +411,14 @@ export function useReportAggregates({
     } else {
       console.log("UA.DEBUG INPUT firstCreativeSample = NONE");
     }
-  }, [rows, selectedMonth, selectedWeek, selectedDevice, selectedChannel]);
+  }, [
+    rows,
+    selectedMonth,
+    selectedWeek,
+    selectedDevice,
+    selectedChannel,
+    selectedSource,
+  ]);
 
   useEffect(() => {
     if (!normalizedRows?.length) return;
@@ -363,7 +429,12 @@ export function useReportAggregates({
     );
     const sample = (normalizedRows as any[]).find((r) => hasCreativeAny(r));
 
-    console.log("UA.DEBUG NORMALIZED len=", normalizedRows.length, "creativeCnt=", cnt);
+    console.log(
+      "UA.DEBUG NORMALIZED len=",
+      normalizedRows.length,
+      "creativeCnt=",
+      cnt
+    );
 
     if (sample) {
       console.log("UA.DEBUG NORMALIZED firstCreativeSample", {
@@ -372,6 +443,7 @@ export function useReportAggregates({
         __row_id: sample.__row_id,
         date: sample.date,
         channel: sample.channel,
+        source: sample.source,
         creative: sample.creative,
         imagePath: sample.imagePath,
         imagepath: sample.imagepath,
@@ -384,6 +456,42 @@ export function useReportAggregates({
   }, [normalizedRows]);
 
   useEffect(() => {
+    const list = channelBaseRows as any[];
+    console.log("UA.DEBUG CHANNEL_BASE len=", list.length, {
+      selectedMonth,
+      selectedWeek,
+      selectedDevice,
+      selectedSource,
+      channelOptions,
+    });
+  }, [
+    channelBaseRows,
+    selectedMonth,
+    selectedWeek,
+    selectedDevice,
+    selectedSource,
+    channelOptions,
+  ]);
+
+  useEffect(() => {
+    const list = sourceBaseRows as any[];
+    console.log("UA.DEBUG SOURCE_BASE len=", list.length, {
+      selectedMonth,
+      selectedWeek,
+      selectedDevice,
+      selectedChannel,
+      sourceOptions,
+    });
+  }, [
+    sourceBaseRows,
+    selectedMonth,
+    selectedWeek,
+    selectedDevice,
+    selectedChannel,
+    sourceOptions,
+  ]);
+
+  useEffect(() => {
     const list = filteredRowsRaw as any[];
     if (!list?.length) {
       console.log("UA.DEBUG FILTERED_RAW len=0");
@@ -393,7 +501,10 @@ export function useReportAggregates({
     const cnt = list.reduce((acc, r) => acc + (hasCreativeAny(r) ? 1 : 0), 0);
     const sample = list.find((r) => hasCreativeAny(r));
 
-    console.log("UA.DEBUG FILTERED_RAW len=", list.length, "creativeCnt=", cnt);
+    console.log("UA.DEBUG FILTERED_RAW len=", list.length, "creativeCnt=", cnt, {
+      selectedChannel,
+      selectedSource,
+    });
 
     if (sample) {
       console.log("UA.DEBUG FILTERED_RAW firstCreativeSample", {
@@ -402,6 +513,7 @@ export function useReportAggregates({
         __row_id: sample.__row_id,
         date: sample.date,
         channel: sample.channel,
+        source: sample.source,
         creative: sample.creative,
         imagePath: sample.imagePath,
         imagepath: sample.imagepath,
@@ -411,7 +523,7 @@ export function useReportAggregates({
     } else {
       console.log("UA.DEBUG FILTERED_RAW firstCreativeSample = NONE");
     }
-  }, [filteredRowsRaw]);
+  }, [filteredRowsRaw, selectedChannel, selectedSource]);
 
   useEffect(() => {
     const list = filteredRows as any[];
@@ -423,7 +535,10 @@ export function useReportAggregates({
     const cnt = list.reduce((acc, r) => acc + (hasCreativeAny(r) ? 1 : 0), 0);
     const sample = list.find((r) => hasCreativeAny(r));
 
-    console.log("UA.DEBUG HYDRATED len=", list.length, "creativeCnt=", cnt);
+    console.log("UA.DEBUG HYDRATED len=", list.length, "creativeCnt=", cnt, {
+      selectedChannel,
+      selectedSource,
+    });
 
     if (sample) {
       console.log("UA.DEBUG HYDRATED firstCreativeSample", {
@@ -432,6 +547,7 @@ export function useReportAggregates({
         __row_id: sample.__row_id,
         date: sample.date,
         channel: sample.channel,
+        source: sample.source,
         creative: sample.creative,
         imagePath: sample.imagePath,
         imagepath: sample.imagepath,
@@ -441,7 +557,7 @@ export function useReportAggregates({
     } else {
       console.log("UA.DEBUG HYDRATED firstCreativeSample = NONE");
     }
-  }, [filteredRows]);
+  }, [filteredRows, selectedChannel, selectedSource]);
 
   // ===== period text =====
   const period = useMemo(
@@ -506,29 +622,27 @@ export function useReportAggregates({
         selectedMonth,
         selectedDevice,
         selectedChannel,
-      }),
-    [normalizedRows, selectedMonth, selectedDevice, selectedChannel]
+        selectedSource,
+      } as any),
+    [normalizedRows, selectedMonth, selectedDevice, selectedChannel, selectedSource]
   );
 
   return {
-    // options
     monthOptions,
     weekOptions,
     deviceOptions,
     channelOptions,
+    sourceOptions,
     enabledMonthKeySet,
     enabledWeekKeySet,
 
-    // core
     filteredRows,
     period,
 
-    // current month + goal computed
     currentMonthKey,
     currentMonthActual,
     currentMonthGoalComputed,
 
-    // aggregates
     totals,
     bySource,
     byCampaign,

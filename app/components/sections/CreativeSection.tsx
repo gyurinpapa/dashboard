@@ -79,51 +79,8 @@ const SORT_LABEL: Record<SortKey, string> = {
 };
 
 export default function CreativeSection({ rows }: Props) {
-  const [selectedSource, setSelectedSource] = useState<string | "all">("all");
-
-  const sourceOptions = useMemo(() => {
-    const srcSet = new Set<string>();
-
-    for (const r of rows ?? []) {
-      const s = String(r.source ?? r.platform ?? "").trim();
-      if (s) srcSet.add(s);
-    }
-
-    const sources = Array.from(srcSet);
-    const validSources: string[] = [];
-
-    for (const s of sources) {
-      const srcRows = (rows ?? []).filter(
-        (r) => String(r.source ?? r.platform ?? "").trim() === s
-      );
-      const agg = groupByCreative(srcRows) ?? [];
-      const hasCreative = agg.some(
-        (a: any) => String(a?.creative ?? "").trim().length > 0
-      );
-      if (hasCreative) validSources.push(s);
-    }
-
-    validSources.sort((a, b) => a.localeCompare(b, "ko"));
-    return ["all", ...validSources];
-  }, [rows]);
-
-  useEffect(() => {
-    if (selectedSource === "all") return;
-    if (!sourceOptions.includes(selectedSource)) {
-      setSelectedSource("all");
-    }
-  }, [sourceOptions, selectedSource]);
-
-  const scopedRows = useMemo(() => {
-    if (selectedSource === "all") return rows ?? [];
-    return (rows ?? []).filter((r) => {
-      const s = String(r.source ?? r.platform ?? "").trim();
-      return s === selectedSource;
-    });
-  }, [rows, selectedSource]);
-
   const creativeAgg: CreativeAgg[] = useMemo(() => {
-    const rawAgg = groupByCreative(scopedRows);
+    const rawAgg = groupByCreative(rows ?? []);
 
     return (rawAgg ?? []).map((r: any) => {
       const impressions = toSafeNumber(r.impressions ?? r.impr);
@@ -159,19 +116,30 @@ export default function CreativeSection({ rows }: Props) {
         roas,
       };
     });
-  }, [scopedRows]);
+  }, [rows]);
 
   const topClicks = useMemo(
-    () => [...creativeAgg].sort((a, b) => b.clicks - a.clicks).slice(0, 20).reverse(),
+    () =>
+      [...creativeAgg]
+        .sort((a, b) => b.clicks - a.clicks)
+        .slice(0, 20)
+        .reverse(),
     [creativeAgg]
   );
   const topConv = useMemo(
     () =>
-      [...creativeAgg].sort((a, b) => b.conversions - a.conversions).slice(0, 20).reverse(),
+      [...creativeAgg]
+        .sort((a, b) => b.conversions - a.conversions)
+        .slice(0, 20)
+        .reverse(),
     [creativeAgg]
   );
   const topRoas = useMemo(
-    () => [...creativeAgg].sort((a, b) => b.roas - a.roas).slice(0, 20).reverse(),
+    () =>
+      [...creativeAgg]
+        .sort((a, b) => b.roas - a.roas)
+        .slice(0, 20)
+        .reverse(),
     [creativeAgg]
   );
 
@@ -189,10 +157,20 @@ export default function CreativeSection({ rows }: Props) {
 
   const SortArrow = ({ k }: { k: SortKey }) => {
     if (sortKey !== k) return null;
-    return <span className="ml-1 inline-block align-middle">{sortDir === "asc" ? "▲" : "▼"}</span>;
+    return (
+      <span className="ml-1 inline-block align-middle">
+        {sortDir === "asc" ? "▲" : "▼"}
+      </span>
+    );
   };
 
-  const Th = ({ k, align = "right" }: { k: SortKey; align?: "left" | "right" }) => (
+  const Th = ({
+    k,
+    align = "right",
+  }: {
+    k: SortKey;
+    align?: "left" | "right";
+  }) => (
     <th
       className={[
         "p-3 select-none whitespace-nowrap",
@@ -243,25 +221,32 @@ export default function CreativeSection({ rows }: Props) {
     [tableRows]
   );
 
-  const [selectedCreative, setSelectedCreative] = useState<CreativeAgg | null>(null);
+  const [selectedCreative, setSelectedCreative] = useState<CreativeAgg | null>(
+    null
+  );
 
   const creativeInsightText = useMemo(() => {
-    if (!scopedRows?.length) return "";
+    if (!rows?.length) return "";
 
-    const totalImpr = scopedRows.reduce((a, r) => a + toSafeNumber(r.impressions), 0);
-    const totalClicks = scopedRows.reduce((a, r) => a + toSafeNumber(r.clicks), 0);
-    const totalCost = scopedRows.reduce((a, r) => a + toSafeNumber(r.cost), 0);
-    const totalConv = scopedRows.reduce((a, r) => a + toSafeNumber(r.conversions), 0);
-    const totalRev = scopedRows.reduce((a, r) => a + toSafeNumber(r.revenue), 0);
+    const totalImpr = rows.reduce(
+      (a, r) => a + toSafeNumber(r.impressions),
+      0
+    );
+    const totalClicks = rows.reduce((a, r) => a + toSafeNumber(r.clicks), 0);
+    const totalCost = rows.reduce((a, r) => a + toSafeNumber(r.cost), 0);
+    const totalConv = rows.reduce(
+      (a, r) => a + toSafeNumber(r.conversions),
+      0
+    );
+    const totalRev = rows.reduce((a, r) => a + toSafeNumber(r.revenue), 0);
 
     if (totalImpr <= 0) return "";
+    if (!creativeAgg?.length) return "";
 
     const totalCtr = totalClicks > 0 ? totalClicks / totalImpr : 0;
     const totalCvr = totalClicks > 0 ? totalConv / totalClicks : 0;
     const totalCpc = totalClicks > 0 ? totalCost / totalClicks : 0;
     const revPerClick = totalClicks > 0 ? totalRev / totalClicks : 0;
-
-    if (!creativeAgg?.length) return "";
 
     const sortedByCtr = [...creativeAgg].sort((a, b) => b.ctr - a.ctr);
     const topN = sortedByCtr.slice(0, Math.min(10, sortedByCtr.length));
@@ -288,13 +273,16 @@ export default function CreativeSection({ rows }: Props) {
     const topClickShare = totalClicks > 0 ? topClicksSum / totalClicks : 0;
 
     return [
-      `- 현재(선택 소스: ${selectedSource === "all" ? "전체" : selectedSource}) CTR은 ${formatPercentFromRate(
+      `- 현재 CTR은 ${formatPercentFromRate(
         totalCtr,
         2
       )}입니다. CTR 상위 소재(Top10)의 CTR은 ${formatPercentFromRate(
         topCtr,
         2
-      )}이며, 전체 클릭의 ${formatPercentFromRate(topClickShare, 1)}를 만들고 있습니다.`,
+      )}이며, 전체 클릭의 ${formatPercentFromRate(
+        topClickShare,
+        1
+      )}를 만들고 있습니다.`,
       `- CTR 하위 소재(하위10)의 CTR은 ${formatPercentFromRate(
         bottomCtr,
         2
@@ -309,25 +297,24 @@ export default function CreativeSection({ rows }: Props) {
       )})입니다.`,
       `- 실행 제안: (1) 첫 프레임/썸네일 대비 강화 (2) 헤드라인 1문장 명확화 (3) CTA 버튼/문구 선명화 3가지를 우선 A/B 테스트하세요.`,
     ].join("\n");
-  }, [scopedRows, creativeAgg, selectedSource]);
+  }, [rows, creativeAgg]);
+
+  useEffect(() => {
+    if (!selectedCreative) return;
+
+    const exists = creativeAgg.some(
+      (item) =>
+        item.creative === selectedCreative.creative &&
+        String(item.imagePath ?? "") === String(selectedCreative.imagePath ?? "")
+    );
+
+    if (!exists) {
+      setSelectedCreative(null);
+    }
+  }, [creativeAgg, selectedCreative]);
 
   return (
     <section className="mt-1">
-      <div className="my-4 flex flex-wrap items-center gap-2">
-        <div className="mr-2 text-sm text-gray-600">소스</div>
-        <select
-          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm shadow-sm"
-          value={selectedSource}
-          onChange={(e) => setSelectedSource(e.target.value as any)}
-        >
-          {sourceOptions.map((s) => (
-            <option key={s} value={s}>
-              {s === "all" ? "전체" : s}
-            </option>
-          ))}
-        </select>
-      </div>
-
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
           <div className="mb-2 text-xs font-semibold">클릭수 TOP20 소재</div>
@@ -351,7 +338,10 @@ export default function CreativeSection({ rows }: Props) {
                   tick={{ fontSize: 11 }}
                   tickFormatter={(v) => short(v, 7)}
                 />
-                <Tooltip wrapperStyle={{ fontSize: 11 }} formatter={(v: any) => formatCount(v)} />
+                <Tooltip
+                  wrapperStyle={{ fontSize: 11 }}
+                  formatter={(v: any) => formatCount(v)}
+                />
                 <Bar
                   dataKey="clicks"
                   onClick={(_: any, idx: number) => {
@@ -393,7 +383,10 @@ export default function CreativeSection({ rows }: Props) {
                   tick={{ fontSize: 11 }}
                   tickFormatter={(v) => short(v, 7)}
                 />
-                <Tooltip wrapperStyle={{ fontSize: 11 }} formatter={(v: any) => formatCount(v)} />
+                <Tooltip
+                  wrapperStyle={{ fontSize: 11 }}
+                  formatter={(v: any) => formatCount(v)}
+                />
                 <Bar
                   dataKey="conversions"
                   onClick={(_: any, idx: number) => {
@@ -560,7 +553,9 @@ export default function CreativeSection({ rows }: Props) {
                       />
                     </td>
 
-                    <td className="p-3 text-right">{formatPercentFromRate(r.ctr, 2)}</td>
+                    <td className="p-3 text-right">
+                      {formatPercentFromRate(r.ctr, 2)}
+                    </td>
                     <td className="p-3 text-right">{KRW(r.cpc)}</td>
 
                     <td className="p-3">
@@ -579,7 +574,9 @@ export default function CreativeSection({ rows }: Props) {
                       />
                     </td>
 
-                    <td className="p-3 text-right">{formatPercentFromRate(r.cvr, 2)}</td>
+                    <td className="p-3 text-right">
+                      {formatPercentFromRate(r.cvr, 2)}
+                    </td>
                     <td className="p-3 text-right">{KRW(r.cpa)}</td>
 
                     <td className="p-3">
@@ -590,7 +587,9 @@ export default function CreativeSection({ rows }: Props) {
                       />
                     </td>
 
-                    <td className="p-3 text-right">{formatPercentFromRoas(r.roas, 1)}</td>
+                    <td className="p-3 text-right">
+                      {formatPercentFromRoas(r.roas, 1)}
+                    </td>
                   </tr>
                 ))
               )}
@@ -599,7 +598,7 @@ export default function CreativeSection({ rows }: Props) {
         </div>
 
         <div className="mt-2 text-xs text-gray-400">
-          * 표는 선택한 정렬 기준으로 Top50 소재입니다. (월/주/기기/채널 + 소스 필터 조건에 따라 변경)
+          * 표는 선택한 정렬 기준으로 Top50 소재입니다. (월/주/기기/채널 필터 조건에 따라 변경)
         </div>
       </section>
     </section>

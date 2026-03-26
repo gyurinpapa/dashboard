@@ -25,6 +25,7 @@ import { monthLabelOf } from "../../../src/lib/report/date";
 import FilterBtn from "../ui/FilterBtn";
 
 type WeekOption = { weekKey: WeekKey; label: string };
+type SourceKey = string;
 
 type Props = {
   tab: TabKey;
@@ -45,10 +46,14 @@ type Props = {
   selectedChannel: ChannelKey;
   setSelectedChannel: (c: ChannelKey) => void;
 
+  selectedSource: SourceKey;
+  setSelectedSource: (s: SourceKey) => void;
+
   monthOptions: MonthKey[];
   weekOptions: WeekOption[];
   deviceOptions: DeviceKey[];
   channelOptions: ChannelKey[];
+  sourceOptions: SourceKey[];
 
   enabledMonthKeySet: Set<string>;
   enabledWeekKeySet: Set<string>;
@@ -228,10 +233,13 @@ function EditorHeaderBar(props: Props) {
     setSelectedDevice,
     selectedChannel,
     setSelectedChannel,
+    selectedSource,
+    setSelectedSource,
     monthOptions,
     weekOptions,
     deviceOptions,
     channelOptions,
+    sourceOptions,
     enabledMonthKeySet,
     enabledWeekKeySet,
     fullPeriod,
@@ -247,8 +255,12 @@ function EditorHeaderBar(props: Props) {
   const disableDisplayChannel = tab === "keyword" || tab === "keywordDetail";
   const filterRootRef = useRef<HTMLDivElement | null>(null);
 
-  const toggleFilter = (k: Exclude<FilterKey, null>) => {
-    setFilterKey(filterKey === k ? null : k);
+  const hasSourceOptions = (sourceOptions ?? []).length > 0;
+
+  const toggleFilter = (
+    k: Exclude<FilterKey, null> | "source"
+  ) => {
+    setFilterKey(filterKey === k ? null : (k as FilterKey));
   };
 
   useEffect(() => {
@@ -394,6 +406,15 @@ function EditorHeaderBar(props: Props) {
               >
                 채널
               </FilterBtn>
+
+              {hasSourceOptions ? (
+                <FilterBtn
+                  active={filterKey === ("source" as FilterKey)}
+                  onClick={() => toggleFilter("source")}
+                >
+                  소스
+                </FilterBtn>
+              ) : null}
             </div>
           </div>
 
@@ -569,6 +590,40 @@ function EditorHeaderBar(props: Props) {
                     </button>
                   );
                 })}
+              </div>
+            </div>
+          )}
+
+          {hasSourceOptions && filterKey === ("source" as FilterKey) && (
+            <div className="absolute left-0 top-full z-50 mt-3 w-[520px] max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl shadow-slate-900/8">
+              <div className="mb-3 text-sm font-semibold text-slate-800">
+                소스 선택
+              </div>
+              <div className="flex max-h-[220px] flex-wrap gap-2 overflow-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedSource("all");
+                    setFilterKey(null);
+                  }}
+                  className={optionBtnClass(selectedSource === "all")}
+                >
+                  전체
+                </button>
+
+                {sourceOptions.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => {
+                      setSelectedSource(s);
+                      setFilterKey(null);
+                    }}
+                    className={optionBtnClass(selectedSource === s)}
+                  >
+                    {s}
+                  </button>
+                ))}
               </div>
             </div>
           )}
