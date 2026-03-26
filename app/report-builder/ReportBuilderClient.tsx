@@ -175,6 +175,8 @@ export default function ReportBuilderPage() {
   const [creatingAdvertiser, setCreatingAdvertiser] = useState(false);
   const [localMsg, setLocalMsg] = useState("");
 
+  const [selectedAdvertiserIds, setSelectedAdvertiserIds] = useState<string[]>([]);
+  const [deletingAdvertisers, setDeletingAdvertisers] = useState(false);
   const [selectedReportIds, setSelectedReportIds] = useState<string[]>([]);
   const [deletingReports, setDeletingReports] = useState(false);
 
@@ -182,6 +184,8 @@ export default function ReportBuilderPage() {
   const canManageAdvertisers = hasMinRole(memberRole, "staff");
   const canDeleteReports = hasMinRole(memberRole, "staff");
   const canManageMembers = hasMinRole(memberRole, "director");
+  const canDeleteAdvertisers = memberRole === "master";
+  
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -364,6 +368,13 @@ export default function ReportBuilderPage() {
   }, [workspaceId]);
 
   useEffect(() => {
+    setSelectedAdvertiserIds((prev) => {
+      const allowed = new Set(advertisers.map((a) => a.id));
+      return prev.filter((id) => allowed.has(id));
+    });
+  }, [advertisers]);
+
+  useEffect(() => {
     if (!workspaceId) return;
     fetchReports();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -488,6 +499,8 @@ export default function ReportBuilderPage() {
     setOpenMap({ __none__: true });
     setLocalMsg("");
     setSelectedReportIds([]);
+    setSelectedAdvertiserIds([]);
+    setDeletingAdvertisers(false);
   }
 
   async function createAdvertiser() {
@@ -554,6 +567,76 @@ export default function ReportBuilderPage() {
       setLocalMsg(e?.message || "광고주 생성 실패");
     } finally {
       setCreatingAdvertiser(false);
+    }
+  }
+
+  async function deleteSelectedAdvertisers() {
+    if (!canDeleteAdvertisers) {
+      setLocalMsg("광고주 삭제 권한이 없습니다.");
+      return;
+    }
+
+    if (!workspaceId || !selectedAdvertiserIds.length || deletingAdvertisers) return;
+
+    const ok = window.confirm(
+      `선택한 광고주 ${selectedAdvertiserIds.length}개를 삭제하시겠습니까?\n\n연결된 리포트가 있는 광고주는 삭제되지 않습니다.`
+    );
+    if (!ok) return;
+
+    setDeletingAdvertisers(true);
+    setLocalMsg("");
+
+    try {
+      const token = await getAccessToken();
+      if (!token) {
+        setLocalMsg("로그인 세션이 없습니다.");
+        setDeletingAdvertisers(false);
+        return;
+      }
+
+      let deletedCount = 0;
+
+      for (const advertiserId of selectedAdvertiserIds) {
+        const res = await fetch(`/api/advertisers/${advertiserId}`, {
+          method: "DELETE",
+          credentials: "include",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const json = await safeReadJson(res);
+
+        if (!res.ok || !(json as any)?.ok) {
+          setLocalMsg(
+            (json as any)?.message ||
+              (json as any)?.error ||
+              "광고주 삭제 실패"
+          );
+          setDeletingAdvertisers(false);
+          return;
+        }
+
+        deletedCount += 1;
+      }
+
+      setAdvertisers((prev) =>
+        prev.filter((a) => !selectedAdvertiserIds.includes(a.id))
+      );
+
+      if (
+        selectedAdvertiserId &&
+        selectedAdvertiserIds.includes(selectedAdvertiserId)
+      ) {
+        setSelectedAdvertiserId("");
+      }
+
+      setSelectedAdvertiserIds([]);
+      setLocalMsg(`광고주 ${deletedCount}개 삭제 완료`);
+    } catch (e: any) {
+      setLocalMsg(e?.message || "광고주 삭제 실패");
+    } finally {
+      setDeletingAdvertisers(false);
     }
   }
 
@@ -669,6 +752,16 @@ export default function ReportBuilderPage() {
     }
   }
 
+  function toggleAdvertiserSelection(advertiserId: string) {
+    if (!canDeleteAdvertisers) return;
+
+    setSelectedAdvertiserIds((prev) => {
+      return prev.includes(advertiserId)
+        ? prev.filter((id) => id !== advertiserId)
+        : [...prev, advertiserId];
+    });
+  }
+
   function toggleFolder(key: string) {
     setOpenMap((prev) => ({ ...prev, [key]: !(prev[key] ?? true) }));
   }
@@ -692,15 +785,16 @@ export default function ReportBuilderPage() {
   }
 
   function changeWorkspace(nextWorkspaceId: string) {
-    if (!nextWorkspaceId) return;
-    if (nextWorkspaceId === workspaceId) return;
+  if (!nextWorkspaceId) return;
+  if (nextWorkspaceId === workspaceId) return;
 
-    setSelectedAdvertiserId("");
-    setSelectedReportIds([]);
-    setSearch("");
-    setLocalMsg("");
-    router.replace(`/report-builder?workspace_id=${encodeURIComponent(nextWorkspaceId)}`);
-  }
+  setSelectedAdvertiserId("");
+  setSelectedAdvertiserIds([]);
+  setSelectedReportIds([]);
+  setSearch("");
+  setLocalMsg("");
+  router.replace(`/report-builder?workspace_id=${encodeURIComponent(nextWorkspaceId)}`);
+}
 
   const advNameById = useMemo(() => {
     const m = new Map<string, string>();
@@ -1025,6 +1119,75 @@ export default function ReportBuilderPage() {
                 <div style={{ marginTop: 10, fontSize: 12, opacity: 0.65 }}>
                   현재 선택: {selectedAdvertiserName || "광고주 미지정"}
                 </div>
+                {canDeleteAdvertisers ? (
+                <div style={{ marginTop: 14 }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 8, opacity: 0.8 }}>
+                    삭제할 광고주 선택
+                  </div>
+
+                  <div
+                    style={{
+                      border: "1px solid #eee",
+                      borderRadius: 12,
+                      background: "white",
+                      padding: 10,
+                      maxHeight: 180,
+                      overflowY: "auto",
+                    }}
+                  >
+                    {advertisers.length === 0 ? (
+                      <div style={{ fontSize: 12, opacity: 0.6 }}>
+                        삭제할 광고주가 없습니다.
+                      </div>
+                    ) : (
+                      advertisers.map((a) => {
+                        const checked = selectedAdvertiserIds.includes(a.id);
+
+                        return (
+                          <label
+                            key={a.id}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
+                              padding: "6px 4px",
+                              cursor: "pointer",
+                              fontSize: 14,
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleAdvertiserSelection(a.id)}
+                            />
+                            <span>{a.name}</span>
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  <button
+                    className="subBtn deleteBtn"
+                    onClick={deleteSelectedAdvertisers}
+                    disabled={selectedAdvertiserIds.length === 0 || deletingAdvertisers}
+                    style={{ marginTop: 10 }}
+                    title={
+                      selectedAdvertiserIds.length === 0
+                        ? "삭제할 광고주를 먼저 선택하세요"
+                        : `선택된 ${selectedAdvertiserIds.length}개 삭제`
+                    }
+                  >
+                    {deletingAdvertisers
+                      ? "삭제 중..."
+                      : `선택 삭제${
+                          selectedAdvertiserIds.length > 0
+                            ? ` (${selectedAdvertiserIds.length})`
+                            : ""
+                        }`}
+                  </button>
+                </div>
+              ) : null}
               </div>
 
               <div className="panelCard">
