@@ -1,6 +1,7 @@
 // app/components/ReportTemplate.tsx
 "use client";
 console.log("🔥 ReportTemplate RENDERED");
+
 import { useEffect, useMemo, useState } from "react";
 
 import type {
@@ -32,6 +33,9 @@ import Summary2Section from "@/app/components/sections/Summary2Section";
 import CreativeSection from "@/app/components/sections/CreativeSection";
 import CreativeDetailSection from "@/app/components/sections/CreativeDetailSection";
 import MonthGoalSection from "@/app/components/sections/MonthGoalSection";
+
+import FloatingFilterRail from "@/app/components/floating/FloatingFilterRail";
+import FloatingTabRail from "@/app/components/floating/FloatingTabRail";
 
 if (typeof window !== "undefined") {
   const checks: Record<string, any> = {
@@ -841,6 +845,7 @@ export default function ReportTemplate({
     >
       <div className="relative">
         <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-slate-100/90 via-slate-50/70 to-transparent" />
+
         <div className="relative z-10 border-b border-slate-200/80 bg-white/85 backdrop-blur-md shadow-[0_1px_0_rgba(15,23,42,0.03)]">
           <HeaderBar
             tab={tab}
@@ -875,6 +880,35 @@ export default function ReportTemplate({
             hideTabPeriodText={hideTabPeriodText}
           />
         </div>
+
+        <FloatingFilterRail
+          filterKey={filterKey}
+          setFilterKey={setFilterKey}
+          selectedMonth={selectedMonth}
+          setSelectedMonth={setSelectedMonth}
+          selectedWeek={selectedWeek}
+          setSelectedWeek={setSelectedWeek}
+          selectedDevice={selectedDevice}
+          setSelectedDevice={setSelectedDevice}
+          selectedChannel={selectedChannel}
+          setSelectedChannel={setSelectedChannel}
+          selectedSource={selectedSource}
+          setSelectedSource={setSelectedSource}
+          monthOptions={monthOptions}
+          weekOptions={weekOptions}
+          deviceOptions={deviceOptions}
+          channelOptions={channelOptions}
+          sourceOptions={sourceOptions}
+          enabledMonthKeySet={enabledMonthKeySet}
+          enabledWeekKeySet={enabledWeekKeySet}
+          readOnlyHeader={readOnlyHeader}
+        />
+
+        <FloatingTabRail
+          tab={tab}
+          setTab={setTab}
+          readOnlyHeader={readOnlyHeader}
+        />
       </div>
 
       <div className="px-4 pb-10 pt-8 sm:px-6 lg:px-8 lg:pt-10">
