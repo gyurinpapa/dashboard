@@ -81,10 +81,7 @@ type Props = {
   onChangeReportPeriod: (next: ReportPeriod) => void;
   readOnlyHeader?: boolean;
 
-  // ✅ 직접 선택 / 날짜 입력 UI만 숨김
   hidePeriodEditor?: boolean;
-
-  // ✅ 오른쪽 하단 "기준 기간 ..." 텍스트만 숨김 (+VAT 유지)
   hideTabPeriodText?: boolean;
 };
 
@@ -204,35 +201,47 @@ function normalizeIncomingRow(rec: any) {
     base.platform = rec?.platform ?? base?.media_source ?? base?.ad_platform ?? null;
   }
 
-  if (base.campaign_name == null && base.campaign != null)
+  if (base.campaign_name == null && base.campaign != null) {
     base.campaign_name = base.campaign;
-  if (base.campaign_name == null && base.campaignName != null)
+  }
+  if (base.campaign_name == null && base.campaignName != null) {
     base.campaign_name = base.campaignName;
+  }
 
   if (base.group_name == null && base.group != null) base.group_name = base.group;
-  if (base.group_name == null && base.groupName != null)
+  if (base.group_name == null && base.groupName != null) {
     base.group_name = base.groupName;
-  if (base.group_name == null && base.adgroup_name != null)
+  }
+  if (base.group_name == null && base.adgroup_name != null) {
     base.group_name = base.adgroup_name;
+  }
 
-  if (base.keyword == null && base.keyword_name != null)
+  if (base.keyword == null && base.keyword_name != null) {
     base.keyword = base.keyword_name;
-  if (base.keyword == null && base.search_term != null)
+  }
+  if (base.keyword == null && base.search_term != null) {
     base.keyword = base.search_term;
+  }
 
-  if (base.imagepath == null && base.imagePath != null)
+  if (base.imagepath == null && base.imagePath != null) {
     base.imagepath = base.imagePath;
-  if (base.imagePath == null && base.imagepath != null)
+  }
+  if (base.imagePath == null && base.imagepath != null) {
     base.imagePath = base.imagepath;
-  if (base.image_path == null && base.imagepath != null)
+  }
+  if (base.image_path == null && base.imagepath != null) {
     base.image_path = base.imagepath;
-  if (base.imagepath_raw == null && base.image_raw != null)
+  }
+  if (base.imagepath_raw == null && base.image_raw != null) {
     base.imagepath_raw = base.image_raw;
+  }
 
-  if (base.creative_file == null && base.creativeFile != null)
+  if (base.creative_file == null && base.creativeFile != null) {
     base.creative_file = base.creativeFile;
-  if (base.creativeFile == null && base.creative_file != null)
+  }
+  if (base.creativeFile == null && base.creative_file != null) {
     base.creativeFile = base.creative_file;
+  }
 
   if (base.impressions == null && base.impr != null) base.impressions = base.impr;
   if (base.clicks == null && base.click != null) base.clicks = base.click;
@@ -242,8 +251,9 @@ function normalizeIncomingRow(rec: any) {
   if (base.conversions == null && base.conv != null) base.conversions = base.conv;
   if (base.conversions == null && base.cv != null) base.conversions = base.cv;
   if (base.revenue == null && base.sales != null) base.revenue = base.sales;
-  if (base.revenue == null && base.purchase_amount != null)
+  if (base.revenue == null && base.purchase_amount != null) {
     base.revenue = base.purchase_amount;
+  }
   if (base.revenue == null && base.gmv != null) base.revenue = base.gmv;
 
   if (base.__row_id == null && rec?.id != null) base.__row_id = rec.id;
@@ -880,43 +890,14 @@ export default function ReportTemplate({
             hideTabPeriodText={hideTabPeriodText}
           />
         </div>
-
-        <FloatingFilterRail
-          filterKey={filterKey}
-          setFilterKey={setFilterKey}
-          selectedMonth={selectedMonth}
-          setSelectedMonth={setSelectedMonth}
-          selectedWeek={selectedWeek}
-          setSelectedWeek={setSelectedWeek}
-          selectedDevice={selectedDevice}
-          setSelectedDevice={setSelectedDevice}
-          selectedChannel={selectedChannel}
-          setSelectedChannel={setSelectedChannel}
-          selectedSource={selectedSource}
-          setSelectedSource={setSelectedSource}
-          monthOptions={monthOptions}
-          weekOptions={weekOptions}
-          deviceOptions={deviceOptions}
-          channelOptions={channelOptions}
-          sourceOptions={sourceOptions}
-          enabledMonthKeySet={enabledMonthKeySet}
-          enabledWeekKeySet={enabledWeekKeySet}
-          readOnlyHeader={readOnlyHeader}
-        />
-
-        <FloatingTabRail
-          tab={tab}
-          setTab={setTab}
-          readOnlyHeader={readOnlyHeader}
-        />
       </div>
 
       <div className="px-4 pb-10 pt-8 sm:px-6 lg:px-8 lg:pt-10">
-        <div className="mx-auto w-full max-w-[1440px]">
+        <div className="mx-auto w-full max-w-[1660px]">
           {isLoading ? (
             <div className="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
               <div className="flex items-center gap-3 px-5 py-4">
-                <div className="h-2.5 w-2.5 rounded-full bg-blue-500 animate-pulse" />
+                <div className="h-2.5 w-2.5 animate-pulse rounded-full bg-blue-500" />
                 <div className="text-sm font-medium text-slate-600">
                   Loading rows...
                 </div>
@@ -924,81 +905,118 @@ export default function ReportTemplate({
             </div>
           ) : null}
 
-          <div className="space-y-8">
-            {tab === "summary" && (
-              <>
-                <div className="rounded-2xl">
-                  <MonthGoalSection
-                    currentMonthKey={currentMonthKey}
-                    currentMonthActual={currentMonthActual}
-                    currentMonthGoalComputed={currentMonthGoalComputed}
-                    monthGoal={monthGoal}
-                    setMonthGoal={setMonthGoal}
-                    monthGoalInsight={monthGoalInsight}
-                  />
+          <div className="relative flex items-start justify-center gap-5 xl:gap-6">
+            <div className="hidden xl:block xl:w-[124px] xl:shrink-0 xl:self-start xl:sticky xl:top-28">
+              <FloatingFilterRail
+                selectedMonth={selectedMonth}
+                setSelectedMonth={setSelectedMonth}
+                monthOptions={monthOptions}
+                selectedWeek={selectedWeek}
+                setSelectedWeek={setSelectedWeek}
+                weekOptions={weekOptions}
+                selectedDevice={selectedDevice}
+                setSelectedDevice={setSelectedDevice}
+                deviceOptions={deviceOptions}
+                selectedChannel={selectedChannel}
+                setSelectedChannel={setSelectedChannel}
+                channelOptions={channelOptions}
+                selectedSource={selectedSource}
+                setSelectedSource={setSelectedSource}
+                sourceOptions={sourceOptions}
+                enabledMonthKeySet={enabledMonthKeySet}
+                enabledWeekKeySet={enabledWeekKeySet}
+                readOnly={Boolean(readOnlyHeader)}
+              />
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <div className="mx-auto w-full max-w-[1440px]">
+                <div className="space-y-8">
+                  {tab === "summary" && (
+                    <>
+                      <div className="rounded-2xl">
+                        <MonthGoalSection
+                          currentMonthKey={currentMonthKey}
+                          currentMonthActual={currentMonthActual}
+                          currentMonthGoalComputed={currentMonthGoalComputed}
+                          monthGoal={monthGoal}
+                          setMonthGoal={setMonthGoal}
+                          monthGoalInsight={monthGoalInsight}
+                        />
+                      </div>
+
+                      <div className="rounded-2xl">
+                        <SummarySection
+                          totals={totals as any}
+                          byMonth={byMonth as any}
+                          byWeekOnly={byWeekOnly as any}
+                          byWeekChart={byWeekChart as any}
+                          bySource={bySource as any}
+                          currentMonthKey={currentMonthKey as any}
+                          currentMonthActual={currentMonthActual as any}
+                          currentMonthGoalComputed={currentMonthGoalComputed as any}
+                          monthGoal={monthGoal as any}
+                          setMonthGoal={setMonthGoal as any}
+                          monthGoalInsight={monthGoalInsight as any}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {tab === "summary2" && (
+                    <div className="rounded-2xl">
+                      <Summary2Section rows={filteredRows as any[]} />
+                    </div>
+                  )}
+
+                  {tab === "structure" && (
+                    <div className="rounded-2xl">
+                      <StructureSection
+                        bySource={bySource}
+                        byCampaign={byCampaign}
+                        rows={filteredRowsWithCreatives}
+                        monthGoal={monthGoal}
+                      />
+                    </div>
+                  )}
+
+                  {tab === "keyword" && (
+                    <div className="rounded-2xl">
+                      <KeywordSection
+                        keywordAgg={keywordAgg}
+                        keywordInsight={keywordInsight}
+                      />
+                    </div>
+                  )}
+
+                  {tab === "keywordDetail" && (
+                    <div className="rounded-2xl">
+                      <KeywordDetailSection rows={filteredRowsWithCreatives as any[]} />
+                    </div>
+                  )}
+
+                  {tab === "creative" && (
+                    <div className="rounded-2xl">
+                      <CreativeSection rows={creativeBaseRows} />
+                    </div>
+                  )}
+
+                  {tab === "creativeDetail" && (
+                    <div className="rounded-2xl">
+                      <CreativeDetailSection rows={creativeBaseRows as any[]} />
+                    </div>
+                  )}
                 </div>
-
-                <div className="rounded-2xl">
-                  <SummarySection
-                    totals={totals as any}
-                    byMonth={byMonth as any}
-                    byWeekOnly={byWeekOnly as any}
-                    byWeekChart={byWeekChart as any}
-                    bySource={bySource as any}
-                    currentMonthKey={currentMonthKey as any}
-                    currentMonthActual={currentMonthActual as any}
-                    currentMonthGoalComputed={currentMonthGoalComputed as any}
-                    monthGoal={monthGoal as any}
-                    setMonthGoal={setMonthGoal as any}
-                    monthGoalInsight={monthGoalInsight as any}
-                  />
-                </div>
-              </>
-            )}
-
-            {tab === "summary2" && (
-              <div className="rounded-2xl">
-                <Summary2Section rows={filteredRows as any[]} />
               </div>
-            )}
+            </div>
 
-            {tab === "structure" && (
-              <div className="rounded-2xl">
-                <StructureSection
-                  bySource={bySource}
-                  byCampaign={byCampaign}
-                  rows={filteredRowsWithCreatives}
-                  monthGoal={monthGoal}
-                />
-              </div>
-            )}
-
-            {tab === "keyword" && (
-              <div className="rounded-2xl">
-                <KeywordSection
-                  keywordAgg={keywordAgg}
-                  keywordInsight={keywordInsight}
-                />
-              </div>
-            )}
-
-            {tab === "keywordDetail" && (
-              <div className="rounded-2xl">
-                <KeywordDetailSection rows={filteredRowsWithCreatives as any[]} />
-              </div>
-            )}
-
-            {tab === "creative" && (
-              <div className="rounded-2xl">
-                <CreativeSection rows={creativeBaseRows} />
-              </div>
-            )}
-
-            {tab === "creativeDetail" && (
-              <div className="rounded-2xl">
-                <CreativeDetailSection rows={creativeBaseRows as any[]} />
-              </div>
-            )}
+            <div className="hidden xl:block xl:w-[116px] xl:shrink-0 xl:self-start xl:sticky xl:top-28">
+              <FloatingTabRail
+                tab={tab}
+                setTab={setTab}
+                readOnly={Boolean(readOnlyHeader)}
+              />
+            </div>
           </div>
         </div>
       </div>
