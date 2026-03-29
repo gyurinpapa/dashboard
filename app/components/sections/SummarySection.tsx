@@ -31,6 +31,7 @@ type Props = {
   byWeekChart: any;
 
   bySource: any;
+  byDay?: any;
 };
 
 const TH_CLASS =
@@ -54,12 +55,13 @@ const TABLE_SURFACE_CLASS =
 const CHART_SURFACE_CLASS = "mt-0";
 
 export default function SummarySection(props: Props) {
-  const { totals, byMonth, byWeekOnly, byWeekChart, bySource } = props;
+  const { totals, byMonth, byWeekOnly, byWeekChart, bySource, byDay } = props;
 
   const months = Array.isArray(byMonth) ? byMonth : [];
   const weeks = Array.isArray(byWeekOnly) ? byWeekOnly : [];
   const weekChartData = Array.isArray(byWeekChart) ? byWeekChart : [];
   const sources = Array.isArray(bySource) ? bySource : [];
+  const days = Array.isArray(byDay) ? byDay : [];
 
   const weekSortKey = (w: any) => {
     const k = w?.weekKey ?? w?.startDate ?? w?.weekStart ?? w?.dateKey;
@@ -75,6 +77,10 @@ export default function SummarySection(props: Props) {
 
   const sortedWeeks = [...weeks].sort((a, b) =>
     weekSortKey(a).localeCompare(weekSortKey(b))
+  );
+
+  const sortedDays = [...days].sort((a, b) =>
+    String(a?.date ?? "").localeCompare(String(b?.date ?? ""))
   );
 
   const prevWeekSorted = sortedWeeks.at(-2);
@@ -104,11 +110,31 @@ export default function SummarySection(props: Props) {
   );
   const srcMaxRev = Math.max(0, ...sources.map((r: any) => toSafeNumber(r?.revenue)));
 
+  const dayMaxImpr = Math.max(
+    0,
+    ...sortedDays.map((r: any) => toSafeNumber(r?.impressions ?? r?.impr))
+  );
+  const dayMaxClicks = Math.max(
+    0,
+    ...sortedDays.map((r: any) => toSafeNumber(r?.clicks))
+  );
+  const dayMaxCost = Math.max(
+    0,
+    ...sortedDays.map((r: any) => toSafeNumber(r?.cost))
+  );
+  const dayMaxConv = Math.max(
+    0,
+    ...sortedDays.map((r: any) => toSafeNumber(r?.conversions ?? r?.conv))
+  );
+  const dayMaxRev = Math.max(
+    0,
+    ...sortedDays.map((r: any) => toSafeNumber(r?.revenue))
+  );
+
   return (
     <>
       <section className="mt-6 space-y-10">
         <div>
-
           <div className="mt-0">
             <SummaryKPI totals={totals} />
           </div>
@@ -120,8 +146,7 @@ export default function SummarySection(props: Props) {
       </section>
 
       <section className="mt-14">
-        <div className="mb-4">
-        </div>
+        <div className="mb-4"></div>
 
         <div className={TABLE_SURFACE_CLASS}>
           <table className="w-full min-w-[1320px] table-fixed text-sm">
@@ -313,8 +338,7 @@ export default function SummarySection(props: Props) {
       </section>
 
       <section className="mt-14">
-        <div className="mb-4">
-        </div>
+        <div className="mb-4"></div>
 
         <div className={CHART_SURFACE_CLASS}>
           <SummaryChart data={weekChartData} />
@@ -322,8 +346,7 @@ export default function SummarySection(props: Props) {
       </section>
 
       <section className="mt-14">
-        <div className="mb-4">
-        </div>
+        <div className="mb-4"></div>
 
         <div className={TABLE_SURFACE_CLASS}>
           <table className="w-full min-w-[1320px] table-fixed text-sm">
@@ -421,6 +444,122 @@ export default function SummarySection(props: Props) {
                   </td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+            <section className="mt-14">
+        <div className={TABLE_SURFACE_CLASS}>
+          <table className="w-full min-w-[1320px] table-fixed text-sm">
+            <colgroup>
+              <col className="w-[180px]" />
+              <col className="w-[90px]" />
+              <col className="w-[90px]" />
+              <col className="w-[90px]" />
+              <col className="w-[90px]" />
+              <col className="w-[110px]" />
+              <col className="w-[90px]" />
+              <col className="w-[90px]" />
+              <col className="w-[90px]" />
+              <col className="w-[120px]" />
+              <col className="w-[90px]" />
+            </colgroup>
+
+            <thead className="sticky top-0 z-10 border-b border-gray-200 bg-gray-50/95 backdrop-blur">
+              <tr>
+                <th className={FIRST_TH_CLASS}>Date</th>
+                <th className={TH_CLASS}>Impr</th>
+                <th className={TH_CLASS}>Clicks</th>
+                <th className={TH_CLASS}>CTR</th>
+                <th className={TH_CLASS}>CPC</th>
+                <th className={TH_CLASS}>Cost</th>
+                <th className={TH_CLASS}>Conv</th>
+                <th className={TH_CLASS}>CVR</th>
+                <th className={TH_CLASS}>CPA</th>
+                <th className={TH_CLASS}>Revenue</th>
+                <th className={TH_CLASS}>ROAS</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {sortedDays.length === 0 ? (
+                <tr className="border-t border-gray-200">
+                  <td
+                    className="px-4 py-10 text-center text-sm text-gray-500"
+                    colSpan={11}
+                  >
+                    데이터가 없습니다.
+                  </td>
+                </tr>
+              ) : (
+                sortedDays.map((d: any, idx: number) => (
+                  <tr
+                    key={d?.date ?? idx}
+                    className="border-t border-gray-200 even:bg-gray-50/60 hover:bg-blue-50/40 transition-colors"
+                  >
+                    <td
+                      className={`${FIRST_TD_CLASS} truncate`}
+                      title={String(d?.date ?? "")}
+                    >
+                      {d?.date}
+                    </td>
+
+                    <td className={TD_CLASS}>
+                      <DataBarCell
+                        value={toSafeNumber(d?.impressions ?? d?.impr)}
+                        max={dayMaxImpr}
+                      />
+                    </td>
+
+                    <td className={TD_CLASS}>
+                      <DataBarCell
+                        value={toSafeNumber(d?.clicks)}
+                        max={dayMaxClicks}
+                      />
+                    </td>
+
+                    <td className={TD_CLASS}>
+                      {formatPercentFromRate(d?.ctr, 2)}
+                    </td>
+
+                    <td className={TD_CLASS}>{KRW(toSafeNumber(d?.cpc))}</td>
+
+                    <td className={TD_CLASS}>
+                      <DataBarCell
+                        value={toSafeNumber(d?.cost)}
+                        max={dayMaxCost}
+                        label={KRW(toSafeNumber(d?.cost))}
+                      />
+                    </td>
+
+                    <td className={TD_CLASS}>
+                      <DataBarCell
+                        value={toSafeNumber(d?.conversions ?? d?.conv)}
+                        max={dayMaxConv}
+                      />
+                    </td>
+
+                    <td className={TD_CLASS}>
+                      {formatPercentFromRate(d?.cvr, 2)}
+                    </td>
+
+                    <td className={TD_CLASS}>{KRW(toSafeNumber(d?.cpa))}</td>
+
+                    <td className={TD_CLASS}>
+                      <DataBarCell
+                        value={toSafeNumber(d?.revenue)}
+                        max={dayMaxRev}
+                        label={KRW(toSafeNumber(d?.revenue))}
+                      />
+                    </td>
+
+                    <td className={TD_CLASS}>
+                      {formatPercentFromRoas(d?.roas, 1)}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

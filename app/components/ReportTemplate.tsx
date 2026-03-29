@@ -23,6 +23,7 @@ import { useInsights } from "@/app/hooks/useInsights";
 
 import { useReportAggregates } from "@/src/lib/report/useReportAggregates";
 import { buildKeywordInsight } from "@/src/lib/report/insights/buildKeywordInsight";
+import { buildDailySummaryRows } from "@/src/lib/report/aggregate";
 
 import HeaderBar from "@/app/components/sections/HeaderBar";
 import StructureSection from "@/app/components/sections/StructureSection";
@@ -642,6 +643,10 @@ export default function ReportTemplate({
     onInvalidWeek: () => setSelectedWeek("all"),
   });
 
+  const byDay = useMemo(() => {
+    return buildDailySummaryRows(filteredRows as any[]);
+  }, [filteredRows]);
+
   useEffect(() => {
     if (readOnlyHeader) return;
     if (selectedMonth !== "all" && !enabledMonthKeySet.has(selectedMonth)) {
@@ -952,6 +957,7 @@ export default function ReportTemplate({
                           byWeekOnly={byWeekOnly as any}
                           byWeekChart={byWeekChart as any}
                           bySource={bySource as any}
+                          byDay={byDay as any}
                           currentMonthKey={currentMonthKey as any}
                           currentMonthActual={currentMonthActual as any}
                           currentMonthGoalComputed={currentMonthGoalComputed as any}

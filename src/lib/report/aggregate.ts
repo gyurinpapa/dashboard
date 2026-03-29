@@ -55,6 +55,20 @@ function firstNum(...values: any[]) {
   return toNum(values[0]);
 }
 
+export type DailySummaryRow = {
+  date: string;
+  impressions: number;
+  clicks: number;
+  cost: number;
+  conversions: number;
+  revenue: number;
+  ctr: number;
+  cpc: number;
+  cvr: number;
+  cpa: number;
+  roas: number;
+};
+
 // =========================
 // ✅ source normalize
 // =========================
@@ -339,6 +353,33 @@ export function summarize(rows: Row[]) {
     cpa: safeDiv(cost, conversions),
     roas: safeDiv(revenue, cost),
   };
+}
+
+export function buildDailySummaryRows(rows: Row[]): DailySummaryRow[] {
+  const map = new Map<string, Row[]>();
+
+  for (const r of rows ?? []) {
+    const d = parseDateLoose(
+      (r as any)?.date ??
+        (r as any)?.report_date ??
+        (r as any)?.day ??
+        (r as any)?.segment_date ??
+        (r as any)?.stat_date
+    );
+    if (!d) continue;
+
+    const date = toYMDLocal(d);
+    const cur = map.get(date) ?? [];
+    cur.push(r);
+    map.set(date, cur);
+  }
+
+  return Array.from(map.entries())
+    .map(([date, list]) => ({
+      date,
+      ...summarize(list),
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
 }
 
 export function buildOptions(rows: Row[]) {
