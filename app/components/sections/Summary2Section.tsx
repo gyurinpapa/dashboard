@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   KRW,
   toSafeNumber,
@@ -1566,113 +1566,113 @@ export default function Summary2Section({ reportType, rows }: Props) {
                     ))}
 
                     {Array.from({ length: 7 }).map((_, dayIdx) => (
-                      <div key={`row-${dayIdx}`} className="contents">
-                        <div className="flex items-center text-sm font-medium text-gray-500">
-                          {dayLabelKor(dayIdx)}
-                        </div>
+                  <Fragment key={`row-${dayIdx}`}>
+                    <div className="flex items-center text-sm font-medium text-gray-500">
+                      {dayLabelKor(dayIdx)}
+                    </div>
 
-                        {calendar.weeks.map((week, weekIdx) => {
-                          const date = week[dayIdx];
-                          const key = ymd(date);
-                          const agg = dailyMap.get(key) ?? null;
-                          const value = agg ? Number(agg[metric] ?? 0) : 0;
-                          const level = quantize(value, metricValues);
-                          const isHovered = heatHoverKey === key;
-                          const isDimmed =
-                            heatHoverKey !== null && heatHoverKey !== key;
+                    {calendar.weeks.map((week, weekIdx) => {
+                      const date = week[dayIdx];
+                      const key = ymd(date);
+                      const agg = dailyMap.get(key) ?? null;
+                      const value = agg ? Number(agg[metric] ?? 0) : 0;
+                      const level = quantize(value, metricValues);
+                      const isHovered = heatHoverKey === key;
+                      const isDimmed =
+                        heatHoverKey !== null && heatHoverKey !== key;
 
-                          return (
-                            <div
-                              key={`${key}-${weekIdx}`}
-                              onMouseEnter={() => {
-                                if (agg) setHeatHoverKey(key);
-                              }}
-                              onMouseLeave={() => setHeatHoverKey(null)}
-                              className={[
-                                "group relative h-8 rounded-lg border transition-all duration-150",
-                                agg
-                                  ? heatColorClass(level)
-                                  : "border-transparent bg-white",
-                                agg ? "cursor-pointer" : "",
-                                isHovered
-                                  ? "ring-2 ring-gray-400/40 scale-[1.03]"
-                                  : "",
-                                isDimmed ? "opacity-55" : "opacity-100",
-                              ].join(" ")}
-                              title={
-                                agg
-                                  ? [
-                                      `${agg.dateKey}`,
-                                      ...(isTraffic
-                                        ? [
-                                            `광고비: ${formatMetricValue(
-                                              "cost",
-                                              agg.cost
-                                            )}`,
-                                            `클릭수: ${formatMetricValue(
-                                              "clicks",
-                                              agg.clicks
-                                            )}`,
-                                            `노출수: ${formatMetricValue(
-                                              "impressions",
-                                              agg.impressions
-                                            )}`,
-                                          ]
-                                        : [
-                                            `매출: ${formatMetricValue(
-                                              "revenue",
-                                              agg.revenue
-                                            )}`,
-                                            `ROAS: ${formatMetricValue(
-                                              "roas",
-                                              agg.roas
-                                            )}`,
-                                            `전환수: ${formatMetricValue(
-                                              "conversions",
-                                              agg.conversions
-                                            )}`,
-                                            `광고비: ${formatMetricValue(
-                                              "cost",
-                                              agg.cost
-                                            )}`,
-                                            `클릭수: ${formatMetricValue(
-                                              "clicks",
-                                              agg.clicks
-                                            )}`,
-                                            `노출수: ${formatMetricValue(
-                                              "impressions",
-                                              agg.impressions
-                                            )}`,
-                                          ]),
-                                    ].join("\n")
-                                  : key
-                              }
-                            >
-                              {agg ? (
-                                <div className="pointer-events-none absolute left-1/2 top-full z-20 hidden w-max -translate-x-1/2 pt-2 group-hover:block">
-                                  <div className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs shadow-lg">
-                                    <div className="font-semibold text-gray-900">
-                                      {agg.dateKey}
-                                    </div>
-                                    <div className="mt-1 text-gray-600">
-                                      {
-                                        metricButtons.find(
-                                          (m) => m.key === metric
-                                        )?.label
-                                      }
-                                      :{" "}
-                                      <span className="font-semibold text-gray-900">
-                                        {formatMetricValue(metric, value)}
-                                      </span>
-                                    </div>
-                                  </div>
+                      return (
+                        <div
+                          key={`${key}-${weekIdx}`}
+                          onMouseEnter={() => {
+                            if (agg) setHeatHoverKey(key);
+                          }}
+                          onMouseLeave={() => setHeatHoverKey(null)}
+                          className={[
+                            "group relative h-8 rounded-lg border transition-all duration-150",
+                            agg
+                              ? heatColorClass(level)
+                              : "border-transparent bg-white",
+                            agg ? "cursor-pointer" : "",
+                            isHovered
+                              ? "ring-2 ring-gray-400/40 scale-[1.03]"
+                              : "",
+                            isDimmed ? "opacity-55" : "opacity-100",
+                          ].join(" ")}
+                          title={
+                            agg
+                              ? [
+                                  `${agg.dateKey}`,
+                                  ...(isTraffic
+                                    ? [
+                                        `광고비: ${formatMetricValue(
+                                          "cost",
+                                          agg.cost
+                                        )}`,
+                                        `클릭수: ${formatMetricValue(
+                                          "clicks",
+                                          agg.clicks
+                                        )}`,
+                                        `노출수: ${formatMetricValue(
+                                          "impressions",
+                                          agg.impressions
+                                        )}`,
+                                      ]
+                                    : [
+                                        `매출: ${formatMetricValue(
+                                          "revenue",
+                                          agg.revenue
+                                        )}`,
+                                        `ROAS: ${formatMetricValue(
+                                          "roas",
+                                          agg.roas
+                                        )}`,
+                                        `전환수: ${formatMetricValue(
+                                          "conversions",
+                                          agg.conversions
+                                        )}`,
+                                        `광고비: ${formatMetricValue(
+                                          "cost",
+                                          agg.cost
+                                        )}`,
+                                        `클릭수: ${formatMetricValue(
+                                          "clicks",
+                                          agg.clicks
+                                        )}`,
+                                        `노출수: ${formatMetricValue(
+                                          "impressions",
+                                          agg.impressions
+                                        )}`,
+                                      ]),
+                                ].join("\n")
+                              : key
+                          }
+                        >
+                          {agg ? (
+                            <div className="pointer-events-none absolute left-1/2 top-full z-20 hidden w-max -translate-x-1/2 pt-2 group-hover:block">
+                              <div className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs shadow-lg">
+                                <div className="font-semibold text-gray-900">
+                                  {agg.dateKey}
                                 </div>
-                              ) : null}
+                                <div className="mt-1 text-gray-600">
+                                  {
+                                    metricButtons.find(
+                                      (m) => m.key === metric
+                                    )?.label
+                                  }
+                                  :{" "}
+                                  <span className="font-semibold text-gray-900">
+                                    {formatMetricValue(metric, value)}
+                                  </span>
+                                </div>
+                              </div>
                             </div>
-                          );
-                        })}
-                      </div>
-                    ))}
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </Fragment>
+                ))}
                   </div>
                 </div>
               </div>
