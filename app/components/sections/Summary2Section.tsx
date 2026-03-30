@@ -854,41 +854,42 @@ export default function Summary2Section({ reportType, rows }: Props) {
   }, [rows]);
 
   const dayList = useMemo(() => {
-    return Array.from(dailyMap.values()).sort((a, b) =>
-      a.dateKey.localeCompare(b.dateKey)
-    );
-  }, [dailyMap]);
+      return Array.from(dailyMap.values()).sort((a, b) =>
+        a.dateKey.localeCompare(b.dateKey)
+      );
+    }, [dailyMap]);
 
-  const metricValues = useMemo(() => {
-    return dayList.map((d) => Number(d[metric] ?? 0));
-  }, [dayList, metric]);
+    const metricValues = useMemo(() => {
+      return dayList.map((d) => Number(d[metric] ?? 0));
+    }, [dayList, metric]);
 
-  const metricButtons: { key: HeatmapMetricKey; label: string }[] = isTraffic
-    ? [
-        { key: "cost", label: "광고비" },
-        { key: "clicks", label: "클릭수" },
-        { key: "impressions", label: "노출수" },
-      ]
-    : [
-        { key: "revenue", label: "매출" },
-        { key: "roas", label: "ROAS" },
-        { key: "conversions", label: "전환수" },
-        { key: "cost", label: "광고비" },
-        { key: "clicks", label: "클릭수" },
-        { key: "impressions", label: "노출수" },
-      ];
+    const metricButtons: { key: HeatmapMetricKey; label: string }[] = isTraffic
+      ? [
+          { key: "cost", label: "광고비" },
+          { key: "clicks", label: "클릭수" },
+          { key: "impressions", label: "노출수" },
+        ]
+      : [
+          { key: "revenue", label: "매출" },
+          { key: "roas", label: "ROAS" },
+          { key: "conversions", label: "전환수" },
+          { key: "cost", label: "광고비" },
+          { key: "clicks", label: "클릭수" },
+          { key: "impressions", label: "노출수" },
+        ];
 
-  useEffect(() => {
-    if (!metricButtons.some((item) => item.key === metric)) {
-      setMetric(isTraffic ? "cost" : "revenue");
-    }
-  }, [metric, metricButtons, isTraffic]);
+    useEffect(() => {
+      if (!metricButtons.some((item) => item.key === metric)) {
+        setMetric(isTraffic ? "cost" : "revenue");
+      }
+    }, [metric, metricButtons, isTraffic]);
 
-  const calendar = useMemo(() => {
+    const calendar = useMemo(() => {
     if (!dayList.length) {
       return {
         weeks: [] as Date[][],
         monthLabels: [] as { label: string; column: number }[],
+        monthRow: [] as string[],
       };
     }
 
@@ -911,17 +912,22 @@ export default function Summary2Section({ reportType, rows }: Props) {
     }
 
     const monthLabels: { label: string; column: number }[] = [];
+    const monthRow: string[] = [];
     let lastLabel = "";
 
     weeks.forEach((week, idx) => {
       const label = monthLabel(week[0]);
+
       if (label !== lastLabel) {
         monthLabels.push({ label, column: idx });
+        monthRow.push(label);
         lastLabel = label;
+      } else {
+        monthRow.push("");
       }
     });
 
-    return { weeks, monthLabels };
+    return { weeks, monthLabels, monthRow };
   }, [dayList]);
 
   const heatmapSummary = useMemo(() => {
@@ -1535,188 +1541,161 @@ export default function Summary2Section({ reportType, rows }: Props) {
           </div>
 
           <div className="px-6 py-5">
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
-              <div className="min-w-0 overflow-x-auto">
-                <div className="min-w-[720px]">
+            <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-4">
+                <div className="text-xs text-gray-500">활성 일수</div>
+                <div className="mt-2 text-2xl font-semibold text-gray-900">
+                  {heatmapSummary.activeDays}일
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-4">
+                <div className="text-xs text-gray-500">평균</div>
+                <div className="mt-2 text-2xl font-semibold text-gray-900">
+                  {formatMetricValue(metric, heatmapSummary.avgValue)}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-4">
+                <div className="text-xs text-gray-500">최대</div>
+                <div className="mt-2 text-2xl font-semibold text-gray-900">
+                  {formatMetricValue(metric, heatmapSummary.maxValue)}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-4">
+                <div className="text-xs text-gray-500">최고 성과 일자</div>
+                <div className="mt-2 text-lg font-semibold text-gray-900">
+                  {heatmapSummary.bestDay?.dateKey ?? "-"}
+                </div>
+                <div className="mt-1 text-sm text-gray-500">
+                  {heatmapSummary.bestDay
+                    ? formatMetricValue(
+                        metric,
+                        Number(heatmapSummary.bestDay[metric] ?? 0)
+                      )
+                    : "-"}
+                </div>
+              </div>
+            </div>
+
+            <div className="min-w-0">
+              <div className="grid grid-cols-[56px_minmax(0,1fr)] gap-3">
+                <div className="shrink-0">
+                  <div className="h-6" />
+                  <div className="h-6" />
+                  <div className="space-y-2">
+                    {Array.from({ length: 7 }).map((_, dayIdx) => (
+                      <div
+                        key={`weekday-${dayIdx}`}
+                        className="flex h-10 items-center justify-start pr-2 text-sm font-medium text-gray-500"
+                      >
+                        {dayLabelKor(dayIdx)}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="min-w-0 overflow-hidden">
                   <div
                     className="grid gap-2"
                     style={{
-                      gridTemplateColumns: `64px repeat(${calendar.weeks.length}, minmax(0, 1fr))`,
+                      gridTemplateColumns: `repeat(${Math.max(
+                        calendar.weeks.length,
+                        1
+                      )}, minmax(0, 1fr))`,
                     }}
                   >
-                    <div />
-                    {calendar.monthLabels.map((item) => (
+                    {calendar.monthRow.map((label, idx) => (
                       <div
-                        key={`${item.label}-${item.column}`}
-                        className="text-xs font-semibold text-gray-500"
-                        style={{ gridColumn: `${item.column + 2} / span 1` }}
+                        key={`month-row-${idx}`}
+                        className="flex h-6 items-center text-xs font-semibold text-gray-500"
                       >
-                        {item.label}
+                        {label}
                       </div>
                     ))}
 
-                    <div />
                     {calendar.weeks.map((week, weekIdx) => (
                       <div
                         key={`week-header-${weekIdx}`}
-                        className="text-center text-[11px] font-medium text-gray-400"
+                        className="flex h-6 items-center justify-center text-center text-[11px] font-medium text-gray-400"
                       >
                         {week[0].getMonth() + 1}/{week[0].getDate()}
                       </div>
                     ))}
 
                     {Array.from({ length: 7 }).map((_, dayIdx) => (
-                  <Fragment key={`row-${dayIdx}`}>
-                    <div className="flex items-center text-sm font-medium text-gray-500">
-                      {dayLabelKor(dayIdx)}
-                    </div>
+                      <Fragment key={`row-${dayIdx}`}>
+                        {calendar.weeks.map((week, weekIdx) => {
+                          const date = week[dayIdx];
+                          const key = ymd(date);
+                          const agg = dailyMap.get(key) ?? null;
+                          const value = agg ? Number(agg[metric] ?? 0) : 0;
+                          const level = quantize(value, metricValues);
+                          const isHovered = heatHoverKey === key;
+                          const isDimmed =
+                            heatHoverKey !== null && heatHoverKey !== key;
 
-                    {calendar.weeks.map((week, weekIdx) => {
-                      const date = week[dayIdx];
-                      const key = ymd(date);
-                      const agg = dailyMap.get(key) ?? null;
-                      const value = agg ? Number(agg[metric] ?? 0) : 0;
-                      const level = quantize(value, metricValues);
-                      const isHovered = heatHoverKey === key;
-                      const isDimmed =
-                        heatHoverKey !== null && heatHoverKey !== key;
-
-                      return (
-                        <div
-                          key={`${key}-${weekIdx}`}
-                          onMouseEnter={() => {
-                            if (agg) setHeatHoverKey(key);
-                          }}
-                          onMouseLeave={() => setHeatHoverKey(null)}
-                          className={[
-                            "group relative h-8 rounded-lg border transition-all duration-150",
-                            agg
-                              ? heatColorClass(level)
-                              : "border-transparent bg-white",
-                            agg ? "cursor-pointer" : "",
-                            isHovered
-                              ? "ring-2 ring-gray-400/40 scale-[1.03]"
-                              : "",
-                            isDimmed ? "opacity-55" : "opacity-100",
-                          ].join(" ")}
-                          title={
-                            agg
-                              ? [
-                                  `${agg.dateKey}`,
-                                  ...(isTraffic
-                                    ? [
-                                        `광고비: ${formatMetricValue(
-                                          "cost",
-                                          agg.cost
-                                        )}`,
-                                        `클릭수: ${formatMetricValue(
-                                          "clicks",
-                                          agg.clicks
-                                        )}`,
-                                        `노출수: ${formatMetricValue(
-                                          "impressions",
-                                          agg.impressions
-                                        )}`,
-                                      ]
-                                    : [
-                                        `매출: ${formatMetricValue(
-                                          "revenue",
-                                          agg.revenue
-                                        )}`,
-                                        `ROAS: ${formatMetricValue(
-                                          "roas",
-                                          agg.roas
-                                        )}`,
-                                        `전환수: ${formatMetricValue(
-                                          "conversions",
-                                          agg.conversions
-                                        )}`,
-                                        `광고비: ${formatMetricValue(
-                                          "cost",
-                                          agg.cost
-                                        )}`,
-                                        `클릭수: ${formatMetricValue(
-                                          "clicks",
-                                          agg.clicks
-                                        )}`,
-                                        `노출수: ${formatMetricValue(
-                                          "impressions",
-                                          agg.impressions
-                                        )}`,
-                                      ]),
-                                ].join("\n")
-                              : key
-                          }
-                        >
-                          {agg ? (
-                            <div className="pointer-events-none absolute left-1/2 top-full z-20 hidden w-max -translate-x-1/2 pt-2 group-hover:block">
-                              <div className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs shadow-lg">
-                                <div className="font-semibold text-gray-900">
-                                  {agg.dateKey}
+                          return (
+                            <div
+                              key={`${key}-${weekIdx}`}
+                              onMouseEnter={() => {
+                                if (agg) setHeatHoverKey(key);
+                              }}
+                              onMouseLeave={() => setHeatHoverKey(null)}
+                              className={[
+                                "group relative h-10 rounded-xl border transition-all duration-150",
+                                agg
+                                  ? heatColorClass(level)
+                                  : "border-transparent bg-white",
+                                agg ? "cursor-pointer" : "",
+                                isHovered
+                                  ? "ring-2 ring-gray-400/40 scale-[1.03]"
+                                  : "",
+                                isDimmed ? "opacity-55" : "opacity-100",
+                              ].join(" ")}
+                              title={
+                                agg
+                                  ? [
+                                      `${agg.dateKey}`,
+                                      ...(isTraffic
+                                        ? [
+                                            `광고비: ${formatMetricValue("cost", agg.cost)}`,
+                                            `클릭수: ${formatMetricValue("clicks", agg.clicks)}`,
+                                            `노출수: ${formatMetricValue("impressions", agg.impressions)}`,
+                                          ]
+                                        : [
+                                            `매출: ${formatMetricValue("revenue", agg.revenue)}`,
+                                            `ROAS: ${formatMetricValue("roas", agg.roas)}`,
+                                            `전환수: ${formatMetricValue("conversions", agg.conversions)}`,
+                                            `광고비: ${formatMetricValue("cost", agg.cost)}`,
+                                            `클릭수: ${formatMetricValue("clicks", agg.clicks)}`,
+                                            `노출수: ${formatMetricValue("impressions", agg.impressions)}`,
+                                          ]),
+                                    ].join("\n")
+                                  : key
+                              }
+                            >
+                              {agg ? (
+                                <div className="pointer-events-none absolute left-1/2 top-full z-20 hidden w-max -translate-x-1/2 pt-2 group-hover:block">
+                                  <div className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs shadow-lg">
+                                    <div className="font-semibold text-gray-900">
+                                      {agg.dateKey}
+                                    </div>
+                                    <div className="mt-1 text-gray-600">
+                                      {metricButtons.find((m) => m.key === metric)?.label}:{" "}
+                                      <span className="font-semibold text-gray-900">
+                                        {formatMetricValue(metric, value)}
+                                      </span>
+                                    </div>
+                                  </div>
                                 </div>
-                                <div className="mt-1 text-gray-600">
-                                  {
-                                    metricButtons.find(
-                                      (m) => m.key === metric
-                                    )?.label
-                                  }
-                                  :{" "}
-                                  <span className="font-semibold text-gray-900">
-                                    {formatMetricValue(metric, value)}
-                                  </span>
-                                </div>
-                              </div>
+                              ) : null}
                             </div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </Fragment>
-                ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-gray-200 bg-gray-50/70 p-4">
-                <div className="text-sm font-semibold text-gray-900">
-                  히트맵 요약
-                </div>
-
-                <div className="mt-4 space-y-3 text-sm">
-                  <div className="flex items-center justify-between gap-4">
-                    <span className="text-gray-500">활성 일수</span>
-                    <span className="font-semibold text-gray-900">
-                      {heatmapSummary.activeDays}일
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-4">
-                    <span className="text-gray-500">평균</span>
-                    <span className="font-semibold text-gray-900">
-                      {formatMetricValue(metric, heatmapSummary.avgValue)}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-4">
-                    <span className="text-gray-500">최대</span>
-                    <span className="font-semibold text-gray-900">
-                      {formatMetricValue(metric, heatmapSummary.maxValue)}
-                    </span>
-                  </div>
-
-                  <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-                    <div className="text-xs text-gray-500">최고 성과 일자</div>
-                    <div className="mt-1 text-sm font-semibold text-gray-900">
-                      {heatmapSummary.bestDay?.dateKey ?? "-"}
-                    </div>
-                    <div className="mt-1 text-xs text-gray-500">
-                      {heatmapSummary.bestDay
-                        ? formatMetricValue(
-                            metric,
-                            Number(heatmapSummary.bestDay[metric] ?? 0)
-                          )
-                        : "-"}
-                    </div>
+                          );
+                        })}
+                      </Fragment>
+                    ))}
                   </div>
                 </div>
               </div>
