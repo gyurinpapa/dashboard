@@ -1,4 +1,3 @@
-// src/lib/report/aggregate.ts
 import type { Row } from "./types";
 import { safeDiv } from "./format";
 import {
@@ -10,9 +9,6 @@ import {
   monthWeekLabelRule,
 } from "./date";
 
-// =========================
-// 숫자 정규화 유틸
-// =========================
 function toNum(v: any): number {
   if (v == null) return 0;
 
@@ -69,18 +65,11 @@ export type DailySummaryRow = {
   roas: number;
 };
 
-// =========================
-// ✅ source normalize
-// =========================
 export function normalizeSource(v: any): string {
   const s = asStr(v).toLowerCase();
   if (!s) return "";
 
-  if (
-    s.includes("naver") ||
-    s.includes("네이버") ||
-    s.includes("nvr")
-  ) {
+  if (s.includes("naver") || s.includes("네이버") || s.includes("nvr")) {
     return "naver";
   }
 
@@ -93,11 +82,7 @@ export function normalizeSource(v: any): string {
     return "google";
   }
 
-  if (
-    s.includes("kakao") ||
-    s.includes("카카오") ||
-    s.includes("daum")
-  ) {
+  if (s.includes("kakao") || s.includes("카카오") || s.includes("daum")) {
     return "kakao";
   }
 
@@ -113,9 +98,6 @@ export function normalizeSource(v: any): string {
   return s;
 }
 
-// =========================
-// ✅ source 추출 함수
-// =========================
 export function getRowSource(row: any): string {
   const candidates = [
     row?.source,
@@ -134,9 +116,6 @@ export function getRowSource(row: any): string {
   return "";
 }
 
-// =========================
-// ✅ 집계 결과에 "대표 row"의 creative/imagePath 등을 싣기 위한 유틸
-// =========================
 function getImagePathAny(r: any) {
   return (
     asStr(r?.imagePath) ||
@@ -170,21 +149,12 @@ function hasCreativeInfo(r: any) {
   );
 }
 
-/**
- * 그룹 내에서 "소재 정보 있는 row"를 대표로 고름
- * - 1) creative/imagePath/image_raw/creative_file 있는 row 우선
- * - 2) 없으면 첫 row
- */
 function pickRepresentativeRow(list: any[]) {
   if (!list?.length) return null;
   const found = list.find((r) => hasCreativeInfo(r));
   return found ?? list[0];
 }
 
-/**
- * 집계 결과 객체(out)에 대표 row의 필드를 덧붙여,
- * ReportTemplate 소재 매칭(candidates 생성)이 가능해지게 한다.
- */
 function attachRepresentativeFields(out: any, rep: any) {
   if (!rep) return out;
 
@@ -212,9 +182,6 @@ function attachRepresentativeFields(out: any, rep: any) {
   };
 }
 
-// =========================
-// CSV → Row 정규화
-// =========================
 export function normalizeCsvRows(rawRows: any[]) {
   return (rawRows ?? []).map((row) => {
     const base: any = { ...(row ?? {}) };
@@ -223,9 +190,16 @@ export function normalizeCsvRows(rawRows: any[]) {
       base.date,
       base.report_date,
       base.day,
+      base.ymd,
+      base.dt,
       base.segment_date,
       base.stat_date,
-      base.period_start
+      base.period_start,
+      base.start_date,
+      base.date_start,
+      base["날짜"],
+      base["일자"],
+      base["집계일"]
     );
 
     const channel = firstStr(
@@ -319,6 +293,9 @@ export function normalizeCsvRows(rawRows: any[]) {
       device,
 
       date,
+      report_date: firstStr(base.report_date, date),
+      day: firstStr(base.day, date),
+      ymd: firstStr(base.ymd, date),
 
       impressions: firstNum(base.impressions, base.impr, base.views),
       clicks: firstNum(base.clicks, base.click, base.clk),
@@ -363,6 +340,8 @@ export function buildDailySummaryRows(rows: Row[]): DailySummaryRow[] {
       (r as any)?.date ??
         (r as any)?.report_date ??
         (r as any)?.day ??
+        (r as any)?.ymd ??
+        (r as any)?.dt ??
         (r as any)?.segment_date ??
         (r as any)?.stat_date
     );
@@ -391,7 +370,13 @@ export function buildOptions(rows: Row[]) {
   for (const raw of rows ?? []) {
     const r: any = raw ?? {};
     const d = parseDateLoose(
-      r.date ?? r.report_date ?? r.day ?? r.segment_date ?? r.stat_date
+      r.date ??
+        r.report_date ??
+        r.day ??
+        r.ymd ??
+        r.dt ??
+        r.segment_date ??
+        r.stat_date
     );
     if (d) monthSet.add(monthKeyOfDate(d));
 
@@ -418,13 +403,25 @@ export function buildWeekOptions(rows: Row[], selectedMonth: string | "all") {
     selectedMonth === "all"
       ? rows
       : (rows ?? []).filter((r) => {
-          const d = parseDateLoose((r as any)?.date);
+          const d = parseDateLoose(
+            (r as any)?.date ??
+              (r as any)?.report_date ??
+              (r as any)?.day ??
+              (r as any)?.ymd ??
+              (r as any)?.dt
+          );
           return d ? monthKeyOfDate(d) === selectedMonth : false;
         });
 
   const valid = (scope ?? [])
     .map((r) => {
-      const d = parseDateLoose((r as any)?.date);
+      const d = parseDateLoose(
+        (r as any)?.date ??
+          (r as any)?.report_date ??
+          (r as any)?.day ??
+          (r as any)?.ymd ??
+          (r as any)?.dt
+      );
       if (!d) return null;
       return { r, d };
     })
@@ -465,7 +462,13 @@ export function filterRows(args: {
 
   return (rows ?? []).filter((r: any) => {
     const d = parseDateLoose(
-      r?.date ?? r?.report_date ?? r?.day ?? r?.segment_date ?? r?.stat_date
+      r?.date ??
+        r?.report_date ??
+        r?.day ??
+        r?.ymd ??
+        r?.dt ??
+        r?.segment_date ??
+        r?.stat_date
     );
     if (!d) return false;
 
@@ -539,7 +542,13 @@ export function groupByDevice(rows: Row[]) {
 export function groupByWeekRecent5(filteredRows: Row[]) {
   const valid = (filteredRows ?? [])
     .map((r) => {
-      const d = parseDateLoose((r as any)?.date);
+      const d = parseDateLoose(
+        (r as any)?.date ??
+          (r as any)?.report_date ??
+          (r as any)?.day ??
+          (r as any)?.ymd ??
+          (r as any)?.dt
+      );
       if (!d) return null;
       return { r, d };
     })
@@ -608,7 +617,9 @@ export function groupByMonthRecent3(args: {
     const start = new Date(yy, mm - 1 - 2, 1);
     const end = new Date(yy, mm, 1);
     scope = baseRows.filter((r: any) => {
-      const d = parseDateLoose(r?.date);
+      const d = parseDateLoose(
+        r?.date ?? r?.report_date ?? r?.day ?? r?.ymd ?? r?.dt
+      );
       if (!d) return false;
       return d >= start && d < end;
     });
@@ -616,7 +627,13 @@ export function groupByMonthRecent3(args: {
 
   const map = new Map<string, Row[]>();
   for (const r of scope) {
-    const d = parseDateLoose((r as any)?.date);
+    const d = parseDateLoose(
+      (r as any)?.date ??
+        (r as any)?.report_date ??
+        (r as any)?.day ??
+        (r as any)?.ymd ??
+        (r as any)?.dt
+    );
     if (!d) continue;
     const mk = monthKeyOfDate(d);
     const cur = map.get(mk) ?? [];
@@ -636,7 +653,15 @@ export function groupByMonthRecent3(args: {
 
 export function getCurrentMonthKeyByData(rows: Row[]) {
   const ds = (rows ?? [])
-    .map((r) => parseDateLoose((r as any)?.date))
+    .map((r) =>
+      parseDateLoose(
+        (r as any)?.date ??
+          (r as any)?.report_date ??
+          (r as any)?.day ??
+          (r as any)?.ymd ??
+          (r as any)?.dt
+      )
+    )
     .filter(Boolean) as Date[];
   if (!ds.length) return "all";
   const max = new Date(Math.max(...ds.map((d) => d.getTime())));
@@ -678,7 +703,15 @@ export function periodText(args: {
   }
 
   const ds = (rows ?? [])
-    .map((r) => parseDateLoose((r as any)?.date))
+    .map((r) =>
+      parseDateLoose(
+        (r as any)?.date ??
+          (r as any)?.report_date ??
+          (r as any)?.day ??
+          (r as any)?.ymd ??
+          (r as any)?.dt
+      )
+    )
     .filter(Boolean) as Date[];
   if (!ds.length) return "";
   const min = new Date(Math.min(...ds.map((d) => d.getTime())));
@@ -736,6 +769,3 @@ export function groupByGroup(rows: Row[]) {
 
   return result.sort((a, b) => (b.cost ?? 0) - (a.cost ?? 0));
 }
-
-// ✅ groupByKeyword는 이제 app/lib/report/keyword.ts 로 분리해서 관리
-// (중복 export/라우팅 빌드 꼬임 방지)

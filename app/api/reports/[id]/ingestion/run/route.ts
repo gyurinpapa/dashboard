@@ -1,4 +1,3 @@
-// app/api/reports/[id]/ingestion/run/route.ts
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
@@ -28,7 +27,6 @@ function toNumber(v: any) {
   return Number.isFinite(n) ? n : 0;
 }
 
-// ✅ “한글/특수문자만 있는 헤더”가 전부 "_"로 깨지는 걸 방지
 function normKey(k: string, idx: number) {
   const raw = String(k ?? "").trim();
   if (!raw) return `col_${idx}`;
@@ -44,9 +42,6 @@ function normKey(k: string, idx: number) {
   return n;
 }
 
-/**
- * 아주 단순하지만 꽤 안전한 CSV 파서 (quoted field 지원)
- */
 function parseCsv(text: string) {
   const rows: string[][] = [];
   let cur = "";
@@ -116,46 +111,6 @@ function chunk<T>(arr: T[], size: number) {
   return out;
 }
 
-// ✅ CSV 선택용 timestamp 유틸
-function toMs(v: any) {
-  if (!v) return 0;
-  const t = Date.parse(String(v));
-  return Number.isFinite(t) ? t : 0;
-}
-
-// ✅ 최신 CSV 엔트리 선택
-// - timestamp가 있으면 가장 최신 시간 우선
-// - timestamp가 전혀 없으면 append 구조를 가정해 마지막 항목 사용
-function pickLatestCsvEntry(csvArr: any[]) {
-  if (!Array.isArray(csvArr) || !csvArr.length) return null;
-
-  const scored = csvArr.map((item, index) => {
-    const ts = Math.max(
-      toMs(item?.uploaded_at),
-      toMs(item?.created_at),
-      toMs(item?.updated_at),
-      toMs(item?.added_at),
-      toMs(item?.last_modified),
-      toMs(item?.timestamp)
-    );
-
-    return { item, index, ts };
-  });
-
-  const hasTimestamp = scored.some((x) => x.ts > 0);
-
-  if (hasTimestamp) {
-    scored.sort((a, b) => {
-      if (b.ts !== a.ts) return b.ts - a.ts;
-      return b.index - a.index;
-    });
-    return scored[0].item;
-  }
-
-  return csvArr[csvArr.length - 1] ?? null;
-}
-
-// channel/device/source 자동 추출(있으면 쓰고, 없으면 null)
 function pickDim(obj: any, keys: string[]) {
   for (const k of keys) {
     const v = obj?.[k];
@@ -166,7 +121,6 @@ function pickDim(obj: any, keys: string[]) {
   return null;
 }
 
-/** ==== path helpers (윈도우 경로/URL 모두 대응) ==== */
 function basenameOf(v: string) {
   const s = String(v ?? "").trim();
   if (!s) return "";
@@ -176,28 +130,32 @@ function basenameOf(v: string) {
   const urlParts = lastWin.split("/");
   return (urlParts[urlParts.length - 1] || lastWin).trim();
 }
+
 function stripExt(name: string) {
   const base = basenameOf(name);
   const i = base.lastIndexOf(".");
   return i > 0 ? base.slice(0, i) : base;
 }
 
-/**
- * ✅ 날짜 찾기: (1) 알려진 키 → (2) 모든 값 스캔해서 yyyy-mm-dd/yyyymmdd 탐지
- */
 function pickDateField(obj: any) {
   const known = [
     "date",
     "day",
     "ymd",
+    "dt",
     "report_date",
+    "segment_date",
+    "stat_date",
+    "period_start",
+    "date_start",
+    "start_date",
     "날짜",
     "일자",
     "기간_시작",
     "기간시작",
     "집계일",
-    "start_date",
   ];
+
   for (const k of known) {
     const v = obj?.[k];
     if (v == null) continue;
@@ -273,12 +231,18 @@ function pickImagePathLike(obj: any) {
 }
 
 /**
- * ✅ Bearer 우선 + 쿠키(session) fallback
+ * ✅ uploads/csv/route.ts 는 새 CSV를 배열 맨 앞에 넣는다.
+ *    const nextCsv = [item, ...csvList]
+ * 따라서 최신 CSV는 항상 csvArr[0] 이다.
  */
+function pickLatestCsvEntry(csvArr: any[]) {
+  if (!Array.isArray(csvArr) || !csvArr.length) return null;
+  return csvArr[0] ?? null;
+}
+
 async function getUserId(req: Request) {
   const admin = getSupabaseAdmin();
 
-  // 1) Bearer 우선
   const authz =
     req.headers.get("authorization") || req.headers.get("Authorization") || "";
   const m = authz.match(/^Bearer\s+(.+)$/i);
@@ -299,7 +263,6 @@ async function getUserId(req: Request) {
     return { ok: true as const, userId };
   }
 
-  // 2) 쿠키 세션 fallback
   const auth = await sbAuth();
   if (auth.error || !auth.user?.id) {
     return { ok: false as const, status: 401, message: "Unauthorized (no session)" };
@@ -309,7 +272,6 @@ async function getUserId(req: Request) {
 }
 
 export async function POST(req: Request, ctx: Ctx) {
-  // ✅ auth (Bearer 우선 + 쿠키 fallback)
   const auth = await getUserId(req);
   if (!auth.ok) {
     return jsonError(auth.status, "UNAUTHORIZED", { detail: auth.message });
@@ -322,11 +284,10 @@ export async function POST(req: Request, ctx: Ctx) {
   if (!reportId) return jsonError(400, "Missing report id");
 
   const body = await req.json().catch(() => ({}));
-  const mode = asString(body?.mode) || "replace"; // replace | append
+  const mode = asString(body?.mode) || "replace";
 
   const sb = getSupabaseAdmin();
 
-  // 1) report + meta 로드
   const { data: report, error: repErr } = await sb
     .from("reports")
     .select("id, workspace_id, advertiser_id, meta")
@@ -336,7 +297,6 @@ export async function POST(req: Request, ctx: Ctx) {
   if (repErr) return jsonError(500, repErr.message || "DB error");
   if (!report) return jsonError(404, "Report not found");
 
-  // ✅ workspace membership 체크
   const { data: wm, error: wmErr } = await sb
     .from("workspace_members")
     .select("role")
@@ -354,17 +314,14 @@ export async function POST(req: Request, ctx: Ctx) {
   console.log("[ingestion:csv-source]", {
     reportId,
     csvCount: csvArr.length,
+    selectedIndex: csvArr.length ? 0 : -1,
     selectedName: asString(latestCsv?.name),
     selectedPath: asString(latestCsv?.path),
     candidates: csvArr.map((x, i) => ({
       i,
       name: asString(x?.name),
       path: asString(x?.path),
-      uploaded_at: asString(x?.uploaded_at),
       created_at: asString(x?.created_at),
-      updated_at: asString(x?.updated_at),
-      added_at: asString(x?.added_at),
-      timestamp: asString(x?.timestamp),
     })),
   });
 
@@ -378,10 +335,8 @@ export async function POST(req: Request, ctx: Ctx) {
     );
   }
 
-  // ✅ 이번 ingestion 세션 id 발급
   const ingestionId = randomUUID();
 
-  // 2) replace면 기존 rows 삭제 (report_id 기준 그대로 유지)
   if (mode === "replace") {
     const { error: delErr } = await sb
       .from("report_rows")
@@ -393,7 +348,6 @@ export async function POST(req: Request, ctx: Ctx) {
     }
   }
 
-  // 3) storage download → parse
   const { data: blob, error: dlErr } = await sb.storage.from(bucket).download(path);
   if (dlErr || !blob) {
     return jsonError(500, dlErr?.message || "CSV download failed", { bucket, path });
@@ -407,7 +361,6 @@ export async function POST(req: Request, ctx: Ctx) {
   const headers = headerRaw.map((h, i) => normKey(h, i));
   const dataLines = grid.slice(1);
 
-  // 4) row objects 만들기
   const rowObjects: { ymd: string; obj: any }[] = [];
   for (const line of dataLines) {
     const obj: any = {};
@@ -424,7 +377,11 @@ export async function POST(req: Request, ctx: Ctx) {
     const ymd = pickDateField(obj);
     if (!ymd) continue;
 
-    // 숫자 정규화
+    obj.date = ymd;
+    obj.report_date = obj.report_date || ymd;
+    obj.day = obj.day || ymd;
+    obj.ymd = obj.ymd || ymd;
+
     const numericKeys = [
       "impressions",
       "impr",
@@ -447,7 +404,6 @@ export async function POST(req: Request, ctx: Ctx) {
       }
     }
 
-    // creative / imagepath 보강
     const imgPath = pickImagePathLike(obj);
     if (imgPath) {
       obj.imagepath = imgPath;
@@ -479,7 +435,6 @@ export async function POST(req: Request, ctx: Ctx) {
     });
   }
 
-  // 5) insert (batch) + ✅ ingestion_id 저장
   const workspace_id = (report as any).workspace_id ?? null;
   const advertiser_id = (report as any).advertiser_id ?? null;
 
@@ -498,8 +453,6 @@ export async function POST(req: Request, ctx: Ctx) {
       channel,
       device,
       source,
-
-      // ✅ 핵심: 이번 세션 id
       ingestion_id: ingestionId,
     };
   });
@@ -514,7 +467,6 @@ export async function POST(req: Request, ctx: Ctx) {
     }
   }
 
-  // ✅ 6) reports.current_ingestion_id 갱신 + meta 기록
   const nextMeta = {
     ...meta,
     ingestion: {

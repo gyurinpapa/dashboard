@@ -11,19 +11,9 @@ function jsonError(status: number, message: string, extra?: any) {
   return NextResponse.json({ ok: false, error: message, ...extra }, { status });
 }
 
-/**
- * ✅ Bearer 우선 + 쿠키(session) fallback
- * - 프론트에서 Authorization: Bearer ... 를 보내면 이걸 먼저 검증
- * - 없으면 sbAuth() 쿠키 세션으로 user 확인
- *
- * 반환:
- *  - { ok: true, userId }
- *  - { ok: false, status, message }
- */
 async function getUserId(req: Request) {
   const admin = getSupabaseAdmin();
 
-  // 1) Bearer 토큰 우선
   const authz =
     req.headers.get("authorization") || req.headers.get("Authorization") || "";
   const m = authz.match(/^Bearer\s+(.+)$/i);
@@ -44,7 +34,6 @@ async function getUserId(req: Request) {
     return { ok: true as const, userId };
   }
 
-  // 2) 쿠키 세션 fallback
   const auth = await sbAuth();
   if (auth.error || !auth.user?.id) {
     return {
@@ -76,28 +65,42 @@ function asStr(v: any) {
   return String(v).trim();
 }
 
-/**
- * ✅ report_rows.row 를 top-level로 안전하게 펼친다.
- * - 편집 화면(/reports/[id])이 share 페이지와 최대한 유사한 row shape를 받도록 맞춤
- * - 원본 row도 유지
- */
 function flattenRow(rec: any) {
   const parsed = tryParseJson(rec?.row) || {};
+
+  const canonicalDate =
+    asStr(rec?.date) ||
+    asStr(parsed?.date) ||
+    asStr(parsed?.report_date) ||
+    asStr(parsed?.day) ||
+    asStr(parsed?.ymd) ||
+    asStr(parsed?.dt) ||
+    asStr(parsed?.segment_date) ||
+    asStr(parsed?.stat_date) ||
+    "";
+
   const out: any = {
     ...parsed,
 
-    // 원본 메타 유지
     id: rec?.id ?? parsed?.id ?? null,
     __row_id: rec?.id ?? parsed?.__row_id ?? parsed?.id ?? null,
     report_id: rec?.report_id ?? null,
     ingestion_id: rec?.ingestion_id ?? null,
     created_at: rec?.created_at ?? null,
 
-    // 원본 row 보존
+    // ✅ DB canonical date 우선
+    date: canonicalDate,
+    report_date: asStr(parsed?.report_date) || canonicalDate,
+    day: asStr(parsed?.day) || canonicalDate,
+    ymd: asStr(parsed?.ymd) || canonicalDate,
+
+    channel: rec?.channel ?? parsed?.channel ?? null,
+    device: rec?.device ?? parsed?.device ?? parsed?.device_type ?? null,
+    source: rec?.source ?? parsed?.source ?? parsed?.site_source ?? null,
+
     row: parsed,
   };
 
-  // 자주 쓰는 alias 보강
   if (out.imagepath == null && out.imagePath != null) out.imagepath = out.imagePath;
   if (out.imagePath == null && out.imagepath != null) out.imagePath = out.imagepath;
 
@@ -123,11 +126,6 @@ function flattenRow(rec: any) {
   return out;
 }
 
-/**
- * ✅ ingestion_id 기준 rows 전체 조회
- * - Supabase select 기본 1000개 제한을 피하기 위해 range pagination 사용
- * - 기존 정렬/반환 구조는 유지
- */
 async function fetchRowsByIngestion(
   admin: ReturnType<typeof getSupabaseAdmin>,
   reportId: string,
@@ -142,50 +140,97 @@ async function fetchRowsByIngestion(
 
     const { data, error } = await admin
       .from("report_rows")
-      .select("id, report_id, ingestion_id, row, created_at")
+      .select(
+        "id, report_id, ingestion_id, row, created_at, date, channel, device, source"
+      )
       .eq("report_id", reportId)
       .eq("ingestion_id", ingestionId)
-      .order("created_at", { ascending: true })
+      .order("row_index", { ascending: true })
       .range(from, to);
 
     if (error) throw new Error(error.message);
-
-    if (!data || data.length === 0) {
-      break;
-    }
+    if (!data || data.length === 0) break;
 
     all.push(...data);
 
-    if (data.length < pageSize) {
-      break;
-    }
-
+    if (data.length < pageSize) break;
     from += pageSize;
   }
 
   return all;
 }
 
-async function findLatestIngestionId(
+async function findBestIngestionIdByRows(
   admin: ReturnType<typeof getSupabaseAdmin>,
   reportId: string
 ) {
-  const { data, error } = await admin
-    .from("report_rows")
-    .select("ingestion_id, created_at")
-    .eq("report_id", reportId)
-    .order("created_at", { ascending: false })
-    .limit(1);
+  const pageSize = 1000;
+  let from = 0;
 
-  if (error) throw new Error(error.message);
+  const stats = new Map<
+    string,
+    {
+      count: number;
+      latestCreatedAt: string;
+    }
+  >();
 
-  const latest = Array.isArray(data) && data.length > 0 ? data[0] : null;
-  return asStr(latest?.ingestion_id);
+  while (true) {
+    const to = from + pageSize - 1;
+
+    const { data, error } = await admin
+      .from("report_rows")
+      .select("ingestion_id, created_at")
+      .eq("report_id", reportId)
+      .order("created_at", { ascending: false })
+      .range(from, to);
+
+    if (error) throw new Error(error.message);
+    if (!data || data.length === 0) break;
+
+    for (const row of data) {
+      const ingestionId = asStr(row?.ingestion_id);
+      if (!ingestionId) continue;
+
+      const createdAt = asStr(row?.created_at);
+      const prev = stats.get(ingestionId);
+
+      if (!prev) {
+        stats.set(ingestionId, {
+          count: 1,
+          latestCreatedAt: createdAt,
+        });
+      } else {
+        prev.count += 1;
+        if (createdAt && (!prev.latestCreatedAt || createdAt > prev.latestCreatedAt)) {
+          prev.latestCreatedAt = createdAt;
+        }
+      }
+    }
+
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+
+  const ranked = Array.from(stats.entries())
+    .map(([ingestionId, s]) => ({
+      ingestionId,
+      count: s.count,
+      latestCreatedAt: s.latestCreatedAt,
+    }))
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return String(b.latestCreatedAt).localeCompare(String(a.latestCreatedAt));
+    });
+
+  return {
+    bestIngestionId: ranked[0]?.ingestionId ?? "",
+    ranked,
+  };
 }
 
 export async function GET(req: Request, ctx: Ctx) {
   try {
-    // ✅ auth 통일 (Bearer 우선 + 쿠키 fallback)
     const auth = await getUserId(req);
     if (!auth.ok) {
       return jsonError(auth.status, auth.message);
@@ -195,7 +240,6 @@ export async function GET(req: Request, ctx: Ctx) {
     const { id } = await ctx.params;
     const admin = getSupabaseAdmin();
 
-    // 1) report 조회
     const { data: report, error: rErr } = await admin
       .from("reports")
       .select("id, workspace_id, current_ingestion_id")
@@ -205,7 +249,6 @@ export async function GET(req: Request, ctx: Ctx) {
     if (rErr) return jsonError(500, rErr.message);
     if (!report) return jsonError(404, "REPORT_NOT_FOUND");
 
-    // 2) membership 체크  ✅ id 컬럼 쓰지 말 것
     const { data: wm, error: wmErr } = await admin
       .from("workspace_members")
       .select("role")
@@ -218,33 +261,27 @@ export async function GET(req: Request, ctx: Ctx) {
 
     const currentIngestionId = asStr((report as any).current_ingestion_id);
 
-    let ingestionIdUsed = currentIngestionId;
-    let fallbackUsed = false;
-    let rawRows: any[] = [];
+    const { bestIngestionId, ranked } = await findBestIngestionIdByRows(admin, id);
 
-    // 3) current_ingestion_id 우선
-    if (currentIngestionId) {
-      rawRows = await fetchRowsByIngestion(admin, id, currentIngestionId);
+    const ingestionIdUsed = bestIngestionId || currentIngestionId || "";
+    const fallbackUsed =
+      !!ingestionIdUsed &&
+      !!currentIngestionId &&
+      ingestionIdUsed !== currentIngestionId;
+
+    if (!ingestionIdUsed) {
+      return NextResponse.json({
+        ok: true,
+        rows: [],
+        ingestion_id_used: null,
+        fallback_used: false,
+        rows_count: 0,
+        ingestion_ranked: [],
+      });
     }
 
-    // 4) ✅ fallback:
-    // current_ingestion_id가 없거나, 거기에 rows가 없으면
-    // report_rows 기준 최신 ingestion_id를 찾아서 사용
-    if (!rawRows.length) {
-      const latestIngestionId = await findLatestIngestionId(admin, id);
+    const rawRows = await fetchRowsByIngestion(admin, id, ingestionIdUsed);
 
-      if (latestIngestionId) {
-        const latestRows = await fetchRowsByIngestion(admin, id, latestIngestionId);
-
-        if (latestRows.length) {
-          rawRows = latestRows;
-          ingestionIdUsed = latestIngestionId;
-          fallbackUsed = latestIngestionId !== currentIngestionId;
-        }
-      }
-    }
-
-    // 5) 그래도 없으면 빈 배열
     if (!rawRows.length) {
       return NextResponse.json({
         ok: true,
@@ -252,10 +289,10 @@ export async function GET(req: Request, ctx: Ctx) {
         ingestion_id_used: ingestionIdUsed || null,
         fallback_used: fallbackUsed,
         rows_count: 0,
+        ingestion_ranked: ranked,
       });
     }
 
-    // 6) ✅ row 펼쳐서 반환
     const rows = rawRows.map(flattenRow);
 
     const dates = rows
@@ -270,6 +307,7 @@ export async function GET(req: Request, ctx: Ctx) {
       currentIngestionId,
       ingestionIdUsed,
       fallbackUsed,
+      ranked: ranked.slice(0, 10),
       rawRowsLen: rawRows.length,
       rowsLen: rows.length,
       firstDate: dates[0] ?? null,
@@ -283,6 +321,7 @@ export async function GET(req: Request, ctx: Ctx) {
       ingestion_id_used: ingestionIdUsed || null,
       fallback_used: fallbackUsed,
       rows_count: rows.length,
+      ingestion_ranked: ranked,
     });
   } catch (e: any) {
     return jsonError(500, e?.message || String(e));

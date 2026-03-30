@@ -12,6 +12,7 @@ import {
 } from "../../../src/lib/report/format";
 
 type Props = {
+  reportType?: "commerce" | "traffic";
   rows: any[];
 };
 
@@ -129,7 +130,10 @@ function dayLabelKor(idx: number) {
   return ["월", "화", "수", "목", "금", "토", "일"][idx] || "";
 }
 
-function formatMetricValue(metric: HeatmapMetricKey | "ctr" | "cvr" | "cpa", v: number) {
+function formatMetricValue(
+  metric: HeatmapMetricKey | "ctr" | "cvr" | "cpa",
+  v: number
+) {
   if (metric === "roas") {
     return formatPercentFromRoas(v, 1);
   }
@@ -143,14 +147,40 @@ function formatMetricValue(metric: HeatmapMetricKey | "ctr" | "cvr" | "cpa", v: 
 }
 
 function quantize(value: number, values: number[]) {
-  const positives = values.filter((v) => Number.isFinite(v) && v > 0).sort((a, b) => a - b);
+  const positives = values
+    .filter((v) => Number.isFinite(v) && v > 0)
+    .sort((a, b) => a - b);
   if (!positives.length || value <= 0) return 0;
   if (positives.length === 1) return 5;
 
-  const p20 = positives[Math.min(positives.length - 1, Math.floor((positives.length - 1) * 0.2))];
-  const p40 = positives[Math.min(positives.length - 1, Math.floor((positives.length - 1) * 0.4))];
-  const p60 = positives[Math.min(positives.length - 1, Math.floor((positives.length - 1) * 0.6))];
-  const p80 = positives[Math.min(positives.length - 1, Math.floor((positives.length - 1) * 0.8))];
+  const p20 =
+    positives[
+      Math.min(
+        positives.length - 1,
+        Math.floor((positives.length - 1) * 0.2)
+      )
+    ];
+  const p40 =
+    positives[
+      Math.min(
+        positives.length - 1,
+        Math.floor((positives.length - 1) * 0.4)
+      )
+    ];
+  const p60 =
+    positives[
+      Math.min(
+        positives.length - 1,
+        Math.floor((positives.length - 1) * 0.6)
+      )
+    ];
+  const p80 =
+    positives[
+      Math.min(
+        positives.length - 1,
+        Math.floor((positives.length - 1) * 0.8)
+      )
+    ];
 
   if (value <= p20) return 1;
   if (value <= p40) return 2;
@@ -173,7 +203,8 @@ function normalizeChannel(v: any) {
   if (!s) return "기타";
   if (s.includes("naver")) return "Naver";
   if (s.includes("google")) return "Google";
-  if (s.includes("meta") || s.includes("facebook") || s.includes("instagram")) return "Meta";
+  if (s.includes("meta") || s.includes("facebook") || s.includes("instagram"))
+    return "Meta";
   if (s.includes("kakao")) return "Kakao";
   if (s.includes("tiktok")) return "TikTok";
   if (s.includes("criteo")) return "Criteo";
@@ -185,8 +216,15 @@ function normalizeChannel(v: any) {
 function normalizeDevice(v: any) {
   const s = asStr(v).toLowerCase();
   if (!s) return "Unknown";
-  if (s.includes("mobile") || s === "mo" || s.includes("mweb") || s.includes("app")) return "Mobile";
-  if (s.includes("pc") || s.includes("desktop") || s.includes("web")) return "PC";
+  if (
+    s.includes("mobile") ||
+    s === "mo" ||
+    s.includes("mweb") ||
+    s.includes("app")
+  )
+    return "Mobile";
+  if (s.includes("pc") || s.includes("desktop") || s.includes("web"))
+    return "PC";
   if (s.includes("tablet") || s.includes("tab")) return "Tablet";
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
@@ -219,7 +257,8 @@ function deviceColor(device: string) {
 
 function rgbaFromHex(hex: string, alpha: number) {
   const raw = hex.replace("#", "");
-  const full = raw.length === 3 ? raw.split("").map((c) => c + c).join("") : raw;
+  const full =
+    raw.length === 3 ? raw.split("").map((c) => c + c).join("") : raw;
   const r = parseInt(full.slice(0, 2), 16);
   const g = parseInt(full.slice(2, 4), 16);
   const b = parseInt(full.slice(4, 6), 16);
@@ -250,7 +289,12 @@ function buildFlowPath(
   ].join(" ");
 }
 
-function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
+function polarToCartesian(
+  cx: number,
+  cy: number,
+  r: number,
+  angleDeg: number
+) {
   const rad = ((angleDeg - 90) * Math.PI) / 180.0;
   return {
     x: cx + r * Math.cos(rad),
@@ -328,15 +372,20 @@ function FunnelCard({
 
       const leftPath = [
         `M ${currentLeft} ${currentBottomY}`,
-        `C ${currentLeft} ${currentBottomY + 10}, ${nextLeft} ${nextTopY - 10}, ${nextLeft} ${nextTopY}`,
+        `C ${currentLeft} ${currentBottomY + 10}, ${nextLeft} ${
+          nextTopY - 10
+        }, ${nextLeft} ${nextTopY}`,
       ].join(" ");
 
       const rightPath = [
         `M ${currentRight} ${currentBottomY}`,
-        `C ${currentRight} ${currentBottomY + 10}, ${nextRight} ${nextTopY - 10}, ${nextRight} ${nextTopY}`,
+        `C ${currentRight} ${currentBottomY + 10}, ${nextRight} ${
+          nextTopY - 10
+        }, ${nextRight} ${nextTopY}`,
       ].join(" ");
 
-      const stroke = i === 0 ? "rgba(75,159,173,0.55)" : "rgba(242,153,90,0.55)";
+      const stroke =
+        i === 0 ? "rgba(75,159,173,0.55)" : "rgba(242,153,90,0.55)";
 
       paths.push({ d: leftPath, stroke }, { d: rightPath, stroke });
     }
@@ -344,7 +393,8 @@ function FunnelCard({
     return paths;
   }, [items]);
 
-  const svgHeight = items.length > 0 ? items.length * barH + (items.length - 1) * gapH : 0;
+  const svgHeight =
+    items.length > 0 ? items.length * barH + (items.length - 1) * gapH : 0;
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
@@ -419,8 +469,12 @@ function FunnelCard({
                 {items.map((item, idx) => (
                   <div key={item.key} className="space-y-2">
                     <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm font-semibold text-gray-900">{item.label}</span>
-                      <span className="text-xs font-medium text-gray-500">{item.sharePctText}</span>
+                      <span className="text-sm font-semibold text-gray-900">
+                        {item.label}
+                      </span>
+                      <span className="text-xs font-medium text-gray-500">
+                        {item.sharePctText}
+                      </span>
                     </div>
 
                     <div className="relative">
@@ -430,11 +484,16 @@ function FunnelCard({
                           style={{
                             width: `${item.widthPct}%`,
                             maxWidth: "100%",
-                            background: `linear-gradient(135deg, ${item.color} 0%, ${item.color} 72%, ${rgbaFromHex(
+                            background: `linear-gradient(135deg, ${
+                              item.color
+                            } 0%, ${item.color} 72%, ${rgbaFromHex(
                               item.color,
                               0.78
                             )} 100%)`,
-                            boxShadow: `0 10px 22px ${rgbaFromHex(item.color, 0.24)}`,
+                            boxShadow: `0 10px 22px ${rgbaFromHex(
+                              item.color,
+                              0.24
+                            )}`,
                             transform: "translateZ(0)",
                           }}
                           title={[
@@ -453,9 +512,15 @@ function FunnelCard({
                     </div>
 
                     <div className="grid grid-cols-1 gap-1 text-center sm:grid-cols-3">
-                      <div className="text-[11px] text-gray-500">{item.sharePctText}</div>
-                      <div className="text-[11px] text-gray-500">{item.peakPctText}</div>
-                      <div className="text-[11px] text-gray-500">{item.dayDiffText}</div>
+                      <div className="text-[11px] text-gray-500">
+                        {item.sharePctText}
+                      </div>
+                      <div className="text-[11px] text-gray-500">
+                        {item.peakPctText}
+                      </div>
+                      <div className="text-[11px] text-gray-500">
+                        {item.dayDiffText}
+                      </div>
                     </div>
 
                     {idx < items.length - 1 ? (
@@ -516,7 +581,10 @@ function DonutCard({
         {items.length > 0 ? (
           <div className="space-y-6">
             <div className="flex items-center justify-center">
-              <svg viewBox="0 0 260 260" className="h-[220px] w-[220px] max-w-full">
+              <svg
+                viewBox="0 0 260 260"
+                className="h-[220px] w-[220px] max-w-full"
+              >
                 {items.map((item) => {
                   const isActive = activeKey === item.key;
                   const isDimmed = activeKey !== null && activeKey !== item.key;
@@ -524,7 +592,14 @@ function DonutCard({
                   return (
                     <path
                       key={item.key}
-                      d={describeArc(130, 130, 100, 60, item.startAngle, item.endAngle)}
+                      d={describeArc(
+                        130,
+                        130,
+                        100,
+                        60,
+                        item.startAngle,
+                        item.endAngle
+                      )}
                       fill={item.color}
                       onMouseEnter={() => setActiveKey(item.key)}
                       onMouseLeave={() => setActiveKey(null)}
@@ -539,10 +614,9 @@ function DonutCard({
                       }}
                     >
                       <title>
-                        {`${item.label}\n값: ${valueFormatter(item.value)}\n비중: ${formatPercentFromRate(
-                          item.pct,
-                          1
-                        )}`}
+                        {`${item.label}\n값: ${valueFormatter(
+                          item.value
+                        )}\n비중: ${formatPercentFromRate(item.pct, 1)}`}
                       </title>
                     </path>
                   );
@@ -629,7 +703,13 @@ function DonutCard({
 function RoasBarCard({
   items,
 }: {
-  items: Array<{ channel: string; revenue: number; conversions: number; cost: number; roas: number }>;
+  items: Array<{
+    channel: string;
+    revenue: number;
+    conversions: number;
+    cost: number;
+    roas: number;
+  }>;
 }) {
   const maxRoas = Math.max(0, ...items.map((x) => x.roas));
 
@@ -711,8 +791,9 @@ function RoasBarCard({
   );
 }
 
-export default function Summary2Section({ rows }: Props) {
-  const [metric, setMetric] = useState<HeatmapMetricKey>("revenue");
+export default function Summary2Section({ reportType, rows }: Props) {
+  const isTraffic = reportType === "traffic";
+  const [metric, setMetric] = useState<HeatmapMetricKey>("cost");
   const [isPlaying, setIsPlaying] = useState(false);
   const [playIndex, setPlayIndex] = useState(0);
   const [heatHoverKey, setHeatHoverKey] = useState<string | null>(null);
@@ -755,7 +836,9 @@ export default function Summary2Section({ rows }: Props) {
       nextBase.clicks += toSafeNumber(r?.clicks ?? r?.click ?? r?.clk);
       nextBase.cost += toSafeNumber(r?.cost ?? r?.spend ?? r?.ad_cost);
       nextBase.conversions += toSafeNumber(r?.conversions ?? r?.conv ?? r?.cv);
-      nextBase.revenue += toSafeNumber(r?.revenue ?? r?.sales ?? r?.purchase_amount ?? r?.gmv);
+      nextBase.revenue += toSafeNumber(
+        r?.revenue ?? r?.sales ?? r?.purchase_amount ?? r?.gmv
+      );
 
       map.set(key, nextBase);
     }
@@ -771,12 +854,35 @@ export default function Summary2Section({ rows }: Props) {
   }, [rows]);
 
   const dayList = useMemo(() => {
-    return Array.from(dailyMap.values()).sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+    return Array.from(dailyMap.values()).sort((a, b) =>
+      a.dateKey.localeCompare(b.dateKey)
+    );
   }, [dailyMap]);
 
   const metricValues = useMemo(() => {
     return dayList.map((d) => Number(d[metric] ?? 0));
   }, [dayList, metric]);
+
+  const metricButtons: { key: HeatmapMetricKey; label: string }[] = isTraffic
+    ? [
+        { key: "cost", label: "광고비" },
+        { key: "clicks", label: "클릭수" },
+        { key: "impressions", label: "노출수" },
+      ]
+    : [
+        { key: "revenue", label: "매출" },
+        { key: "roas", label: "ROAS" },
+        { key: "conversions", label: "전환수" },
+        { key: "cost", label: "광고비" },
+        { key: "clicks", label: "클릭수" },
+        { key: "impressions", label: "노출수" },
+      ];
+
+  useEffect(() => {
+    if (!metricButtons.some((item) => item.key === metric)) {
+      setMetric(isTraffic ? "cost" : "revenue");
+    }
+  }, [metric, metricButtons, isTraffic]);
 
   const calendar = useMemo(() => {
     if (!dayList.length) {
@@ -828,7 +934,9 @@ export default function Summary2Section({ rows }: Props) {
 
     const bestDay =
       dayList.length > 0
-        ? [...dayList].sort((a, b) => Number(b[metric] ?? 0) - Number(a[metric] ?? 0))[0]
+        ? [...dayList].sort(
+            (a, b) => Number(b[metric] ?? 0) - Number(a[metric] ?? 0)
+          )[0]
         : null;
 
     return {
@@ -845,7 +953,9 @@ export default function Summary2Section({ rows }: Props) {
     for (const r of rows ?? []) {
       const channel = normalizeChannel(r?.channel ?? r?.source ?? r?.platform);
       const device = normalizeDevice(r?.device);
-      const revenue = toSafeNumber(r?.revenue ?? r?.sales ?? r?.purchase_amount ?? r?.gmv);
+      const revenue = toSafeNumber(
+        r?.revenue ?? r?.sales ?? r?.purchase_amount ?? r?.gmv
+      );
 
       if (revenue <= 0) continue;
 
@@ -891,7 +1001,9 @@ export default function Summary2Section({ rows }: Props) {
 
     for (const r of rows ?? []) {
       const channel = normalizeChannel(r?.channel ?? r?.source ?? r?.platform);
-      const revenue = toSafeNumber(r?.revenue ?? r?.sales ?? r?.purchase_amount ?? r?.gmv);
+      const revenue = toSafeNumber(
+        r?.revenue ?? r?.sales ?? r?.purchase_amount ?? r?.gmv
+      );
       const conversions = toSafeNumber(r?.conversions ?? r?.conv ?? r?.cv);
       const cost = toSafeNumber(r?.cost ?? r?.spend ?? r?.ad_cost);
 
@@ -923,7 +1035,13 @@ export default function Summary2Section({ rows }: Props) {
   const funnelTimeline = useMemo(() => {
     const map = new Map<
       string,
-      { dateKey: string; impressions: number; clicks: number; conversions: number }
+      {
+        dateKey: string;
+        impressions: number;
+        clicks: number;
+        cost: number;
+        conversions: number;
+      }
     >();
 
     for (const r of rows ?? []) {
@@ -943,17 +1061,21 @@ export default function Summary2Section({ rows }: Props) {
         dateKey: key,
         impressions: 0,
         clicks: 0,
+        cost: 0,
         conversions: 0,
       };
 
       prev.impressions += toSafeNumber(r?.impressions ?? r?.impr);
       prev.clicks += toSafeNumber(r?.clicks ?? r?.click ?? r?.clk);
+      prev.cost += toSafeNumber(r?.cost ?? r?.spend ?? r?.ad_cost);
       prev.conversions += toSafeNumber(r?.conversions ?? r?.conv ?? r?.cv);
 
       map.set(key, prev);
     }
 
-    return Array.from(map.values()).sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+    return Array.from(map.values()).sort((a, b) =>
+      a.dateKey.localeCompare(b.dateKey)
+    );
   }, [rows]);
 
   useEffect(() => {
@@ -985,7 +1107,10 @@ export default function Summary2Section({ rows }: Props) {
 
   const currentFunnelPoint = useMemo(() => {
     if (!funnelTimeline.length) return null;
-    const safeIndex = Math.max(0, Math.min(playIndex, funnelTimeline.length - 1));
+    const safeIndex = Math.max(
+      0,
+      Math.min(playIndex, funnelTimeline.length - 1)
+    );
     return funnelTimeline[safeIndex];
   }, [funnelTimeline, playIndex]);
 
@@ -993,22 +1118,34 @@ export default function Summary2Section({ rows }: Props) {
     const point = currentFunnelPoint ?? {
       impressions: 0,
       clicks: 0,
+      cost: 0,
       conversions: 0,
     };
 
-    const safeIndex = Math.max(0, Math.min(playIndex, Math.max(0, funnelTimeline.length - 1)));
+    const safeIndex = Math.max(
+      0,
+      Math.min(playIndex, Math.max(0, funnelTimeline.length - 1))
+    );
     const prevPoint =
       safeIndex > 0
         ? funnelTimeline[safeIndex - 1]
-        : { impressions: 0, clicks: 0, conversions: 0 };
+        : { impressions: 0, clicks: 0, cost: 0, conversions: 0 };
 
-    const maxImpressions = Math.max(...funnelTimeline.map((x) => x.impressions), 1);
+    const maxImpressions = Math.max(
+      ...funnelTimeline.map((x) => x.impressions),
+      1
+    );
     const maxClicks = Math.max(...funnelTimeline.map((x) => x.clicks), 1);
-    const maxConversions = Math.max(...funnelTimeline.map((x) => x.conversions), 1);
+    const maxCost = Math.max(...funnelTimeline.map((x) => x.cost), 1);
+    const maxConversions = Math.max(
+      ...funnelTimeline.map((x) => x.conversions),
+      1
+    );
 
     const currentDayMax = Math.max(
       point.impressions,
       point.clicks,
+      point.cost,
       point.conversions,
       1
     );
@@ -1018,10 +1155,13 @@ export default function Summary2Section({ rows }: Props) {
         if (current > 0) return "전일 대비 신규";
         return "전일 대비 -";
       }
-      return `전일 대비 ${formatDeltaPercentFromRatio(diffRatio(current, prev), 1)}`;
+      return `전일 대비 ${formatDeltaPercentFromRatio(
+        diffRatio(current, prev),
+        1
+      )}`;
     };
 
-    return [
+    const baseItems: FunnelItem[] = [
       {
         key: "impressions",
         label: "노출",
@@ -1029,7 +1169,10 @@ export default function Summary2Section({ rows }: Props) {
         displayValue: formatCount(point.impressions),
         color: "#3b82f6",
         widthPct: Math.max(10, (point.impressions / currentDayMax) * 100),
-        sharePctText: formatPercentFromRate(point.impressions / maxImpressions, 1),
+        sharePctText: formatPercentFromRate(
+          point.impressions / maxImpressions,
+          1
+        ),
         peakPctText: `최고일 ${formatCount(maxImpressions)}`,
         dayDiffText: diffText(point.impressions, prevPoint.impressions),
       },
@@ -1044,38 +1187,66 @@ export default function Summary2Section({ rows }: Props) {
         peakPctText: `최고일 ${formatCount(maxClicks)}`,
         dayDiffText: diffText(point.clicks, prevPoint.clicks),
       },
-      {
-        key: "conversions",
-        label: "전환",
-        value: point.conversions,
-        displayValue: formatCount(point.conversions),
-        color: "#f2995a",
-        widthPct: Math.max(10, (point.conversions / currentDayMax) * 100),
-        sharePctText: formatPercentFromRate(point.conversions / maxConversions, 1),
-        peakPctText: `최고일 ${formatCount(maxConversions)}`,
-        dayDiffText: diffText(point.conversions, prevPoint.conversions),
-      },
     ];
-  }, [currentFunnelPoint, funnelTimeline, playIndex]);
+
+    if (isTraffic) {
+      baseItems.push({
+        key: "cost",
+        label: "광고비",
+        value: point.cost,
+        displayValue: KRW(point.cost),
+        color: "#f59e0b",
+        widthPct: Math.max(10, (point.cost / currentDayMax) * 100),
+        sharePctText: formatPercentFromRate(point.cost / maxCost, 1),
+        peakPctText: `최고일 ${KRW(maxCost)}`,
+        dayDiffText: diffText(point.cost, prevPoint.cost),
+      });
+      return baseItems;
+    }
+
+    baseItems.push({
+      key: "conversions",
+      label: "전환",
+      value: point.conversions,
+      displayValue: formatCount(point.conversions),
+      color: "#f2995a",
+      widthPct: Math.max(10, (point.conversions / currentDayMax) * 100),
+      sharePctText: formatPercentFromRate(
+        point.conversions / maxConversions,
+        1
+      ),
+      peakPctText: `최고일 ${formatCount(maxConversions)}`,
+      dayDiffText: diffText(point.conversions, prevPoint.conversions),
+    });
+
+    return baseItems;
+  }, [currentFunnelPoint, funnelTimeline, playIndex, isTraffic]);
 
   const funnelTransitionBadges = useMemo(() => {
     const point = currentFunnelPoint ?? {
       impressions: 0,
       clicks: 0,
+      cost: 0,
       conversions: 0,
     };
 
     const ctr = point.impressions > 0 ? point.clicks / point.impressions : 0;
+    const cpc = point.clicks > 0 ? point.cost / point.clicks : 0;
     const cvr = point.clicks > 0 ? point.conversions / point.clicks : 0;
 
-    return [
-      `CTR ${formatPercentFromRate(ctr, 2)}`,
-      `CVR ${formatPercentFromRate(cvr, 2)}`,
-    ];
-  }, [currentFunnelPoint]);
+    return isTraffic
+      ? [`CTR ${formatPercentFromRate(ctr, 2)}`, `CPC ${KRW(cpc)}`]
+      : [
+          `CTR ${formatPercentFromRate(ctr, 2)}`,
+          `CVR ${formatPercentFromRate(cvr, 2)}`,
+        ];
+  }, [currentFunnelPoint, isTraffic]);
 
   const sankeyData = useMemo(() => {
-    const totalRevenue = channelDeviceAgg.reduce((acc, cur) => acc + cur.revenue, 0);
+    const totalRevenue = channelDeviceAgg.reduce(
+      (acc, cur) => acc + cur.revenue,
+      0
+    );
 
     const linksA: SankeyLink[] = channelDeviceAgg.map((item) => ({
       source: item.channel,
@@ -1121,7 +1292,8 @@ export default function Summary2Section({ rows }: Props) {
       const rawHeights = items.map((item) =>
         Math.max(
           minNodeH,
-          (item.value / valueSum) * (usableHeight - gap * Math.max(items.length - 1, 0))
+          (item.value / valueSum) *
+            (usableHeight - gap * Math.max(items.length - 1, 0))
         )
       );
       const heightSum = rawHeights.reduce((acc, cur) => acc + cur, 0);
@@ -1277,7 +1449,10 @@ export default function Summary2Section({ rows }: Props) {
   }, [channelMetricAgg]);
 
   const conversionDonutData = useMemo(() => {
-    const total = channelMetricAgg.reduce((acc, cur) => acc + cur.conversions, 0);
+    const total = channelMetricAgg.reduce(
+      (acc, cur) => acc + cur.conversions,
+      0
+    );
     let start = 0;
 
     return channelMetricAgg
@@ -1315,18 +1490,14 @@ export default function Summary2Section({ rows }: Props) {
     );
   }
 
-  const metricButtons: { key: HeatmapMetricKey; label: string }[] = [
-    { key: "revenue", label: "매출" },
-    { key: "roas", label: "ROAS" },
-    { key: "conversions", label: "전환수" },
-    { key: "cost", label: "광고비" },
-    { key: "clicks", label: "클릭수" },
-    { key: "impressions", label: "노출수" },
-  ];
-
-  const uniqueDevices = Array.from(new Set(channelDeviceAgg.map((x) => x.device)));
+  const uniqueDevices = Array.from(
+    new Set(channelDeviceAgg.map((x) => x.device))
+  );
   const sankeyCollapsed = uniqueDevices.length <= 1;
-  const totalConversions = channelMetricAgg.reduce((acc, cur) => acc + cur.conversions, 0);
+  const totalConversions = channelMetricAgg.reduce(
+    (acc, cur) => acc + cur.conversions,
+    0
+  );
 
   return (
     <section className="mt-2">
@@ -1363,80 +1534,52 @@ export default function Summary2Section({ rows }: Props) {
             </div>
           </div>
 
-          <div className="grid gap-4 border-b border-gray-200 px-6 py-5 md:grid-cols-4">
-            <div className="rounded-2xl border border-gray-200 bg-gray-50 px-5 py-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-              <div className="text-xs font-medium text-gray-500">평균</div>
-              <div className="mt-3 text-xl font-semibold text-gray-900">
-                {formatMetricValue(metric, heatmapSummary.avgValue)}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-gray-200 bg-gray-50 px-5 py-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-              <div className="text-xs font-medium text-gray-500">최고값</div>
-              <div className="mt-3 text-xl font-semibold text-gray-900">
-                {formatMetricValue(metric, heatmapSummary.maxValue)}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-gray-200 bg-gray-50 px-5 py-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-              <div className="text-xs font-medium text-gray-500">활성 일수</div>
-              <div className="mt-3 text-xl font-semibold text-gray-900">
-                {formatCount(heatmapSummary.activeDays)}일
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-gray-200 bg-gray-50 px-5 py-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-              <div className="text-xs font-medium text-gray-500">최고 성과일</div>
-              <div className="mt-3 text-xl font-semibold text-gray-900">
-                {heatmapSummary.bestDay ? heatmapSummary.bestDay.dateKey : "-"}
-              </div>
-            </div>
-          </div>
-
-          <div className="px-6 py-6">
-            <div className="rounded-3xl border border-gray-100 bg-gradient-to-b from-gray-50 to-white px-5 py-6">
-              <div className="w-full">
-                <div className="w-full">
-                  <div
-                    className="mb-4 grid gap-2"
-                    style={{
-                      gridTemplateColumns: `60px repeat(${calendar.weeks.length}, 1fr)`,
-                    }}
-                  >
-                    <div />
-                    {calendar.weeks.map((_, idx) => {
-                      const labelItem = calendar.monthLabels.find((m) => m.column === idx);
-                      return (
-                        <div
-                          key={`month-${idx}`}
-                          className="text-center text-xs font-medium tracking-tight text-gray-500"
-                        >
-                          {labelItem?.label ?? ""}
-                        </div>
-                      );
-                    })}
-                  </div>
-
+          <div className="px-6 py-5">
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+              <div className="min-w-0 overflow-x-auto">
+                <div className="min-w-[720px]">
                   <div
                     className="grid gap-2"
                     style={{
-                      gridTemplateColumns: `60px repeat(${calendar.weeks.length}, 1fr)`,
+                      gridTemplateColumns: `64px repeat(${calendar.weeks.length}, minmax(0, 1fr))`,
                     }}
                   >
+                    <div />
+                    {calendar.monthLabels.map((item) => (
+                      <div
+                        key={`${item.label}-${item.column}`}
+                        className="text-xs font-semibold text-gray-500"
+                        style={{ gridColumn: `${item.column + 2} / span 1` }}
+                      >
+                        {item.label}
+                      </div>
+                    ))}
+
+                    <div />
+                    {calendar.weeks.map((week, weekIdx) => (
+                      <div
+                        key={`week-header-${weekIdx}`}
+                        className="text-center text-[11px] font-medium text-gray-400"
+                      >
+                        {week[0].getMonth() + 1}/{week[0].getDate()}
+                      </div>
+                    ))}
+
                     {Array.from({ length: 7 }).map((_, dayIdx) => (
-                      <div key={`label-${dayIdx}`} className="contents">
-                        <div className="flex h-8 items-center text-sm font-medium text-gray-500">
+                      <div contents="" key={`row-${dayIdx}`} className="contents">
+                        <div className="flex items-center text-sm font-medium text-gray-500">
                           {dayLabelKor(dayIdx)}
                         </div>
 
                         {calendar.weeks.map((week, weekIdx) => {
                           const date = week[dayIdx];
                           const key = ymd(date);
-                          const agg = dailyMap.get(key);
+                          const agg = dailyMap.get(key) ?? null;
                           const value = agg ? Number(agg[metric] ?? 0) : 0;
                           const level = quantize(value, metricValues);
                           const isHovered = heatHoverKey === key;
-                          const isDimmed = heatHoverKey !== null && heatHoverKey !== key;
+                          const isDimmed =
+                            heatHoverKey !== null && heatHoverKey !== key;
 
                           return (
                             <div
@@ -1447,21 +1590,60 @@ export default function Summary2Section({ rows }: Props) {
                               onMouseLeave={() => setHeatHoverKey(null)}
                               className={[
                                 "group relative h-8 rounded-lg border transition-all duration-150",
-                                agg ? heatColorClass(level) : "border-transparent bg-white",
+                                agg
+                                  ? heatColorClass(level)
+                                  : "border-transparent bg-white",
                                 agg ? "cursor-pointer" : "",
-                                isHovered ? "ring-2 ring-gray-400/40 scale-[1.03]" : "",
+                                isHovered
+                                  ? "ring-2 ring-gray-400/40 scale-[1.03]"
+                                  : "",
                                 isDimmed ? "opacity-55" : "opacity-100",
                               ].join(" ")}
                               title={
                                 agg
                                   ? [
                                       `${agg.dateKey}`,
-                                      `매출: ${formatMetricValue("revenue", agg.revenue)}`,
-                                      `ROAS: ${formatMetricValue("roas", agg.roas)}`,
-                                      `전환수: ${formatMetricValue("conversions", agg.conversions)}`,
-                                      `광고비: ${formatMetricValue("cost", agg.cost)}`,
-                                      `클릭수: ${formatMetricValue("clicks", agg.clicks)}`,
-                                      `노출수: ${formatMetricValue("impressions", agg.impressions)}`,
+                                      ...(isTraffic
+                                        ? [
+                                            `광고비: ${formatMetricValue(
+                                              "cost",
+                                              agg.cost
+                                            )}`,
+                                            `클릭수: ${formatMetricValue(
+                                              "clicks",
+                                              agg.clicks
+                                            )}`,
+                                            `노출수: ${formatMetricValue(
+                                              "impressions",
+                                              agg.impressions
+                                            )}`,
+                                          ]
+                                        : [
+                                            `매출: ${formatMetricValue(
+                                              "revenue",
+                                              agg.revenue
+                                            )}`,
+                                            `ROAS: ${formatMetricValue(
+                                              "roas",
+                                              agg.roas
+                                            )}`,
+                                            `전환수: ${formatMetricValue(
+                                              "conversions",
+                                              agg.conversions
+                                            )}`,
+                                            `광고비: ${formatMetricValue(
+                                              "cost",
+                                              agg.cost
+                                            )}`,
+                                            `클릭수: ${formatMetricValue(
+                                              "clicks",
+                                              agg.clicks
+                                            )}`,
+                                            `노출수: ${formatMetricValue(
+                                              "impressions",
+                                              agg.impressions
+                                            )}`,
+                                          ]),
                                     ].join("\n")
                                   : key
                               }
@@ -1469,9 +1651,16 @@ export default function Summary2Section({ rows }: Props) {
                               {agg ? (
                                 <div className="pointer-events-none absolute left-1/2 top-full z-20 hidden w-max -translate-x-1/2 pt-2 group-hover:block">
                                   <div className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs shadow-lg">
-                                    <div className="font-semibold text-gray-900">{agg.dateKey}</div>
+                                    <div className="font-semibold text-gray-900">
+                                      {agg.dateKey}
+                                    </div>
                                     <div className="mt-1 text-gray-600">
-                                      {metricButtons.find((m) => m.key === metric)?.label}:{" "}
+                                      {
+                                        metricButtons.find(
+                                          (m) => m.key === metric
+                                        )?.label
+                                      }
+                                      :{" "}
                                       <span className="font-semibold text-gray-900">
                                         {formatMetricValue(metric, value)}
                                       </span>
@@ -1488,237 +1677,272 @@ export default function Summary2Section({ rows }: Props) {
                 </div>
               </div>
 
-              <div className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-gray-100 bg-white/80 px-4 py-3">
-                <div className="text-sm text-gray-600">
-                  선택 지표:{" "}
-                  <span className="font-semibold text-gray-900">
-                    {metricButtons.find((m) => m.key === metric)?.label}
-                  </span>
+              <div className="rounded-2xl border border-gray-200 bg-gray-50/70 p-4">
+                <div className="text-sm font-semibold text-gray-900">
+                  히트맵 요약
                 </div>
 
-                <div className="flex items-center gap-2 text-xs text-gray-500">
-                  <span>낮음</span>
-                  <span className="h-5 w-5 rounded-md border border-gray-200 bg-gray-100" />
-                  <span className="h-5 w-5 rounded-md border border-orange-100 bg-orange-100" />
-                  <span className="h-5 w-5 rounded-md border border-orange-200 bg-orange-200" />
-                  <span className="h-5 w-5 rounded-md border border-orange-300 bg-orange-300" />
-                  <span className="h-5 w-5 rounded-md border border-orange-400 bg-orange-400" />
-                  <span className="h-5 w-5 rounded-md border border-orange-600 bg-orange-600" />
-                  <span>높음</span>
+                <div className="mt-4 space-y-3 text-sm">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-gray-500">활성 일수</span>
+                    <span className="font-semibold text-gray-900">
+                      {heatmapSummary.activeDays}일
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-gray-500">평균</span>
+                    <span className="font-semibold text-gray-900">
+                      {formatMetricValue(metric, heatmapSummary.avgValue)}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-gray-500">최대</span>
+                    <span className="font-semibold text-gray-900">
+                      {formatMetricValue(metric, heatmapSummary.maxValue)}
+                    </span>
+                  </div>
+
+                  <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+                    <div className="text-xs text-gray-500">최고 성과 일자</div>
+                    <div className="mt-1 text-sm font-semibold text-gray-900">
+                      {heatmapSummary.bestDay?.dateKey ?? "-"}
+                    </div>
+                    <div className="mt-1 text-xs text-gray-500">
+                      {heatmapSummary.bestDay
+                        ? formatMetricValue(
+                            metric,
+                            Number(heatmapSummary.bestDay[metric] ?? 0)
+                          )
+                        : "-"}
+                    </div>
+                  </div>
                 </div>
+              </div>
+            </div>
+
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-gray-100 bg-white/80 px-4 py-3">
+              <div className="text-sm text-gray-600">
+                선택 지표:{" "}
+                <span className="font-semibold text-gray-900">
+                  {metricButtons.find((m) => m.key === metric)?.label}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                <span>낮음</span>
+                <span className="h-5 w-5 rounded-md border border-gray-200 bg-gray-100" />
+                <span className="h-5 w-5 rounded-md border border-orange-100 bg-orange-100" />
+                <span className="h-5 w-5 rounded-md border border-orange-200 bg-orange-200" />
+                <span className="h-5 w-5 rounded-md border border-orange-300 bg-orange-300" />
+                <span className="h-5 w-5 rounded-md border border-orange-400 bg-orange-400" />
+                <span className="h-5 w-5 rounded-md border border-orange-600 bg-orange-600" />
+                <span>높음</span>
               </div>
             </div>
           </div>
         </div>
 
-        <div className="grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)]">
-          <FunnelCard
-            items={funnelData}
-            isPlaying={isPlaying}
-            onTogglePlay={() => {
-              if (!funnelTimeline.length) return;
-              setIsPlaying((prev) => !prev);
-            }}
-            currentDateLabel={currentFunnelPoint?.dateKey ?? "-"}
-            totalDates={funnelTimeline.length}
-            playIndex={playIndex}
-            maxIndex={Math.max(0, funnelTimeline.length - 1)}
-            onScrubChange={(next) => {
-              setIsPlaying(false);
-              setPlayIndex(next);
-            }}
-            transitionBadges={funnelTransitionBadges}
-          />
+        {!isTraffic ? (
+          <div className="grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)]">
+            <FunnelCard
+              items={funnelData}
+              isPlaying={isPlaying}
+              onTogglePlay={() => {
+                if (!funnelTimeline.length) return;
+                setIsPlaying((prev) => !prev);
+              }}
+              currentDateLabel={currentFunnelPoint?.dateKey ?? "-"}
+              totalDates={funnelTimeline.length}
+              playIndex={playIndex}
+              maxIndex={Math.max(0, funnelTimeline.length - 1)}
+              onScrubChange={(next) => {
+                setIsPlaying(false);
+                setPlayIndex(next);
+              }}
+              transitionBadges={funnelTransitionBadges}
+            />
 
-          <div className="flex min-w-0 flex-col rounded-2xl border border-gray-200 bg-white shadow-sm">
-            <div className="border-b border-gray-200 px-6 py-4">
-              <h3 className="text-base font-semibold text-gray-900">
-                채널 → 기기 → 매출 흐름
-              </h3>
-              <p className="mt-1 text-sm text-gray-500">
-                현재 필터가 적용된 데이터 기준으로, 어떤 채널의 매출이 어떤 기기에서
-                발생했는지 흐름으로 보여줍니다.
-              </p>
-              {sankeyCollapsed ? (
-                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                  현재 데이터는 기기 값이 1개만 보여 Sankey의 중간 기기 구간이 단순하게
-                  보일 수 있습니다.
-                </div>
-              ) : null}
-            </div>
-
-            <div className="flex flex-1 flex-col justify-between px-6 py-4">
-              {sankeyData.totalRevenue > 0 ? (
-                <div className="flex justify-center pt-22 pb-6">
-                  <div className="w-full max-w-[800px]">
-                    <svg
-                      viewBox="0 0 800 270"
-                      className="h-auto w-full"
-                      role="img"
-                      aria-label="채널에서 기기로 이어지는 매출 Sankey 차트"
-                    >
-                      <text x="80" y="18" fontSize="13" fontWeight="700" fill="#374151">
-                        Channel
-                      </text>
-                      <text x="355" y="18" fontSize="13" fontWeight="700" fill="#374151">
-                        Device
-                      </text>
-                      <text x="690" y="18" fontSize="13" fontWeight="700" fill="#374151">
-                        Revenue
-                      </text>
-
-                      {sankeyLayout.links.map((link, idx) => (
-                        <path
-                          key={`${link.source}-${link.target}-${idx}`}
-                          d={link.path}
-                          fill={link.fill}
-                        >
-                          <title>
-                            {`${link.source} → ${link.target}\n매출: ${KRW(link.value)}`}
-                          </title>
-                        </path>
-                      ))}
-
-                      {sankeyLayout.channels.map((node) => (
-                        <g key={`channel-${node.key}`}>
-                          <rect
-                            x={node.x}
-                            y={node.y}
-                            width={node.width}
-                            height={node.height}
-                            rx="4"
-                            fill={node.color}
-                          />
-                          <text
-                            x={node.x - 10}
-                            y={node.centerY}
-                            textAnchor="end"
-                            dominantBaseline="middle"
-                            fontSize="13"
-                            fill="#111827"
-                            fontWeight="600"
-                          >
-                            {node.label}
-                          </text>
-                          <title>{`${node.label}\n매출: ${KRW(node.value)}`}</title>
-                        </g>
-                      ))}
-
-                      {sankeyLayout.devices.map((node) => (
-                        <g key={`device-${node.key}`}>
-                          <rect
-                            x={node.x}
-                            y={node.y}
-                            width={node.width}
-                            height={node.height}
-                            rx="4"
-                            fill={node.color}
-                          />
-                          <text
-                            x={node.x + node.width + 10}
-                            y={node.centerY}
-                            textAnchor="start"
-                            dominantBaseline="middle"
-                            fontSize="13"
-                            fill="#111827"
-                            fontWeight="600"
-                          >
-                            {node.label}
-                          </text>
-                          <title>{`${node.label}\n매출: ${KRW(node.value)}`}</title>
-                        </g>
-                      ))}
-
-                      {sankeyLayout.revenueNode.map((node) => (
-                        <g key={`revenue-${node.key}`}>
-                          <rect
-                            x={node.x}
-                            y={node.y}
-                            width={node.width}
-                            height={node.height}
-                            rx="4"
-                            fill={node.color}
-                          />
-                          <text
-                            x={node.x + node.width + 10}
-                            y={node.centerY}
-                            textAnchor="start"
-                            dominantBaseline="middle"
-                            fontSize="13"
-                            fill="#111827"
-                            fontWeight="700"
-                          >
-                            {KRW(node.value)}
-                          </text>
-                          <title>{`총 매출\n${KRW(node.value)}`}</title>
-                        </g>
-                      ))}
-                    </svg>
+            <div className="flex min-w-0 flex-col rounded-2xl border border-gray-200 bg-white shadow-sm">
+              <div className="border-b border-gray-200 px-6 py-4">
+                <h3 className="text-base font-semibold text-gray-900">
+                  채널 → 기기 → 매출 흐름
+                </h3>
+                <p className="mt-1 text-sm text-gray-500">
+                  현재 필터가 적용된 데이터 기준으로, 어떤 채널의 매출이 어떤 기기에서
+                  발생했는지 흐름으로 보여줍니다.
+                </p>
+                {sankeyCollapsed ? (
+                  <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    현재 데이터는 기기 값이 1개만 보여 Sankey의 중간 기기 구간이 단순하게
+                    보일 수 있습니다.
                   </div>
-                </div>
-              ) : (
-                <div className="rounded-2xl border border-gray-200 bg-gray-50 px-6 py-10 text-sm text-gray-500">
-                  Sankey에 표시할 매출 데이터가 없습니다.
-                </div>
-              )}
+                ) : null}
+              </div>
 
-              {channelRevenue.length > 0 ? (
-                <div className="flex justify-center pt-6">
-                  <div className="grid w-full max-w-[800px] gap-4 md:grid-cols-2">
-                    {channelRevenue.slice(0, 2).map((item) => {
-                      const total = sankeyData.totalRevenue || 1;
-                      const pct = item.revenue / total;
-                      return (
-                        <div
-                          key={item.channel}
-                          className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4"
+              <div className="flex flex-1 flex-col justify-between px-6 py-4">
+                {sankeyData.totalRevenue > 0 ? (
+                  <div className="flex justify-center pt-22 pb-6">
+                    <div className="w-full max-w-[800px]">
+                      <svg
+                        viewBox="0 0 800 270"
+                        className="h-auto w-full"
+                        role="img"
+                        aria-label="채널에서 기기로 이어지는 매출 Sankey 차트"
+                      >
+                        <text
+                          x="80"
+                          y="18"
+                          fontSize="13"
+                          fontWeight="700"
+                          fill="#374151"
                         >
-                          <div className="flex items-center gap-2">
-                            <span
-                              className="inline-block h-3 w-3 rounded-full"
-                              style={{ backgroundColor: channelColor(item.channel) }}
+                          Channel
+                        </text>
+                        <text
+                          x="355"
+                          y="18"
+                          fontSize="13"
+                          fontWeight="700"
+                          fill="#374151"
+                        >
+                          Device
+                        </text>
+                        <text
+                          x="690"
+                          y="18"
+                          fontSize="13"
+                          fontWeight="700"
+                          fill="#374151"
+                        >
+                          Revenue
+                        </text>
+
+                        {sankeyLayout.links.map((link, idx) => (
+                          <path
+                            key={`${link.source}-${link.target}-${idx}`}
+                            d={link.path}
+                            fill={link.fill}
+                          >
+                            <title>
+                              {`${link.source} → ${link.target}\n매출: ${KRW(
+                                link.value
+                              )}`}
+                            </title>
+                          </path>
+                        ))}
+
+                        {sankeyLayout.channels.map((node) => (
+                          <g key={`channel-${node.key}`}>
+                            <rect
+                              x={node.x}
+                              y={node.y}
+                              width={node.width}
+                              height={node.height}
+                              rx="8"
+                              fill={node.color}
                             />
-                            <span className="text-sm font-semibold text-gray-900">
-                              {item.channel}
-                            </span>
-                          </div>
-                          <div className="mt-2 text-lg font-semibold text-gray-900">
-                            {KRW(item.revenue)}
-                          </div>
-                          <div className="mt-1 text-xs text-gray-500">
-                            전체 매출의 {formatPercentFromRate(pct, 1)}
-                          </div>
-                        </div>
-                      );
-                    })}
+                            <text
+                              x={node.x - 8}
+                              y={node.centerY}
+                              textAnchor="end"
+                              dominantBaseline="middle"
+                              fontSize="12"
+                              fontWeight="600"
+                              fill="#374151"
+                            >
+                              {node.label}
+                            </text>
+                          </g>
+                        ))}
+
+                        {sankeyLayout.devices.map((node) => (
+                          <g key={`device-${node.key}`}>
+                            <rect
+                              x={node.x}
+                              y={node.y}
+                              width={node.width}
+                              height={node.height}
+                              rx="8"
+                              fill={node.color}
+                            />
+                            <text
+                              x={node.x + node.width + 8}
+                              y={node.centerY}
+                              textAnchor="start"
+                              dominantBaseline="middle"
+                              fontSize="12"
+                              fontWeight="600"
+                              fill="#374151"
+                            >
+                              {node.label}
+                            </text>
+                          </g>
+                        ))}
+
+                        {sankeyLayout.revenueNode.map((node) => (
+                          <g key={`revenue-${node.key}`}>
+                            <rect
+                              x={node.x}
+                              y={node.y}
+                              width={node.width}
+                              height={node.height}
+                              rx="8"
+                              fill={node.color}
+                            />
+                            <text
+                              x={node.x + node.width + 8}
+                              y={node.centerY}
+                              textAnchor="start"
+                              dominantBaseline="middle"
+                              fontSize="12"
+                              fontWeight="700"
+                              fill="#111827"
+                            >
+                              {KRW(node.value)}
+                            </text>
+                          </g>
+                        ))}
+                      </svg>
+                    </div>
                   </div>
-                </div>
-              ) : null}
+                ) : (
+                  <div className="rounded-2xl border border-gray-200 bg-gray-50 px-6 py-10 text-sm text-gray-500">
+                    Sankey 차트를 표시할 매출 데이터가 없습니다.
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        </div>
+        ) : null}
 
-        <div className="grid gap-6 xl:grid-cols-3">
-          <DonutCard
-            title="채널 매출 비중"
-            description="전체 매출 중 각 채널이 차지하는 비중입니다."
-            totalLabel="Total Revenue"
-            totalValue={channelMetricAgg.reduce((acc, cur) => acc + cur.revenue, 0)}
-            items={revenueDonutData}
-            valueFormatter={(v) => KRW(v)}
-          />
+        {!isTraffic ? (
+          <div className="grid gap-6 xl:grid-cols-3">
+            <DonutCard
+              title="채널별 매출 비중"
+              description="전체 매출 중 각 채널이 차지하는 비중입니다."
+              totalLabel="총 매출"
+              totalValue={channelMetricAgg.reduce(
+                (acc, cur) => acc + cur.revenue,
+                0
+              )}
+              items={revenueDonutData}
+              valueFormatter={(v) => KRW(v)}
+            />
 
-          <DonutCard
-            title="채널 전환 비중"
-            description="전체 전환 중 각 채널이 차지하는 비중입니다."
-            totalLabel="Total Conv"
-            totalValue={totalConversions}
-            items={conversionDonutData}
-            valueFormatter={(v) => formatCount(v)}
-          />
+            <DonutCard
+              title="채널별 전환 비중"
+              description="전체 전환 중 각 채널이 차지하는 비중입니다."
+              totalLabel="총 전환"
+              totalValue={totalConversions}
+              items={conversionDonutData}
+              valueFormatter={(v) => formatCount(v)}
+            />
 
-          <RoasBarCard items={roasBarData} />
-        </div>
+            <RoasBarCard items={roasBarData} />
+          </div>
+        ) : null}
       </div>
     </section>
   );

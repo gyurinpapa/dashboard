@@ -3,6 +3,7 @@
 import SummaryGoal from "./summary/SummaryGoal";
 
 type Props = {
+  reportType?: "commerce" | "traffic";
   currentMonthKey: string;
   currentMonthActual: any;
   currentMonthGoalComputed: any;
@@ -12,6 +13,7 @@ type Props = {
 };
 
 export default function MonthGoalSection({
+  reportType,
   currentMonthKey,
   currentMonthActual,
   currentMonthGoalComputed,
@@ -24,6 +26,7 @@ export default function MonthGoalSection({
       <div className="rounded-[24px] border border-slate-200 bg-white shadow-sm">
         <div className="px-5 py-5 sm:px-6">
           <SummaryGoal
+            reportType={reportType}
             currentMonthKey={currentMonthKey}
             currentMonthActual={currentMonthActual}
             currentMonthGoalComputed={currentMonthGoalComputed}

@@ -5,8 +5,10 @@ import {
   KRW,
   toSafeNumber,
   formatPercentFromRoas,
+  formatPercentFromRate,
   formatCurrencyAxisCompact,
   formatPercentAxisFromRoas,
+  formatCount,
 } from "../../../../src/lib/report/format";
 import {
   ResponsiveContainer,
@@ -48,6 +50,7 @@ type Props = {
   density?: SummaryChartViewDensity;
   insight?: Partial<SummaryChartInsight>;
   className?: string;
+  reportType?: "commerce" | "traffic";
 };
 
 const TOKENS = {
@@ -97,6 +100,15 @@ function splitXAxisLabel(raw: any) {
   }
 
   return [normalized, ""];
+}
+
+function formatCountAxisCompact(value: any) {
+  const n = toSafeNumber(value);
+
+  if (n >= 100000000) return `${(n / 100000000).toFixed(n >= 1000000000 ? 0 : 1)}억`;
+  if (n >= 10000) return `${(n / 10000).toFixed(n >= 100000 ? 0 : 1)}만`;
+  if (n >= 1000) return `${Math.round(n / 100) / 10}천`;
+  return formatCount(n);
 }
 
 function getDensityClasses(density: SummaryChartViewDensity) {
@@ -256,10 +268,15 @@ function CustomXAxisTick(props: any & { density: SummaryChartViewDensity }) {
   );
 }
 
-function CustomTooltip(props: any) {
-  const { active, payload, label } = props;
-
+function CustomTooltip({
+  active,
+  payload,
+  label,
+  reportType,
+}: any & { reportType?: "commerce" | "traffic" }) {
   if (!active || !payload?.length) return null;
+
+  const isTraffic = reportType === "traffic";
 
   const costItem = payload.find((item: any) => item?.dataKey === "cost");
   const revenueItem = payload.find((item: any) => item?.dataKey === "revenue");
@@ -280,10 +297,12 @@ function CustomTooltip(props: any) {
               className="inline-block h-2.5 w-2.5 rounded-full"
               style={{ backgroundColor: TOKENS.metric.cost }}
             />
-            <span className="font-medium">비용</span>
+            <span className="font-medium">{isTraffic ? "노출" : "비용"}</span>
           </div>
           <div className="font-semibold text-gray-900">
-            {KRW(toSafeNumber(costItem?.value))}
+            {isTraffic
+              ? formatCount(toSafeNumber(costItem?.value))
+              : KRW(toSafeNumber(costItem?.value))}
           </div>
         </div>
 
@@ -293,10 +312,14 @@ function CustomTooltip(props: any) {
               className="inline-block h-2.5 w-2.5 rounded-full"
               style={{ backgroundColor: TOKENS.metric.revenue }}
             />
-            <span className="font-medium">전환매출</span>
+            <span className="font-medium">
+              {isTraffic ? "클릭" : "전환매출"}
+            </span>
           </div>
           <div className="font-semibold text-gray-900">
-            {KRW(toSafeNumber(revenueItem?.value))}
+            {isTraffic
+              ? formatCount(toSafeNumber(revenueItem?.value))
+              : KRW(toSafeNumber(revenueItem?.value))}
           </div>
         </div>
 
@@ -306,10 +329,12 @@ function CustomTooltip(props: any) {
               className="inline-block h-2.5 w-2.5 rounded-full"
               style={{ backgroundColor: TOKENS.metric.roas }}
             />
-            <span className="font-medium">ROAS</span>
+            <span className="font-medium">{isTraffic ? "CTR" : "ROAS"}</span>
           </div>
           <div className="font-semibold text-gray-900">
-            {formatPercentFromRoas(roasItem?.value, 1)}
+            {isTraffic
+              ? formatPercentFromRate(roasItem?.value, 2)
+              : formatPercentFromRoas(roasItem?.value, 1)}
           </div>
         </div>
       </div>
@@ -392,21 +417,22 @@ function HoverAwareDot({
   cy,
   index,
   activeIndex,
-}: DotProps & { activeIndex: number | null }) {
+  fill,
+}: DotProps & { activeIndex: number | null; fill: string }) {
   if (cx == null || cy == null) return null;
 
   const isActive = activeIndex === index;
 
   return (
     <g>
-      {isActive && <circle cx={cx} cy={cy} r={13} fill="rgba(239,68,68,0.10)" />}
-      {isActive && <circle cx={cx} cy={cy} r={9} fill="rgba(239,68,68,0.12)" />}
+      {isActive && <circle cx={cx} cy={cy} r={13} fill="rgba(148,163,184,0.10)" />}
+      {isActive && <circle cx={cx} cy={cy} r={9} fill="rgba(148,163,184,0.12)" />}
       <circle cx={cx} cy={cy} r={isActive ? 6.5 : 5.5} fill="#FFFFFF" />
       <circle
         cx={cx}
         cy={cy}
         r={isActive ? 5 : 4}
-        fill={TOKENS.metric.roas}
+        fill={fill}
         stroke="#FFFFFF"
         strokeWidth={2}
       />
@@ -421,10 +447,12 @@ export default function SummaryChartView({
   density = "report",
   insight,
   className,
+  reportType,
 }: Props) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [activeLabel, setActiveLabel] = useState<string | null>(null);
 
+  const isTraffic = reportType === "traffic";
   const safeData = useMemo(() => (Array.isArray(data) ? data : []), [data]);
   const densityClasses = getDensityClasses(density);
 
@@ -435,6 +463,14 @@ export default function SummaryChartView({
       minCostLabel: insight?.minCostLabel ?? "-",
     };
   }, [insight]);
+
+  const leftAxisFormatter = (v: any) => {
+    return isTraffic ? formatCountAxisCompact(v) : formatCurrencyAxisCompact(v);
+  };
+
+  const rightAxisFormatter = (v: any) => {
+    return isTraffic ? formatPercentFromRate(v, 2) : formatPercentAxisFromRoas(v);
+  };
 
   return (
     <div className={[densityClasses.shell, className ?? ""].join(" ")}>
@@ -449,17 +485,17 @@ export default function SummaryChartView({
             <div className="flex flex-wrap items-center gap-2">
               <SlimLegendItem
                 color={TOKENS.metric.roas}
-                label="ROAS"
+                label={isTraffic ? "CTR" : "ROAS"}
                 pillClass={densityClasses.legendPill}
               />
               <SlimLegendItem
                 color={TOKENS.metric.cost}
-                label="비용"
+                label={isTraffic ? "노출" : "비용"}
                 pillClass={densityClasses.legendPill}
               />
               <SlimLegendItem
                 color={TOKENS.metric.revenue}
-                label="전환매출"
+                label={isTraffic ? "클릭" : "전환매출"}
                 pillClass={densityClasses.legendPill}
               />
             </div>
@@ -473,7 +509,7 @@ export default function SummaryChartView({
               />
               <StatusDivider />
               <InlineInsight
-                label="Max Revenue"
+                label={isTraffic ? "Max Clicks" : "Max Revenue"}
                 value={resolvedInsight.maxRevenueLabel}
                 tone="sky"
                 labelClassName={densityClasses.insightLabel}
@@ -481,7 +517,7 @@ export default function SummaryChartView({
               />
               <StatusDivider />
               <InlineInsight
-                label="Min Cost"
+                label={isTraffic ? "Max CTR" : "Min Cost"}
                 value={resolvedInsight.minCostLabel}
                 tone="amber"
                 labelClassName={densityClasses.insightLabel}
@@ -552,8 +588,16 @@ export default function SummaryChartView({
               tickMargin={10}
               minTickGap={14}
               tick={{ fontSize: densityClasses.yTick, fill: TOKENS.text.muted }}
-              tickFormatter={(v: any) => formatCurrencyAxisCompact(v)}
+              tickFormatter={leftAxisFormatter}
             />
+
+            {isTraffic && (
+              <YAxis
+                yAxisId="clicks"
+                hide
+                domain={["auto", "auto"]}
+              />
+            )}
 
             <YAxis
               yAxisId="right"
@@ -564,19 +608,21 @@ export default function SummaryChartView({
               tickMargin={10}
               minTickGap={14}
               tick={{ fontSize: densityClasses.yTick, fill: TOKENS.text.muted }}
-              tickFormatter={(v: any) => formatPercentAxisFromRoas(v)}
+              tickFormatter={rightAxisFormatter}
             />
 
             <Tooltip
               cursor={{ fill: TOKENS.surface.hoverBand }}
-              content={(props) => <CustomTooltip {...props} />}
+              content={(props) => (
+                <CustomTooltip {...props} reportType={reportType} />
+              )}
               animationDuration={180}
             />
 
             <Bar
               yAxisId="left"
               dataKey="cost"
-              name="비용"
+              name={isTraffic ? "노출" : "비용"}
               fill={TOKENS.metric.cost}
               radius={[10, 10, 0, 0]}
               maxBarSize={densityClasses.maxBarSize}
@@ -605,43 +651,77 @@ export default function SummaryChartView({
               })}
             </Bar>
 
-            <Bar
-              yAxisId="left"
-              dataKey="revenue"
-              name="전환매출"
-              fill={TOKENS.metric.revenue}
-              radius={[10, 10, 0, 0]}
-              maxBarSize={densityClasses.maxBarSize}
-              isAnimationActive
-              animationBegin={80}
-              animationDuration={MOTION.barDuration}
-              animationEasing="ease-out"
-            >
-              {safeData.map((_: any, index: number) => {
-                const isActive = activeIndex === index;
-                const hasActive = activeIndex !== null;
-
-                return (
-                  <Cell
-                    key={`revenue-cell-${index}`}
-                    fill={
-                      isActive
-                        ? TOKENS.metric.revenue
-                        : hasActive
-                        ? TOKENS.metric.revenueSoft
-                        : TOKENS.metric.revenue
-                    }
-                    fillOpacity={isActive ? 1 : hasActive ? 0.58 : 0.95}
+            {isTraffic ? (
+              <Line
+                yAxisId="clicks"
+                type="monotone"
+                dataKey="revenue"
+                name="클릭"
+                stroke={TOKENS.metric.revenue}
+                strokeWidth={
+                  activeIndex !== null
+                    ? densityClasses.lineWidthActive
+                    : densityClasses.lineWidth
+                }
+                strokeOpacity={1}
+                connectNulls
+                dot={(props: any) => (
+                  <HoverAwareDot
+                    {...props}
+                    activeIndex={activeIndex}
+                    fill={TOKENS.metric.revenue}
                   />
-                );
-              })}
-            </Bar>
+                )}
+                activeDot={{
+                  r: 7,
+                  stroke: "#FFFFFF",
+                  strokeWidth: 3,
+                  fill: TOKENS.metric.revenue,
+                }}
+                isAnimationActive
+                animationBegin={80}
+                animationDuration={MOTION.lineDuration}
+                animationEasing="ease-out"
+              />
+            ) : (
+              <Bar
+                yAxisId="left"
+                dataKey="revenue"
+                name="전환매출"
+                fill={TOKENS.metric.revenue}
+                radius={[10, 10, 0, 0]}
+                maxBarSize={densityClasses.maxBarSize}
+                isAnimationActive
+                animationBegin={80}
+                animationDuration={MOTION.barDuration}
+                animationEasing="ease-out"
+              >
+                {safeData.map((_: any, index: number) => {
+                  const isActive = activeIndex === index;
+                  const hasActive = activeIndex !== null;
+
+                  return (
+                    <Cell
+                      key={`revenue-cell-${index}`}
+                      fill={
+                        isActive
+                          ? TOKENS.metric.revenue
+                          : hasActive
+                          ? TOKENS.metric.revenueSoft
+                          : TOKENS.metric.revenue
+                      }
+                      fillOpacity={isActive ? 1 : hasActive ? 0.58 : 0.95}
+                    />
+                  );
+                })}
+              </Bar>
+            )}
 
             <Line
               yAxisId="right"
               type="natural"
               dataKey="roas"
-              name="ROAS"
+              name={isTraffic ? "CTR" : "ROAS"}
               stroke={TOKENS.metric.roas}
               strokeWidth={
                 activeIndex !== null
@@ -651,7 +731,11 @@ export default function SummaryChartView({
               strokeOpacity={1}
               connectNulls
               dot={(props: any) => (
-                <HoverAwareDot {...props} activeIndex={activeIndex} />
+                <HoverAwareDot
+                  {...props}
+                  activeIndex={activeIndex}
+                  fill={TOKENS.metric.roas}
+                />
               )}
               activeDot={{
                 r: 7,

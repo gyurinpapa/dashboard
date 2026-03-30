@@ -27,6 +27,7 @@ import DataBarCell from "../ui/DataBarCell";
 import { groupByCreative } from "../../../src/lib/report/creative";
 
 type Props = {
+  reportType?: "commerce" | "traffic";
   rows: any[];
 };
 
@@ -78,7 +79,9 @@ const SORT_LABEL: Record<SortKey, string> = {
   roas: "ROAS",
 };
 
-export default function CreativeSection({ rows }: Props) {
+export default function CreativeSection({ reportType, rows }: Props) {
+  const isTraffic = reportType === "traffic";
+
   const creativeAgg: CreativeAgg[] = useMemo(() => {
     const rawAgg = groupByCreative(rows ?? []);
 
@@ -118,6 +121,15 @@ export default function CreativeSection({ rows }: Props) {
     });
   }, [rows]);
 
+  const topImpressions = useMemo(
+    () =>
+      [...creativeAgg]
+        .sort((a, b) => b.impressions - a.impressions)
+        .slice(0, 20)
+        .reverse(),
+    [creativeAgg]
+  );
+
   const topClicks = useMemo(
     () =>
       [...creativeAgg]
@@ -126,6 +138,16 @@ export default function CreativeSection({ rows }: Props) {
         .reverse(),
     [creativeAgg]
   );
+
+  const topCost = useMemo(
+    () =>
+      [...creativeAgg]
+        .sort((a, b) => b.cost - a.cost)
+        .slice(0, 20)
+        .reverse(),
+    [creativeAgg]
+  );
+
   const topConv = useMemo(
     () =>
       [...creativeAgg]
@@ -134,6 +156,7 @@ export default function CreativeSection({ rows }: Props) {
         .reverse(),
     [creativeAgg]
   );
+
   const topRoas = useMemo(
     () =>
       [...creativeAgg]
@@ -145,6 +168,7 @@ export default function CreativeSection({ rows }: Props) {
 
   const [sortKey, setSortKey] = useState<SortKey>("clicks");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [selectedCreative, setSelectedCreative] = useState<CreativeAgg | null>(null);
 
   const onClickHeader = (k: SortKey) => {
     if (k === sortKey) {
@@ -204,100 +228,26 @@ export default function CreativeSection({ rows }: Props) {
     () => Math.max(0, ...tableRows.map((r) => toSafeNumber(r.impressions))),
     [tableRows]
   );
+
   const maxClicks = useMemo(
     () => Math.max(0, ...tableRows.map((r) => toSafeNumber(r.clicks))),
     [tableRows]
   );
+
   const maxCost = useMemo(
     () => Math.max(0, ...tableRows.map((r) => toSafeNumber(r.cost))),
     [tableRows]
   );
+
   const maxConv = useMemo(
     () => Math.max(0, ...tableRows.map((r) => toSafeNumber(r.conversions))),
     [tableRows]
   );
+
   const maxRev = useMemo(
     () => Math.max(0, ...tableRows.map((r) => toSafeNumber(r.revenue))),
     [tableRows]
   );
-
-  const [selectedCreative, setSelectedCreative] = useState<CreativeAgg | null>(
-    null
-  );
-
-  const creativeInsightText = useMemo(() => {
-    if (!rows?.length) return "";
-
-    const totalImpr = rows.reduce(
-      (a, r) => a + toSafeNumber(r.impressions),
-      0
-    );
-    const totalClicks = rows.reduce((a, r) => a + toSafeNumber(r.clicks), 0);
-    const totalCost = rows.reduce((a, r) => a + toSafeNumber(r.cost), 0);
-    const totalConv = rows.reduce(
-      (a, r) => a + toSafeNumber(r.conversions),
-      0
-    );
-    const totalRev = rows.reduce((a, r) => a + toSafeNumber(r.revenue), 0);
-
-    if (totalImpr <= 0) return "";
-    if (!creativeAgg?.length) return "";
-
-    const totalCtr = totalClicks > 0 ? totalClicks / totalImpr : 0;
-    const totalCvr = totalClicks > 0 ? totalConv / totalClicks : 0;
-    const totalCpc = totalClicks > 0 ? totalCost / totalClicks : 0;
-    const revPerClick = totalClicks > 0 ? totalRev / totalClicks : 0;
-
-    const sortedByCtr = [...creativeAgg].sort((a, b) => b.ctr - a.ctr);
-    const topN = sortedByCtr.slice(0, Math.min(10, sortedByCtr.length));
-    const bottomN = sortedByCtr.slice(-Math.min(10, sortedByCtr.length));
-
-    const sum = (arr: CreativeAgg[], key: keyof CreativeAgg) =>
-      arr.reduce((acc, cur) => acc + toSafeNumber(cur[key] as any), 0);
-
-    const topImpr = sum(topN, "impressions");
-    const topClicksSum = sum(topN, "clicks");
-    const bottomImpr = sum(bottomN, "impressions");
-    const bottomClicksSum = sum(bottomN, "clicks");
-
-    const topCtr = topImpr > 0 ? topClicksSum / topImpr : 0;
-    const bottomCtr = bottomImpr > 0 ? bottomClicksSum / bottomImpr : 0;
-
-    const expectedBottomClicks = bottomImpr * totalCtr;
-    const deltaClicks = Math.max(0, expectedBottomClicks - bottomClicksSum);
-
-    const expectedDeltaConv = deltaClicks * totalCvr;
-    const expectedDeltaRev = deltaClicks * revPerClick;
-    const expectedDeltaCost = deltaClicks * totalCpc;
-
-    const topClickShare = totalClicks > 0 ? topClicksSum / totalClicks : 0;
-
-    return [
-      `- 현재 CTR은 ${formatPercentFromRate(
-        totalCtr,
-        2
-      )}입니다. CTR 상위 소재(Top10)의 CTR은 ${formatPercentFromRate(
-        topCtr,
-        2
-      )}이며, 전체 클릭의 ${formatPercentFromRate(
-        topClickShare,
-        1
-      )}를 만들고 있습니다.`,
-      `- CTR 하위 소재(하위10)의 CTR은 ${formatPercentFromRate(
-        bottomCtr,
-        2
-      )}입니다. 하위10의 노출을 유지한 채 CTR이 평균(${formatPercentFromRate(
-        totalCtr,
-        2
-      )}) 수준만 회복해도 클릭이 약 ${formatCount(deltaClicks)} 증가할 수 있습니다.`,
-      `- 동일 CVR·매출/클릭이 유지된다고 가정하면, 추가 전환 약 ${formatCount(
-        expectedDeltaConv
-      )}건 / 추가 매출 약 ${KRW(expectedDeltaRev)} 기대(추가비용 약 ${KRW(
-        expectedDeltaCost
-      )})입니다.`,
-      `- 실행 제안: (1) 첫 프레임/썸네일 대비 강화 (2) 헤드라인 1문장 명확화 (3) CTA 버튼/문구 선명화 3가지를 우선 A/B 테스트하세요.`,
-    ].join("\n");
-  }, [rows, creativeAgg]);
 
   useEffect(() => {
     if (!selectedCreative) return;
@@ -316,189 +266,282 @@ export default function CreativeSection({ rows }: Props) {
   return (
     <section className="mt-1">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-          <div className="mb-2 text-xs font-semibold">클릭수 TOP20 소재</div>
-          <div style={{ width: "100%", height: 340 }}>
-            <ResponsiveContainer>
-              <BarChart
-                data={topClicks}
-                layout="vertical"
-                margin={{ top: 6, right: 18, left: 6, bottom: 6 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  type="number"
-                  tick={{ fontSize: 11 }}
-                  tickFormatter={(v) => formatCurrencyAxisCompact(v)}
-                />
-                <YAxis
-                  type="category"
-                  dataKey="creative"
-                  width={78}
-                  tick={{ fontSize: 11 }}
-                  tickFormatter={(v) => short(v, 7)}
-                />
-                <Tooltip
-                  wrapperStyle={{ fontSize: 11 }}
-                  formatter={(v: any) => formatCount(v)}
-                />
-                <Bar
-                  dataKey="clicks"
-                  onClick={(_: any, idx: number) => {
-                    const item = topClicks?.[idx];
-                    if (item) setSelectedCreative(item);
-                  }}
-                >
-                  <LabelList
-                    dataKey="clicks"
-                    position="insideRight"
-                    formatter={(v: any) => formatCount(v)}
-                    style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
-                  />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-          <div className="mb-2 text-xs font-semibold">전환수 TOP20 소재</div>
-          <div style={{ width: "100%", height: 340 }}>
-            <ResponsiveContainer>
-              <BarChart
-                data={topConv}
-                layout="vertical"
-                margin={{ top: 6, right: 18, left: 6, bottom: 6 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  type="number"
-                  tick={{ fontSize: 11 }}
-                  tickFormatter={(v) => formatCurrencyAxisCompact(v)}
-                />
-                <YAxis
-                  type="category"
-                  dataKey="creative"
-                  width={78}
-                  tick={{ fontSize: 11 }}
-                  tickFormatter={(v) => short(v, 7)}
-                />
-                <Tooltip
-                  wrapperStyle={{ fontSize: 11 }}
-                  formatter={(v: any) => formatCount(v)}
-                />
-                <Bar
-                  dataKey="conversions"
-                  onClick={(_: any, idx: number) => {
-                    const item = topConv?.[idx];
-                    if (item) setSelectedCreative(item);
-                  }}
-                >
-                  <LabelList
-                    dataKey="conversions"
-                    position="insideRight"
-                    formatter={(v: any) => formatCount(v)}
-                    style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
-                  />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-          <div className="mb-2 text-xs font-semibold">ROAS TOP20 소재</div>
-          <div style={{ width: "100%", height: 340 }}>
-            <ResponsiveContainer>
-              <BarChart
-                data={topRoas}
-                layout="vertical"
-                margin={{ top: 6, right: 22, left: 6, bottom: 6 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  type="number"
-                  tick={{ fontSize: 11 }}
-                  tickFormatter={(v) => formatPercentAxisFromRoas(v)}
-                />
-                <YAxis
-                  type="category"
-                  dataKey="creative"
-                  width={78}
-                  tick={{ fontSize: 11 }}
-                  tickFormatter={(v) => short(v, 7)}
-                />
-                <Tooltip
-                  wrapperStyle={{ fontSize: 11 }}
-                  formatter={(v: any) => formatPercentFromRoas(v, 1)}
-                />
-                <Bar
-                  dataKey="roas"
-                  onClick={(_: any, idx: number) => {
-                    const item = topRoas?.[idx];
-                    if (item) setSelectedCreative(item);
-                  }}
-                >
-                  <LabelList
-                    dataKey="roas"
-                    position="insideRight"
-                    formatter={(v: any) => formatPercentFromRoas(v, 1)}
-                    style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
-                  />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      </div>
-
-      <section className="mt-6">
-        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
-          <div className="mb-3 font-semibold">요약 인사이트</div>
-
-          {creativeInsightText ? (
-            <div className="whitespace-pre-wrap text-sm text-gray-800">
-              {creativeInsightText}
-            </div>
-          ) : (
-            <div className="text-sm text-gray-500">
-              소재 데이터가 없어 인사이트를 생성할 수 없습니다.
-            </div>
-          )}
-        </div>
-      </section>
-
-      <section className="mt-6">
-        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-          <div className="mb-3 font-semibold">선택 소재</div>
-
-          {!selectedCreative ? (
-            <div className="text-sm text-gray-500">
-              차트/표에서 소재를 클릭하면 이미지가 표시됩니다.
-            </div>
-          ) : (
-            <div className="flex flex-col items-center gap-3">
-              <div className="text-center text-sm font-semibold">
-                {selectedCreative.creative}
+        {isTraffic ? (
+          <>
+            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="mb-2 text-xs font-semibold">노출수 TOP20 소재</div>
+              <div style={{ width: "100%", height: 340 }}>
+                <ResponsiveContainer>
+                  <BarChart
+                    data={topImpressions}
+                    layout="vertical"
+                    margin={{ top: 6, right: 18, left: 6, bottom: 6 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      type="number"
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v) => formatCurrencyAxisCompact(v)}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="creative"
+                      width={78}
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v) => short(v, 7)}
+                    />
+                    <Tooltip
+                      wrapperStyle={{ fontSize: 11 }}
+                      formatter={(v: any) => formatCount(v)}
+                    />
+                    <Bar
+                      dataKey="impressions"
+                      onClick={(_: any, idx: number) => {
+                        const item = topImpressions?.[idx];
+                        if (item) setSelectedCreative(item);
+                      }}
+                    >
+                      <LabelList
+                        dataKey="impressions"
+                        position="insideRight"
+                        formatter={(v: any) => formatCount(v)}
+                        style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                      />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
-
-              {selectedCreative.imagePath ? (
-                <div className="flex w-full justify-center">
-                  <img
-                    src={selectedCreative.imagePath}
-                    alt={selectedCreative.creative}
-                    className="max-h-[360px] w-full max-w-[680px] rounded-xl bg-white object-contain"
-                  />
-                </div>
-              ) : (
-                <div className="text-sm text-gray-500">
-                  imagePath가 없어 이미지를 표시할 수 없습니다.
-                </div>
-              )}
             </div>
-          )}
-        </div>
-      </section>
+
+            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="mb-2 text-xs font-semibold">클릭수 TOP20 소재</div>
+              <div style={{ width: "100%", height: 340 }}>
+                <ResponsiveContainer>
+                  <BarChart
+                    data={topClicks}
+                    layout="vertical"
+                    margin={{ top: 6, right: 18, left: 6, bottom: 6 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      type="number"
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v) => formatCurrencyAxisCompact(v)}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="creative"
+                      width={78}
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v) => short(v, 7)}
+                    />
+                    <Tooltip
+                      wrapperStyle={{ fontSize: 11 }}
+                      formatter={(v: any) => formatCount(v)}
+                    />
+                    <Bar
+                      dataKey="clicks"
+                      onClick={(_: any, idx: number) => {
+                        const item = topClicks?.[idx];
+                        if (item) setSelectedCreative(item);
+                      }}
+                    >
+                      <LabelList
+                        dataKey="clicks"
+                        position="insideRight"
+                        formatter={(v: any) => formatCount(v)}
+                        style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                      />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="mb-2 text-xs font-semibold">비용 TOP20 소재</div>
+              <div style={{ width: "100%", height: 340 }}>
+                <ResponsiveContainer>
+                  <BarChart
+                    data={topCost}
+                    layout="vertical"
+                    margin={{ top: 6, right: 18, left: 6, bottom: 6 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      type="number"
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v) => formatCurrencyAxisCompact(v)}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="creative"
+                      width={78}
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v) => short(v, 7)}
+                    />
+                    <Tooltip
+                      wrapperStyle={{ fontSize: 11 }}
+                      formatter={(v: any) => KRW(v)}
+                    />
+                    <Bar
+                      dataKey="cost"
+                      onClick={(_: any, idx: number) => {
+                        const item = topCost?.[idx];
+                        if (item) setSelectedCreative(item);
+                      }}
+                    >
+                      <LabelList
+                        dataKey="cost"
+                        position="insideRight"
+                        formatter={(v: any) => KRW(v)}
+                        style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                      />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="mb-2 text-xs font-semibold">클릭수 TOP20 소재</div>
+              <div style={{ width: "100%", height: 340 }}>
+                <ResponsiveContainer>
+                  <BarChart
+                    data={topClicks}
+                    layout="vertical"
+                    margin={{ top: 6, right: 18, left: 6, bottom: 6 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      type="number"
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v) => formatCurrencyAxisCompact(v)}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="creative"
+                      width={78}
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v) => short(v, 7)}
+                    />
+                    <Tooltip
+                      wrapperStyle={{ fontSize: 11 }}
+                      formatter={(v: any) => formatCount(v)}
+                    />
+                    <Bar
+                      dataKey="clicks"
+                      onClick={(_: any, idx: number) => {
+                        const item = topClicks?.[idx];
+                        if (item) setSelectedCreative(item);
+                      }}
+                    >
+                      <LabelList
+                        dataKey="clicks"
+                        position="insideRight"
+                        formatter={(v: any) => formatCount(v)}
+                        style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                      />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="mb-2 text-xs font-semibold">전환수 TOP20 소재</div>
+              <div style={{ width: "100%", height: 340 }}>
+                <ResponsiveContainer>
+                  <BarChart
+                    data={topConv}
+                    layout="vertical"
+                    margin={{ top: 6, right: 18, left: 6, bottom: 6 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      type="number"
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v) => formatCurrencyAxisCompact(v)}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="creative"
+                      width={78}
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v) => short(v, 7)}
+                    />
+                    <Tooltip
+                      wrapperStyle={{ fontSize: 11 }}
+                      formatter={(v: any) => formatCount(v)}
+                    />
+                    <Bar
+                      dataKey="conversions"
+                      onClick={(_: any, idx: number) => {
+                        const item = topConv?.[idx];
+                        if (item) setSelectedCreative(item);
+                      }}
+                    >
+                      <LabelList
+                        dataKey="conversions"
+                        position="insideRight"
+                        formatter={(v: any) => formatCount(v)}
+                        style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                      />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="mb-2 text-xs font-semibold">ROAS TOP20 소재</div>
+              <div style={{ width: "100%", height: 340 }}>
+                <ResponsiveContainer>
+                  <BarChart
+                    data={topRoas}
+                    layout="vertical"
+                    margin={{ top: 6, right: 18, left: 6, bottom: 6 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      type="number"
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v) => formatPercentAxisFromRoas(v)}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="creative"
+                      width={78}
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v) => short(v, 7)}
+                    />
+                    <Tooltip
+                      wrapperStyle={{ fontSize: 11 }}
+                      formatter={(v: any) => formatPercentFromRoas(v, 1)}
+                    />
+                    <Bar
+                      dataKey="roas"
+                      onClick={(_: any, idx: number) => {
+                        const item = topRoas?.[idx];
+                        if (item) setSelectedCreative(item);
+                      }}
+                    >
+                      <LabelList
+                        dataKey="roas"
+                        position="insideRight"
+                        formatter={(v: any) => formatPercentFromRoas(v, 1)}
+                        style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                      />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
 
       <section className="mt-10">
         <div className="overflow-auto rounded-2xl border border-gray-200/80 bg-white shadow-sm">
@@ -511,18 +554,18 @@ export default function CreativeSection({ rows }: Props) {
                 <Th k="ctr" />
                 <Th k="cpc" />
                 <Th k="cost" />
-                <Th k="conversions" />
-                <Th k="cvr" />
-                <Th k="cpa" />
-                <Th k="revenue" />
-                <Th k="roas" />
+                {!isTraffic && <Th k="conversions" />}
+                {!isTraffic && <Th k="cvr" />}
+                {!isTraffic && <Th k="cpa" />}
+                {!isTraffic && <Th k="revenue" />}
+                {!isTraffic && <Th k="roas" />}
               </tr>
             </thead>
 
             <tbody>
               {tableRows.length === 0 ? (
                 <tr className="border-t border-gray-200">
-                  <td className="p-3 text-gray-500" colSpan={11}>
+                  <td className="p-3 text-gray-500" colSpan={isTraffic ? 6 : 11}>
                     표시할 소재 데이터가 없습니다. (creative 컬럼을 확인해 주세요)
                   </td>
                 </tr>
@@ -566,30 +609,41 @@ export default function CreativeSection({ rows }: Props) {
                       />
                     </td>
 
-                    <td className="p-3">
-                      <DataBarCell
-                        value={toSafeNumber(r.conversions)}
-                        max={maxConv}
-                        label={formatCount(r.conversions)}
-                      />
-                    </td>
+                    {!isTraffic && (
+                      <td className="p-3">
+                        <DataBarCell
+                          value={toSafeNumber(r.conversions)}
+                          max={maxConv}
+                          label={formatCount(r.conversions)}
+                        />
+                      </td>
+                    )}
 
-                    <td className="p-3 text-right">
-                      {formatPercentFromRate(r.cvr, 2)}
-                    </td>
-                    <td className="p-3 text-right">{KRW(r.cpa)}</td>
+                    {!isTraffic && (
+                      <td className="p-3 text-right">
+                        {formatPercentFromRate(r.cvr, 2)}
+                      </td>
+                    )}
 
-                    <td className="p-3">
-                      <DataBarCell
-                        value={toSafeNumber(r.revenue)}
-                        max={maxRev}
-                        label={KRW(r.revenue)}
-                      />
-                    </td>
+                    {!isTraffic && (
+                      <td className="p-3 text-right">{KRW(r.cpa)}</td>
+                    )}
 
-                    <td className="p-3 text-right">
-                      {formatPercentFromRoas(r.roas, 1)}
-                    </td>
+                    {!isTraffic && (
+                      <td className="p-3">
+                        <DataBarCell
+                          value={toSafeNumber(r.revenue)}
+                          max={maxRev}
+                          label={KRW(r.revenue)}
+                        />
+                      </td>
+                    )}
+
+                    {!isTraffic && (
+                      <td className="p-3 text-right">
+                        {formatPercentFromRoas(r.roas, 1)}
+                      </td>
+                    )}
                   </tr>
                 ))
               )}

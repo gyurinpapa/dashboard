@@ -9,17 +9,17 @@ import {
 } from "../../../../src/lib/report/format";
 
 type Props = {
+  reportType?: "commerce" | "traffic";
   currentMonthKey: string;
   currentMonthActual: any;
   currentMonthGoalComputed: any;
-
   monthGoal: any;
   setMonthGoal: any;
-
   monthGoalInsight: string;
 };
 
 export default function SummaryGoal({
+  reportType,
   currentMonthKey,
   currentMonthActual,
   currentMonthGoalComputed,
@@ -27,6 +27,7 @@ export default function SummaryGoal({
   setMonthGoal,
   monthGoalInsight,
 }: Props) {
+  const isTraffic = reportType === "traffic";
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -78,7 +79,12 @@ export default function SummaryGoal({
       </div>
 
       <div className="overflow-auto rounded-[24px] border border-slate-200 bg-white shadow-sm">
-        <table className="w-full min-w-[1320px] text-sm">
+        <table
+          className={[
+            "w-full text-sm",
+            isTraffic ? "min-w-[760px]" : "min-w-[1320px]",
+          ].join(" ")}
+        >
           <thead className="border-b border-slate-200 bg-gray-50/95">
             <tr>
               <th className={`${firstHeadClass} w-[120px]`}>구분</th>
@@ -87,11 +93,11 @@ export default function SummaryGoal({
               <th className={headClass}>CTR</th>
               <th className={headClass}>CPC</th>
               <th className={headClass}>Cost</th>
-              <th className={headClass}>Conv</th>
-              <th className={headClass}>CVR</th>
-              <th className={headClass}>CPA</th>
-              <th className={headClass}>Revenue</th>
-              <th className={headClass}>ROAS</th>
+              {!isTraffic && <th className={headClass}>Conv</th>}
+              {!isTraffic && <th className={headClass}>CVR</th>}
+              {!isTraffic && <th className={headClass}>CPA</th>}
+              {!isTraffic && <th className={headClass}>Revenue</th>}
+              {!isTraffic && <th className={headClass}>ROAS</th>}
             </tr>
           </thead>
 
@@ -149,46 +155,54 @@ export default function SummaryGoal({
                 </div>
               </td>
 
-              <td className={tdClass}>
-                <input
-                  className={inputClass}
-                  value={formatNumber(monthGoal?.conversions ?? 0)}
-                  onChange={(e) =>
-                    setMonthGoal((p: any) => ({
-                      ...p,
-                      conversions: parseNumberInput(e.target.value),
-                    }))
-                  }
-                />
-              </td>
-
-              <td className={tdClass}>
-                {((mounted ? goalCVR : 0) * 100).toFixed(2)}%
-              </td>
-
-              <td className={tdClass}>{KRW(goalCPA)}</td>
-
-              <td className={tdClass}>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">
-                    ₩
-                  </span>
+              {!isTraffic && (
+                <td className={tdClass}>
                   <input
-                    className={`${inputClass} pl-7`}
-                    value={formatNumber(monthGoal?.revenue ?? 0)}
+                    className={inputClass}
+                    value={formatNumber(monthGoal?.conversions ?? 0)}
                     onChange={(e) =>
                       setMonthGoal((p: any) => ({
                         ...p,
-                        revenue: parseNumberInput(e.target.value),
+                        conversions: parseNumberInput(e.target.value),
                       }))
                     }
                   />
-                </div>
-              </td>
+                </td>
+              )}
 
-              <td className={tdClass}>
-                {((mounted ? goalROAS : 0) * 100).toFixed(1)}%
-              </td>
+              {!isTraffic && (
+                <td className={tdClass}>
+                  {((mounted ? goalCVR : 0) * 100).toFixed(2)}%
+                </td>
+              )}
+
+              {!isTraffic && <td className={tdClass}>{KRW(goalCPA)}</td>}
+
+              {!isTraffic && (
+                <td className={tdClass}>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">
+                      ₩
+                    </span>
+                    <input
+                      className={`${inputClass} pl-7`}
+                      value={formatNumber(monthGoal?.revenue ?? 0)}
+                      onChange={(e) =>
+                        setMonthGoal((p: any) => ({
+                          ...p,
+                          revenue: parseNumberInput(e.target.value),
+                        }))
+                      }
+                    />
+                  </div>
+                </td>
+              )}
+
+              {!isTraffic && (
+                <td className={tdClass}>
+                  {((mounted ? goalROAS : 0) * 100).toFixed(1)}%
+                </td>
+              )}
             </tr>
 
             <tr className="border-t border-slate-200 bg-slate-50/60">
@@ -216,25 +230,35 @@ export default function SummaryGoal({
                 {KRW(currentMonthActual?.cost ?? 0)}
               </td>
 
-              <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-semibold text-slate-900">
-                {formatNumber(currentMonthActual?.conversions ?? 0)}
-              </td>
+              {!isTraffic && (
+                <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-semibold text-slate-900">
+                  {formatNumber(currentMonthActual?.conversions ?? 0)}
+                </td>
+              )}
 
-              <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-semibold text-blue-600">
-                {pct2(currentMonthActual?.cvr ?? 0)}
-              </td>
+              {!isTraffic && (
+                <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-semibold text-blue-600">
+                  {pct2(currentMonthActual?.cvr ?? 0)}
+                </td>
+              )}
 
-              <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-semibold text-slate-900">
-                {KRW(currentMonthActual?.cpa ?? 0)}
-              </td>
+              {!isTraffic && (
+                <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-semibold text-slate-900">
+                  {KRW(currentMonthActual?.cpa ?? 0)}
+                </td>
+              )}
 
-              <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-semibold text-emerald-600">
-                {KRW(currentMonthActual?.revenue ?? 0)}
-              </td>
+              {!isTraffic && (
+                <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-semibold text-emerald-600">
+                  {KRW(currentMonthActual?.revenue ?? 0)}
+                </td>
+              )}
 
-              <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-bold text-orange-600">
-                {pct1(currentMonthActual?.roas ?? 0)}
-              </td>
+              {!isTraffic && (
+                <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-bold text-orange-600">
+                  {pct1(currentMonthActual?.roas ?? 0)}
+                </td>
+              )}
             </tr>
 
             <tr className="border-t border-slate-200 bg-slate-50/60">
@@ -265,25 +289,33 @@ export default function SummaryGoal({
                   )
                 )}
               </td>
-              <td className={tdClass}>
-                {pct1(
-                  progressRate(
-                    currentMonthActual?.conversions,
-                    currentMonthGoalComputed?.conversions
-                  )
-                )}
-              </td>
-              <td className={`${tdClass} text-slate-400`}>-</td>
-              <td className={`${tdClass} text-slate-400`}>-</td>
-              <td className={tdClass}>
-                {pct1(
-                  progressRate(
-                    currentMonthActual?.revenue,
-                    currentMonthGoalComputed?.revenue
-                  )
-                )}
-              </td>
-              <td className={`${tdClass} text-slate-400`}>-</td>
+
+              {!isTraffic && (
+                <td className={tdClass}>
+                  {pct1(
+                    progressRate(
+                      currentMonthActual?.conversions,
+                      currentMonthGoalComputed?.conversions
+                    )
+                  )}
+                </td>
+              )}
+
+              {!isTraffic && <td className={`${tdClass} text-slate-400`}>-</td>}
+              {!isTraffic && <td className={`${tdClass} text-slate-400`}>-</td>}
+
+              {!isTraffic && (
+                <td className={tdClass}>
+                  {pct1(
+                    progressRate(
+                      currentMonthActual?.revenue,
+                      currentMonthGoalComputed?.revenue
+                    )
+                  )}
+                </td>
+              )}
+
+              {!isTraffic && <td className={`${tdClass} text-slate-400`}>-</td>}
             </tr>
           </tbody>
         </table>

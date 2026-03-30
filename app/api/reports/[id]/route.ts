@@ -1,4 +1,3 @@
-// app/api/reports/[id]/route.ts
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
@@ -76,6 +75,81 @@ async function enrichReportWithAdvertiserName(report: any) {
   };
 }
 
+async function enrichReportWithReportType(report: any) {
+  if (!report || typeof report !== "object") return report;
+
+  const meta =
+    report?.meta && typeof report.meta === "object" ? report.meta : {};
+
+  const existingReportTypeKey =
+    asString(report?.report_type_key) ||
+    asString(report?.reportTypeKey) ||
+    asString(meta?.report_type_key) ||
+    asString(meta?.reportTypeKey) ||
+    asString(meta?.report_type);
+
+  const existingReportTypeName =
+    asString(report?.report_type_name) ||
+    asString(report?.reportTypeName) ||
+    asString(meta?.report_type_name) ||
+    asString(meta?.reportTypeName);
+
+  if (existingReportTypeKey || existingReportTypeName) {
+    let nextName = existingReportTypeName;
+    const keyLower = String(existingReportTypeKey ?? "").toLowerCase();
+
+    if (keyLower === "traffic") nextName = "트래픽 리포트";
+    if (keyLower === "commerce") nextName = nextName || "커머스 매출 리포트";
+
+    return {
+      ...report,
+      report_type_key: existingReportTypeKey,
+      reportTypeKey: existingReportTypeKey,
+      report_type_name: nextName,
+      reportTypeName: nextName,
+    };
+  }
+
+  const reportTypeId = asString(report?.report_type_id);
+  if (!reportTypeId) {
+    return report;
+  }
+
+  const { data: reportType, error: rtErr } = await supabaseAdmin
+    .from("report_types")
+    .select("id, key, name")
+    .eq("id", reportTypeId)
+    .maybeSingle();
+
+  if (rtErr || !reportType) {
+    return report;
+  }
+
+  const reportTypeKey = asString((reportType as any)?.key);
+  let reportTypeName = asString((reportType as any)?.name);
+
+  const keyLower = String(reportTypeKey ?? "").toLowerCase();
+  if (keyLower === "traffic") {
+    reportTypeName = "트래픽 리포트";
+  } else if (keyLower === "commerce") {
+    reportTypeName = reportTypeName || "커머스 매출 리포트";
+  }
+
+  return {
+    ...report,
+    report_type_key: reportTypeKey,
+    reportTypeKey: reportTypeKey,
+    report_type_name: reportTypeName,
+    reportTypeName: reportTypeName,
+  };
+}
+
+async function enrichReport(report: any) {
+  const withAdvertiser = await enrichReportWithAdvertiserName(report);
+  const withType = await enrichReportWithReportType(withAdvertiser);
+  return withType;
+}
+
 export async function GET(_req: Request, ctx: Ctx) {
   try {
     const { id: idRaw } = await ctx.params;
@@ -143,7 +217,7 @@ export async function GET(_req: Request, ctx: Ctx) {
       return jsonError(403, "Forbidden: you are not a member of this workspace");
     }
 
-    const enrichedReport = await enrichReportWithAdvertiserName(report);
+    const enrichedReport = await enrichReport(report);
 
     return NextResponse.json({ ok: true, report: enrichedReport });
   } catch (e: any) {
@@ -167,7 +241,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
 
     const { data: report, error: rErr } = await supabaseAdmin
       .from("reports")
-      .select("id, workspace_id, advertiser_id, created_by")
+      .select("id, workspace_id, advertiser_id, report_type_id, created_by")
       .eq("id", id)
       .maybeSingle();
 
@@ -227,10 +301,6 @@ export async function PATCH(req: Request, ctx: Ctx) {
       patch.period_end = draft_period_end;
     }
 
-    // ✅ 현재 DB 안전 우선:
-    // draft_period_preset / draft_period_label 은 여기서 저장하지 않음
-    // (컬럼 존재 확인 후 다음 단계에서 붙이기)
-
     if (meta !== undefined) patch.meta = meta;
 
     if (Object.keys(patch).length === 0) {
@@ -269,7 +339,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
     if (uErr) return jsonError(400, uErr.message);
     if (!updated) return jsonError(404, "Report not found");
 
-    const enrichedUpdated = await enrichReportWithAdvertiserName(updated);
+    const enrichedUpdated = await enrichReport(updated);
 
     return NextResponse.json({ ok: true, report: enrichedUpdated });
   } catch (e: any) {

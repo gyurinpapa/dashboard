@@ -31,6 +31,7 @@ import {
 import DataBarCell from "../ui/DataBarCell";
 
 type Props = {
+  reportType?: "commerce" | "traffic";
   keywordAgg: any[];
   keywordInsight: string;
 };
@@ -313,7 +314,13 @@ const SORT_LABEL: Record<SortKey, string> = {
   roas: "ROAS",
 };
 
-export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
+export default function KeywordSection({
+  reportType,
+  keywordAgg,
+  keywordInsight,
+}: Props) {
+  const isTraffic = reportType === "traffic";
+
   const rows: Row[] = useMemo(() => {
     return (Array.isArray(keywordAgg) ? keywordAgg : []).map((r: any) => {
       const keyword = String(r.keyword ?? r.label ?? r.name ?? "");
@@ -375,8 +382,17 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
     });
   }, [keywordAgg]);
 
+  const topImpressions = useMemo(
+    () =>
+      [...rows].sort((a, b) => b.impressions - a.impressions).slice(0, 20).reverse(),
+    [rows]
+  );
   const topClicks = useMemo(
     () => [...rows].sort((a, b) => b.clicks - a.clicks).slice(0, 20).reverse(),
+    [rows]
+  );
+  const topCost = useMemo(
+    () => [...rows].sort((a, b) => b.cost - a.cost).slice(0, 20).reverse(),
     [rows]
   );
   const topConv = useMemo(
@@ -519,98 +535,194 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
   return (
     <section className="mt-1">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-          <div className="mb-2 text-xs font-semibold">클릭수 TOP20 키워드</div>
-          <div style={{ width: "100%", height: 340 }}>
-            <ResponsiveContainer>
-              <BarChart
-                data={topClicks}
-                layout="vertical"
-                margin={{ top: 6, right: 70, left: 0, bottom: 6 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  type="number"
-                  tick={{ fontSize: 11 }}
-                  tickFormatter={(v) => formatCurrencyAxisCompact(v)}
-                />
-                <YAxis type="category" dataKey="keyword" width={100} tick={{ fontSize: 11 }} />
-                <Tooltip wrapperStyle={{ fontSize: 11 }} formatter={(v: any) => formatCount(v)} />
-                <Bar dataKey="clicks">
-                  <LabelList
-                    dataKey="clicks"
-                    position="right"
-                    formatter={(v: any) => formatCount(v)}
-                    style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
-                  />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+        {isTraffic ? (
+          <>
+            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="mb-2 text-xs font-semibold">노출수 TOP20 키워드</div>
+              <div style={{ width: "100%", height: 340 }}>
+                <ResponsiveContainer>
+                  <BarChart
+                    data={topImpressions}
+                    layout="vertical"
+                    margin={{ top: 6, right: 70, left: 0, bottom: 6 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      type="number"
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v) => formatCurrencyAxisCompact(v)}
+                    />
+                    <YAxis type="category" dataKey="keyword" width={100} tick={{ fontSize: 11 }} />
+                    <Tooltip wrapperStyle={{ fontSize: 11 }} formatter={(v: any) => formatCount(v)} />
+                    <Bar dataKey="impressions">
+                      <LabelList
+                        dataKey="impressions"
+                        position="right"
+                        formatter={(v: any) => formatCount(v)}
+                        style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                      />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
 
-        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-          <div className="mb-2 text-xs font-semibold">전환수 TOP20 키워드</div>
-          <div style={{ width: "100%", height: 340 }}>
-            <ResponsiveContainer>
-              <BarChart
-                data={topConv}
-                layout="vertical"
-                margin={{ top: 6, right: 70, left: 0, bottom: 6 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  type="number"
-                  tick={{ fontSize: 11 }}
-                  tickFormatter={(v) => formatCurrencyAxisCompact(v)}
-                />
-                <YAxis type="category" dataKey="keyword" width={100} tick={{ fontSize: 11 }} />
-                <Tooltip wrapperStyle={{ fontSize: 11 }} formatter={(v: any) => formatCount(v)} />
-                <Bar dataKey="conversions">
-                  <LabelList
-                    dataKey="conversions"
-                    position="right"
-                    formatter={(v: any) => formatCount(v)}
-                    style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
-                  />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="mb-2 text-xs font-semibold">클릭수 TOP20 키워드</div>
+              <div style={{ width: "100%", height: 340 }}>
+                <ResponsiveContainer>
+                  <BarChart
+                    data={topClicks}
+                    layout="vertical"
+                    margin={{ top: 6, right: 70, left: 0, bottom: 6 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      type="number"
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v) => formatCurrencyAxisCompact(v)}
+                    />
+                    <YAxis type="category" dataKey="keyword" width={100} tick={{ fontSize: 11 }} />
+                    <Tooltip wrapperStyle={{ fontSize: 11 }} formatter={(v: any) => formatCount(v)} />
+                    <Bar dataKey="clicks">
+                      <LabelList
+                        dataKey="clicks"
+                        position="right"
+                        formatter={(v: any) => formatCount(v)}
+                        style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                      />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
 
-        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-          <div className="mb-2 text-xs font-semibold">ROAS TOP20 키워드</div>
-          <div style={{ width: "100%", height: 340 }}>
-            <ResponsiveContainer>
-              <BarChart
-                data={topRoas}
-                layout="vertical"
-                margin={{ top: 6, right: 82, left: 0, bottom: 6 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  type="number"
-                  tick={{ fontSize: 11 }}
-                  tickFormatter={(v) => formatPercentAxisFromRoas(v)}
-                />
-                <YAxis type="category" dataKey="keyword" width={100} tick={{ fontSize: 11 }} />
-                <Tooltip
-                  wrapperStyle={{ fontSize: 11 }}
-                  formatter={(v: any) => formatPercentFromRoas(v, 1)}
-                />
-                <Bar dataKey="roas">
-                  <LabelList
-                    dataKey="roas"
-                    position="right"
-                    formatter={(v: any) => formatPercentFromRoas(v, 1)}
-                    style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
-                  />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="mb-2 text-xs font-semibold">비용 TOP20 키워드</div>
+              <div style={{ width: "100%", height: 340 }}>
+                <ResponsiveContainer>
+                  <BarChart
+                    data={topCost}
+                    layout="vertical"
+                    margin={{ top: 6, right: 82, left: 0, bottom: 6 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      type="number"
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v) => formatCurrencyAxisCompact(v)}
+                    />
+                    <YAxis type="category" dataKey="keyword" width={100} tick={{ fontSize: 11 }} />
+                    <Tooltip wrapperStyle={{ fontSize: 11 }} formatter={(v: any) => KRW(v)} />
+                    <Bar dataKey="cost">
+                      <LabelList
+                        dataKey="cost"
+                        position="right"
+                        formatter={(v: any) => KRW(v)}
+                        style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                      />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="mb-2 text-xs font-semibold">클릭수 TOP20 키워드</div>
+              <div style={{ width: "100%", height: 340 }}>
+                <ResponsiveContainer>
+                  <BarChart
+                    data={topClicks}
+                    layout="vertical"
+                    margin={{ top: 6, right: 70, left: 0, bottom: 6 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      type="number"
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v) => formatCurrencyAxisCompact(v)}
+                    />
+                    <YAxis type="category" dataKey="keyword" width={100} tick={{ fontSize: 11 }} />
+                    <Tooltip wrapperStyle={{ fontSize: 11 }} formatter={(v: any) => formatCount(v)} />
+                    <Bar dataKey="clicks">
+                      <LabelList
+                        dataKey="clicks"
+                        position="right"
+                        formatter={(v: any) => formatCount(v)}
+                        style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                      />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="mb-2 text-xs font-semibold">전환수 TOP20 키워드</div>
+              <div style={{ width: "100%", height: 340 }}>
+                <ResponsiveContainer>
+                  <BarChart
+                    data={topConv}
+                    layout="vertical"
+                    margin={{ top: 6, right: 70, left: 0, bottom: 6 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      type="number"
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v) => formatCurrencyAxisCompact(v)}
+                    />
+                    <YAxis type="category" dataKey="keyword" width={100} tick={{ fontSize: 11 }} />
+                    <Tooltip wrapperStyle={{ fontSize: 11 }} formatter={(v: any) => formatCount(v)} />
+                    <Bar dataKey="conversions">
+                      <LabelList
+                        dataKey="conversions"
+                        position="right"
+                        formatter={(v: any) => formatCount(v)}
+                        style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                      />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="mb-2 text-xs font-semibold">ROAS TOP20 키워드</div>
+              <div style={{ width: "100%", height: 340 }}>
+                <ResponsiveContainer>
+                  <BarChart
+                    data={topRoas}
+                    layout="vertical"
+                    margin={{ top: 6, right: 82, left: 0, bottom: 6 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      type="number"
+                      tick={{ fontSize: 11 }}
+                      tickFormatter={(v) => formatPercentAxisFromRoas(v)}
+                    />
+                    <YAxis type="category" dataKey="keyword" width={100} tick={{ fontSize: 11 }} />
+                    <Tooltip
+                      wrapperStyle={{ fontSize: 11 }}
+                      formatter={(v: any) => formatPercentFromRoas(v, 1)}
+                    />
+                    <Bar dataKey="roas">
+                      <LabelList
+                        dataKey="roas"
+                        position="right"
+                        formatter={(v: any) => formatPercentFromRoas(v, 1)}
+                        style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                      />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       <section className="mt-6">
@@ -673,18 +785,18 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
                 <Th k="ctr" />
                 <Th k="cpc" />
                 <Th k="cost" />
-                <Th k="conversions" />
-                <Th k="cvr" />
-                <Th k="cpa" />
-                <Th k="revenue" />
-                <Th k="roas" />
+                {!isTraffic && <Th k="conversions" />}
+                {!isTraffic && <Th k="cvr" />}
+                {!isTraffic && <Th k="cpa" />}
+                {!isTraffic && <Th k="revenue" />}
+                {!isTraffic && <Th k="roas" />}
               </tr>
             </thead>
 
             <tbody>
               {tableRows.length === 0 ? (
                 <tr className="border-t border-gray-200">
-                  <td className="p-3 text-gray-500" colSpan={11}>
+                  <td className="p-3 text-gray-500" colSpan={isTraffic ? 6 : 11}>
                     표시할 키워드 데이터가 없습니다. (필터 조건/컬럼명을 확인해 주세요)
                   </td>
                 </tr>
@@ -722,26 +834,37 @@ export default function KeywordSection({ keywordAgg, keywordInsight }: Props) {
                       />
                     </td>
 
-                    <td className="p-3">
-                      <DataBarCell
-                        value={toSafeNumber(r.conversions)}
-                        max={kwMaxConv}
-                        label={formatCount(r.conversions)}
-                      />
-                    </td>
+                    {!isTraffic && (
+                      <td className="p-3">
+                        <DataBarCell
+                          value={toSafeNumber(r.conversions)}
+                          max={kwMaxConv}
+                          label={formatCount(r.conversions)}
+                        />
+                      </td>
+                    )}
 
-                    <td className="p-3 text-right">{formatPercentFromRate(r.cvr, 2)}</td>
-                    <td className="p-3 text-right">{KRW(r.cpa)}</td>
+                    {!isTraffic && (
+                      <td className="p-3 text-right">{formatPercentFromRate(r.cvr, 2)}</td>
+                    )}
 
-                    <td className="p-3">
-                      <DataBarCell
-                        value={toSafeNumber(r.revenue)}
-                        max={kwMaxRev}
-                        label={KRW(r.revenue)}
-                      />
-                    </td>
+                    {!isTraffic && (
+                      <td className="p-3 text-right">{KRW(r.cpa)}</td>
+                    )}
 
-                    <td className="p-3 text-right">{formatPercentFromRoas(r.roas, 1)}</td>
+                    {!isTraffic && (
+                      <td className="p-3">
+                        <DataBarCell
+                          value={toSafeNumber(r.revenue)}
+                          max={kwMaxRev}
+                          label={KRW(r.revenue)}
+                        />
+                      </td>
+                    )}
+
+                    {!isTraffic && (
+                      <td className="p-3 text-right">{formatPercentFromRoas(r.roas, 1)}</td>
+                    )}
                   </tr>
                 ))
               )}

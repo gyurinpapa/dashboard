@@ -1,3 +1,4 @@
+// app/components/sections/HeaderBar.tsx
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
@@ -63,16 +64,14 @@ type Props = {
 
   advertiserName?: string | null;
   reportTypeName?: string | null;
+  reportTypeKey?: string | null;
 
   reportPeriod: ReportPeriod;
   onChangeReportPeriod: (next: ReportPeriod) => void;
 
   readOnlyHeader?: boolean;
 
-  // ✅ 미리보기에서 "직접 선택/시작일/종료일"만 숨기기
   hidePeriodEditor?: boolean;
-
-  // ✅ 미리보기에서 오른쪽 하단 "기준 기간 ..." 텍스트만 숨기기 (+VAT는 유지)
   hideTabPeriodText?: boolean;
 };
 
@@ -127,34 +126,71 @@ function periodPresetLabel(preset: ReportPeriodPreset) {
 function HeaderIntro({
   advertiserName,
   reportTypeName,
+  reportTypeKey,
   fullPeriod,
 }: {
   advertiserName?: string | null;
   reportTypeName?: string | null;
+  reportTypeKey?: string | null;
   fullPeriod: string;
 }) {
+  const cleanTypeKey = useMemo(() => {
+    return cleanText(reportTypeKey);
+  }, [reportTypeKey]);
+
+  const cleanTypeName = useMemo(() => {
+    return cleanText(reportTypeName);
+  }, [reportTypeName]);
+
+  const badgeText = useMemo(() => {
+    const key = cleanTypeKey.toLowerCase();
+    const name = cleanTypeName.toLowerCase();
+
+    if (
+      key === "traffic" ||
+      key.includes("traffic") ||
+      name.includes("트래픽") ||
+      name.includes("traffic")
+    ) {
+      return "TRAFFIC";
+    }
+
+    if (
+      key === "commerce" ||
+      key.includes("commerce") ||
+      name.includes("커머스") ||
+      name.includes("commerce") ||
+      name.includes("e-commerce") ||
+      name.includes("매출")
+    ) {
+      return "E-COMMERCE";
+    }
+
+    return "ONLINE AD";
+  }, [cleanTypeKey, cleanTypeName]);
+
   const headerTitle = useMemo(() => {
     const adv = cleanText(advertiserName);
-    const typeName = cleanText(reportTypeName);
+    const typeName = cleanTypeName;
 
     if (adv) return `${adv} 광고 리포트`;
     if (typeName) return typeName;
     return "온라인광고";
-  }, [advertiserName, reportTypeName]);
+  }, [advertiserName, cleanTypeName]);
 
   const headerSubTitle = useMemo(() => {
-    const typeName = cleanText(reportTypeName);
+    const typeName = cleanTypeName;
 
     if (typeName) return typeName;
     return "광고 성과 리포트";
-  }, [reportTypeName]);
+  }, [cleanTypeName]);
 
   return (
     <div className="mb-6 rounded-3xl border border-slate-200/80 bg-white px-6 py-6 shadow-sm">
       <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0">
           <div className="mb-2 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold tracking-[0.12em] text-slate-500">
-            E-COMMERCE
+            {badgeText}
           </div>
 
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
@@ -182,12 +218,14 @@ function HeaderIntro({
 function ReadOnlyHeaderBar({
   advertiserName,
   reportTypeName,
+  reportTypeKey,
   fullPeriod,
   period,
   reportPeriod,
 }: {
   advertiserName?: string | null;
   reportTypeName?: string | null;
+  reportTypeKey?: string | null;
   fullPeriod: string;
   period: string;
   reportPeriod: ReportPeriod;
@@ -197,6 +235,7 @@ function ReadOnlyHeaderBar({
       <HeaderIntro
         advertiserName={advertiserName}
         reportTypeName={reportTypeName}
+        reportTypeKey={reportTypeKey}
         fullPeriod={fullPeriod}
       />
 
@@ -246,6 +285,7 @@ function EditorHeaderBar(props: Props) {
     period,
     advertiserName,
     reportTypeName,
+    reportTypeKey,
     reportPeriod,
     onChangeReportPeriod,
     hidePeriodEditor = false,
@@ -257,9 +297,7 @@ function EditorHeaderBar(props: Props) {
 
   const hasSourceOptions = (sourceOptions ?? []).length > 0;
 
-  const toggleFilter = (
-    k: Exclude<FilterKey, null> | "source"
-  ) => {
+  const toggleFilter = (k: Exclude<FilterKey, null> | "source") => {
     setFilterKey(filterKey === k ? null : (k as FilterKey));
   };
 
@@ -324,6 +362,7 @@ function EditorHeaderBar(props: Props) {
       <HeaderIntro
         advertiserName={advertiserName}
         reportTypeName={reportTypeName}
+        reportTypeKey={reportTypeKey}
         fullPeriod={fullPeriod}
       />
 
@@ -721,6 +760,7 @@ export default function HeaderBar(props: Props) {
             <ReadOnlyHeaderBar
               advertiserName={props.advertiserName}
               reportTypeName={props.reportTypeName}
+              reportTypeKey={props.reportTypeKey}
               fullPeriod={props.fullPeriod}
               period={props.period}
               reportPeriod={props.reportPeriod}

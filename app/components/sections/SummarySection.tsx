@@ -17,6 +17,8 @@ import TrendCell from "../ui/TrendCell";
 import DataBarCell from "../ui/DataBarCell";
 
 type Props = {
+  reportType?: "commerce" | "traffic";
+
   currentMonthKey: string;
   currentMonthActual: any;
   currentMonthGoalComputed: any;
@@ -46,16 +48,16 @@ const FIRST_TH_CLASS =
 const FIRST_TD_CLASS =
   "px-4 py-3.5 text-left text-sm font-medium text-gray-900 whitespace-nowrap align-middle";
 
-const SECTION_TITLE_CLASS =
-  "mb-4 text-lg font-semibold tracking-tight text-gray-900";
-
 const TABLE_SURFACE_CLASS =
   "overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm";
 
 const CHART_SURFACE_CLASS = "mt-0";
 
 export default function SummarySection(props: Props) {
-  const { totals, byMonth, byWeekOnly, byWeekChart, bySource, byDay } = props;
+  const { reportType, totals, byMonth, byWeekOnly, byWeekChart, bySource, byDay } =
+    props;
+
+  const isTraffic = reportType === "traffic";
 
   const months = Array.isArray(byMonth) ? byMonth : [];
   const weeks = Array.isArray(byWeekOnly) ? byWeekOnly : [];
@@ -136,12 +138,12 @@ export default function SummarySection(props: Props) {
       <section className="mt-6 space-y-10">
         <div>
           <div className="mt-0">
-            <SummaryKPI totals={totals} />
+            <SummaryKPI reportType={reportType} totals={totals} />
           </div>
         </div>
 
         <div>
-          <SummaryTable byMonth={months} />
+          <SummaryTable reportType={reportType} byMonth={months} />
         </div>
       </section>
 
@@ -149,7 +151,12 @@ export default function SummarySection(props: Props) {
         <div className="mb-4"></div>
 
         <div className={TABLE_SURFACE_CLASS}>
-          <table className="w-full min-w-[1320px] table-fixed text-sm">
+          <table
+            className={[
+              "w-full table-fixed text-sm",
+              isTraffic ? "min-w-[860px]" : "min-w-[1320px]",
+            ].join(" ")}
+          >
             <colgroup>
               <col className="w-[180px]" />
               <col className="w-[90px]" />
@@ -157,11 +164,11 @@ export default function SummarySection(props: Props) {
               <col className="w-[90px]" />
               <col className="w-[90px]" />
               <col className="w-[110px]" />
-              <col className="w-[90px]" />
-              <col className="w-[90px]" />
-              <col className="w-[90px]" />
-              <col className="w-[120px]" />
-              <col className="w-[90px]" />
+              {!isTraffic && <col className="w-[90px]" />}
+              {!isTraffic && <col className="w-[90px]" />}
+              {!isTraffic && <col className="w-[90px]" />}
+              {!isTraffic && <col className="w-[120px]" />}
+              {!isTraffic && <col className="w-[90px]" />}
             </colgroup>
 
             <thead className="sticky top-0 z-10 border-b border-gray-200 bg-gray-50/95 backdrop-blur">
@@ -172,11 +179,11 @@ export default function SummarySection(props: Props) {
                 <th className={TH_CLASS}>CTR</th>
                 <th className={TH_CLASS}>CPC</th>
                 <th className={TH_CLASS}>Cost</th>
-                <th className={TH_CLASS}>Conv</th>
-                <th className={TH_CLASS}>CVR</th>
-                <th className={TH_CLASS}>CPA</th>
-                <th className={TH_CLASS}>Revenue</th>
-                <th className={TH_CLASS}>ROAS</th>
+                {!isTraffic && <th className={TH_CLASS}>Conv</th>}
+                {!isTraffic && <th className={TH_CLASS}>CVR</th>}
+                {!isTraffic && <th className={TH_CLASS}>CPA</th>}
+                {!isTraffic && <th className={TH_CLASS}>Revenue</th>}
+                {!isTraffic && <th className={TH_CLASS}>ROAS</th>}
               </tr>
             </thead>
 
@@ -225,47 +232,60 @@ export default function SummarySection(props: Props) {
                     />
                   </td>
 
-                  <td className={TD_CLASS}>
-                    <TrendCell
-                      v={diffRatio(
-                        lastWeekSorted?.conversions,
-                        prevWeekSorted?.conversions
-                      )}
-                    />
-                  </td>
+                  {!isTraffic && (
+                    <td className={TD_CLASS}>
+                      <TrendCell
+                        v={diffRatio(
+                          lastWeekSorted?.conversions,
+                          prevWeekSorted?.conversions
+                        )}
+                      />
+                    </td>
+                  )}
 
-                  <td className={TD_CLASS}>
-                    <TrendCell
-                      v={diffRatio(
-                        normalizeRate01(lastWeekSorted?.cvr),
-                        normalizeRate01(prevWeekSorted?.cvr)
-                      )}
-                      digits={2}
-                    />
-                  </td>
+                  {!isTraffic && (
+                    <td className={TD_CLASS}>
+                      <TrendCell
+                        v={diffRatio(
+                          normalizeRate01(lastWeekSorted?.cvr),
+                          normalizeRate01(prevWeekSorted?.cvr)
+                        )}
+                        digits={2}
+                      />
+                    </td>
+                  )}
 
-                  <td className={TD_CLASS}>
-                    <TrendCell
-                      v={diffRatio(lastWeekSorted?.cpa, prevWeekSorted?.cpa)}
-                      digits={2}
-                    />
-                  </td>
+                  {!isTraffic && (
+                    <td className={TD_CLASS}>
+                      <TrendCell
+                        v={diffRatio(lastWeekSorted?.cpa, prevWeekSorted?.cpa)}
+                        digits={2}
+                      />
+                    </td>
+                  )}
 
-                  <td className={TD_CLASS}>
-                    <TrendCell
-                      v={diffRatio(lastWeekSorted?.revenue, prevWeekSorted?.revenue)}
-                    />
-                  </td>
+                  {!isTraffic && (
+                    <td className={TD_CLASS}>
+                      <TrendCell
+                        v={diffRatio(
+                          lastWeekSorted?.revenue,
+                          prevWeekSorted?.revenue
+                        )}
+                      />
+                    </td>
+                  )}
 
-                  <td className={TD_CLASS}>
-                    <TrendCell
-                      v={diffRatio(
-                        normalizeRoas01(lastWeekSorted?.roas),
-                        normalizeRoas01(prevWeekSorted?.roas)
-                      )}
-                      digits={2}
-                    />
-                  </td>
+                  {!isTraffic && (
+                    <td className={TD_CLASS}>
+                      <TrendCell
+                        v={diffRatio(
+                          normalizeRoas01(lastWeekSorted?.roas),
+                          normalizeRoas01(prevWeekSorted?.roas)
+                        )}
+                        digits={2}
+                      />
+                    </td>
+                  )}
                 </tr>
               )}
 
@@ -306,30 +326,40 @@ export default function SummarySection(props: Props) {
                     />
                   </td>
 
-                  <td className={TD_CLASS}>
-                    <DataBarCell
-                      value={toSafeNumber(w?.conversions ?? w?.conv)}
-                      max={maxConv}
-                    />
-                  </td>
+                  {!isTraffic && (
+                    <td className={TD_CLASS}>
+                      <DataBarCell
+                        value={toSafeNumber(w?.conversions ?? w?.conv)}
+                        max={maxConv}
+                      />
+                    </td>
+                  )}
 
-                  <td className={TD_CLASS}>
-                    {formatPercentFromRate(w?.cvr, 2)}
-                  </td>
+                  {!isTraffic && (
+                    <td className={TD_CLASS}>
+                      {formatPercentFromRate(w?.cvr, 2)}
+                    </td>
+                  )}
 
-                  <td className={TD_CLASS}>{KRW(toSafeNumber(w?.cpa))}</td>
+                  {!isTraffic && (
+                    <td className={TD_CLASS}>{KRW(toSafeNumber(w?.cpa))}</td>
+                  )}
 
-                  <td className={TD_CLASS}>
-                    <DataBarCell
-                      value={toSafeNumber(w?.revenue)}
-                      max={maxRev}
-                      label={KRW(toSafeNumber(w?.revenue))}
-                    />
-                  </td>
+                  {!isTraffic && (
+                    <td className={TD_CLASS}>
+                      <DataBarCell
+                        value={toSafeNumber(w?.revenue)}
+                        max={maxRev}
+                        label={KRW(toSafeNumber(w?.revenue))}
+                      />
+                    </td>
+                  )}
 
-                  <td className={TD_CLASS}>
-                    {formatPercentFromRoas(w?.roas, 1)}
-                  </td>
+                  {!isTraffic && (
+                    <td className={TD_CLASS}>
+                      {formatPercentFromRoas(w?.roas, 1)}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -341,7 +371,7 @@ export default function SummarySection(props: Props) {
         <div className="mb-4"></div>
 
         <div className={CHART_SURFACE_CLASS}>
-          <SummaryChart data={weekChartData} />
+          <SummaryChart reportType={reportType} data={weekChartData} />
         </div>
       </section>
 
@@ -349,7 +379,12 @@ export default function SummarySection(props: Props) {
         <div className="mb-4"></div>
 
         <div className={TABLE_SURFACE_CLASS}>
-          <table className="w-full min-w-[1320px] table-fixed text-sm">
+          <table
+            className={[
+              "w-full table-fixed text-sm",
+              isTraffic ? "min-w-[860px]" : "min-w-[1320px]",
+            ].join(" ")}
+          >
             <colgroup>
               <col className="w-[180px]" />
               <col className="w-[90px]" />
@@ -357,11 +392,11 @@ export default function SummarySection(props: Props) {
               <col className="w-[90px]" />
               <col className="w-[90px]" />
               <col className="w-[110px]" />
-              <col className="w-[90px]" />
-              <col className="w-[90px]" />
-              <col className="w-[90px]" />
-              <col className="w-[120px]" />
-              <col className="w-[90px]" />
+              {!isTraffic && <col className="w-[90px]" />}
+              {!isTraffic && <col className="w-[90px]" />}
+              {!isTraffic && <col className="w-[90px]" />}
+              {!isTraffic && <col className="w-[120px]" />}
+              {!isTraffic && <col className="w-[90px]" />}
             </colgroup>
 
             <thead className="sticky top-0 z-10 border-b border-gray-200 bg-gray-50/95 backdrop-blur">
@@ -372,11 +407,11 @@ export default function SummarySection(props: Props) {
                 <th className={TH_CLASS}>CTR</th>
                 <th className={TH_CLASS}>CPC</th>
                 <th className={TH_CLASS}>Cost</th>
-                <th className={TH_CLASS}>Conv</th>
-                <th className={TH_CLASS}>CVR</th>
-                <th className={TH_CLASS}>CPA</th>
-                <th className={TH_CLASS}>Revenue</th>
-                <th className={TH_CLASS}>ROAS</th>
+                {!isTraffic && <th className={TH_CLASS}>Conv</th>}
+                {!isTraffic && <th className={TH_CLASS}>CVR</th>}
+                {!isTraffic && <th className={TH_CLASS}>CPA</th>}
+                {!isTraffic && <th className={TH_CLASS}>Revenue</th>}
+                {!isTraffic && <th className={TH_CLASS}>ROAS</th>}
               </tr>
             </thead>
 
@@ -418,30 +453,40 @@ export default function SummarySection(props: Props) {
                     />
                   </td>
 
-                  <td className={TD_CLASS}>
-                    <DataBarCell
-                      value={toSafeNumber(r?.conversions ?? r?.conv)}
-                      max={srcMaxConv}
-                    />
-                  </td>
+                  {!isTraffic && (
+                    <td className={TD_CLASS}>
+                      <DataBarCell
+                        value={toSafeNumber(r?.conversions ?? r?.conv)}
+                        max={srcMaxConv}
+                      />
+                    </td>
+                  )}
 
-                  <td className={TD_CLASS}>
-                    {formatPercentFromRate(r?.cvr, 2)}
-                  </td>
+                  {!isTraffic && (
+                    <td className={TD_CLASS}>
+                      {formatPercentFromRate(r?.cvr, 2)}
+                    </td>
+                  )}
 
-                  <td className={TD_CLASS}>{KRW(toSafeNumber(r?.cpa))}</td>
+                  {!isTraffic && (
+                    <td className={TD_CLASS}>{KRW(toSafeNumber(r?.cpa))}</td>
+                  )}
 
-                  <td className={TD_CLASS}>
-                    <DataBarCell
-                      value={toSafeNumber(r?.revenue)}
-                      max={srcMaxRev}
-                      label={KRW(toSafeNumber(r?.revenue))}
-                    />
-                  </td>
+                  {!isTraffic && (
+                    <td className={TD_CLASS}>
+                      <DataBarCell
+                        value={toSafeNumber(r?.revenue)}
+                        max={srcMaxRev}
+                        label={KRW(toSafeNumber(r?.revenue))}
+                      />
+                    </td>
+                  )}
 
-                  <td className={TD_CLASS}>
-                    {formatPercentFromRoas(r?.roas, 1)}
-                  </td>
+                  {!isTraffic && (
+                    <td className={TD_CLASS}>
+                      {formatPercentFromRoas(r?.roas, 1)}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -449,9 +494,14 @@ export default function SummarySection(props: Props) {
         </div>
       </section>
 
-            <section className="mt-14">
+      <section className="mt-14">
         <div className={TABLE_SURFACE_CLASS}>
-          <table className="w-full min-w-[1320px] table-fixed text-sm">
+          <table
+            className={[
+              "w-full table-fixed text-sm",
+              isTraffic ? "min-w-[860px]" : "min-w-[1320px]",
+            ].join(" ")}
+          >
             <colgroup>
               <col className="w-[180px]" />
               <col className="w-[90px]" />
@@ -459,11 +509,11 @@ export default function SummarySection(props: Props) {
               <col className="w-[90px]" />
               <col className="w-[90px]" />
               <col className="w-[110px]" />
-              <col className="w-[90px]" />
-              <col className="w-[90px]" />
-              <col className="w-[90px]" />
-              <col className="w-[120px]" />
-              <col className="w-[90px]" />
+              {!isTraffic && <col className="w-[90px]" />}
+              {!isTraffic && <col className="w-[90px]" />}
+              {!isTraffic && <col className="w-[90px]" />}
+              {!isTraffic && <col className="w-[120px]" />}
+              {!isTraffic && <col className="w-[90px]" />}
             </colgroup>
 
             <thead className="sticky top-0 z-10 border-b border-gray-200 bg-gray-50/95 backdrop-blur">
@@ -474,11 +524,11 @@ export default function SummarySection(props: Props) {
                 <th className={TH_CLASS}>CTR</th>
                 <th className={TH_CLASS}>CPC</th>
                 <th className={TH_CLASS}>Cost</th>
-                <th className={TH_CLASS}>Conv</th>
-                <th className={TH_CLASS}>CVR</th>
-                <th className={TH_CLASS}>CPA</th>
-                <th className={TH_CLASS}>Revenue</th>
-                <th className={TH_CLASS}>ROAS</th>
+                {!isTraffic && <th className={TH_CLASS}>Conv</th>}
+                {!isTraffic && <th className={TH_CLASS}>CVR</th>}
+                {!isTraffic && <th className={TH_CLASS}>CPA</th>}
+                {!isTraffic && <th className={TH_CLASS}>Revenue</th>}
+                {!isTraffic && <th className={TH_CLASS}>ROAS</th>}
               </tr>
             </thead>
 
@@ -487,7 +537,7 @@ export default function SummarySection(props: Props) {
                 <tr className="border-t border-gray-200">
                   <td
                     className="px-4 py-10 text-center text-sm text-gray-500"
-                    colSpan={11}
+                    colSpan={isTraffic ? 6 : 11}
                   >
                     데이터가 없습니다.
                   </td>
@@ -533,30 +583,40 @@ export default function SummarySection(props: Props) {
                       />
                     </td>
 
-                    <td className={TD_CLASS}>
-                      <DataBarCell
-                        value={toSafeNumber(d?.conversions ?? d?.conv)}
-                        max={dayMaxConv}
-                      />
-                    </td>
+                    {!isTraffic && (
+                      <td className={TD_CLASS}>
+                        <DataBarCell
+                          value={toSafeNumber(d?.conversions ?? d?.conv)}
+                          max={dayMaxConv}
+                        />
+                      </td>
+                    )}
 
-                    <td className={TD_CLASS}>
-                      {formatPercentFromRate(d?.cvr, 2)}
-                    </td>
+                    {!isTraffic && (
+                      <td className={TD_CLASS}>
+                        {formatPercentFromRate(d?.cvr, 2)}
+                      </td>
+                    )}
 
-                    <td className={TD_CLASS}>{KRW(toSafeNumber(d?.cpa))}</td>
+                    {!isTraffic && (
+                      <td className={TD_CLASS}>{KRW(toSafeNumber(d?.cpa))}</td>
+                    )}
 
-                    <td className={TD_CLASS}>
-                      <DataBarCell
-                        value={toSafeNumber(d?.revenue)}
-                        max={dayMaxRev}
-                        label={KRW(toSafeNumber(d?.revenue))}
-                      />
-                    </td>
+                    {!isTraffic && (
+                      <td className={TD_CLASS}>
+                        <DataBarCell
+                          value={toSafeNumber(d?.revenue)}
+                          max={dayMaxRev}
+                          label={KRW(toSafeNumber(d?.revenue))}
+                        />
+                      </td>
+                    )}
 
-                    <td className={TD_CLASS}>
-                      {formatPercentFromRoas(d?.roas, 1)}
-                    </td>
+                    {!isTraffic && (
+                      <td className={TD_CLASS}>
+                        {formatPercentFromRoas(d?.roas, 1)}
+                      </td>
+                    )}
                   </tr>
                 ))
               )}

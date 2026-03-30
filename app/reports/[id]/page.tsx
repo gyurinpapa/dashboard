@@ -194,6 +194,7 @@ type UploadCreativesResult = {
 type ReportHeaderInfo = {
   advertiserName: string;
   reportTypeName: string;
+  reportTypeKey: string;
 };
 
 async function uploadCreatives(reportId: string, files: File[]) {
@@ -383,6 +384,27 @@ async function fetchReportHeaderInfo(
     const meta =
       report?.meta && typeof report.meta === "object" ? report.meta : {};
 
+    const reportTypeKey =
+      asStr((report as any)?.report_type_key) ||
+      asStr((report as any)?.reportTypeKey) ||
+      asStr(meta?.report_type_key) ||
+      asStr(meta?.reportTypeKey) ||
+      asStr(meta?.report_type);
+
+    let reportTypeName =
+      asStr((report as any)?.report_type_name) ||
+      asStr((report as any)?.reportTypeName) ||
+      asStr(meta?.report_type_name) ||
+      asStr(meta?.reportTypeName);
+
+    const keyLower = reportTypeKey.toLowerCase();
+
+    if (keyLower === "traffic") {
+      reportTypeName = "트래픽 리포트";
+    } else if (keyLower === "commerce") {
+      reportTypeName = reportTypeName || "커머스 매출 리포트";
+    }
+
     return {
       advertiserName:
         asStr((report as any)?.advertiser_name) ||
@@ -392,21 +414,14 @@ async function fetchReportHeaderInfo(
         asStr(meta?.advertiserName) ||
         asStr(meta?.advertiser) ||
         "",
-      reportTypeName:
-        asStr((report as any)?.report_type_name) ||
-        asStr((report as any)?.reportTypeName) ||
-        asStr((report as any)?.report_type_key) ||
-        asStr((report as any)?.reportTypeKey) ||
-        asStr(meta?.report_type_name) ||
-        asStr(meta?.reportTypeName) ||
-        asStr(meta?.report_type_key) ||
-        asStr(meta?.reportTypeKey) ||
-        "",
+      reportTypeName,
+      reportTypeKey,
     };
   } catch {
     return {
       advertiserName: "",
       reportTypeName: "",
+      reportTypeKey: "",
     };
   }
 }
@@ -465,6 +480,34 @@ function buildInitialReportPeriod(args: {
   rowsRange: { startDate: string; endDate: string } | null;
 }): ReportPeriod | null {
   const { report, reportId, rowsRange } = args;
+
+  const meta =
+    report?.meta && typeof report.meta === "object" ? report.meta : {};
+
+  const reportTypeKey =
+    asStr((report as any)?.report_type_key) ||
+    asStr((report as any)?.reportTypeKey) ||
+    asStr(meta?.report_type_key) ||
+    asStr(meta?.reportTypeKey) ||
+    asStr(meta?.report_type);
+
+  const reportTypeName =
+    asStr((report as any)?.report_type_name) ||
+    asStr((report as any)?.reportTypeName) ||
+    asStr(meta?.report_type_name) ||
+    asStr(meta?.reportTypeName);
+
+  const typeLower = `${reportTypeKey} ${reportTypeName}`.toLowerCase();
+  const isTraffic =
+    typeLower.includes("traffic") || typeLower.includes("트래픽");
+
+  if (isTraffic && rowsRange?.startDate && rowsRange?.endDate) {
+    return {
+      preset: "custom",
+      startDate: rowsRange.startDate,
+      endDate: rowsRange.endDate,
+    };
+  }
 
   const draftStart = asStr(report?.draft_period_start);
   const draftEnd = asStr(report?.draft_period_end);
@@ -529,6 +572,7 @@ export default function ReportDetailPage() {
   const [headerInfo, setHeaderInfo] = useState<ReportHeaderInfo>({
     advertiserName: "",
     reportTypeName: "",
+    reportTypeKey: "",
   });
   const [previewVersion, setPreviewVersion] = useState(0);
 
@@ -694,8 +738,27 @@ export default function ReportDetailPage() {
     headerFallbackFromRows.advertiserName ||
     "";
 
-  const effectivePreviewReportTypeName =
-    headerInfo.reportTypeName || headerFallbackFromRows.reportTypeName || "";
+  const effectivePreviewReportTypeName = useMemo(() => {
+    const keyLower = asStr(headerInfo.reportTypeKey).toLowerCase();
+
+    if (keyLower === "traffic") return "트래픽 리포트";
+    if (keyLower === "commerce") {
+      return headerInfo.reportTypeName || "커머스 매출 리포트";
+    }
+
+    const name =
+      headerInfo.reportTypeName || headerFallbackFromRows.reportTypeName || "";
+
+    if (name.toLowerCase().includes("traffic") || name.includes("트래픽")) {
+      return "트래픽 리포트";
+    }
+
+    return name;
+  }, [
+    headerInfo.reportTypeKey,
+    headerInfo.reportTypeName,
+    headerFallbackFromRows.reportTypeName,
+  ]);
 
   const previewKey = useMemo(() => {
     return [
@@ -725,20 +788,27 @@ export default function ReportDetailPage() {
     return getPeriodLabel(reportPeriod);
   }, [reportPeriod]);
 
-  const canPublish = sessionIngested && !publishing;
+  const canPublish =
+    sessionIngested &&
+    !publishing &&
+    !loadingRows &&
+    Array.isArray(rows) &&
+    rows.length > 0;
+
   const canOpenExportBuilder = ENABLE_EXPORT_BUILDER_ENTRY && canPublish;
 
   const reportTitleForDownload = effectivePreviewReportTypeName || "report";
   const advertiserNameForDownload =
     effectivePreviewAdvertiserName || "advertiser";
 
-  async function refreshRows() {
-    if (!reportId) return;
+  async function refreshRows(): Promise<{ rowsCount: number }> {
+    if (!reportId) return { rowsCount: 0 };
 
     setLoadingRows(true);
     setMsg("");
 
     let nextMsg = "";
+    let fetchedRowsCount = 0;
 
     try {
       try {
@@ -752,6 +822,7 @@ export default function ReportDetailPage() {
       try {
         const rws = await fetchRows(reportId);
         const nextRows = Array.isArray(rws) ? [...rws] : [];
+        fetchedRowsCount = nextRows.length;
         setRows(nextRows);
 
         console.log("[refreshRows] rows ok", {
@@ -782,6 +853,7 @@ export default function ReportDetailPage() {
       } catch (e: any) {
         console.error("[refreshRows] rows failed", e);
         setRows([]);
+        fetchedRowsCount = 0;
         nextMsg += `rows 조회 실패: ${e?.message || "unknown"}\n`;
       }
 
@@ -801,15 +873,33 @@ export default function ReportDetailPage() {
 
       try {
         const hdr = await fetchReportHeaderInfo(reportId);
+
+        const nextReportTypeKey = asStr(hdr?.reportTypeKey);
+        let nextReportTypeName = asStr(hdr?.reportTypeName);
+
+        const typeLower =
+          `${nextReportTypeKey} ${nextReportTypeName}`.toLowerCase();
+
+        if (typeLower.includes("traffic") || typeLower.includes("트래픽")) {
+          nextReportTypeName = "트래픽 리포트";
+        } else if (
+          nextReportTypeKey.toLowerCase() === "commerce" &&
+          !nextReportTypeName
+        ) {
+          nextReportTypeName = "커머스 매출 리포트";
+        }
+
         setHeaderInfo({
           advertiserName: asStr(hdr?.advertiserName),
-          reportTypeName: asStr(hdr?.reportTypeName),
+          reportTypeName: nextReportTypeName,
+          reportTypeKey: nextReportTypeKey,
         });
       } catch (e: any) {
         console.error("[refreshRows] headerInfo failed", e);
         setHeaderInfo({
           advertiserName: "",
           reportTypeName: "",
+          reportTypeKey: "",
         });
         nextMsg += `header 조회 실패: ${e?.message || "unknown"}\n`;
       }
@@ -819,6 +909,8 @@ export default function ReportDetailPage() {
       if (nextMsg.trim()) {
         setMsg(nextMsg.trim());
       }
+
+      return { rowsCount: fetchedRowsCount };
     } finally {
       setLoadingRows(false);
     }
@@ -844,6 +936,7 @@ export default function ReportDetailPage() {
     setHeaderInfo({
       advertiserName: "",
       reportTypeName: "",
+      reportTypeKey: "",
     });
     setPreviewVersion(0);
 
@@ -856,7 +949,7 @@ export default function ReportDetailPage() {
 
     setReportPeriod(resolvePresetPeriod());
 
-    refreshRows();
+    void refreshRows();
 
     const d = new Date(sessionStartedAtRef.current);
     setSessionStartedText(d.toLocaleString());
@@ -897,9 +990,8 @@ export default function ReportDetailPage() {
 
       const run = await runIngestion(reportId);
 
-      setSessionIngested(true);
-
-      await refreshRows();
+      const refreshed = await refreshRows();
+      setSessionIngested((refreshed?.rowsCount ?? 0) > 0);
 
       setCsvFile(null);
       if (csvInputRef.current) csvInputRef.current.value = "";
@@ -1190,7 +1282,9 @@ export default function ReportDetailPage() {
             <button
               type="button"
               className="rounded-md border px-3 py-2 text-sm hover:border-gray-400"
-              onClick={refreshRows}
+              onClick={() => {
+                void refreshRows();
+              }}
             >
               새로고침
             </button>
@@ -1524,6 +1618,7 @@ export default function ReportDetailPage() {
                     creativesMap={displayCreativesMap}
                     advertiserName={effectivePreviewAdvertiserName}
                     reportTypeName={effectivePreviewReportTypeName}
+                    reportTypeKey={headerInfo.reportTypeKey}
                     reportPeriod={reportPeriod}
                     onChangeReportPeriod={setReportPeriod}
                     hidePeriodEditor={true}

@@ -79,6 +79,16 @@ function pickReportTypeName(report: ReportRow | null) {
   );
 }
 
+function pickReportTypeKey(report: ReportRow | null) {
+  if (!report) return "";
+  return (
+    asStr((report as any)?.report_type_key) ||
+    asStr(report?.meta?.report_type_key) ||
+    asStr(report?.meta?.reportTypeKey) ||
+    ""
+  );
+}
+
 export default function ShareReportPage() {
   const params = useParams<{ token: string }>();
   const token = useMemo(() => String(params?.token ?? "").trim(), [params]);
@@ -97,9 +107,9 @@ export default function ShareReportPage() {
 
   const advertiserName = useMemo(() => pickAdvertiserName(report), [report]);
   const reportTypeName = useMemo(() => pickReportTypeName(report), [report]);
+  const reportTypeKey = useMemo(() => pickReportTypeKey(report), [report]);
 
   const shareReportPeriod = useMemo<ReportPeriod>(() => {
-    // 1) published 기준 우선 고정
     const publishedStart = asStr(report?.published_period_start);
     const publishedEnd = asStr(report?.published_period_end);
 
@@ -111,7 +121,6 @@ export default function ShareReportPage() {
       };
     }
 
-    // 2) legacy fallback
     const legacyStart = asStr(report?.period_start);
     const legacyEnd = asStr(report?.period_end);
 
@@ -123,7 +132,6 @@ export default function ShareReportPage() {
       };
     }
 
-    // 3) rows fallback
     const range = getRowsDateRange(rows as any[]);
     if (range?.startDate && range?.endDate) {
       return {
@@ -151,12 +159,14 @@ export default function ShareReportPage() {
     const updatedAt = report?.updated_at ?? "";
     const startDate = shareReportPeriod.startDate;
     const endDate = shareReportPeriod.endDate;
-    return `${id}:${updatedAt}:${startDate}:${endDate}`;
+    const typeKey = reportTypeKey;
+    return `${id}:${updatedAt}:${startDate}:${endDate}:${typeKey}`;
   }, [
     report?.id,
     report?.updated_at,
     shareReportPeriod.startDate,
     shareReportPeriod.endDate,
+    reportTypeKey,
   ]);
 
   useEffect(() => {
@@ -223,6 +233,7 @@ export default function ShareReportPage() {
       creativesMap={creativesMap}
       advertiserName={advertiserName}
       reportTypeName={reportTypeName}
+      reportTypeKey={reportTypeKey}
       reportPeriod={shareReportPeriod}
       onChangeReportPeriod={() => {}}
       hidePeriodEditor={true}

@@ -6,6 +6,7 @@ import { groupByGroup } from "../../../src/lib/report/aggregate";
 import DataBarCell from "../ui/DataBarCell";
 
 type Props = {
+  reportType?: "commerce" | "traffic";
   bySource: any;
   byCampaign: any;
   rows: any; // ✅ 전역필터가 반영된 raw rows
@@ -132,12 +133,15 @@ function generateSourceInsights(bySource: any[], monthGoal: any) {
 }
 
 export default function StructureSection({
+  reportType,
   bySource,
   byCampaign,
   rows,
   monthGoal,
   allRowsLoading,
 }: Props) {
+  const isTraffic = reportType === "traffic";
+
   const scopedRows = Array.isArray(rows) ? rows : [];
   const sourceRows = Array.isArray(bySource) ? bySource : [];
   const campaignRows = Array.isArray(byCampaign) ? byCampaign : [];
@@ -203,18 +207,18 @@ export default function StructureSection({
                 <th className="text-right p-3">CTR</th>
                 <th className="text-right p-3">CPC</th>
                 <th className="text-right p-3">Cost</th>
-                <th className="text-right p-3">Conv</th>
-                <th className="text-right p-3">CVR</th>
-                <th className="text-right p-3">CPA</th>
-                <th className="text-right p-3">Revenue</th>
-                <th className="text-right p-3">ROAS</th>
+                {!isTraffic && <th className="text-right p-3">Conv</th>}
+                {!isTraffic && <th className="text-right p-3">CVR</th>}
+                {!isTraffic && <th className="text-right p-3">CPA</th>}
+                {!isTraffic && <th className="text-right p-3">Revenue</th>}
+                {!isTraffic && <th className="text-right p-3">ROAS</th>}
               </tr>
             </thead>
 
             <tbody>
               {sourceRows.length === 0 ? (
                 <tr className="border-t border-gray-200">
-                  <td className="p-3 text-gray-500" colSpan={11}>
+                  <td className="p-3 text-gray-500" colSpan={isTraffic ? 6 : 11}>
                     {(allRowsLoading ?? false)
                       ? "데이터 로딩 중..."
                       : "표시할 소스 데이터가 없습니다. (필터 조건을 확인해 주세요)"}
@@ -244,22 +248,33 @@ export default function StructureSection({
                       />
                     </td>
 
-                    <td className="p-3">
-                      <DataBarCell value={toNum(r.conversions ?? r.conv)} max={srcMaxConv} />
-                    </td>
+                    {!isTraffic && (
+                      <td className="p-3">
+                        <DataBarCell value={toNum(r.conversions ?? r.conv)} max={srcMaxConv} />
+                      </td>
+                    )}
 
-                    <td className="p-3 text-right">{(toRate01(r.cvr) * 100).toFixed(2)}%</td>
-                    <td className="p-3 text-right">{KRW(toNum(r.cpa))}</td>
+                    {!isTraffic && (
+                      <td className="p-3 text-right">{(toRate01(r.cvr) * 100).toFixed(2)}%</td>
+                    )}
 
-                    <td className="p-3">
-                      <DataBarCell
-                        value={toNum(r.revenue)}
-                        max={srcMaxRev}
-                        label={KRW(toNum(r.revenue))}
-                      />
-                    </td>
+                    {!isTraffic && (
+                      <td className="p-3 text-right">{KRW(toNum(r.cpa))}</td>
+                    )}
 
-                    <td className="p-3 text-right">{(toRoas01(r.roas) * 100).toFixed(1)}%</td>
+                    {!isTraffic && (
+                      <td className="p-3">
+                        <DataBarCell
+                          value={toNum(r.revenue)}
+                          max={srcMaxRev}
+                          label={KRW(toNum(r.revenue))}
+                        />
+                      </td>
+                    )}
+
+                    {!isTraffic && (
+                      <td className="p-3 text-right">{(toRoas01(r.roas) * 100).toFixed(1)}%</td>
+                    )}
                   </tr>
                 ))
               )}
@@ -303,11 +318,11 @@ export default function StructureSection({
                 <th className="text-right p-3">CTR</th>
                 <th className="text-right p-3">CPC</th>
                 <th className="text-right p-3">Cost</th>
-                <th className="text-right p-3">Conv</th>
-                <th className="text-right p-3">CVR</th>
-                <th className="text-right p-3">CPA</th>
-                <th className="text-right p-3">Revenue</th>
-                <th className="text-right p-3">ROAS</th>
+                {!isTraffic && <th className="text-right p-3">Conv</th>}
+                {!isTraffic && <th className="text-right p-3">CVR</th>}
+                {!isTraffic && <th className="text-right p-3">CPA</th>}
+                {!isTraffic && <th className="text-right p-3">Revenue</th>}
+                {!isTraffic && <th className="text-right p-3">ROAS</th>}
               </tr>
             </thead>
 
@@ -335,28 +350,39 @@ export default function StructureSection({
                     />
                   </td>
 
-                  <td className="p-3">
-                    <DataBarCell value={toNum(r.conversions ?? r.conv)} max={campMaxConv} />
-                  </td>
+                  {!isTraffic && (
+                    <td className="p-3">
+                      <DataBarCell value={toNum(r.conversions ?? r.conv)} max={campMaxConv} />
+                    </td>
+                  )}
 
-                  <td className="p-3 text-right">{(toRate01(r.cvr) * 100).toFixed(2)}%</td>
-                  <td className="p-3 text-right">{KRW(toNum(r.cpa))}</td>
+                  {!isTraffic && (
+                    <td className="p-3 text-right">{(toRate01(r.cvr) * 100).toFixed(2)}%</td>
+                  )}
 
-                  <td className="p-3">
-                    <DataBarCell
-                      value={toNum(r.revenue)}
-                      max={campMaxRev}
-                      label={KRW(toNum(r.revenue))}
-                    />
-                  </td>
+                  {!isTraffic && (
+                    <td className="p-3 text-right">{KRW(toNum(r.cpa))}</td>
+                  )}
 
-                  <td className="p-3 text-right">{(toRoas01(r.roas) * 100).toFixed(1)}%</td>
+                  {!isTraffic && (
+                    <td className="p-3">
+                      <DataBarCell
+                        value={toNum(r.revenue)}
+                        max={campMaxRev}
+                        label={KRW(toNum(r.revenue))}
+                      />
+                    </td>
+                  )}
+
+                  {!isTraffic && (
+                    <td className="p-3 text-right">{(toRoas01(r.roas) * 100).toFixed(1)}%</td>
+                  )}
                 </tr>
               ))}
 
               {campaignRows.length === 0 && (
                 <tr className="border-t border-gray-200">
-                  <td className="p-3 text-gray-500" colSpan={11}>
+                  <td className="p-3 text-gray-500" colSpan={isTraffic ? 6 : 11}>
                     표시할 캠페인 데이터가 없습니다. (필터/컬럼명을 확인)
                   </td>
                 </tr>
@@ -437,11 +463,11 @@ export default function StructureSection({
                 <th className="text-right p-3">CTR</th>
                 <th className="text-right p-3">CPC</th>
                 <th className="text-right p-3">Cost</th>
-                <th className="text-right p-3">Conv</th>
-                <th className="text-right p-3">CVR</th>
-                <th className="text-right p-3">CPA</th>
-                <th className="text-right p-3">Revenue</th>
-                <th className="text-right p-3">ROAS</th>
+                {!isTraffic && <th className="text-right p-3">Conv</th>}
+                {!isTraffic && <th className="text-right p-3">CVR</th>}
+                {!isTraffic && <th className="text-right p-3">CPA</th>}
+                {!isTraffic && <th className="text-right p-3">Revenue</th>}
+                {!isTraffic && <th className="text-right p-3">ROAS</th>}
               </tr>
             </thead>
 
@@ -469,28 +495,39 @@ export default function StructureSection({
                     />
                   </td>
 
-                  <td className="p-3">
-                    <DataBarCell value={toNum(r.conversions ?? r.conv)} max={grpMaxConv} />
-                  </td>
+                  {!isTraffic && (
+                    <td className="p-3">
+                      <DataBarCell value={toNum(r.conversions ?? r.conv)} max={grpMaxConv} />
+                    </td>
+                  )}
 
-                  <td className="p-3 text-right">{(toRate01(r.cvr) * 100).toFixed(2)}%</td>
-                  <td className="p-3 text-right">{KRW(toNum(r.cpa))}</td>
+                  {!isTraffic && (
+                    <td className="p-3 text-right">{(toRate01(r.cvr) * 100).toFixed(2)}%</td>
+                  )}
 
-                  <td className="p-3">
-                    <DataBarCell
-                      value={toNum(r.revenue)}
-                      max={grpMaxRev}
-                      label={KRW(toNum(r.revenue))}
-                    />
-                  </td>
+                  {!isTraffic && (
+                    <td className="p-3 text-right">{KRW(toNum(r.cpa))}</td>
+                  )}
 
-                  <td className="p-3 text-right">{(toRoas01(r.roas) * 100).toFixed(1)}%</td>
+                  {!isTraffic && (
+                    <td className="p-3">
+                      <DataBarCell
+                        value={toNum(r.revenue)}
+                        max={grpMaxRev}
+                        label={KRW(toNum(r.revenue))}
+                      />
+                    </td>
+                  )}
+
+                  {!isTraffic && (
+                    <td className="p-3 text-right">{(toRoas01(r.roas) * 100).toFixed(1)}%</td>
+                  )}
                 </tr>
               ))}
 
               {groupAggRows.length === 0 && (
                 <tr className="border-t border-gray-200">
-                  <td className="p-3 text-gray-500" colSpan={11}>
+                  <td className="p-3 text-gray-500" colSpan={isTraffic ? 6 : 11}>
                     표시할 그룹 데이터가 없습니다. (필터/캠페인 선택/컬럼명을 확인)
                   </td>
                 </tr>

@@ -13,6 +13,7 @@ import {
 import DataBarCell from "../../ui/DataBarCell";
 
 type Props = {
+  reportType?: "commerce" | "traffic";
   byMonth: any[];
 };
 
@@ -25,7 +26,8 @@ const monthKey = (m: any) => {
   return `${match[1]}-${match[2].padStart(2, "0")}`;
 };
 
-export default function SummaryTable({ byMonth }: Props) {
+export default function SummaryTable({ reportType, byMonth }: Props) {
+  const isTraffic = reportType === "traffic";
   const months = Array.isArray(byMonth) ? byMonth : [];
 
   const sortedMonths = [...months].sort((a, b) =>
@@ -69,7 +71,12 @@ export default function SummaryTable({ byMonth }: Props) {
 
       <div className="px-4 pb-4 pt-4 sm:px-6 sm:pb-5 sm:pt-5">
         <div className="overflow-auto rounded-2xl border border-gray-200/80">
-          <table className="w-full min-w-[1120px] text-sm">
+          <table
+            className={[
+              "w-full text-sm",
+              isTraffic ? "min-w-[760px]" : "min-w-[1120px]",
+            ].join(" ")}
+          >
             <thead className="sticky top-0 z-10 border-b border-gray-200 bg-gray-50/95 backdrop-blur">
               <tr>
                 <th className="whitespace-nowrap px-4 py-3.5 text-left text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-600">
@@ -90,21 +97,31 @@ export default function SummaryTable({ byMonth }: Props) {
                 <th className="whitespace-nowrap px-4 py-3.5 text-right text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-600">
                   Cost
                 </th>
-                <th className="whitespace-nowrap px-4 py-3.5 text-right text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-600">
-                  Conv
-                </th>
-                <th className="whitespace-nowrap px-4 py-3.5 text-right text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-600">
-                  CVR
-                </th>
-                <th className="whitespace-nowrap px-4 py-3.5 text-right text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-600">
-                  CPA
-                </th>
-                <th className="whitespace-nowrap px-4 py-3.5 text-right text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-600">
-                  Revenue
-                </th>
-                <th className="whitespace-nowrap px-4 py-3.5 text-right text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-600">
-                  ROAS
-                </th>
+                {!isTraffic && (
+                  <th className="whitespace-nowrap px-4 py-3.5 text-right text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-600">
+                    Conv
+                  </th>
+                )}
+                {!isTraffic && (
+                  <th className="whitespace-nowrap px-4 py-3.5 text-right text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-600">
+                    CVR
+                  </th>
+                )}
+                {!isTraffic && (
+                  <th className="whitespace-nowrap px-4 py-3.5 text-right text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-600">
+                    CPA
+                  </th>
+                )}
+                {!isTraffic && (
+                  <th className="whitespace-nowrap px-4 py-3.5 text-right text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-600">
+                    Revenue
+                  </th>
+                )}
+                {!isTraffic && (
+                  <th className="whitespace-nowrap px-4 py-3.5 text-right text-[12px] font-semibold uppercase tracking-[0.04em] text-gray-600">
+                    ROAS
+                  </th>
+                )}
               </tr>
             </thead>
 
@@ -150,44 +167,54 @@ export default function SummaryTable({ byMonth }: Props) {
                     />
                   </td>
 
-                  <td className="whitespace-nowrap px-4 py-3.5 text-right">
-                    <TrendCell
-                      v={diffRatio(lastMonth?.conversions, prevMonth?.conversions)}
-                    />
-                  </td>
+                  {!isTraffic && (
+                    <td className="whitespace-nowrap px-4 py-3.5 text-right">
+                      <TrendCell
+                        v={diffRatio(lastMonth?.conversions, prevMonth?.conversions)}
+                      />
+                    </td>
+                  )}
 
-                  <td className="whitespace-nowrap px-4 py-3.5 text-right">
-                    <TrendCell
-                      v={diffRatio(
-                        normalizeRate01(lastMonth?.cvr),
-                        normalizeRate01(prevMonth?.cvr)
-                      )}
-                      digits={2}
-                    />
-                  </td>
+                  {!isTraffic && (
+                    <td className="whitespace-nowrap px-4 py-3.5 text-right">
+                      <TrendCell
+                        v={diffRatio(
+                          normalizeRate01(lastMonth?.cvr),
+                          normalizeRate01(prevMonth?.cvr)
+                        )}
+                        digits={2}
+                      />
+                    </td>
+                  )}
 
-                  <td className="whitespace-nowrap px-4 py-3.5 text-right">
-                    <TrendCell
-                      v={diffRatio(lastMonth?.cpa, prevMonth?.cpa)}
-                      digits={2}
-                    />
-                  </td>
+                  {!isTraffic && (
+                    <td className="whitespace-nowrap px-4 py-3.5 text-right">
+                      <TrendCell
+                        v={diffRatio(lastMonth?.cpa, prevMonth?.cpa)}
+                        digits={2}
+                      />
+                    </td>
+                  )}
 
-                  <td className="whitespace-nowrap px-4 py-3.5 text-right">
-                    <TrendCell
-                      v={diffRatio(lastMonth?.revenue, prevMonth?.revenue)}
-                    />
-                  </td>
+                  {!isTraffic && (
+                    <td className="whitespace-nowrap px-4 py-3.5 text-right">
+                      <TrendCell
+                        v={diffRatio(lastMonth?.revenue, prevMonth?.revenue)}
+                      />
+                    </td>
+                  )}
 
-                  <td className="whitespace-nowrap px-4 py-3.5 text-right">
-                    <TrendCell
-                      v={diffRatio(
-                        normalizeRoas01(lastMonth?.roas),
-                        normalizeRoas01(prevMonth?.roas)
-                      )}
-                      digits={2}
-                    />
-                  </td>
+                  {!isTraffic && (
+                    <td className="whitespace-nowrap px-4 py-3.5 text-right">
+                      <TrendCell
+                        v={diffRatio(
+                          normalizeRoas01(lastMonth?.roas),
+                          normalizeRoas01(prevMonth?.roas)
+                        )}
+                        digits={2}
+                      />
+                    </td>
+                  )}
                 </tr>
               )}
 
@@ -230,39 +257,49 @@ export default function SummaryTable({ byMonth }: Props) {
                     />
                   </td>
 
-                  <td className="whitespace-nowrap px-4 py-3.5 text-right align-middle">
-                    <DataBarCell
-                      value={toSafeNumber(row?.conversions ?? row?.conv)}
-                      max={maxConv}
-                    />
-                  </td>
+                  {!isTraffic && (
+                    <td className="whitespace-nowrap px-4 py-3.5 text-right align-middle">
+                      <DataBarCell
+                        value={toSafeNumber(row?.conversions ?? row?.conv)}
+                        max={maxConv}
+                      />
+                    </td>
+                  )}
 
-                  <td className="whitespace-nowrap px-4 py-3.5 text-right text-gray-700">
-                    {formatPercentFromRate(row?.cvr, 2)}
-                  </td>
+                  {!isTraffic && (
+                    <td className="whitespace-nowrap px-4 py-3.5 text-right text-gray-700">
+                      {formatPercentFromRate(row?.cvr, 2)}
+                    </td>
+                  )}
 
-                  <td className="whitespace-nowrap px-4 py-3.5 text-right text-gray-700">
-                    {KRW(toSafeNumber(row?.cpa))}
-                  </td>
+                  {!isTraffic && (
+                    <td className="whitespace-nowrap px-4 py-3.5 text-right text-gray-700">
+                      {KRW(toSafeNumber(row?.cpa))}
+                    </td>
+                  )}
 
-                  <td className="whitespace-nowrap px-4 py-3.5 text-right align-middle">
-                    <DataBarCell
-                      value={toSafeNumber(row?.revenue)}
-                      max={maxRev}
-                      label={KRW(toSafeNumber(row?.revenue))}
-                    />
-                  </td>
+                  {!isTraffic && (
+                    <td className="whitespace-nowrap px-4 py-3.5 text-right align-middle">
+                      <DataBarCell
+                        value={toSafeNumber(row?.revenue)}
+                        max={maxRev}
+                        label={KRW(toSafeNumber(row?.revenue))}
+                      />
+                    </td>
+                  )}
 
-                  <td className="whitespace-nowrap px-4 py-3.5 text-right font-semibold text-rose-600">
-                    {formatPercentFromRoas(row?.roas, 1)}
-                  </td>
+                  {!isTraffic && (
+                    <td className="whitespace-nowrap px-4 py-3.5 text-right font-semibold text-rose-600">
+                      {formatPercentFromRoas(row?.roas, 1)}
+                    </td>
+                  )}
                 </tr>
               ))}
 
               {!sortedMonths.length && (
                 <tr>
                   <td
-                    colSpan={11}
+                    colSpan={isTraffic ? 6 : 11}
                     className="px-4 py-10 text-center text-sm font-medium text-gray-400"
                   >
                     표시할 월별 데이터가 없습니다.

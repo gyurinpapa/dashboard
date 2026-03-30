@@ -234,7 +234,7 @@ function buildKeywordDetailInsight(args: {
       `소스 비교: 2순위 “${String(topS2.source)}”(ROAS ${safeRoasPct0(
         toSafeNumber(topS2.roas)
       )})와 함께 증액/유지/축소 기준을 명확히 하세요.`
-    );
+      );
   }
 
   if (topD1 && topD2) {
@@ -274,11 +274,13 @@ function buildKeywordDetailInsight(args: {
  * ========================= */
 
 type Props = {
+  reportType?: "commerce" | "traffic";
   rows: Row[];
 };
 
 export default function KeywordDetailSection(props: Props) {
-  const { rows } = props;
+  const { reportType, rows } = props;
+  const isTraffic = reportType === "traffic";
 
   const keywords = useMemo(() => extractKeywords(rows), [rows]);
   const [selectedKeyword, setSelectedKeyword] = useState<string | null>(keywords[0] ?? null);
@@ -336,7 +338,6 @@ export default function KeywordDetailSection(props: Props) {
   return (
     <section className="w-full min-w-0">
       <div className="mt-4 grid grid-cols-1 items-start gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
-        {/* LEFT: 키워드 리스트 */}
         <aside className="min-w-0 rounded-2xl border border-gray-200 bg-white p-4 lg:sticky lg:top-24 lg:max-h-[calc(100vh-6rem)] lg:overflow-hidden">
           <div className="flex items-center justify-between gap-3">
             <div className="text-sm font-semibold">키워드 리스트</div>
@@ -380,7 +381,6 @@ export default function KeywordDetailSection(props: Props) {
           </div>
         </aside>
 
-        {/* RIGHT */}
         <div className="min-w-0 space-y-6">
           <section className="min-w-0 rounded-2xl border border-gray-200 bg-white p-6">
             <div className="flex items-start justify-between gap-4">
@@ -404,7 +404,9 @@ export default function KeywordDetailSection(props: Props) {
             </ul>
 
             <div className="mt-4 rounded-xl bg-gray-50 p-4">
-              <div className="text-sm font-semibold text-gray-900">다음 운영 액션(클릭 · 전환 · ROAS)</div>
+              <div className="text-sm font-semibold text-gray-900">
+                다음 운영 액션(클릭 · 전환 · ROAS)
+              </div>
               <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-gray-700">
                 {insight.actions.map((a, i) => (
                   <li key={i}>{a}</li>
@@ -413,7 +415,7 @@ export default function KeywordDetailSection(props: Props) {
             </div>
           </section>
 
-          <div className="keyword-detail-week-table-fix min-w-0">
+          <div className="keyword-detail-week-table-fix keyword-detail-hide-date-table min-w-0">
             {(() => {
               const currentMonthKey = (totals as any)?.currentMonthKey ?? null;
               const currentMonthActual = (totals as any)?.currentMonthActual ?? totals;
@@ -439,6 +441,7 @@ export default function KeywordDetailSection(props: Props) {
               return (
                 <div className="min-w-0">
                   <SummarySection
+                    reportType={reportType}
                     totals={totals as any}
                     byMonth={byMonth as any}
                     byWeekOnly={byWeekOnly as any}
@@ -484,6 +487,20 @@ export default function KeywordDetailSection(props: Props) {
           overflow: hidden;
           text-overflow: ellipsis;
         }
+
+        .keyword-detail-hide-date-table > div > section:last-of-type {
+          display: none !important;
+        }
+
+        ${isTraffic ? `
+        .keyword-detail-week-table-fix table {
+          min-width: 860px !important;
+        }
+        ` : `
+        .keyword-detail-week-table-fix table {
+          min-width: 1320px !important;
+        }
+        `}
       `}</style>
     </section>
   );

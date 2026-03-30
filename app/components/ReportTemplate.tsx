@@ -78,6 +78,7 @@ type Props = {
   creativesMap?: Record<string, string>;
   advertiserName?: string | null;
   reportTypeName?: string | null;
+  reportTypeKey?: string | null;
   reportPeriod: ReportPeriod;
   onChangeReportPeriod: (next: ReportPeriod) => void;
   readOnlyHeader?: boolean;
@@ -85,6 +86,8 @@ type Props = {
   hidePeriodEditor?: boolean;
   hideTabPeriodText?: boolean;
 };
+
+type ReportUiType = "commerce" | "traffic";
 
 function asStr(v: any) {
   if (v == null) return "";
@@ -187,7 +190,11 @@ function normalizeIncomingRow(rec: any) {
 
   if (base.channel == null) {
     base.channel =
-      rec?.channel ?? base?.ad_channel ?? base?.media ?? base?.media_type ?? null;
+      rec?.channel ??
+      base?.ad_channel ??
+      base?.media ??
+      base?.media_type ??
+      null;
   }
 
   if (base.device == null) {
@@ -199,7 +206,8 @@ function normalizeIncomingRow(rec: any) {
   }
 
   if (base.platform == null) {
-    base.platform = rec?.platform ?? base?.media_source ?? base?.ad_platform ?? null;
+    base.platform =
+      rec?.platform ?? base?.media_source ?? base?.ad_platform ?? null;
   }
 
   if (base.campaign_name == null && base.campaign != null) {
@@ -493,6 +501,7 @@ export default function ReportTemplate({
   creativesMap,
   advertiserName,
   reportTypeName,
+  reportTypeKey,
   reportPeriod,
   onChangeReportPeriod,
   readOnlyHeader = false,
@@ -529,9 +538,52 @@ export default function ReportTemplate({
     return firstNonEmpty(advertiserName, headerFallback.advertiserName);
   }, [advertiserName, headerFallback.advertiserName]);
 
+  const effectiveReportTypeKey = useMemo(() => {
+    const rawKey = firstNonEmpty(reportTypeKey);
+    const keyLower = rawKey.toLowerCase();
+
+    if (keyLower.includes("traffic") || keyLower.includes("트래픽")) {
+      return "traffic";
+    }
+
+    if (
+      keyLower.includes("commerce") ||
+      keyLower.includes("커머스") ||
+      keyLower.includes("e-commerce") ||
+      keyLower.includes("매출")
+    ) {
+      return "commerce";
+    }
+
+    const rawName = firstNonEmpty(reportTypeName, headerFallback.reportTypeName);
+    const nameLower = rawName.toLowerCase();
+
+    if (nameLower.includes("traffic") || nameLower.includes("트래픽")) {
+      return "traffic";
+    }
+
+    if (
+      nameLower.includes("commerce") ||
+      nameLower.includes("커머스") ||
+      nameLower.includes("e-commerce") ||
+      nameLower.includes("매출")
+    ) {
+      return "commerce";
+    }
+
+    return "";
+  }, [reportTypeKey, reportTypeName, headerFallback.reportTypeName]);
+
   const effectiveReportTypeName = useMemo(() => {
+    if (effectiveReportTypeKey === "traffic") return "트래픽 리포트";
+    if (effectiveReportTypeKey === "commerce") return "커머스 매출 리포트";
+
     return firstNonEmpty(reportTypeName, headerFallback.reportTypeName);
-  }, [reportTypeName, headerFallback.reportTypeName]);
+  }, [effectiveReportTypeKey, reportTypeName, headerFallback.reportTypeName]);
+
+  const reportType = useMemo<ReportUiType>(() => {
+    return effectiveReportTypeKey === "traffic" ? "traffic" : "commerce";
+  }, [effectiveReportTypeKey]);
 
   const templateRenderKey = useMemo(() => {
     const first = normalizedRows?.[0];
@@ -888,6 +940,7 @@ export default function ReportTemplate({
             period={periodFixed}
             advertiserName={effectiveAdvertiserName}
             reportTypeName={effectiveReportTypeName}
+            reportTypeKey={effectiveReportTypeKey}
             reportPeriod={reportPeriod}
             onChangeReportPeriod={onChangeReportPeriod}
             readOnlyHeader={readOnlyHeader}
@@ -941,6 +994,7 @@ export default function ReportTemplate({
                     <>
                       <div className="rounded-2xl">
                         <MonthGoalSection
+                          reportType={reportType}
                           currentMonthKey={currentMonthKey}
                           currentMonthActual={currentMonthActual}
                           currentMonthGoalComputed={currentMonthGoalComputed}
@@ -952,6 +1006,7 @@ export default function ReportTemplate({
 
                       <div className="rounded-2xl">
                         <SummarySection
+                          {...({ reportType } as any)}
                           totals={totals as any}
                           byMonth={byMonth as any}
                           byWeekOnly={byWeekOnly as any}
@@ -971,13 +1026,17 @@ export default function ReportTemplate({
 
                   {tab === "summary2" && (
                     <div className="rounded-2xl">
-                      <Summary2Section rows={filteredRows as any[]} />
+                      <Summary2Section
+                        {...({ reportType } as any)}
+                        rows={filteredRows as any[]}
+                      />
                     </div>
                   )}
 
                   {tab === "structure" && (
                     <div className="rounded-2xl">
                       <StructureSection
+                        {...({ reportType } as any)}
                         bySource={bySource}
                         byCampaign={byCampaign}
                         rows={filteredRowsWithCreatives}
@@ -989,6 +1048,7 @@ export default function ReportTemplate({
                   {tab === "keyword" && (
                     <div className="rounded-2xl">
                       <KeywordSection
+                        {...({ reportType } as any)}
                         keywordAgg={keywordAgg}
                         keywordInsight={keywordInsight}
                       />
@@ -997,19 +1057,28 @@ export default function ReportTemplate({
 
                   {tab === "keywordDetail" && (
                     <div className="rounded-2xl">
-                      <KeywordDetailSection rows={filteredRowsWithCreatives as any[]} />
+                      <KeywordDetailSection
+                        {...({ reportType } as any)}
+                        rows={filteredRowsWithCreatives as any[]}
+                      />
                     </div>
                   )}
 
                   {tab === "creative" && (
                     <div className="rounded-2xl">
-                      <CreativeSection rows={creativeBaseRows} />
+                      <CreativeSection
+                        {...({ reportType } as any)}
+                        rows={creativeBaseRows}
+                      />
                     </div>
                   )}
 
                   {tab === "creativeDetail" && (
                     <div className="rounded-2xl">
-                      <CreativeDetailSection rows={creativeBaseRows as any[]} />
+                      <CreativeDetailSection
+                        {...({ reportType } as any)}
+                        rows={creativeBaseRows as any[]}
+                      />
                     </div>
                   )}
                 </div>
