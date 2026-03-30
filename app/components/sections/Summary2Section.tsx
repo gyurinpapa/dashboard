@@ -1566,7 +1566,7 @@ export default function Summary2Section({ reportType, rows }: Props) {
                     ))}
 
                     {Array.from({ length: 7 }).map((_, dayIdx) => (
-                      <div contents="" key={`row-${dayIdx}`} className="contents">
+                      <div key={`row-${dayIdx}`} className="contents">
                         <div className="flex items-center text-sm font-medium text-gray-500">
                           {dayLabelKor(dayIdx)}
                         </div>
