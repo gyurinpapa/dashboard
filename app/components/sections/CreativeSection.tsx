@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -78,6 +78,52 @@ const SORT_LABEL: Record<SortKey, string> = {
   revenue: "Revenue",
   roas: "ROAS",
 };
+
+const PREVIEW_CARD_WIDTH = 288;
+const PREVIEW_OPEN_DELAY = 40;
+const PREVIEW_CLOSE_DELAY = 140;
+
+function creativePreviewKey(item: CreativeAgg | null | undefined) {
+  if (!item) return "";
+  return `${String(item.creative ?? "")}__${String(item.imagePath ?? "")}`;
+}
+
+function computePreviewPosition(anchorEl: HTMLElement | null) {
+  if (!anchorEl || typeof window === "undefined") {
+    return {
+      top: 0,
+      left: 0,
+      placement: "right" as "right" | "left",
+    };
+  }
+
+  const rect = anchorEl.getBoundingClientRect();
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const gap = 12;
+  const cardWidth = PREVIEW_CARD_WIDTH;
+  const estimatedCardHeight = 280;
+
+  const enoughRight = rect.right + gap + cardWidth <= viewportWidth - 12;
+  const enoughLeft = rect.left - gap - cardWidth >= 12;
+
+  const placement: "right" | "left" = enoughRight || !enoughLeft ? "right" : "left";
+
+  let left =
+    placement === "right"
+      ? rect.right + gap
+      : rect.left - gap - cardWidth;
+
+  let top = rect.top + rect.height / 2 - estimatedCardHeight / 2;
+
+  const minTop = 12;
+  const maxTop = Math.max(12, viewportHeight - estimatedCardHeight - 12);
+  top = Math.min(Math.max(top, minTop), maxTop);
+
+  left = Math.max(12, Math.min(left, viewportWidth - cardWidth - 12));
+
+  return { top, left, placement };
+}
 
 export default function CreativeSection({ reportType, rows }: Props) {
   const isTraffic = reportType === "traffic";
@@ -170,6 +216,16 @@ export default function CreativeSection({ reportType, rows }: Props) {
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [selectedCreative, setSelectedCreative] = useState<CreativeAgg | null>(null);
 
+  const [hoveredCreative, setHoveredCreative] = useState<CreativeAgg | null>(null);
+  const [previewAnchorEl, setPreviewAnchorEl] = useState<HTMLElement | null>(null);
+  const [previewPos, setPreviewPos] = useState(() =>
+    computePreviewPosition(null)
+  );
+  const [imageErrorMap, setImageErrorMap] = useState<Record<string, boolean>>({});
+
+  const openTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const onClickHeader = (k: SortKey) => {
     if (k === sortKey) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -177,6 +233,47 @@ export default function CreativeSection({ reportType, rows }: Props) {
     }
     setSortKey(k);
     setSortDir(k === "creative" ? "asc" : "desc");
+  };
+
+  const clearPreviewTimers = () => {
+    if (openTimerRef.current) {
+      clearTimeout(openTimerRef.current);
+      openTimerRef.current = null;
+    }
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  };
+
+  const openPreview = (item: CreativeAgg, anchorEl: HTMLElement) => {
+    clearPreviewTimers();
+    openTimerRef.current = setTimeout(() => {
+      setHoveredCreative(item);
+      setPreviewAnchorEl(anchorEl);
+      setPreviewPos(computePreviewPosition(anchorEl));
+    }, PREVIEW_OPEN_DELAY);
+  };
+
+  const closePreview = () => {
+    if (openTimerRef.current) {
+      clearTimeout(openTimerRef.current);
+      openTimerRef.current = null;
+    }
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+    }
+    closeTimerRef.current = setTimeout(() => {
+      setHoveredCreative(null);
+      setPreviewAnchorEl(null);
+    }, PREVIEW_CLOSE_DELAY);
+  };
+
+  const keepPreviewOpen = () => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
   };
 
   const SortArrow = ({ k }: { k: SortKey }) => {
@@ -262,6 +359,48 @@ export default function CreativeSection({ reportType, rows }: Props) {
       setSelectedCreative(null);
     }
   }, [creativeAgg, selectedCreative]);
+
+  useEffect(() => {
+    if (!hoveredCreative) return;
+
+    const exists = creativeAgg.some(
+      (item) =>
+        item.creative === hoveredCreative.creative &&
+        String(item.imagePath ?? "") === String(hoveredCreative.imagePath ?? "")
+    );
+
+    if (!exists) {
+      setHoveredCreative(null);
+      setPreviewAnchorEl(null);
+    }
+  }, [creativeAgg, hoveredCreative]);
+
+  useEffect(() => {
+    if (!hoveredCreative || !previewAnchorEl) return;
+
+    const updatePosition = () => {
+      setPreviewPos(computePreviewPosition(previewAnchorEl));
+    };
+
+    updatePosition();
+    window.addEventListener("scroll", updatePosition, true);
+    window.addEventListener("resize", updatePosition);
+
+    return () => {
+      window.removeEventListener("scroll", updatePosition, true);
+      window.removeEventListener("resize", updatePosition);
+    };
+  }, [hoveredCreative, previewAnchorEl]);
+
+  useEffect(() => {
+    return () => {
+      clearPreviewTimers();
+    };
+  }, []);
+
+  const previewKey = creativePreviewKey(hoveredCreative);
+  const hasPreviewImage =
+    !!hoveredCreative?.imagePath && !imageErrorMap[previewKey];
 
   return (
     <section className="mt-1">
@@ -570,82 +709,192 @@ export default function CreativeSection({ reportType, rows }: Props) {
                   </td>
                 </tr>
               ) : (
-                tableRows.map((r, idx) => (
-                  <tr
-                    key={`${r.creative}-${idx}`}
-                    className="cursor-pointer border-t border-gray-200 hover:bg-orange-50"
-                    onClick={() => setSelectedCreative(r)}
-                  >
-                    <td className="whitespace-nowrap p-3 text-left font-medium">
-                      {r.creative || "(empty)"}
-                    </td>
+                tableRows.map((r, idx) => {
+                  const rowKey = creativePreviewKey(r);
 
-                    <td className="p-3">
-                      <DataBarCell
-                        value={toSafeNumber(r.impressions)}
-                        max={maxImpr}
-                        label={formatCount(r.impressions)}
-                      />
-                    </td>
+                  return (
+                    <tr
+                      key={`${r.creative}-${idx}`}
+                      className="cursor-pointer border-t border-gray-200 hover:bg-orange-50"
+                      onClick={() => setSelectedCreative(r)}
+                    >
+                      <td className="p-3 text-left font-medium">
+                        <div
+                          className="inline-flex max-w-[260px] items-center gap-2"
+                          onMouseEnter={(e) =>
+                            openPreview(r, e.currentTarget as HTMLElement)
+                          }
+                          onMouseLeave={closePreview}
+                        >
+                          <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 px-2 text-[11px] font-semibold text-gray-500">
+                            AD
+                          </span>
 
-                    <td className="p-3">
-                      <DataBarCell
-                        value={toSafeNumber(r.clicks)}
-                        max={maxClicks}
-                        label={formatCount(r.clicks)}
-                      />
-                    </td>
+                          <span
+                            className="cursor-default truncate text-gray-900 underline decoration-dotted underline-offset-4"
+                            title={r.creative || "(empty)"}
+                          >
+                            {r.creative || "(empty)"}
+                          </span>
 
-                    <td className="p-3 text-right">
-                      {formatPercentFromRate(r.ctr, 2)}
-                    </td>
-                    <td className="p-3 text-right">{KRW(r.cpc)}</td>
+                          {!!r.imagePath && (
+                            <span className="shrink-0 rounded-full bg-orange-50 px-2 py-0.5 text-[10px] font-semibold text-orange-600">
+                              Preview
+                            </span>
+                          )}
 
-                    <td className="p-3">
-                      <DataBarCell
-                        value={toSafeNumber(r.cost)}
-                        max={maxCost}
-                        label={KRW(r.cost)}
-                      />
-                    </td>
+                          {!r.imagePath && (
+                            <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-500">
+                              No image
+                            </span>
+                          )}
+                        </div>
 
-                    {!isTraffic && (
+                        {hoveredCreative &&
+                          rowKey === previewKey &&
+                          previewAnchorEl && (
+                            <div
+                              className="fixed z-[120]"
+                              style={{
+                                top: previewPos.top,
+                                left: previewPos.left,
+                                width: PREVIEW_CARD_WIDTH,
+                              }}
+                              onMouseEnter={keepPreviewOpen}
+                              onMouseLeave={closePreview}
+                            >
+                              <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl">
+                                <div className="border-b border-gray-100 px-4 py-3">
+                                  <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-400">
+                                    Creative Preview
+                                  </div>
+                                  <div
+                                    className="mt-1 line-clamp-2 text-sm font-semibold text-gray-900"
+                                    title={hoveredCreative.creative || "(empty)"}
+                                  >
+                                    {hoveredCreative.creative || "(empty)"}
+                                  </div>
+                                </div>
+
+                                <div className="bg-gray-50 p-3">
+                                  <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+                                    {hasPreviewImage ? (
+                                      <img
+                                        src={hoveredCreative.imagePath}
+                                        alt={hoveredCreative.creative || "creative preview"}
+                                        className="block h-52 w-full object-contain bg-white"
+                                        loading="lazy"
+                                        onError={() => {
+                                          setImageErrorMap((prev) => ({
+                                            ...prev,
+                                            [previewKey]: true,
+                                          }));
+                                        }}
+                                      />
+                                    ) : (
+                                      <div className="flex h-52 items-center justify-center bg-gray-50 px-4 text-center">
+                                        <div>
+                                          <div className="text-sm font-semibold text-gray-500">
+                                            미리보기 없음
+                                          </div>
+                                          <div className="mt-1 text-xs text-gray-400">
+                                            이미지 URL이 없거나 로딩에 실패했습니다.
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center justify-between px-4 py-3 text-[11px] text-gray-500">
+                                  <span className="truncate">
+                                    {hoveredCreative.imagePath
+                                      ? "이미지 미리보기"
+                                      : "Fallback preview"}
+                                  </span>
+                                  <span
+                                    className={[
+                                      "rounded-full px-2 py-0.5 font-semibold",
+                                      hoveredCreative.imagePath
+                                        ? "bg-orange-50 text-orange-600"
+                                        : "bg-gray-100 text-gray-500",
+                                    ].join(" ")}
+                                  >
+                                    {hoveredCreative.imagePath ? "IMAGE" : "EMPTY"}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                      </td>
+
                       <td className="p-3">
                         <DataBarCell
-                          value={toSafeNumber(r.conversions)}
-                          max={maxConv}
-                          label={formatCount(r.conversions)}
+                          value={toSafeNumber(r.impressions)}
+                          max={maxImpr}
+                          label={formatCount(r.impressions)}
                         />
                       </td>
-                    )}
 
-                    {!isTraffic && (
-                      <td className="p-3 text-right">
-                        {formatPercentFromRate(r.cvr, 2)}
-                      </td>
-                    )}
-
-                    {!isTraffic && (
-                      <td className="p-3 text-right">{KRW(r.cpa)}</td>
-                    )}
-
-                    {!isTraffic && (
                       <td className="p-3">
                         <DataBarCell
-                          value={toSafeNumber(r.revenue)}
-                          max={maxRev}
-                          label={KRW(r.revenue)}
+                          value={toSafeNumber(r.clicks)}
+                          max={maxClicks}
+                          label={formatCount(r.clicks)}
                         />
                       </td>
-                    )}
 
-                    {!isTraffic && (
                       <td className="p-3 text-right">
-                        {formatPercentFromRoas(r.roas, 1)}
+                        {formatPercentFromRate(r.ctr, 2)}
                       </td>
-                    )}
-                  </tr>
-                ))
+                      <td className="p-3 text-right">{KRW(r.cpc)}</td>
+
+                      <td className="p-3">
+                        <DataBarCell
+                          value={toSafeNumber(r.cost)}
+                          max={maxCost}
+                          label={KRW(r.cost)}
+                        />
+                      </td>
+
+                      {!isTraffic && (
+                        <td className="p-3">
+                          <DataBarCell
+                            value={toSafeNumber(r.conversions)}
+                            max={maxConv}
+                            label={formatCount(r.conversions)}
+                          />
+                        </td>
+                      )}
+
+                      {!isTraffic && (
+                        <td className="p-3 text-right">
+                          {formatPercentFromRate(r.cvr, 2)}
+                        </td>
+                      )}
+
+                      {!isTraffic && (
+                        <td className="p-3 text-right">{KRW(r.cpa)}</td>
+                      )}
+
+                      {!isTraffic && (
+                        <td className="p-3">
+                          <DataBarCell
+                            value={toSafeNumber(r.revenue)}
+                            max={maxRev}
+                            label={KRW(r.revenue)}
+                          />
+                        </td>
+                      )}
+
+                      {!isTraffic && (
+                        <td className="p-3 text-right">
+                          {formatPercentFromRoas(r.roas, 1)}
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
