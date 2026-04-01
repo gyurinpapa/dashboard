@@ -18,10 +18,7 @@ type Props = {
 export default function SummaryChart({ reportType, data }: Props) {
   const isTraffic = reportType === "traffic";
 
-  const safeData = useMemo(
-    () => (Array.isArray(data) ? data : []),
-    [data]
-  );
+  const safeData = useMemo(() => (Array.isArray(data) ? data : []), [data]);
 
   const insight = useMemo(() => {
     if (!safeData.length) {
@@ -94,8 +91,8 @@ export default function SummaryChart({ reportType, data }: Props) {
 
   return (
     <SummaryChartView
-      title={isTraffic ? "주차별 노출 · 클릭 · CTR" : "주차별 비용 · 전환매출 · ROAS"}
-      subtitle="최근 주차별 핵심 성과 흐름"
+      title={isTraffic ? "📈 주차별 노출 · 클릭 · CTR" : "📈 주차별 비용 · 전환매출 · ROAS"}
+      subtitle="최근 주차별 핵심 성과 흐름을 시각적으로 살펴봅니다"
       data={chartData}
       density="report"
       insight={insight}

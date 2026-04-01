@@ -150,52 +150,66 @@ function quantize(value: number, values: number[]) {
   const positives = values
     .filter((v) => Number.isFinite(v) && v > 0)
     .sort((a, b) => a - b);
+
   if (!positives.length || value <= 0) return 0;
-  if (positives.length === 1) return 5;
+  if (positives.length === 1) return 6;
 
-  const p20 =
+  const p10 =
     positives[
       Math.min(
         positives.length - 1,
-        Math.floor((positives.length - 1) * 0.2)
+        Math.floor((positives.length - 1) * 0.1)
       )
     ];
-  const p40 =
+  const p30 =
     positives[
       Math.min(
         positives.length - 1,
-        Math.floor((positives.length - 1) * 0.4)
+        Math.floor((positives.length - 1) * 0.3)
       )
     ];
-  const p60 =
+  const p50 =
     positives[
       Math.min(
         positives.length - 1,
-        Math.floor((positives.length - 1) * 0.6)
+        Math.floor((positives.length - 1) * 0.5)
       )
     ];
-  const p80 =
+  const p70 =
     positives[
       Math.min(
         positives.length - 1,
-        Math.floor((positives.length - 1) * 0.8)
+        Math.floor((positives.length - 1) * 0.7)
+      )
+    ];
+  const p85 =
+    positives[
+      Math.min(
+        positives.length - 1,
+        Math.floor((positives.length - 1) * 0.85)
       )
     ];
 
-  if (value <= p20) return 1;
-  if (value <= p40) return 2;
-  if (value <= p60) return 3;
-  if (value <= p80) return 4;
-  return 5;
+  if (value <= p10) return 1;
+  if (value <= p30) return 2;
+  if (value <= p50) return 3;
+  if (value <= p70) return 4;
+  if (value <= p85) return 5;
+  return 6;
 }
 
 function heatColorClass(level: number) {
-  if (level <= 0) return "bg-gray-100 border-gray-200";
-  if (level === 1) return "bg-orange-100 border-orange-100";
-  if (level === 2) return "bg-orange-200 border-orange-200";
-  if (level === 3) return "bg-orange-300 border-orange-300";
-  if (level === 4) return "bg-orange-400 border-orange-400";
-  return "bg-orange-600 border-orange-600";
+  const palette = [
+    "bg-gray-100 border-gray-200 text-gray-500",
+    "bg-orange-100 border-orange-100 text-orange-700",
+    "bg-orange-200 border-orange-200 text-orange-800",
+    "bg-orange-300 border-orange-300 text-orange-900",
+    "bg-orange-400 border-orange-400 text-white",
+    "bg-orange-500 border-orange-500 text-white",
+    "bg-orange-600 border-orange-600 text-white",
+  ];
+
+  return palette[Math.max(0, Math.min(level, palette.length - 1))];
 }
 
 function normalizeChannel(v: any) {
@@ -335,6 +349,8 @@ function FunnelCard({
   maxIndex,
   onScrubChange,
   transitionBadges,
+  badge,
+  overview,
 }: {
   items: FunnelItem[];
   isPlaying: boolean;
@@ -345,6 +361,8 @@ function FunnelCard({
   maxIndex: number;
   onScrubChange: (next: number) => void;
   transitionBadges: string[];
+  badge: string;
+  overview: string;
 }) {
   const barH = 54;
   const gapH = 32;
@@ -399,10 +417,21 @@ function FunnelCard({
   return (
     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
       <div className="border-b border-gray-200 px-6 py-4">
-        <h3 className="text-base font-semibold text-gray-900">성과 퍼널</h3>
-        <p className="mt-1 text-sm text-gray-500">
-          현재 필터가 적용된 데이터 기준으로 요약합니다.
-        </p>
+        <div>
+          <div className="mb-3">
+            <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] text-emerald-700">
+              {badge}
+            </span>
+          </div>
+
+          <h3 className="text-base font-semibold text-gray-900">
+            성과 퍼널
+          </h3>
+
+          <p className="mt-1 text-sm text-gray-500">
+            현재 필터가 적용된 데이터 기준으로 요약합니다.
+          </p>
+        </div>
       </div>
 
       <div className="px-6 py-4 pb-3">
@@ -552,6 +581,8 @@ function DonutCard({
   totalValue,
   items,
   valueFormatter,
+  badge,
+  overview,
 }: {
   title: string;
   description: string;
@@ -567,14 +598,34 @@ function DonutCard({
     endAngle: number;
   }>;
   valueFormatter: (v: number) => string;
+  badge: string;
+  overview: string;
 }) {
   const [activeKey, setActiveKey] = useState<string | null>(null);
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
       <div className="border-b border-gray-200 px-6 py-5">
-        <h3 className="text-base font-semibold text-gray-900">{title}</h3>
-        <p className="mt-1 text-sm text-gray-500">{description}</p>
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <div className="mb-2">
+              <span className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] text-violet-700">
+                {badge}
+              </span>
+            </div>
+            <h3 className="text-base font-semibold text-gray-900">{title}</h3>
+            <p className="mt-1 text-sm text-gray-500">{description}</p>
+          </div>
+
+          <div className="min-w-[220px] rounded-2xl border border-gray-200 bg-gray-50/80 px-4 py-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400">
+              Overview
+            </div>
+            <div className="mt-1 text-sm font-semibold text-gray-900">
+              {overview}
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="px-6 py-6">
@@ -702,6 +753,8 @@ function DonutCard({
 
 function RoasBarCard({
   items,
+  badge,
+  overview,
 }: {
   items: Array<{
     channel: string;
@@ -710,16 +763,36 @@ function RoasBarCard({
     cost: number;
     roas: number;
   }>;
+  badge: string;
+  overview: string;
 }) {
   const maxRoas = Math.max(0, ...items.map((x) => x.roas));
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
       <div className="border-b border-gray-200 px-6 py-5">
-        <h3 className="text-base font-semibold text-gray-900">채널별 ROAS 비교</h3>
-        <p className="mt-1 text-sm text-gray-500">
-          채널별 총매출 ÷ 총광고비 기준으로 계산한 ROAS입니다.
-        </p>
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <div className="mb-2">
+              <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] text-amber-700">
+                {badge}
+              </span>
+            </div>
+            <h3 className="text-base font-semibold text-gray-900">채널별 ROAS 비교</h3>
+            <p className="mt-1 text-sm text-gray-500">
+              채널별 총매출 ÷ 총광고비 기준으로 계산한 ROAS입니다.
+            </p>
+          </div>
+
+          <div className="min-w-[220px] rounded-2xl border border-gray-200 bg-gray-50/80 px-4 py-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400">
+              Overview
+            </div>
+            <div className="mt-1 text-sm font-semibold text-gray-900">
+              {overview}
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="px-6 py-6">
@@ -854,37 +927,37 @@ export default function Summary2Section({ reportType, rows }: Props) {
   }, [rows]);
 
   const dayList = useMemo(() => {
-      return Array.from(dailyMap.values()).sort((a, b) =>
-        a.dateKey.localeCompare(b.dateKey)
-      );
-    }, [dailyMap]);
+    return Array.from(dailyMap.values()).sort((a, b) =>
+      a.dateKey.localeCompare(b.dateKey)
+    );
+  }, [dailyMap]);
 
-    const metricValues = useMemo(() => {
-      return dayList.map((d) => Number(d[metric] ?? 0));
-    }, [dayList, metric]);
+  const metricValues = useMemo(() => {
+    return dayList.map((d) => Number(d[metric] ?? 0));
+  }, [dayList, metric]);
 
-    const metricButtons: { key: HeatmapMetricKey; label: string }[] = isTraffic
-      ? [
-          { key: "cost", label: "광고비" },
-          { key: "clicks", label: "클릭수" },
-          { key: "impressions", label: "노출수" },
-        ]
-      : [
-          { key: "revenue", label: "매출" },
-          { key: "roas", label: "ROAS" },
-          { key: "conversions", label: "전환수" },
-          { key: "cost", label: "광고비" },
-          { key: "clicks", label: "클릭수" },
-          { key: "impressions", label: "노출수" },
-        ];
+  const metricButtons: { key: HeatmapMetricKey; label: string }[] = isTraffic
+    ? [
+        { key: "cost", label: "광고비" },
+        { key: "clicks", label: "클릭수" },
+        { key: "impressions", label: "노출수" },
+      ]
+    : [
+        { key: "revenue", label: "매출" },
+        { key: "roas", label: "ROAS" },
+        { key: "conversions", label: "전환수" },
+        { key: "cost", label: "광고비" },
+        { key: "clicks", label: "클릭수" },
+        { key: "impressions", label: "노출수" },
+      ];
 
-    useEffect(() => {
-      if (!metricButtons.some((item) => item.key === metric)) {
-        setMetric(isTraffic ? "cost" : "revenue");
-      }
-    }, [metric, metricButtons, isTraffic]);
+  useEffect(() => {
+    if (!metricButtons.some((item) => item.key === metric)) {
+      setMetric(isTraffic ? "cost" : "revenue");
+    }
+  }, [metric, metricButtons, isTraffic]);
 
-    const calendar = useMemo(() => {
+  const calendar = useMemo(() => {
     if (!dayList.length) {
       return {
         weeks: [] as Date[][],
@@ -1505,6 +1578,41 @@ export default function Summary2Section({ reportType, rows }: Props) {
     0
   );
 
+  const selectedMetricLabel =
+    metricButtons.find((m) => m.key === metric)?.label ?? "-";
+
+  const heatLegendPalette = [
+    "bg-gray-100 border-gray-200",
+    "bg-orange-100 border-orange-100",
+    "bg-orange-200 border-orange-200",
+    "bg-orange-300 border-orange-300",
+    "bg-orange-400 border-orange-400",
+    "bg-orange-500 border-orange-500",
+    "bg-orange-600 border-orange-600",
+  ];
+
+  const heatmapOverview = heatmapSummary.bestDay
+    ? `${selectedMetricLabel} 최고일 ${heatmapSummary.bestDay.dateKey}`
+    : `${selectedMetricLabel} 데이터 없음`;
+
+  const funnelOverview = currentFunnelPoint
+    ? `기준일 ${currentFunnelPoint.dateKey} · 단계 ${funnelData.length}개`
+    : "기준일 데이터 없음";
+
+  const sankeyOverview =
+    sankeyData.totalRevenue > 0
+      ? `채널 ${channelRevenue.length}개 · 기기 ${deviceRevenue.length}개`
+      : "흐름 데이터 없음";
+
+  const topRevenueChannel =
+    revenueDonutData.length > 0 ? revenueDonutData[0]?.label ?? "-" : "-";
+
+  const topConversionChannel =
+    conversionDonutData.length > 0 ? conversionDonutData[0]?.label ?? "-" : "-";
+
+  const topRoasChannel =
+    roasBarData.length > 0 ? roasBarData[0]?.channel ?? "-" : "-";
+
   return (
     <section className="mt-2">
       <div className="space-y-10 pt-4">
@@ -1512,6 +1620,11 @@ export default function Summary2Section({ reportType, rows }: Props) {
           <div className="border-b border-gray-200 px-6 py-5">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div>
+                <div className="mb-2">
+                  <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] text-sky-700">
+                    HEATMAP
+                  </span>
+                </div>
                 <h3 className="text-base font-semibold text-gray-900">
                   일자별 성과 히트맵
                 </h3>
@@ -1520,22 +1633,33 @@ export default function Summary2Section({ reportType, rows }: Props) {
                 </p>
               </div>
 
-              <div className="flex flex-wrap gap-2">
-                {metricButtons.map((item) => (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => setMetric(item.key)}
-                    className={[
-                      "rounded-xl border px-4 py-2 text-sm font-semibold transition",
-                      metric === item.key
-                        ? "border-black bg-black text-white shadow-sm"
-                        : "border-gray-300 bg-white text-black hover:bg-gray-100",
-                    ].join(" ")}
-                  >
-                    {item.label}
-                  </button>
-                ))}
+              <div className="flex min-w-[240px] flex-col gap-3 xl:items-end">
+                <div className="rounded-2xl border border-gray-200 bg-gray-50/80 px-4 py-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400">
+                    Overview
+                  </div>
+                  <div className="mt-1 text-sm font-semibold text-gray-900">
+                    {heatmapOverview}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 xl:justify-end">
+                  {metricButtons.map((item) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => setMetric(item.key)}
+                      className={[
+                        "rounded-xl border px-4 py-2 text-sm font-semibold transition",
+                        metric === item.key
+                          ? "border-black bg-black text-white shadow-sm"
+                          : "border-gray-300 bg-white text-black hover:bg-gray-100",
+                      ].join(" ")}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -1584,11 +1708,11 @@ export default function Summary2Section({ reportType, rows }: Props) {
                 <div className="shrink-0">
                   <div className="h-6" />
                   <div className="h-6" />
-                  <div className="space-y-2">
+                  <div className="space-y-[6px]">
                     {Array.from({ length: 7 }).map((_, dayIdx) => (
                       <div
                         key={`weekday-${dayIdx}`}
-                        className="flex h-10 items-center justify-start pr-2 text-sm font-medium text-gray-500"
+                        className="flex h-10 items-center justify-start pr-2 text-sm font-semibold text-gray-500"
                       >
                         {dayLabelKor(dayIdx)}
                       </div>
@@ -1598,7 +1722,7 @@ export default function Summary2Section({ reportType, rows }: Props) {
 
                 <div className="min-w-0 overflow-hidden">
                   <div
-                    className="grid gap-2"
+                    className="grid gap-[6px]"
                     style={{
                       gridTemplateColumns: `repeat(${Math.max(
                         calendar.weeks.length,
@@ -1609,7 +1733,7 @@ export default function Summary2Section({ reportType, rows }: Props) {
                     {calendar.monthRow.map((label, idx) => (
                       <div
                         key={`month-row-${idx}`}
-                        className="flex h-6 items-center text-xs font-semibold text-gray-500"
+                        className="flex h-6 items-center text-xs font-semibold tracking-[0.02em] text-gray-500"
                       >
                         {label}
                       </div>
@@ -1644,14 +1768,12 @@ export default function Summary2Section({ reportType, rows }: Props) {
                               }}
                               onMouseLeave={() => setHeatHoverKey(null)}
                               className={[
-                                "group relative h-10 rounded-xl border transition-all duration-150",
+                                "group relative h-10 rounded-xl border transition-[box-shadow,opacity,background-color,border-color] duration-150",
                                 agg
                                   ? heatColorClass(level)
                                   : "border-transparent bg-white",
                                 agg ? "cursor-pointer" : "",
-                                isHovered
-                                  ? "ring-2 ring-gray-400/40 scale-[1.03]"
-                                  : "",
+                                isHovered ? "ring-2 ring-black/10" : "",
                                 isDimmed ? "opacity-55" : "opacity-100",
                               ].join(" ")}
                               title={
@@ -1679,11 +1801,11 @@ export default function Summary2Section({ reportType, rows }: Props) {
                               {agg ? (
                                 <div className="pointer-events-none absolute left-1/2 top-full z-20 hidden w-max -translate-x-1/2 pt-2 group-hover:block">
                                   <div className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs shadow-lg">
-                                    <div className="font-semibold text-gray-900">
+                                    <div className="font-bold text-gray-900">
                                       {agg.dateKey}
                                     </div>
                                     <div className="mt-1 text-gray-600">
-                                      {metricButtons.find((m) => m.key === metric)?.label}:{" "}
+                                      {selectedMetricLabel}:{" "}
                                       <span className="font-semibold text-gray-900">
                                         {formatMetricValue(metric, value)}
                                       </span>
@@ -1704,20 +1826,22 @@ export default function Summary2Section({ reportType, rows }: Props) {
             <div className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-gray-100 bg-white/80 px-4 py-3">
               <div className="text-sm text-gray-600">
                 선택 지표:{" "}
-                <span className="font-semibold text-gray-900">
-                  {metricButtons.find((m) => m.key === metric)?.label}
+                <span className="rounded-full bg-black px-2.5 py-1 text-xs font-semibold text-white">
+                  {selectedMetricLabel}
                 </span>
               </div>
 
-              <div className="flex items-center gap-2 text-xs text-gray-500">
-                <span>낮음</span>
-                <span className="h-5 w-5 rounded-md border border-gray-200 bg-gray-100" />
-                <span className="h-5 w-5 rounded-md border border-orange-100 bg-orange-100" />
-                <span className="h-5 w-5 rounded-md border border-orange-200 bg-orange-200" />
-                <span className="h-5 w-5 rounded-md border border-orange-300 bg-orange-300" />
-                <span className="h-5 w-5 rounded-md border border-orange-400 bg-orange-400" />
-                <span className="h-5 w-5 rounded-md border border-orange-600 bg-orange-600" />
-                <span>높음</span>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                  <span>낮음</span>
+                  {heatLegendPalette.map((klass, idx) => (
+                    <span
+                      key={`heat-legend-${idx}`}
+                      className={`h-5 w-5 rounded-md border ${klass}`}
+                    />
+                  ))}
+                  <span>높음</span>
+                </div>
               </div>
             </div>
           </div>
@@ -1741,17 +1865,38 @@ export default function Summary2Section({ reportType, rows }: Props) {
                 setPlayIndex(next);
               }}
               transitionBadges={funnelTransitionBadges}
+              badge="FUNNEL"
+              overview={funnelOverview}
             />
 
             <div className="flex min-w-0 flex-col rounded-2xl border border-gray-200 bg-white shadow-sm">
               <div className="border-b border-gray-200 px-6 py-4">
-                <h3 className="text-base font-semibold text-gray-900">
-                  채널 → 기기 → 매출 흐름
-                </h3>
-                <p className="mt-1 text-sm text-gray-500">
-                  현재 필터가 적용된 데이터 기준으로, 어떤 채널의 매출이 어떤 기기에서
-                  발생했는지 흐름으로 보여줍니다.
-                </p>
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                  <div>
+                    <div className="mb-2">
+                      <span className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] text-indigo-700">
+                        SANKEY
+                      </span>
+                    </div>
+                    <h3 className="text-base font-semibold text-gray-900">
+                      채널 → 기기 → 매출 흐름
+                    </h3>
+                    <p className="mt-1 text-sm text-gray-500">
+                      현재 필터가 적용된 데이터 기준으로, 어떤 채널의 매출이 어떤 기기에서
+                      발생했는지 흐름으로 보여줍니다.
+                    </p>
+                  </div>
+
+                  <div className="min-w-[220px] rounded-2xl border border-gray-200 bg-gray-50/80 px-4 py-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400">
+                      Overview
+                    </div>
+                    <div className="mt-1 text-sm font-semibold text-gray-900">
+                      {sankeyOverview}
+                    </div>
+                  </div>
+                </div>
+
                 {sankeyCollapsed ? (
                   <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                     현재 데이터는 기기 값이 1개만 보여 Sankey의 중간 기기 구간이 단순하게
@@ -1768,39 +1913,11 @@ export default function Summary2Section({ reportType, rows }: Props) {
                         viewBox="0 0 800 270"
                         className="h-auto w-full"
                         role="img"
-                        aria-label="채널에서 기기로 이어지는 매출 Sankey 차트"
+                        aria-label="채널에서 기기를 거쳐 매출로 이어지는 흐름 차트"
                       >
-                        <text
-                          x="80"
-                          y="18"
-                          fontSize="13"
-                          fontWeight="700"
-                          fill="#374151"
-                        >
-                          Channel
-                        </text>
-                        <text
-                          x="355"
-                          y="18"
-                          fontSize="13"
-                          fontWeight="700"
-                          fill="#374151"
-                        >
-                          Device
-                        </text>
-                        <text
-                          x="690"
-                          y="18"
-                          fontSize="13"
-                          fontWeight="700"
-                          fill="#374151"
-                        >
-                          Revenue
-                        </text>
-
                         {sankeyLayout.links.map((link, idx) => (
                           <path
-                            key={`${link.source}-${link.target}-${idx}`}
+                            key={`link-${idx}`}
                             d={link.path}
                             fill={link.fill}
                           >
@@ -1908,6 +2025,8 @@ export default function Summary2Section({ reportType, rows }: Props) {
               )}
               items={revenueDonutData}
               valueFormatter={(v) => KRW(v)}
+              badge="REVENUE MIX"
+              overview={`Top channel ${topRevenueChannel}`}
             />
 
             <DonutCard
@@ -1917,9 +2036,15 @@ export default function Summary2Section({ reportType, rows }: Props) {
               totalValue={totalConversions}
               items={conversionDonutData}
               valueFormatter={(v) => formatCount(v)}
+              badge="CONVERSION MIX"
+              overview={`Top channel ${topConversionChannel}`}
             />
 
-            <RoasBarCard items={roasBarData} />
+            <RoasBarCard
+              items={roasBarData}
+              badge="ROAS COMPARE"
+              overview={`Best ROAS ${topRoasChannel}`}
+            />
           </div>
         ) : null}
       </div>

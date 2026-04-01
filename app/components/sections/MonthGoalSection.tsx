@@ -22,8 +22,8 @@ export default function MonthGoalSection({
   monthGoalInsight,
 }: Props) {
   return (
-    <section className="mt-2 mb-8">
-      <div className="rounded-[24px] border border-slate-200 bg-white shadow-sm">
+    <section className="mb-8 mt-2">
+      <div className="overflow-hidden rounded-[28px] border border-slate-200/90 bg-gradient-to-br from-white via-white to-slate-50 shadow-[0_14px_36px_rgba(15,23,42,0.08)]">
         <div className="px-5 py-5 sm:px-6">
           <SummaryGoal
             reportType={reportType}

@@ -101,10 +101,12 @@ function buildSafeOptions(
   fallbackSet?: Set<string>
 ): NormalizedOption[] {
   const normalizedFromOptions = Array.isArray(options)
-    ? options.map(normalizeOption).filter(Boolean) as NormalizedOption[]
+    ? (options.map(normalizeOption).filter(Boolean) as NormalizedOption[])
     : [];
 
-  const hasRealOptions = normalizedFromOptions.some((item) => item.value !== "all");
+  const hasRealOptions = normalizedFromOptions.some(
+    (item) => item.value !== "all"
+  );
 
   if (hasRealOptions) {
     return dedupeWithAllFirst(normalizedFromOptions);
@@ -140,22 +142,53 @@ function GroupSection({
   onSelect: (value: string) => void;
   readOnly?: boolean;
 }) {
+  const selectedOption =
+    options.find((option) => option.value === selectedValue) ?? ALL_OPTION;
+
   return (
-    <section className="rounded-2xl border border-gray-200 bg-white/95 shadow-sm backdrop-blur">
+    <section
+      className={[
+        "overflow-hidden rounded-[24px] border bg-white/95 shadow-[0_8px_28px_rgba(15,23,42,0.08)] backdrop-blur-sm transition-all duration-200",
+        open
+          ? "border-slate-200/90"
+          : "border-slate-200/80 hover:border-slate-300/80 hover:shadow-[0_10px_30px_rgba(15,23,42,0.10)]",
+      ].join(" ")}
+    >
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center justify-between px-3 py-2 text-left"
+        className={[
+          "group flex w-full items-center gap-2 px-4 py-3.5 transition-colors",
+          open ? "bg-white" : "bg-white hover:bg-slate-50/90",
+        ].join(" ")}
       >
-        <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">
-          {title}
-        </span>
-        <span className="text-[10px] text-gray-400">{open ? "−" : "+"}</span>
+        <div className="min-w-0 flex-1 text-center">
+          <div className="text-[11px] font-semibold tracking-[-0.01em] text-slate-500">
+            {title}
+          </div>
+          {!open ? (
+            <div className="mt-0.5 truncate text-[11px] font-medium text-slate-400">
+              {selectedOption?.label || "전체"}
+            </div>
+          ) : null}
+        </div>
+
+        <div
+          className={[
+            "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[12px] font-semibold transition-all",
+            open
+              ? "border-slate-200 bg-slate-50 text-slate-500"
+              : "border-slate-200 bg-white text-slate-400 group-hover:border-slate-300 group-hover:text-slate-600",
+          ].join(" ")}
+          aria-hidden="true"
+        >
+          {open ? "−" : "+"}
+        </div>
       </button>
 
       {open ? (
-        <div className="border-t border-gray-100 px-2 py-2">
-          <div className="flex max-h-[260px] flex-col gap-1 overflow-y-auto pr-1">
+        <div className="border-t border-slate-100 bg-gradient-to-b from-slate-50/70 to-white px-3 pb-3 pt-3">
+          <div className="flex max-h-[280px] flex-col gap-2 overflow-y-auto pr-1">
             {options.map((option) => {
               const active = selectedValue === option.value;
               const disabled = Boolean(readOnly);
@@ -167,15 +200,19 @@ function GroupSection({
                   disabled={disabled}
                   onClick={() => onSelect(option.value)}
                   className={[
-                    "w-full rounded-xl px-2.5 py-2 text-left text-[12px] transition",
+                    "w-full rounded-full border px-1.5 py-3 text-center text-[12px] font-semibold tracking-[-0.01em] transition-all duration-200",
+                    "flex min-h-[46px] items-center justify-center",
                     "whitespace-nowrap overflow-hidden text-ellipsis",
                     active
-                      ? "border border-gray-900 bg-gray-900 text-white"
-                      : "border border-gray-200 bg-white text-gray-700 hover:bg-gray-50",
-                    disabled ? "cursor-not-allowed opacity-40 hover:bg-white" : "",
+                      ? "border-slate-900 bg-slate-900 text-white shadow-[0_6px_18px_rgba(15,23,42,0.18)]"
+                      : "border-slate-200 bg-white text-slate-700 hover:-translate-y-[1px] hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900",
+                    disabled
+                      ? "cursor-not-allowed opacity-40 hover:translate-y-0 hover:border-slate-200 hover:bg-white hover:text-slate-700"
+                      : "cursor-pointer",
                   ].join(" ")}
+                  title={option.label}
                 >
-                  {option.label}
+                  <span className="truncate">{option.label}</span>
                 </button>
               );
             })}
@@ -250,7 +287,7 @@ export default function FloatingFilterRail({
 
   return (
     <aside className={className}>
-      <div className="flex w-[124px] flex-col gap-2">
+      <div className="flex w-[124px] flex-col gap-4">
         <GroupSection
           title="월"
           open={openGroup.month}

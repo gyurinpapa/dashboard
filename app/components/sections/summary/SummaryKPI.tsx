@@ -119,37 +119,26 @@ export default function SummaryKPI({ reportType, totals }: Props) {
   ];
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-      <div className="border-b border-gray-200 px-5 py-4 sm:px-6 sm:py-5">
-        <div className="text-[15px] font-semibold tracking-[-0.01em] text-gray-900 sm:text-[16px]">
-          기간 성과 요약
-        </div>
-        <div className="mt-1 text-xs font-medium text-gray-500 sm:text-[12px]">
-          현재 조회 조건 기준 핵심 지표
-        </div>
+    <div className="px-0 py-0">
+      <div
+        className={[
+          "grid gap-3 sm:gap-3.5",
+          isTraffic
+            ? "grid-cols-2 lg:grid-cols-5"
+            : "grid-cols-2 lg:grid-cols-5",
+        ].join(" ")}
+      >
+        {cards.map((card) => (
+          <SummaryKPICardView
+            key={card.key}
+            title={card.title}
+            value={card.value}
+            tone={card.tone ?? "neutral"}
+            density="report"
+            footerText={card.footerText}
+          />
+        ))}
       </div>
-
-      <div className="px-4 py-4 sm:px-6 sm:py-5">
-        <div
-          className={[
-            "grid gap-3",
-            isTraffic
-              ? "grid-cols-2 sm:grid-cols-2 lg:grid-cols-5"
-              : "grid-cols-2 sm:grid-cols-2 lg:grid-cols-5",
-          ].join(" ")}
-        >
-          {cards.map((card) => (
-            <SummaryKPICardView
-              key={card.key}
-              title={card.title}
-              value={card.value}
-              tone={card.tone ?? "neutral"}
-              density="report"
-              footerText={card.footerText}
-            />
-          ))}
-        </div>
-      </div>
-    </section>
+    </div>
   );
 }
