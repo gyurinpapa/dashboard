@@ -122,6 +122,14 @@ function SectionShell({
   );
 }
 
+function daySortKey(row: any) {
+  return String(row?.date ?? row?.dateKey ?? row?.label ?? "");
+}
+
+function dayLabel(row: any) {
+  return String(row?.date ?? row?.dateKey ?? row?.label ?? "-");
+}
+
 export default function SummarySection(props: Props) {
   const { reportType, totals, byMonth, byWeekOnly, byWeekChart, bySource, byDay } =
     props;
@@ -153,7 +161,7 @@ export default function SummarySection(props: Props) {
   );
 
   const sortedDays = [...days].sort((a, b) =>
-    String(a?.date ?? "").localeCompare(String(b?.date ?? ""))
+    daySortKey(a).localeCompare(daySortKey(b))
   );
 
   const prevWeekSorted = sortedWeeks.at(-2);
@@ -244,7 +252,7 @@ export default function SummarySection(props: Props) {
           description="최근 월별 핵심 성과를 비교합니다."
           compact
         />
-          <SummaryTable reportType={reportType} byMonth={months} />
+        <SummaryTable reportType={reportType} byMonth={months} />
       </div>
 
       <section className="space-y-12 lg:space-y-14">
@@ -677,14 +685,14 @@ export default function SummarySection(props: Props) {
                 ) : (
                   sortedDays.map((d: any, idx: number) => (
                     <tr
-                      key={d?.date ?? idx}
+                      key={d?.date ?? d?.dateKey ?? `${daySortKey(d)}-${idx}`}
                       className="border-t border-slate-200/90 even:bg-slate-50/45 hover:bg-amber-50/45 transition-colors"
                     >
                       <td
                         className={`${FIRST_TD_CLASS} truncate`}
-                        title={String(d?.date ?? "")}
+                        title={dayLabel(d)}
                       >
-                        {d?.date}
+                        {dayLabel(d)}
                       </td>
 
                       <td className={TD_CLASS}>

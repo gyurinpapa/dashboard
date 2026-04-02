@@ -33,8 +33,73 @@ const toRoas01 = (v: any) => {
   return n > 10 ? n / 100 : n;
 };
 
-const pctText = (rate01: number, digits = 1) => `${(rate01 * 100).toFixed(digits)}%`;
+const pctText = (rate01: number, digits = 1) =>
+  `${(rate01 * 100).toFixed(digits)}%`;
 const safeDiv = (a: number, b: number) => (b === 0 ? 0 : a / b);
+
+const TABLE_SURFACE_CLASS =
+  "overflow-x-auto rounded-[24px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] shadow-[0_10px_30px_rgba(15,23,42,0.06)] ring-1 ring-white/60";
+
+const TABLE_HEAD_CLASS =
+  "border-b border-slate-200/90 bg-[rgba(248,250,252,0.9)] backdrop-blur supports-[backdrop-filter]:bg-[rgba(248,250,252,0.82)]";
+
+const TH_CLASS =
+  "whitespace-nowrap px-4 py-3.5 text-right text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500";
+
+const FIRST_TH_CLASS =
+  "whitespace-nowrap px-4 py-3.5 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500";
+
+const TD_CLASS =
+  "whitespace-nowrap px-4 py-3.5 text-right text-sm text-slate-700 align-middle";
+
+const FIRST_TD_CLASS =
+  "whitespace-nowrap px-4 py-3.5 text-left text-sm font-medium text-slate-900 align-middle";
+
+const EMPTY_STATE_CLASS =
+  "px-4 py-10 text-center text-sm font-medium text-slate-500";
+
+function SectionIntro({
+  badge,
+  title,
+  description,
+  compact = false,
+}: {
+  badge: string;
+  title: string;
+  description: string;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={
+        compact ? "mb-5 flex flex-col gap-2" : "mb-6 flex flex-col gap-2.5"
+      }
+    >
+      <div className="inline-flex w-fit items-center rounded-full border border-slate-200/90 bg-white px-3 py-1 text-[10px] font-semibold tracking-[0.12em] text-slate-500 shadow-sm">
+        {badge}
+      </div>
+
+      <div>
+        <h3
+          className={[
+            "font-semibold tracking-[-0.02em] text-slate-900",
+            compact ? "text-[18px]" : "text-[20px]",
+          ].join(" ")}
+        >
+          {title}
+        </h3>
+        <p
+          className={[
+            "text-slate-500",
+            compact ? "mt-1.5 text-sm leading-6" : "mt-2 text-sm leading-6",
+          ].join(" ")}
+        >
+          {description}
+        </p>
+      </div>
+    </div>
+  );
+}
 
 function computeGoalKpis(monthGoal: any) {
   const impressions = toNum(monthGoal?.impressions);
@@ -49,7 +114,18 @@ function computeGoalKpis(monthGoal: any) {
   const cpa = safeDiv(cost, conversions);
   const roas = safeDiv(revenue, cost);
 
-  return { impressions, clicks, cost, conversions, revenue, ctr, cvr, cpc, cpa, roas };
+  return {
+    impressions,
+    clicks,
+    cost,
+    conversions,
+    revenue,
+    ctr,
+    cvr,
+    cpc,
+    cpa,
+    roas,
+  };
 }
 
 function pickTopBottom(rows: any[], keyFn: (r: any) => number) {
@@ -99,24 +175,42 @@ function generateSourceInsights(bySource: any[], monthGoal: any) {
   const totalRoas = safeDiv(total.revenue, total.cost);
   const totalCpa = safeDiv(total.cost, total.conversions);
 
-  const { top: topRoas, bottom: bottomRoas } = pickTopBottom(norm, (r) => r.roas);
+  const { top: topRoas, bottom: bottomRoas } = pickTopBottom(
+    norm,
+    (r) => r.roas
+  );
   const maxCostSource = [...norm].sort((a, b) => b.cost - a.cost)[0];
 
-  const roasStatus = goal.roas === 0 ? "unknown" : totalRoas >= goal.roas ? "over" : "under";
+  const roasStatus =
+    goal.roas === 0 ? "unknown" : totalRoas >= goal.roas ? "over" : "under";
 
   const s1 =
     goal.roas === 0
-      ? `소스 합산 ROAS는 ${pctText(totalRoas)}이며, 목표 ROAS가 미입력 상태라 목표 대비 판정은 보류됩니다.`
+      ? `소스 합산 ROAS는 ${pctText(
+          totalRoas
+        )}이며, 목표 ROAS가 미입력 상태라 목표 대비 판정은 보류됩니다.`
       : roasStatus === "over"
-      ? `소스 합산 ROAS는 ${pctText(totalRoas)}로 목표 ${pctText(goal.roas)}를 상회하며, 구조적으로 효율이 확보된 상태입니다.`
-      : `소스 합산 ROAS는 ${pctText(totalRoas)}로 목표 ${pctText(goal.roas)} 대비 미달이며, 저효율 소스의 영향이 큽니다.`;
+      ? `소스 합산 ROAS는 ${pctText(
+          totalRoas
+        )}로 목표 ${pctText(
+          goal.roas
+        )}를 상회하며, 구조적으로 효율이 확보된 상태입니다.`
+      : `소스 합산 ROAS는 ${pctText(
+          totalRoas
+        )}로 목표 ${pctText(
+          goal.roas
+        )} 대비 미달이며, 저효율 소스의 영향이 큽니다.`;
 
   const s2 =
     goal.cpa === 0
       ? `CPA 목표가 미입력 상태라, 전환 효율(CPA/CVR) 중심의 최적화 우선순위 산정이 제한됩니다.`
-      : `CPA는 ${KRW(totalCpa)}로 목표 ${KRW(goal.cpa)} 대비 ${totalCpa <= goal.cpa ? "양호" : "높은"} 상태입니다.`;
+      : `CPA는 ${KRW(totalCpa)}로 목표 ${KRW(goal.cpa)} 대비 ${
+          totalCpa <= goal.cpa ? "양호" : "높은"
+        } 상태입니다.`;
 
-  const s3 = `ROAS 상위 소스는 "${topRoas.source}"(${pctText(topRoas.roas)}), 하위 소스는 "${bottomRoas.source}"(${pctText(
+  const s3 = `ROAS 상위 소스는 "${topRoas.source}"(${pctText(
+    topRoas.roas
+  )}), 하위 소스는 "${bottomRoas.source}"(${pctText(
     bottomRoas.roas
   )})로 확인됩니다.`;
 
@@ -130,6 +224,65 @@ function generateSourceInsights(bySource: any[], monthGoal: any) {
       : `목표 달성을 위해 ROAS 상위 소스로 예산을 재배분하고, 하위 소스는 구조 개선 또는 축소로 효율을 회복해야 합니다.`;
 
   return [s1, s2, s3, s4, s5];
+}
+
+function highlightInsightText(text: string) {
+  const rules: Array<{ pattern: RegExp; className: string }> = [
+    {
+      pattern:
+        /(ROAS|CPA|CVR|CTR|CPC|Revenue|Cost|목표|미달|상회|양호|높은|저효율|상위|하위|확장|축소|재배분|우선 점검|개선 경로|효율)/g,
+      className: "font-semibold text-slate-900",
+    },
+    {
+      pattern: /([A-Za-z가-힣0-9_-]+\.?\d*%|₩[\d,]+|\"[^\"]+\")/g,
+      className: "font-semibold text-violet-700",
+    },
+  ];
+
+  const segments: Array<{ text: string; className?: string }> = [{ text }];
+
+  for (const rule of rules) {
+    const next: Array<{ text: string; className?: string }> = [];
+
+    segments.forEach((segment) => {
+      if (segment.className) {
+        next.push(segment);
+        return;
+      }
+
+      let lastIndex = 0;
+      const matches = Array.from(segment.text.matchAll(rule.pattern));
+
+      if (matches.length === 0) {
+        next.push(segment);
+        return;
+      }
+
+      matches.forEach((match) => {
+        const index = match.index ?? 0;
+        const value = match[0];
+
+        if (index > lastIndex) {
+          next.push({ text: segment.text.slice(lastIndex, index) });
+        }
+
+        next.push({
+          text: value,
+          className: rule.className,
+        });
+
+        lastIndex = index + value.length;
+      });
+
+      if (lastIndex < segment.text.length) {
+        next.push({ text: segment.text.slice(lastIndex) });
+      }
+    });
+
+    segments.splice(0, segments.length, ...next);
+  }
+
+  return segments;
 }
 
 export default function StructureSection({
@@ -146,23 +299,54 @@ export default function StructureSection({
   const sourceRows = Array.isArray(bySource) ? bySource : [];
   const campaignRows = Array.isArray(byCampaign) ? byCampaign : [];
 
-  const srcMaxImpr = Math.max(0, ...sourceRows.map((r: any) => toNum(r.impressions ?? r.impr)));
-  const srcMaxClicks = Math.max(0, ...sourceRows.map((r: any) => toNum(r.clicks)));
-  const srcMaxCost = Math.max(0, ...sourceRows.map((r: any) => toNum(r.cost)));
-  const srcMaxConv = Math.max(0, ...sourceRows.map((r: any) => toNum(r.conversions ?? r.conv)));
-  const srcMaxRev = Math.max(0, ...sourceRows.map((r: any) => toNum(r.revenue)));
+  const srcMaxImpr = Math.max(
+    0,
+    ...sourceRows.map((r: any) => toNum(r.impressions ?? r.impr))
+  );
+  const srcMaxClicks = Math.max(
+    0,
+    ...sourceRows.map((r: any) => toNum(r.clicks))
+  );
+  const srcMaxCost = Math.max(
+    0,
+    ...sourceRows.map((r: any) => toNum(r.cost))
+  );
+  const srcMaxConv = Math.max(
+    0,
+    ...sourceRows.map((r: any) => toNum(r.conversions ?? r.conv))
+  );
+  const srcMaxRev = Math.max(
+    0,
+    ...sourceRows.map((r: any) => toNum(r.revenue))
+  );
 
-  const campMaxImpr = Math.max(0, ...campaignRows.map((r: any) => toNum(r.impressions ?? r.impr)));
-  const campMaxClicks = Math.max(0, ...campaignRows.map((r: any) => toNum(r.clicks)));
-  const campMaxCost = Math.max(0, ...campaignRows.map((r: any) => toNum(r.cost)));
-  const campMaxConv = Math.max(0, ...campaignRows.map((r: any) => toNum(r.conversions ?? r.conv)));
-  const campMaxRev = Math.max(0, ...campaignRows.map((r: any) => toNum(r.revenue)));
+  const campMaxImpr = Math.max(
+    0,
+    ...campaignRows.map((r: any) => toNum(r.impressions ?? r.impr))
+  );
+  const campMaxClicks = Math.max(
+    0,
+    ...campaignRows.map((r: any) => toNum(r.clicks))
+  );
+  const campMaxCost = Math.max(
+    0,
+    ...campaignRows.map((r: any) => toNum(r.cost))
+  );
+  const campMaxConv = Math.max(
+    0,
+    ...campaignRows.map((r: any) => toNum(r.conversions ?? r.conv))
+  );
+  const campMaxRev = Math.max(
+    0,
+    ...campaignRows.map((r: any) => toNum(r.revenue))
+  );
 
   const insightLoading = (allRowsLoading ?? false) && sourceRows.length === 0;
   const [sentences, setSentences] = useState<string[]>([]);
 
   useEffect(() => {
-    if (sourceRows.length > 0) setSentences(generateSourceInsights(sourceRows, monthGoal));
+    if (sourceRows.length > 0)
+      setSentences(generateSourceInsights(sourceRows, monthGoal));
     else setSentences([]);
   }, [sourceRows, monthGoal]);
 
@@ -188,37 +372,67 @@ export default function StructureSection({
   const byGroup = useMemo(() => groupByGroup(groupRows), [groupRows]);
   const groupAggRows = Array.isArray(byGroup) ? byGroup : [];
 
-  const grpMaxImpr = Math.max(0, ...groupAggRows.map((r: any) => toNum(r.impressions ?? r.impr)));
-  const grpMaxClicks = Math.max(0, ...groupAggRows.map((r: any) => toNum(r.clicks)));
-  const grpMaxCost = Math.max(0, ...groupAggRows.map((r: any) => toNum(r.cost)));
-  const grpMaxConv = Math.max(0, ...groupAggRows.map((r: any) => toNum(r.conversions ?? r.conv)));
-  const grpMaxRev = Math.max(0, ...groupAggRows.map((r: any) => toNum(r.revenue)));
+  const grpMaxImpr = Math.max(
+    0,
+    ...groupAggRows.map((r: any) => toNum(r.impressions ?? r.impr))
+  );
+  const grpMaxClicks = Math.max(
+    0,
+    ...groupAggRows.map((r: any) => toNum(r.clicks))
+  );
+  const grpMaxCost = Math.max(
+    0,
+    ...groupAggRows.map((r: any) => toNum(r.cost))
+  );
+  const grpMaxConv = Math.max(
+    0,
+    ...groupAggRows.map((r: any) => toNum(r.conversions ?? r.conv))
+  );
+  const grpMaxRev = Math.max(
+    0,
+    ...groupAggRows.map((r: any) => toNum(r.revenue))
+  );
 
   return (
-    <>
-      <section>
-        <div className="overflow-auto rounded-2xl border border-gray-200/80 bg-white shadow-sm">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50/95 text-gray-600">
+    <div className="mt-6 space-y-8">
+      <div>
+        <SectionIntro
+          badge="🧭 SOURCE"
+          title="소스별 구조 성과"
+          description="소스 단위 성과 구조를 비교해 운영 우선순위와 효율 편차를 빠르게 확인합니다."
+          compact
+        />
+
+        <div className={TABLE_SURFACE_CLASS}>
+          <table
+            className={[
+              "w-full text-sm",
+              isTraffic ? "min-w-[860px]" : "min-w-[1320px]",
+            ].join(" ")}
+          >
+            <thead className={TABLE_HEAD_CLASS}>
               <tr>
-                <th className="text-left p-3">Source</th>
-                <th className="text-right p-3">Impr</th>
-                <th className="text-right p-3">Clicks</th>
-                <th className="text-right p-3">CTR</th>
-                <th className="text-right p-3">CPC</th>
-                <th className="text-right p-3">Cost</th>
-                {!isTraffic && <th className="text-right p-3">Conv</th>}
-                {!isTraffic && <th className="text-right p-3">CVR</th>}
-                {!isTraffic && <th className="text-right p-3">CPA</th>}
-                {!isTraffic && <th className="text-right p-3">Revenue</th>}
-                {!isTraffic && <th className="text-right p-3">ROAS</th>}
+                <th className={FIRST_TH_CLASS}>Source</th>
+                <th className={TH_CLASS}>Impr</th>
+                <th className={TH_CLASS}>Clicks</th>
+                <th className={TH_CLASS}>CTR</th>
+                <th className={TH_CLASS}>CPC</th>
+                <th className={TH_CLASS}>Cost</th>
+                {!isTraffic && <th className={TH_CLASS}>Conv</th>}
+                {!isTraffic && <th className={TH_CLASS}>CVR</th>}
+                {!isTraffic && <th className={TH_CLASS}>CPA</th>}
+                {!isTraffic && <th className={TH_CLASS}>Revenue</th>}
+                {!isTraffic && <th className={TH_CLASS}>ROAS</th>}
               </tr>
             </thead>
 
             <tbody>
               {sourceRows.length === 0 ? (
-                <tr className="border-t border-gray-200">
-                  <td className="p-3 text-gray-500" colSpan={isTraffic ? 6 : 11}>
+                <tr className="border-t border-slate-200/90">
+                  <td
+                    className={EMPTY_STATE_CLASS}
+                    colSpan={isTraffic ? 6 : 11}
+                  >
                     {(allRowsLoading ?? false)
                       ? "데이터 로딩 중..."
                       : "표시할 소스 데이터가 없습니다. (필터 조건을 확인해 주세요)"}
@@ -226,21 +440,30 @@ export default function StructureSection({
                 </tr>
               ) : (
                 sourceRows.map((r: any, idx: number) => (
-                  <tr key={r.source ?? idx} className="border-t border-gray-200">
-                    <td className="p-3 font-medium whitespace-nowrap">{r.source}</td>
+                  <tr
+                    key={r.source ?? idx}
+                    className="border-t border-slate-200/90 even:bg-slate-50/45 hover:bg-emerald-50/45 transition-colors"
+                  >
+                    <td className={FIRST_TD_CLASS}>{r.source}</td>
 
-                    <td className="p-3">
-                      <DataBarCell value={toNum(r.impressions ?? r.impr)} max={srcMaxImpr} />
+                    <td className={TD_CLASS}>
+                      <DataBarCell
+                        value={toNum(r.impressions ?? r.impr)}
+                        max={srcMaxImpr}
+                      />
                     </td>
 
-                    <td className="p-3">
+                    <td className={TD_CLASS}>
                       <DataBarCell value={toNum(r.clicks)} max={srcMaxClicks} />
                     </td>
 
-                    <td className="p-3 text-right">{(toRate01(r.ctr) * 100).toFixed(2)}%</td>
-                    <td className="p-3 text-right">{KRW(toNum(r.cpc))}</td>
+                    <td className={`${TD_CLASS} font-medium text-violet-600`}>
+                      {(toRate01(r.ctr) * 100).toFixed(2)}%
+                    </td>
 
-                    <td className="p-3">
+                    <td className={TD_CLASS}>{KRW(toNum(r.cpc))}</td>
+
+                    <td className={TD_CLASS}>
                       <DataBarCell
                         value={toNum(r.cost)}
                         max={srcMaxCost}
@@ -249,21 +472,26 @@ export default function StructureSection({
                     </td>
 
                     {!isTraffic && (
-                      <td className="p-3">
-                        <DataBarCell value={toNum(r.conversions ?? r.conv)} max={srcMaxConv} />
+                      <td className={TD_CLASS}>
+                        <DataBarCell
+                          value={toNum(r.conversions ?? r.conv)}
+                          max={srcMaxConv}
+                        />
                       </td>
                     )}
 
                     {!isTraffic && (
-                      <td className="p-3 text-right">{(toRate01(r.cvr) * 100).toFixed(2)}%</td>
+                      <td className={`${TD_CLASS} font-medium text-violet-600`}>
+                        {(toRate01(r.cvr) * 100).toFixed(2)}%
+                      </td>
                     )}
 
                     {!isTraffic && (
-                      <td className="p-3 text-right">{KRW(toNum(r.cpa))}</td>
+                      <td className={TD_CLASS}>{KRW(toNum(r.cpa))}</td>
                     )}
 
                     {!isTraffic && (
-                      <td className="p-3">
+                      <td className={TD_CLASS}>
                         <DataBarCell
                           value={toNum(r.revenue)}
                           max={srcMaxRev}
@@ -273,7 +501,9 @@ export default function StructureSection({
                     )}
 
                     {!isTraffic && (
-                      <td className="p-3 text-right">{(toRoas01(r.roas) * 100).toFixed(1)}%</td>
+                      <td className={`${TD_CLASS} font-semibold text-orange-600`}>
+                        {(toRoas01(r.roas) * 100).toFixed(1)}%
+                      </td>
                     )}
                   </tr>
                 ))
@@ -281,68 +511,146 @@ export default function StructureSection({
             </tbody>
           </table>
         </div>
-      </section>
+      </div>
 
-      <section className="mt-6">
-        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
-          <div className="mb-3 font-semibold">요약 인사이트</div>
+      <div>
+        <div className="overflow-hidden rounded-[26px] border border-slate-200/90 bg-[linear-gradient(135deg,rgba(15,23,42,0.02),rgba(255,255,255,0.98)_18%,rgba(245,243,255,0.92)_56%,rgba(255,247,237,0.92)_100%)] shadow-[0_14px_34px_rgba(15,23,42,0.08)] ring-1 ring-white/70">
+          <div className="border-b border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(248,250,252,0.84))] px-5 py-4">
+            <div className="flex flex-wrap items-center gap-2 text-sm text-slate-700">
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-violet-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(245,243,255,0.9))] shadow-sm">
+                🧠
+              </span>
 
-          {insightLoading ? (
-            <div className="text-sm text-gray-500">인사이트 생성 중...</div>
-          ) : sourceRows.length === 0 ? (
-            <div className="text-sm text-gray-500">
-              소스 데이터가 없어서 인사이트를 만들 수 없습니다. (필터/데이터 확인)
+              <span className="inline-flex items-center rounded-full border border-violet-200/80 bg-violet-50/80 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-violet-700">
+                AI Insight
+              </span>
+
+              <span className="font-semibold text-slate-900">구조 분석 포인트</span>
+
+              <span className="font-normal text-slate-400">-</span>
+
+              <span className="font-normal text-slate-500">
+                현재 소스 구조를 목표 기준으로 해석해 우선 점검 포인트를
+                정리합니다.
+              </span>
             </div>
-          ) : sentences.length === 0 ? (
-            <div className="text-sm text-gray-500">
-              인사이트 생성 실패: sourceRows는 있는데 문장이 비어있습니다. (값/키 확인)
-            </div>
-          ) : (
-            <ol className="list-decimal pl-5 space-y-1 text-sm text-gray-800">
-              {sentences.map((s, i) => (
-                <li key={i}>{s}</li>
-              ))}
-            </ol>
-          )}
+          </div>
+
+          <div className="px-5 py-5">
+            {insightLoading ? (
+              <div className="rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-4 text-sm text-slate-500 shadow-sm">
+                인사이트 생성 중...
+              </div>
+            ) : sourceRows.length === 0 ? (
+              <div className="rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-4 text-sm text-slate-500 shadow-sm">
+                소스 데이터가 없어서 인사이트를 만들 수 없습니다. (필터/데이터
+                확인)
+              </div>
+            ) : sentences.length === 0 ? (
+              <div className="rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-4 text-sm text-slate-500 shadow-sm">
+                인사이트 생성 실패: sourceRows는 있는데 문장이 비어있습니다.
+                (값/키 확인)
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {sentences.map((s, i) => (
+                  <div
+                    key={i}
+                    className="group rounded-[22px] border border-slate-200/80 bg-white/88 px-4 py-4 shadow-[0_8px_22px_rgba(15,23,42,0.035)] transition hover:-translate-y-[1px] hover:shadow-[0_12px_28px_rgba(15,23,42,0.06)]"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(180deg,rgba(79,70,229,0.12),rgba(124,58,237,0.08))] text-xs font-bold text-violet-700 ring-1 ring-violet-200/70">
+                        {i + 1}
+                      </div>
+
+                      <div className="min-w-0 flex-1 pt-0.5">
+                        <div className="mb-1 flex items-center gap-2">
+                          <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                            Insight
+                          </span>
+                          <span className="h-1 w-1 rounded-full bg-slate-300" />
+                          <span className="text-[11px] font-medium text-slate-400">
+                            구조 분석
+                          </span>
+                        </div>
+
+                        <p className="whitespace-pre-wrap text-[15px] leading-7 text-slate-700">
+                          {highlightInsightText(s).map((part, idx) => (
+                            <span
+                              key={`${i}-${idx}`}
+                              className={part.className ?? undefined}
+                            >
+                              {part.text}
+                            </span>
+                          ))}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-      </section>
+      </div>
 
-      <section className="mt-6">
-        <div className="overflow-auto rounded-2xl border border-gray-200/80 bg-white shadow-sm">
-          <table className="w-full text-sm border-collapse">
-            <thead className="bg-gray-50/95 text-gray-600">
+      <div>
+        <SectionIntro
+          badge="📣 CAMPAIGN"
+          title="캠페인별 성과"
+          description="캠페인 단위 성과를 비교해 어떤 캠페인이 전체 구조를 주도하는지 확인합니다."
+          compact
+        />
+
+        <div className={TABLE_SURFACE_CLASS}>
+          <table
+            className={[
+              "w-full text-sm border-collapse",
+              isTraffic ? "min-w-[860px]" : "min-w-[1320px]",
+            ].join(" ")}
+          >
+            <thead className={TABLE_HEAD_CLASS}>
               <tr>
-                <th className="text-left p-3">Campaign</th>
-                <th className="text-right p-3">Impr</th>
-                <th className="text-right p-3">Clicks</th>
-                <th className="text-right p-3">CTR</th>
-                <th className="text-right p-3">CPC</th>
-                <th className="text-right p-3">Cost</th>
-                {!isTraffic && <th className="text-right p-3">Conv</th>}
-                {!isTraffic && <th className="text-right p-3">CVR</th>}
-                {!isTraffic && <th className="text-right p-3">CPA</th>}
-                {!isTraffic && <th className="text-right p-3">Revenue</th>}
-                {!isTraffic && <th className="text-right p-3">ROAS</th>}
+                <th className={FIRST_TH_CLASS}>Campaign</th>
+                <th className={TH_CLASS}>Impr</th>
+                <th className={TH_CLASS}>Clicks</th>
+                <th className={TH_CLASS}>CTR</th>
+                <th className={TH_CLASS}>CPC</th>
+                <th className={TH_CLASS}>Cost</th>
+                {!isTraffic && <th className={TH_CLASS}>Conv</th>}
+                {!isTraffic && <th className={TH_CLASS}>CVR</th>}
+                {!isTraffic && <th className={TH_CLASS}>CPA</th>}
+                {!isTraffic && <th className={TH_CLASS}>Revenue</th>}
+                {!isTraffic && <th className={TH_CLASS}>ROAS</th>}
               </tr>
             </thead>
 
             <tbody>
               {campaignRows.map((r: any, idx: number) => (
-                <tr key={r.campaign ?? idx} className="border-t border-gray-200">
-                  <td className="p-3 font-medium whitespace-nowrap">{r.campaign}</td>
+                <tr
+                  key={r.campaign ?? idx}
+                  className="border-t border-slate-200/90 even:bg-slate-50/45 hover:bg-sky-50/45 transition-colors"
+                >
+                  <td className={FIRST_TD_CLASS}>{r.campaign}</td>
 
-                  <td className="p-3">
-                    <DataBarCell value={toNum(r.impressions ?? r.impr)} max={campMaxImpr} />
+                  <td className={TD_CLASS}>
+                    <DataBarCell
+                      value={toNum(r.impressions ?? r.impr)}
+                      max={campMaxImpr}
+                    />
                   </td>
 
-                  <td className="p-3">
+                  <td className={TD_CLASS}>
                     <DataBarCell value={toNum(r.clicks)} max={campMaxClicks} />
                   </td>
 
-                  <td className="p-3 text-right">{(toRate01(r.ctr) * 100).toFixed(2)}%</td>
-                  <td className="p-3 text-right">{KRW(toNum(r.cpc))}</td>
+                  <td className={`${TD_CLASS} font-medium text-violet-600`}>
+                    {(toRate01(r.ctr) * 100).toFixed(2)}%
+                  </td>
 
-                  <td className="p-3">
+                  <td className={TD_CLASS}>{KRW(toNum(r.cpc))}</td>
+
+                  <td className={TD_CLASS}>
                     <DataBarCell
                       value={toNum(r.cost)}
                       max={campMaxCost}
@@ -351,21 +659,26 @@ export default function StructureSection({
                   </td>
 
                   {!isTraffic && (
-                    <td className="p-3">
-                      <DataBarCell value={toNum(r.conversions ?? r.conv)} max={campMaxConv} />
+                    <td className={TD_CLASS}>
+                      <DataBarCell
+                        value={toNum(r.conversions ?? r.conv)}
+                        max={campMaxConv}
+                      />
                     </td>
                   )}
 
                   {!isTraffic && (
-                    <td className="p-3 text-right">{(toRate01(r.cvr) * 100).toFixed(2)}%</td>
+                    <td className={`${TD_CLASS} font-medium text-violet-600`}>
+                      {(toRate01(r.cvr) * 100).toFixed(2)}%
+                    </td>
                   )}
 
                   {!isTraffic && (
-                    <td className="p-3 text-right">{KRW(toNum(r.cpa))}</td>
+                    <td className={TD_CLASS}>{KRW(toNum(r.cpa))}</td>
                   )}
 
                   {!isTraffic && (
-                    <td className="p-3">
+                    <td className={TD_CLASS}>
                       <DataBarCell
                         value={toNum(r.revenue)}
                         max={campMaxRev}
@@ -375,14 +688,19 @@ export default function StructureSection({
                   )}
 
                   {!isTraffic && (
-                    <td className="p-3 text-right">{(toRoas01(r.roas) * 100).toFixed(1)}%</td>
+                    <td className={`${TD_CLASS} font-semibold text-orange-600`}>
+                      {(toRoas01(r.roas) * 100).toFixed(1)}%
+                    </td>
                   )}
                 </tr>
               ))}
 
               {campaignRows.length === 0 && (
-                <tr className="border-t border-gray-200">
-                  <td className="p-3 text-gray-500" colSpan={isTraffic ? 6 : 11}>
+                <tr className="border-t border-slate-200/90">
+                  <td
+                    className={EMPTY_STATE_CLASS}
+                    colSpan={isTraffic ? 6 : 11}
+                  >
                     표시할 캠페인 데이터가 없습니다. (필터/컬럼명을 확인)
                   </td>
                 </tr>
@@ -390,10 +708,17 @@ export default function StructureSection({
             </tbody>
           </table>
         </div>
-      </section>
+      </div>
 
-      <section className="mt-6 relative">
-        <div className="mb-2 flex items-center justify-end gap-4">
+      <div className="relative">
+        <SectionIntro
+          badge="🧩 GROUP"
+          title="그룹별 성과"
+          description="선택한 캠페인 기준으로 그룹 구조를 확인해 세부 운영 단위의 편차를 점검합니다."
+          compact
+        />
+
+        <div className="mb-3 flex items-center justify-end gap-4">
           <div className="relative">
             <button
               type="button"
@@ -401,30 +726,27 @@ export default function StructureSection({
                 e.stopPropagation();
                 setCampaignOpen((prev) => !prev);
               }}
-              className="px-4 py-2 rounded-xl border text-sm font-semibold transition
-                         border-orange-900/40
-                         bg-orange-600 text-white shadow
-                         hover:bg-orange-700"
+              className="rounded-xl border border-slate-200/90 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
             >
               캠페인명 {campaignOpen ? "▲" : "▼"}
             </button>
 
             {campaignOpen && (
               <div
-                className="absolute right-0 mt-2 w-64 bg-white border rounded-xl shadow-lg z-50 p-2"
+                className="absolute right-0 z-50 mt-2 w-64 rounded-2xl border border-slate-200/90 bg-white p-2 shadow-[0_18px_40px_rgba(15,23,42,0.14)]"
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="max-h-80 overflow-auto space-y-1">
+                <div className="max-h-80 space-y-1 overflow-auto">
                   <button
                     type="button"
                     onClick={() => {
                       setSelectedCampaign(null);
                       setCampaignOpen(false);
                     }}
-                    className={`w-full text-left px-3 py-2 rounded-lg text-sm transition ${
+                    className={`w-full rounded-xl px-3 py-2 text-left text-sm transition ${
                       selectedCampaign == null
-                        ? "bg-orange-600 text-white"
-                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                        ? "bg-slate-900 text-white"
+                        : "bg-slate-50 text-slate-700 hover:bg-slate-100"
                     }`}
                   >
                     전체
@@ -438,10 +760,10 @@ export default function StructureSection({
                         setSelectedCampaign(c);
                         setCampaignOpen(false);
                       }}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition ${
+                      className={`w-full rounded-xl px-3 py-2 text-left text-sm transition ${
                         selectedCampaign === c
-                          ? "bg-orange-600 text-white"
-                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                          ? "bg-slate-900 text-white"
+                          : "bg-slate-50 text-slate-700 hover:bg-slate-100"
                       }`}
                     >
                       {c}
@@ -453,41 +775,55 @@ export default function StructureSection({
           </div>
         </div>
 
-        <div className="overflow-auto rounded-2xl border border-gray-200/80 bg-white shadow-sm">
-          <table className="w-full text-sm border-collapse">
-            <thead className="bg-gray-50/95 text-gray-600">
+        <div className={TABLE_SURFACE_CLASS}>
+          <table
+            className={[
+              "w-full text-sm border-collapse",
+              isTraffic ? "min-w-[860px]" : "min-w-[1320px]",
+            ].join(" ")}
+          >
+            <thead className={TABLE_HEAD_CLASS}>
               <tr>
-                <th className="text-left p-3">Group</th>
-                <th className="text-right p-3">Impr</th>
-                <th className="text-right p-3">Clicks</th>
-                <th className="text-right p-3">CTR</th>
-                <th className="text-right p-3">CPC</th>
-                <th className="text-right p-3">Cost</th>
-                {!isTraffic && <th className="text-right p-3">Conv</th>}
-                {!isTraffic && <th className="text-right p-3">CVR</th>}
-                {!isTraffic && <th className="text-right p-3">CPA</th>}
-                {!isTraffic && <th className="text-right p-3">Revenue</th>}
-                {!isTraffic && <th className="text-right p-3">ROAS</th>}
+                <th className={FIRST_TH_CLASS}>Group</th>
+                <th className={TH_CLASS}>Impr</th>
+                <th className={TH_CLASS}>Clicks</th>
+                <th className={TH_CLASS}>CTR</th>
+                <th className={TH_CLASS}>CPC</th>
+                <th className={TH_CLASS}>Cost</th>
+                {!isTraffic && <th className={TH_CLASS}>Conv</th>}
+                {!isTraffic && <th className={TH_CLASS}>CVR</th>}
+                {!isTraffic && <th className={TH_CLASS}>CPA</th>}
+                {!isTraffic && <th className={TH_CLASS}>Revenue</th>}
+                {!isTraffic && <th className={TH_CLASS}>ROAS</th>}
               </tr>
             </thead>
 
             <tbody>
               {groupAggRows.map((r: any, idx: number) => (
-                <tr key={r.group ?? idx} className="border-t border-gray-200">
-                  <td className="p-3 font-medium whitespace-nowrap">{r.group}</td>
+                <tr
+                  key={r.group ?? idx}
+                  className="border-t border-slate-200/90 even:bg-slate-50/45 hover:bg-amber-50/45 transition-colors"
+                >
+                  <td className={FIRST_TD_CLASS}>{r.group}</td>
 
-                  <td className="p-3">
-                    <DataBarCell value={toNum(r.impressions ?? r.impr)} max={grpMaxImpr} />
+                  <td className={TD_CLASS}>
+                    <DataBarCell
+                      value={toNum(r.impressions ?? r.impr)}
+                      max={grpMaxImpr}
+                    />
                   </td>
 
-                  <td className="p-3">
+                  <td className={TD_CLASS}>
                     <DataBarCell value={toNum(r.clicks)} max={grpMaxClicks} />
                   </td>
 
-                  <td className="p-3 text-right">{(toRate01(r.ctr) * 100).toFixed(2)}%</td>
-                  <td className="p-3 text-right">{KRW(toNum(r.cpc))}</td>
+                  <td className={`${TD_CLASS} font-medium text-violet-600`}>
+                    {(toRate01(r.ctr) * 100).toFixed(2)}%
+                  </td>
 
-                  <td className="p-3">
+                  <td className={TD_CLASS}>{KRW(toNum(r.cpc))}</td>
+
+                  <td className={TD_CLASS}>
                     <DataBarCell
                       value={toNum(r.cost)}
                       max={grpMaxCost}
@@ -496,21 +832,26 @@ export default function StructureSection({
                   </td>
 
                   {!isTraffic && (
-                    <td className="p-3">
-                      <DataBarCell value={toNum(r.conversions ?? r.conv)} max={grpMaxConv} />
+                    <td className={TD_CLASS}>
+                      <DataBarCell
+                        value={toNum(r.conversions ?? r.conv)}
+                        max={grpMaxConv}
+                      />
                     </td>
                   )}
 
                   {!isTraffic && (
-                    <td className="p-3 text-right">{(toRate01(r.cvr) * 100).toFixed(2)}%</td>
+                    <td className={`${TD_CLASS} font-medium text-violet-600`}>
+                      {(toRate01(r.cvr) * 100).toFixed(2)}%
+                    </td>
                   )}
 
                   {!isTraffic && (
-                    <td className="p-3 text-right">{KRW(toNum(r.cpa))}</td>
+                    <td className={TD_CLASS}>{KRW(toNum(r.cpa))}</td>
                   )}
 
                   {!isTraffic && (
-                    <td className="p-3">
+                    <td className={TD_CLASS}>
                       <DataBarCell
                         value={toNum(r.revenue)}
                         max={grpMaxRev}
@@ -520,22 +861,28 @@ export default function StructureSection({
                   )}
 
                   {!isTraffic && (
-                    <td className="p-3 text-right">{(toRoas01(r.roas) * 100).toFixed(1)}%</td>
+                    <td className={`${TD_CLASS} font-semibold text-orange-600`}>
+                      {(toRoas01(r.roas) * 100).toFixed(1)}%
+                    </td>
                   )}
                 </tr>
               ))}
 
               {groupAggRows.length === 0 && (
-                <tr className="border-t border-gray-200">
-                  <td className="p-3 text-gray-500" colSpan={isTraffic ? 6 : 11}>
-                    표시할 그룹 데이터가 없습니다. (필터/캠페인 선택/컬럼명을 확인)
+                <tr className="border-t border-slate-200/90">
+                  <td
+                    className={EMPTY_STATE_CLASS}
+                    colSpan={isTraffic ? 6 : 11}
+                  >
+                    표시할 그룹 데이터가 없습니다. (필터/캠페인 선택/컬럼명을
+                    확인)
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
-      </section>
-    </>
+      </div>
+    </div>
   );
 }

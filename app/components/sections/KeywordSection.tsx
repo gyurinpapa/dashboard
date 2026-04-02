@@ -202,31 +202,31 @@ function FilterDropdown({
         }}
         title={disabled ? `${label} (캠페인을 먼저 선택하세요)` : buttonText}
         className={[
-          "inline-flex items-center gap-1",
-          "px-4 py-2 rounded-lg text-sm font-semibold shadow-sm transition border",
+          "inline-flex items-center gap-1.5",
+          "rounded-xl border px-4 py-2.5 text-sm font-semibold shadow-sm transition",
+          "focus:outline-none",
           maxButtonWidthClass,
           disabled
-            ? "bg-gray-200 text-gray-500 border-gray-200 cursor-not-allowed"
-            : "bg-orange-600 text-white border-orange-600 hover:bg-orange-700",
+            ? "cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400"
+            : "border-orange-200 bg-white text-gray-800 hover:border-orange-300 hover:bg-orange-50/70",
         ].join(" ")}
       >
         <span className="truncate">{buttonText}</span>
-        <span className={disabled ? "text-gray-400" : "text-white/90"}>▼</span>
+        <span className={disabled ? "text-gray-300" : "text-orange-500"}>▼</span>
       </button>
 
       {open && !disabled && (
         <div
           className={[
             "absolute left-0 mt-2",
-            "min-w-full w-80 max-w-[70vw]",
-            "bg-white border rounded-xl shadow-lg z-50",
-            "max-h-72 overflow-auto",
+            "z-50 max-h-72 min-w-full w-80 max-w-[70vw] overflow-auto",
+            "rounded-2xl border border-gray-200 bg-white shadow-xl",
           ].join(" ")}
         >
           <button
             type="button"
             className={[
-              "w-full px-4 py-2 text-sm text-left flex items-center justify-between gap-2",
+              "flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left text-sm",
               !value ? "bg-orange-50" : "hover:bg-orange-50",
             ].join(" ")}
             title={`전체 ${label}`}
@@ -236,11 +236,15 @@ function FilterDropdown({
             }}
           >
             <span className="truncate whitespace-nowrap">{`전체 ${label}`}</span>
-            {!value ? <span className="text-orange-600 font-bold">✓</span> : <span />}
+            {!value ? (
+              <span className="font-bold text-orange-600">✓</span>
+            ) : (
+              <span />
+            )}
           </button>
 
           {sortedOptions.length === 0 ? (
-            <div className="px-4 py-2 text-sm text-gray-500">옵션이 없습니다.</div>
+            <div className="px-4 py-3 text-sm text-gray-500">옵션이 없습니다.</div>
           ) : (
             sortedOptions.map((opt) => {
               const active = value === opt;
@@ -249,7 +253,7 @@ function FilterDropdown({
                   key={opt}
                   type="button"
                   className={[
-                    "w-full px-4 py-2 text-sm text-left flex items-center justify-between gap-2",
+                    "flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left text-sm",
                     active ? "bg-orange-50" : "hover:bg-orange-50",
                   ].join(" ")}
                   title={opt}
@@ -259,7 +263,11 @@ function FilterDropdown({
                   }}
                 >
                   <span className="truncate whitespace-nowrap">{opt}</span>
-                  {active ? <span className="text-orange-600 font-bold">✓</span> : <span />}
+                  {active ? (
+                    <span className="font-bold text-orange-600">✓</span>
+                  ) : (
+                    <span />
+                  )}
                 </button>
               );
             })
@@ -313,6 +321,54 @@ const SORT_LABEL: Record<SortKey, string> = {
   revenue: "Revenue",
   roas: "ROAS",
 };
+
+function SectionHeader({
+  badge,
+  title,
+  description,
+  right,
+}: {
+  badge: string;
+  title: string;
+  description: string;
+  right?: React.ReactNode;
+}) {
+  return (
+    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="min-w-0">
+        <div className="mb-2">
+          <span className="inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-orange-700">
+            {badge}
+          </span>
+        </div>
+        <div className="text-[17px] font-semibold tracking-[-0.02em] text-gray-900">
+          {title}
+        </div>
+        <div className="mt-1 text-sm leading-6 text-gray-500">{description}</div>
+      </div>
+      {right ? <div className="shrink-0">{right}</div> : null}
+    </div>
+  );
+}
+
+function ChartCard({
+  badge,
+  title,
+  description,
+  children,
+}: {
+  badge: string;
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition hover:shadow-md">
+      <SectionHeader badge={badge} title={title} description={description} />
+      {children}
+    </div>
+  );
+}
 
 export default function KeywordSection({
   reportType,
@@ -419,15 +475,19 @@ export default function KeywordSection({
 
   const SortArrow = ({ k }: { k: SortKey }) => {
     if (sortKey !== k) return null;
-    return <span className="ml-1 inline-block align-middle">{sortDir === "asc" ? "▲" : "▼"}</span>;
+    return (
+      <span className="ml-1 inline-block align-middle text-[10px] text-orange-500">
+        {sortDir === "asc" ? "▲" : "▼"}
+      </span>
+    );
   };
 
   const Th = ({ k, align = "right" }: { k: SortKey; align?: "left" | "right" }) => (
     <th
       className={[
-        "p-3 select-none whitespace-nowrap",
+        "select-none whitespace-nowrap px-4 py-3.5 text-[11px] font-semibold uppercase tracking-[0.08em]",
         align === "left" ? "text-left" : "text-right",
-        "cursor-pointer hover:bg-gray-100",
+        "cursor-pointer border-b border-gray-200 text-gray-500 transition hover:bg-gray-100/80 hover:text-gray-700",
       ].join(" ")}
       onClick={() => onClickHeader(k)}
       title={`정렬: ${SORT_LABEL[k]}`}
@@ -533,12 +593,15 @@ export default function KeywordSection({
   }, [campaignFilter, groupFilter]);
 
   return (
-    <section className="mt-1">
+    <section className="mt-2 space-y-6">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {isTraffic ? (
           <>
-            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-              <div className="mb-2 text-xs font-semibold">노출수 TOP20 키워드</div>
+            <ChartCard
+              badge="Keyword Ranking"
+              title="노출수 TOP20 키워드"
+              description="노출 기여도가 높은 키워드를 빠르게 비교할 수 있도록 정리했습니다."
+            >
               <div style={{ width: "100%", height: 340 }}>
                 <ResponsiveContainer>
                   <BarChart
@@ -565,10 +628,13 @@ export default function KeywordSection({
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-            </div>
+            </ChartCard>
 
-            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-              <div className="mb-2 text-xs font-semibold">클릭수 TOP20 키워드</div>
+            <ChartCard
+              badge="Keyword Ranking"
+              title="클릭수 TOP20 키워드"
+              description="실제 유입 반응이 많이 발생한 키워드를 중심으로 확인할 수 있습니다."
+            >
               <div style={{ width: "100%", height: 340 }}>
                 <ResponsiveContainer>
                   <BarChart
@@ -595,10 +661,13 @@ export default function KeywordSection({
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-            </div>
+            </ChartCard>
 
-            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-              <div className="mb-2 text-xs font-semibold">비용 TOP20 키워드</div>
+            <ChartCard
+              badge="Keyword Ranking"
+              title="비용 TOP20 키워드"
+              description="예산이 많이 집행된 키워드를 기준으로 운영 집중도를 살펴봅니다."
+            >
               <div style={{ width: "100%", height: 340 }}>
                 <ResponsiveContainer>
                   <BarChart
@@ -625,12 +694,15 @@ export default function KeywordSection({
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-            </div>
+            </ChartCard>
           </>
         ) : (
           <>
-            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-              <div className="mb-2 text-xs font-semibold">클릭수 TOP20 키워드</div>
+            <ChartCard
+              badge="Keyword Ranking"
+              title="클릭수 TOP20 키워드"
+              description="유입을 가장 많이 만든 키워드를 우선순위 기준으로 정리했습니다."
+            >
               <div style={{ width: "100%", height: 340 }}>
                 <ResponsiveContainer>
                   <BarChart
@@ -657,10 +729,13 @@ export default function KeywordSection({
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-            </div>
+            </ChartCard>
 
-            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-              <div className="mb-2 text-xs font-semibold">전환수 TOP20 키워드</div>
+            <ChartCard
+              badge="Keyword Ranking"
+              title="전환수 TOP20 키워드"
+              description="전환 기여도가 높은 키워드를 중심으로 효율 우선순위를 파악합니다."
+            >
               <div style={{ width: "100%", height: 340 }}>
                 <ResponsiveContainer>
                   <BarChart
@@ -687,10 +762,13 @@ export default function KeywordSection({
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-            </div>
+            </ChartCard>
 
-            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-              <div className="mb-2 text-xs font-semibold">ROAS TOP20 키워드</div>
+            <ChartCard
+              badge="Keyword Ranking"
+              title="ROAS TOP20 키워드"
+              description="매출 효율이 좋은 키워드를 빠르게 식별할 수 있도록 정리했습니다."
+            >
               <div style={{ width: "100%", height: 340 }}>
                 <ResponsiveContainer>
                   <BarChart
@@ -720,16 +798,22 @@ export default function KeywordSection({
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-            </div>
+            </ChartCard>
           </>
         )}
       </div>
 
-      <section className="mt-6">
+      <section>
         <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
-          <div className="mb-3 font-semibold">요약 인사이트</div>
+          <SectionHeader
+            badge="AI Insight"
+            title="키워드 요약 인사이트"
+            description="현재 키워드 성과를 바탕으로 중요한 흐름과 해석 포인트를 정리했습니다."
+          />
           {keywordInsight ? (
-            <div className="whitespace-pre-wrap text-sm text-gray-800">{keywordInsight}</div>
+            <div className="whitespace-pre-wrap text-sm leading-7 text-gray-800">
+              {keywordInsight}
+            </div>
           ) : (
             <div className="text-sm text-gray-500">
               키워드 데이터가 없어 인사이트를 생성할 수 없습니다.
@@ -738,142 +822,167 @@ export default function KeywordSection({
         </div>
       </section>
 
-      <section className="mt-10">
-        <div className="mb-3 flex items-center justify-between">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="shrink-0 rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[11px]">
-              {filterBadge}
-            </span>
+      <section>
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
+          <SectionHeader
+            badge="Keyword Table"
+            title="키워드 상세 성과"
+            description="정렬 기준과 필터 조건에 따라 주요 키워드 성과를 비교할 수 있습니다."
+            right={
+              <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-[11px] font-medium text-gray-600">
+                {filterBadge}
+              </span>
+            }
+          />
+
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="text-xs text-gray-400">
+              선택한 정렬 기준으로 Top50 키워드가 표시됩니다.
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              <FilterDropdown
+                label="캠페인명"
+                placeholder="캠페인명"
+                options={campaignOptions}
+                value={campaignFilter}
+                onChange={(v) => {
+                  rememberScroll();
+                  setCampaignFilter(v);
+                  setGroupFilter(null);
+                }}
+              />
+              <FilterDropdown
+                label="그룹명"
+                placeholder="그룹명"
+                options={groupOptions}
+                value={groupFilter}
+                disabled={!campaignFilter}
+                onChange={(v) => {
+                  rememberScroll();
+                  setGroupFilter(v);
+                }}
+              />
+            </div>
           </div>
 
-          <div className="flex gap-3">
-            <FilterDropdown
-              label="캠페인명"
-              placeholder="캠페인명"
-              options={campaignOptions}
-              value={campaignFilter}
-              onChange={(v) => {
-                rememberScroll();
-                setCampaignFilter(v);
-                setGroupFilter(null);
-              }}
-            />
-            <FilterDropdown
-              label="그룹명"
-              placeholder="그룹명"
-              options={groupOptions}
-              value={groupFilter}
-              disabled={!campaignFilter}
-              onChange={(v) => {
-                rememberScroll();
-                setGroupFilter(v);
-              }}
-            />
-          </div>
-        </div>
-
-        <div
-          ref={tableScrollRef}
-          className="overflow-auto rounded-2xl border border-gray-200/80 bg-white shadow-sm"
-        >
-          <table className="w-full border-collapse text-sm">
-            <thead className="bg-gray-50/95 text-gray-600">
-              <tr>
-                <Th k="keyword" align="left" />
-                <Th k="impressions" />
-                <Th k="clicks" />
-                <Th k="ctr" />
-                <Th k="cpc" />
-                <Th k="cost" />
-                {!isTraffic && <Th k="conversions" />}
-                {!isTraffic && <Th k="cvr" />}
-                {!isTraffic && <Th k="cpa" />}
-                {!isTraffic && <Th k="revenue" />}
-                {!isTraffic && <Th k="roas" />}
-              </tr>
-            </thead>
-
-            <tbody>
-              {tableRows.length === 0 ? (
-                <tr className="border-t border-gray-200">
-                  <td className="p-3 text-gray-500" colSpan={isTraffic ? 6 : 11}>
-                    표시할 키워드 데이터가 없습니다. (필터 조건/컬럼명을 확인해 주세요)
-                  </td>
+          <div
+            ref={tableScrollRef}
+            className="overflow-auto rounded-2xl border border-gray-200/90 bg-white shadow-sm"
+          >
+            <table className="w-full border-collapse text-sm">
+              <thead className="sticky top-0 z-10 bg-gray-50/95 backdrop-blur">
+                <tr>
+                  <Th k="keyword" align="left" />
+                  <Th k="impressions" />
+                  <Th k="clicks" />
+                  <Th k="ctr" />
+                  <Th k="cpc" />
+                  <Th k="cost" />
+                  {!isTraffic && <Th k="conversions" />}
+                  {!isTraffic && <Th k="cvr" />}
+                  {!isTraffic && <Th k="cpa" />}
+                  {!isTraffic && <Th k="revenue" />}
+                  {!isTraffic && <Th k="roas" />}
                 </tr>
-              ) : (
-                tableRows.map((r, idx) => (
-                  <tr key={`${r.keyword}-${idx}`} className="border-t border-gray-200">
-                    <td className="whitespace-nowrap p-3 text-left font-medium">
-                      {r.keyword || "(empty)"}
+              </thead>
+
+              <tbody>
+                {tableRows.length === 0 ? (
+                  <tr className="border-t border-gray-200">
+                    <td
+                      className="px-4 py-8 text-center text-sm text-gray-500"
+                      colSpan={isTraffic ? 6 : 11}
+                    >
+                      표시할 키워드 데이터가 없습니다. (필터 조건/컬럼명을 확인해 주세요)
                     </td>
-
-                    <td className="p-3">
-                      <DataBarCell
-                        value={toSafeNumber(r.impressions)}
-                        max={kwMaxImpr}
-                        label={formatCount(r.impressions)}
-                      />
-                    </td>
-
-                    <td className="p-3">
-                      <DataBarCell
-                        value={toSafeNumber(r.clicks)}
-                        max={kwMaxClicks}
-                        label={formatCount(r.clicks)}
-                      />
-                    </td>
-
-                    <td className="p-3 text-right">{formatPercentFromRate(r.ctr, 2)}</td>
-                    <td className="p-3 text-right">{KRW(r.cpc)}</td>
-
-                    <td className="p-3">
-                      <DataBarCell
-                        value={toSafeNumber(r.cost)}
-                        max={kwMaxCost}
-                        label={KRW(r.cost)}
-                      />
-                    </td>
-
-                    {!isTraffic && (
-                      <td className="p-3">
-                        <DataBarCell
-                          value={toSafeNumber(r.conversions)}
-                          max={kwMaxConv}
-                          label={formatCount(r.conversions)}
-                        />
-                      </td>
-                    )}
-
-                    {!isTraffic && (
-                      <td className="p-3 text-right">{formatPercentFromRate(r.cvr, 2)}</td>
-                    )}
-
-                    {!isTraffic && (
-                      <td className="p-3 text-right">{KRW(r.cpa)}</td>
-                    )}
-
-                    {!isTraffic && (
-                      <td className="p-3">
-                        <DataBarCell
-                          value={toSafeNumber(r.revenue)}
-                          max={kwMaxRev}
-                          label={KRW(r.revenue)}
-                        />
-                      </td>
-                    )}
-
-                    {!isTraffic && (
-                      <td className="p-3 text-right">{formatPercentFromRoas(r.roas, 1)}</td>
-                    )}
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ) : (
+                  tableRows.map((r, idx) => (
+                    <tr
+                      key={`${r.keyword}-${idx}`}
+                      className="border-t border-gray-200 transition hover:bg-orange-50/40"
+                    >
+                      <td className="whitespace-nowrap px-4 py-3.5 text-left font-medium text-gray-900">
+                        {r.keyword || "(empty)"}
+                      </td>
 
-        <div className="mt-2 text-xs text-gray-400">
-          * 표는 선택한 정렬 기준으로 Top50 키워드입니다. (좌측 필터 조건에 따라 자동 변경)
+                      <td className="px-4 py-3.5">
+                        <DataBarCell
+                          value={toSafeNumber(r.impressions)}
+                          max={kwMaxImpr}
+                          label={formatCount(r.impressions)}
+                        />
+                      </td>
+
+                      <td className="px-4 py-3.5">
+                        <DataBarCell
+                          value={toSafeNumber(r.clicks)}
+                          max={kwMaxClicks}
+                          label={formatCount(r.clicks)}
+                        />
+                      </td>
+
+                      <td className="px-4 py-3.5 text-right text-gray-700">
+                        {formatPercentFromRate(r.ctr, 2)}
+                      </td>
+                      <td className="px-4 py-3.5 text-right text-gray-700">{KRW(r.cpc)}</td>
+
+                      <td className="px-4 py-3.5">
+                        <DataBarCell
+                          value={toSafeNumber(r.cost)}
+                          max={kwMaxCost}
+                          label={KRW(r.cost)}
+                        />
+                      </td>
+
+                      {!isTraffic && (
+                        <td className="px-4 py-3.5">
+                          <DataBarCell
+                            value={toSafeNumber(r.conversions)}
+                            max={kwMaxConv}
+                            label={formatCount(r.conversions)}
+                          />
+                        </td>
+                      )}
+
+                      {!isTraffic && (
+                        <td className="px-4 py-3.5 text-right text-gray-700">
+                          {formatPercentFromRate(r.cvr, 2)}
+                        </td>
+                      )}
+
+                      {!isTraffic && (
+                        <td className="px-4 py-3.5 text-right text-gray-700">
+                          {KRW(r.cpa)}
+                        </td>
+                      )}
+
+                      {!isTraffic && (
+                        <td className="px-4 py-3.5">
+                          <DataBarCell
+                            value={toSafeNumber(r.revenue)}
+                            max={kwMaxRev}
+                            label={KRW(r.revenue)}
+                          />
+                        </td>
+                      )}
+
+                      {!isTraffic && (
+                        <td className="px-4 py-3.5 text-right text-gray-700">
+                          {formatPercentFromRoas(r.roas, 1)}
+                        </td>
+                      )}
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="mt-3 text-xs text-gray-400">
+            * 표는 선택한 정렬 기준으로 Top50 키워드입니다. (좌측 필터 조건에 따라 자동 변경)
+          </div>
         </div>
       </section>
     </section>

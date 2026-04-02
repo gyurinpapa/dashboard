@@ -107,6 +107,101 @@ function safeCall<T>(fn: () => T, fallback: T): T {
   }
 }
 
+function normalizeDateKey(value: any): string {
+  if (value == null) return "";
+  const raw = String(value).trim();
+  if (!raw) return "";
+
+  const compact = raw.replace(/\./g, "-").replace(/\//g, "-").replace(/\s+/g, "");
+  const matched = compact.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+
+  if (matched) {
+    const [, y, m, d] = matched;
+    return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+
+  const digits = raw.replace(/[^\d]/g, "");
+  if (digits.length >= 8) {
+    return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+  }
+
+  return "";
+}
+
+function extractRowDateKey(row: Row): string {
+  const anyR = row as any;
+  const candidates = [
+    anyR.dateKey,
+    anyR.date,
+    anyR.day,
+    anyR.ymd,
+    anyR.reportDate,
+    anyR.segmentDate,
+    anyR.daily,
+    anyR["일자"],
+    anyR["날짜"],
+    anyR["date"],
+  ];
+
+  for (const value of candidates) {
+    const normalized = normalizeDateKey(value);
+    if (normalized) return normalized;
+  }
+
+  return "";
+}
+
+function groupByDayFromRows(rows: Row[]) {
+  const map = new Map<string, Row[]>();
+
+  for (const row of rows) {
+    const dateKey = extractRowDateKey(row);
+    if (!dateKey) continue;
+
+    const bucket = map.get(dateKey) ?? [];
+    bucket.push(row);
+    map.set(dateKey, bucket);
+  }
+
+  return Array.from(map.entries())
+    .map(([dateKey, bucket]) => {
+      const s = safeCall(
+        () => summarize(bucket as any),
+        {
+          impressions: 0,
+          clicks: 0,
+          cost: 0,
+          conversions: 0,
+          revenue: 0,
+          ctr: 0,
+          cpc: 0,
+          cvr: 0,
+          cpa: 0,
+          roas: 0,
+        } as any
+      );
+
+      return {
+        date: dateKey,
+        dateKey,
+        label: dateKey,
+        impressions: toSafeNumber((s as any)?.impressions ?? (s as any)?.impr),
+        impr: toSafeNumber((s as any)?.impressions ?? (s as any)?.impr),
+        clicks: toSafeNumber((s as any)?.clicks),
+        ctr: toSafeNumber((s as any)?.ctr),
+        cpc: toSafeNumber((s as any)?.cpc),
+        cost: toSafeNumber((s as any)?.cost),
+        conversions: toSafeNumber((s as any)?.conversions ?? (s as any)?.conv),
+        conv: toSafeNumber((s as any)?.conversions ?? (s as any)?.conv),
+        cvr: toSafeNumber((s as any)?.cvr),
+        cpa: toSafeNumber((s as any)?.cpa),
+        revenue: toSafeNumber((s as any)?.revenue),
+        roas: toSafeNumber((s as any)?.roas),
+      };
+    })
+    .sort((a, b) => String(a.dateKey).localeCompare(String(b.dateKey)));
+}
+
 /** =========================
  * Badge helpers (TOP3)
  * ========================= */
@@ -425,6 +520,7 @@ export default function CreativeDetailSection({ reportType, rows }: Props) {
 
   const creatives = useMemo(() => extractCreatives(rows), [rows]);
   const [selectedCreative, setSelectedCreative] = useState<string | null>(null);
+  const [searchText, setSearchText] = useState("");
 
   useEffect(() => {
     if (!selectedCreative && creatives.length > 0) {
@@ -518,9 +614,20 @@ export default function CreativeDetailSection({ reportType, rows }: Props) {
     return badgeMap.get(selectedCreative) ?? [];
   }, [badgeMap, selectedCreative]);
 
+  const filteredCreatives = useMemo(() => {
+    const q = searchText.trim().toLowerCase();
+    if (!q) return creatives;
+    return creatives.filter((name) => String(name).toLowerCase().includes(q));
+  }, [creatives, searchText]);
+
   const filteredRows = useMemo(
     () => filterByCreative(rows, selectedCreative),
     [rows, selectedCreative]
+  );
+
+  const byDay = useMemo(
+    () => groupByDayFromRows(filteredRows),
+    [filteredRows]
   );
 
   const selectedPreviewUrl = useMemo(() => {
@@ -624,24 +731,92 @@ export default function CreativeDetailSection({ reportType, rows }: Props) {
   return (
     <section className="w-full min-w-0">
       <div className="mt-4 grid grid-cols-1 items-start gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
-        <aside className="min-w-0 rounded-2xl border border-gray-200 bg-white p-4 lg:sticky lg:top-24 lg:max-h-[calc(100vh-6rem)] lg:overflow-hidden">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-sm font-semibold">소재 리스트</div>
-            <div className="min-w-0 truncate text-xs text-gray-500">
-              {selectedCreative ? `선택: ${selectedCreative}` : "선택 없음"}
+        <aside className="min-w-0 rounded-[28px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.96))] p-4 shadow-[0_10px_30px_rgba(15,23,42,0.06)] lg:sticky lg:top-24 lg:max-h-[calc(100vh-6rem)] lg:overflow-hidden">
+          <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-orange-700">
+                  Creative Selector
+                </div>
+                <div className="mt-3 text-sm font-semibold text-slate-900">
+                  소재 리스트
+                </div>
+                <div className="mt-1 text-xs leading-5 text-slate-500">
+                  선택한 소재 기준으로 우측 상세 성과와 인사이트가 함께 갱신됩니다.
+                </div>
+              </div>
+
+              <div className="shrink-0 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-right">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                  Total
+                </div>
+                <div className="mt-1 text-sm font-semibold text-slate-900">
+                  {creatives.length}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                Search
+              </label>
+              <div className="relative">
+                <input
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  placeholder="소재명 검색"
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:bg-white focus:ring-4 focus:ring-orange-100"
+                />
+                {searchText ? (
+                  <button
+                    type="button"
+                    onClick={() => setSearchText("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-300"
+                    title="검색 초기화"
+                  >
+                    초기화
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2.5">
+              <div className="min-w-0">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                  Current Selection
+                </div>
+                <div className="mt-1 truncate text-xs font-medium text-slate-700">
+                  {selectedCreative || "선택 없음"}
+                </div>
+              </div>
+
+              <div className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 shadow-sm">
+                {filteredCreatives.length}개 표시
+              </div>
             </div>
           </div>
 
-          <div className="mt-3 overflow-auto pr-1 lg:max-h-[calc(100vh-14rem)]">
-            <div className="flex flex-col gap-2">
+          <div className="mt-4 overflow-auto pr-1 lg:max-h-[calc(100vh-20rem)]">
+            <div className="flex flex-col gap-2.5">
               {creatives.length === 0 ? (
-                <div className="rounded-xl bg-gray-50 p-4 text-sm text-gray-600">
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">
                   소재 데이터가 없습니다. (소재 컬럼 매핑 필요)
                 </div>
+              ) : filteredCreatives.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5">
+                  <div className="text-sm font-semibold text-slate-700">
+                    검색 결과가 없습니다
+                  </div>
+                  <div className="mt-1 text-xs leading-5 text-slate-500">
+                    다른 검색어로 시도하거나 검색어를 초기화해 주세요.
+                  </div>
+                </div>
               ) : (
-                creatives.map((k) => {
+                filteredCreatives.map((k) => {
                   const active = k === selectedCreative;
                   const badges = badgeMap.get(k) ?? [];
+                  const previewRow = rows.find((r) => getCreativeKey(r) === k);
+                  const previewUrl = previewRow ? getCreativePreviewUrl(previewRow) : "";
 
                   return (
                     <button
@@ -649,40 +824,89 @@ export default function CreativeDetailSection({ reportType, rows }: Props) {
                       type="button"
                       onClick={() => setSelectedCreative(k)}
                       className={[
-                        "block w-full rounded-xl border px-3 py-2 text-left text-sm font-semibold transition",
-                        "overflow-hidden text-ellipsis whitespace-nowrap",
+                        "group relative block w-full overflow-hidden rounded-2xl border text-left transition-all",
                         active
-                          ? "bg-orange-700 text-white border-orange-700"
-                          : "bg-white text-gray-900 border-gray-200 hover:bg-orange-50 hover:border-orange-200",
+                          ? "border-orange-300 bg-[linear-gradient(180deg,rgba(255,247,237,1),rgba(255,255,255,1))] shadow-[0_10px_24px_rgba(249,115,22,0.14)]"
+                          : "border-slate-200 bg-white hover:border-orange-200 hover:bg-orange-50/40 hover:shadow-sm",
                       ].join(" ")}
                       title={k}
                     >
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="truncate">{k}</span>
+                      <div
+                        className={[
+                          "absolute inset-y-0 left-0 w-1 transition-all",
+                          active ? "bg-orange-500" : "bg-transparent group-hover:bg-orange-200",
+                        ].join(" ")}
+                      />
 
-                        {badges.length > 0 && (
-                          <span className="flex shrink-0 gap-1">
-                            {badges.slice(0, 2).map((b) => (
-                              <span
-                                key={b}
+                      <div className="flex items-start gap-3 px-3.5 py-3.5">
+                        <div className="shrink-0">
+                          <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                            {previewUrl ? (
+                              <img
+                                src={previewUrl}
+                                alt={k}
+                                className="h-12 w-12 object-cover"
+                              />
+                            ) : (
+                              <div className="flex h-12 w-12 items-center justify-center text-[10px] font-semibold text-slate-400">
+                                NO
+                                <br />
+                                IMG
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div
                                 className={[
-                                  "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold",
-                                  active ? "bg-white/20 text-white" : BADGE_META[b].className,
+                                  "truncate text-sm font-semibold",
+                                  active ? "text-slate-900" : "text-slate-800",
                                 ].join(" ")}
                               >
-                                {active
-                                  ? `TOP ${
-                                      b === "ctr"
-                                        ? "CTR"
-                                        : b === "roas"
-                                        ? "ROAS"
-                                        : "전환"
-                                    }`
-                                  : BADGE_META[b].label}
-                              </span>
-                            ))}
-                          </span>
-                        )}
+                                {k}
+                              </div>
+                              <div className="mt-1 text-[11px] text-slate-500">
+                                {previewUrl ? "이미지 미리보기 가능" : "이미지 미리보기 없음"}
+                              </div>
+                            </div>
+
+                            <div
+                              className={[
+                                "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold",
+                                active
+                                  ? "bg-orange-100 text-orange-700"
+                                  : "bg-slate-100 text-slate-500",
+                              ].join(" ")}
+                            >
+                              {active ? "선택됨" : "선택"}
+                            </div>
+                          </div>
+
+                          {badges.length > 0 ? (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {badges.slice(0, 3).map((b) => (
+                                <span
+                                  key={b}
+                                  className={[
+                                    "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                                    active
+                                      ? "bg-white text-slate-700 border border-orange-200"
+                                      : BADGE_META[b].className,
+                                  ].join(" ")}
+                                >
+                                  {BADGE_META[b].label}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="mt-2 text-[11px] text-slate-400">
+                              성과 배지 없음
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </button>
                   );
@@ -691,10 +915,10 @@ export default function CreativeDetailSection({ reportType, rows }: Props) {
             </div>
           </div>
 
-          <div className="mt-4 rounded-xl bg-gray-50 p-3 text-xs text-gray-600">
-            <b>메모</b>
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-3 text-xs leading-5 text-slate-600">
+            <b className="text-slate-800">메모</b>
             <div className="mt-1">
-              오른쪽은 선택 소재 기준으로 “요약탭 구성(월3/주5/그래프/소스별)”을 재사용합니다.
+              검색과 선택만 담당하는 패널입니다. 우측 상세 성과 영역의 데이터 흐름은 그대로 유지됩니다.
             </div>
           </div>
         </aside>
@@ -780,7 +1004,7 @@ export default function CreativeDetailSection({ reportType, rows }: Props) {
             </div>
           </section>
 
-          <div className="creative-detail-week-table-fix creative-detail-hide-date-table min-w-0">
+          <div className="creative-detail-week-table-fix min-w-0">
             {(() => {
               const currentMonthKey = (totals as any)?.currentMonthKey ?? null;
               const currentMonthActual = (totals as any)?.currentMonthActual ?? totals;
@@ -812,6 +1036,7 @@ export default function CreativeDetailSection({ reportType, rows }: Props) {
                     byWeekOnly={byWeekOnly as any}
                     byWeekChart={byWeekChart as any}
                     bySource={bySource as any}
+                    byDay={byDay as any}
                     currentMonthKey={currentMonthKey}
                     currentMonthActual={currentMonthActual}
                     currentMonthGoalComputed={currentMonthGoalComputed}
@@ -851,10 +1076,6 @@ export default function CreativeDetailSection({ reportType, rows }: Props) {
         .creative-detail-week-table-fix table td:first-child {
           overflow: hidden;
           text-overflow: ellipsis;
-        }
-
-        .creative-detail-hide-date-table > div > section:last-of-type {
-          display: none !important;
         }
 
         ${isTraffic

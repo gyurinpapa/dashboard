@@ -93,6 +93,84 @@ function filterByKeyword(rows: Row[], keyword: string | null) {
   return rows.filter((r) => (r.keyword ?? "").toString().trim() === keyword);
 }
 
+function normalizeDateKey(value: any): string {
+  if (value == null) return "";
+  const raw = String(value).trim();
+  if (!raw) return "";
+
+  const compact = raw.replace(/\./g, "-").replace(/\//g, "-").replace(/\s+/g, "");
+  const matched = compact.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (matched) {
+    const [, y, m, d] = matched;
+    return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+
+  const digits = raw.replace(/[^\d]/g, "");
+  if (digits.length >= 8) {
+    return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+  }
+
+  return "";
+}
+
+function extractRowDateKey(row: Row): string {
+  const candidates = [
+    (row as any)?.dateKey,
+    (row as any)?.date,
+    (row as any)?.day,
+    (row as any)?.ymd,
+    (row as any)?.reportDate,
+    (row as any)?.segmentDate,
+    (row as any)?.daily,
+    (row as any)?.["일자"],
+    (row as any)?.["날짜"],
+    (row as any)?.["date"],
+  ];
+
+  for (const value of candidates) {
+    const normalized = normalizeDateKey(value);
+    if (normalized) return normalized;
+  }
+
+  return "";
+}
+
+function groupByDayFromRows(rows: Row[]) {
+  const map = new Map<string, Row[]>();
+
+  for (const row of rows) {
+    const dateKey = extractRowDateKey(row);
+    if (!dateKey) continue;
+
+    const list = map.get(dateKey) ?? [];
+    list.push(row);
+    map.set(dateKey, list);
+  }
+
+  return Array.from(map.entries())
+    .map(([dateKey, bucket]) => {
+      const s = summarize(bucket);
+      return {
+        date: dateKey,
+        dateKey,
+        label: dateKey,
+        impressions: toSafeNumber((s as any)?.impressions ?? (s as any)?.impr),
+        impr: toSafeNumber((s as any)?.impressions ?? (s as any)?.impr),
+        clicks: toSafeNumber((s as any)?.clicks),
+        ctr: toSafeNumber((s as any)?.ctr),
+        cpc: toSafeNumber((s as any)?.cpc),
+        cost: toSafeNumber((s as any)?.cost),
+        conversions: toSafeNumber((s as any)?.conversions ?? (s as any)?.conv),
+        conv: toSafeNumber((s as any)?.conversions ?? (s as any)?.conv),
+        cvr: toSafeNumber((s as any)?.cvr),
+        cpa: toSafeNumber((s as any)?.cpa),
+        revenue: toSafeNumber((s as any)?.revenue),
+        roas: toSafeNumber((s as any)?.roas),
+      };
+    })
+    .sort((a, b) => String(a.dateKey).localeCompare(String(b.dateKey)));
+}
+
 /**
  * ✅ 인사이트 생성(근거 기반 v2: 기기 근거 포함)
  * - 선택 키워드 실적/효율 + 전체 대비 기여도 + 최근 주간 추세 + 소스별 + 기기별(Top 비교)
@@ -234,7 +312,7 @@ function buildKeywordDetailInsight(args: {
       `소스 비교: 2순위 “${String(topS2.source)}”(ROAS ${safeRoasPct0(
         toSafeNumber(topS2.roas)
       )})와 함께 증액/유지/축소 기준을 명확히 하세요.`
-      );
+    );
   }
 
   if (topD1 && topD2) {
@@ -303,6 +381,7 @@ export default function KeywordDetailSection(props: Props) {
   const bySource = useMemo(() => groupBySource(filteredRows), [filteredRows]);
   const byDevice = useMemo(() => groupByDevice(filteredRows), [filteredRows]);
   const byWeekOnly = useMemo(() => groupByWeekRecent5(filteredRows), [filteredRows]);
+  const byDay = useMemo(() => groupByDayFromRows(filteredRows), [filteredRows]);
 
   const byWeekChart = useMemo(() => {
     const arr = [...byWeekOnly];
@@ -415,7 +494,7 @@ export default function KeywordDetailSection(props: Props) {
             </div>
           </section>
 
-          <div className="keyword-detail-week-table-fix keyword-detail-hide-date-table min-w-0">
+          <div className="keyword-detail-week-table-fix min-w-0">
             {(() => {
               const currentMonthKey = (totals as any)?.currentMonthKey ?? null;
               const currentMonthActual = (totals as any)?.currentMonthActual ?? totals;
@@ -447,6 +526,7 @@ export default function KeywordDetailSection(props: Props) {
                     byWeekOnly={byWeekOnly as any}
                     byWeekChart={byWeekChart as any}
                     bySource={bySource as any}
+                    byDay={byDay as any}
                     currentMonthKey={currentMonthKey}
                     currentMonthActual={currentMonthActual}
                     currentMonthGoalComputed={currentMonthGoalComputed}
@@ -486,10 +566,6 @@ export default function KeywordDetailSection(props: Props) {
         .keyword-detail-week-table-fix table td:first-child {
           overflow: hidden;
           text-overflow: ellipsis;
-        }
-
-        .keyword-detail-hide-date-table > div > section:last-of-type {
-          display: none !important;
         }
 
         ${isTraffic ? `
