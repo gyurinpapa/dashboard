@@ -1,3 +1,4 @@
+// app/components/sections/KeywordSection.tsx
 "use client";
 
 import {
@@ -147,6 +148,19 @@ function extractGroupName(r: any): string | null {
     "adgroup.name",
     "adgroup.title",
   ]);
+}
+
+function normalizeKeywordKey(v: any): string {
+  return String(v ?? "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+function pickDisplayKeyword(rawKeyword: any, normalizedKey: string) {
+  const raw = String(rawKeyword ?? "").trim().replace(/\s+/g, " ");
+  if (raw) return raw;
+  return normalizedKey || "(empty)";
 }
 
 function FilterDropdown({
@@ -394,7 +408,9 @@ export default function KeywordSection({
         r.cvr ?? (clicks > 0 ? conversions / clicks : 0)
       );
       const cpc = toSafeNumber(r.cpc ?? (clicks > 0 ? cost / clicks : 0));
-      const cpa = toSafeNumber(r.cpa ?? (conversions > 0 ? cost / conversions : 0));
+      const cpa = toSafeNumber(
+        r.cpa ?? (conversions > 0 ? cost / conversions : 0)
+      );
       const roas = normalizeRoas01(r.roas ?? (cost > 0 ? revenue / cost : 0));
 
       const campaign = extractCampaignName(r);
@@ -418,51 +434,109 @@ export default function KeywordSection({
     });
   }, [keywordAgg]);
 
-  useEffect(() => {
-    console.log("campaign raw", keywordAgg?.[0]);
-    console.log(
-      "[KeywordSection] keywordAgg length:",
-      Array.isArray(keywordAgg) ? keywordAgg.length : "not array"
-    );
-    console.log(
-      "[KeywordSection] keywordAgg[0] keys:",
-      keywordAgg?.[0] ? Object.keys(keywordAgg[0]) : null
-    );
-    console.log("[KeywordSection] sample campaign/group from keywordAgg[0]:", {
-      campaign_name: keywordAgg?.[0]?.campaign_name,
-      campaign: keywordAgg?.[0]?.campaign,
-      group_name: keywordAgg?.[0]?.group_name,
-      group: keywordAgg?.[0]?.group,
-      campaignObj: keywordAgg?.[0]?.campaign,
-      groupObj: keywordAgg?.[0]?.group,
+  const chartRows: Row[] = useMemo(() => {
+    const map = new Map<string, Row>();
+
+    for (const r of rows) {
+      const key = normalizeKeywordKey(r.keyword);
+      const displayKeyword = pickDisplayKeyword(r.keyword, key);
+
+      const prev = map.get(key);
+
+      if (!prev) {
+        map.set(key, {
+          keyword: displayKeyword,
+          impressions: toSafeNumber(r.impressions),
+          clicks: toSafeNumber(r.clicks),
+          ctr: 0,
+          cpc: 0,
+          cost: toSafeNumber(r.cost),
+          conversions: toSafeNumber(r.conversions),
+          cvr: 0,
+          cpa: 0,
+          revenue: toSafeNumber(r.revenue),
+          roas: 0,
+          campaign: null,
+          group: null,
+        });
+        continue;
+      }
+
+      prev.impressions += toSafeNumber(r.impressions);
+      prev.clicks += toSafeNumber(r.clicks);
+      prev.cost += toSafeNumber(r.cost);
+      prev.conversions += toSafeNumber(r.conversions);
+      prev.revenue += toSafeNumber(r.revenue);
+    }
+
+    return Array.from(map.values()).map((r) => {
+      const impressions = toSafeNumber(r.impressions);
+      const clicks = toSafeNumber(r.clicks);
+      const cost = toSafeNumber(r.cost);
+      const conversions = toSafeNumber(r.conversions);
+      const revenue = toSafeNumber(r.revenue);
+
+      return {
+        ...r,
+        ctr: normalizeRate01(impressions > 0 ? clicks / impressions : 0),
+        cpc: toSafeNumber(clicks > 0 ? cost / clicks : 0),
+        cvr: normalizeRate01(clicks > 0 ? conversions / clicks : 0),
+        cpa: toSafeNumber(conversions > 0 ? cost / conversions : 0),
+        roas: normalizeRoas01(cost > 0 ? revenue / cost : 0),
+      };
     });
-  }, [keywordAgg]);
+  }, [rows]);
 
   const topImpressions = useMemo(
     () =>
-      [...rows].sort((a, b) => b.impressions - a.impressions).slice(0, 20).reverse(),
-    [rows]
+      [...chartRows]
+        .sort((a, b) => b.impressions - a.impressions)
+        .slice(0, 20)
+        .reverse(),
+    [chartRows]
   );
+
   const topClicks = useMemo(
-    () => [...rows].sort((a, b) => b.clicks - a.clicks).slice(0, 20).reverse(),
-    [rows]
+    () =>
+      [...chartRows]
+        .sort((a, b) => b.clicks - a.clicks)
+        .slice(0, 20)
+        .reverse(),
+    [chartRows]
   );
+
   const topCost = useMemo(
-    () => [...rows].sort((a, b) => b.cost - a.cost).slice(0, 20).reverse(),
-    [rows]
+    () =>
+      [...chartRows]
+        .sort((a, b) => b.cost - a.cost)
+        .slice(0, 20)
+        .reverse(),
+    [chartRows]
   );
+
   const topConv = useMemo(
     () =>
-      [...rows].sort((a, b) => b.conversions - a.conversions).slice(0, 20).reverse(),
-    [rows]
+      [...chartRows]
+        .sort((a, b) => b.conversions - a.conversions)
+        .slice(0, 20)
+        .reverse(),
+    [chartRows]
   );
+
   const topRoas = useMemo(
-    () => [...rows].sort((a, b) => b.roas - a.roas).slice(0, 20).reverse(),
-    [rows]
+    () =>
+      [...chartRows]
+        .sort((a, b) => b.roas - a.roas)
+        .slice(0, 20)
+        .reverse(),
+    [chartRows]
   );
 
   const [sortKey, setSortKey] = useState<SortKey>("clicks");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [campaignFilter, setCampaignFilter] = useState<string | null>(null);
+  const [groupFilter, setGroupFilter] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"merged" | "raw">("merged");
 
   const onClickHeader = (k: SortKey) => {
     if (k === sortKey) {
@@ -482,7 +556,13 @@ export default function KeywordSection({
     );
   };
 
-  const Th = ({ k, align = "right" }: { k: SortKey; align?: "left" | "right" }) => (
+  const Th = ({
+    k,
+    align = "right",
+  }: {
+    k: SortKey;
+    align?: "left" | "right";
+  }) => (
     <th
       className={[
         "select-none whitespace-nowrap px-4 py-3.5 text-[11px] font-semibold uppercase tracking-[0.08em]",
@@ -497,37 +577,40 @@ export default function KeywordSection({
     </th>
   );
 
-  const [campaignFilter, setCampaignFilter] = useState<string | null>(null);
-  const [groupFilter, setGroupFilter] = useState<string | null>(null);
-
   const campaignOptions = useMemo(() => {
+    const baseRows = viewMode === "merged" ? chartRows : rows;
     const set = new Set<string>();
-    rows.forEach((r) => {
+    baseRows.forEach((r) => {
       const c = (r.campaign ?? "").toString().trim();
       if (c) set.add(c);
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b, "ko"));
-  }, [rows]);
+  }, [rows, chartRows, viewMode]);
 
   const groupOptions = useMemo(() => {
     if (!campaignFilter) return [];
+    const baseRows = viewMode === "merged" ? chartRows : rows;
     const set = new Set<string>();
-    rows
+    baseRows
       .filter((r) => (r.campaign ?? "") === campaignFilter)
       .forEach((r) => {
         const g = (r.group ?? "").toString().trim();
         if (g) set.add(g);
       });
     return Array.from(set).sort((a, b) => a.localeCompare(b, "ko"));
-  }, [rows, campaignFilter]);
+  }, [rows, chartRows, campaignFilter, viewMode]);
+
+  const tableSourceRows = useMemo(() => {
+    return viewMode === "merged" ? chartRows : rows;
+  }, [viewMode, chartRows, rows]);
 
   const tableScopeRows = useMemo(() => {
-    return rows.filter((r) => {
+    return tableSourceRows.filter((r) => {
       if (campaignFilter && (r.campaign ?? "") !== campaignFilter) return false;
       if (groupFilter && (r.group ?? "") !== groupFilter) return false;
       return true;
     });
-  }, [rows, campaignFilter, groupFilter]);
+  }, [tableSourceRows, campaignFilter, groupFilter]);
 
   const tableRows = useMemo(() => {
     const sorted = [...tableScopeRows].sort((a, b) => {
@@ -584,13 +667,18 @@ export default function KeywordSection({
     pendingRestoreScrollTop.current = null;
   });
 
+  useEffect(() => {
+    setCampaignFilter(null);
+    setGroupFilter(null);
+  }, [viewMode]);
+
   const filterBadge = useMemo(() => {
-    if (!campaignFilter && !groupFilter) return "전체";
-    const parts: string[] = [];
+    const modeLabel = viewMode === "merged" ? "통합 보기" : "원본 보기";
+    const parts: string[] = [modeLabel];
     if (campaignFilter) parts.push(`캠페인: ${campaignFilter}`);
     if (groupFilter) parts.push(`그룹: ${groupFilter}`);
     return parts.join(" / ");
-  }, [campaignFilter, groupFilter]);
+  }, [campaignFilter, groupFilter, viewMode]);
 
   return (
     <section className="mt-2 space-y-6">
@@ -600,7 +688,7 @@ export default function KeywordSection({
             <ChartCard
               badge="Keyword Ranking"
               title="노출수 TOP20 키워드"
-              description="노출 기여도가 높은 키워드를 빠르게 비교할 수 있도록 정리했습니다."
+              description="중복 키워드를 통합 집계한 뒤 노출 기여도가 높은 순으로 정리했습니다."
             >
               <div style={{ width: "100%", height: 340 }}>
                 <ResponsiveContainer>
@@ -615,14 +703,26 @@ export default function KeywordSection({
                       tick={{ fontSize: 11 }}
                       tickFormatter={(v) => formatCurrencyAxisCompact(v)}
                     />
-                    <YAxis type="category" dataKey="keyword" width={100} tick={{ fontSize: 11 }} />
-                    <Tooltip wrapperStyle={{ fontSize: 11 }} formatter={(v: any) => formatCount(v)} />
+                    <YAxis
+                      type="category"
+                      dataKey="keyword"
+                      width={100}
+                      tick={{ fontSize: 11 }}
+                    />
+                    <Tooltip
+                      wrapperStyle={{ fontSize: 11 }}
+                      formatter={(v: any) => formatCount(v)}
+                    />
                     <Bar dataKey="impressions">
                       <LabelList
                         dataKey="impressions"
                         position="right"
                         formatter={(v: any) => formatCount(v)}
-                        style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          fill: "#F97316",
+                        }}
                       />
                     </Bar>
                   </BarChart>
@@ -633,7 +733,7 @@ export default function KeywordSection({
             <ChartCard
               badge="Keyword Ranking"
               title="클릭수 TOP20 키워드"
-              description="실제 유입 반응이 많이 발생한 키워드를 중심으로 확인할 수 있습니다."
+              description="중복 키워드를 통합한 뒤 실제 유입 반응이 많은 키워드 순으로 정리했습니다."
             >
               <div style={{ width: "100%", height: 340 }}>
                 <ResponsiveContainer>
@@ -648,14 +748,26 @@ export default function KeywordSection({
                       tick={{ fontSize: 11 }}
                       tickFormatter={(v) => formatCurrencyAxisCompact(v)}
                     />
-                    <YAxis type="category" dataKey="keyword" width={100} tick={{ fontSize: 11 }} />
-                    <Tooltip wrapperStyle={{ fontSize: 11 }} formatter={(v: any) => formatCount(v)} />
+                    <YAxis
+                      type="category"
+                      dataKey="keyword"
+                      width={100}
+                      tick={{ fontSize: 11 }}
+                    />
+                    <Tooltip
+                      wrapperStyle={{ fontSize: 11 }}
+                      formatter={(v: any) => formatCount(v)}
+                    />
                     <Bar dataKey="clicks">
                       <LabelList
                         dataKey="clicks"
                         position="right"
                         formatter={(v: any) => formatCount(v)}
-                        style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          fill: "#F97316",
+                        }}
                       />
                     </Bar>
                   </BarChart>
@@ -666,7 +778,7 @@ export default function KeywordSection({
             <ChartCard
               badge="Keyword Ranking"
               title="비용 TOP20 키워드"
-              description="예산이 많이 집행된 키워드를 기준으로 운영 집중도를 살펴봅니다."
+              description="중복 키워드를 통합 집계한 뒤 예산이 많이 집행된 순으로 정리했습니다."
             >
               <div style={{ width: "100%", height: 340 }}>
                 <ResponsiveContainer>
@@ -681,14 +793,26 @@ export default function KeywordSection({
                       tick={{ fontSize: 11 }}
                       tickFormatter={(v) => formatCurrencyAxisCompact(v)}
                     />
-                    <YAxis type="category" dataKey="keyword" width={100} tick={{ fontSize: 11 }} />
-                    <Tooltip wrapperStyle={{ fontSize: 11 }} formatter={(v: any) => KRW(v)} />
+                    <YAxis
+                      type="category"
+                      dataKey="keyword"
+                      width={100}
+                      tick={{ fontSize: 11 }}
+                    />
+                    <Tooltip
+                      wrapperStyle={{ fontSize: 11 }}
+                      formatter={(v: any) => KRW(v)}
+                    />
                     <Bar dataKey="cost">
                       <LabelList
                         dataKey="cost"
                         position="right"
                         formatter={(v: any) => KRW(v)}
-                        style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          fill: "#F97316",
+                        }}
                       />
                     </Bar>
                   </BarChart>
@@ -701,7 +825,7 @@ export default function KeywordSection({
             <ChartCard
               badge="Keyword Ranking"
               title="클릭수 TOP20 키워드"
-              description="유입을 가장 많이 만든 키워드를 우선순위 기준으로 정리했습니다."
+              description="중복 키워드를 통합 집계한 뒤 유입을 가장 많이 만든 키워드 순으로 정리했습니다."
             >
               <div style={{ width: "100%", height: 340 }}>
                 <ResponsiveContainer>
@@ -716,14 +840,26 @@ export default function KeywordSection({
                       tick={{ fontSize: 11 }}
                       tickFormatter={(v) => formatCurrencyAxisCompact(v)}
                     />
-                    <YAxis type="category" dataKey="keyword" width={100} tick={{ fontSize: 11 }} />
-                    <Tooltip wrapperStyle={{ fontSize: 11 }} formatter={(v: any) => formatCount(v)} />
+                    <YAxis
+                      type="category"
+                      dataKey="keyword"
+                      width={100}
+                      tick={{ fontSize: 11 }}
+                    />
+                    <Tooltip
+                      wrapperStyle={{ fontSize: 11 }}
+                      formatter={(v: any) => formatCount(v)}
+                    />
                     <Bar dataKey="clicks">
                       <LabelList
                         dataKey="clicks"
                         position="right"
                         formatter={(v: any) => formatCount(v)}
-                        style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          fill: "#F97316",
+                        }}
                       />
                     </Bar>
                   </BarChart>
@@ -734,7 +870,7 @@ export default function KeywordSection({
             <ChartCard
               badge="Keyword Ranking"
               title="전환수 TOP20 키워드"
-              description="전환 기여도가 높은 키워드를 중심으로 효율 우선순위를 파악합니다."
+              description="중복 키워드를 통합한 뒤 전환 기여도가 높은 키워드 순으로 정리했습니다."
             >
               <div style={{ width: "100%", height: 340 }}>
                 <ResponsiveContainer>
@@ -749,14 +885,26 @@ export default function KeywordSection({
                       tick={{ fontSize: 11 }}
                       tickFormatter={(v) => formatCurrencyAxisCompact(v)}
                     />
-                    <YAxis type="category" dataKey="keyword" width={100} tick={{ fontSize: 11 }} />
-                    <Tooltip wrapperStyle={{ fontSize: 11 }} formatter={(v: any) => formatCount(v)} />
+                    <YAxis
+                      type="category"
+                      dataKey="keyword"
+                      width={100}
+                      tick={{ fontSize: 11 }}
+                    />
+                    <Tooltip
+                      wrapperStyle={{ fontSize: 11 }}
+                      formatter={(v: any) => formatCount(v)}
+                    />
                     <Bar dataKey="conversions">
                       <LabelList
                         dataKey="conversions"
                         position="right"
                         formatter={(v: any) => formatCount(v)}
-                        style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          fill: "#F97316",
+                        }}
                       />
                     </Bar>
                   </BarChart>
@@ -767,7 +915,7 @@ export default function KeywordSection({
             <ChartCard
               badge="Keyword Ranking"
               title="ROAS TOP20 키워드"
-              description="매출 효율이 좋은 키워드를 빠르게 식별할 수 있도록 정리했습니다."
+              description="중복 키워드를 통합한 뒤 합산 매출/비용 기준으로 ROAS를 재계산해 정리했습니다."
             >
               <div style={{ width: "100%", height: 340 }}>
                 <ResponsiveContainer>
@@ -782,7 +930,12 @@ export default function KeywordSection({
                       tick={{ fontSize: 11 }}
                       tickFormatter={(v) => formatPercentAxisFromRoas(v)}
                     />
-                    <YAxis type="category" dataKey="keyword" width={100} tick={{ fontSize: 11 }} />
+                    <YAxis
+                      type="category"
+                      dataKey="keyword"
+                      width={100}
+                      tick={{ fontSize: 11 }}
+                    />
                     <Tooltip
                       wrapperStyle={{ fontSize: 11 }}
                       formatter={(v: any) => formatPercentFromRoas(v, 1)}
@@ -792,7 +945,11 @@ export default function KeywordSection({
                         dataKey="roas"
                         position="right"
                         formatter={(v: any) => formatPercentFromRoas(v, 1)}
-                        style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          fill: "#F97316",
+                        }}
                       />
                     </Bar>
                   </BarChart>
@@ -829,15 +986,51 @@ export default function KeywordSection({
             title="키워드 상세 성과"
             description="정렬 기준과 필터 조건에 따라 주요 키워드 성과를 비교할 수 있습니다."
             right={
-              <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-[11px] font-medium text-gray-600">
-                {filterBadge}
-              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    rememberScroll();
+                    setViewMode("merged");
+                  }}
+                  className={[
+                    "inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold transition",
+                    viewMode === "merged"
+                      ? "border-orange-300 bg-orange-500 text-white"
+                      : "border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100",
+                  ].join(" ")}
+                >
+                  통합 보기
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    rememberScroll();
+                    setViewMode("raw");
+                  }}
+                  className={[
+                    "inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold transition",
+                    viewMode === "raw"
+                      ? "border-orange-300 bg-orange-500 text-white"
+                      : "border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100",
+                  ].join(" ")}
+                >
+                  원본 보기
+                </button>
+
+                <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-[11px] font-medium text-gray-600">
+                  {filterBadge}
+                </span>
+              </div>
             }
           />
 
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div className="text-xs text-gray-400">
-              선택한 정렬 기준으로 Top50 키워드가 표시됩니다.
+              {viewMode === "merged"
+                ? "통합 보기: 중복 키워드를 합산한 뒤 정렬 기준으로 Top50 키워드가 표시됩니다."
+                : "원본 보기: 기존 raw 기준으로 정렬된 Top50 키워드가 표시됩니다."}
             </div>
 
             <div className="flex flex-wrap gap-3">
@@ -900,7 +1093,7 @@ export default function KeywordSection({
                 ) : (
                   tableRows.map((r, idx) => (
                     <tr
-                      key={`${r.keyword}-${idx}`}
+                      key={`${viewMode}-${r.keyword}-${idx}`}
                       className="border-t border-gray-200 transition hover:bg-orange-50/40"
                     >
                       <td className="whitespace-nowrap px-4 py-3.5 text-left font-medium text-gray-900">
@@ -926,7 +1119,10 @@ export default function KeywordSection({
                       <td className="px-4 py-3.5 text-right text-gray-700">
                         {formatPercentFromRate(r.ctr, 2)}
                       </td>
-                      <td className="px-4 py-3.5 text-right text-gray-700">{KRW(r.cpc)}</td>
+
+                      <td className="px-4 py-3.5 text-right text-gray-700">
+                        {KRW(r.cpc)}
+                      </td>
 
                       <td className="px-4 py-3.5">
                         <DataBarCell

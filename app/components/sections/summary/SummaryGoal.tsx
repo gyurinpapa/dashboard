@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   progressRate,
   formatNumber,
@@ -17,6 +17,96 @@ type Props = {
   setMonthGoal: any;
   monthGoalInsight: string;
 };
+
+function toSafeNumber(value: any) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function clamp01(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(1, value));
+}
+
+function parseLooseDate(value: any): Date | null {
+  if (!value) return null;
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  const normalized = raw
+    .replace(/\./g, "-")
+    .replace(/\//g, "-")
+    .replace(" ", "T");
+
+  const direct = new Date(normalized);
+  if (!Number.isNaN(direct.getTime())) return direct;
+
+  const dateOnly = normalized.slice(0, 10);
+  const fallback = new Date(`${dateOnly}T00:00:00`);
+  if (!Number.isNaN(fallback.getTime())) return fallback;
+
+  return null;
+}
+
+function toYmd(date: Date | null) {
+  if (!date) return "";
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function getMonthLastDate(monthKey: string): Date | null {
+  if (!monthKey || !/^\d{4}-\d{2}$/.test(monthKey)) return null;
+  const [yy, mm] = monthKey.split("-").map(Number);
+  if (!yy || !mm) return null;
+  return new Date(yy, mm, 0);
+}
+
+function getMonthStartDate(monthKey: string): Date | null {
+  if (!monthKey || !/^\d{4}-\d{2}$/.test(monthKey)) return null;
+  const [yy, mm] = monthKey.split("-").map(Number);
+  if (!yy || !mm) return null;
+  return new Date(yy, mm - 1, 1);
+}
+
+function extractLastDataDate(...sources: any[]): Date | null {
+  const candidateKeys = [
+    "latestDate",
+    "lastDate",
+    "last_date",
+    "dataLastDate",
+    "data_last_date",
+    "csvLastDate",
+    "csv_last_date",
+    "maxDate",
+    "max_date",
+    "endDate",
+    "end_date",
+    "reportEndDate",
+    "report_end_date",
+    "date",
+    "ymd",
+    "report_date",
+    "day",
+  ];
+
+  for (const source of sources) {
+    if (!source || typeof source !== "object") continue;
+
+    for (const key of candidateKeys) {
+      const parsed = parseLooseDate(source?.[key]);
+      if (parsed) return parsed;
+    }
+  }
+
+  return null;
+}
 
 export default function SummaryGoal({
   reportType,
@@ -68,20 +158,71 @@ export default function SummaryGoal({
   const inputClass =
     "h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-right text-sm font-semibold text-slate-900 outline-none transition-all duration-200 placeholder:text-slate-400 focus:border-slate-400 focus:bg-white focus:shadow-[0_0_0_4px_rgba(148,163,184,0.12)]";
 
-  const mainProgressRate = Math.max(
-    0,
-    Math.min(
-      1,
+  const {
+    mainProgressRate,
+    progressPercent,
+    progressLastDateLabel,
+    progressMonthEndLabel,
+  } = useMemo(() => {
+    const fallback = clamp01(
       Number(
         progressRate(
           currentMonthActual?.cost,
           currentMonthGoalComputed?.cost
         ) ?? 0
       )
-    )
-  );
+    );
 
-  const progressPercent = Math.round(mainProgressRate * 100);
+    const lastDataDate = extractLastDataDate(
+      currentMonthActual,
+      currentMonthGoalComputed,
+      monthGoal
+    );
+
+    const monthStartDate = getMonthStartDate(currentMonthKey);
+    const monthEndDate = getMonthLastDate(currentMonthKey);
+
+    if (!lastDataDate || !monthStartDate || !monthEndDate) {
+      return {
+        mainProgressRate: fallback,
+        progressPercent: Math.round(fallback * 100),
+        progressLastDateLabel: "",
+        progressMonthEndLabel: monthEndDate ? toYmd(monthEndDate) : "",
+      };
+    }
+
+    const monthStartYmd = toYmd(monthStartDate);
+    const monthEndYmd = toYmd(monthEndDate);
+    const lastDateYmd = toYmd(lastDataDate);
+
+    if (
+      !monthStartYmd ||
+      !monthEndYmd ||
+      !lastDateYmd ||
+      lastDateYmd < monthStartYmd ||
+      lastDateYmd > monthEndYmd
+    ) {
+      return {
+        mainProgressRate: fallback,
+        progressPercent: Math.round(fallback * 100),
+        progressLastDateLabel: lastDateYmd,
+        progressMonthEndLabel: monthEndYmd,
+      };
+    }
+
+    const monthTotalDays = monthEndDate.getDate();
+    const lastDay = lastDataDate.getDate();
+    const calendarRate =
+      monthTotalDays > 0 ? clamp01(lastDay / monthTotalDays) : fallback;
+
+    return {
+      mainProgressRate: calendarRate,
+      progressPercent: Math.round(calendarRate * 100),
+      progressLastDateLabel: lastDateYmd,
+      progressMonthEndLabel: monthEndYmd,
+    };
+  }, [currentMonthActual, currentMonthGoalComputed, monthGoal, currentMonthKey]);
+
   const runnerLeft = `calc(${progressPercent}% - 18px)`;
   const isFinalSprint = mainProgressRate >= 0.85;
   const isMidSprint = mainProgressRate >= 0.45 && mainProgressRate < 0.85;
@@ -94,6 +235,11 @@ export default function SummaryGoal({
   const finishFlagTone = isFinalSprint
     ? "from-emerald-100 to-lime-100 text-emerald-700"
     : "from-slate-100 to-slate-50 text-slate-500";
+
+  const progressGuideText =
+    progressLastDateLabel && progressMonthEndLabel
+      ? `${progressLastDateLabel} / ${progressMonthEndLabel} 기준`
+      : "최신 데이터 기준";
 
   return (
     <section>
@@ -132,6 +278,9 @@ export default function SummaryGoal({
                 </div>
                 <div className="mt-1 text-sm font-semibold text-slate-900">
                   이번 달 목표를 향해 달리는 중
+                </div>
+                <div className="mt-1 text-[11px] font-medium text-slate-400">
+                  {progressGuideText}
                 </div>
               </div>
 
@@ -176,11 +325,11 @@ export default function SummaryGoal({
                 >
                   <div className="relative flex flex-col items-center">
                     {!isFinalSprint ? (
-                      <span className="absolute -right-4 top-1 text-[11px] opacity-70 animate-pulse">
-                        {isMidSprint ? "💦" : "✨"}
+                      <span className="absolute -left-4 top-1 text-[11px] opacity-70 animate-pulse">
+                        {isMidSprint ? "💨" : "✨"}
                       </span>
                     ) : (
-                      <span className="absolute -right-5 -top-1 text-[12px] animate-bounce">
+                      <span className="absolute -left-5 -top-1 text-[12px] animate-bounce">
                         🎉
                       </span>
                     )}
@@ -194,7 +343,9 @@ export default function SummaryGoal({
                           : "animate-[bounce_1.8s_ease-in-out_infinite]",
                       ].join(" ")}
                     >
-                      {runnerFace}
+                      <span className="inline-block -scale-x-100">
+                        {runnerFace}
+                      </span>
                     </span>
 
                     <span className="mt-1 rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm">

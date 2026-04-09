@@ -27,6 +27,8 @@ import { extractAdvertiserName } from "@/src/lib/report/utils";
 
 import ReportTemplate from "../../components/ReportTemplate";
 
+const CSV_BUCKET = "report_uploads";
+
 async function safeJson(res: Response) {
   const raw = await res.text().catch(() => "");
   try {
@@ -71,6 +73,7 @@ type ReportDetail = {
   title?: string | null;
   status?: string | null;
   meta?: any;
+  workspace_id?: string | null;
 
   advertiser_name?: string | null;
   advertiserName?: string | null;
@@ -96,6 +99,30 @@ type ReportDetail = {
 
   created_at?: string | null;
   updated_at?: string | null;
+};
+
+type CsvUploadMetaItem = {
+  id: string;
+  name: string;
+  size: number;
+  contentType: string;
+  path: string;
+  created_at: string;
+  bucket?: string;
+};
+
+type IngestionUiInfo = {
+  status: "idle" | "queued" | "processing" | "done" | "failed";
+  progress: number;
+  totalLines: number;
+  parsedLines: number;
+  inserted: number;
+  validRows: number;
+  batchSize: number;
+  committedBatches: number;
+  error: string;
+  startedAt: string;
+  finishedAt: string;
 };
 
 async function fetchReportDetail(reportId: string): Promise<ReportDetail> {
@@ -167,20 +194,93 @@ async function runIngestion(reportId: string) {
   return json;
 }
 
-async function uploadCsv(reportId: string, file: File) {
-  const fd = new FormData();
-  fd.append("file", file);
-  fd.set("reportId", reportId);
+function nowIso() {
+  return new Date().toISOString();
+}
 
+function cleanUploadFileName(name: string) {
+  let base = String(name || "").split("/").pop() || name || "upload.csv";
+  base = base.replace(/[\\]/g, "_");
+  base = base.replace(/\u00A0/g, " ").replace(/\s+/g, " ").trim();
+
+  try {
+    base = base.normalize("NFC");
+  } catch {}
+
+  return base || "upload.csv";
+}
+
+async function uploadCsvDirectToStorage(params: {
+  reportId: string;
+  workspaceId: string;
+  file: File;
+}) {
+  const { reportId, workspaceId, file } = params;
+
+  const fileName = cleanUploadFileName(file.name || "upload.csv");
+  const ts = Date.now();
+  const path = `workspaces/${workspaceId}/reports/${reportId}/csv/${ts}_${fileName}`;
+
+  const { error } = await supabase.storage.from(CSV_BUCKET).upload(path, file, {
+    upsert: true,
+    contentType: file.type || "text/csv",
+    cacheControl: "3600",
+  });
+
+  if (error) {
+    throw new Error(error.message || "CSV direct upload failed");
+  }
+
+  const item: CsvUploadMetaItem = {
+    id: String(ts),
+    name: fileName,
+    size: file.size,
+    contentType: file.type || "text/csv",
+    path,
+    created_at: nowIso(),
+    bucket: CSV_BUCKET,
+  };
+
+  return { ok: true as const, item };
+}
+
+async function finalizeCsvUploadMeta(
+  reportId: string,
+  item: CsvUploadMetaItem
+) {
   const res = await authFetch(`/api/uploads/csv`, {
     method: "POST",
-    body: fd,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      mode: "finalize",
+      reportId,
+      item,
+    }),
   });
+
   const json = await safeJson(res);
   if (!res.ok || !json?.ok) {
-    throw new Error(json?.error || `CSV upload failed (${res.status})`);
+    throw new Error(
+      json?.detail || json?.error || `CSV finalize failed (${res.status})`
+    );
   }
+
   return json;
+}
+
+async function uploadCsv(params: {
+  reportId: string;
+  workspaceId: string;
+  file: File;
+}) {
+  const direct = await uploadCsvDirectToStorage(params);
+  const finalized = await finalizeCsvUploadMeta(params.reportId, direct.item);
+
+  return {
+    ok: true,
+    item: direct.item,
+    finalize: finalized,
+  };
 }
 
 type UploadCreativesResult = {
@@ -342,6 +442,11 @@ function humanSize(bytes: number) {
   return `${fixed}${units[i]}`;
 }
 
+function formatInt(v: number) {
+  const n = Number(v || 0);
+  return new Intl.NumberFormat("ko-KR").format(n);
+}
+
 function asStr(v: any) {
   if (v == null) return "";
   const s = String(v).trim();
@@ -349,6 +454,11 @@ function asStr(v: any) {
   if (s.toLowerCase() === "null") return "";
   if (s.toLowerCase() === "undefined") return "";
   return s;
+}
+
+function asNum(v: any) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
 }
 
 function normalizeReportId(v: any) {
@@ -374,6 +484,46 @@ function rowFingerprint(row: any) {
     asStr(row?.conversions ?? row?.conv ?? row?.cv),
     asStr(row?.revenue ?? row?.sales ?? row?.gmv),
   ].join("|");
+}
+
+function extractIngestionInfo(
+  detail: ReportDetail | null | undefined
+): IngestionUiInfo {
+  const ingestion = detail?.meta?.ingestion ?? {};
+
+  const rawStatus = asStr(ingestion?.status);
+  const status =
+    rawStatus === "queued" ||
+    rawStatus === "processing" ||
+    rawStatus === "done" ||
+    rawStatus === "failed"
+      ? rawStatus
+      : "idle";
+
+  const progress = Math.max(0, Math.min(100, asNum(ingestion?.progress)));
+  const totalLines = asNum(ingestion?.total_lines);
+  const parsedLines = asNum(ingestion?.parsed_lines);
+  const inserted = asNum(ingestion?.inserted);
+  const validRows = asNum(ingestion?.valid_rows);
+  const batchSize = asNum(ingestion?.batch_size);
+  const committedBatches = asNum(ingestion?.committed_batches);
+  const error = asStr(ingestion?.error);
+  const startedAt = asStr(ingestion?.started_at);
+  const finishedAt = asStr(ingestion?.finished_at);
+
+  return {
+    status,
+    progress,
+    totalLines,
+    parsedLines,
+    inserted,
+    validRows,
+    batchSize,
+    committedBatches,
+    error,
+    startedAt,
+    finishedAt,
+  };
 }
 
 async function fetchReportHeaderInfo(
@@ -583,6 +733,23 @@ export default function ReportDetailPage() {
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvUploading, setCsvUploading] = useState(false);
   const [lastUploadedCsvName, setLastUploadedCsvName] = useState<string>("");
+  const [ingestionStatus, setIngestionStatus] = useState<
+    "idle" | "queued" | "processing" | "done" | "failed"
+  >("idle");
+  const [ingestionInfo, setIngestionInfo] = useState<IngestionUiInfo>({
+    status: "idle",
+    progress: 0,
+    totalLines: 0,
+    parsedLines: 0,
+    inserted: 0,
+    validRows: 0,
+    batchSize: 0,
+    committedBatches: 0,
+    error: "",
+    startedAt: "",
+    finishedAt: "",
+  });
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const creativesInputRef = useRef<HTMLInputElement | null>(null);
   const [creativeFiles, setCreativeFiles] = useState<File[]>([]);
@@ -628,6 +795,15 @@ export default function ReportDetailPage() {
   const rowsRange = useMemo(() => {
     return getRowsDateRange(displayRows as any[]);
   }, [displayRows]);
+
+  const ingestionStatusLabel = useMemo(() => {
+    if (ingestionStatus === "idle") return "대기";
+    if (ingestionStatus === "queued") return "업로드 완료 / 시작 대기";
+    if (ingestionStatus === "processing") return "파싱 중";
+    if (ingestionStatus === "done") return "완료";
+    if (ingestionStatus === "failed") return "실패";
+    return "대기";
+  }, [ingestionStatus]);
 
   useEffect(() => {
     const initial = buildInitialReportPeriod({
@@ -814,6 +990,10 @@ export default function ReportDetailPage() {
       try {
         const detail = await fetchReportDetail(reportId);
         setReport(detail);
+
+        const info = extractIngestionInfo(detail);
+        setIngestionInfo(info);
+        setIngestionStatus(info.status);
       } catch (e: any) {
         console.error("[refreshRows] report detail failed", e);
         nextMsg += `report 조회 실패: ${e?.message || "unknown"}\n`;
@@ -916,6 +1096,53 @@ export default function ReportDetailPage() {
     }
   }
 
+  async function pollIngestionStatus(targetReportId: string) {
+    if (!targetReportId) return;
+
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+
+    pollingRef.current = setInterval(async () => {
+      try {
+        const detail = await fetchReportDetail(targetReportId);
+        const info = extractIngestionInfo(detail);
+
+        setReport(detail);
+        setIngestionInfo(info);
+        setIngestionStatus(info.status);
+
+        if (info.status === "done") {
+          if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+          }
+
+          const refreshed = await refreshRows();
+          setSessionIngested((refreshed?.rowsCount ?? 0) > 0);
+
+          setMsg(
+            `파싱 완료${
+              info.inserted > 0 ? ` (inserted: ${formatInt(info.inserted)})` : ""
+            } → 미리보기에 반영되었습니다.`
+          );
+        }
+
+        if (info.status === "failed") {
+          if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+          }
+
+          setMsg(info.error || "CSV 파싱 실패");
+        }
+      } catch (e) {
+        console.error("[polling ingestion]", e);
+      }
+    }, 700);
+  }
+
   useEffect(() => {
     if (!reportId) return;
 
@@ -947,6 +1174,25 @@ export default function ReportDetailPage() {
       saveDraftPeriodTimerRef.current = null;
     }
 
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+    setIngestionStatus("idle");
+    setIngestionInfo({
+      status: "idle",
+      progress: 0,
+      totalLines: 0,
+      parsedLines: 0,
+      inserted: 0,
+      validRows: 0,
+      batchSize: 0,
+      committedBatches: 0,
+      error: "",
+      startedAt: "",
+      finishedAt: "",
+    });
+
     setReportPeriod(resolvePresetPeriod());
 
     void refreshRows();
@@ -955,6 +1201,15 @@ export default function ReportDetailPage() {
     setSessionStartedText(d.toLocaleString());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reportId]);
+
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const notice = searchParams?.get("eb_notice");
@@ -983,26 +1238,66 @@ export default function ReportDetailPage() {
     setMsg("");
 
     try {
-      const up = await uploadCsv(reportId, csvFile);
+      let currentReport = report;
+
+      if (!currentReport?.workspace_id) {
+        currentReport = await fetchReportDetail(reportId);
+        setReport(currentReport);
+      }
+
+      const workspaceId = asStr(currentReport?.workspace_id);
+      if (!workspaceId) {
+        throw new Error(
+          "workspace_id를 확인할 수 없습니다. report detail 응답을 확인하세요."
+        );
+      }
+
+      const up = await uploadCsv({
+        reportId,
+        workspaceId,
+        file: csvFile,
+      });
+
       const uploadedName =
-        up?.item?.name || up?.item?.file_name || csvFile.name || "";
+        up?.item?.name || (up?.item as any)?.file_name || csvFile.name || "";
       if (uploadedName) setLastUploadedCsvName(String(uploadedName));
 
-      const run = await runIngestion(reportId);
+      setMsg("CSV 업로드 완료 → 파싱 시작 중...");
+      setIngestionStatus("processing");
+      setIngestionInfo((prev) => ({
+        ...prev,
+        status: "processing",
+        progress: 3,
+        parsedLines: 0,
+        totalLines: 0,
+        inserted: 0,
+        validRows: 0,
+        error: "",
+      }));
 
-      const refreshed = await refreshRows();
-      setSessionIngested((refreshed?.rowsCount ?? 0) > 0);
+      runIngestion(reportId).catch((e) => {
+        console.error("[runIngestion async failed]", e);
+        setIngestionStatus("failed");
+        setIngestionInfo((prev) => ({
+          ...prev,
+          status: "failed",
+          error: e?.message || "CSV 파싱 시작 실패",
+        }));
+        setMsg(e?.message || "CSV 파싱 시작 실패");
+      });
+
+      void pollIngestionStatus(reportId);
 
       setCsvFile(null);
       if (csvInputRef.current) csvInputRef.current.value = "";
-
-      setMsg(
-        `CSV 업로드 + 파싱 완료 (inserted: ${
-          run?.inserted ?? "?"
-        }) → 미리보기에 반영되었습니다.`
-      );
     } catch (e: any) {
-      setMsg(e?.message || "CSV 업로드/파싱 실패");
+      setMsg(e?.message || "CSV 업로드 실패");
+      setIngestionStatus("failed");
+      setIngestionInfo((prev) => ({
+        ...prev,
+        status: "failed",
+        error: e?.message || "CSV 업로드 실패",
+      }));
     } finally {
       setCsvUploading(false);
     }
@@ -1183,7 +1478,7 @@ export default function ReportDetailPage() {
     }
   }
 
-  function handleDownloadCsv() {
+  async function handleDownloadCsv() {
     try {
       setCsvLoading(true);
 
@@ -1193,19 +1488,17 @@ export default function ReportDetailPage() {
         ext: "csv",
       });
 
-      const result = downloadCsvFile({
+      await downloadCsvFile({
+        rows: displayRows,
         fileName,
-        rows: Array.isArray(displayRows) ? displayRows : [],
       });
 
       console.log("[download:csv:done]", {
-        fileName: result.fileName,
-        rowCount: result.rowCount,
+        fileName,
+        rows: displayRows.length,
       });
 
-      setMsg(
-        `CSV 다운로드 완료: ${result.fileName} / ${result.rowCount}개 row`
-      );
+      setMsg(`CSV 다운로드 완료: ${fileName}`);
     } catch (e: any) {
       console.error("[download:csv:error]", e);
       setMsg(e?.message || "CSV 다운로드 중 오류가 발생했습니다.");
@@ -1214,312 +1507,294 @@ export default function ReportDetailPage() {
     }
   }
 
-  const shareUrl = sharePath ? fullUrl(sharePath) : "";
-
-  const csvStatusText = useMemo(() => {
-    if (csvFile) {
-      const sz = csvFile.size ? ` (${humanSize(csvFile.size)})` : "";
-      return `선택됨: ${csvFile.name}${sz}`;
-    }
-    if (lastUploadedCsvName) return `최근 업로드: ${lastUploadedCsvName}`;
-    return "📌 CSV 파일을 선택해 주세요 (클릭)";
-  }, [csvFile, lastUploadedCsvName]);
-
-  const creativesStatusText = useMemo(() => {
-    if (creativeFiles.length > 0) return `선택됨: ${creativeFiles.length}개`;
-    if (lastUploadedCreativeCount > 0) {
-      return `최근 업로드: ${lastUploadedCreativeCount}개`;
-    }
-    return "📌 이미지 파일을 선택해 주세요 (클릭)";
-  }, [creativeFiles.length, lastUploadedCreativeCount]);
-
-  const creativesNamePreview = useMemo(() => {
-    const list = creativeFiles.map((f) => f?.name).filter(Boolean);
-    if (!list.length) return "";
-    const head = list.slice(0, 3).join(", ");
-    const more = list.length > 3 ? ` 외 ${list.length - 3}개` : "";
-    return `${head}${more}`;
-  }, [creativeFiles]);
-
   return (
-    <div className="p-6">
-      <div className="mb-4 rounded-lg border p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-sm font-semibold">실제 보고서 URL</div>
-            <div className="text-xs text-gray-600">
-              CSV 업로드/파싱 + 소재 업로드 후, 발행하면 공유 링크(/share/[token])가
-              생성됩니다.
-            </div>
-            <div className="mt-1 text-[11px] text-gray-500">
-              세션 시작: {sessionStartedText}
-              {" · "}
-              {sessionIngested
-                ? "✅ 이번 세션 CSV 파싱 완료"
-                : "⛔ 이번 세션 CSV 파싱 전(재발행 제한)"}
-              {" · "}
-              {sessionCreativesUploaded
-                ? "✅ 이번 세션 소재 업로드 완료"
-                : "ℹ️ 기존 저장 소재는 표시되며, 이번 세션 재업로드 전 상태"}
-            </div>
-          </div>
-
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              className={`rounded-md px-3 py-2 text-sm font-semibold ${
-                publishing || !canPublish
-                  ? "bg-gray-300 text-gray-600"
-                  : "bg-black text-white hover:opacity-90"
-              }`}
-              onClick={handlePublish}
-              disabled={publishing || !canPublish}
-              title={!sessionIngested ? "이번 세션에서 CSV 업로드+파싱 필요" : ""}
-            >
-              {publishing ? "발행 중..." : "발행하기"}
-            </button>
-
-            <button
-              type="button"
-              className="rounded-md border px-3 py-2 text-sm hover:border-gray-400"
-              onClick={() => {
-                void refreshRows();
-              }}
-            >
-              새로고침
-            </button>
-
-            {ENABLE_EXPORT_BUILDER_ENTRY ? (
-              <button
-                type="button"
-                className={`rounded-md px-3 py-2 text-sm font-semibold ${
-                  canOpenExportBuilder
-                    ? "border bg-white hover:border-gray-400 hover:bg-gray-50"
-                    : "cursor-not-allowed border bg-gray-100 text-gray-400"
-                }`}
-                onClick={handleOpenExportBuilder}
-                disabled={!canOpenExportBuilder}
-                title={
-                  canOpenExportBuilder
-                    ? "Export Builder 열기"
-                    : "이번 세션에서 CSV 업로드 + 파싱 완료 후 사용 가능합니다."
-                }
-              >
-                Export Builder
-              </button>
-            ) : null}
+    <div className="mx-auto max-w-[1600px] px-6 py-6">
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-2xl font-bold tracking-tight">리포트 편집</div>
+          <div className="mt-1 text-sm text-gray-500">
+            업로드/파싱/소재 매칭/발행까지 한 화면에서 진행합니다.
           </div>
         </div>
 
-        {shareUrl ? (
-          <div className="mt-3 flex items-center gap-2">
-            <input
-              className="w-full rounded-md border px-3 py-2 text-sm"
-              readOnly
-              value={shareUrl}
-            />
-
+        <div className="flex flex-wrap items-center gap-2">
+          {canOpenExportBuilder ? (
             <button
               type="button"
-              className="rounded-md border bg-white px-3 py-2 text-sm font-semibold hover:border-gray-400 hover:bg-gray-50 active:bg-gray-100"
-              style={{ minWidth: 74 }}
-              onClick={() => window.open(shareUrl, "_blank")}
-              title="새 탭에서 열기"
+              className="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-gray-50"
+              onClick={handleOpenExportBuilder}
             >
-              열기
+              Export Builder 열기
             </button>
+          ) : null}
 
-            <button
-              type="button"
-              className="rounded-md border bg-white px-3 py-2 text-sm font-semibold hover:border-gray-400 hover:bg-gray-50 active:bg-gray-100"
-              style={{ minWidth: 74 }}
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(shareUrl);
-                  setMsg("URL을 복사했습니다.");
-                } catch {
-                  setMsg("복사 실패(브라우저 권한 확인)");
-                }
-              }}
-              title="클립보드에 복사"
-            >
-              복사
-            </button>
-          </div>
-        ) : (
-          <div className="mt-3 text-xs text-gray-500">
-            아직 발행되지 않았습니다.
-          </div>
-        )}
+          <button
+            type="button"
+            className={`rounded-lg px-4 py-2 text-sm font-medium text-white ${
+              canPublish
+                ? "bg-black hover:opacity-90"
+                : "cursor-not-allowed bg-gray-300"
+            }`}
+            onClick={handlePublish}
+            disabled={!canPublish}
+          >
+            {publishing ? "발행 중..." : "발행"}
+          </button>
+        </div>
       </div>
 
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-xl font-extrabold">리포트</div>
-          <div className="mt-1 text-sm text-gray-600">/reports/{reportId}</div>
+      <div className="mb-4 grid gap-3 rounded-xl border bg-white p-4 lg:grid-cols-4">
+        <div className="rounded-lg border p-3">
+          <div className="text-xs text-gray-500">Report ID</div>
+          <div className="mt-1 break-all font-mono text-sm">{reportId || "-"}</div>
+        </div>
+
+        <div className="rounded-lg border p-3">
+          <div className="text-xs text-gray-500">세션 시작</div>
+          <div className="mt-1 text-sm font-medium">{sessionStartedText}</div>
+        </div>
+
+        <div className="rounded-lg border p-3">
+          <div className="text-xs text-gray-500">CSV 파싱 상태</div>
+          <div className="mt-1 text-sm font-medium">{ingestionStatusLabel}</div>
+          <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-gray-100">
+            <div
+              className={`h-full rounded-full transition-all ${
+                ingestionStatus === "failed"
+                  ? "bg-red-500"
+                  : ingestionStatus === "done"
+                  ? "bg-green-500"
+                  : "bg-black"
+              }`}
+              style={{
+                width: `${Math.max(
+                  ingestionStatus === "queued" ? 5 : 0,
+                  ingestionInfo.progress
+                )}%`,
+              }}
+            />
+          </div>
+          <div className="mt-2 text-xs text-gray-500">
+            진행률 {formatInt(ingestionInfo.progress)}%{" "}
+            <span className="text-gray-300">·</span> parsed{" "}
+            {formatInt(ingestionInfo.parsedLines)} /{" "}
+            {formatInt(ingestionInfo.totalLines)}{" "}
+            <span className="text-gray-300">·</span> inserted{" "}
+            {formatInt(ingestionInfo.inserted)}
+          </div>
+        </div>
+
+        <div className="rounded-lg border p-3">
+          <div className="text-xs text-gray-500">공유 URL</div>
+          <div className="mt-1 text-sm">
+            {sharePath ? (
+              <a
+                href={fullUrl(sharePath)}
+                target="_blank"
+                rel="noreferrer"
+                className="break-all text-blue-600 underline"
+              >
+                {fullUrl(sharePath)}
+              </a>
+            ) : (
+              "-"
+            )}
+          </div>
         </div>
       </div>
 
       {msg ? (
-        <div className="mt-3 whitespace-pre-line rounded-md border bg-white p-3 text-sm text-gray-700">
+        <div className="mb-4 rounded-lg border bg-gray-50 px-4 py-3 text-sm whitespace-pre-wrap">
           {msg}
         </div>
       ) : null}
 
-      <div className="mt-6 grid grid-cols-12 gap-4">
-        <div className="col-span-12 space-y-4 lg:col-span-4">
+      <div className="grid grid-cols-12 gap-5">
+        <div className="col-span-12 space-y-5 lg:col-span-4">
           <div className="rounded-lg border p-4">
-            <div className="mb-2 text-sm font-semibold">CSV 업로드</div>
-            <div className="mb-3 text-xs text-gray-600">
-              업로드 후 서버 파서(ingestion/run)가 실행되어 rows가 갱신됩니다.
+            <div className="mb-1 text-sm font-semibold">CSV 업로드</div>
+            <div className="mb-3 text-xs text-gray-500">
+              브라우저에서 Storage로 직접 업로드 후 finalize 합니다.
             </div>
 
-            <input
-              ref={csvInputRef}
-              type="file"
-              accept=".csv,text/csv"
-              className="hidden"
-              onChange={(e) => setCsvFile(e.target.files?.[0] ?? null)}
-            />
-
-            <label
-              htmlFor={undefined as any}
-              onClick={() => csvInputRef.current?.click()}
-              className="block w-full cursor-pointer rounded-md border bg-gray-50 px-4 py-3 hover:bg-gray-100"
-              style={{ userSelect: "none" }}
-              title="클릭해서 CSV 파일을 선택하세요"
-            >
-              <div className="text-sm font-semibold">📁 CSV 파일 선택</div>
-              <div className="mt-1 text-xs text-gray-600">
-                클릭하여 파일을 선택하세요. (드래그앤드롭은 추후)
-              </div>
-
-              <div className="mt-2 flex items-center justify-between gap-2">
-                <div
-                  className={`text-xs ${
-                    csvFile || lastUploadedCsvName
-                      ? "text-gray-700"
-                      : "text-gray-500"
-                  }`}
-                >
-                  {csvStatusText}
-                </div>
-
-                {csvFile ? (
-                  <button
-                    type="button"
-                    className="rounded-md border bg-white px-2 py-1 text-xs font-semibold hover:border-gray-400"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setCsvFile(null);
-                      if (csvInputRef.current) csvInputRef.current.value = "";
-                    }}
-                    title="선택 해제"
-                  >
-                    선택 해제
-                  </button>
-                ) : null}
-              </div>
-            </label>
-
-            <div className="mt-3 flex items-center gap-2">
-              <button
-                type="button"
-                className={`rounded-md px-3 py-2 text-sm font-semibold ${
-                  csvUploading
-                    ? "bg-gray-300 text-gray-600"
-                    : "bg-black text-white hover:opacity-90"
-                }`}
-                onClick={handleUploadCsv}
-                disabled={csvUploading}
-              >
-                {csvUploading ? "업로드 중..." : "CSV 업로드 + 파싱"}
-              </button>
+            <div className="space-y-3">
+              <input
+                ref={csvInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(e) => {
+                  const next = e.target.files?.[0] ?? null;
+                  setCsvFile(next);
+                }}
+                className="block w-full text-sm"
+              />
 
               <div className="text-xs text-gray-600">
-                {csvFile
-                  ? "업로드 준비 완료"
-                  : lastUploadedCsvName
-                  ? "CSV를 다시 바꾸려면 위 박스를 클릭"
-                  : "먼저 CSV를 선택하세요"}
+                {csvFile ? (
+                  <>
+                    선택됨: <span className="font-medium">{csvFile.name}</span>{" "}
+                    <span className="text-gray-400">·</span>{" "}
+                    {humanSize(csvFile.size)}
+                  </>
+                ) : lastUploadedCsvName ? (
+                  <>
+                    마지막 업로드:{" "}
+                    <span className="font-medium">{lastUploadedCsvName}</span>
+                  </>
+                ) : (
+                  "CSV 파일을 선택하세요"
+                )}
+              </div>
+
+              <button
+                type="button"
+                className={`rounded-lg px-4 py-2 text-sm font-medium text-white ${
+                  csvUploading ||
+                  ingestionStatus === "queued" ||
+                  ingestionStatus === "processing"
+                    ? "cursor-not-allowed bg-gray-400"
+                    : "bg-black hover:opacity-90"
+                }`}
+                onClick={handleUploadCsv}
+                disabled={
+                  csvUploading ||
+                  ingestionStatus === "queued" ||
+                  ingestionStatus === "processing"
+                }
+              >
+                {csvUploading
+                  ? "업로드 중..."
+                  : ingestionStatus === "queued"
+                  ? "파싱 시작 중..."
+                  : ingestionStatus === "processing"
+                  ? `파싱 중... ${formatInt(ingestionInfo.progress)}%`
+                  : "CSV 업로드"}
+              </button>
+
+              <div className="rounded-lg border bg-gray-50 p-3">
+                <div className="flex items-center justify-between gap-3 text-xs">
+                  <span className="font-medium text-gray-700">
+                    {ingestionStatusLabel}
+                  </span>
+                  <span className="text-gray-500">
+                    {formatInt(ingestionInfo.progress)}%
+                  </span>
+                </div>
+
+                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      ingestionStatus === "failed"
+                        ? "bg-red-500"
+                        : ingestionStatus === "done"
+                        ? "bg-green-500"
+                        : "bg-black"
+                    }`}
+                    style={{
+                      width: `${Math.max(
+                        ingestionStatus === "queued" ? 5 : 0,
+                        ingestionInfo.progress
+                      )}%`,
+                    }}
+                  />
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-600">
+                  <div>
+                    parsed:{" "}
+                    <span className="font-medium text-gray-800">
+                      {formatInt(ingestionInfo.parsedLines)}
+                    </span>
+                  </div>
+                  <div>
+                    total:{" "}
+                    <span className="font-medium text-gray-800">
+                      {formatInt(ingestionInfo.totalLines)}
+                    </span>
+                  </div>
+                  <div>
+                    inserted:{" "}
+                    <span className="font-medium text-gray-800">
+                      {formatInt(ingestionInfo.inserted)}
+                    </span>
+                  </div>
+                  <div>
+                    valid:{" "}
+                    <span className="font-medium text-gray-800">
+                      {formatInt(ingestionInfo.validRows)}
+                    </span>
+                  </div>
+                  <div>
+                    batch size:{" "}
+                    <span className="font-medium text-gray-800">
+                      {formatInt(ingestionInfo.batchSize)}
+                    </span>
+                  </div>
+                  <div>
+                    batches:{" "}
+                    <span className="font-medium text-gray-800">
+                      {formatInt(ingestionInfo.committedBatches)}
+                    </span>
+                  </div>
+                </div>
+
+                {ingestionInfo.error ? (
+                  <div className="mt-2 text-xs text-red-600">
+                    {ingestionInfo.error}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="text-xs text-gray-500">
+                업로드 완료 후 파싱 상태와 진행률은 자동으로 갱신됩니다.
               </div>
             </div>
           </div>
 
           <div className="rounded-lg border p-4">
-            <div className="mb-2 text-sm font-semibold">소재 업로드</div>
-            <div className="mb-3 text-xs text-gray-600">
-              CSV의 <b>creative_file</b> 값과 업로드 파일명이 매칭됩니다.
-              <br />
-              예: CSV <b>CR_001.png</b> → 업로드도 <b>CR_001.png</b>
+            <div className="mb-1 text-sm font-semibold">소재 업로드</div>
+            <div className="mb-3 text-xs text-gray-500">
+              소재 이미지를 업로드하면 creative key 기준으로 매칭됩니다.
             </div>
 
-            <input
-              ref={creativesInputRef}
-              type="file"
-              multiple
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => setCreativeFiles(Array.from(e.target.files ?? []))}
-            />
+            <div className="space-y-3">
+              <input
+                ref={creativesInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={(e) => {
+                  const list = Array.from(e.target.files || []);
+                  setCreativeFiles(list);
+                }}
+                className="block w-full text-sm"
+              />
 
-            <label
-              htmlFor={undefined as any}
-              onClick={() => creativesInputRef.current?.click()}
-              className="block w-full cursor-pointer rounded-md border bg-gray-50 px-4 py-3 hover:bg-gray-100"
-              style={{ userSelect: "none" }}
-              title="클릭해서 이미지 파일을 선택하세요"
-            >
-              <div className="text-sm font-semibold">🖼️ 이미지 파일 선택</div>
-              <div className="mt-1 text-xs text-gray-600">
-                여러 개 선택 가능합니다.
-              </div>
-
-              <div className="mt-2 flex items-center justify-between gap-2">
-                <div
-                  className={`text-xs ${
-                    creativeFiles.length > 0 || lastUploadedCreativeCount > 0
-                      ? "text-gray-700"
-                      : "text-gray-500"
-                  }`}
-                >
-                  {creativesStatusText}
-                  {creativesNamePreview ? (
-                    <span className="text-gray-500">
-                      {" "}
-                      · {creativesNamePreview}
-                    </span>
-                  ) : null}
-                </div>
-
+              <div className="text-xs text-gray-600">
                 {creativeFiles.length > 0 ? (
-                  <button
-                    type="button"
-                    className="rounded-md border bg-white px-2 py-1 text-xs font-semibold hover:border-gray-400"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setCreativeFiles([]);
-                      if (creativesInputRef.current) {
-                        creativesInputRef.current.value = "";
-                      }
-                    }}
-                    title="선택 해제"
-                  >
-                    선택 해제
-                  </button>
-                ) : null}
+                  <>
+                    선택됨:{" "}
+                    <span className="font-medium">{creativeFiles.length}</span>개
+                  </>
+                ) : lastUploadedCreativeCount > 0 ? (
+                  <>
+                    마지막 업로드:{" "}
+                    <span className="font-medium">
+                      {lastUploadedCreativeCount}
+                    </span>
+                    개
+                  </>
+                ) : (
+                  "이미지 파일을 선택하세요"
+                )}
               </div>
-            </label>
 
-            <div className="mt-3 flex items-center gap-2">
               <button
                 type="button"
-                className={`rounded-md px-3 py-2 text-sm font-semibold ${
+                className={`rounded-lg px-4 py-2 text-sm font-medium text-white ${
                   uploadingCreatives
-                    ? "bg-gray-300 text-gray-600"
-                    : "bg-black text-white hover:opacity-90"
+                    ? "cursor-not-allowed bg-gray-400"
+                    : "bg-black hover:opacity-90"
                 }`}
                 onClick={handleUploadCreatives}
                 disabled={uploadingCreatives}
