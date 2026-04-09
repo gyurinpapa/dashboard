@@ -991,17 +991,17 @@ export async function POST(req: Request, ctx: Ctx) {
           obj.imagepath_raw = fileLike;
         }
 
-        let channel =
-          headerMap.channel >= 0 ? asString(line?.[headerMap.channel]) : "";
-        if (!channel) channel = pickDim(obj, ["channel", "채널"]) || null;
+        let channel: string | null =
+          headerMap.channel >= 0 ? asString(line?.[headerMap.channel]) : null;
+        if (!channel) channel = pickDim(obj, ["channel", "채널"]);
 
-        let device =
-          headerMap.device >= 0 ? asString(line?.[headerMap.device]) : "";
-        if (!device) device = pickDim(obj, ["device", "기기"]) || null;
+        let device: string | null =
+          headerMap.device >= 0 ? asString(line?.[headerMap.device]) : null;
+        if (!device) device = pickDim(obj, ["device", "기기"]);
 
-        let source =
-          headerMap.source >= 0 ? asString(line?.[headerMap.source]) : "";
-        if (!source) source = pickDim(obj, ["source", "매체", "platform"]) || null;
+        let source: string | null =
+          headerMap.source >= 0 ? asString(line?.[headerMap.source]) : null;
+        if (!source) source = pickDim(obj, ["source", "매체", "platform"]);
 
         pendingBatch.push({
           report_id: reportId,
