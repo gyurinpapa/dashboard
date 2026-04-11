@@ -64,6 +64,7 @@ const TRAFFIC_TABLE_CLASS = "w-full table-fixed text-sm min-w-[860px]";
 const COMMERCE_TABLE_CLASS = "w-full table-fixed text-sm min-w-[1320px]";
 
 const EMPTY_LIST: readonly any[] = Object.freeze([]);
+const EMPTY_MUTABLE_LIST: any[] = [];
 
 const SectionIntro = memo(function SectionIntro({
   badge,
@@ -267,35 +268,54 @@ const WeeklyDeltaRow = memo(function WeeklyDeltaRow({
       <td className={`${FIRST_TD_CLASS} truncate`}>증감(최근주-전주)</td>
 
       <td className={TD_CLASS}>
-        <TrendCell v={diffRatio(lastRow?.impressions, prevRow?.impressions)} />
-      </td>
-
-      <td className={TD_CLASS}>
-        <TrendCell v={diffRatio(lastRow?.clicks, prevRow?.clicks)} />
+        <TrendCell
+          v={
+            diffRatio(
+              lastRow?.impressions ?? 0,
+              prevRow?.impressions ?? 0
+            ) ?? 0
+          }
+        />
       </td>
 
       <td className={TD_CLASS}>
         <TrendCell
-          v={diffRatio(
-            normalizeRate01(lastRow?.ctr),
-            normalizeRate01(prevRow?.ctr)
-          )}
+          v={diffRatio(lastRow?.clicks ?? 0, prevRow?.clicks ?? 0) ?? 0}
+        />
+      </td>
+
+      <td className={TD_CLASS}>
+        <TrendCell
+          v={
+            diffRatio(
+              normalizeRate01(lastRow?.ctr),
+              normalizeRate01(prevRow?.ctr)
+            ) ?? 0
+          }
           digits={2}
         />
       </td>
 
       <td className={TD_CLASS}>
-        <TrendCell v={diffRatio(lastRow?.cpc, prevRow?.cpc)} digits={2} />
+        <TrendCell
+          v={diffRatio(lastRow?.cpc ?? 0, prevRow?.cpc ?? 0) ?? 0}
+          digits={2}
+        />
       </td>
 
       <td className={TD_CLASS}>
-        <TrendCell v={diffRatio(lastRow?.cost, prevRow?.cost)} />
+        <TrendCell v={diffRatio(lastRow?.cost ?? 0, prevRow?.cost ?? 0) ?? 0} />
       </td>
 
       {!isTraffic && (
         <td className={TD_CLASS}>
           <TrendCell
-            v={diffRatio(lastRow?.conversions, prevRow?.conversions)}
+            v={
+              diffRatio(
+                lastRow?.conversions ?? 0,
+                prevRow?.conversions ?? 0
+              ) ?? 0
+            }
           />
         </td>
       )}
@@ -303,10 +323,12 @@ const WeeklyDeltaRow = memo(function WeeklyDeltaRow({
       {!isTraffic && (
         <td className={TD_CLASS}>
           <TrendCell
-            v={diffRatio(
-              normalizeRate01(lastRow?.cvr),
-              normalizeRate01(prevRow?.cvr)
-            )}
+            v={
+              diffRatio(
+                normalizeRate01(lastRow?.cvr),
+                normalizeRate01(prevRow?.cvr)
+              ) ?? 0
+            }
             digits={2}
           />
         </td>
@@ -314,23 +336,30 @@ const WeeklyDeltaRow = memo(function WeeklyDeltaRow({
 
       {!isTraffic && (
         <td className={TD_CLASS}>
-          <TrendCell v={diffRatio(lastRow?.cpa, prevRow?.cpa)} digits={2} />
-        </td>
-      )}
-
-      {!isTraffic && (
-        <td className={TD_CLASS}>
-          <TrendCell v={diffRatio(lastRow?.revenue, prevRow?.revenue)} />
+          <TrendCell
+            v={diffRatio(lastRow?.cpa ?? 0, prevRow?.cpa ?? 0) ?? 0}
+            digits={2}
+          />
         </td>
       )}
 
       {!isTraffic && (
         <td className={TD_CLASS}>
           <TrendCell
-            v={diffRatio(
-              normalizeRoas01(lastRow?.roas),
-              normalizeRoas01(prevRow?.roas)
-            )}
+            v={diffRatio(lastRow?.revenue ?? 0, prevRow?.revenue ?? 0) ?? 0}
+          />
+        </td>
+      )}
+
+      {!isTraffic && (
+        <td className={TD_CLASS}>
+          <TrendCell
+            v={
+              diffRatio(
+                normalizeRoas01(lastRow?.roas),
+                normalizeRoas01(prevRow?.roas)
+              ) ?? 0
+            }
             digits={2}
           />
         </td>
@@ -867,16 +896,16 @@ function SummarySectionComponent(props: Props) {
 
   const isTraffic = reportType === "traffic";
 
-  const months = useMemo(
-    () => (Array.isArray(byMonth) ? byMonth : EMPTY_LIST),
+  const months = useMemo<any[]>(
+    () => (Array.isArray(byMonth) ? [...byMonth] : EMPTY_MUTABLE_LIST),
     [byMonth]
   );
   const weeks = useMemo(
     () => (Array.isArray(byWeekOnly) ? byWeekOnly : EMPTY_LIST),
     [byWeekOnly]
   );
-  const weekChartData = useMemo(
-    () => (Array.isArray(byWeekChart) ? byWeekChart : EMPTY_LIST),
+  const weekChartData = useMemo<any[]>(
+    () => (Array.isArray(byWeekChart) ? [...byWeekChart] : EMPTY_MUTABLE_LIST),
     [byWeekChart]
   );
   const sources = useMemo(

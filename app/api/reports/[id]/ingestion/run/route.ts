@@ -804,6 +804,8 @@ export async function POST(req: Request, ctx: Ctx) {
       | { ok: true; size: number }
       | { ok: false; error: any };
 
+    const PROGRESS_UPDATE_MIN_INTERVAL_MS = 1500;
+
     const updateProgressMeta = async (force = false) => {
     const now = Date.now();
 

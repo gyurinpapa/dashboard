@@ -10,7 +10,7 @@ export type TabKey =
   | "creative"
   | "creativeDetail";
 
-// ===== FilterKey (HeaderBar에서 쓰는 상단 버튼: 월/주차/기기/채널/소스) =====
+// ===== FilterKey (HeaderBar에서 쓰는 상단 버튼: 월/주차/기기/채널/소스/상품) =====
 // 지금 page.tsx에서 초기값을 null로 쓰고 있으니 null 포함
 export type FilterKey =
   | "month"
@@ -18,6 +18,7 @@ export type FilterKey =
   | "device"
   | "channel"
   | "source"
+  | "product"
   | null;
 
 // ===== Period keys =====

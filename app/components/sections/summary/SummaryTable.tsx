@@ -191,9 +191,6 @@ function SummaryTableComponent({ reportType, byMonth }: Props) {
   const isTraffic = reportType === "traffic";
   const months = Array.isArray(byMonth) ? byMonth : [];
 
-  // 성능 최적화:
-  // - 정렬/최근월/전월/max 스캔을 1회 useMemo로 고정
-  // - map 내부 계산용 원시값도 여기서 먼저 정리
   const {
     sortedMonths,
     lastMonth,
@@ -242,37 +239,39 @@ function SummaryTableComponent({ reportType, byMonth }: Props) {
     };
   }, [months]);
 
-  // 성능 최적화:
-  // - TrendCell에 넘길 diffRatio / normalize 계산을 상위에서 미리 고정
-  // - DeltaRow 내부 inline 계산 제거
   const deltaRowModel = useMemo<DeltaRowModel | null>(() => {
     if (!lastMonth || !prevMonth) return null;
 
     const items: DeltaCellItem[] = [
       {
         key: "delta-impr",
-        value: diffRatio(lastMonth?.impressions, prevMonth?.impressions),
+        value:
+          diffRatio(
+            lastMonth?.impressions ?? 0,
+            prevMonth?.impressions ?? 0
+          ) ?? 0,
       },
       {
         key: "delta-clicks",
-        value: diffRatio(lastMonth?.clicks, prevMonth?.clicks),
+        value: diffRatio(lastMonth?.clicks ?? 0, prevMonth?.clicks ?? 0) ?? 0,
       },
       {
         key: "delta-ctr",
-        value: diffRatio(
-          normalizeRate01(lastMonth?.ctr),
-          normalizeRate01(prevMonth?.ctr)
-        ),
+        value:
+          diffRatio(
+            normalizeRate01(lastMonth?.ctr),
+            normalizeRate01(prevMonth?.ctr)
+          ) ?? 0,
         digits: 2,
       },
       {
         key: "delta-cpc",
-        value: diffRatio(lastMonth?.cpc, prevMonth?.cpc),
+        value: diffRatio(lastMonth?.cpc ?? 0, prevMonth?.cpc ?? 0) ?? 0,
         digits: 2,
       },
       {
         key: "delta-cost",
-        value: diffRatio(lastMonth?.cost, prevMonth?.cost),
+        value: diffRatio(lastMonth?.cost ?? 0, prevMonth?.cost ?? 0) ?? 0,
       },
     ];
 
@@ -280,31 +279,38 @@ function SummaryTableComponent({ reportType, byMonth }: Props) {
       items.push(
         {
           key: "delta-conv",
-          value: diffRatio(lastMonth?.conversions, prevMonth?.conversions),
+          value:
+            diffRatio(
+              lastMonth?.conversions ?? 0,
+              prevMonth?.conversions ?? 0
+            ) ?? 0,
         },
         {
           key: "delta-cvr",
-          value: diffRatio(
-            normalizeRate01(lastMonth?.cvr),
-            normalizeRate01(prevMonth?.cvr)
-          ),
+          value:
+            diffRatio(
+              normalizeRate01(lastMonth?.cvr),
+              normalizeRate01(prevMonth?.cvr)
+            ) ?? 0,
           digits: 2,
         },
         {
           key: "delta-cpa",
-          value: diffRatio(lastMonth?.cpa, prevMonth?.cpa),
+          value: diffRatio(lastMonth?.cpa ?? 0, prevMonth?.cpa ?? 0) ?? 0,
           digits: 2,
         },
         {
           key: "delta-revenue",
-          value: diffRatio(lastMonth?.revenue, prevMonth?.revenue),
+          value:
+            diffRatio(lastMonth?.revenue ?? 0, prevMonth?.revenue ?? 0) ?? 0,
         },
         {
           key: "delta-roas",
-          value: diffRatio(
-            normalizeRoas01(lastMonth?.roas),
-            normalizeRoas01(prevMonth?.roas)
-          ),
+          value:
+            diffRatio(
+              normalizeRoas01(lastMonth?.roas),
+              normalizeRoas01(prevMonth?.roas)
+            ) ?? 0,
           digits: 2,
         }
       );
@@ -316,9 +322,6 @@ function SummaryTableComponent({ reportType, byMonth }: Props) {
     };
   }, [isTraffic, lastMonth, prevMonth]);
 
-  // 성능 최적화:
-  // - 월 row 렌더 전 formatter / safe number / label / bar props를 전부 선계산
-  // - map 내부에서는 이미 만들어진 model만 렌더
   const monthRowModels = useMemo<MonthRowModel[]>(() => {
     return sortedMonths.map((row: any, idx: number) => {
       const rowKey =
@@ -422,8 +425,6 @@ function SummaryTableComponent({ reportType, byMonth }: Props) {
     });
   }, [isTraffic, maxClicks, maxConv, maxCost, maxImpr, maxRev, sortedMonths]);
 
-  // 성능 최적화:
-  // - className / colSpan도 stable reference로 고정
   const tableClassName = useMemo(
     () => (isTraffic ? TRAFFIC_TABLE_CLASS_NAME : COMMERCE_TABLE_CLASS_NAME),
     [isTraffic]
