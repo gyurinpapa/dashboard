@@ -805,14 +805,18 @@ export async function POST(req: Request, ctx: Ctx) {
       | { ok: false; error: any };
 
     const updateProgressMeta = async (force = false) => {
-      const shouldUpdate =
+    const now = Date.now();
+
+    const shouldUpdate =
         force ||
         committedBatchCount === 1 ||
-        committedBatchCount - lastCommittedBatchMeta >= updateEveryBatches;
+        committedBatchCount - lastCommittedBatchMeta >= updateEveryBatches ||
+        now - lastMetaUpdateAt >= PROGRESS_UPDATE_MIN_INTERVAL_MS;
 
       if (!shouldUpdate) return;
 
       lastCommittedBatchMeta = committedBatchCount;
+      lastMetaUpdateAt = now;
 
       reportMetaForError = await updateReportIngestionMeta(
         sb!,

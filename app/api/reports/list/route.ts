@@ -35,6 +35,15 @@ function asLimit(v: any, def = 50) {
   return x;
 }
 
+function asOffset(v: any, def = 0) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return def;
+
+  const x = Math.floor(n);
+  if (x < 0) return 0;
+  return x;
+}
+
 /**
  * ✅ Bearer 우선 + cookie fallback
  */
@@ -79,10 +88,10 @@ export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
 
-    // ✅ 현재 단계에서는 기존 호출 구조를 절대 깨지 않기 위해
-    //    workspace_id query를 그대로 받는다.
+    // ✅ 기존 호출 구조 유지 + 점진 로딩 지원
     const workspace_id = asString(url.searchParams.get("workspace_id"));
     const limit = asLimit(url.searchParams.get("limit"), 50);
+    const offset = asOffset(url.searchParams.get("offset"), 0);
 
     if (!workspace_id) {
       return jsonError(400, "workspace_id required");
@@ -119,9 +128,12 @@ export async function GET(req: Request) {
     }
 
     // ✅ reports list
-    // - workspace_id 기준으로만 조회
-    // - 최신 생성 리포트 누락 방지: created_at desc + id desc
-    // - advertiser_id / share_token 포함
+    // - workspace_id 기준 조회
+    // - 안정 정렬 유지: created_at desc + id desc
+    // - offset/limit 기반 점진 로딩 지원
+    const from = offset;
+    const to = offset + limit - 1;
+
     const { data, error } = await supabaseAdmin
       .from("reports")
       .select(
@@ -130,7 +142,7 @@ export async function GET(req: Request) {
       .eq("workspace_id", workspace_id)
       .order("created_at", { ascending: false })
       .order("id", { ascending: false })
-      .limit(limit);
+      .range(from, to);
 
     if (error) {
       return jsonError(500, error.message);
@@ -184,11 +196,17 @@ export async function GET(req: Request) {
       };
     });
 
+    const has_more = rows.length >= limit;
+    const next_offset = offset + rows.length;
+
     return NextResponse.json({
       ok: true,
       workspace_id,
       count: reports.length,
       limit,
+      offset,
+      has_more,
+      next_offset,
       reports,
     });
   } catch (e: any) {

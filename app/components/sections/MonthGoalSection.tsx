@@ -1,3 +1,4 @@
+// app/components/sections/MonthGoalSection.tsx
 "use client";
 
 import SummaryGoal from "./summary/SummaryGoal";

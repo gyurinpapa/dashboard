@@ -1,3 +1,4 @@
+// app/components/sections/summary/SummaryGoal.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -223,7 +224,8 @@ export default function SummaryGoal({
     };
   }, [currentMonthActual, currentMonthGoalComputed, monthGoal, currentMonthKey]);
 
-  const runnerLeft = `calc(${progressPercent}% - 18px)`;
+  const progressPercentSafe = clamp01(toSafeNumber(progressPercent) / 100) * 100;
+  const runnerLeft = `calc(${progressPercentSafe}% - 18px)`;
   const isFinalSprint = mainProgressRate >= 0.85;
   const isMidSprint = mainProgressRate >= 0.45 && mainProgressRate < 0.85;
   const runnerFace = isFinalSprint ? "🙌" : isMidSprint ? "🥵" : "🏃";
@@ -232,9 +234,6 @@ export default function SummaryGoal({
     : isMidSprint
     ? "열심히 달리는 중"
     : "출발 후 페이스 업";
-  const finishFlagTone = isFinalSprint
-    ? "from-emerald-100 to-lime-100 text-emerald-700"
-    : "from-slate-100 to-slate-50 text-slate-500";
 
   const progressGuideText =
     progressLastDateLabel && progressMonthEndLabel
@@ -290,8 +289,8 @@ export default function SummaryGoal({
             </div>
 
             <div className="rounded-[22px] border border-slate-200/80 bg-gradient-to-r from-sky-50 via-white to-amber-50 px-4 py-4">
-              <div className="relative h-[92px] overflow-hidden rounded-[18px] border border-slate-200/70 bg-white/80 px-4">
-                <div className="absolute inset-x-4 top-[18px] flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+              <div className="relative h-[96px] overflow-hidden rounded-[18px] border border-slate-200/70 bg-white/80 px-4">
+                <div className="pointer-events-none absolute inset-x-4 top-[18px] flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">
                   <span>Start</span>
                   <span>Finish</span>
                 </div>
@@ -303,7 +302,7 @@ export default function SummaryGoal({
                   />
                 </div>
 
-                <div className="absolute inset-x-4 top-[45px] flex items-center justify-between px-[6px]">
+                <div className="pointer-events-none absolute inset-x-4 top-[45px] flex items-center justify-between px-[6px]">
                   {Array.from({ length: 9 }).map((_, i) => (
                     <span
                       key={i}
@@ -312,15 +311,17 @@ export default function SummaryGoal({
                   ))}
                 </div>
 
-                <div className="absolute left-4 top-[28px] flex flex-col items-start gap-1">
-                  <span className="text-base">🚩</span>
+                <div className="absolute left-4 top-[27px] z-[1] flex flex-col items-start gap-1">
+                  <span className="text-[16px] leading-none drop-shadow-[0_2px_3px_rgba(15,23,42,0.16)]">
+                    🚩
+                  </span>
                   <span className="text-[10px] font-semibold text-slate-400">
                     1일
                   </span>
                 </div>
 
                 <div
-                  className="absolute top-[12px] z-10 transition-all duration-700 ease-out"
+                  className="absolute top-[10px] z-10 transition-all duration-700 ease-out"
                   style={{ left: runnerLeft }}
                 >
                   <div className="relative flex flex-col items-center">
@@ -336,8 +337,7 @@ export default function SummaryGoal({
 
                     <span
                       className={[
-                        "relative inline-flex h-10 w-10 items-center justify-center rounded-full border text-[20px] shadow-sm",
-                        "border-slate-200 bg-white/95",
+                        "relative z-10 inline-block text-[30px] leading-none drop-shadow-[0_6px_10px_rgba(15,23,42,0.22)]",
                         isFinalSprint
                           ? "animate-bounce"
                           : "animate-[bounce_1.8s_ease-in-out_infinite]",
@@ -348,20 +348,24 @@ export default function SummaryGoal({
                       </span>
                     </span>
 
+                    <span className="absolute left-1/2 top-[24px] h-[8px] w-[24px] -translate-x-1/2 rounded-full bg-slate-900/10 blur-[2px]" />
+
                     <span className="mt-1 rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm">
                       {runnerCaption}
                     </span>
                   </div>
                 </div>
 
-                <div
-                  className={[
-                    "absolute right-4 top-[16px] flex h-14 w-12 items-center justify-center rounded-2xl border bg-gradient-to-br text-xl shadow-sm transition-all duration-500",
-                    finishFlagTone,
-                    isFinalSprint ? "scale-105" : "scale-100",
-                  ].join(" ")}
-                >
-                  🏁
+                <div className="absolute right-4 top-[12px] z-10 flex flex-col items-center">
+                  <span
+                    className={[
+                      "inline-block text-[30px] leading-none drop-shadow-[0_6px_10px_rgba(15,23,42,0.18)] transition-all duration-500",
+                      isFinalSprint ? "scale-110" : "scale-100 opacity-90",
+                    ].join(" ")}
+                  >
+                    🏁
+                  </span>
+                  <span className="mt-1 h-[8px] w-[18px] rounded-full bg-slate-900/10 blur-[2px]" />
                 </div>
 
                 <div className="absolute bottom-2 left-4 right-4 flex items-center justify-between text-[10px] font-medium text-slate-400">

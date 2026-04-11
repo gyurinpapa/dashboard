@@ -1,7 +1,14 @@
 // app/reports/[id]/page.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   useParams,
   usePathname,
@@ -699,6 +706,101 @@ function buildInitialReportPeriod(args: {
   return null;
 }
 
+/* =========================================================
+ * [변경 포인트] Preview 분리
+ * 좌측 업로드/상태 변경이 발생해도
+ * preview props가 같으면 ReportTemplate 재렌더를 최대한 막는다.
+ * ========================================================= */
+
+type PreviewPaneProps = {
+  previewKey: string;
+  loadingRows: boolean;
+  rows: any[];
+  creativesMap: Record<string, string>;
+  advertiserName: string;
+  reportTypeName: string;
+  reportTypeKey: string;
+  reportPeriod: ReportPeriod;
+  onChangeReportPeriod: React.Dispatch<React.SetStateAction<ReportPeriod>>;
+  reportCaptureRef: React.RefObject<HTMLDivElement | null>;
+  onDownloadPdf: () => Promise<void>;
+  onDownloadPng: () => Promise<void>;
+  onDownloadCsv: () => Promise<void>;
+  pdfLoading: boolean;
+  pngLoading: boolean;
+  csvLoading: boolean;
+};
+
+const PreviewPane = memo(function PreviewPane({
+  previewKey,
+  loadingRows,
+  rows,
+  creativesMap,
+  advertiserName,
+  reportTypeName,
+  reportTypeKey,
+  reportPeriod,
+  onChangeReportPeriod,
+  reportCaptureRef,
+  onDownloadPdf,
+  onDownloadPng,
+  onDownloadCsv,
+  pdfLoading,
+  pngLoading,
+  csvLoading,
+}: PreviewPaneProps) {
+  return (
+    <div className="col-span-12 lg:col-span-8">
+      <div className="rounded-lg border">
+        <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold">미리보기</div>
+            <div className="text-xs text-gray-500">
+              draft period 기준 편집 미리보기
+            </div>
+          </div>
+
+          <div className="shrink-0">
+            <ReportDownloadButtons
+              onDownloadPdf={onDownloadPdf}
+              onDownloadPng={onDownloadPng}
+              onDownloadCsv={onDownloadCsv}
+              pdfLoading={pdfLoading}
+              pngLoading={pngLoading}
+              csvLoading={csvLoading}
+            />
+          </div>
+        </div>
+
+        <div className="p-4">
+          <div ref={reportCaptureRef}>
+            <div
+              style={{
+                transform: "scale(1)",
+                transformOrigin: "top center",
+              }}
+            >
+              <ReportTemplate
+                key={previewKey}
+                rows={rows}
+                isLoading={loadingRows}
+                creativesMap={creativesMap}
+                advertiserName={advertiserName}
+                reportTypeName={reportTypeName}
+                reportTypeKey={reportTypeKey}
+                reportPeriod={reportPeriod}
+                onChangeReportPeriod={onChangeReportPeriod}
+                hidePeriodEditor={true}
+                hideTabPeriodText={true}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
+
 export default function ReportDetailPage() {
   const router = useRouter();
   const pathname = usePathname();
@@ -750,6 +852,7 @@ export default function ReportDetailPage() {
     finishedAt: "",
   });
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollingBusyRef = useRef(false);
 
   const creativesInputRef = useRef<HTMLInputElement | null>(null);
   const [creativeFiles, setCreativeFiles] = useState<File[]>([]);
@@ -775,6 +878,14 @@ export default function ReportDetailPage() {
 
   const displayRows = rows;
   const displayCreativesMap = creativesMap;
+
+  /**
+   * [변경 포인트]
+   * 큰 rows / creativesMap 반영 시 UI 블로킹을 완화
+   * 미리보기는 약간 늦게 따라와도 안전한 영역이라 deferred 적용
+   */
+  const deferredDisplayRows = useDeferredValue(displayRows);
+  const deferredDisplayCreativesMap = useDeferredValue(displayCreativesMap);
 
   const creativesKeyCount = Object.keys(displayCreativesMap || {}).length;
 
@@ -858,21 +969,21 @@ export default function ReportDetailPage() {
   }, [reportId, reportPeriod]);
 
   const rowsSignature = useMemo(() => {
-    if (!displayRows.length) return "rows:0";
+    if (!deferredDisplayRows.length) return "rows:0";
 
-    const first = displayRows[0];
-    const second = displayRows[1];
-    const last = displayRows[displayRows.length - 1];
-    const prev = displayRows[displayRows.length - 2];
+    const first = deferredDisplayRows[0];
+    const second = deferredDisplayRows[1];
+    const last = deferredDisplayRows[deferredDisplayRows.length - 1];
+    const prev = deferredDisplayRows[deferredDisplayRows.length - 2];
 
     return [
-      `len:${displayRows.length}`,
+      `len:${deferredDisplayRows.length}`,
       `f1:${rowFingerprint(first)}`,
       `f2:${rowFingerprint(second)}`,
       `l2:${rowFingerprint(prev)}`,
       `l1:${rowFingerprint(last)}`,
     ].join("||");
-  }, [displayRows]);
+  }, [deferredDisplayRows]);
 
   const advertiserNameFromRows = useMemo(() => {
     return extractAdvertiserName(rows);
@@ -1105,6 +1216,14 @@ export default function ReportDetailPage() {
     }
 
     pollingRef.current = setInterval(async () => {
+      /**
+       * [변경 포인트]
+       * polling 중첩 호출 방지
+       * 이전 요청이 끝나기 전에 다음 interval이 들어오면 skip
+       */
+      if (pollingBusyRef.current) return;
+      pollingBusyRef.current = true;
+
       try {
         const detail = await fetchReportDetail(targetReportId);
         const info = extractIngestionInfo(detail);
@@ -1139,6 +1258,8 @@ export default function ReportDetailPage() {
         }
       } catch (e) {
         console.error("[polling ingestion]", e);
+      } finally {
+        pollingBusyRef.current = false;
       }
     }, 700);
   }
@@ -1178,6 +1299,8 @@ export default function ReportDetailPage() {
       clearInterval(pollingRef.current);
       pollingRef.current = null;
     }
+    pollingBusyRef.current = false;
+
     setIngestionStatus("idle");
     setIngestionInfo({
       status: "idle",
@@ -1208,6 +1331,7 @@ export default function ReportDetailPage() {
         clearInterval(pollingRef.current);
         pollingRef.current = null;
       }
+      pollingBusyRef.current = false;
     };
   }, []);
 
@@ -1856,66 +1980,36 @@ export default function ReportDetailPage() {
           </div>
         </div>
 
-        <div className="col-span-12 lg:col-span-8">
-          <div className="rounded-lg border">
-            <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
-              <div className="min-w-0">
-                <div className="text-sm font-semibold">미리보기</div>
-                <div className="text-xs text-gray-500">
-                  draft period 기준 편집 미리보기
-                </div>
-              </div>
+        <PreviewPane
+          previewKey={previewKey}
+          loadingRows={loadingRows}
+          rows={deferredDisplayRows}
+          creativesMap={deferredDisplayCreativesMap}
+          advertiserName={effectivePreviewAdvertiserName}
+          reportTypeName={effectivePreviewReportTypeName}
+          reportTypeKey={headerInfo.reportTypeKey}
+          reportPeriod={reportPeriod}
+          onChangeReportPeriod={setReportPeriod}
+          reportCaptureRef={reportCaptureRef}
+          onDownloadPdf={handleDownloadPdf}
+          onDownloadPng={handleDownloadPng}
+          onDownloadCsv={handleDownloadCsv}
+          pdfLoading={pdfLoading}
+          pngLoading={pngLoading}
+          csvLoading={csvLoading}
+        />
+      </div>
 
-              <div className="shrink-0">
-                <ReportDownloadButtons
-                  onDownloadPdf={handleDownloadPdf}
-                  onDownloadPng={handleDownloadPng}
-                  onDownloadCsv={handleDownloadCsv}
-                  pdfLoading={pdfLoading}
-                  pngLoading={pngLoading}
-                  csvLoading={csvLoading}
-                />
-              </div>
-            </div>
-
-            <div className="p-4">
-              <div ref={reportCaptureRef}>
-                <div
-                  style={{
-                    transform: "scale(1)",
-                    transformOrigin: "top center",
-                  }}
-                >
-                  <ReportTemplate
-                    key={previewKey}
-                    rows={displayRows}
-                    isLoading={loadingRows}
-                    creativesMap={displayCreativesMap}
-                    advertiserName={effectivePreviewAdvertiserName}
-                    reportTypeName={effectivePreviewReportTypeName}
-                    reportTypeKey={headerInfo.reportTypeKey}
-                    reportPeriod={reportPeriod}
-                    onChangeReportPeriod={setReportPeriod}
-                    hidePeriodEditor={true}
-                    hideTabPeriodText={true}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-2 text-xs text-gray-500">
-            서버 rows(실제): {rows.length}개{" "}
-            <span className="text-gray-400">·</span> 현재 표시 rows:{" "}
-            {displayRows.length}개{" "}
-            <span className="text-gray-400">·</span> 광고주:{" "}
-            {effectivePreviewAdvertiserName || "-"}{" "}
-            <span className="text-gray-400">·</span> 유형:{" "}
-            {effectivePreviewReportTypeName || "-"}{" "}
-            <span className="text-gray-400">·</span> 기준 기간:{" "}
-            {previewPeriodLabel || "-"}
-          </div>
-        </div>
+      <div className="mt-2 text-xs text-gray-500">
+        서버 rows(실제): {rows.length}개{" "}
+        <span className="text-gray-400">·</span> 현재 표시 rows:{" "}
+        {displayRows.length}개{" "}
+        <span className="text-gray-400">·</span> 광고주:{" "}
+        {effectivePreviewAdvertiserName || "-"}{" "}
+        <span className="text-gray-400">·</span> 유형:{" "}
+        {effectivePreviewReportTypeName || "-"}{" "}
+        <span className="text-gray-400">·</span> 기준 기간:{" "}
+        {previewPeriodLabel || "-"}
       </div>
     </div>
   );

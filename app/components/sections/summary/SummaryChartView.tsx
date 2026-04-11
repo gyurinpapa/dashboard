@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import {
   KRW,
   toSafeNumber,
@@ -53,6 +53,30 @@ type Props = {
   reportType?: "commerce" | "traffic";
 };
 
+type DensityClasses = {
+  shell: string;
+  headerWrap: string;
+  title: string;
+  subtitle: string;
+  topStripWrap: string;
+  topStrip: string;
+  chartWrap: string;
+  chartMinHeight: number;
+  legendPill: string;
+  insightLabel: string;
+  insightValue: string;
+  xTick1: number;
+  xTick2Offset: number;
+  yTick: number;
+  xHeight: number;
+  tickMargin: number;
+  rightWidth: number;
+  leftWidth: number;
+  lineWidth: number;
+  lineWidthActive: number;
+  maxBarSize: number;
+};
+
 const TOKENS = {
   metric: {
     cost: "#F59E0B",
@@ -83,6 +107,160 @@ const MOTION = {
   lineDuration: 950,
 };
 
+const EMPTY_INSIGHT: SummaryChartInsight = {
+  currentLabel: "-",
+  maxRevenueLabel: "-",
+  minCostLabel: "-",
+};
+
+const TOOLTIP_CURSOR = { fill: TOKENS.surface.hoverBand };
+const HIDDEN_AXIS_DOMAIN: ["auto", "auto"] = ["auto", "auto"];
+
+const REPORT_DENSITY: DensityClasses = {
+  shell:
+    "overflow-hidden rounded-[24px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(248,250,252,0.78),rgba(255,255,255,1))] shadow-[0_10px_30px_rgba(15,23,42,0.06)]",
+  headerWrap:
+    "relative border-b border-slate-200/80 bg-[linear-gradient(180deg,rgba(248,250,252,0.86),rgba(255,255,255,0.98))] px-5 py-4 sm:px-6 sm:py-5",
+  title: "text-[15px] font-semibold tracking-[-0.02em] text-slate-900 sm:text-[16px]",
+  subtitle: "mt-1.5 text-xs font-medium text-slate-500 sm:text-[12px]",
+  topStripWrap: "px-4 pt-4 sm:px-6 sm:pt-5",
+  topStrip:
+    "rounded-[20px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.88))] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]",
+  chartWrap: "h-[430px] px-4 pb-4 pt-3 sm:h-[470px] sm:px-6 sm:pb-5 sm:pt-4",
+  chartMinHeight: 340,
+  legendPill:
+    "inline-flex h-7 items-center gap-2 rounded-full border border-slate-200/90 bg-white px-3 text-[11px] font-semibold tracking-[-0.01em] text-slate-700 shadow-sm",
+  insightLabel: "text-[10px]",
+  insightValue:
+    "max-w-[220px] truncate text-[12px] font-semibold tracking-[-0.01em] text-slate-800",
+  xTick1: 11,
+  xTick2Offset: 15,
+  yTick: 11,
+  xHeight: 56,
+  tickMargin: 14,
+  rightWidth: 68,
+  leftWidth: 76,
+  lineWidth: 3,
+  lineWidthActive: 3.5,
+  maxBarSize: 28,
+};
+
+const EXPORT_FULL_DENSITY: DensityClasses = {
+  shell:
+    "overflow-hidden rounded-[24px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(248,250,252,0.78),rgba(255,255,255,1))] shadow-[0_10px_30px_rgba(15,23,42,0.06)]",
+  headerWrap:
+    "relative border-b border-slate-200/80 bg-[linear-gradient(180deg,rgba(248,250,252,0.86),rgba(255,255,255,0.98))] px-5 py-4 sm:px-6 sm:py-5",
+  title: "text-[15px] font-semibold tracking-[-0.02em] text-slate-900 sm:text-[16px]",
+  subtitle: "mt-1.5 text-xs font-medium text-slate-500 sm:text-[12px]",
+  topStripWrap: "px-4 pt-4 sm:px-6 sm:pt-5",
+  topStrip:
+    "rounded-[20px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.88))] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]",
+  chartWrap: "h-[380px] px-4 pb-4 pt-3 sm:px-6 sm:pb-5 sm:pt-4",
+  chartMinHeight: 300,
+  legendPill:
+    "inline-flex h-7 items-center gap-2 rounded-full border border-slate-200/90 bg-white px-3 text-[11px] font-semibold tracking-[-0.01em] text-slate-700 shadow-sm",
+  insightLabel: "text-[10px]",
+  insightValue:
+    "max-w-[220px] truncate text-[12px] font-semibold tracking-[-0.01em] text-slate-800",
+  xTick1: 11,
+  xTick2Offset: 15,
+  yTick: 11,
+  xHeight: 56,
+  tickMargin: 14,
+  rightWidth: 68,
+  leftWidth: 76,
+  lineWidth: 3,
+  lineWidthActive: 3.5,
+  maxBarSize: 28,
+};
+
+const EXPORT_WIDE_DENSITY: DensityClasses = {
+  shell:
+    "overflow-hidden rounded-[20px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(248,250,252,0.78),rgba(255,255,255,1))] shadow-[0_10px_30px_rgba(15,23,42,0.06)]",
+  headerWrap:
+    "relative border-b border-slate-200/80 bg-[linear-gradient(180deg,rgba(248,250,252,0.86),rgba(255,255,255,0.98))] px-4 py-3.5",
+  title: "text-[14px] font-semibold tracking-[-0.02em] text-slate-900",
+  subtitle: "mt-1.5 text-[11px] font-medium text-slate-500",
+  topStripWrap: "px-4 pt-3.5",
+  topStrip:
+    "rounded-[18px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.88))] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]",
+  chartWrap: "h-[320px] px-4 pb-4 pt-3",
+  chartMinHeight: 250,
+  legendPill:
+    "inline-flex h-7 items-center gap-2 rounded-full border border-slate-200/90 bg-white px-3 text-[10px] font-semibold tracking-[-0.01em] text-slate-700 shadow-sm",
+  insightLabel: "text-[9px]",
+  insightValue:
+    "max-w-[180px] truncate text-[11px] font-semibold tracking-[-0.01em] text-slate-800",
+  xTick1: 10,
+  xTick2Offset: 14,
+  yTick: 10,
+  xHeight: 52,
+  tickMargin: 12,
+  rightWidth: 60,
+  leftWidth: 68,
+  lineWidth: 3,
+  lineWidthActive: 3.25,
+  maxBarSize: 24,
+};
+
+const EXPORT_COMPACT_DENSITY: DensityClasses = {
+  shell:
+    "overflow-hidden rounded-[18px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(248,250,252,0.78),rgba(255,255,255,1))] shadow-[0_10px_30px_rgba(15,23,42,0.06)]",
+  headerWrap:
+    "relative border-b border-slate-200/80 bg-[linear-gradient(180deg,rgba(248,250,252,0.86),rgba(255,255,255,0.98))] px-3 py-2.5",
+  title: "text-[13px] font-semibold tracking-[-0.02em] text-slate-900",
+  subtitle: "mt-1 text-[10px] font-medium text-slate-500",
+  topStripWrap: "px-3 pt-2.5",
+  topStrip:
+    "rounded-[16px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.88))] px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]",
+  chartWrap: "h-[240px] px-3 pb-3 pt-2.5",
+  chartMinHeight: 180,
+  legendPill:
+    "inline-flex h-6 items-center gap-1.5 rounded-full border border-slate-200/90 bg-white px-2.5 text-[9px] font-semibold tracking-[-0.01em] text-slate-700 shadow-sm",
+  insightLabel: "text-[8px]",
+  insightValue:
+    "max-w-[130px] truncate text-[10px] font-semibold tracking-[-0.01em] text-slate-800",
+  xTick1: 9,
+  xTick2Offset: 12,
+  yTick: 9,
+  xHeight: 46,
+  tickMargin: 10,
+  rightWidth: 50,
+  leftWidth: 56,
+  lineWidth: 2.75,
+  lineWidthActive: 3,
+  maxBarSize: 18,
+};
+
+const EXPORT_SIDE_COMPACT_DENSITY: DensityClasses = {
+  shell:
+    "overflow-hidden rounded-[16px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(248,250,252,0.78),rgba(255,255,255,1))] shadow-[0_10px_30px_rgba(15,23,42,0.06)]",
+  headerWrap:
+    "relative border-b border-slate-200/80 bg-[linear-gradient(180deg,rgba(248,250,252,0.86),rgba(255,255,255,0.98))] px-2.5 py-2",
+  title: "text-[12px] font-semibold tracking-[-0.02em] text-slate-900",
+  subtitle: "mt-1 text-[9px] font-medium text-slate-500",
+  topStripWrap: "px-2.5 pt-2",
+  topStrip:
+    "rounded-[14px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.88))] px-2 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]",
+  chartWrap: "h-[200px] px-2.5 pb-2.5 pt-2",
+  chartMinHeight: 150,
+  legendPill:
+    "inline-flex h-5 items-center gap-1.5 rounded-full border border-slate-200/90 bg-white px-2 text-[8px] font-semibold tracking-[-0.01em] text-slate-700 shadow-sm",
+  insightLabel: "text-[8px]",
+  insightValue:
+    "max-w-[100px] truncate text-[9px] font-semibold tracking-[-0.01em] text-slate-800",
+  xTick1: 8,
+  xTick2Offset: 11,
+  yTick: 8,
+  xHeight: 40,
+  tickMargin: 8,
+  rightWidth: 44,
+  leftWidth: 48,
+  lineWidth: 2.5,
+  lineWidthActive: 2.75,
+  maxBarSize: 14,
+};
+
 function splitXAxisLabel(raw: any) {
   const label = String(raw || "").trim();
   if (!label) return ["", ""];
@@ -111,165 +289,30 @@ function formatCountAxisCompact(value: any) {
   return formatCount(n);
 }
 
-function getDensityClasses(density: SummaryChartViewDensity) {
-  if (density === "export-full") {
-    return {
-      shell:
-        "overflow-hidden rounded-[24px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(248,250,252,0.78),rgba(255,255,255,1))] shadow-[0_10px_30px_rgba(15,23,42,0.06)]",
-      headerWrap:
-        "relative border-b border-slate-200/80 bg-[linear-gradient(180deg,rgba(248,250,252,0.86),rgba(255,255,255,0.98))] px-5 py-4 sm:px-6 sm:py-5",
-      title: "text-[15px] font-semibold tracking-[-0.02em] text-slate-900 sm:text-[16px]",
-      subtitle: "mt-1.5 text-xs font-medium text-slate-500 sm:text-[12px]",
-      topStripWrap: "px-4 pt-4 sm:px-6 sm:pt-5",
-      topStrip:
-        "rounded-[20px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.88))] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]",
-      chartWrap: "h-[380px] px-4 pb-4 pt-3 sm:px-6 sm:pb-5 sm:pt-4",
-      chartMinHeight: 300,
-      legendPill:
-        "inline-flex h-7 items-center gap-2 rounded-full border border-slate-200/90 bg-white px-3 text-[11px] font-semibold tracking-[-0.01em] text-slate-700 shadow-sm",
-      insightLabel: "text-[10px]",
-      insightValue:
-        "max-w-[220px] truncate text-[12px] font-semibold tracking-[-0.01em] text-slate-800",
-      xTick1: 11,
-      xTick2Offset: 15,
-      yTick: 11,
-      xHeight: 56,
-      tickMargin: 14,
-      rightWidth: 68,
-      leftWidth: 76,
-      lineWidth: 3,
-      lineWidthActive: 3.5,
-      maxBarSize: 28,
-    };
+function getDensityClasses(density: SummaryChartViewDensity): DensityClasses {
+  switch (density) {
+    case "export-full":
+      return EXPORT_FULL_DENSITY;
+    case "export-wide":
+      return EXPORT_WIDE_DENSITY;
+    case "export-compact":
+      return EXPORT_COMPACT_DENSITY;
+    case "export-side-compact":
+      return EXPORT_SIDE_COMPACT_DENSITY;
+    case "report":
+    default:
+      return REPORT_DENSITY;
   }
-
-  if (density === "export-wide") {
-    return {
-      shell:
-        "overflow-hidden rounded-[20px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(248,250,252,0.78),rgba(255,255,255,1))] shadow-[0_10px_30px_rgba(15,23,42,0.06)]",
-      headerWrap:
-        "relative border-b border-slate-200/80 bg-[linear-gradient(180deg,rgba(248,250,252,0.86),rgba(255,255,255,0.98))] px-4 py-3.5",
-      title: "text-[14px] font-semibold tracking-[-0.02em] text-slate-900",
-      subtitle: "mt-1.5 text-[11px] font-medium text-slate-500",
-      topStripWrap: "px-4 pt-3.5",
-      topStrip:
-        "rounded-[18px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.88))] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]",
-      chartWrap: "h-[320px] px-4 pb-4 pt-3",
-      chartMinHeight: 250,
-      legendPill:
-        "inline-flex h-7 items-center gap-2 rounded-full border border-slate-200/90 bg-white px-3 text-[10px] font-semibold tracking-[-0.01em] text-slate-700 shadow-sm",
-      insightLabel: "text-[9px]",
-      insightValue:
-        "max-w-[180px] truncate text-[11px] font-semibold tracking-[-0.01em] text-slate-800",
-      xTick1: 10,
-      xTick2Offset: 14,
-      yTick: 10,
-      xHeight: 52,
-      tickMargin: 12,
-      rightWidth: 60,
-      leftWidth: 68,
-      lineWidth: 3,
-      lineWidthActive: 3.25,
-      maxBarSize: 24,
-    };
-  }
-
-  if (density === "export-compact") {
-    return {
-      shell:
-        "overflow-hidden rounded-[18px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(248,250,252,0.78),rgba(255,255,255,1))] shadow-[0_10px_30px_rgba(15,23,42,0.06)]",
-      headerWrap:
-        "relative border-b border-slate-200/80 bg-[linear-gradient(180deg,rgba(248,250,252,0.86),rgba(255,255,255,0.98))] px-3 py-2.5",
-      title: "text-[13px] font-semibold tracking-[-0.02em] text-slate-900",
-      subtitle: "mt-1 text-[10px] font-medium text-slate-500",
-      topStripWrap: "px-3 pt-2.5",
-      topStrip:
-        "rounded-[16px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.88))] px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]",
-      chartWrap: "h-[240px] px-3 pb-3 pt-2.5",
-      chartMinHeight: 180,
-      legendPill:
-        "inline-flex h-6 items-center gap-1.5 rounded-full border border-slate-200/90 bg-white px-2.5 text-[9px] font-semibold tracking-[-0.01em] text-slate-700 shadow-sm",
-      insightLabel: "text-[8px]",
-      insightValue:
-        "max-w-[130px] truncate text-[10px] font-semibold tracking-[-0.01em] text-slate-800",
-      xTick1: 9,
-      xTick2Offset: 12,
-      yTick: 9,
-      xHeight: 46,
-      tickMargin: 10,
-      rightWidth: 50,
-      leftWidth: 56,
-      lineWidth: 2.75,
-      lineWidthActive: 3,
-      maxBarSize: 18,
-    };
-  }
-
-  if (density === "export-side-compact") {
-    return {
-      shell:
-        "overflow-hidden rounded-[16px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(248,250,252,0.78),rgba(255,255,255,1))] shadow-[0_10px_30px_rgba(15,23,42,0.06)]",
-      headerWrap:
-        "relative border-b border-slate-200/80 bg-[linear-gradient(180deg,rgba(248,250,252,0.86),rgba(255,255,255,0.98))] px-2.5 py-2",
-      title: "text-[12px] font-semibold tracking-[-0.02em] text-slate-900",
-      subtitle: "mt-1 text-[9px] font-medium text-slate-500",
-      topStripWrap: "px-2.5 pt-2",
-      topStrip:
-        "rounded-[14px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.88))] px-2 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]",
-      chartWrap: "h-[200px] px-2.5 pb-2.5 pt-2",
-      chartMinHeight: 150,
-      legendPill:
-        "inline-flex h-5 items-center gap-1.5 rounded-full border border-slate-200/90 bg-white px-2 text-[8px] font-semibold tracking-[-0.01em] text-slate-700 shadow-sm",
-      insightLabel: "text-[8px]",
-      insightValue:
-        "max-w-[100px] truncate text-[9px] font-semibold tracking-[-0.01em] text-slate-800",
-      xTick1: 8,
-      xTick2Offset: 11,
-      yTick: 8,
-      xHeight: 40,
-      tickMargin: 8,
-      rightWidth: 44,
-      leftWidth: 48,
-      lineWidth: 2.5,
-      lineWidthActive: 2.75,
-      maxBarSize: 14,
-    };
-  }
-
-  return {
-    shell:
-      "overflow-hidden rounded-[24px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(248,250,252,0.78),rgba(255,255,255,1))] shadow-[0_10px_30px_rgba(15,23,42,0.06)]",
-    headerWrap:
-      "relative border-b border-slate-200/80 bg-[linear-gradient(180deg,rgba(248,250,252,0.86),rgba(255,255,255,0.98))] px-5 py-4 sm:px-6 sm:py-5",
-    title: "text-[15px] font-semibold tracking-[-0.02em] text-slate-900 sm:text-[16px]",
-    subtitle: "mt-1.5 text-xs font-medium text-slate-500 sm:text-[12px]",
-    topStripWrap: "px-4 pt-4 sm:px-6 sm:pt-5",
-    topStrip:
-      "rounded-[20px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.88))] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]",
-    chartWrap: "h-[430px] px-4 pb-4 pt-3 sm:h-[470px] sm:px-6 sm:pb-5 sm:pt-4",
-    chartMinHeight: 340,
-    legendPill:
-      "inline-flex h-7 items-center gap-2 rounded-full border border-slate-200/90 bg-white px-3 text-[11px] font-semibold tracking-[-0.01em] text-slate-700 shadow-sm",
-    insightLabel: "text-[10px]",
-    insightValue:
-      "max-w-[220px] truncate text-[12px] font-semibold tracking-[-0.01em] text-slate-800",
-    xTick1: 11,
-    xTick2Offset: 15,
-    yTick: 11,
-    xHeight: 56,
-    tickMargin: 14,
-    rightWidth: 68,
-    leftWidth: 76,
-    lineWidth: 3,
-    lineWidthActive: 3.5,
-    maxBarSize: 28,
-  };
 }
 
-function CustomXAxisTick(props: any & { density: SummaryChartViewDensity }) {
-  const { x, y, payload, density } = props;
+const CustomXAxisTick = memo(function CustomXAxisTick({
+  x,
+  y,
+  payload,
+  xTick1,
+  xTick2Offset,
+}: any & { xTick1: number; xTick2Offset: number }) {
   const [line1, line2] = splitXAxisLabel(payload?.value);
-  const densityClasses = getDensityClasses(density);
 
   return (
     <g transform={`translate(${x},${y})`}>
@@ -279,21 +322,21 @@ function CustomXAxisTick(props: any & { density: SummaryChartViewDensity }) {
         dy={14}
         textAnchor="middle"
         fill={TOKENS.text.muted}
-        fontSize={densityClasses.xTick1}
+        fontSize={xTick1}
         fontWeight={500}
       >
         <tspan x={0}>{line1}</tspan>
         {line2 ? (
-          <tspan x={0} dy={densityClasses.xTick2Offset}>
+          <tspan x={0} dy={xTick2Offset}>
             {line2}
           </tspan>
         ) : null}
       </text>
     </g>
   );
-}
+});
 
-function CustomTooltip({
+const CustomTooltip = memo(function CustomTooltip({
   active,
   payload,
   label,
@@ -365,9 +408,9 @@ function CustomTooltip({
       </div>
     </div>
   );
-}
+});
 
-function SlimLegendItem({
+const SlimLegendItem = memo(function SlimLegendItem({
   color,
   label,
   pillClass,
@@ -385,13 +428,13 @@ function SlimLegendItem({
       <span>{label}</span>
     </div>
   );
-}
+});
 
-function StatusDivider() {
+const StatusDivider = memo(function StatusDivider() {
   return <div className="hidden h-4 w-px bg-slate-200 sm:block" />;
-}
+});
 
-function InlineInsight({
+const InlineInsight = memo(function InlineInsight({
   label,
   value,
   tone = "neutral",
@@ -429,7 +472,7 @@ function InlineInsight({
       <span className={valueClassName}>{value}</span>
     </div>
   );
-}
+});
 
 type DotProps = {
   cx?: number;
@@ -437,7 +480,7 @@ type DotProps = {
   index?: number;
 };
 
-function HoverAwareDot({
+const HoverAwareDot = memo(function HoverAwareDot({
   cx,
   cy,
   index,
@@ -463,9 +506,9 @@ function HoverAwareDot({
       />
     </g>
   );
-}
+});
 
-export default function SummaryChartView({
+function SummaryChartView({
   title,
   subtitle,
   data,
@@ -475,30 +518,179 @@ export default function SummaryChartView({
   reportType,
 }: Props) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
-  const [activeLabel, setActiveLabel] = useState<string | null>(null);
+  const activeIndexRef = useRef<number | null>(null);
 
   const isTraffic = reportType === "traffic";
-  const safeData = useMemo(() => (Array.isArray(data) ? data : []), [data]);
-  const densityClasses = getDensityClasses(density);
 
-  const resolvedInsight = useMemo(() => {
+  // 성능 최적화 포인트:
+  // - 부모가 동일 참조를 유지하면 하위 chart 계산도 그대로 유지
+  const safeData = useMemo(() => (Array.isArray(data) ? data : []), [data]);
+
+  // 성능 최적화 포인트:
+  // - density 분기 계산 1회만 수행
+  const densityClasses = useMemo(() => getDensityClasses(density), [density]);
+
+  const resolvedInsight = useMemo<SummaryChartInsight>(() => {
     return {
-      currentLabel: insight?.currentLabel ?? "-",
-      maxRevenueLabel: insight?.maxRevenueLabel ?? "-",
-      minCostLabel: insight?.minCostLabel ?? "-",
+      currentLabel: insight?.currentLabel ?? EMPTY_INSIGHT.currentLabel,
+      maxRevenueLabel: insight?.maxRevenueLabel ?? EMPTY_INSIGHT.maxRevenueLabel,
+      minCostLabel: insight?.minCostLabel ?? EMPTY_INSIGHT.minCostLabel,
     };
   }, [insight]);
 
-  const leftAxisFormatter = (v: any) => {
-    return isTraffic ? formatCountAxisCompact(v) : formatCurrencyAxisCompact(v);
-  };
+  // 성능 최적화 포인트:
+  // - activeLabel을 별도 state로 들지 않고 activeIndex에서 파생
+  const activeLabel = useMemo(() => {
+    if (activeIndex == null) return null;
+    return String(safeData[activeIndex]?.label || "");
+  }, [activeIndex, safeData]);
 
-  const rightAxisFormatter = (v: any) => {
-    return isTraffic ? formatPercentFromRate(v, 2) : formatPercentAxisFromRoas(v);
-  };
+  const rootClassName = useMemo(() => {
+    return [densityClasses.shell, className ?? ""].join(" ");
+  }, [densityClasses.shell, className]);
+
+  const leftAxisFormatter = useCallback(
+    (value: any) => {
+      return isTraffic ? formatCountAxisCompact(value) : formatCurrencyAxisCompact(value);
+    },
+    [isTraffic]
+  );
+
+  const rightAxisFormatter = useCallback(
+    (value: any) => {
+      return isTraffic ? formatPercentFromRate(value, 2) : formatPercentAxisFromRoas(value);
+    },
+    [isTraffic]
+  );
+
+  const handleMouseMove = useCallback((state: any) => {
+    const nextIndex =
+      typeof state?.activeTooltipIndex === "number" ? state.activeTooltipIndex : null;
+
+    // 성능 최적화 포인트:
+    // - 같은 index hover에서는 state 업데이트를 생략해
+    //   불필요한 chart 재렌더를 줄임
+    if (activeIndexRef.current === nextIndex) return;
+
+    activeIndexRef.current = nextIndex;
+    setActiveIndex(nextIndex);
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    if (activeIndexRef.current === null) return;
+    activeIndexRef.current = null;
+    setActiveIndex(null);
+  }, []);
+
+  const renderXAxisTick = useCallback(
+    (props: any) => (
+      <CustomXAxisTick
+        {...props}
+        xTick1={densityClasses.xTick1}
+        xTick2Offset={densityClasses.xTick2Offset}
+      />
+    ),
+    [densityClasses.xTick1, densityClasses.xTick2Offset]
+  );
+
+  const renderTooltip = useCallback(
+    (props: any) => <CustomTooltip {...props} reportType={reportType} />,
+    [reportType]
+  );
+
+  const renderRevenueDot = useCallback(
+    (props: any) => (
+      <HoverAwareDot
+        {...props}
+        activeIndex={activeIndex}
+        fill={TOKENS.metric.revenue}
+      />
+    ),
+    [activeIndex]
+  );
+
+  const renderRoasDot = useCallback(
+    (props: any) => (
+      <HoverAwareDot
+        {...props}
+        activeIndex={activeIndex}
+        fill={TOKENS.metric.roas}
+      />
+    ),
+    [activeIndex]
+  );
+
+  const revenueActiveDot = useMemo(
+    () => ({
+      r: 7,
+      stroke: "#FFFFFF",
+      strokeWidth: 3,
+      fill: TOKENS.metric.revenue,
+    }),
+    []
+  );
+
+  const roasActiveDot = useMemo(
+    () => ({
+      r: 7,
+      stroke: "#FFFFFF",
+      strokeWidth: 3,
+      fill: TOKENS.metric.roas,
+    }),
+    []
+  );
+
+  const lineStrokeWidth =
+    activeIndex !== null ? densityClasses.lineWidthActive : densityClasses.lineWidth;
+
+  const costCells = useMemo(() => {
+    const hasActive = activeIndex !== null;
+
+    return safeData.map((_: SummaryChartViewPoint, index: number) => {
+      const isActiveCell = activeIndex === index;
+
+      return (
+        <Cell
+          key={`cost-cell-${index}`}
+          fill={
+            isActiveCell
+              ? TOKENS.metric.cost
+              : hasActive
+              ? TOKENS.metric.costSoft
+              : TOKENS.metric.cost
+          }
+          fillOpacity={isActiveCell ? 1 : hasActive ? 0.58 : 0.95}
+        />
+      );
+    });
+  }, [safeData, activeIndex]);
+
+  const revenueCells = useMemo(() => {
+    if (isTraffic) return null;
+
+    const hasActive = activeIndex !== null;
+
+    return safeData.map((_: SummaryChartViewPoint, index: number) => {
+      const isActiveCell = activeIndex === index;
+
+      return (
+        <Cell
+          key={`revenue-cell-${index}`}
+          fill={
+            isActiveCell
+              ? TOKENS.metric.revenue
+              : hasActive
+              ? TOKENS.metric.revenueSoft
+              : TOKENS.metric.revenue
+          }
+          fillOpacity={isActiveCell ? 1 : hasActive ? 0.58 : 0.95}
+        />
+      );
+    });
+  }, [safeData, activeIndex, isTraffic]);
 
   return (
-    <div className={[densityClasses.shell, className ?? ""].join(" ")}>
+    <div className={rootClassName}>
       <div className={densityClasses.headerWrap}>
         <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-slate-200/80 to-transparent" />
         <div className="flex items-start justify-between gap-3">
@@ -582,20 +774,8 @@ export default function SummaryChartView({
               data={safeData}
               margin={{ top: 10, right: 12, left: 2, bottom: 18 }}
               barCategoryGap="24%"
-              onMouseMove={(state: any) => {
-                if (typeof state?.activeTooltipIndex === "number") {
-                  setActiveIndex(state.activeTooltipIndex);
-                  const row = safeData[state.activeTooltipIndex];
-                  setActiveLabel(String(row?.label || null));
-                } else {
-                  setActiveIndex(null);
-                  setActiveLabel(null);
-                }
-              }}
-              onMouseLeave={() => {
-                setActiveIndex(null);
-                setActiveLabel(null);
-              }}
+              onMouseMove={handleMouseMove}
+              onMouseLeave={handleMouseLeave}
             >
               <CartesianGrid
                 vertical={false}
@@ -603,14 +783,14 @@ export default function SummaryChartView({
                 strokeDasharray="3 4"
               />
 
-              {activeLabel && (
+              {activeLabel ? (
                 <ReferenceLine
                   x={activeLabel}
                   stroke={TOKENS.surface.crosshair}
                   strokeDasharray="4 4"
                   strokeWidth={1}
                 />
-              )}
+              ) : null}
 
               <XAxis
                 dataKey="label"
@@ -620,7 +800,7 @@ export default function SummaryChartView({
                 height={densityClasses.xHeight}
                 tickMargin={densityClasses.tickMargin}
                 minTickGap={12}
-                tick={(props) => <CustomXAxisTick {...props} density={density} />}
+                tick={renderXAxisTick}
               />
 
               <YAxis
@@ -634,7 +814,9 @@ export default function SummaryChartView({
                 tickFormatter={leftAxisFormatter}
               />
 
-              {isTraffic && <YAxis yAxisId="clicks" hide domain={["auto", "auto"]} />}
+              {isTraffic ? (
+                <YAxis yAxisId="clicks" hide domain={HIDDEN_AXIS_DOMAIN} />
+              ) : null}
 
               <YAxis
                 yAxisId="right"
@@ -649,10 +831,8 @@ export default function SummaryChartView({
               />
 
               <Tooltip
-                cursor={{ fill: TOKENS.surface.hoverBand }}
-                content={(props) => (
-                  <CustomTooltip {...props} reportType={reportType} />
-                )}
+                cursor={TOOLTIP_CURSOR}
+                content={renderTooltip}
                 animationDuration={180}
               />
 
@@ -668,24 +848,7 @@ export default function SummaryChartView({
                 animationDuration={MOTION.barDuration}
                 animationEasing="ease-out"
               >
-                {safeData.map((_: any, index: number) => {
-                  const isActive = activeIndex === index;
-                  const hasActive = activeIndex !== null;
-
-                  return (
-                    <Cell
-                      key={`cost-cell-${index}`}
-                      fill={
-                        isActive
-                          ? TOKENS.metric.cost
-                          : hasActive
-                          ? TOKENS.metric.costSoft
-                          : TOKENS.metric.cost
-                      }
-                      fillOpacity={isActive ? 1 : hasActive ? 0.58 : 0.95}
-                    />
-                  );
-                })}
+                {costCells}
               </Bar>
 
               {isTraffic ? (
@@ -695,26 +858,11 @@ export default function SummaryChartView({
                   dataKey="revenue"
                   name="클릭"
                   stroke={TOKENS.metric.revenue}
-                  strokeWidth={
-                    activeIndex !== null
-                      ? densityClasses.lineWidthActive
-                      : densityClasses.lineWidth
-                  }
+                  strokeWidth={lineStrokeWidth}
                   strokeOpacity={1}
                   connectNulls
-                  dot={(props: any) => (
-                    <HoverAwareDot
-                      {...props}
-                      activeIndex={activeIndex}
-                      fill={TOKENS.metric.revenue}
-                    />
-                  )}
-                  activeDot={{
-                    r: 7,
-                    stroke: "#FFFFFF",
-                    strokeWidth: 3,
-                    fill: TOKENS.metric.revenue,
-                  }}
+                  dot={renderRevenueDot}
+                  activeDot={revenueActiveDot}
                   isAnimationActive
                   animationBegin={80}
                   animationDuration={MOTION.lineDuration}
@@ -733,24 +881,7 @@ export default function SummaryChartView({
                   animationDuration={MOTION.barDuration}
                   animationEasing="ease-out"
                 >
-                  {safeData.map((_: any, index: number) => {
-                    const isActive = activeIndex === index;
-                    const hasActive = activeIndex !== null;
-
-                    return (
-                      <Cell
-                        key={`revenue-cell-${index}`}
-                        fill={
-                          isActive
-                            ? TOKENS.metric.revenue
-                            : hasActive
-                            ? TOKENS.metric.revenueSoft
-                            : TOKENS.metric.revenue
-                        }
-                        fillOpacity={isActive ? 1 : hasActive ? 0.58 : 0.95}
-                      />
-                    );
-                  })}
+                  {revenueCells}
                 </Bar>
               )}
 
@@ -760,26 +891,11 @@ export default function SummaryChartView({
                 dataKey="roas"
                 name={isTraffic ? "CTR" : "ROAS"}
                 stroke={TOKENS.metric.roas}
-                strokeWidth={
-                  activeIndex !== null
-                    ? densityClasses.lineWidthActive
-                    : densityClasses.lineWidth
-                }
+                strokeWidth={lineStrokeWidth}
                 strokeOpacity={1}
                 connectNulls
-                dot={(props: any) => (
-                  <HoverAwareDot
-                    {...props}
-                    activeIndex={activeIndex}
-                    fill={TOKENS.metric.roas}
-                  />
-                )}
-                activeDot={{
-                  r: 7,
-                  stroke: "#FFFFFF",
-                  strokeWidth: 3,
-                  fill: TOKENS.metric.roas,
-                }}
+                dot={renderRoasDot}
+                activeDot={roasActiveDot}
                 isAnimationActive
                 animationBegin={160}
                 animationDuration={MOTION.lineDuration}
@@ -792,3 +908,5 @@ export default function SummaryChartView({
     </div>
   );
 }
+
+export default memo(SummaryChartView);

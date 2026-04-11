@@ -1,6 +1,13 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import {
+  Fragment,
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   KRW,
   toSafeNumber,
@@ -71,6 +78,47 @@ type FunnelItem = {
   peakPctText: string;
   dayDiffText: string;
 };
+
+type HeatmapThresholds = {
+  p10: number;
+  p30: number;
+  p50: number;
+  p70: number;
+  p85: number;
+  hasValues: boolean;
+  singleValueOnly: boolean;
+};
+
+const TRAFFIC_METRIC_BUTTONS: Array<{
+  key: HeatmapMetricKey;
+  label: string;
+}> = [
+  { key: "cost", label: "광고비" },
+  { key: "clicks", label: "클릭수" },
+  { key: "impressions", label: "노출수" },
+];
+
+const COMMERCE_METRIC_BUTTONS: Array<{
+  key: HeatmapMetricKey;
+  label: string;
+}> = [
+  { key: "revenue", label: "매출" },
+  { key: "roas", label: "ROAS" },
+  { key: "conversions", label: "전환수" },
+  { key: "cost", label: "광고비" },
+  { key: "clicks", label: "클릭수" },
+  { key: "impressions", label: "노출수" },
+];
+
+const HEAT_LEGEND_PALETTE = [
+  "bg-gray-100 border-gray-200",
+  "bg-orange-100 border-orange-100",
+  "bg-orange-200 border-orange-200",
+  "bg-orange-300 border-orange-300",
+  "bg-orange-400 border-orange-400",
+  "bg-orange-500 border-orange-500",
+  "bg-orange-600 border-orange-600",
+] as const;
 
 function asStr(v: any) {
   if (v == null) return "";
@@ -146,55 +194,63 @@ function formatMetricValue(
   return formatCount(v);
 }
 
-function quantize(value: number, values: number[]) {
+function buildHeatThresholds(values: number[]): HeatmapThresholds {
   const positives = values
     .filter((v) => Number.isFinite(v) && v > 0)
     .sort((a, b) => a - b);
 
-  if (!positives.length || value <= 0) return 0;
-  if (positives.length === 1) return 6;
+  if (!positives.length) {
+    return {
+      p10: 0,
+      p30: 0,
+      p50: 0,
+      p70: 0,
+      p85: 0,
+      hasValues: false,
+      singleValueOnly: false,
+    };
+  }
 
-  const p10 =
+  if (positives.length === 1) {
+    const only = positives[0];
+    return {
+      p10: only,
+      p30: only,
+      p50: only,
+      p70: only,
+      p85: only,
+      hasValues: true,
+      singleValueOnly: true,
+    };
+  }
+
+  const pick = (ratio: number) =>
     positives[
       Math.min(
         positives.length - 1,
-        Math.floor((positives.length - 1) * 0.1)
-      )
-    ];
-  const p30 =
-    positives[
-      Math.min(
-        positives.length - 1,
-        Math.floor((positives.length - 1) * 0.3)
-      )
-    ];
-  const p50 =
-    positives[
-      Math.min(
-        positives.length - 1,
-        Math.floor((positives.length - 1) * 0.5)
-      )
-    ];
-  const p70 =
-    positives[
-      Math.min(
-        positives.length - 1,
-        Math.floor((positives.length - 1) * 0.7)
-      )
-    ];
-  const p85 =
-    positives[
-      Math.min(
-        positives.length - 1,
-        Math.floor((positives.length - 1) * 0.85)
+        Math.floor((positives.length - 1) * ratio)
       )
     ];
 
-  if (value <= p10) return 1;
-  if (value <= p30) return 2;
-  if (value <= p50) return 3;
-  if (value <= p70) return 4;
-  if (value <= p85) return 5;
+  return {
+    p10: pick(0.1),
+    p30: pick(0.3),
+    p50: pick(0.5),
+    p70: pick(0.7),
+    p85: pick(0.85),
+    hasValues: true,
+    singleValueOnly: false,
+  };
+}
+
+function quantizeWithThresholds(value: number, thresholds: HeatmapThresholds) {
+  if (!thresholds.hasValues || value <= 0) return 0;
+  if (thresholds.singleValueOnly) return 6;
+  if (value <= thresholds.p10) return 1;
+  if (value <= thresholds.p30) return 2;
+  if (value <= thresholds.p50) return 3;
+  if (value <= thresholds.p70) return 4;
+  if (value <= thresholds.p85) return 5;
   return 6;
 }
 
@@ -339,7 +395,7 @@ function describeArc(
   ].join(" ");
 }
 
-function FunnelCard({
+const FunnelCard = memo(function FunnelCard({
   items,
   isPlaying,
   onTogglePlay,
@@ -572,9 +628,9 @@ function FunnelCard({
       </div>
     </div>
   );
-}
+});
 
-function DonutCard({
+const DonutCard = memo(function DonutCard({
   title,
   description,
   totalLabel,
@@ -749,9 +805,9 @@ function DonutCard({
       </div>
     </div>
   );
-}
+});
 
-function RoasBarCard({
+const RoasBarCard = memo(function RoasBarCard({
   items,
   badge,
   overview,
@@ -778,7 +834,9 @@ function RoasBarCard({
                 {badge}
               </span>
             </div>
-            <h3 className="text-base font-semibold text-gray-900">채널별 ROAS 비교</h3>
+            <h3 className="text-base font-semibold text-gray-900">
+              채널별 ROAS 비교
+            </h3>
             <p className="mt-1 text-sm text-gray-500">
               채널별 총매출 ÷ 총광고비 기준으로 계산한 ROAS입니다.
             </p>
@@ -862,7 +920,87 @@ function RoasBarCard({
       </div>
     </div>
   );
-}
+});
+
+const HeatmapCell = memo(function HeatmapCell({
+  cellKey,
+  dateKey,
+  agg,
+  value,
+  level,
+  isHovered,
+  isDimmed,
+  metric,
+  isTraffic,
+  selectedMetricLabel,
+  onHoverStart,
+  onHoverEnd,
+}: {
+  cellKey: string;
+  dateKey: string;
+  agg: DayAgg | null;
+  value: number;
+  level: number;
+  isHovered: boolean;
+  isDimmed: boolean;
+  metric: HeatmapMetricKey;
+  isTraffic: boolean;
+  selectedMetricLabel: string;
+  onHoverStart: (key: string, hasAgg: boolean) => void;
+  onHoverEnd: () => void;
+}) {
+  // ✅ 성능 최소 수정: 셀 단위 title 문자열을 memo로 고정
+  const title = useMemo(() => {
+    if (!agg) return dateKey;
+
+    return [
+      `${agg.dateKey}`,
+      ...(isTraffic
+        ? [
+            `광고비: ${formatMetricValue("cost", agg.cost)}`,
+            `클릭수: ${formatMetricValue("clicks", agg.clicks)}`,
+            `노출수: ${formatMetricValue("impressions", agg.impressions)}`,
+          ]
+        : [
+            `매출: ${formatMetricValue("revenue", agg.revenue)}`,
+            `ROAS: ${formatMetricValue("roas", agg.roas)}`,
+            `전환수: ${formatMetricValue("conversions", agg.conversions)}`,
+            `광고비: ${formatMetricValue("cost", agg.cost)}`,
+            `클릭수: ${formatMetricValue("clicks", agg.clicks)}`,
+            `노출수: ${formatMetricValue("impressions", agg.impressions)}`,
+          ]),
+    ].join("\n");
+  }, [agg, dateKey, isTraffic]);
+
+  return (
+    <div
+      onMouseEnter={() => onHoverStart(cellKey, Boolean(agg))}
+      onMouseLeave={onHoverEnd}
+      className={[
+        "group relative h-10 rounded-xl border transition-[box-shadow,opacity,background-color,border-color] duration-150",
+        agg ? heatColorClass(level) : "border-transparent bg-white",
+        agg ? "cursor-pointer" : "",
+        isHovered ? "ring-2 ring-black/10" : "",
+        isDimmed ? "opacity-55" : "opacity-100",
+      ].join(" ")}
+      title={title}
+    >
+      {agg ? (
+        <div className="pointer-events-none absolute left-1/2 top-full z-20 hidden w-max -translate-x-1/2 pt-2 group-hover:block">
+          <div className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs shadow-lg">
+            <div className="font-bold text-gray-900">{agg.dateKey}</div>
+            <div className="mt-1 text-gray-600">
+              {selectedMetricLabel}:{" "}
+              <span className="font-semibold text-gray-900">
+                {formatMetricValue(metric, value)}
+              </span>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+});
 
 export default function Summary2Section({ reportType, rows }: Props) {
   const isTraffic = reportType === "traffic";
@@ -936,20 +1074,11 @@ export default function Summary2Section({ reportType, rows }: Props) {
     return dayList.map((d) => Number(d[metric] ?? 0));
   }, [dayList, metric]);
 
-  const metricButtons: { key: HeatmapMetricKey; label: string }[] = isTraffic
-    ? [
-        { key: "cost", label: "광고비" },
-        { key: "clicks", label: "클릭수" },
-        { key: "impressions", label: "노출수" },
-      ]
-    : [
-        { key: "revenue", label: "매출" },
-        { key: "roas", label: "ROAS" },
-        { key: "conversions", label: "전환수" },
-        { key: "cost", label: "광고비" },
-        { key: "clicks", label: "클릭수" },
-        { key: "impressions", label: "노출수" },
-      ];
+  // ✅ 성능 최소 수정: 버튼 배열 reference 고정
+  const metricButtons = useMemo(
+    () => (isTraffic ? TRAFFIC_METRIC_BUTTONS : COMMERCE_METRIC_BUTTONS),
+    [isTraffic]
+  );
 
   useEffect(() => {
     if (!metricButtons.some((item) => item.key === metric)) {
@@ -1581,16 +1710,6 @@ export default function Summary2Section({ reportType, rows }: Props) {
   const selectedMetricLabel =
     metricButtons.find((m) => m.key === metric)?.label ?? "-";
 
-  const heatLegendPalette = [
-    "bg-gray-100 border-gray-200",
-    "bg-orange-100 border-orange-100",
-    "bg-orange-200 border-orange-200",
-    "bg-orange-300 border-orange-300",
-    "bg-orange-400 border-orange-400",
-    "bg-orange-500 border-orange-500",
-    "bg-orange-600 border-orange-600",
-  ];
-
   const heatmapOverview = heatmapSummary.bestDay
     ? `${selectedMetricLabel} 최고일 ${heatmapSummary.bestDay.dateKey}`
     : `${selectedMetricLabel} 데이터 없음`;
@@ -1612,6 +1731,60 @@ export default function Summary2Section({ reportType, rows }: Props) {
 
   const topRoasChannel =
     roasBarData.length > 0 ? roasBarData[0]?.channel ?? "-" : "-";
+
+  // ✅ 성능 최소 수정: quantize 기준을 셀마다 다시 만들지 않고 metric 변경 시 1회만 계산
+  const heatThresholds = useMemo(() => {
+    return buildHeatThresholds(metricValues);
+  }, [metricValues]);
+
+  // ✅ 성능 최소 수정: 셀 모델을 사전 계산해서 JSX 직전 inline 계산 제거
+  const heatmapRows = useMemo(() => {
+    return Array.from({ length: 7 }).map((_, dayIdx) =>
+      calendar.weeks.map((week, weekIdx) => {
+        const date = week[dayIdx];
+        const cellKey = ymd(date);
+        const agg = dailyMap.get(cellKey) ?? null;
+        const value = agg ? Number(agg[metric] ?? 0) : 0;
+        const level = quantizeWithThresholds(value, heatThresholds);
+
+        return {
+          id: `${cellKey}-${weekIdx}`,
+          cellKey,
+          dateKey: cellKey,
+          agg,
+          value,
+          level,
+        };
+      })
+    );
+  }, [calendar.weeks, dailyMap, metric, heatThresholds]);
+
+  // ✅ 성능 최소 수정: hover handler stable reference
+  const handleHeatHoverStart = useCallback(
+    (key: string, hasAgg: boolean) => {
+      if (!hasAgg) return;
+      setHeatHoverKey((prev) => (prev === key ? prev : key));
+    },
+    []
+  );
+
+  const handleHeatHoverEnd = useCallback(() => {
+    setHeatHoverKey((prev) => (prev === null ? prev : null));
+  }, []);
+
+  const handleTogglePlay = useCallback(() => {
+    if (!funnelTimeline.length) return;
+    setIsPlaying((prev) => !prev);
+  }, [funnelTimeline.length]);
+
+  const handleScrubChange = useCallback((next: number) => {
+    setIsPlaying(false);
+    setPlayIndex(next);
+  }, []);
+
+  const handleMetricChange = useCallback((next: HeatmapMetricKey) => {
+    setMetric((prev) => (prev === next ? prev : next));
+  }, []);
 
   return (
     <section className="mt-2">
@@ -1648,7 +1821,7 @@ export default function Summary2Section({ reportType, rows }: Props) {
                     <button
                       key={item.key}
                       type="button"
-                      onClick={() => setMetric(item.key)}
+                      onClick={() => handleMetricChange(item.key)}
                       className={[
                         "rounded-xl border px-4 py-2 text-sm font-semibold transition",
                         metric === item.key
@@ -1748,72 +1921,30 @@ export default function Summary2Section({ reportType, rows }: Props) {
                       </div>
                     ))}
 
-                    {Array.from({ length: 7 }).map((_, dayIdx) => (
+                    {heatmapRows.map((row, dayIdx) => (
                       <Fragment key={`row-${dayIdx}`}>
-                        {calendar.weeks.map((week, weekIdx) => {
-                          const date = week[dayIdx];
-                          const key = ymd(date);
-                          const agg = dailyMap.get(key) ?? null;
-                          const value = agg ? Number(agg[metric] ?? 0) : 0;
-                          const level = quantize(value, metricValues);
-                          const isHovered = heatHoverKey === key;
+                        {row.map((cell) => {
+                          const isHovered = heatHoverKey === cell.cellKey;
                           const isDimmed =
-                            heatHoverKey !== null && heatHoverKey !== key;
+                            heatHoverKey !== null &&
+                            heatHoverKey !== cell.cellKey;
 
                           return (
-                            <div
-                              key={`${key}-${weekIdx}`}
-                              onMouseEnter={() => {
-                                if (agg) setHeatHoverKey(key);
-                              }}
-                              onMouseLeave={() => setHeatHoverKey(null)}
-                              className={[
-                                "group relative h-10 rounded-xl border transition-[box-shadow,opacity,background-color,border-color] duration-150",
-                                agg
-                                  ? heatColorClass(level)
-                                  : "border-transparent bg-white",
-                                agg ? "cursor-pointer" : "",
-                                isHovered ? "ring-2 ring-black/10" : "",
-                                isDimmed ? "opacity-55" : "opacity-100",
-                              ].join(" ")}
-                              title={
-                                agg
-                                  ? [
-                                      `${agg.dateKey}`,
-                                      ...(isTraffic
-                                        ? [
-                                            `광고비: ${formatMetricValue("cost", agg.cost)}`,
-                                            `클릭수: ${formatMetricValue("clicks", agg.clicks)}`,
-                                            `노출수: ${formatMetricValue("impressions", agg.impressions)}`,
-                                          ]
-                                        : [
-                                            `매출: ${formatMetricValue("revenue", agg.revenue)}`,
-                                            `ROAS: ${formatMetricValue("roas", agg.roas)}`,
-                                            `전환수: ${formatMetricValue("conversions", agg.conversions)}`,
-                                            `광고비: ${formatMetricValue("cost", agg.cost)}`,
-                                            `클릭수: ${formatMetricValue("clicks", agg.clicks)}`,
-                                            `노출수: ${formatMetricValue("impressions", agg.impressions)}`,
-                                          ]),
-                                    ].join("\n")
-                                  : key
-                              }
-                            >
-                              {agg ? (
-                                <div className="pointer-events-none absolute left-1/2 top-full z-20 hidden w-max -translate-x-1/2 pt-2 group-hover:block">
-                                  <div className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs shadow-lg">
-                                    <div className="font-bold text-gray-900">
-                                      {agg.dateKey}
-                                    </div>
-                                    <div className="mt-1 text-gray-600">
-                                      {selectedMetricLabel}:{" "}
-                                      <span className="font-semibold text-gray-900">
-                                        {formatMetricValue(metric, value)}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
-                              ) : null}
-                            </div>
+                            <HeatmapCell
+                              key={cell.id}
+                              cellKey={cell.cellKey}
+                              dateKey={cell.dateKey}
+                              agg={cell.agg}
+                              value={cell.value}
+                              level={cell.level}
+                              isHovered={isHovered}
+                              isDimmed={isDimmed}
+                              metric={metric}
+                              isTraffic={isTraffic}
+                              selectedMetricLabel={selectedMetricLabel}
+                              onHoverStart={handleHeatHoverStart}
+                              onHoverEnd={handleHeatHoverEnd}
+                            />
                           );
                         })}
                       </Fragment>
@@ -1834,7 +1965,7 @@ export default function Summary2Section({ reportType, rows }: Props) {
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-1.5 text-xs text-gray-500">
                   <span>낮음</span>
-                  {heatLegendPalette.map((klass, idx) => (
+                  {HEAT_LEGEND_PALETTE.map((klass, idx) => (
                     <span
                       key={`heat-legend-${idx}`}
                       className={`h-5 w-5 rounded-md border ${klass}`}
@@ -1852,18 +1983,12 @@ export default function Summary2Section({ reportType, rows }: Props) {
             <FunnelCard
               items={funnelData}
               isPlaying={isPlaying}
-              onTogglePlay={() => {
-                if (!funnelTimeline.length) return;
-                setIsPlaying((prev) => !prev);
-              }}
+              onTogglePlay={handleTogglePlay}
               currentDateLabel={currentFunnelPoint?.dateKey ?? "-"}
               totalDates={funnelTimeline.length}
               playIndex={playIndex}
               maxIndex={Math.max(0, funnelTimeline.length - 1)}
-              onScrubChange={(next) => {
-                setIsPlaying(false);
-                setPlayIndex(next);
-              }}
+              onScrubChange={handleScrubChange}
               transitionBadges={funnelTransitionBadges}
               badge="FUNNEL"
               overview={funnelOverview}

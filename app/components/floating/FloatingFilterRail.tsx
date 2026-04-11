@@ -1,3 +1,4 @@
+// app/components/floating/FloatingFilterRail.tsx
 "use client";
 
 import { useMemo, useState } from "react";
@@ -35,6 +36,10 @@ type Props = {
   setSelectedSource: (value: string) => void;
   sourceOptions?: OptionInput[];
 
+  selectedProduct: string;
+  setSelectedProduct: (value: string) => void;
+  productOptions?: OptionInput[];
+
   enabledMonthKeySet?: Set<string>;
   enabledWeekKeySet?: Set<string>;
 
@@ -47,7 +52,7 @@ type NormalizedOption = {
   label: string;
 };
 
-type GroupKey = "month" | "week" | "device" | "channel" | "source";
+type GroupKey = "month" | "week" | "device" | "channel" | "source" | "product";
 
 const ALL_OPTION: NormalizedOption = {
   value: "all",
@@ -227,26 +232,23 @@ export default function FloatingFilterRail({
   selectedMonth,
   setSelectedMonth,
   monthOptions = [],
-
   selectedWeek,
   setSelectedWeek,
   weekOptions = [],
-
   selectedDevice,
   setSelectedDevice,
   deviceOptions = [],
-
   selectedChannel,
   setSelectedChannel,
   channelOptions = [],
-
   selectedSource,
   setSelectedSource,
   sourceOptions = [],
-
+  selectedProduct,
+  setSelectedProduct,
+  productOptions = [],
   enabledMonthKeySet,
   enabledWeekKeySet,
-
   className = "",
   readOnly = false,
 }: Props) {
@@ -256,6 +258,7 @@ export default function FloatingFilterRail({
     device: false,
     channel: false,
     source: false,
+    product: false,
   });
 
   const safeMonthOptions = useMemo(() => {
@@ -278,6 +281,10 @@ export default function FloatingFilterRail({
     return buildSafeOptions(sourceOptions);
   }, [sourceOptions]);
 
+  const safeProductOptions = useMemo(() => {
+    return buildSafeOptions(productOptions);
+  }, [productOptions]);
+
   const toggleGroup = (group: GroupKey) => {
     setOpenGroup((prev) => ({
       ...prev,
@@ -297,7 +304,6 @@ export default function FloatingFilterRail({
           onSelect={setSelectedMonth}
           readOnly={readOnly}
         />
-
         <GroupSection
           title="주차"
           open={openGroup.week}
@@ -307,7 +313,6 @@ export default function FloatingFilterRail({
           onSelect={setSelectedWeek}
           readOnly={readOnly}
         />
-
         <GroupSection
           title="기기"
           open={openGroup.device}
@@ -317,7 +322,6 @@ export default function FloatingFilterRail({
           onSelect={setSelectedDevice}
           readOnly={readOnly}
         />
-
         <GroupSection
           title="채널"
           open={openGroup.channel}
@@ -327,7 +331,6 @@ export default function FloatingFilterRail({
           onSelect={setSelectedChannel}
           readOnly={readOnly}
         />
-
         <GroupSection
           title="소스"
           open={openGroup.source}
@@ -335,6 +338,15 @@ export default function FloatingFilterRail({
           options={safeSourceOptions}
           selectedValue={selectedSource}
           onSelect={setSelectedSource}
+          readOnly={readOnly}
+        />
+        <GroupSection
+          title="상품"
+          open={openGroup.product}
+          onToggle={() => toggleGroup("product")}
+          options={safeProductOptions}
+          selectedValue={selectedProduct}
+          onSelect={setSelectedProduct}
           readOnly={readOnly}
         />
       </div>

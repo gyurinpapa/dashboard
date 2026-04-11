@@ -1,8 +1,14 @@
 // app/components/ReportTemplate.tsx
 "use client";
-console.log("🔥 ReportTemplate RENDERED");
 
-import { useEffect, useMemo, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import type {
   ChannelKey,
@@ -34,33 +40,23 @@ import Summary2Section from "@/app/components/sections/Summary2Section";
 import CreativeSection from "@/app/components/sections/CreativeSection";
 import CreativeDetailSection from "@/app/components/sections/CreativeDetailSection";
 import MonthGoalSection from "@/app/components/sections/MonthGoalSection";
+import FloatingFilterRail from "./floating/FloatingFilterRail";
+import FloatingTabRail from "./floating/FloatingTabRail";
 
-import FloatingFilterRail from "@/app/components/floating/FloatingFilterRail";
-import FloatingTabRail from "@/app/components/floating/FloatingTabRail";
-
-if (typeof window !== "undefined") {
-  const checks: Record<string, any> = {
-    HeaderBar,
-    StructureSection,
-    KeywordSection,
-    KeywordDetailSection,
-    SummarySection,
-    Summary2Section,
-    CreativeSection,
-    CreativeDetailSection,
-    MonthGoalSection,
-  };
-
-  const bad = Object.entries(checks)
-    .filter(([, v]) => typeof v !== "function")
-    .map(([k, v]) => ({ name: k, type: typeof v, value: v }));
-
-  if (bad.length) {
-    console.error("❌ Invalid React component imports:", bad);
-  } else {
-    console.log("✅ All section imports are functions");
-  }
-}
+/**
+ * 성능 최적화 포인트:
+ * - 자식 컴포넌트를 memo 래핑하여 props reference가 유지될 때 불필요한 재렌더를 줄임
+ * - 기존 외부 인터페이스 / 내부 로직은 변경하지 않음
+ */
+const MemoHeaderBar = memo(HeaderBar);
+const MemoStructureSection = memo(StructureSection);
+const MemoKeywordSection = memo(KeywordSection);
+const MemoKeywordDetailSection = memo(KeywordDetailSection);
+const MemoSummarySection = memo(SummarySection);
+const MemoSummary2Section = memo(Summary2Section);
+const MemoCreativeSection = memo(CreativeSection);
+const MemoCreativeDetailSection = memo(CreativeDetailSection);
+const MemoMonthGoalSection = memo(MonthGoalSection);
 
 const MONTH_GOAL_KEY = "nature_report_month_goal_v1";
 
@@ -88,6 +84,7 @@ type Props = {
 };
 
 type ReportUiType = "commerce" | "traffic";
+type ReportFilterKey = FilterKey | "source" | "product";
 
 function asStr(v: any) {
   if (v == null) return "";
@@ -495,6 +492,48 @@ function minMaxYmd(rows: any[]) {
   return { min, max };
 }
 
+function shallowEqualStable(a: any, b: any) {
+  if (Object.is(a, b)) return true;
+
+  const aIsArray = Array.isArray(a);
+  const bIsArray = Array.isArray(b);
+
+  if (aIsArray || bIsArray) {
+    if (!aIsArray || !bIsArray) return false;
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i += 1) {
+      if (!Object.is(a[i], b[i])) return false;
+    }
+    return true;
+  }
+
+  const aIsObj = !!a && typeof a === "object";
+  const bIsObj = !!b && typeof b === "object";
+
+  if (!aIsObj || !bIsObj) return false;
+
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+
+  for (const key of aKeys) {
+    if (!Object.prototype.hasOwnProperty.call(b, key)) return false;
+    if (!Object.is(a[key], b[key])) return false;
+  }
+
+  return true;
+}
+
+function useStableShallowValue<T>(value: T): T {
+  const ref = useRef(value);
+
+  if (!shallowEqualStable(ref.current, value)) {
+    ref.current = value;
+  }
+
+  return ref.current;
+}
+
 export default function ReportTemplate({
   rows,
   isLoading,
@@ -510,12 +549,13 @@ export default function ReportTemplate({
 }: Props) {
   const [tab, setTab] = useState<TabKey>("summary");
 
-  const [filterKey, setFilterKey] = useState<FilterKey>(null);
+  const [filterKey, setFilterKey] = useState<ReportFilterKey>(null);
   const [selectedMonth, setSelectedMonth] = useState<MonthKey>("all");
   const [selectedWeek, setSelectedWeek] = useState<WeekKey>("all");
   const [selectedDevice, setSelectedDevice] = useState<DeviceKey>("all");
   const [selectedChannel, setSelectedChannel] = useState<ChannelKey>("all");
   const [selectedSource, setSelectedSource] = useState<string>("all");
+  const [selectedProduct, setSelectedProduct] = useState<string>("all");
 
   const [monthGoal, setMonthGoal] = useLocalStorageState<GoalState>(
     MONTH_GOAL_KEY,
@@ -622,8 +662,6 @@ export default function ReportTemplate({
       if (sp.get("debugRows") !== "1") return;
       (window as any).__ROWS__ = normalizedRows;
       (window as any).__CREATIVES_MAP__ = creativesMap ?? {};
-      console.log("✅ debugRows=1: window.__ROWS__ / window.__CREATIVES_MAP__ set");
-      console.log("sample __ROWS__[0] =", normalizedRows?.[0] ?? null);
     } catch {}
   }, [normalizedRows, creativesMap]);
 
@@ -639,30 +677,78 @@ export default function ReportTemplate({
   }, [normalizedRows]);
 
   useEffect(() => {
-    try {
-      const sp = new URLSearchParams(window.location.search);
-      const on = sp.get("debugCreative") === "1";
-      if (!on) return;
-
-      console.log("===== CREATIVE DEBUG =====");
-      console.log(
-        "[normalizedRows sample keys]",
-        normalizedRows?.[0] ? Object.keys(normalizedRows[0]) : null
-      );
-      console.log("[normalizedRows sample]", normalizedRows?.slice(0, 5));
-      console.log("[effectiveAdvertiserName]", effectiveAdvertiserName);
-      console.log("[effectiveReportTypeName]", effectiveReportTypeName);
-    } catch {}
-  }, [normalizedRows, effectiveAdvertiserName, effectiveReportTypeName]);
-
-  useEffect(() => {
     if (readOnlyHeader) return;
-
     if (tab !== "keyword" && tab !== "keywordDetail") return;
+
     if (selectedChannel === ("display" as ChannelKey)) {
       setSelectedChannel("search" as ChannelKey);
     }
   }, [tab, selectedChannel, readOnlyHeader]);
+
+  const needSummaryAggregates = tab === "summary";
+  const needStructureAggregates = tab === "structure";
+  const needKeywordAggregates = tab === "keyword";
+
+  const needCurrentMonthActual = needSummaryAggregates || needKeywordAggregates;
+  const needTotals = needSummaryAggregates;
+  const needBySource = needSummaryAggregates || needStructureAggregates;
+  const needByCampaign = needStructureAggregates;
+  const needByGroup = false;
+  const needByWeek = needSummaryAggregates;
+  const needByMonth = needSummaryAggregates;
+
+  const needCreativeRows = useMemo(() => {
+    return (
+      tab === "structure" ||
+      tab === "keywordDetail" ||
+      tab === "creative" ||
+      tab === "creativeDetail"
+    );
+  }, [tab]);
+
+  const handleInvalidWeek = useCallback(() => {
+    setSelectedWeek("all");
+  }, []);
+
+  const reportAggregatesParams = useMemo(() => {
+    return {
+      rows: reportPeriodRows as any,
+      selectedMonth,
+      selectedWeek,
+      selectedDevice,
+      selectedChannel,
+      selectedSource,
+      selectedProduct,
+      monthGoal,
+      onInvalidWeek: handleInvalidWeek,
+      needCurrentMonthActual,
+      needTotals,
+      needBySource,
+      needByCampaign,
+      needByGroup,
+      needByWeek,
+      needByMonth,
+      needHydratedFilteredRows: needCreativeRows,
+    };
+  }, [
+    reportPeriodRows,
+    selectedMonth,
+    selectedWeek,
+    selectedDevice,
+    selectedChannel,
+    selectedSource,
+    selectedProduct,
+    monthGoal,
+    handleInvalidWeek,
+    needCurrentMonthActual,
+    needTotals,
+    needBySource,
+    needByCampaign,
+    needByGroup,
+    needByWeek,
+    needByMonth,
+    needCreativeRows,
+  ]);
 
   const {
     monthOptions,
@@ -670,6 +756,7 @@ export default function ReportTemplate({
     deviceOptions,
     channelOptions,
     sourceOptions,
+    productOptions,
     enabledMonthKeySet,
     enabledWeekKeySet,
     filteredRows,
@@ -680,24 +767,31 @@ export default function ReportTemplate({
     totals,
     bySource,
     byCampaign,
-    byGroup,
     byWeekOnly,
     byWeekChart,
     byMonth,
-  } = useReportAggregates({
-    rows: reportPeriodRows as any,
-    selectedMonth,
-    selectedWeek,
-    selectedDevice,
-    selectedChannel,
-    selectedSource,
-    monthGoal,
-    onInvalidWeek: () => setSelectedWeek("all"),
-  });
+  } = useReportAggregates(reportAggregatesParams);
+
+  const allowedDeviceSet = useMemo(() => {
+    return new Set((deviceOptions ?? []).map((x: any) => String(x)));
+  }, [deviceOptions]);
+
+  const allowedChannelSet = useMemo(() => {
+    return new Set((channelOptions ?? []).map((x: any) => String(x)));
+  }, [channelOptions]);
+
+  const allowedSourceSet = useMemo(() => {
+    return new Set((sourceOptions ?? []).map((x: any) => String(x)));
+  }, [sourceOptions]);
+
+  const allowedProductSet = useMemo(() => {
+    return new Set((productOptions ?? []).map((x: any) => String(x)));
+  }, [productOptions]);
 
   const byDay = useMemo(() => {
+    if (tab !== "summary") return [];
     return buildDailySummaryRows(filteredRows as any[]);
-  }, [filteredRows]);
+  }, [tab, filteredRows]);
 
   useEffect(() => {
     if (readOnlyHeader) return;
@@ -715,27 +809,31 @@ export default function ReportTemplate({
 
   useEffect(() => {
     if (readOnlyHeader) return;
-    const allowed = new Set((deviceOptions ?? []).map((x: any) => String(x)));
-    if (selectedDevice !== "all" && !allowed.has(String(selectedDevice))) {
+    if (selectedDevice !== "all" && !allowedDeviceSet.has(String(selectedDevice))) {
       setSelectedDevice("all");
     }
-  }, [selectedDevice, deviceOptions, readOnlyHeader]);
+  }, [selectedDevice, allowedDeviceSet, readOnlyHeader]);
 
   useEffect(() => {
     if (readOnlyHeader) return;
-    const allowed = new Set((channelOptions ?? []).map((x: any) => String(x)));
-    if (selectedChannel !== "all" && !allowed.has(String(selectedChannel))) {
+    if (selectedChannel !== "all" && !allowedChannelSet.has(String(selectedChannel))) {
       setSelectedChannel("all");
     }
-  }, [selectedChannel, channelOptions, readOnlyHeader]);
+  }, [selectedChannel, allowedChannelSet, readOnlyHeader]);
 
   useEffect(() => {
     if (readOnlyHeader) return;
-    const allowed = new Set((sourceOptions ?? []).map((x: any) => String(x)));
-    if (selectedSource !== "all" && !allowed.has(String(selectedSource))) {
+    if (selectedSource !== "all" && !allowedSourceSet.has(String(selectedSource))) {
       setSelectedSource("all");
     }
-  }, [selectedSource, sourceOptions, readOnlyHeader]);
+  }, [selectedSource, allowedSourceSet, readOnlyHeader]);
+
+  useEffect(() => {
+    if (readOnlyHeader) return;
+    if (selectedProduct !== "all" && !allowedProductSet.has(String(selectedProduct))) {
+      setSelectedProduct("all");
+    }
+  }, [selectedProduct, allowedProductSet, readOnlyHeader]);
 
   const fullPeriod = useMemo(() => {
     const mm = minMaxYmd(normalizedRows as any[]);
@@ -749,12 +847,8 @@ export default function ReportTemplate({
     return `${formatYmd(mm.min)} ~ ${formatYmd(mm.max)}`;
   }, [filteredRows, period]);
 
-  const { monthGoalInsight } = useInsights({
-    byMonth,
-    rowsLength: reportPeriodRows.length,
-    currentMonthKey,
-    monthGoal,
-    currentMonthActual: {
+  const insightsCurrentMonthActual = useMemo(() => {
+    return {
       impressions: currentMonthActual.impressions,
       clicks: currentMonthActual.clicks,
       cost: currentMonthActual.cost,
@@ -765,31 +859,55 @@ export default function ReportTemplate({
       cvr: currentMonthActual.cvr,
       cpa: currentMonthActual.cpa,
       roas: currentMonthActual.roas,
-    },
+    };
+  }, [currentMonthActual]);
+
+  const insightsParams = useMemo(() => {
+    return {
+      byMonth,
+      rowsLength: reportPeriodRows.length,
+      currentMonthKey,
+      monthGoal,
+      currentMonthActual: insightsCurrentMonthActual,
+      currentMonthGoalComputed,
+      enableMonthlyInsight: tab === "summary",
+      enableMonthGoalInsight: tab === "summary",
+    };
+  }, [
+    byMonth,
+    reportPeriodRows.length,
+    currentMonthKey,
+    monthGoal,
+    insightsCurrentMonthActual,
     currentMonthGoalComputed,
-  });
+    tab,
+  ]);
 
-  const keywordBaseRows = useMemo(() => filteredRows, [filteredRows]);
+  const { monthGoalInsight } = useInsights(insightsParams);
 
-  const keywordAgg = useMemo(
-    () => groupByKeyword(keywordBaseRows as any[]),
-    [keywordBaseRows]
-  );
+  const keywordAgg = useMemo(() => {
+    if (tab !== "keyword") return [];
+    return groupByKeyword(filteredRows as any[]);
+  }, [tab, filteredRows]);
 
   const keywordInsight = useMemo(() => {
+    if (tab !== "keyword") return "";
     return buildKeywordInsight({
       keywordAgg: keywordAgg as any[],
-      keywordBaseRows: keywordBaseRows as any[],
+      keywordBaseRows: filteredRows as any[],
       currentMonthActual: currentMonthActual as any,
       currentMonthGoalComputed: currentMonthGoalComputed as any,
     });
-  }, [keywordAgg, keywordBaseRows, currentMonthActual, currentMonthGoalComputed]);
+  }, [tab, keywordAgg, filteredRows, currentMonthActual, currentMonthGoalComputed]);
 
   const creativesMapNormalized = useMemo(() => {
+    if (!needCreativeRows) return {};
     return normalizeCreativesMap(creativesMap ?? {});
-  }, [creativesMap]);
+  }, [needCreativeRows, creativesMap]);
 
   const filteredRowsWithCreatives = useMemo(() => {
+    if (!needCreativeRows) return filteredRows as any[];
+
     const map = creativesMapNormalized;
 
     return (filteredRows as any[]).map((r) => {
@@ -821,22 +939,6 @@ export default function ReportTemplate({
         creative_url: matchedUrl,
         creativeKey: matchedKey,
         creativeUrl: matchedUrl,
-        __dbg_used_orig: !!orig,
-        __imagepath_raw:
-          baseForCandidates?.imagepath_raw ??
-          baseForCandidates?.imagepath ??
-          baseForCandidates?.imagePath ??
-          "",
-        __creative_raw: baseForCandidates?.creative ?? "",
-        __creative_file_raw:
-          baseForCandidates?.creative_file ??
-          baseForCandidates?.creativeFile ??
-          undefined,
-        __creative_candidates: candidates,
-        __dbg_hit_candidates: candidates
-          .map((x: any) => normalizeKey(x))
-          .filter((x: string) => !!map[x])
-          .slice(0, 10),
       };
 
       if (displayUrl) {
@@ -867,43 +969,77 @@ export default function ReportTemplate({
 
       return out;
     });
-  }, [filteredRows, creativesMapNormalized, originalRowById]);
+  }, [needCreativeRows, filteredRows, creativesMapNormalized, originalRowById]);
 
   const creativeBaseRows = useMemo(() => {
+    if (tab !== "creative" && tab !== "creativeDetail") return [];
     const list = (filteredRowsWithCreatives as any[]) ?? [];
     return list.filter((r) => !!r?.creative_url);
-  }, [filteredRowsWithCreatives]);
+  }, [tab, filteredRowsWithCreatives]);
 
-  useEffect(() => {
-    try {
-      const sp = new URLSearchParams(window.location.search);
-      const on = sp.get("debugCreative") === "1";
-      if (!on) return;
+  const stableMonthGoal = useStableShallowValue(monthGoal);
+  const stableCurrentMonthActual = useStableShallowValue(currentMonthActual);
+  const stableCurrentMonthGoalComputed =
+    useStableShallowValue(currentMonthGoalComputed);
+  const stableTotals = useStableShallowValue(totals);
+  const stableByMonth = useStableShallowValue(byMonth);
+  const stableByWeekOnly = useStableShallowValue(byWeekOnly);
+  const stableByWeekChart = useStableShallowValue(byWeekChart);
+  const stableBySource = useStableShallowValue(bySource);
+  const stableByDay = useStableShallowValue(byDay);
+  const stableMonthGoalInsight = useStableShallowValue(monthGoalInsight);
 
-      if (tab !== "creative" && tab !== "creativeDetail") return;
+  const monthGoalSectionProps = useMemo(() => {
+    return {
+      reportType,
+      currentMonthKey,
+      currentMonthActual: stableCurrentMonthActual,
+      currentMonthGoalComputed: stableCurrentMonthGoalComputed,
+      monthGoal: stableMonthGoal,
+      setMonthGoal,
+      monthGoalInsight: stableMonthGoalInsight,
+    };
+  }, [
+    reportType,
+    currentMonthKey,
+    stableCurrentMonthActual,
+    stableCurrentMonthGoalComputed,
+    stableMonthGoal,
+    setMonthGoal,
+    stableMonthGoalInsight,
+  ]);
 
-      const first = (creativeBaseRows as any[]).slice(0, 8).map((r) => ({
-        used_orig: r?.__dbg_used_orig,
-        creative: r?.__creative_raw,
-        creative_file: r?.__creative_file_raw,
-        imagepath_raw: r?.__imagepath_raw,
-        matchedKey: r?.creative_key,
-        matchedUrl: r?.creative_url,
-        imagePath_for_display: r?.imagePath ?? null,
-        thumbnail_for_display: r?.thumbnail?.imagePath ?? null,
-        candidates: r?.__creative_candidates?.slice(0, 20) ?? [],
-        hitCandidates: r?.__dbg_hit_candidates ?? [],
-      }));
-
-      console.log("===== CREATIVE DEBUG =====");
-      console.log(
-        "creativesMap keys =",
-        Object.keys(creativesMapNormalized).slice(0, 200)
-      );
-      console.log("creativeBaseRows len =", creativeBaseRows.length);
-      console.log("rows sample =", first);
-    } catch {}
-  }, [tab, creativeBaseRows, creativesMapNormalized]);
+  const summarySectionProps = useMemo(() => {
+    return {
+      reportType,
+      totals: stableTotals,
+      byMonth: stableByMonth,
+      byWeekOnly: stableByWeekOnly,
+      byWeekChart: stableByWeekChart,
+      bySource: stableBySource,
+      byDay: stableByDay,
+      currentMonthKey,
+      currentMonthActual: stableCurrentMonthActual,
+      currentMonthGoalComputed: stableCurrentMonthGoalComputed,
+      monthGoal: stableMonthGoal,
+      setMonthGoal,
+      monthGoalInsight: stableMonthGoalInsight,
+    };
+  }, [
+    reportType,
+    stableTotals,
+    stableByMonth,
+    stableByWeekOnly,
+    stableByWeekChart,
+    stableBySource,
+    stableByDay,
+    currentMonthKey,
+    stableCurrentMonthActual,
+    stableCurrentMonthGoalComputed,
+    stableMonthGoal,
+    setMonthGoal,
+    stableMonthGoalInsight,
+  ]);
 
   return (
     <main
@@ -914,7 +1050,7 @@ export default function ReportTemplate({
         <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-slate-100/90 via-slate-50/70 to-transparent" />
 
         <div className="relative z-10 border-b border-slate-200/80 bg-white/85 backdrop-blur-md shadow-[0_1px_0_rgba(15,23,42,0.03)]">
-          <HeaderBar
+          <MemoHeaderBar
             tab={tab}
             setTab={setTab}
             filterKey={filterKey}
@@ -929,11 +1065,14 @@ export default function ReportTemplate({
             setSelectedChannel={setSelectedChannel}
             selectedSource={selectedSource}
             setSelectedSource={setSelectedSource}
+            selectedProduct={selectedProduct}
+            setSelectedProduct={setSelectedProduct}
             monthOptions={monthOptions}
             weekOptions={weekOptions}
             deviceOptions={deviceOptions}
             channelOptions={channelOptions}
             sourceOptions={sourceOptions}
+            productOptions={productOptions}
             enabledMonthKeySet={enabledMonthKeySet}
             enabledWeekKeySet={enabledWeekKeySet}
             fullPeriod={fullPeriod}
@@ -964,7 +1103,7 @@ export default function ReportTemplate({
           ) : null}
 
           <div className="relative flex items-start justify-center gap-5 xl:gap-6">
-            <div className="hidden xl:block xl:w-[124px] xl:shrink-0 xl:self-start xl:sticky xl:top-28">
+            <div className="hidden xl:block xl:sticky xl:top-24 xl:self-start">
               <FloatingFilterRail
                 selectedMonth={selectedMonth}
                 setSelectedMonth={setSelectedMonth}
@@ -981,9 +1120,12 @@ export default function ReportTemplate({
                 selectedSource={selectedSource}
                 setSelectedSource={setSelectedSource}
                 sourceOptions={sourceOptions}
+                selectedProduct={selectedProduct}
+                setSelectedProduct={setSelectedProduct}
+                productOptions={productOptions}
                 enabledMonthKeySet={enabledMonthKeySet}
                 enabledWeekKeySet={enabledWeekKeySet}
-                readOnly={Boolean(readOnlyHeader)}
+                readOnly={readOnlyHeader}
               />
             </div>
 
@@ -993,40 +1135,18 @@ export default function ReportTemplate({
                   {tab === "summary" && (
                     <>
                       <div className="rounded-2xl">
-                        <MonthGoalSection
-                          reportType={reportType}
-                          currentMonthKey={currentMonthKey}
-                          currentMonthActual={currentMonthActual}
-                          currentMonthGoalComputed={currentMonthGoalComputed}
-                          monthGoal={monthGoal}
-                          setMonthGoal={setMonthGoal}
-                          monthGoalInsight={monthGoalInsight}
-                        />
+                        <MemoMonthGoalSection {...(monthGoalSectionProps as any)} />
                       </div>
 
                       <div className="rounded-2xl">
-                        <SummarySection
-                          {...({ reportType } as any)}
-                          totals={totals as any}
-                          byMonth={byMonth as any}
-                          byWeekOnly={byWeekOnly as any}
-                          byWeekChart={byWeekChart as any}
-                          bySource={bySource as any}
-                          byDay={byDay as any}
-                          currentMonthKey={currentMonthKey as any}
-                          currentMonthActual={currentMonthActual as any}
-                          currentMonthGoalComputed={currentMonthGoalComputed as any}
-                          monthGoal={monthGoal as any}
-                          setMonthGoal={setMonthGoal as any}
-                          monthGoalInsight={monthGoalInsight as any}
-                        />
+                        <MemoSummarySection {...(summarySectionProps as any)} />
                       </div>
                     </>
                   )}
 
                   {tab === "summary2" && (
                     <div className="rounded-2xl">
-                      <Summary2Section
+                      <MemoSummary2Section
                         {...({ reportType } as any)}
                         rows={filteredRows as any[]}
                       />
@@ -1035,7 +1155,7 @@ export default function ReportTemplate({
 
                   {tab === "structure" && (
                     <div className="rounded-2xl">
-                      <StructureSection
+                      <MemoStructureSection
                         {...({ reportType } as any)}
                         bySource={bySource}
                         byCampaign={byCampaign}
@@ -1047,7 +1167,7 @@ export default function ReportTemplate({
 
                   {tab === "keyword" && (
                     <div className="rounded-2xl">
-                      <KeywordSection
+                      <MemoKeywordSection
                         {...({ reportType } as any)}
                         keywordAgg={keywordAgg}
                         keywordInsight={keywordInsight}
@@ -1057,7 +1177,7 @@ export default function ReportTemplate({
 
                   {tab === "keywordDetail" && (
                     <div className="rounded-2xl">
-                      <KeywordDetailSection
+                      <MemoKeywordDetailSection
                         {...({ reportType } as any)}
                         rows={filteredRowsWithCreatives as any[]}
                       />
@@ -1066,7 +1186,7 @@ export default function ReportTemplate({
 
                   {tab === "creative" && (
                     <div className="rounded-2xl">
-                      <CreativeSection
+                      <MemoCreativeSection
                         {...({ reportType } as any)}
                         rows={creativeBaseRows}
                       />
@@ -1075,7 +1195,7 @@ export default function ReportTemplate({
 
                   {tab === "creativeDetail" && (
                     <div className="rounded-2xl">
-                      <CreativeDetailSection
+                      <MemoCreativeDetailSection
                         {...({ reportType } as any)}
                         rows={creativeBaseRows as any[]}
                       />
@@ -1085,11 +1205,11 @@ export default function ReportTemplate({
               </div>
             </div>
 
-            <div className="hidden xl:block xl:w-[116px] xl:shrink-0 xl:self-start xl:sticky xl:top-28">
+            <div className="hidden xl:block xl:sticky xl:top-24 xl:self-start">
               <FloatingTabRail
                 tab={tab}
                 setTab={setTab}
-                readOnly={Boolean(readOnlyHeader)}
+                readOnly={readOnlyHeader}
               />
             </div>
           </div>

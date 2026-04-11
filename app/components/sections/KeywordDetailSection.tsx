@@ -1,6 +1,7 @@
+// app/components/sections/KeywordDetailSection.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import type { Row } from "../../../src/lib/report/types";
 
 import SummarySection from "./SummarySection";
@@ -47,6 +48,10 @@ function pickDeviceLabel(raw: string) {
   if (s.includes("tablet")) return "태블릿";
   if (s.includes("unknown") || !s.trim()) return "미지정";
   return raw;
+}
+
+function normalizeKeywordSearchText(value: any) {
+  return String(value ?? "").trim().toLowerCase();
 }
 
 /**
@@ -169,6 +174,130 @@ function groupByDayFromRows(rows: Row[]) {
       };
     })
     .sort((a, b) => String(a.dateKey).localeCompare(String(b.dateKey)));
+}
+
+/**
+ * ✅ rows 기준 keyword 목록 + bucket 사전 계산
+ */
+function buildKeywordIndex(rows: Row[]) {
+  const keywordSet = new Set<string>();
+  const keywordBuckets = new Map<string, Row[]>();
+
+  for (const row of rows) {
+    const keyword = (row.keyword ?? "").toString().trim();
+    if (!keyword) continue;
+
+    keywordSet.add(keyword);
+
+    const bucket = keywordBuckets.get(keyword);
+    if (bucket) {
+      bucket.push(row);
+    } else {
+      keywordBuckets.set(keyword, [row]);
+    }
+  }
+
+  const keywords = Array.from(keywordSet).sort((a, b) => a.localeCompare(b, "ko"));
+  const keywordLookup = new Set(keywords);
+
+  return {
+    keywords,
+    keywordBuckets,
+    keywordLookup,
+  };
+}
+
+/**
+ * ✅ 변경 지점:
+ * 키워드 선택 때마다 무거운 집계 재계산이 몰리지 않도록
+ * 키워드별 집계 결과를 최초 rows 기준으로 한 번 사전 계산
+ */
+function buildKeywordMetricsIndex(rows: Row[]) {
+  const { keywords, keywordBuckets, keywordLookup } = buildKeywordIndex(rows);
+  const metricsMap = new Map<
+    string,
+    {
+      filteredRows: Row[];
+      avgRank: number | null;
+      totals: any;
+      bySource: any[];
+      byDevice: any[];
+      byWeekOnly: any[];
+      byWeekChart: any[];
+      byDay: any[];
+      byMonth: any[];
+      currentMonthGoalComputed: any;
+      currentMonthKey: any;
+      currentMonthActual: any;
+      monthGoal: any;
+      monthGoalInsight: any;
+    }
+  >();
+
+  for (const keyword of keywords) {
+    const filteredRows = keywordBuckets.get(keyword) ?? [];
+    const avgRank = calcAvgRankWeighted(filteredRows);
+    const totals = summarize(filteredRows);
+    const bySource = groupBySource(filteredRows);
+    const byDevice = groupByDevice(filteredRows);
+    const byWeekOnly = groupByWeekRecent5(filteredRows);
+
+    const byWeekChart = [...byWeekOnly].sort((a, b) =>
+      String(a.weekKey ?? "").localeCompare(String(b.weekKey ?? ""))
+    );
+
+    const byDay = groupByDayFromRows(filteredRows);
+
+    const byMonth = groupByMonthRecent3({
+      rows: filteredRows,
+      selectedMonth: "all",
+      selectedDevice: "all",
+      selectedChannel: "all",
+    });
+
+    const currentMonthGoalComputed =
+      (totals as any)?.currentMonthGoalComputed ?? {
+        imp: 0,
+        click: 0,
+        cost: 0,
+        conv: 0,
+        revenue: 0,
+        ctr: 0,
+        cpc: 0,
+        cvr: 0,
+        cpa: 0,
+        roas: 0,
+      };
+
+    const currentMonthKey = (totals as any)?.currentMonthKey ?? null;
+    const currentMonthActual = (totals as any)?.currentMonthActual ?? totals;
+    const monthGoal = (totals as any)?.monthGoal ?? null;
+    const monthGoalInsight = null;
+
+    metricsMap.set(keyword, {
+      filteredRows,
+      avgRank,
+      totals,
+      bySource,
+      byDevice,
+      byWeekOnly,
+      byWeekChart,
+      byDay,
+      byMonth,
+      currentMonthGoalComputed,
+      currentMonthKey,
+      currentMonthActual,
+      monthGoal,
+      monthGoalInsight,
+    });
+  }
+
+  return {
+    keywords,
+    keywordBuckets,
+    keywordLookup,
+    metricsMap,
+  };
 }
 
 /**
@@ -348,6 +477,222 @@ function buildKeywordDetailInsight(args: {
 }
 
 /** =========================
+ * Perf-safe constants
+ * ========================= */
+
+const NOOP_SET_MONTH_GOAL = () => {};
+
+/** =========================
+ * Memoized UI blocks
+ * ========================= */
+
+type KeywordListItemProps = {
+  keyword: string;
+  active: boolean;
+  onSelect: (keyword: string) => void;
+};
+
+const KeywordListItem = memo(function KeywordListItem({
+  keyword,
+  active,
+  onSelect,
+}: KeywordListItemProps) {
+  const handleClick = useCallback(() => {
+    onSelect(keyword);
+  }, [onSelect, keyword]);
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      className={[
+        "block w-full rounded-xl border px-3 py-2 text-left text-sm font-semibold transition",
+        "overflow-hidden text-ellipsis whitespace-nowrap",
+        active
+          ? "border-orange-700 bg-orange-700 text-white"
+          : "border-gray-200 bg-white text-gray-900 hover:border-orange-200 hover:bg-orange-50",
+      ].join(" ")}
+      title={keyword}
+    >
+      {keyword}
+    </button>
+  );
+});
+
+type KeywordListPanelProps = {
+  keywords: string[];
+  selectedKeyword: string | null;
+  keywordQuery: string;
+  onChangeKeywordQuery: (value: string) => void;
+  onSelectKeyword: (keyword: string) => void;
+};
+
+const KeywordListPanel = memo(function KeywordListPanel({
+  keywords,
+  selectedKeyword,
+  keywordQuery,
+  onChangeKeywordQuery,
+  onSelectKeyword,
+}: KeywordListPanelProps) {
+  const hasQuery = String(keywordQuery ?? "").trim().length > 0;
+
+  const handleChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      onChangeKeywordQuery(e.target.value);
+    },
+    [onChangeKeywordQuery]
+  );
+
+  return (
+    <aside className="min-w-0 rounded-2xl border border-gray-200 bg-white p-4 lg:sticky lg:top-24 lg:max-h-[calc(100vh-6rem)] lg:overflow-hidden">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-sm font-semibold">키워드 리스트</div>
+        <div className="min-w-0 truncate text-xs text-gray-500">
+          {selectedKeyword ? `선택: ${selectedKeyword}` : "선택 없음"}
+        </div>
+      </div>
+
+      <div className="mt-3">
+        <input
+          type="text"
+          value={keywordQuery}
+          onChange={handleChange}
+          placeholder="키워드 검색"
+          className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+        />
+      </div>
+
+      <div className="mt-3 overflow-auto pr-1 lg:max-h-[calc(100vh-17rem)]">
+        <div className="flex flex-col gap-2">
+          {keywords.length === 0 ? (
+            <div className="rounded-xl bg-gray-50 p-4 text-sm text-gray-600">
+              {hasQuery ? "검색 결과가 없습니다." : "키워드 데이터가 없습니다."}
+            </div>
+          ) : (
+            keywords.map((k) => (
+              <KeywordListItem
+                key={k}
+                keyword={k}
+                active={k === selectedKeyword}
+                onSelect={onSelectKeyword}
+              />
+            ))
+          )}
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-xl bg-gray-50 p-3 text-xs text-gray-600">
+        <b>메모</b>
+        <div className="mt-1">오른쪽은 선택 키워드 기준으로 “요약탭 구성(월3/주5/그래프/소스별)”을 재사용합니다.</div>
+      </div>
+    </aside>
+  );
+});
+
+type InsightPanelProps = {
+  title: string;
+  selectedKeyword: string | null;
+  avgRank: number | null;
+  bullets: string[];
+  actions: string[];
+};
+
+const InsightPanel = memo(function InsightPanel({
+  title,
+  selectedKeyword,
+  avgRank,
+  bullets,
+  actions,
+}: InsightPanelProps) {
+  return (
+    <section className="min-w-0 rounded-2xl border border-gray-200 bg-white p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h3 className="text-base font-semibold">{title}</h3>
+          <div className="mt-1 truncate text-xs text-gray-500">
+            {selectedKeyword ? `키워드: ${selectedKeyword}` : "키워드를 선택하세요"}
+          </div>
+        </div>
+
+        <div className="shrink-0 text-right">
+          <div className="text-xs text-gray-500">Avg.rank</div>
+          <div className="mt-1 text-lg font-semibold">{avgRank == null ? "-" : avgRank.toFixed(2)}</div>
+        </div>
+      </div>
+
+      <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-gray-700">
+        {bullets.map((b, i) => (
+          <li key={i}>{b}</li>
+        ))}
+      </ul>
+
+      <div className="mt-4 rounded-xl bg-gray-50 p-4">
+        <div className="text-sm font-semibold text-gray-900">
+          다음 운영 액션(클릭 · 전환 · ROAS)
+        </div>
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-gray-700">
+          {actions.map((a, i) => (
+            <li key={i}>{a}</li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+});
+
+type SummarySectionBlockProps = {
+  reportType?: "commerce" | "traffic";
+  totals: any;
+  byMonth: any;
+  byWeekOnly: any;
+  byWeekChart: any;
+  bySource: any;
+  byDay: any;
+  currentMonthKey: any;
+  currentMonthActual: any;
+  currentMonthGoalComputed: any;
+  monthGoal: any;
+  monthGoalInsight: any;
+};
+
+const SummarySectionBlock = memo(function SummarySectionBlock({
+  reportType,
+  totals,
+  byMonth,
+  byWeekOnly,
+  byWeekChart,
+  bySource,
+  byDay,
+  currentMonthKey,
+  currentMonthActual,
+  currentMonthGoalComputed,
+  monthGoal,
+  monthGoalInsight,
+}: SummarySectionBlockProps) {
+  return (
+    <div className="keyword-detail-week-table-fix min-w-0">
+      <div className="min-w-0">
+        <SummarySection
+          reportType={reportType}
+          totals={totals as any}
+          byMonth={byMonth as any}
+          byWeekOnly={byWeekOnly as any}
+          byWeekChart={byWeekChart as any}
+          bySource={bySource as any}
+          byDay={byDay as any}
+          currentMonthKey={currentMonthKey}
+          currentMonthActual={currentMonthActual}
+          currentMonthGoalComputed={currentMonthGoalComputed}
+          monthGoal={monthGoal}
+          setMonthGoal={NOOP_SET_MONTH_GOAL}
+          monthGoalInsight={monthGoalInsight}
+        />
+      </div>
+    </div>
+  );
+});
+
+/** =========================
  * Component
  * ========================= */
 
@@ -360,8 +705,12 @@ export default function KeywordDetailSection(props: Props) {
   const { reportType, rows } = props;
   const isTraffic = reportType === "traffic";
 
-  const keywords = useMemo(() => extractKeywords(rows), [rows]);
+  // ✅ 변경 지점:
+  // 키워드별 bucket + 집계 결과 전체를 rows 기준으로 한 번 사전 계산
+  const { keywords, keywordLookup, metricsMap } = useMemo(() => buildKeywordMetricsIndex(rows), [rows]);
+
   const [selectedKeyword, setSelectedKeyword] = useState<string | null>(keywords[0] ?? null);
+  const [keywordQuery, setKeywordQuery] = useState<string>("");
 
   useEffect(() => {
     if (!keywords.length) {
@@ -369,36 +718,53 @@ export default function KeywordDetailSection(props: Props) {
       return;
     }
 
-    if (!selectedKeyword || !keywords.includes(selectedKeyword)) {
+    if (!selectedKeyword || !keywordLookup.has(selectedKeyword)) {
       setSelectedKeyword(keywords[0]);
     }
-  }, [keywords, selectedKeyword]);
+  }, [keywords, keywordLookup, selectedKeyword]);
 
-  const filteredRows = useMemo(() => filterByKeyword(rows, selectedKeyword), [rows, selectedKeyword]);
-  const avgRank = useMemo(() => calcAvgRankWeighted(filteredRows), [filteredRows]);
+  const handleSelectKeyword = useCallback((keyword: string) => {
+    setSelectedKeyword((prev) => (prev === keyword ? prev : keyword));
+  }, []);
 
-  const totals = useMemo(() => summarize(filteredRows), [filteredRows]);
-  const bySource = useMemo(() => groupBySource(filteredRows), [filteredRows]);
-  const byDevice = useMemo(() => groupByDevice(filteredRows), [filteredRows]);
-  const byWeekOnly = useMemo(() => groupByWeekRecent5(filteredRows), [filteredRows]);
-  const byDay = useMemo(() => groupByDayFromRows(filteredRows), [filteredRows]);
+  const handleChangeKeywordQuery = useCallback((value: string) => {
+    setKeywordQuery(value);
+  }, []);
 
-  const byWeekChart = useMemo(() => {
-    const arr = [...byWeekOnly];
-    arr.sort((a, b) => String(a.weekKey ?? "").localeCompare(String(b.weekKey ?? "")));
-    return arr;
-  }, [byWeekOnly]);
+  const filteredKeywordList = useMemo(() => {
+    const query = normalizeKeywordSearchText(keywordQuery);
+    if (!query) return keywords;
 
-  const byMonth = useMemo(
-    () =>
-      groupByMonthRecent3({
-        rows: filteredRows,
-        selectedMonth: "all",
-        selectedDevice: "all",
-        selectedChannel: "all",
-      }),
-    [filteredRows]
-  );
+    return keywords.filter((keyword) =>
+      normalizeKeywordSearchText(keyword).includes(query)
+    );
+  }, [keywords, keywordQuery]);
+
+  // ✅ 변경 지점:
+  // 선택 변경 시 계산이 아니라 사전 계산 결과 조회만 수행
+  const selectedMetrics = useMemo(() => {
+    if (!selectedKeyword) return null;
+    return metricsMap.get(selectedKeyword) ?? null;
+  }, [selectedKeyword, metricsMap]);
+
+  const filteredRows = selectedMetrics?.filteredRows ?? rows;
+  const avgRank = selectedMetrics?.avgRank ?? null;
+  const totals = selectedMetrics?.totals ?? summarize(filteredRows);
+  const bySource = selectedMetrics?.bySource ?? groupBySource(filteredRows);
+  const byDevice = selectedMetrics?.byDevice ?? groupByDevice(filteredRows);
+  const byWeekOnly = selectedMetrics?.byWeekOnly ?? groupByWeekRecent5(filteredRows);
+  const byWeekChart =
+    selectedMetrics?.byWeekChart ??
+    [...byWeekOnly].sort((a, b) => String(a.weekKey ?? "").localeCompare(String(b.weekKey ?? "")));
+  const byDay = selectedMetrics?.byDay ?? groupByDayFromRows(filteredRows);
+  const byMonth =
+    selectedMetrics?.byMonth ??
+    groupByMonthRecent3({
+      rows: filteredRows,
+      selectedMonth: "all",
+      selectedDevice: "all",
+      selectedChannel: "all",
+    });
 
   const insight = useMemo(
     () =>
@@ -414,130 +780,61 @@ export default function KeywordDetailSection(props: Props) {
     [selectedKeyword, rows, filteredRows, byWeekOnly, bySource, byDevice, avgRank]
   );
 
+  const currentMonthGoalComputed =
+    selectedMetrics?.currentMonthGoalComputed ??
+    ((totals as any)?.currentMonthGoalComputed ?? {
+      imp: 0,
+      click: 0,
+      cost: 0,
+      conv: 0,
+      revenue: 0,
+      ctr: 0,
+      cpc: 0,
+      cvr: 0,
+      cpa: 0,
+      roas: 0,
+    });
+
+  const currentMonthKey = selectedMetrics?.currentMonthKey ?? (totals as any)?.currentMonthKey ?? null;
+  const currentMonthActual =
+    selectedMetrics?.currentMonthActual ?? (totals as any)?.currentMonthActual ?? totals;
+  const monthGoal = selectedMetrics?.monthGoal ?? (totals as any)?.monthGoal ?? null;
+  const monthGoalInsight = selectedMetrics?.monthGoalInsight ?? null;
+
   return (
     <section className="w-full min-w-0">
       <div className="mt-4 grid grid-cols-1 items-start gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
-        <aside className="min-w-0 rounded-2xl border border-gray-200 bg-white p-4 lg:sticky lg:top-24 lg:max-h-[calc(100vh-6rem)] lg:overflow-hidden">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-sm font-semibold">키워드 리스트</div>
-            <div className="min-w-0 truncate text-xs text-gray-500">
-              {selectedKeyword ? `선택: ${selectedKeyword}` : "선택 없음"}
-            </div>
-          </div>
-
-          <div className="mt-3 overflow-auto pr-1 lg:max-h-[calc(100vh-14rem)]">
-            <div className="flex flex-col gap-2">
-              {keywords.length === 0 ? (
-                <div className="rounded-xl bg-gray-50 p-4 text-sm text-gray-600">키워드 데이터가 없습니다.</div>
-              ) : (
-                keywords.map((k) => {
-                  const active = k === selectedKeyword;
-                  return (
-                    <button
-                      key={k}
-                      type="button"
-                      onClick={() => setSelectedKeyword(k)}
-                      className={[
-                        "block w-full rounded-xl border px-3 py-2 text-left text-sm font-semibold transition",
-                        "overflow-hidden text-ellipsis whitespace-nowrap",
-                        active
-                          ? "border-orange-700 bg-orange-700 text-white"
-                          : "border-gray-200 bg-white text-gray-900 hover:border-orange-200 hover:bg-orange-50",
-                      ].join(" ")}
-                      title={k}
-                    >
-                      {k}
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          </div>
-
-          <div className="mt-4 rounded-xl bg-gray-50 p-3 text-xs text-gray-600">
-            <b>메모</b>
-            <div className="mt-1">오른쪽은 선택 키워드 기준으로 “요약탭 구성(월3/주5/그래프/소스별)”을 재사용합니다.</div>
-          </div>
-        </aside>
+        <KeywordListPanel
+          keywords={filteredKeywordList}
+          selectedKeyword={selectedKeyword}
+          keywordQuery={keywordQuery}
+          onChangeKeywordQuery={handleChangeKeywordQuery}
+          onSelectKeyword={handleSelectKeyword}
+        />
 
         <div className="min-w-0 space-y-6">
-          <section className="min-w-0 rounded-2xl border border-gray-200 bg-white p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <h3 className="text-base font-semibold">{insight.title}</h3>
-                <div className="mt-1 truncate text-xs text-gray-500">
-                  {selectedKeyword ? `키워드: ${selectedKeyword}` : "키워드를 선택하세요"}
-                </div>
-              </div>
+          <InsightPanel
+            title={insight.title}
+            selectedKeyword={selectedKeyword}
+            avgRank={avgRank}
+            bullets={insight.bullets}
+            actions={insight.actions}
+          />
 
-              <div className="shrink-0 text-right">
-                <div className="text-xs text-gray-500">Avg.rank</div>
-                <div className="mt-1 text-lg font-semibold">{avgRank == null ? "-" : avgRank.toFixed(2)}</div>
-              </div>
-            </div>
-
-            <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-gray-700">
-              {insight.bullets.map((b, i) => (
-                <li key={i}>{b}</li>
-              ))}
-            </ul>
-
-            <div className="mt-4 rounded-xl bg-gray-50 p-4">
-              <div className="text-sm font-semibold text-gray-900">
-                다음 운영 액션(클릭 · 전환 · ROAS)
-              </div>
-              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-gray-700">
-                {insight.actions.map((a, i) => (
-                  <li key={i}>{a}</li>
-                ))}
-              </ul>
-            </div>
-          </section>
-
-          <div className="keyword-detail-week-table-fix min-w-0">
-            {(() => {
-              const currentMonthKey = (totals as any)?.currentMonthKey ?? null;
-              const currentMonthActual = (totals as any)?.currentMonthActual ?? totals;
-              const monthGoal = (totals as any)?.monthGoal ?? null;
-
-              const currentMonthGoalComputed =
-                (totals as any)?.currentMonthGoalComputed ?? {
-                  imp: 0,
-                  click: 0,
-                  cost: 0,
-                  conv: 0,
-                  revenue: 0,
-                  ctr: 0,
-                  cpc: 0,
-                  cvr: 0,
-                  cpa: 0,
-                  roas: 0,
-                };
-
-              const setMonthGoal = () => {};
-              const monthGoalInsight = null;
-
-              return (
-                <div className="min-w-0">
-                  <SummarySection
-                    reportType={reportType}
-                    totals={totals as any}
-                    byMonth={byMonth as any}
-                    byWeekOnly={byWeekOnly as any}
-                    byWeekChart={byWeekChart as any}
-                    bySource={bySource as any}
-                    byDay={byDay as any}
-                    currentMonthKey={currentMonthKey}
-                    currentMonthActual={currentMonthActual}
-                    currentMonthGoalComputed={currentMonthGoalComputed}
-                    monthGoal={monthGoal}
-                    setMonthGoal={setMonthGoal}
-                    monthGoalInsight={monthGoalInsight}
-                  />
-                </div>
-              );
-            })()}
-          </div>
+          <SummarySectionBlock
+            reportType={reportType}
+            totals={totals}
+            byMonth={byMonth}
+            byWeekOnly={byWeekOnly}
+            byWeekChart={byWeekChart}
+            bySource={bySource}
+            byDay={byDay}
+            currentMonthKey={currentMonthKey}
+            currentMonthActual={currentMonthActual}
+            currentMonthGoalComputed={currentMonthGoalComputed}
+            monthGoal={monthGoal}
+            monthGoalInsight={monthGoalInsight}
+          />
         </div>
       </div>
 
@@ -568,11 +865,13 @@ export default function KeywordDetailSection(props: Props) {
           text-overflow: ellipsis;
         }
 
-        ${isTraffic ? `
+        ${isTraffic
+          ? `
         .keyword-detail-week-table-fix table {
           min-width: 860px !important;
         }
-        ` : `
+        `
+          : `
         .keyword-detail-week-table-fix table {
           min-width: 1320px !important;
         }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { memo, useMemo, useState } from "react";
 import { KRW } from "../../../src/lib/report/format";
 import { groupByGroup } from "../../../src/lib/report/aggregate";
 import DataBarCell from "../ui/DataBarCell";
@@ -162,6 +162,8 @@ function generateSourceInsights(bySource: any[], monthGoal: any) {
     };
   });
 
+  if (norm.length === 0) return [];
+
   const total = norm.reduce(
     (acc, r) => {
       acc.cost += r.cost;
@@ -285,71 +287,498 @@ function highlightInsightText(text: string) {
   return segments;
 }
 
-export default function StructureSection({
-  reportType,
-  bySource,
-  byCampaign,
-  rows,
-  monthGoal,
+// ✅ 수정: max 계산 반복을 줄이기 위한 공용 helper
+function getMetricMaxes(rows: any[]) {
+  return {
+    maxImpr: Math.max(0, ...rows.map((r: any) => toNum(r.impressions ?? r.impr))),
+    maxClicks: Math.max(0, ...rows.map((r: any) => toNum(r.clicks))),
+    maxCost: Math.max(0, ...rows.map((r: any) => toNum(r.cost))),
+    maxConv: Math.max(0, ...rows.map((r: any) => toNum(r.conversions ?? r.conv))),
+    maxRev: Math.max(0, ...rows.map((r: any) => toNum(r.revenue))),
+  };
+}
+
+type SourceTableProps = {
+  isTraffic: boolean;
+  sourceRows: any[];
+  allRowsLoading?: boolean;
+};
+
+const SourceTable = memo(function SourceTable({
+  isTraffic,
+  sourceRows,
   allRowsLoading,
-}: Props) {
-  const isTraffic = reportType === "traffic";
+}: SourceTableProps) {
+  const srcMax = useMemo(() => getMetricMaxes(sourceRows), [sourceRows]);
 
-  const scopedRows = Array.isArray(rows) ? rows : [];
-  const sourceRows = Array.isArray(bySource) ? bySource : [];
-  const campaignRows = Array.isArray(byCampaign) ? byCampaign : [];
+  return (
+    <div className={TABLE_SURFACE_CLASS}>
+      <table
+        className={[
+          "w-full text-sm",
+          isTraffic ? "min-w-[860px]" : "min-w-[1320px]",
+        ].join(" ")}
+      >
+        <thead className={TABLE_HEAD_CLASS}>
+          <tr>
+            <th className={FIRST_TH_CLASS}>Source</th>
+            <th className={TH_CLASS}>Impr</th>
+            <th className={TH_CLASS}>Clicks</th>
+            <th className={TH_CLASS}>CTR</th>
+            <th className={TH_CLASS}>CPC</th>
+            <th className={TH_CLASS}>Cost</th>
+            {!isTraffic && <th className={TH_CLASS}>Conv</th>}
+            {!isTraffic && <th className={TH_CLASS}>CVR</th>}
+            {!isTraffic && <th className={TH_CLASS}>CPA</th>}
+            {!isTraffic && <th className={TH_CLASS}>Revenue</th>}
+            {!isTraffic && <th className={TH_CLASS}>ROAS</th>}
+          </tr>
+        </thead>
 
-  const srcMaxImpr = Math.max(
-    0,
-    ...sourceRows.map((r: any) => toNum(r.impressions ?? r.impr))
-  );
-  const srcMaxClicks = Math.max(
-    0,
-    ...sourceRows.map((r: any) => toNum(r.clicks))
-  );
-  const srcMaxCost = Math.max(
-    0,
-    ...sourceRows.map((r: any) => toNum(r.cost))
-  );
-  const srcMaxConv = Math.max(
-    0,
-    ...sourceRows.map((r: any) => toNum(r.conversions ?? r.conv))
-  );
-  const srcMaxRev = Math.max(
-    0,
-    ...sourceRows.map((r: any) => toNum(r.revenue))
-  );
+        <tbody>
+          {sourceRows.length === 0 ? (
+            <tr className="border-t border-slate-200/90">
+              <td className={EMPTY_STATE_CLASS} colSpan={isTraffic ? 6 : 11}>
+                {(allRowsLoading ?? false)
+                  ? "데이터 로딩 중..."
+                  : "표시할 소스 데이터가 없습니다. (필터 조건을 확인해 주세요)"}
+              </td>
+            </tr>
+          ) : (
+            sourceRows.map((r: any, idx: number) => {
+              const impr = toNum(r.impressions ?? r.impr);
+              const clicks = toNum(r.clicks);
+              const ctr = toRate01(r.ctr);
+              const cpc = toNum(r.cpc);
+              const cost = toNum(r.cost);
+              const conv = toNum(r.conversions ?? r.conv);
+              const cvr = toRate01(r.cvr);
+              const cpa = toNum(r.cpa);
+              const revenue = toNum(r.revenue);
+              const roas = toRoas01(r.roas);
 
-  const campMaxImpr = Math.max(
-    0,
-    ...campaignRows.map((r: any) => toNum(r.impressions ?? r.impr))
-  );
-  const campMaxClicks = Math.max(
-    0,
-    ...campaignRows.map((r: any) => toNum(r.clicks))
-  );
-  const campMaxCost = Math.max(
-    0,
-    ...campaignRows.map((r: any) => toNum(r.cost))
-  );
-  const campMaxConv = Math.max(
-    0,
-    ...campaignRows.map((r: any) => toNum(r.conversions ?? r.conv))
-  );
-  const campMaxRev = Math.max(
-    0,
-    ...campaignRows.map((r: any) => toNum(r.revenue))
-  );
+              return (
+                <tr
+                  key={r.source ?? idx}
+                  className="border-t border-slate-200/90 even:bg-slate-50/45 hover:bg-emerald-50/45 transition-colors"
+                >
+                  <td className={FIRST_TD_CLASS}>{r.source}</td>
 
-  const insightLoading = (allRowsLoading ?? false) && sourceRows.length === 0;
-  const [sentences, setSentences] = useState<string[]>([]);
+                  <td className={TD_CLASS}>
+                    <DataBarCell value={impr} max={srcMax.maxImpr} />
+                  </td>
 
-  useEffect(() => {
-    if (sourceRows.length > 0)
-      setSentences(generateSourceInsights(sourceRows, monthGoal));
-    else setSentences([]);
+                  <td className={TD_CLASS}>
+                    <DataBarCell value={clicks} max={srcMax.maxClicks} />
+                  </td>
+
+                  <td className={`${TD_CLASS} font-medium text-violet-600`}>
+                    {(ctr * 100).toFixed(2)}%
+                  </td>
+
+                  <td className={TD_CLASS}>{KRW(cpc)}</td>
+
+                  <td className={TD_CLASS}>
+                    <DataBarCell
+                      value={cost}
+                      max={srcMax.maxCost}
+                      label={KRW(cost)}
+                    />
+                  </td>
+
+                  {!isTraffic && (
+                    <td className={TD_CLASS}>
+                      <DataBarCell value={conv} max={srcMax.maxConv} />
+                    </td>
+                  )}
+
+                  {!isTraffic && (
+                    <td className={`${TD_CLASS} font-medium text-violet-600`}>
+                      {(cvr * 100).toFixed(2)}%
+                    </td>
+                  )}
+
+                  {!isTraffic && <td className={TD_CLASS}>{KRW(cpa)}</td>}
+
+                  {!isTraffic && (
+                    <td className={TD_CLASS}>
+                      <DataBarCell
+                        value={revenue}
+                        max={srcMax.maxRev}
+                        label={KRW(revenue)}
+                      />
+                    </td>
+                  )}
+
+                  {!isTraffic && (
+                    <td className={`${TD_CLASS} font-semibold text-orange-600`}>
+                      {(roas * 100).toFixed(1)}%
+                    </td>
+                  )}
+                </tr>
+              );
+            })
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+});
+
+type InsightPanelProps = {
+  sourceRows: any[];
+  monthGoal: any;
+  insightLoading: boolean;
+};
+
+const InsightPanel = memo(function InsightPanel({
+  sourceRows,
+  monthGoal,
+  insightLoading,
+}: InsightPanelProps) {
+  const sentences = useMemo(() => {
+    if (sourceRows.length === 0) return [];
+    return generateSourceInsights(sourceRows, monthGoal);
   }, [sourceRows, monthGoal]);
 
+  return (
+    <div className="overflow-hidden rounded-[26px] border border-slate-200/90 bg-[linear-gradient(135deg,rgba(15,23,42,0.02),rgba(255,255,255,0.98)_18%,rgba(245,243,255,0.92)_56%,rgba(255,247,237,0.92)_100%)] shadow-[0_14px_34px_rgba(15,23,42,0.08)] ring-1 ring-white/70">
+      <div className="border-b border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(248,250,252,0.84))] px-5 py-4">
+        <div className="flex flex-wrap items-center gap-2 text-sm text-slate-700">
+          <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-violet-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(245,243,255,0.9))] shadow-sm">
+            🧠
+          </span>
+
+          <span className="inline-flex items-center rounded-full border border-violet-200/80 bg-violet-50/80 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-violet-700">
+            AI Insight
+          </span>
+
+          <span className="font-semibold text-slate-900">구조 분석 포인트</span>
+
+          <span className="font-normal text-slate-400">-</span>
+
+          <span className="font-normal text-slate-500">
+            현재 소스 구조를 목표 기준으로 해석해 우선 점검 포인트를
+            정리합니다.
+          </span>
+        </div>
+      </div>
+
+      <div className="px-5 py-5">
+        {insightLoading ? (
+          <div className="rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-4 text-sm text-slate-500 shadow-sm">
+            인사이트 생성 중...
+          </div>
+        ) : sourceRows.length === 0 ? (
+          <div className="rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-4 text-sm text-slate-500 shadow-sm">
+            소스 데이터가 없어서 인사이트를 만들 수 없습니다. (필터/데이터
+            확인)
+          </div>
+        ) : sentences.length === 0 ? (
+          <div className="rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-4 text-sm text-slate-500 shadow-sm">
+            인사이트 생성 실패: sourceRows는 있는데 문장이 비어있습니다.
+            (값/키 확인)
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {sentences.map((s, i) => (
+              <div
+                key={i}
+                className="group rounded-[22px] border border-slate-200/80 bg-white/88 px-4 py-4 shadow-[0_8px_22px_rgba(15,23,42,0.035)] transition hover:-translate-y-[1px] hover:shadow-[0_12px_28px_rgba(15,23,42,0.06)]"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(180deg,rgba(79,70,229,0.12),rgba(124,58,237,0.08))] text-xs font-bold text-violet-700 ring-1 ring-violet-200/70">
+                    {i + 1}
+                  </div>
+
+                  <div className="min-w-0 flex-1 pt-0.5">
+                    <div className="mb-1 flex items-center gap-2">
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                        Insight
+                      </span>
+                      <span className="h-1 w-1 rounded-full bg-slate-300" />
+                      <span className="text-[11px] font-medium text-slate-400">
+                        구조 분석
+                      </span>
+                    </div>
+
+                    <p className="whitespace-pre-wrap text-[15px] leading-7 text-slate-700">
+                      {highlightInsightText(s).map((part, idx) => (
+                        <span
+                          key={`${i}-${idx}`}
+                          className={part.className ?? undefined}
+                        >
+                          {part.text}
+                        </span>
+                      ))}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
+
+type CampaignTableProps = {
+  isTraffic: boolean;
+  campaignRows: any[];
+};
+
+const CampaignTable = memo(function CampaignTable({
+  isTraffic,
+  campaignRows,
+}: CampaignTableProps) {
+  const campMax = useMemo(() => getMetricMaxes(campaignRows), [campaignRows]);
+
+  return (
+    <div className={TABLE_SURFACE_CLASS}>
+      <table
+        className={[
+          "w-full text-sm border-collapse",
+          isTraffic ? "min-w-[860px]" : "min-w-[1320px]",
+        ].join(" ")}
+      >
+        <thead className={TABLE_HEAD_CLASS}>
+          <tr>
+            <th className={FIRST_TH_CLASS}>Campaign</th>
+            <th className={TH_CLASS}>Impr</th>
+            <th className={TH_CLASS}>Clicks</th>
+            <th className={TH_CLASS}>CTR</th>
+            <th className={TH_CLASS}>CPC</th>
+            <th className={TH_CLASS}>Cost</th>
+            {!isTraffic && <th className={TH_CLASS}>Conv</th>}
+            {!isTraffic && <th className={TH_CLASS}>CVR</th>}
+            {!isTraffic && <th className={TH_CLASS}>CPA</th>}
+            {!isTraffic && <th className={TH_CLASS}>Revenue</th>}
+            {!isTraffic && <th className={TH_CLASS}>ROAS</th>}
+          </tr>
+        </thead>
+
+        <tbody>
+          {campaignRows.map((r: any, idx: number) => {
+            const impr = toNum(r.impressions ?? r.impr);
+            const clicks = toNum(r.clicks);
+            const ctr = toRate01(r.ctr);
+            const cpc = toNum(r.cpc);
+            const cost = toNum(r.cost);
+            const conv = toNum(r.conversions ?? r.conv);
+            const cvr = toRate01(r.cvr);
+            const cpa = toNum(r.cpa);
+            const revenue = toNum(r.revenue);
+            const roas = toRoas01(r.roas);
+
+            return (
+              <tr
+                key={r.campaign ?? idx}
+                className="border-t border-slate-200/90 even:bg-slate-50/45 hover:bg-sky-50/45 transition-colors"
+              >
+                <td className={FIRST_TD_CLASS}>{r.campaign}</td>
+
+                <td className={TD_CLASS}>
+                  <DataBarCell value={impr} max={campMax.maxImpr} />
+                </td>
+
+                <td className={TD_CLASS}>
+                  <DataBarCell value={clicks} max={campMax.maxClicks} />
+                </td>
+
+                <td className={`${TD_CLASS} font-medium text-violet-600`}>
+                  {(ctr * 100).toFixed(2)}%
+                </td>
+
+                <td className={TD_CLASS}>{KRW(cpc)}</td>
+
+                <td className={TD_CLASS}>
+                  <DataBarCell
+                    value={cost}
+                    max={campMax.maxCost}
+                    label={KRW(cost)}
+                  />
+                </td>
+
+                {!isTraffic && (
+                  <td className={TD_CLASS}>
+                    <DataBarCell value={conv} max={campMax.maxConv} />
+                  </td>
+                )}
+
+                {!isTraffic && (
+                  <td className={`${TD_CLASS} font-medium text-violet-600`}>
+                    {(cvr * 100).toFixed(2)}%
+                  </td>
+                )}
+
+                {!isTraffic && <td className={TD_CLASS}>{KRW(cpa)}</td>}
+
+                {!isTraffic && (
+                  <td className={TD_CLASS}>
+                    <DataBarCell
+                      value={revenue}
+                      max={campMax.maxRev}
+                      label={KRW(revenue)}
+                    />
+                  </td>
+                )}
+
+                {!isTraffic && (
+                  <td className={`${TD_CLASS} font-semibold text-orange-600`}>
+                    {(roas * 100).toFixed(1)}%
+                  </td>
+                )}
+              </tr>
+            );
+          })}
+
+          {campaignRows.length === 0 && (
+            <tr className="border-t border-slate-200/90">
+              <td className={EMPTY_STATE_CLASS} colSpan={isTraffic ? 6 : 11}>
+                표시할 캠페인 데이터가 없습니다. (필터/컬럼명을 확인)
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+});
+
+type GroupTableProps = {
+  isTraffic: boolean;
+  groupAggRows: any[];
+};
+
+const GroupTable = memo(function GroupTable({
+  isTraffic,
+  groupAggRows,
+}: GroupTableProps) {
+  const grpMax = useMemo(() => getMetricMaxes(groupAggRows), [groupAggRows]);
+
+  return (
+    <div className={TABLE_SURFACE_CLASS}>
+      <table
+        className={[
+          "w-full text-sm border-collapse",
+          isTraffic ? "min-w-[860px]" : "min-w-[1320px]",
+        ].join(" ")}
+      >
+        <thead className={TABLE_HEAD_CLASS}>
+          <tr>
+            <th className={FIRST_TH_CLASS}>Group</th>
+            <th className={TH_CLASS}>Impr</th>
+            <th className={TH_CLASS}>Clicks</th>
+            <th className={TH_CLASS}>CTR</th>
+            <th className={TH_CLASS}>CPC</th>
+            <th className={TH_CLASS}>Cost</th>
+            {!isTraffic && <th className={TH_CLASS}>Conv</th>}
+            {!isTraffic && <th className={TH_CLASS}>CVR</th>}
+            {!isTraffic && <th className={TH_CLASS}>CPA</th>}
+            {!isTraffic && <th className={TH_CLASS}>Revenue</th>}
+            {!isTraffic && <th className={TH_CLASS}>ROAS</th>}
+          </tr>
+        </thead>
+
+        <tbody>
+          {groupAggRows.map((r: any, idx: number) => {
+            const impr = toNum(r.impressions ?? r.impr);
+            const clicks = toNum(r.clicks);
+            const ctr = toRate01(r.ctr);
+            const cpc = toNum(r.cpc);
+            const cost = toNum(r.cost);
+            const conv = toNum(r.conversions ?? r.conv);
+            const cvr = toRate01(r.cvr);
+            const cpa = toNum(r.cpa);
+            const revenue = toNum(r.revenue);
+            const roas = toRoas01(r.roas);
+
+            return (
+              <tr
+                key={r.group ?? idx}
+                className="border-t border-slate-200/90 even:bg-slate-50/45 hover:bg-amber-50/45 transition-colors"
+              >
+                <td className={FIRST_TD_CLASS}>{r.group}</td>
+
+                <td className={TD_CLASS}>
+                  <DataBarCell value={impr} max={grpMax.maxImpr} />
+                </td>
+
+                <td className={TD_CLASS}>
+                  <DataBarCell value={clicks} max={grpMax.maxClicks} />
+                </td>
+
+                <td className={`${TD_CLASS} font-medium text-violet-600`}>
+                  {(ctr * 100).toFixed(2)}%
+                </td>
+
+                <td className={TD_CLASS}>{KRW(cpc)}</td>
+
+                <td className={TD_CLASS}>
+                  <DataBarCell
+                    value={cost}
+                    max={grpMax.maxCost}
+                    label={KRW(cost)}
+                  />
+                </td>
+
+                {!isTraffic && (
+                  <td className={TD_CLASS}>
+                    <DataBarCell value={conv} max={grpMax.maxConv} />
+                  </td>
+                )}
+
+                {!isTraffic && (
+                  <td className={`${TD_CLASS} font-medium text-violet-600`}>
+                    {(cvr * 100).toFixed(2)}%
+                  </td>
+                )}
+
+                {!isTraffic && <td className={TD_CLASS}>{KRW(cpa)}</td>}
+
+                {!isTraffic && (
+                  <td className={TD_CLASS}>
+                    <DataBarCell
+                      value={revenue}
+                      max={grpMax.maxRev}
+                      label={KRW(revenue)}
+                    />
+                  </td>
+                )}
+
+                {!isTraffic && (
+                  <td className={`${TD_CLASS} font-semibold text-orange-600`}>
+                    {(roas * 100).toFixed(1)}%
+                  </td>
+                )}
+              </tr>
+            );
+          })}
+
+          {groupAggRows.length === 0 && (
+            <tr className="border-t border-slate-200/90">
+              <td className={EMPTY_STATE_CLASS} colSpan={isTraffic ? 6 : 11}>
+                표시할 그룹 데이터가 없습니다. (필터/캠페인 선택/컬럼명을
+                확인)
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+});
+
+type GroupSectionProps = {
+  isTraffic: boolean;
+  scopedRows: any[];
+};
+
+const GroupSection = memo(function GroupSection({
+  isTraffic,
+  scopedRows,
+}: GroupSectionProps) {
   const [selectedCampaign, setSelectedCampaign] = useState<string | null>(null);
   const [campaignOpen, setCampaignOpen] = useState(false);
 
@@ -372,26 +801,92 @@ export default function StructureSection({
   const byGroup = useMemo(() => groupByGroup(groupRows), [groupRows]);
   const groupAggRows = Array.isArray(byGroup) ? byGroup : [];
 
-  const grpMaxImpr = Math.max(
-    0,
-    ...groupAggRows.map((r: any) => toNum(r.impressions ?? r.impr))
+  return (
+    <div className="relative">
+      <SectionIntro
+        badge="🧩 GROUP"
+        title="그룹별 성과"
+        description="선택한 캠페인 기준으로 그룹 구조를 확인해 세부 운영 단위의 편차를 점검합니다."
+        compact
+      />
+
+      <div className="mb-3 flex items-center justify-end gap-4">
+        <div className="relative">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setCampaignOpen((prev) => !prev);
+            }}
+            className="rounded-xl border border-slate-200/90 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+          >
+            캠페인명 {campaignOpen ? "▲" : "▼"}
+          </button>
+
+          {campaignOpen && (
+            <div
+              className="absolute right-0 z-50 mt-2 w-64 rounded-2xl border border-slate-200/90 bg-white p-2 shadow-[0_18px_40px_rgba(15,23,42,0.14)]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="max-h-80 space-y-1 overflow-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedCampaign(null);
+                    setCampaignOpen(false);
+                  }}
+                  className={`w-full rounded-xl px-3 py-2 text-left text-sm transition ${
+                    selectedCampaign == null
+                      ? "bg-slate-900 text-white"
+                      : "bg-slate-50 text-slate-700 hover:bg-slate-100"
+                  }`}
+                >
+                  전체
+                </button>
+
+                {campaignOptions.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => {
+                      setSelectedCampaign(c);
+                      setCampaignOpen(false);
+                    }}
+                    className={`w-full rounded-xl px-3 py-2 text-left text-sm transition ${
+                      selectedCampaign === c
+                        ? "bg-slate-900 text-white"
+                        : "bg-slate-50 text-slate-700 hover:bg-slate-100"
+                    }`}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <GroupTable isTraffic={isTraffic} groupAggRows={groupAggRows} />
+    </div>
   );
-  const grpMaxClicks = Math.max(
-    0,
-    ...groupAggRows.map((r: any) => toNum(r.clicks))
-  );
-  const grpMaxCost = Math.max(
-    0,
-    ...groupAggRows.map((r: any) => toNum(r.cost))
-  );
-  const grpMaxConv = Math.max(
-    0,
-    ...groupAggRows.map((r: any) => toNum(r.conversions ?? r.conv))
-  );
-  const grpMaxRev = Math.max(
-    0,
-    ...groupAggRows.map((r: any) => toNum(r.revenue))
-  );
+});
+
+export default function StructureSection({
+  reportType,
+  bySource,
+  byCampaign,
+  rows,
+  monthGoal,
+  allRowsLoading,
+}: Props) {
+  const isTraffic = reportType === "traffic";
+
+  const scopedRows = Array.isArray(rows) ? rows : [];
+  const sourceRows = Array.isArray(bySource) ? bySource : [];
+  const campaignRows = Array.isArray(byCampaign) ? byCampaign : [];
+
+  const insightLoading = (allRowsLoading ?? false) && sourceRows.length === 0;
 
   return (
     <div className="mt-6 space-y-8">
@@ -403,195 +898,19 @@ export default function StructureSection({
           compact
         />
 
-        <div className={TABLE_SURFACE_CLASS}>
-          <table
-            className={[
-              "w-full text-sm",
-              isTraffic ? "min-w-[860px]" : "min-w-[1320px]",
-            ].join(" ")}
-          >
-            <thead className={TABLE_HEAD_CLASS}>
-              <tr>
-                <th className={FIRST_TH_CLASS}>Source</th>
-                <th className={TH_CLASS}>Impr</th>
-                <th className={TH_CLASS}>Clicks</th>
-                <th className={TH_CLASS}>CTR</th>
-                <th className={TH_CLASS}>CPC</th>
-                <th className={TH_CLASS}>Cost</th>
-                {!isTraffic && <th className={TH_CLASS}>Conv</th>}
-                {!isTraffic && <th className={TH_CLASS}>CVR</th>}
-                {!isTraffic && <th className={TH_CLASS}>CPA</th>}
-                {!isTraffic && <th className={TH_CLASS}>Revenue</th>}
-                {!isTraffic && <th className={TH_CLASS}>ROAS</th>}
-              </tr>
-            </thead>
-
-            <tbody>
-              {sourceRows.length === 0 ? (
-                <tr className="border-t border-slate-200/90">
-                  <td
-                    className={EMPTY_STATE_CLASS}
-                    colSpan={isTraffic ? 6 : 11}
-                  >
-                    {(allRowsLoading ?? false)
-                      ? "데이터 로딩 중..."
-                      : "표시할 소스 데이터가 없습니다. (필터 조건을 확인해 주세요)"}
-                  </td>
-                </tr>
-              ) : (
-                sourceRows.map((r: any, idx: number) => (
-                  <tr
-                    key={r.source ?? idx}
-                    className="border-t border-slate-200/90 even:bg-slate-50/45 hover:bg-emerald-50/45 transition-colors"
-                  >
-                    <td className={FIRST_TD_CLASS}>{r.source}</td>
-
-                    <td className={TD_CLASS}>
-                      <DataBarCell
-                        value={toNum(r.impressions ?? r.impr)}
-                        max={srcMaxImpr}
-                      />
-                    </td>
-
-                    <td className={TD_CLASS}>
-                      <DataBarCell value={toNum(r.clicks)} max={srcMaxClicks} />
-                    </td>
-
-                    <td className={`${TD_CLASS} font-medium text-violet-600`}>
-                      {(toRate01(r.ctr) * 100).toFixed(2)}%
-                    </td>
-
-                    <td className={TD_CLASS}>{KRW(toNum(r.cpc))}</td>
-
-                    <td className={TD_CLASS}>
-                      <DataBarCell
-                        value={toNum(r.cost)}
-                        max={srcMaxCost}
-                        label={KRW(toNum(r.cost))}
-                      />
-                    </td>
-
-                    {!isTraffic && (
-                      <td className={TD_CLASS}>
-                        <DataBarCell
-                          value={toNum(r.conversions ?? r.conv)}
-                          max={srcMaxConv}
-                        />
-                      </td>
-                    )}
-
-                    {!isTraffic && (
-                      <td className={`${TD_CLASS} font-medium text-violet-600`}>
-                        {(toRate01(r.cvr) * 100).toFixed(2)}%
-                      </td>
-                    )}
-
-                    {!isTraffic && (
-                      <td className={TD_CLASS}>{KRW(toNum(r.cpa))}</td>
-                    )}
-
-                    {!isTraffic && (
-                      <td className={TD_CLASS}>
-                        <DataBarCell
-                          value={toNum(r.revenue)}
-                          max={srcMaxRev}
-                          label={KRW(toNum(r.revenue))}
-                        />
-                      </td>
-                    )}
-
-                    {!isTraffic && (
-                      <td className={`${TD_CLASS} font-semibold text-orange-600`}>
-                        {(toRoas01(r.roas) * 100).toFixed(1)}%
-                      </td>
-                    )}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        <SourceTable
+          isTraffic={isTraffic}
+          sourceRows={sourceRows}
+          allRowsLoading={allRowsLoading}
+        />
       </div>
 
       <div>
-        <div className="overflow-hidden rounded-[26px] border border-slate-200/90 bg-[linear-gradient(135deg,rgba(15,23,42,0.02),rgba(255,255,255,0.98)_18%,rgba(245,243,255,0.92)_56%,rgba(255,247,237,0.92)_100%)] shadow-[0_14px_34px_rgba(15,23,42,0.08)] ring-1 ring-white/70">
-          <div className="border-b border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(248,250,252,0.84))] px-5 py-4">
-            <div className="flex flex-wrap items-center gap-2 text-sm text-slate-700">
-              <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-violet-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(245,243,255,0.9))] shadow-sm">
-                🧠
-              </span>
-
-              <span className="inline-flex items-center rounded-full border border-violet-200/80 bg-violet-50/80 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-violet-700">
-                AI Insight
-              </span>
-
-              <span className="font-semibold text-slate-900">구조 분석 포인트</span>
-
-              <span className="font-normal text-slate-400">-</span>
-
-              <span className="font-normal text-slate-500">
-                현재 소스 구조를 목표 기준으로 해석해 우선 점검 포인트를
-                정리합니다.
-              </span>
-            </div>
-          </div>
-
-          <div className="px-5 py-5">
-            {insightLoading ? (
-              <div className="rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-4 text-sm text-slate-500 shadow-sm">
-                인사이트 생성 중...
-              </div>
-            ) : sourceRows.length === 0 ? (
-              <div className="rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-4 text-sm text-slate-500 shadow-sm">
-                소스 데이터가 없어서 인사이트를 만들 수 없습니다. (필터/데이터
-                확인)
-              </div>
-            ) : sentences.length === 0 ? (
-              <div className="rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-4 text-sm text-slate-500 shadow-sm">
-                인사이트 생성 실패: sourceRows는 있는데 문장이 비어있습니다.
-                (값/키 확인)
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {sentences.map((s, i) => (
-                  <div
-                    key={i}
-                    className="group rounded-[22px] border border-slate-200/80 bg-white/88 px-4 py-4 shadow-[0_8px_22px_rgba(15,23,42,0.035)] transition hover:-translate-y-[1px] hover:shadow-[0_12px_28px_rgba(15,23,42,0.06)]"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(180deg,rgba(79,70,229,0.12),rgba(124,58,237,0.08))] text-xs font-bold text-violet-700 ring-1 ring-violet-200/70">
-                        {i + 1}
-                      </div>
-
-                      <div className="min-w-0 flex-1 pt-0.5">
-                        <div className="mb-1 flex items-center gap-2">
-                          <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                            Insight
-                          </span>
-                          <span className="h-1 w-1 rounded-full bg-slate-300" />
-                          <span className="text-[11px] font-medium text-slate-400">
-                            구조 분석
-                          </span>
-                        </div>
-
-                        <p className="whitespace-pre-wrap text-[15px] leading-7 text-slate-700">
-                          {highlightInsightText(s).map((part, idx) => (
-                            <span
-                              key={`${i}-${idx}`}
-                              className={part.className ?? undefined}
-                            >
-                              {part.text}
-                            </span>
-                          ))}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+        <InsightPanel
+          sourceRows={sourceRows}
+          monthGoal={monthGoal}
+          insightLoading={insightLoading}
+        />
       </div>
 
       <div>
@@ -602,287 +921,10 @@ export default function StructureSection({
           compact
         />
 
-        <div className={TABLE_SURFACE_CLASS}>
-          <table
-            className={[
-              "w-full text-sm border-collapse",
-              isTraffic ? "min-w-[860px]" : "min-w-[1320px]",
-            ].join(" ")}
-          >
-            <thead className={TABLE_HEAD_CLASS}>
-              <tr>
-                <th className={FIRST_TH_CLASS}>Campaign</th>
-                <th className={TH_CLASS}>Impr</th>
-                <th className={TH_CLASS}>Clicks</th>
-                <th className={TH_CLASS}>CTR</th>
-                <th className={TH_CLASS}>CPC</th>
-                <th className={TH_CLASS}>Cost</th>
-                {!isTraffic && <th className={TH_CLASS}>Conv</th>}
-                {!isTraffic && <th className={TH_CLASS}>CVR</th>}
-                {!isTraffic && <th className={TH_CLASS}>CPA</th>}
-                {!isTraffic && <th className={TH_CLASS}>Revenue</th>}
-                {!isTraffic && <th className={TH_CLASS}>ROAS</th>}
-              </tr>
-            </thead>
-
-            <tbody>
-              {campaignRows.map((r: any, idx: number) => (
-                <tr
-                  key={r.campaign ?? idx}
-                  className="border-t border-slate-200/90 even:bg-slate-50/45 hover:bg-sky-50/45 transition-colors"
-                >
-                  <td className={FIRST_TD_CLASS}>{r.campaign}</td>
-
-                  <td className={TD_CLASS}>
-                    <DataBarCell
-                      value={toNum(r.impressions ?? r.impr)}
-                      max={campMaxImpr}
-                    />
-                  </td>
-
-                  <td className={TD_CLASS}>
-                    <DataBarCell value={toNum(r.clicks)} max={campMaxClicks} />
-                  </td>
-
-                  <td className={`${TD_CLASS} font-medium text-violet-600`}>
-                    {(toRate01(r.ctr) * 100).toFixed(2)}%
-                  </td>
-
-                  <td className={TD_CLASS}>{KRW(toNum(r.cpc))}</td>
-
-                  <td className={TD_CLASS}>
-                    <DataBarCell
-                      value={toNum(r.cost)}
-                      max={campMaxCost}
-                      label={KRW(toNum(r.cost))}
-                    />
-                  </td>
-
-                  {!isTraffic && (
-                    <td className={TD_CLASS}>
-                      <DataBarCell
-                        value={toNum(r.conversions ?? r.conv)}
-                        max={campMaxConv}
-                      />
-                    </td>
-                  )}
-
-                  {!isTraffic && (
-                    <td className={`${TD_CLASS} font-medium text-violet-600`}>
-                      {(toRate01(r.cvr) * 100).toFixed(2)}%
-                    </td>
-                  )}
-
-                  {!isTraffic && (
-                    <td className={TD_CLASS}>{KRW(toNum(r.cpa))}</td>
-                  )}
-
-                  {!isTraffic && (
-                    <td className={TD_CLASS}>
-                      <DataBarCell
-                        value={toNum(r.revenue)}
-                        max={campMaxRev}
-                        label={KRW(toNum(r.revenue))}
-                      />
-                    </td>
-                  )}
-
-                  {!isTraffic && (
-                    <td className={`${TD_CLASS} font-semibold text-orange-600`}>
-                      {(toRoas01(r.roas) * 100).toFixed(1)}%
-                    </td>
-                  )}
-                </tr>
-              ))}
-
-              {campaignRows.length === 0 && (
-                <tr className="border-t border-slate-200/90">
-                  <td
-                    className={EMPTY_STATE_CLASS}
-                    colSpan={isTraffic ? 6 : 11}
-                  >
-                    표시할 캠페인 데이터가 없습니다. (필터/컬럼명을 확인)
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        <CampaignTable isTraffic={isTraffic} campaignRows={campaignRows} />
       </div>
 
-      <div className="relative">
-        <SectionIntro
-          badge="🧩 GROUP"
-          title="그룹별 성과"
-          description="선택한 캠페인 기준으로 그룹 구조를 확인해 세부 운영 단위의 편차를 점검합니다."
-          compact
-        />
-
-        <div className="mb-3 flex items-center justify-end gap-4">
-          <div className="relative">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setCampaignOpen((prev) => !prev);
-              }}
-              className="rounded-xl border border-slate-200/90 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
-            >
-              캠페인명 {campaignOpen ? "▲" : "▼"}
-            </button>
-
-            {campaignOpen && (
-              <div
-                className="absolute right-0 z-50 mt-2 w-64 rounded-2xl border border-slate-200/90 bg-white p-2 shadow-[0_18px_40px_rgba(15,23,42,0.14)]"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="max-h-80 space-y-1 overflow-auto">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedCampaign(null);
-                      setCampaignOpen(false);
-                    }}
-                    className={`w-full rounded-xl px-3 py-2 text-left text-sm transition ${
-                      selectedCampaign == null
-                        ? "bg-slate-900 text-white"
-                        : "bg-slate-50 text-slate-700 hover:bg-slate-100"
-                    }`}
-                  >
-                    전체
-                  </button>
-
-                  {campaignOptions.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => {
-                        setSelectedCampaign(c);
-                        setCampaignOpen(false);
-                      }}
-                      className={`w-full rounded-xl px-3 py-2 text-left text-sm transition ${
-                        selectedCampaign === c
-                          ? "bg-slate-900 text-white"
-                          : "bg-slate-50 text-slate-700 hover:bg-slate-100"
-                      }`}
-                    >
-                      {c}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className={TABLE_SURFACE_CLASS}>
-          <table
-            className={[
-              "w-full text-sm border-collapse",
-              isTraffic ? "min-w-[860px]" : "min-w-[1320px]",
-            ].join(" ")}
-          >
-            <thead className={TABLE_HEAD_CLASS}>
-              <tr>
-                <th className={FIRST_TH_CLASS}>Group</th>
-                <th className={TH_CLASS}>Impr</th>
-                <th className={TH_CLASS}>Clicks</th>
-                <th className={TH_CLASS}>CTR</th>
-                <th className={TH_CLASS}>CPC</th>
-                <th className={TH_CLASS}>Cost</th>
-                {!isTraffic && <th className={TH_CLASS}>Conv</th>}
-                {!isTraffic && <th className={TH_CLASS}>CVR</th>}
-                {!isTraffic && <th className={TH_CLASS}>CPA</th>}
-                {!isTraffic && <th className={TH_CLASS}>Revenue</th>}
-                {!isTraffic && <th className={TH_CLASS}>ROAS</th>}
-              </tr>
-            </thead>
-
-            <tbody>
-              {groupAggRows.map((r: any, idx: number) => (
-                <tr
-                  key={r.group ?? idx}
-                  className="border-t border-slate-200/90 even:bg-slate-50/45 hover:bg-amber-50/45 transition-colors"
-                >
-                  <td className={FIRST_TD_CLASS}>{r.group}</td>
-
-                  <td className={TD_CLASS}>
-                    <DataBarCell
-                      value={toNum(r.impressions ?? r.impr)}
-                      max={grpMaxImpr}
-                    />
-                  </td>
-
-                  <td className={TD_CLASS}>
-                    <DataBarCell value={toNum(r.clicks)} max={grpMaxClicks} />
-                  </td>
-
-                  <td className={`${TD_CLASS} font-medium text-violet-600`}>
-                    {(toRate01(r.ctr) * 100).toFixed(2)}%
-                  </td>
-
-                  <td className={TD_CLASS}>{KRW(toNum(r.cpc))}</td>
-
-                  <td className={TD_CLASS}>
-                    <DataBarCell
-                      value={toNum(r.cost)}
-                      max={grpMaxCost}
-                      label={KRW(toNum(r.cost))}
-                    />
-                  </td>
-
-                  {!isTraffic && (
-                    <td className={TD_CLASS}>
-                      <DataBarCell
-                        value={toNum(r.conversions ?? r.conv)}
-                        max={grpMaxConv}
-                      />
-                    </td>
-                  )}
-
-                  {!isTraffic && (
-                    <td className={`${TD_CLASS} font-medium text-violet-600`}>
-                      {(toRate01(r.cvr) * 100).toFixed(2)}%
-                    </td>
-                  )}
-
-                  {!isTraffic && (
-                    <td className={TD_CLASS}>{KRW(toNum(r.cpa))}</td>
-                  )}
-
-                  {!isTraffic && (
-                    <td className={TD_CLASS}>
-                      <DataBarCell
-                        value={toNum(r.revenue)}
-                        max={grpMaxRev}
-                        label={KRW(toNum(r.revenue))}
-                      />
-                    </td>
-                  )}
-
-                  {!isTraffic && (
-                    <td className={`${TD_CLASS} font-semibold text-orange-600`}>
-                      {(toRoas01(r.roas) * 100).toFixed(1)}%
-                    </td>
-                  )}
-                </tr>
-              ))}
-
-              {groupAggRows.length === 0 && (
-                <tr className="border-t border-slate-200/90">
-                  <td
-                    className={EMPTY_STATE_CLASS}
-                    colSpan={isTraffic ? 6 : 11}
-                  >
-                    표시할 그룹 데이터가 없습니다. (필터/캠페인 선택/컬럼명을
-                    확인)
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <GroupSection isTraffic={isTraffic} scopedRows={scopedRows} />
     </div>
   );
 }

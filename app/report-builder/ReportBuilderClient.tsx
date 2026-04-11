@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/src/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -159,6 +159,11 @@ export default function ReportBuilderPage() {
   const [types, setTypes] = useState<ReportType[]>([]);
   const [reports, setReports] = useState<ReportRow[]>([]);
 
+  const [loadingReports, setLoadingReports] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextOffset, setNextOffset] = useState(0);
+
   const [creating, setCreating] = useState(false);
 
   const [advertisers, setAdvertisers] = useState<AdvertiserRow[]>([]);
@@ -178,6 +183,23 @@ export default function ReportBuilderPage() {
   const [deletingAdvertisers, setDeletingAdvertisers] = useState(false);
   const [selectedReportIds, setSelectedReportIds] = useState<string[]>([]);
   const [deletingReports, setDeletingReports] = useState(false);
+
+  const FOLDER_ROW_HEIGHT = 58;
+  const REPORT_ROW_HEIGHT = 68;
+  const OVERSCAN = 8;
+  const LIST_VIEWPORT_HEIGHT = 520;
+  const REPORTS_PAGE_SIZE = 100;
+  const LOAD_MORE_THRESHOLD = 240;
+
+  const listScrollRef = useRef<HTMLDivElement | null>(null);
+  const [listScrollTop, setListScrollTop] = useState(0);
+  const [listViewportHeight, setListViewportHeight] = useState(LIST_VIEWPORT_HEIGHT);
+
+  const reportsRequestSeqRef = useRef(0);
+  const nextOffsetRef = useRef(0);
+  const hasMoreRef = useRef(false);
+  const loadingReportsRef = useRef(false);
+  const loadingMoreRef = useRef(false);
 
   const canCreateReport = hasMinRole(memberRole, "staff");
   const canManageAdvertisers = hasMinRole(memberRole, "staff");
@@ -204,6 +226,219 @@ export default function ReportBuilderPage() {
     return data?.session?.access_token ?? null;
   }
 
+  const resetReportsState = useCallback(() => {
+    reportsRequestSeqRef.current += 1;
+
+    nextOffsetRef.current = 0;
+    hasMoreRef.current = false;
+    loadingReportsRef.current = false;
+    loadingMoreRef.current = false;
+
+    setReports([]);
+    setHasMore(false);
+    setNextOffset(0);
+    setLoadingReports(false);
+    setLoadingMore(false);
+  }, []);
+
+  const normalizeReportList = useCallback((list: any[]): ReportRow[] => {
+    return (list ?? []).map((r) => ({
+      id: String(r.id),
+      title: String(r.title ?? ""),
+      status: String(r.status ?? ""),
+      created_at: r.created_at ? String(r.created_at) : undefined,
+      advertiser_id: r.advertiser_id ? String(r.advertiser_id) : null,
+      advertiser_name: r.advertiser_name ? String(r.advertiser_name) : null,
+      share_token: r.share_token ? String(r.share_token) : null,
+      period_start: r.period_start ? String(r.period_start) : null,
+      period_end: r.period_end ? String(r.period_end) : null,
+      period_preset: r.period_preset ? String(r.period_preset) : null,
+      period_label: r.period_label ? String(r.period_label) : null,
+      draft_period_start: r.draft_period_start ? String(r.draft_period_start) : null,
+      draft_period_end: r.draft_period_end ? String(r.draft_period_end) : null,
+      draft_period_preset: r.draft_period_preset ? String(r.draft_period_preset) : null,
+      draft_period_label: r.draft_period_label ? String(r.draft_period_label) : null,
+      published_period_start: r.published_period_start
+        ? String(r.published_period_start)
+        : null,
+      published_period_end: r.published_period_end
+        ? String(r.published_period_end)
+        : null,
+      published_period_preset: r.published_period_preset
+        ? String(r.published_period_preset)
+        : null,
+      published_period_label: r.published_period_label
+        ? String(r.published_period_label)
+        : null,
+      published_at: r.published_at ? String(r.published_at) : null,
+    })) as ReportRow[];
+  }, []);
+
+  const hydrateMissingAdvertiserNames = useCallback(async (rows: ReportRow[]) => {
+    let nextReports = rows;
+
+    const missingNameIds = Array.from(
+      new Set(
+        nextReports
+          .filter((r) => r.advertiser_id && !r.advertiser_name)
+          .map((r) => r.advertiser_id as string)
+      )
+    );
+
+    if (!missingNameIds.length) return nextReports;
+
+    const { data: advs, error } = await supabase
+      .from("advertisers")
+      .select("id,name")
+      .in("id", missingNameIds);
+
+    if (error || !advs?.length) return nextReports;
+
+    const map = new Map<string, string>();
+    for (const a of advs as any[]) {
+      map.set(String(a.id), String(a.name ?? ""));
+    }
+
+    nextReports = nextReports.map((r) => {
+      if (r.advertiser_id && !r.advertiser_name) {
+        const nm = map.get(r.advertiser_id) ?? null;
+        return { ...r, advertiser_name: nm };
+      }
+      return r;
+    });
+
+    return nextReports;
+  }, []);
+
+  const mergeUniqueReports = useCallback((prev: ReportRow[], incoming: ReportRow[]) => {
+    if (!incoming.length) return prev;
+
+    const map = new Map<string, ReportRow>();
+    for (const row of prev) map.set(row.id, row);
+    for (const row of incoming) map.set(row.id, row);
+
+    return Array.from(map.values());
+  }, []);
+
+  const fetchReportsPage = useCallback(
+    async ({
+      reset = false,
+      forceOffset,
+    }: {
+      reset?: boolean;
+      forceOffset?: number;
+    } = {}) => {
+      if (!workspaceId) return;
+
+      const currentOffset =
+        typeof forceOffset === "number"
+          ? forceOffset
+          : reset
+          ? 0
+          : nextOffsetRef.current;
+
+      if (reset) {
+        if (loadingReportsRef.current) return;
+      } else {
+        if (loadingMoreRef.current) return;
+        if (!hasMoreRef.current && currentOffset !== 0) return;
+      }
+
+      const requestSeq = ++reportsRequestSeqRef.current;
+
+      if (reset) {
+        loadingReportsRef.current = true;
+        hasMoreRef.current = false;
+        nextOffsetRef.current = 0;
+
+        setLoadingReports(true);
+        setHasMore(false);
+        setNextOffset(0);
+      } else {
+        loadingMoreRef.current = true;
+        setLoadingMore(true);
+      }
+
+      try {
+        const token = await getAccessToken();
+        if (!token) return;
+
+        const qs = new URLSearchParams();
+        qs.set("workspace_id", workspaceId);
+        qs.set("limit", String(REPORTS_PAGE_SIZE));
+        qs.set("offset", String(currentOffset));
+
+        const res = await fetch(`/api/reports/list?${qs.toString()}`, {
+          method: "GET",
+          credentials: "include",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const json = await safeReadJson(res);
+
+        if (requestSeq !== reportsRequestSeqRef.current) return;
+
+        if (!res.ok || !(json as any)?.ok) {
+          console.warn("[reports/list] failed", res.status, json);
+          return;
+        }
+
+        const list = ((json as any)?.reports ?? []) as any[];
+        const normalized = normalizeReportList(list);
+        const hydrated = await hydrateMissingAdvertiserNames(normalized);
+
+        if (requestSeq !== reportsRequestSeqRef.current) return;
+
+        const parsedNextOffset = Number((json as any)?.next_offset);
+        const safeNextOffset = Number.isFinite(parsedNextOffset)
+          ? parsedNextOffset
+          : currentOffset + hydrated.length;
+
+        const safeHasMore =
+          typeof (json as any)?.has_more === "boolean"
+            ? Boolean((json as any)?.has_more)
+            : hydrated.length >= REPORTS_PAGE_SIZE;
+
+        setReports((prev) => {
+          return reset ? hydrated : mergeUniqueReports(prev, hydrated);
+        });
+
+        nextOffsetRef.current = safeNextOffset;
+        hasMoreRef.current = safeHasMore;
+
+        setNextOffset(safeNextOffset);
+        setHasMore(safeHasMore);
+      } catch (e) {
+        console.warn("[reports/list] exception", e);
+      } finally {
+        if (requestSeq === reportsRequestSeqRef.current) {
+          loadingReportsRef.current = false;
+          loadingMoreRef.current = false;
+
+          setLoadingReports(false);
+          setLoadingMore(false);
+        }
+      }
+    },
+    [
+      workspaceId,
+      REPORTS_PAGE_SIZE,
+      normalizeReportList,
+      hydrateMissingAdvertiserNames,
+      mergeUniqueReports,
+    ]
+  );
+
+  const fetchReports = useCallback(async () => {
+    await fetchReportsPage({ reset: true, forceOffset: 0 });
+  }, [fetchReportsPage]);
+
+  const loadMoreReports = useCallback(async () => {
+    await fetchReportsPage({ reset: false });
+  }, [fetchReportsPage]);
+
   useEffect(() => {
     if (!userId) {
       setWorkspaceId(null);
@@ -213,6 +448,7 @@ export default function ReportBuilderPage() {
       setMemberDivision(null);
       setMemberDepartment(null);
       setMemberTeam(null);
+      resetReportsState();
       return;
     }
 
@@ -227,6 +463,7 @@ export default function ReportBuilderPage() {
         setMemberDivision(null);
         setMemberDepartment(null);
         setMemberTeam(null);
+        resetReportsState();
         return;
       }
 
@@ -249,6 +486,7 @@ export default function ReportBuilderPage() {
         setMemberDivision(null);
         setMemberDepartment(null);
         setMemberTeam(null);
+        resetReportsState();
         return;
       }
 
@@ -272,6 +510,7 @@ export default function ReportBuilderPage() {
         setMemberDivision(null);
         setMemberDepartment(null);
         setMemberTeam(null);
+        resetReportsState();
         return;
       }
 
@@ -289,7 +528,7 @@ export default function ReportBuilderPage() {
         router.replace(`/report-builder?workspace_id=${encodeURIComponent(current.workspace_id)}`);
       }
     })();
-  }, [userId, workspaceIdFromQuery, router]);
+  }, [userId, workspaceIdFromQuery, router, resetReportsState]);
 
   useEffect(() => {
     if (!userId) {
@@ -373,7 +612,11 @@ export default function ReportBuilderPage() {
   }, [advertisers]);
 
   useEffect(() => {
-    if (!workspaceId) return;
+    if (!workspaceId) {
+      resetReportsState();
+      return;
+    }
+
     fetchReports();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId]);
@@ -390,73 +633,6 @@ export default function ReportBuilderPage() {
       setSelectedReportIds([]);
     }
   }, [canDeleteReports, selectedReportIds.length]);
-
-  async function fetchReports() {
-    if (!workspaceId) return;
-
-    const token = await getAccessToken();
-    if (!token) return;
-
-    const res = await fetch(
-      `/api/reports/list?workspace_id=${workspaceId}&limit=50`,
-      {
-        method: "GET",
-        credentials: "include",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
-
-    const json = await safeReadJson(res);
-    if (!res.ok || !(json as any).ok) {
-      console.warn("[reports/list] failed", res.status, json);
-      return;
-    }
-
-    const list = ((json as any).reports ?? []) as any[];
-
-    let nextReports = (list ?? []).map((r) => ({
-      id: String(r.id),
-      title: String(r.title ?? ""),
-      status: String(r.status ?? ""),
-      created_at: r.created_at ? String(r.created_at) : undefined,
-      advertiser_id: r.advertiser_id ? String(r.advertiser_id) : null,
-      advertiser_name: r.advertiser_name ? String(r.advertiser_name) : null,
-      share_token: r.share_token ? String(r.share_token) : null,
-    })) as ReportRow[];
-
-    const missingNameIds = Array.from(
-      new Set(
-        nextReports
-          .filter((r) => r.advertiser_id && !r.advertiser_name)
-          .map((r) => r.advertiser_id as string)
-      )
-    );
-
-    if (missingNameIds.length) {
-      const { data: advs, error } = await supabase
-        .from("advertisers")
-        .select("id,name")
-        .in("id", missingNameIds);
-
-      if (!error && advs?.length) {
-        const map = new Map<string, string>();
-        for (const a of advs as any[]) {
-          map.set(String(a.id), String(a.name ?? ""));
-        }
-        nextReports = nextReports.map((r) => {
-          if (r.advertiser_id && !r.advertiser_name) {
-            const nm = map.get(r.advertiser_id) ?? null;
-            return { ...r, advertiser_name: nm };
-          }
-          return r;
-        });
-      }
-    }
-
-    setReports(nextReports);
-  }
 
   async function signIn() {
     setLocalMsg("");
@@ -488,7 +664,7 @@ export default function ReportBuilderPage() {
     setMemberDivision(null);
     setMemberDepartment(null);
     setMemberTeam(null);
-    setReports([]);
+    resetReportsState();
     setAdvertisers([]);
     setSearch("");
     setReportFilter("all");
@@ -738,7 +914,6 @@ export default function ReportBuilderPage() {
 
       const deletedCount = Number((json as any)?.deleted_count ?? 0);
 
-      setReports((prev) => prev.filter((r) => !selectedReportIds.includes(r.id)));
       setSelectedReportIds([]);
       await fetchReports();
 
@@ -791,6 +966,7 @@ export default function ReportBuilderPage() {
     setSelectedReportIds([]);
     setSearch("");
     setLocalMsg("");
+    resetReportsState();
     router.replace(`/report-builder?workspace_id=${encodeURIComponent(nextWorkspaceId)}`);
   }
 
@@ -868,6 +1044,225 @@ export default function ReportBuilderPage() {
 
     return { map, orderedKeys };
   }, [filteredReports, advertisers]);
+
+  const virtualRows = useMemo(() => {
+    const rows: Array<
+      | {
+          kind: "folder";
+          key: string;
+          folderKey: string;
+          folderName: string;
+          isNone: boolean;
+          list: ReportRow[];
+          open: boolean;
+        }
+      | {
+          kind: "report";
+          key: string;
+          folderKey: string;
+          report: ReportRow;
+          idx: number;
+          listLength: number;
+        }
+    > = [];
+
+    for (const key of grouped.orderedKeys) {
+      const list = grouped.map.get(key) ?? [];
+      const isNone = key === "__none__";
+      const folderName = isNone
+        ? "광고주 미지정"
+        : advNameById.get(key) ||
+          (list.find((x) => x.advertiser_name)?.advertiser_name ?? "(광고주)");
+
+      const open = openMap[key] ?? true;
+
+      rows.push({
+        kind: "folder",
+        key: `folder:${key}`,
+        folderKey: key,
+        folderName,
+        isNone,
+        list,
+        open,
+      });
+
+      if (open) {
+        for (let idx = 0; idx < list.length; idx++) {
+          rows.push({
+            kind: "report",
+            key: `report:${key}:${list[idx].id}`,
+            folderKey: key,
+            report: list[idx],
+            idx,
+            listLength: list.length,
+          });
+        }
+      }
+    }
+
+    return rows;
+  }, [grouped, advNameById, openMap]);
+
+  const getVirtualRowHeight = useCallback(
+    (
+      row:
+        | {
+            kind: "folder";
+            key: string;
+            folderKey: string;
+            folderName: string;
+            isNone: boolean;
+            list: ReportRow[];
+            open: boolean;
+          }
+        | {
+            kind: "report";
+            key: string;
+            folderKey: string;
+            report: ReportRow;
+            idx: number;
+            listLength: number;
+          }
+    ) => {
+      return row.kind === "folder" ? FOLDER_ROW_HEIGHT : REPORT_ROW_HEIGHT;
+    },
+    [FOLDER_ROW_HEIGHT, REPORT_ROW_HEIGHT]
+  );
+
+  const virtualOffsets = useMemo(() => {
+    const offsets: number[] = new Array(virtualRows.length);
+    let acc = 0;
+
+    for (let i = 0; i < virtualRows.length; i += 1) {
+      offsets[i] = acc;
+      acc += getVirtualRowHeight(virtualRows[i]);
+    }
+
+    return offsets;
+  }, [virtualRows, getVirtualRowHeight]);
+
+  const totalVirtualHeight = useMemo(() => {
+    if (virtualRows.length === 0) return 0;
+    const lastIndex = virtualRows.length - 1;
+    return virtualOffsets[lastIndex] + getVirtualRowHeight(virtualRows[lastIndex]);
+  }, [virtualRows, virtualOffsets, getVirtualRowHeight]);
+
+  const findVirtualStartIndex = useCallback(
+    (scrollTop: number) => {
+      if (virtualRows.length === 0) return 0;
+
+      let left = 0;
+      let right = virtualRows.length - 1;
+      let answer = 0;
+
+      while (left <= right) {
+        const mid = Math.floor((left + right) / 2);
+        const rowTop = virtualOffsets[mid];
+        const rowBottom = rowTop + getVirtualRowHeight(virtualRows[mid]);
+
+        if (rowBottom >= scrollTop) {
+          answer = mid;
+          right = mid - 1;
+        } else {
+          left = mid + 1;
+        }
+      }
+
+      return answer;
+    },
+    [virtualRows, virtualOffsets, getVirtualRowHeight]
+  );
+
+  const virtualStartIndex = useMemo(() => {
+    return Math.max(0, findVirtualStartIndex(listScrollTop) - OVERSCAN);
+  }, [findVirtualStartIndex, listScrollTop, OVERSCAN]);
+
+  const virtualEndIndex = useMemo(() => {
+    const viewportBottom = listScrollTop + listViewportHeight;
+    return Math.min(
+      virtualRows.length,
+      findVirtualStartIndex(viewportBottom) + OVERSCAN + 1
+    );
+  }, [
+    findVirtualStartIndex,
+    listScrollTop,
+    listViewportHeight,
+    virtualRows.length,
+    OVERSCAN,
+  ]);
+
+  const visibleVirtualRows = useMemo(() => {
+    return virtualRows.slice(virtualStartIndex, virtualEndIndex);
+  }, [virtualRows, virtualStartIndex, virtualEndIndex]);
+
+  const handleListScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    setListScrollTop(e.currentTarget.scrollTop);
+  }, []);
+
+  useEffect(() => {
+    const el = listScrollRef.current;
+    if (!el) return;
+
+    const syncViewportHeight = () => {
+      setListViewportHeight(el.clientHeight || LIST_VIEWPORT_HEIGHT);
+    };
+
+    syncViewportHeight();
+
+    const observer = new ResizeObserver(() => {
+      syncViewportHeight();
+    });
+
+    observer.observe(el);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    const el = listScrollRef.current;
+    if (!el) return;
+    if (!workspaceId) return;
+    if (loadingReportsRef.current || loadingMoreRef.current) return;
+    if (!hasMoreRef.current) return;
+    if (totalVirtualHeight <= 0) return;
+
+    const viewportBottom = listScrollTop + listViewportHeight;
+    const triggerPoint = totalVirtualHeight - LOAD_MORE_THRESHOLD;
+
+    if (viewportBottom >= triggerPoint) {
+      loadMoreReports();
+    }
+  }, [
+    workspaceId,
+    listScrollTop,
+    listViewportHeight,
+    totalVirtualHeight,
+    loadMoreReports,
+    LOAD_MORE_THRESHOLD,
+  ]);
+
+  useEffect(() => {
+    if (!workspaceId) return;
+    if (loadingReportsRef.current || loadingMoreRef.current) return;
+    if (!hasMoreRef.current) return;
+    if (totalVirtualHeight <= 0) return;
+
+    const needsMoreToFillViewport =
+      totalVirtualHeight < listViewportHeight + 80;
+
+    if (needsMoreToFillViewport) {
+      loadMoreReports();
+    }
+  }, [workspaceId, totalVirtualHeight, listViewportHeight, loadMoreReports]);
+
+  useEffect(() => {
+    setListScrollTop(0);
+    if (listScrollRef.current) {
+      listScrollRef.current.scrollTop = 0;
+    }
+  }, [workspaceId, search, reportFilter, selectedAdvertiserId]);
 
   const visibleReportIds = useMemo(() => {
     return filteredReports.map((r) => r.id);
@@ -1407,10 +1802,10 @@ export default function ReportBuilderPage() {
                 <button
                   className="subBtn"
                   onClick={fetchReports}
-                  disabled={!userId || !workspaceId}
+                  disabled={!userId || !workspaceId || loadingReports}
                   style={{ padding: "10px 14px" }}
                 >
-                  새로고침
+                  {loadingReports ? "불러오는 중..." : "새로고침"}
                 </button>
 
                 <input
@@ -1492,124 +1887,194 @@ export default function ReportBuilderPage() {
               </div>
             ) : null}
 
-            {filteredReports.length === 0 && (
+            <div
+              style={{
+                marginTop: 10,
+                fontSize: 12,
+                color: "#6b7280",
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                flexWrap: "wrap",
+              }}
+            >
+              <span>현재 로딩된 리포트: {reports.length}개</span>
+              {loadingReports ? <span>첫 목록 불러오는 중...</span> : null}
+              {!loadingReports && loadingMore ? <span>추가 불러오는 중...</span> : null}
+              {!loadingReports && !loadingMore && hasMore ? (
+                <span>스크롤 하단에서 다음 페이지를 자동으로 불러옵니다.</span>
+              ) : null}
+            </div>
+
+            {filteredReports.length === 0 && !loadingReports && (
               <p style={{ marginTop: 10, opacity: 0.7 }}>
                 조건에 맞는 리포트가 없습니다.
               </p>
             )}
 
-            <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
-              {grouped.orderedKeys.map((key) => {
-                const list = grouped.map.get(key) ?? [];
-                const isNone = key === "__none__";
-                const folderName = isNone
-                  ? "광고주 미지정"
-                  : advNameById.get(key) ||
-                    (list.find((x) => x.advertiser_name)?.advertiser_name ??
-                      "(광고주)");
+            <div
+              ref={listScrollRef}
+              onScroll={handleListScroll}
+              style={{
+                marginTop: 12,
+                height: LIST_VIEWPORT_HEIGHT,
+                overflowY: "auto",
+                borderRadius: 14,
+              }}
+            >
+              <div
+                style={{
+                  position: "relative",
+                  height: totalVirtualHeight,
+                }}
+              >
+                {visibleVirtualRows.map((item, visibleIdx) => {
+                  const absoluteIndex = virtualStartIndex + visibleIdx;
+                  const top = virtualOffsets[absoluteIndex] ?? 0;
+                  const rowHeight = getVirtualRowHeight(item);
 
-                const open = openMap[key] ?? true;
-
-                return (
-                  <div key={key} className="folderBox">
-                    <button
-                      className="folderHeader"
-                      onClick={() => toggleFolder(key)}
-                    >
+                  if (item.kind === "folder") {
+                    return (
                       <div
+                        key={item.key}
                         style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 10,
-                          minWidth: 0,
+                          position: "absolute",
+                          top,
+                          left: 0,
+                          right: 0,
+                          height: rowHeight,
+                          paddingBottom: 10,
+                          boxSizing: "border-box",
                         }}
                       >
-                        <span
-                          style={{
-                            fontWeight: 900,
-                            width: 18,
-                            display: "inline-block",
-                          }}
-                        >
-                          {open ? "▼" : "▶"}
-                        </span>
-                        <div
-                          style={{
-                            fontWeight: 900,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {folderName}
-                        </div>
-                        <div style={{ fontSize: 12, opacity: 0.65 }}>
-                          ({list.length})
-                        </div>
-                      </div>
-
-                      <div style={{ fontSize: 12, opacity: 0.45 }}>
-                        {isNone ? "" : key}
-                      </div>
-                    </button>
-
-                    {open ? (
-                      <div className="folderBody">
-                        {list.map((r, idx) => {
-                          const checked = selectedReportIds.includes(r.id);
-
-                          return (
+                        <div className="folderBox">
+                          <button
+                            className="folderHeader"
+                            onClick={() => toggleFolder(item.folderKey)}
+                          >
                             <div
-                              key={r.id}
-                              className="reportRow"
                               style={{
-                                borderBottom:
-                                  idx === list.length - 1
-                                    ? "none"
-                                    : "1px solid #eee",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 10,
+                                minWidth: 0,
                               }}
                             >
-                              {canDeleteReports ? (
-                                <label
-                                  className="reportCheckWrap"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={() => toggleReportSelection(r.id)}
-                                  />
-                                </label>
-                              ) : null}
-
-                              <button
-                                onClick={() => router.push(`/reports/${r.id}`)}
-                                className={`reportItem reportItemMain ${
-                                  checked ? "reportItemSelected" : ""
-                                }`}
+                              <span
                                 style={{
-                                  width: "100%",
+                                  fontWeight: 900,
+                                  width: 18,
+                                  display: "inline-block",
                                 }}
                               >
-                                <div style={{ fontWeight: 700 }}>
-                                  {r.title}
-                                  <span style={{ fontSize: 12, opacity: 0.55 }}>
-                                    {" "}
-                                    · {String(r.status ?? "").toUpperCase()}
-                                  </span>
-                                </div>
-                                <div style={{ fontSize: 13, opacity: 0.6 }}>
-                                  {fmtDate(r.created_at ?? null)}
-                                </div>
-                              </button>
+                                {item.open ? "▼" : "▶"}
+                              </span>
+                              <div
+                                style={{
+                                  fontWeight: 900,
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {item.folderName}
+                              </div>
+                              <div style={{ fontSize: 12, opacity: 0.65 }}>
+                                ({item.list.length})
+                              </div>
                             </div>
-                          );
-                        })}
+
+                            <div style={{ fontSize: 12, opacity: 0.45 }}>
+                              {item.isNone ? "" : item.folderKey}
+                            </div>
+                          </button>
+                        </div>
                       </div>
-                    ) : null}
-                  </div>
-                );
-              })}
+                    );
+                  }
+
+                  const r = item.report;
+                  const checked = selectedReportIds.includes(r.id);
+
+                  return (
+                    <div
+                      key={item.key}
+                      style={{
+                        position: "absolute",
+                        top,
+                        left: 0,
+                        right: 0,
+                        height: rowHeight,
+                        boxSizing: "border-box",
+                      }}
+                    >
+                      <div className="folderBox" style={{ borderTop: "none" }}>
+                        <div
+                          className="reportRow"
+                          style={{
+                            borderBottom:
+                              item.idx === item.listLength - 1
+                                ? "none"
+                                : "1px solid #eee",
+                          }}
+                        >
+                          {canDeleteReports ? (
+                            <label
+                              className="reportCheckWrap"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleReportSelection(r.id)}
+                              />
+                            </label>
+                          ) : null}
+
+                          <button
+                            onClick={() => router.push(`/reports/${r.id}`)}
+                            className={`reportItem reportItemMain ${
+                              checked ? "reportItemSelected" : ""
+                            }`}
+                            style={{
+                              width: "100%",
+                            }}
+                          >
+                            <div style={{ fontWeight: 700 }}>
+                              {r.title}
+                              <span style={{ fontSize: 12, opacity: 0.55 }}>
+                                {" "}
+                                · {String(r.status ?? "").toUpperCase()}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: 13, opacity: 0.6 }}>
+                              {fmtDate(r.created_at ?? null)}
+                            </div>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div
+              style={{
+                marginTop: 8,
+                padding: "8px 4px",
+                fontSize: 12,
+                color: "#6b7280",
+                textAlign: "center",
+              }}
+            >
+              {loadingMore
+                ? "추가 리포트를 불러오는 중..."
+                : hasMore
+                ? "아래로 스크롤하면 다음 리포트를 자동으로 불러옵니다."
+                : reports.length > 0
+                ? "모든 리포트를 불러왔습니다."
+                : null}
             </div>
           </section>
         ) : null}
@@ -1933,6 +2398,11 @@ export default function ReportBuilderPage() {
 
           .folderBody {
             border-top: 1px solid #eee;
+          }
+
+          .virtualSpacer {
+            position: relative;
+            width: 100%;
           }
 
           @media (max-width: 860px) {

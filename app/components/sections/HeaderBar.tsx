@@ -27,13 +27,15 @@ import FilterBtn from "../ui/FilterBtn";
 
 type WeekOption = { weekKey: WeekKey; label: string };
 type SourceKey = string;
+type ProductKey = string;
+type HeaderFilterKey = FilterKey | "source" | "product";
 
 type Props = {
   tab: TabKey;
   setTab: (t: TabKey) => void;
 
-  filterKey: FilterKey;
-  setFilterKey: (k: FilterKey) => void;
+  filterKey: HeaderFilterKey;
+  setFilterKey: (k: HeaderFilterKey) => void;
 
   selectedMonth: MonthKey;
   setSelectedMonth: (m: MonthKey) => void;
@@ -50,11 +52,15 @@ type Props = {
   selectedSource?: SourceKey;
   setSelectedSource?: (s: SourceKey) => void;
 
+  selectedProduct?: ProductKey;
+  setSelectedProduct?: (p: ProductKey) => void;
+
   monthOptions: MonthKey[];
   weekOptions: WeekOption[];
   deviceOptions: DeviceKey[];
   channelOptions: ChannelKey[];
   sourceOptions?: SourceKey[];
+  productOptions?: ProductKey[];
 
   enabledMonthKeySet: Set<string>;
   enabledWeekKeySet: Set<string>;
@@ -277,11 +283,14 @@ function EditorHeaderBar(props: Props) {
     setSelectedChannel,
     selectedSource = "all",
     setSelectedSource = () => {},
+    selectedProduct = "all",
+    setSelectedProduct = () => {},
     monthOptions,
     weekOptions,
     deviceOptions,
     channelOptions,
     sourceOptions = [],
+    productOptions = [],
     enabledMonthKeySet,
     enabledWeekKeySet,
     fullPeriod,
@@ -299,9 +308,10 @@ function EditorHeaderBar(props: Props) {
   const filterRootRef = useRef<HTMLDivElement | null>(null);
 
   const hasSourceOptions = (sourceOptions ?? []).length > 0;
+  const hasProductOptions = (productOptions ?? []).length > 0;
 
-  const toggleFilter = (k: Exclude<FilterKey, null> | "source") => {
-    setFilterKey(filterKey === k ? null : (k as FilterKey));
+  const toggleFilter = (k: Exclude<HeaderFilterKey, null>) => {
+    setFilterKey(filterKey === k ? null : k);
   };
 
   useEffect(() => {
@@ -453,10 +463,19 @@ function EditorHeaderBar(props: Props) {
 
               {hasSourceOptions ? (
                 <FilterBtn
-                  active={filterKey === ("source" as FilterKey)}
+                  active={filterKey === "source"}
                   onClick={() => toggleFilter("source")}
                 >
                   소스
+                </FilterBtn>
+              ) : null}
+
+              {hasProductOptions ? (
+                <FilterBtn
+                  active={filterKey === "product"}
+                  onClick={() => toggleFilter("product")}
+                >
+                  상품
                 </FilterBtn>
               ) : null}
             </div>
@@ -637,7 +656,7 @@ function EditorHeaderBar(props: Props) {
             </div>
           )}
 
-          {hasSourceOptions && filterKey === ("source" as FilterKey) && (
+          {hasSourceOptions && filterKey === "source" && (
             <div className="absolute left-0 top-full z-50 mt-3 w-[520px] max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200/90 bg-white/95 p-4 shadow-[0_24px_50px_rgba(15,23,42,0.18)] backdrop-blur-md">
               <div className="mb-3 text-sm font-semibold text-slate-800">
                 소스 선택
@@ -665,6 +684,40 @@ function EditorHeaderBar(props: Props) {
                     className={optionBtnClass(selectedSource === s)}
                   >
                     {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {hasProductOptions && filterKey === "product" && (
+            <div className="absolute left-0 top-full z-50 mt-3 w-[520px] max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200/90 bg-white/95 p-4 shadow-[0_24px_50px_rgba(15,23,42,0.18)] backdrop-blur-md">
+              <div className="mb-3 text-sm font-semibold text-slate-800">
+                상품 선택
+              </div>
+              <div className="flex max-h-[220px] flex-wrap gap-2 overflow-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedProduct("all");
+                    setFilterKey(null);
+                  }}
+                  className={optionBtnClass(selectedProduct === "all")}
+                >
+                  전체
+                </button>
+
+                {productOptions.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => {
+                      setSelectedProduct(p);
+                      setFilterKey(null);
+                    }}
+                    className={optionBtnClass(selectedProduct === p)}
+                  >
+                    {p}
                   </button>
                 ))}
               </div>
