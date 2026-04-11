@@ -1,4 +1,3 @@
-// app/components/sections/summary/SummaryGoal.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -17,6 +16,7 @@ type Props = {
   monthGoal: any;
   setMonthGoal: any;
   monthGoalInsight: string;
+  lastDataDate?: string;
 };
 
 function toSafeNumber(value: any) {
@@ -36,20 +36,46 @@ function parseLooseDate(value: any): Date | null {
     return Number.isNaN(value.getTime()) ? null : value;
   }
 
+  if (typeof value === "number") {
+    const rawNum = String(value);
+    if (/^\d{8}$/.test(rawNum)) {
+      const y = rawNum.slice(0, 4);
+      const m = rawNum.slice(4, 6);
+      const d = rawNum.slice(6, 8);
+      const parsed = new Date(`${y}-${m}-${d}T00:00:00`);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+  }
+
   const raw = String(value).trim();
   if (!raw) return null;
 
   const normalized = raw
     .replace(/\./g, "-")
     .replace(/\//g, "-")
-    .replace(" ", "T");
+    .replace(/\s+/g, " ")
+    .trim();
 
-  const direct = new Date(normalized);
+  const fullMatch = normalized.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (fullMatch) {
+    const y = fullMatch[1];
+    const m = fullMatch[2].padStart(2, "0");
+    const d = fullMatch[3].padStart(2, "0");
+    const parsed = new Date(`${y}-${m}-${d}T00:00:00`);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+
+  const compactMatch = normalized.match(/\b(\d{4})(\d{2})(\d{2})\b/);
+  if (compactMatch) {
+    const y = compactMatch[1];
+    const m = compactMatch[2];
+    const d = compactMatch[3];
+    const parsed = new Date(`${y}-${m}-${d}T00:00:00`);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+
+  const direct = new Date(normalized.replace(" ", "T"));
   if (!Number.isNaN(direct.getTime())) return direct;
-
-  const dateOnly = normalized.slice(0, 10);
-  const fallback = new Date(`${dateOnly}T00:00:00`);
-  if (!Number.isNaN(fallback.getTime())) return fallback;
 
   return null;
 }
@@ -69,44 +95,11 @@ function getMonthLastDate(monthKey: string): Date | null {
   return new Date(yy, mm, 0);
 }
 
-function getMonthStartDate(monthKey: string): Date | null {
-  if (!monthKey || !/^\d{4}-\d{2}$/.test(monthKey)) return null;
-  const [yy, mm] = monthKey.split("-").map(Number);
-  if (!yy || !mm) return null;
-  return new Date(yy, mm - 1, 1);
-}
-
-function extractLastDataDate(...sources: any[]): Date | null {
-  const candidateKeys = [
-    "latestDate",
-    "lastDate",
-    "last_date",
-    "dataLastDate",
-    "data_last_date",
-    "csvLastDate",
-    "csv_last_date",
-    "maxDate",
-    "max_date",
-    "endDate",
-    "end_date",
-    "reportEndDate",
-    "report_end_date",
-    "date",
-    "ymd",
-    "report_date",
-    "day",
-  ];
-
-  for (const source of sources) {
-    if (!source || typeof source !== "object") continue;
-
-    for (const key of candidateKeys) {
-      const parsed = parseLooseDate(source?.[key]);
-      if (parsed) return parsed;
-    }
-  }
-
-  return null;
+function getMonthKeyFromDate(date: Date | null) {
+  if (!date) return "";
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
 }
 
 export default function SummaryGoal({
@@ -117,6 +110,7 @@ export default function SummaryGoal({
   monthGoal,
   setMonthGoal,
   monthGoalInsight,
+  lastDataDate,
 }: Props) {
   const isTraffic = reportType === "traffic";
   const [mounted, setMounted] = useState(false);
@@ -148,22 +142,24 @@ export default function SummaryGoal({
   };
 
   const headClass =
-    "whitespace-nowrap px-4 py-3.5 text-right text-[12px] font-semibold uppercase tracking-[0.04em] text-slate-500";
+    "whitespace-nowrap px-2.5 py-3 text-right text-[10px] font-semibold uppercase tracking-[0.03em] text-slate-500";
   const firstHeadClass =
-    "whitespace-nowrap px-4 py-3.5 text-left text-[12px] font-semibold uppercase tracking-[0.04em] text-slate-500";
+    "whitespace-nowrap px-3 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.03em] text-slate-500";
   const tdClass =
-    "whitespace-nowrap px-4 py-3.5 text-right text-sm text-slate-800 align-middle";
+    "whitespace-nowrap px-2.5 py-3 text-right text-[13px] text-slate-800 align-middle tabular-nums";
   const firstTdClass =
-    "whitespace-nowrap px-4 py-3.5 text-left text-sm font-semibold text-slate-900 align-middle";
+    "whitespace-nowrap px-3 py-3 text-left text-[13px] font-semibold text-slate-900 align-middle";
 
   const inputClass =
-    "h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-right text-sm font-semibold text-slate-900 outline-none transition-all duration-200 placeholder:text-slate-400 focus:border-slate-400 focus:bg-white focus:shadow-[0_0_0_4px_rgba(148,163,184,0.12)]";
+    "h-9 w-full rounded-xl border border-slate-200 bg-white px-2.5 text-right text-[13px] font-semibold text-slate-900 outline-none transition-all duration-200 placeholder:text-slate-400 focus:border-slate-400 focus:bg-white focus:shadow-[0_0_0_3px_rgba(148,163,184,0.10)]";
 
   const {
     mainProgressRate,
     progressPercent,
     progressLastDateLabel,
     progressMonthEndLabel,
+    progressBaseMonthKey,
+    isCalendarProgressApplied,
   } = useMemo(() => {
     const fallback = clamp01(
       Number(
@@ -174,57 +170,44 @@ export default function SummaryGoal({
       )
     );
 
-    const lastDataDate = extractLastDataDate(
-      currentMonthActual,
-      currentMonthGoalComputed,
-      monthGoal
-    );
+    const parsedLastDataDate = parseLooseDate(lastDataDate);
 
-    const monthStartDate = getMonthStartDate(currentMonthKey);
-    const monthEndDate = getMonthLastDate(currentMonthKey);
+    if (parsedLastDataDate) {
+      const baseMonthKey = getMonthKeyFromDate(parsedLastDataDate);
+      const monthEndDate = getMonthLastDate(baseMonthKey);
 
-    if (!lastDataDate || !monthStartDate || !monthEndDate) {
-      return {
-        mainProgressRate: fallback,
-        progressPercent: Math.round(fallback * 100),
-        progressLastDateLabel: "",
-        progressMonthEndLabel: monthEndDate ? toYmd(monthEndDate) : "",
-      };
+      if (monthEndDate) {
+        const monthTotalDays = monthEndDate.getDate();
+        const lastDay = parsedLastDataDate.getDate();
+        const calendarRate =
+          monthTotalDays > 0 ? clamp01(lastDay / monthTotalDays) : fallback;
+
+        return {
+          mainProgressRate: calendarRate,
+          progressPercent: Math.round(calendarRate * 1000) / 10,
+          progressLastDateLabel: toYmd(parsedLastDataDate),
+          progressMonthEndLabel: toYmd(monthEndDate),
+          progressBaseMonthKey: baseMonthKey,
+          isCalendarProgressApplied: true,
+        };
+      }
     }
 
-    const monthStartYmd = toYmd(monthStartDate);
-    const monthEndYmd = toYmd(monthEndDate);
-    const lastDateYmd = toYmd(lastDataDate);
-
-    if (
-      !monthStartYmd ||
-      !monthEndYmd ||
-      !lastDateYmd ||
-      lastDateYmd < monthStartYmd ||
-      lastDateYmd > monthEndYmd
-    ) {
-      return {
-        mainProgressRate: fallback,
-        progressPercent: Math.round(fallback * 100),
-        progressLastDateLabel: lastDateYmd,
-        progressMonthEndLabel: monthEndYmd,
-      };
-    }
-
-    const monthTotalDays = monthEndDate.getDate();
-    const lastDay = lastDataDate.getDate();
-    const calendarRate =
-      monthTotalDays > 0 ? clamp01(lastDay / monthTotalDays) : fallback;
+    const fallbackMonthEndDate = getMonthLastDate(currentMonthKey);
 
     return {
-      mainProgressRate: calendarRate,
-      progressPercent: Math.round(calendarRate * 100),
-      progressLastDateLabel: lastDateYmd,
-      progressMonthEndLabel: monthEndYmd,
+      mainProgressRate: fallback,
+      progressPercent: Math.round(fallback * 1000) / 10,
+      progressLastDateLabel: "",
+      progressMonthEndLabel: fallbackMonthEndDate
+        ? toYmd(fallbackMonthEndDate)
+        : "",
+      progressBaseMonthKey: currentMonthKey || "",
+      isCalendarProgressApplied: false,
     };
-  }, [currentMonthActual, currentMonthGoalComputed, monthGoal, currentMonthKey]);
+  }, [currentMonthActual, currentMonthGoalComputed, currentMonthKey, lastDataDate]);
 
-  const progressPercentSafe = clamp01(toSafeNumber(progressPercent) / 100) * 100;
+  const progressPercentSafe = clamp01(mainProgressRate) * 100;
   const runnerLeft = `calc(${progressPercentSafe}% - 18px)`;
   const isFinalSprint = mainProgressRate >= 0.85;
   const isMidSprint = mainProgressRate >= 0.45 && mainProgressRate < 0.85;
@@ -235,10 +218,9 @@ export default function SummaryGoal({
     ? "열심히 달리는 중"
     : "출발 후 페이스 업";
 
-  const progressGuideText =
-    progressLastDateLabel && progressMonthEndLabel
-      ? `${progressLastDateLabel} / ${progressMonthEndLabel} 기준`
-      : "최신 데이터 기준";
+  const progressGuideText = isCalendarProgressApplied
+    ? `${progressLastDateLabel} / ${progressMonthEndLabel} 기준`
+    : "최신 데이터 기준";
 
   return (
     <section>
@@ -281,6 +263,16 @@ export default function SummaryGoal({
                 <div className="mt-1 text-[11px] font-medium text-slate-400">
                   {progressGuideText}
                 </div>
+                {progressBaseMonthKey ? (
+                  <div className="mt-1 text-[11px] font-medium text-slate-400">
+                    진행 기준 월: {progressBaseMonthKey}
+                  </div>
+                ) : null}
+                {!isCalendarProgressApplied && lastDataDate ? (
+                  <div className="mt-1 text-[11px] font-medium text-amber-600">
+                    전달받은 lastDataDate: {String(lastDataDate)}
+                  </div>
+                ) : null}
               </div>
 
               <div className="rounded-full border border-slate-200/80 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm">
@@ -298,7 +290,7 @@ export default function SummaryGoal({
                 <div className="absolute inset-x-4 top-[42px] h-[10px] rounded-full bg-slate-100 shadow-inner">
                   <div
                     className="h-full rounded-full bg-gradient-to-r from-sky-400 via-indigo-400 to-emerald-400 transition-all duration-700 ease-out"
-                    style={{ width: `${progressPercent}%` }}
+                    style={{ width: `${progressPercentSafe}%` }}
                   />
                 </div>
 
@@ -378,16 +370,38 @@ export default function SummaryGoal({
           </div>
         </div>
 
-        <div className="overflow-auto">
-          <table
-            className={[
-              "w-full text-sm",
-              isTraffic ? "min-w-[760px]" : "min-w-[1320px]",
-            ].join(" ")}
-          >
+        <div className="w-full">
+          <table className="w-full table-fixed text-sm">
+            <colgroup>
+              {isTraffic ? (
+                <>
+                  <col className="w-[11%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[11%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[16%]" />
+                </>
+              ) : (
+                <>
+                  <col className="w-[8%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[11%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[8%]" />
+                </>
+              )}
+            </colgroup>
+
             <thead className="border-b border-slate-200 bg-gradient-to-b from-slate-50 to-white">
               <tr>
-                <th className={`${firstHeadClass} w-[120px]`}>구분</th>
+                <th className={firstHeadClass}>구분</th>
                 <th className={headClass}>Impr</th>
                 <th className={headClass}>Clicks</th>
                 <th className={headClass}>CTR</th>
@@ -441,11 +455,11 @@ export default function SummaryGoal({
 
                 <td className={tdClass}>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[12px] text-slate-400">
                       ₩
                     </span>
                     <input
-                      className={`${inputClass} pl-7`}
+                      className={`${inputClass} pl-6`}
                       value={formatNumber(monthGoal?.cost ?? 0)}
                       onChange={(e) =>
                         setMonthGoal((p: any) => ({
@@ -487,11 +501,11 @@ export default function SummaryGoal({
                 {!isTraffic && (
                   <td className={tdClass}>
                     <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[12px] text-slate-400">
                         ₩
                       </span>
                       <input
-                        className={`${inputClass} pl-7`}
+                        className={`${inputClass} pl-6`}
                         value={formatNumber(monthGoal?.revenue ?? 0)}
                         onChange={(e) =>
                           setMonthGoal((p: any) => ({
@@ -512,56 +526,56 @@ export default function SummaryGoal({
               </tr>
 
               <tr className="border-t border-slate-200 bg-gradient-to-r from-sky-50 via-blue-50 to-white">
-                <td className="whitespace-nowrap px-4 py-3.5 text-left text-sm font-bold text-slate-900">
+                <td className="whitespace-nowrap px-3 py-3 text-left text-[13px] font-bold text-slate-900">
                   결과
                 </td>
 
-                <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-semibold text-slate-900">
+                <td className="whitespace-nowrap px-2.5 py-3 text-right text-[13px] font-semibold text-slate-900 tabular-nums">
                   {formatNumber(currentMonthActual?.impressions ?? 0)}
                 </td>
 
-                <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-semibold text-slate-900">
+                <td className="whitespace-nowrap px-2.5 py-3 text-right text-[13px] font-semibold text-slate-900 tabular-nums">
                   {formatNumber(currentMonthActual?.clicks ?? 0)}
                 </td>
 
-                <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-bold text-violet-600">
+                <td className="whitespace-nowrap px-2.5 py-3 text-right text-[13px] font-bold text-violet-600 tabular-nums">
                   {pct2(currentMonthActual?.ctr ?? 0)}
                 </td>
 
-                <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-semibold text-slate-900">
+                <td className="whitespace-nowrap px-2.5 py-3 text-right text-[13px] font-semibold text-slate-900 tabular-nums">
                   {KRW(currentMonthActual?.cpc ?? 0)}
                 </td>
 
-                <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-semibold text-slate-900">
+                <td className="whitespace-nowrap px-2.5 py-3 text-right text-[13px] font-semibold text-slate-900 tabular-nums">
                   {KRW(currentMonthActual?.cost ?? 0)}
                 </td>
 
                 {!isTraffic && (
-                  <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-semibold text-slate-900">
+                  <td className="whitespace-nowrap px-2.5 py-3 text-right text-[13px] font-semibold text-slate-900 tabular-nums">
                     {formatNumber(currentMonthActual?.conversions ?? 0)}
                   </td>
                 )}
 
                 {!isTraffic && (
-                  <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-bold text-violet-600">
+                  <td className="whitespace-nowrap px-2.5 py-3 text-right text-[13px] font-bold text-violet-600 tabular-nums">
                     {pct2(currentMonthActual?.cvr ?? 0)}
                   </td>
                 )}
 
                 {!isTraffic && (
-                  <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-semibold text-slate-900">
+                  <td className="whitespace-nowrap px-2.5 py-3 text-right text-[13px] font-semibold text-slate-900 tabular-nums">
                     {KRW(currentMonthActual?.cpa ?? 0)}
                   </td>
                 )}
 
                 {!isTraffic && (
-                  <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-bold text-emerald-600">
+                  <td className="whitespace-nowrap px-2.5 py-3 text-right text-[13px] font-bold text-emerald-600 tabular-nums">
                     {KRW(currentMonthActual?.revenue ?? 0)}
                   </td>
                 )}
 
                 {!isTraffic && (
-                  <td className="whitespace-nowrap px-4 py-3.5 text-right text-sm font-bold text-orange-600">
+                  <td className="whitespace-nowrap px-2.5 py-3 text-right text-[13px] font-bold text-orange-600 tabular-nums">
                     {pct1(currentMonthActual?.roas ?? 0)}
                   </td>
                 )}
