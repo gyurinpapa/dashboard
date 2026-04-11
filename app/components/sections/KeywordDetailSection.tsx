@@ -1,7 +1,14 @@
 // app/components/sections/KeywordDetailSection.tsx
 "use client";
 
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ChangeEvent,
+} from "react";
 import type { Row } from "../../../src/lib/report/types";
 
 import SummarySection from "./SummarySection";
@@ -82,20 +89,6 @@ function calcAvgRankWeighted(rows: Row[]) {
   if (w > 0) return wSum / w;
   if (sCnt > 0) return sSum / sCnt;
   return null;
-}
-
-function extractKeywords(rows: Row[]) {
-  const set = new Set<string>();
-  for (const r of rows) {
-    const k = (r.keyword ?? "").toString().trim();
-    if (k) set.add(k);
-  }
-  return Array.from(set).sort((a, b) => a.localeCompare(b, "ko"));
-}
-
-function filterByKeyword(rows: Row[], keyword: string | null) {
-  if (!keyword) return rows;
-  return rows.filter((r) => (r.keyword ?? "").toString().trim() === keyword);
 }
 
 function normalizeDateKey(value: any): string {
@@ -214,6 +207,7 @@ function buildKeywordIndex(rows: Row[]) {
  */
 function buildKeywordMetricsIndex(rows: Row[]) {
   const { keywords, keywordBuckets, keywordLookup } = buildKeywordIndex(rows);
+
   const metricsMap = new Map<
     string,
     {
@@ -226,11 +220,6 @@ function buildKeywordMetricsIndex(rows: Row[]) {
       byWeekChart: any[];
       byDay: any[];
       byMonth: any[];
-      currentMonthGoalComputed: any;
-      currentMonthKey: any;
-      currentMonthActual: any;
-      monthGoal: any;
-      monthGoalInsight: any;
     }
   >();
 
@@ -255,25 +244,6 @@ function buildKeywordMetricsIndex(rows: Row[]) {
       selectedChannel: "all",
     });
 
-    const currentMonthGoalComputed =
-      (totals as any)?.currentMonthGoalComputed ?? {
-        imp: 0,
-        click: 0,
-        cost: 0,
-        conv: 0,
-        revenue: 0,
-        ctr: 0,
-        cpc: 0,
-        cvr: 0,
-        cpa: 0,
-        roas: 0,
-      };
-
-    const currentMonthKey = (totals as any)?.currentMonthKey ?? null;
-    const currentMonthActual = (totals as any)?.currentMonthActual ?? totals;
-    const monthGoal = (totals as any)?.monthGoal ?? null;
-    const monthGoalInsight = null;
-
     metricsMap.set(keyword, {
       filteredRows,
       avgRank,
@@ -284,17 +254,11 @@ function buildKeywordMetricsIndex(rows: Row[]) {
       byWeekChart,
       byDay,
       byMonth,
-      currentMonthGoalComputed,
-      currentMonthKey,
-      currentMonthActual,
-      monthGoal,
-      monthGoalInsight,
     });
   }
 
   return {
     keywords,
-    keywordBuckets,
     keywordLookup,
     metricsMap,
   };
@@ -302,8 +266,6 @@ function buildKeywordMetricsIndex(rows: Row[]) {
 
 /**
  * ✅ 인사이트 생성(근거 기반 v2: 기기 근거 포함)
- * - 선택 키워드 실적/효율 + 전체 대비 기여도 + 최근 주간 추세 + 소스별 + 기기별(Top 비교)
- * - 다음 액션(클릭/전환/ROAS 개선)까지 문장으로
  */
 function buildKeywordDetailInsight(args: {
   keyword: string | null;
@@ -337,11 +299,16 @@ function buildKeywordDetailInsight(args: {
   const wLast = weeks.length ? weeks[weeks.length - 1] : null;
   const wPrev = weeks.length >= 2 ? weeks[weeks.length - 2] : null;
 
-  const roasWoW = wLast && wPrev ? diffRatio(toSafeNumber(wLast.roas), toSafeNumber(wPrev.roas)) ?? 0 : 0;
-  const clickWoW = wLast && wPrev ? diffRatio(toSafeNumber(wLast.clicks), toSafeNumber(wPrev.clicks)) ?? 0 : 0;
+  const roasWoW =
+    wLast && wPrev ? diffRatio(toSafeNumber(wLast.roas), toSafeNumber(wPrev.roas)) ?? 0 : 0;
+  const clickWoW =
+    wLast && wPrev ? diffRatio(toSafeNumber(wLast.clicks), toSafeNumber(wPrev.clicks)) ?? 0 : 0;
   const convWoW =
-    wLast && wPrev ? diffRatio(toSafeNumber(wLast.conversions), toSafeNumber(wPrev.conversions)) ?? 0 : 0;
-  const costWoW = wLast && wPrev ? diffRatio(toSafeNumber(wLast.cost), toSafeNumber(wPrev.cost)) ?? 0 : 0;
+    wLast && wPrev
+      ? diffRatio(toSafeNumber(wLast.conversions), toSafeNumber(wPrev.conversions)) ?? 0
+      : 0;
+  const costWoW =
+    wLast && wPrev ? diffRatio(toSafeNumber(wLast.cost), toSafeNumber(wPrev.cost)) ?? 0 : 0;
 
   const sources = [...(bySource || [])].sort((a, b) => (b.cost ?? 0) - (a.cost ?? 0));
   const topS1 = sources[0] ?? null;
@@ -367,12 +334,14 @@ function buildKeywordDetailInsight(args: {
 
   const bullets: string[] = [];
   bullets.push(
-    `선택 키워드 “${keyword}” 성과: 클릭 ${Math.round(me.clicks)} / 전환 ${toSafeNumber(me.conversions).toFixed(
-      1
-    )} / ROAS ${safeRoasPct0(me.roas)} · ${efficiencyLabel}`
+    `선택 키워드 “${keyword}” 성과: 클릭 ${Math.round(me.clicks)} / 전환 ${toSafeNumber(
+      me.conversions
+    ).toFixed(1)} / ROAS ${safeRoasPct0(me.roas)} · ${efficiencyLabel}`
   );
   bullets.push(
-    `기여도(현재 탭 범위 대비): 비용 ${safePct(shareCost)}, 전환 ${safePct(shareConv)}, 매출 ${safePct(shareRev)}`
+    `기여도(현재 탭 범위 대비): 비용 ${safePct(shareCost)}, 전환 ${safePct(
+      shareConv
+    )}, 매출 ${safePct(shareRev)}`
   );
   bullets.push(trendLabel);
 
@@ -388,9 +357,9 @@ function buildKeywordDetailInsight(args: {
     const d1Cvr = toSafeNumber(topD1.cvr);
     const d1Ctr = toSafeNumber(topD1.ctr);
 
-    let deviceLine = `기기별: “${d1}” 비중이 가장 큽니다(ROAS ${safeRoasPct0(d1Roas)}, CTR ${safePct(
-      d1Ctr
-    )}, CVR ${safePct(d1Cvr)}).`;
+    let deviceLine = `기기별: “${d1}” 비중이 가장 큽니다(ROAS ${safeRoasPct0(
+      d1Roas
+    )}, CTR ${safePct(d1Ctr)}, CVR ${safePct(d1Cvr)}).`;
 
     if (topD2) {
       const d2 = pickDeviceLabel(String(topD2.device ?? "unknown"));
@@ -452,7 +421,9 @@ function buildKeywordDetailInsight(args: {
 
     if (d1Roas > d2Roas * 1.1) {
       actions.push(
-        `기기 최적화: “${pickDeviceLabel(d1)}” ROAS가 “${pickDeviceLabel(d2)}” 대비 높습니다. 기기 분리 운영(입찰/예산/광고문구) 후 성과 좋은 기기에 예산을 우선 배분하세요.`
+        `기기 최적화: “${pickDeviceLabel(d1)}” ROAS가 “${pickDeviceLabel(
+          d2
+        )}” 대비 높습니다. 기기 분리 운영(입찰/예산/광고문구) 후 성과 좋은 기기에 예산을 우선 배분하세요.`
       );
     } else if (d2Roas > d1Roas * 1.1) {
       actions.push(
@@ -465,7 +436,9 @@ function buildKeywordDetailInsight(args: {
     }
   } else if (topD1) {
     actions.push(
-      `기기 최적화: “${pickDeviceLabel(String(topD1.device))}” 중심으로 데이터가 모였습니다. 다른 기기의 데이터가 충분히 쌓이도록 최소 노출을 확보한 뒤 비교 최적화하세요.`
+      `기기 최적화: “${pickDeviceLabel(
+        String(topD1.device)
+      )}” 중심으로 데이터가 모였습니다. 다른 기기의 데이터가 충분히 쌓이도록 최소 노출을 확보한 뒤 비교 최적화하세요.`
     );
   }
 
@@ -475,12 +448,6 @@ function buildKeywordDetailInsight(args: {
     actions,
   };
 }
-
-/** =========================
- * Perf-safe constants
- * ========================= */
-
-const NOOP_SET_MONTH_GOAL = () => {};
 
 /** =========================
  * Memoized UI blocks
@@ -537,7 +504,7 @@ const KeywordListPanel = memo(function KeywordListPanel({
   const hasQuery = String(keywordQuery ?? "").trim().length > 0;
 
   const handleChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
+    (e: ChangeEvent<HTMLInputElement>) => {
       onChangeKeywordQuery(e.target.value);
     },
     [onChangeKeywordQuery]
@@ -583,7 +550,9 @@ const KeywordListPanel = memo(function KeywordListPanel({
 
       <div className="mt-4 rounded-xl bg-gray-50 p-3 text-xs text-gray-600">
         <b>메모</b>
-        <div className="mt-1">오른쪽은 선택 키워드 기준으로 “요약탭 구성(월3/주5/그래프/소스별)”을 재사용합니다.</div>
+        <div className="mt-1">
+          오른쪽은 선택 키워드 기준으로 요약 탭 성과 구성(월별/주별/소스별/일자별)을 재사용합니다.
+        </div>
       </div>
     </aside>
   );
@@ -616,7 +585,9 @@ const InsightPanel = memo(function InsightPanel({
 
         <div className="shrink-0 text-right">
           <div className="text-xs text-gray-500">Avg.rank</div>
-          <div className="mt-1 text-lg font-semibold">{avgRank == null ? "-" : avgRank.toFixed(2)}</div>
+          <div className="mt-1 text-lg font-semibold">
+            {avgRank == null ? "-" : avgRank.toFixed(2)}
+          </div>
         </div>
       </div>
 
@@ -648,11 +619,6 @@ type SummarySectionBlockProps = {
   byWeekChart: any;
   bySource: any;
   byDay: any;
-  currentMonthKey: any;
-  currentMonthActual: any;
-  currentMonthGoalComputed: any;
-  monthGoal: any;
-  monthGoalInsight: any;
 };
 
 const SummarySectionBlock = memo(function SummarySectionBlock({
@@ -663,11 +629,6 @@ const SummarySectionBlock = memo(function SummarySectionBlock({
   byWeekChart,
   bySource,
   byDay,
-  currentMonthKey,
-  currentMonthActual,
-  currentMonthGoalComputed,
-  monthGoal,
-  monthGoalInsight,
 }: SummarySectionBlockProps) {
   return (
     <div className="keyword-detail-week-table-fix min-w-0">
@@ -680,12 +641,6 @@ const SummarySectionBlock = memo(function SummarySectionBlock({
           byWeekChart={byWeekChart as any}
           bySource={bySource as any}
           byDay={byDay as any}
-          currentMonthKey={currentMonthKey}
-          currentMonthActual={currentMonthActual}
-          currentMonthGoalComputed={currentMonthGoalComputed}
-          monthGoal={monthGoal}
-          setMonthGoal={NOOP_SET_MONTH_GOAL}
-          monthGoalInsight={monthGoalInsight}
         />
       </div>
     </div>
@@ -703,11 +658,11 @@ type Props = {
 
 export default function KeywordDetailSection(props: Props) {
   const { reportType, rows } = props;
-  const isTraffic = reportType === "traffic";
 
-  // ✅ 변경 지점:
-  // 키워드별 bucket + 집계 결과 전체를 rows 기준으로 한 번 사전 계산
-  const { keywords, keywordLookup, metricsMap } = useMemo(() => buildKeywordMetricsIndex(rows), [rows]);
+  const { keywords, keywordLookup, metricsMap } = useMemo(
+    () => buildKeywordMetricsIndex(rows),
+    [rows]
+  );
 
   const [selectedKeyword, setSelectedKeyword] = useState<string | null>(keywords[0] ?? null);
   const [keywordQuery, setKeywordQuery] = useState<string>("");
@@ -740,8 +695,6 @@ export default function KeywordDetailSection(props: Props) {
     );
   }, [keywords, keywordQuery]);
 
-  // ✅ 변경 지점:
-  // 선택 변경 시 계산이 아니라 사전 계산 결과 조회만 수행
   const selectedMetrics = useMemo(() => {
     if (!selectedKeyword) return null;
     return metricsMap.get(selectedKeyword) ?? null;
@@ -755,7 +708,9 @@ export default function KeywordDetailSection(props: Props) {
   const byWeekOnly = selectedMetrics?.byWeekOnly ?? groupByWeekRecent5(filteredRows);
   const byWeekChart =
     selectedMetrics?.byWeekChart ??
-    [...byWeekOnly].sort((a, b) => String(a.weekKey ?? "").localeCompare(String(b.weekKey ?? "")));
+    [...byWeekOnly].sort((a, b) =>
+      String(a.weekKey ?? "").localeCompare(String(b.weekKey ?? ""))
+    );
   const byDay = selectedMetrics?.byDay ?? groupByDayFromRows(filteredRows);
   const byMonth =
     selectedMetrics?.byMonth ??
@@ -779,27 +734,6 @@ export default function KeywordDetailSection(props: Props) {
       }),
     [selectedKeyword, rows, filteredRows, byWeekOnly, bySource, byDevice, avgRank]
   );
-
-  const currentMonthGoalComputed =
-    selectedMetrics?.currentMonthGoalComputed ??
-    ((totals as any)?.currentMonthGoalComputed ?? {
-      imp: 0,
-      click: 0,
-      cost: 0,
-      conv: 0,
-      revenue: 0,
-      ctr: 0,
-      cpc: 0,
-      cvr: 0,
-      cpa: 0,
-      roas: 0,
-    });
-
-  const currentMonthKey = selectedMetrics?.currentMonthKey ?? (totals as any)?.currentMonthKey ?? null;
-  const currentMonthActual =
-    selectedMetrics?.currentMonthActual ?? (totals as any)?.currentMonthActual ?? totals;
-  const monthGoal = selectedMetrics?.monthGoal ?? (totals as any)?.monthGoal ?? null;
-  const monthGoalInsight = selectedMetrics?.monthGoalInsight ?? null;
 
   return (
     <section className="w-full min-w-0">
@@ -829,11 +763,6 @@ export default function KeywordDetailSection(props: Props) {
             byWeekChart={byWeekChart}
             bySource={bySource}
             byDay={byDay}
-            currentMonthKey={currentMonthKey}
-            currentMonthActual={currentMonthActual}
-            currentMonthGoalComputed={currentMonthGoalComputed}
-            monthGoal={monthGoal}
-            monthGoalInsight={monthGoalInsight}
           />
         </div>
       </div>
@@ -850,7 +779,6 @@ export default function KeywordDetailSection(props: Props) {
 
         .keyword-detail-week-table-fix table {
           width: 100%;
-          table-layout: fixed;
         }
 
         .keyword-detail-week-table-fix table th:first-child,
@@ -864,18 +792,6 @@ export default function KeywordDetailSection(props: Props) {
           overflow: hidden;
           text-overflow: ellipsis;
         }
-
-        ${isTraffic
-          ? `
-        .keyword-detail-week-table-fix table {
-          min-width: 860px !important;
-        }
-        `
-          : `
-        .keyword-detail-week-table-fix table {
-          min-width: 1320px !important;
-        }
-        `}
       `}</style>
     </section>
   );

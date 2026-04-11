@@ -11,6 +11,7 @@ type Props = {
   monthGoal: any;
   setMonthGoal: any;
   monthGoalInsight: string;
+  lastDataDate?: string;
 };
 
 export default function MonthGoalSection({
@@ -21,6 +22,7 @@ export default function MonthGoalSection({
   monthGoal,
   setMonthGoal,
   monthGoalInsight,
+  lastDataDate,
 }: Props) {
   return (
     <section className="mb-8 mt-2">
@@ -34,6 +36,7 @@ export default function MonthGoalSection({
             monthGoal={monthGoal}
             setMonthGoal={setMonthGoal}
             monthGoalInsight={monthGoalInsight}
+            lastDataDate={lastDataDate}
           />
         </div>
       </div>

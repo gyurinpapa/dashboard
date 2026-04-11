@@ -43,11 +43,6 @@ import MonthGoalSection from "@/app/components/sections/MonthGoalSection";
 import FloatingFilterRail from "./floating/FloatingFilterRail";
 import FloatingTabRail from "./floating/FloatingTabRail";
 
-/**
- * 성능 최적화 포인트:
- * - 자식 컴포넌트를 memo 래핑하여 props reference가 유지될 때 불필요한 재렌더를 줄임
- * - 기존 외부 인터페이스 / 내부 로직은 변경하지 않음
- */
 const MemoHeaderBar = memo(HeaderBar);
 const MemoStructureSection = memo(StructureSection);
 const MemoKeywordSection = memo(KeywordSection);
@@ -78,7 +73,6 @@ type Props = {
   reportPeriod: ReportPeriod;
   onChangeReportPeriod: (next: ReportPeriod) => void;
   readOnlyHeader?: boolean;
-
   hidePeriodEditor?: boolean;
   hideTabPeriodText?: boolean;
 };
@@ -534,6 +528,170 @@ function useStableShallowValue<T>(value: T): T {
   return ref.current;
 }
 
+function parseLooseDate(value: any): Date | null {
+  if (!value) return null;
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  if (typeof value === "number") {
+    const rawNum = String(value);
+    if (/^\d{8}$/.test(rawNum)) {
+      const y = rawNum.slice(0, 4);
+      const m = rawNum.slice(4, 6);
+      const d = rawNum.slice(6, 8);
+      const parsed = new Date(`${y}-${m}-${d}T00:00:00`);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+  }
+
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  const normalized = raw
+    .replace(/\./g, "-")
+    .replace(/\//g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const fullMatch = normalized.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (fullMatch) {
+    const y = fullMatch[1];
+    const m = fullMatch[2].padStart(2, "0");
+    const d = fullMatch[3].padStart(2, "0");
+    const parsed = new Date(`${y}-${m}-${d}T00:00:00`);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+
+  const compactMatch = normalized.match(/\b(\d{4})(\d{2})(\d{2})\b/);
+  if (compactMatch) {
+    const y = compactMatch[1];
+    const m = compactMatch[2];
+    const d = compactMatch[3];
+    const parsed = new Date(`${y}-${m}-${d}T00:00:00`);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+
+  const direct = new Date(normalized.replace(" ", "T"));
+  if (!Number.isNaN(direct.getTime())) return direct;
+
+  return null;
+}
+
+function toYmd(date: Date | null) {
+  if (!date) return "";
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function buildDateFromCurrentMonth(
+  currentMonthKey: string,
+  month: number,
+  day: number
+): Date | null {
+  if (!/^\d{4}-\d{2}$/.test(currentMonthKey)) return null;
+  const [yy] = currentMonthKey.split("-").map(Number);
+  if (!yy || !month || !day) return null;
+  const parsed = new Date(
+    `${yy}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}T00:00:00`
+  );
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function buildDateFromCurrentMonthDay(
+  currentMonthKey: string,
+  day: number
+): Date | null {
+  if (!/^\d{4}-\d{2}$/.test(currentMonthKey)) return null;
+  const [yy, mm] = currentMonthKey.split("-").map(Number);
+  if (!yy || !mm || !day) return null;
+  const parsed = new Date(
+    `${yy}-${String(mm).padStart(2, "0")}-${String(day).padStart(2, "0")}T00:00:00`
+  );
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function parseDateCandidateWithMonthContext(
+  value: any,
+  currentMonthKey: string
+): Date | null {
+  const direct = parseLooseDate(value);
+  if (direct) return direct;
+
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+
+  const normalized = raw
+    .replace(/\./g, "-")
+    .replace(/\//g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const mdMatch = normalized.match(/\b(\d{1,2})-(\d{1,2})\b/);
+  if (mdMatch) {
+    return buildDateFromCurrentMonth(
+      currentMonthKey,
+      Number(mdMatch[1]),
+      Number(mdMatch[2])
+    );
+  }
+
+  const dayKorMatch = normalized.match(/\b(\d{1,2})일\b/);
+  if (dayKorMatch) {
+    return buildDateFromCurrentMonthDay(currentMonthKey, Number(dayKorMatch[1]));
+  }
+
+  const dayOnlyMatch = normalized.match(/^\d{1,2}$/);
+  if (dayOnlyMatch) {
+    return buildDateFromCurrentMonthDay(currentMonthKey, Number(dayOnlyMatch[0]));
+  }
+
+  return null;
+}
+
+function getLastDateFromRows(
+  rows: readonly any[],
+  currentMonthKey: string
+): string {
+  let last: Date | null = null;
+
+  const candidateKeys = [
+    "date",
+    "dateKey",
+    "day",
+    "ymd",
+    "report_date",
+    "reportDate",
+    "fullDate",
+    "rawDate",
+    "startDate",
+    "label",
+  ];
+
+  for (let i = 0; i < rows.length; i += 1) {
+    const row = rows[i];
+    if (!row || typeof row !== "object") continue;
+
+    let parsed: Date | null = null;
+
+    for (const key of candidateKeys) {
+      parsed = parseDateCandidateWithMonthContext(row?.[key], currentMonthKey);
+      if (parsed) break;
+    }
+
+    if (!parsed) continue;
+
+    if (!last || parsed.getTime() > last.getTime()) {
+      last = parsed;
+    }
+  }
+
+  return toYmd(last);
+}
+
 export default function ReportTemplate({
   rows,
   isLoading,
@@ -793,6 +951,10 @@ export default function ReportTemplate({
     return buildDailySummaryRows(filteredRows as any[]);
   }, [tab, filteredRows]);
 
+  const lastDataDate = useMemo(() => {
+    return getLastDateFromRows(filteredRows as any[], currentMonthKey);
+  }, [filteredRows, currentMonthKey]);
+
   useEffect(() => {
     if (readOnlyHeader) return;
     if (selectedMonth !== "all" && !enabledMonthKeySet.has(selectedMonth)) {
@@ -998,6 +1160,7 @@ export default function ReportTemplate({
       monthGoal: stableMonthGoal,
       setMonthGoal,
       monthGoalInsight: stableMonthGoalInsight,
+      lastDataDate,
     };
   }, [
     reportType,
@@ -1007,6 +1170,7 @@ export default function ReportTemplate({
     stableMonthGoal,
     setMonthGoal,
     stableMonthGoalInsight,
+    lastDataDate,
   ]);
 
   const summarySectionProps = useMemo(() => {

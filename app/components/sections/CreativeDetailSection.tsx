@@ -9,7 +9,7 @@ import {
 } from "react";
 import type { Row } from "../../../src/lib/report/types";
 
-import SummarySection from "./SummarySection";
+import SummaryGoal from "./summary/SummaryGoal";
 
 import {
   summarize,
@@ -939,10 +939,10 @@ export default function CreativeDetailSection({ reportType, rows }: Props) {
 
   const emptyCurrentMonthGoalComputed = useMemo(
     () => ({
-      imp: 0,
-      click: 0,
+      impressions: 0,
+      clicks: 0,
       cost: 0,
-      conv: 0,
+      conversions: 0,
       revenue: 0,
       ctr: 0,
       cpc: 0,
@@ -953,10 +953,10 @@ export default function CreativeDetailSection({ reportType, rows }: Props) {
     []
   );
 
-  const currentMonthKey = useMemo(
-    () => (totals as any)?.currentMonthKey ?? null,
-    [totals]
-  );
+  const currentMonthKey = useMemo(() => {
+    const candidate = (totals as any)?.currentMonthKey;
+    return candidate == null ? "" : String(candidate);
+  }, [totals]);
 
   const currentMonthActual = useMemo(
     () => (totals as any)?.currentMonthActual ?? totals,
@@ -964,50 +964,58 @@ export default function CreativeDetailSection({ reportType, rows }: Props) {
   );
 
   const monthGoal = useMemo(
-    () => (totals as any)?.monthGoal ?? null,
+    () =>
+      (totals as any)?.monthGoal ?? {
+        impressions: 0,
+        clicks: 0,
+        cost: 0,
+        conversions: 0,
+        revenue: 0,
+      },
     [totals]
   );
 
   const currentMonthGoalComputed = useMemo(
-    () => (totals as any)?.currentMonthGoalComputed ?? emptyCurrentMonthGoalComputed,
+    () =>
+      (totals as any)?.currentMonthGoalComputed ??
+      emptyCurrentMonthGoalComputed,
     [totals, emptyCurrentMonthGoalComputed]
   );
 
-  const setMonthGoal = useCallback(() => {}, []);
-  const monthGoalInsight = null;
+  const lastDataDate = useMemo(() => {
+    let latest = "";
+    for (const row of filteredRows) {
+      const key = extractRowDateKey(row);
+      if (key && key > latest) latest = key;
+    }
+    return latest || undefined;
+  }, [filteredRows]);
+
+  const setMonthGoal = useCallback((_updater: any) => {}, []);
+  const monthGoalInsight = "";
 
   const summarySectionNode = useMemo(
     () => (
-      <SummarySection
+      <SummaryGoal
         reportType={reportType}
-        totals={totals as any}
-        byMonth={byMonth as any}
-        byWeekOnly={byWeekOnly as any}
-        byWeekChart={byWeekChart as any}
-        bySource={bySource as any}
-        byDay={byDay as any}
         currentMonthKey={currentMonthKey}
         currentMonthActual={currentMonthActual}
         currentMonthGoalComputed={currentMonthGoalComputed}
         monthGoal={monthGoal}
         setMonthGoal={setMonthGoal}
         monthGoalInsight={monthGoalInsight}
+        lastDataDate={lastDataDate}
       />
     ),
     [
       reportType,
-      totals,
-      byMonth,
-      byWeekOnly,
-      byWeekChart,
-      bySource,
-      byDay,
       currentMonthKey,
       currentMonthActual,
       currentMonthGoalComputed,
       monthGoal,
       setMonthGoal,
       monthGoalInsight,
+      lastDataDate,
     ]
   );
 
@@ -1215,7 +1223,6 @@ export default function CreativeDetailSection({ reportType, rows }: Props) {
 
         .creative-detail-week-table-fix table {
           width: 100%;
-          table-layout: fixed;
         }
 
         .creative-detail-week-table-fix table th:first-child,
@@ -1229,18 +1236,6 @@ export default function CreativeDetailSection({ reportType, rows }: Props) {
           overflow: hidden;
           text-overflow: ellipsis;
         }
-
-        ${isTraffic
-          ? `
-        .creative-detail-week-table-fix table {
-          min-width: 860px !important;
-        }
-        `
-          : `
-        .creative-detail-week-table-fix table {
-          min-width: 1320px !important;
-        }
-        `}
       `}</style>
     </section>
   );

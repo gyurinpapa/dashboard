@@ -361,45 +361,13 @@ export default function CommerceDashboard({
                 monthGoalInsight={monthGoalInsight}
               />
 
-              {(() => {
-                const currentMonthKey = (totals as any)?.currentMonthKey ?? null;
-                const currentMonthActual = (totals as any)?.currentMonthActual ?? totals;
-
-                const monthGoal = (totals as any)?.monthGoal ?? null;
-
-                const currentMonthGoalComputed =
-                  (totals as any)?.currentMonthGoalComputed ?? {
-                    imp: 0,
-                    click: 0,
-                    cost: 0,
-                    conv: 0,
-                    revenue: 0,
-                    ctr: 0,
-                    cpc: 0,
-                    cvr: 0,
-                    cpa: 0,
-                    roas: 0,
-                  };
-
-                const setMonthGoal = () => {};
-                const monthGoalInsight = null;
-
-                return (
-                  <SummarySection
-                    totals={totals as any}
-                    byMonth={byMonth as any}
-                    byWeekOnly={byWeekOnly as any}
-                    byWeekChart={byWeekChart as any}
-                    bySource={bySource as any}
-                    currentMonthKey={currentMonthKey}
-                    currentMonthActual={currentMonthActual}
-                    currentMonthGoalComputed={currentMonthGoalComputed}
-                    monthGoal={monthGoal}
-                    setMonthGoal={setMonthGoal}
-                    monthGoalInsight={monthGoalInsight}
-                  />
-                );
-              })()}
+              <SummarySection
+                totals={totals as any}
+                byMonth={byMonth as any}
+                byWeekOnly={byWeekOnly as any}
+                byWeekChart={byWeekChart as any}
+                bySource={bySource as any}
+              />
             </>
           )}
 
@@ -420,13 +388,19 @@ export default function CommerceDashboard({
           )}
 
           {tab === "keywordDetail" && (
-            <KeywordDetailSection rows={filteredRows as any[]} />
+            <KeywordDetailSection
+              reportType={undefined}
+              rows={filteredRows as any[]}
+            />
           )}
 
           {tab === "creative" && <CreativeSection rows={creativeBaseRows} />}
 
           {tab === "creativeDetail" && (
-            <CreativeDetailSection rows={filteredRows as any[]} />
+            <CreativeDetailSection
+              reportType={undefined}
+              rows={filteredRows as any[]}
+            />
           )}
         </div>
       </div>

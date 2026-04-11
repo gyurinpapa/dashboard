@@ -20,13 +20,6 @@ import DataBarCell from "../ui/DataBarCell";
 type Props = {
   reportType?: "commerce" | "traffic";
 
-  currentMonthKey: string;
-  currentMonthActual: any;
-  currentMonthGoalComputed: any;
-  monthGoal: any;
-  setMonthGoal: any;
-  monthGoalInsight: any;
-
   totals: any;
   byMonth: any;
 
@@ -124,11 +117,29 @@ function weekSortKey(w: any) {
 }
 
 function daySortKey(row: any) {
-  return String(row?.date ?? row?.dateKey ?? row?.label ?? "");
+  return String(
+    row?.date ??
+      row?.dateKey ??
+      row?.day ??
+      row?.ymd ??
+      row?.report_date ??
+      row?.reportDate ??
+      row?.label ??
+      ""
+  );
 }
 
 function dayLabel(row: any) {
-  return String(row?.date ?? row?.dateKey ?? row?.label ?? "-");
+  return String(
+    row?.date ??
+      row?.dateKey ??
+      row?.day ??
+      row?.ymd ??
+      row?.report_date ??
+      row?.reportDate ??
+      row?.label ??
+      "-"
+  );
 }
 
 function getMaxValue<T>(rows: readonly T[], getter: (row: T) => number) {
@@ -834,7 +845,14 @@ const DailyPerformanceTable = memo(function DailyPerformanceTable({
         const label = dayLabel(d);
 
         return {
-          key: d?.date ?? d?.dateKey ?? `${daySortKey(d)}-${idx}`,
+          key:
+            d?.date ??
+            d?.dateKey ??
+            d?.day ??
+            d?.ymd ??
+            d?.report_date ??
+            d?.reportDate ??
+            `${daySortKey(d)}-${idx}`,
           title: label,
           label,
           impressions,

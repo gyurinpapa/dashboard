@@ -114,12 +114,6 @@ export default function Page() {
     DEFAULT_GOAL
   );
 
-  /**
-   * HeaderBar 최신 Props 호환용
-   * - 현재 홈 화면의 기존 로직은 유지
-   * - 빌드 안전성을 위해 reportPeriod 상태만 최소 연결
-   * - 이 페이지에서 실제 rows 기반 기본 기간만 한번 세팅
-   */
   const [reportPeriod, setReportPeriod] = useState<ReportPeriod>(() =>
     resolvePresetPeriod()
   );
@@ -146,7 +140,10 @@ export default function Page() {
     setLastShareTokenState(getLastShareToken());
   }, []);
 
-  const shareToken = useMemo(() => extractShareTokenFromText(shareInput), [shareInput]);
+  const shareToken = useMemo(
+    () => extractShareTokenFromText(shareInput),
+    [shareInput]
+  );
 
   const goShare = (tokenLike: string) => {
     const t = extractShareTokenFromText(tokenLike);
@@ -251,7 +248,14 @@ export default function Page() {
             공유 리포트 열기
           </div>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
             <input
               value={shareInput}
               onChange={(e) => setShareInput(e.target.value)}
@@ -337,7 +341,12 @@ export default function Page() {
             {lastShareToken ? (
               <>
                 최근 토큰:{" "}
-                <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+                <span
+                  style={{
+                    fontFamily:
+                      "ui-monospace, SFMono-Regular, Menlo, monospace",
+                  }}
+                >
                   {lastShareToken}
                 </span>
               </>
@@ -386,46 +395,13 @@ export default function Page() {
                 monthGoalInsight={monthGoalInsight}
               />
 
-              {(() => {
-                const currentMonthKey = (totals as any)?.currentMonthKey ?? null;
-                const currentMonthActual =
-                  (totals as any)?.currentMonthActual ?? totals;
-
-                const monthGoal = (totals as any)?.monthGoal ?? null;
-
-                const currentMonthGoalComputed =
-                  (totals as any)?.currentMonthGoalComputed ?? {
-                    imp: 0,
-                    click: 0,
-                    cost: 0,
-                    conv: 0,
-                    revenue: 0,
-                    ctr: 0,
-                    cpc: 0,
-                    cvr: 0,
-                    cpa: 0,
-                    roas: 0,
-                  };
-
-                const setMonthGoal = () => {};
-                const monthGoalInsight = null;
-
-                return (
-                  <SummarySection
-                    totals={totals as any}
-                    byMonth={byMonth as any}
-                    byWeekOnly={byWeekOnly as any}
-                    byWeekChart={byWeekChart as any}
-                    bySource={bySource as any}
-                    currentMonthKey={currentMonthKey}
-                    currentMonthActual={currentMonthActual}
-                    currentMonthGoalComputed={currentMonthGoalComputed}
-                    monthGoal={monthGoal}
-                    setMonthGoal={setMonthGoal}
-                    monthGoalInsight={monthGoalInsight}
-                  />
-                );
-              })()}
+              <SummarySection
+                totals={totals as any}
+                byMonth={byMonth as any}
+                byWeekOnly={byWeekOnly as any}
+                byWeekChart={byWeekChart as any}
+                bySource={bySource as any}
+              />
             </>
           )}
 
@@ -439,17 +415,28 @@ export default function Page() {
           )}
 
           {tab === "keyword" && (
-            <KeywordSection keywordAgg={keywordAgg} keywordInsight={keywordInsight} />
+            <KeywordSection
+              keywordAgg={keywordAgg}
+              keywordInsight={keywordInsight}
+            />
           )}
 
           {tab === "keywordDetail" && (
-            <KeywordDetailSection rows={filteredRows as any[]} />
+            <KeywordDetailSection
+              reportType={undefined}
+              rows={filteredRows as any[]}
+            />
           )}
 
-          {tab === "creative" && <CreativeSection rows={creativeBaseRows} />}
+          {tab === "creative" && (
+            <CreativeSection rows={creativeBaseRows} />
+          )}
 
           {tab === "creativeDetail" && (
-            <CreativeDetailSection rows={filteredRows as any[]} />
+            <CreativeDetailSection
+              reportType={undefined}
+              rows={filteredRows as any[]}
+            />
           )}
         </div>
       </div>
