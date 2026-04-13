@@ -375,31 +375,38 @@ export function useReportAggregates({
   }, [onInvalidWeek, selectedMonth, weekOptions, selectedWeek]);
 
   // ============================================================
+  // 공통 base filtered rows
+  // month / week / device 만 적용
+  // channel / source / product 는 이후 baseFilteredRows 기준으로 재구성
+  // ============================================================
+  const baseFilteredRows = useMemo(
+    () =>
+      filterRows({
+        rows: normalizedRows as any,
+        selectedMonth,
+        selectedWeek,
+        selectedDevice,
+        selectedChannel: "all",
+        selectedSource: "all",
+      }) as any[],
+    [normalizedRows, selectedMonth, selectedWeek, selectedDevice]
+  );
+
+  // ============================================================
   // 채널 옵션용 base rows
-  // month / week / device / source 까지만 적용
+  // source / product 만 적용
   // channel 은 아직 적용하지 않음
   // ============================================================
   const channelBaseRows = useMemo(
     () =>
       applyProductFilter(
-        filterRows({
-          rows: normalizedRows as any,
-          selectedMonth,
-          selectedWeek,
-          selectedDevice,
-          selectedChannel: "all",
-          selectedSource,
-        }) as any[],
+        (baseFilteredRows as any[]).filter((r) => {
+          if (selectedSource === "all") return true;
+          return asStr(r?.source) === String(selectedSource);
+        }),
         selectedProduct
       ),
-    [
-      normalizedRows,
-      selectedMonth,
-      selectedWeek,
-      selectedDevice,
-      selectedSource,
-      selectedProduct,
-    ]
+    [baseFilteredRows, selectedSource, selectedProduct]
   );
 
   const { channelOptions } = useMemo(
@@ -409,30 +416,19 @@ export function useReportAggregates({
 
   // ============================================================
   // 소스 옵션용 base rows
-  // month / week / device / channel 까지만 적용
+  // channel / product 만 적용
   // source 는 아직 적용하지 않음
   // ============================================================
   const sourceBaseRows = useMemo(
     () =>
       applyProductFilter(
-        filterRows({
-          rows: normalizedRows as any,
-          selectedMonth,
-          selectedWeek,
-          selectedDevice,
-          selectedChannel,
-          selectedSource: "all",
-        }) as any[],
+        (baseFilteredRows as any[]).filter((r) => {
+          if (selectedChannel === "all") return true;
+          return asStr(r?.channel) === String(selectedChannel);
+        }),
         selectedProduct
       ),
-    [
-      normalizedRows,
-      selectedMonth,
-      selectedWeek,
-      selectedDevice,
-      selectedChannel,
-      selectedProduct,
-    ]
+    [baseFilteredRows, selectedChannel, selectedProduct]
   );
 
   const { sourceOptions } = useMemo(
@@ -442,27 +438,23 @@ export function useReportAggregates({
 
   // ============================================================
   // 상품 옵션용 base rows
-  // month / week / device / channel / source 까지만 적용
+  // channel / source 까지만 적용
   // product 는 아직 적용하지 않음
   // ============================================================
   const productBaseRows = useMemo(
     () =>
-      filterRows({
-        rows: normalizedRows as any,
-        selectedMonth,
-        selectedWeek,
-        selectedDevice,
-        selectedChannel,
-        selectedSource,
-      }) as any[],
-    [
-      normalizedRows,
-      selectedMonth,
-      selectedWeek,
-      selectedDevice,
-      selectedChannel,
-      selectedSource,
-    ]
+      (baseFilteredRows as any[]).filter((r) => {
+        const channelOk =
+          selectedChannel === "all" ||
+          asStr(r?.channel) === String(selectedChannel);
+        if (!channelOk) return false;
+
+        const sourceOk =
+          selectedSource === "all" ||
+          asStr(r?.source) === String(selectedSource);
+        return sourceOk;
+      }),
+    [baseFilteredRows, selectedChannel, selectedSource]
   );
 
   const productOptions = useMemo(
@@ -474,25 +466,20 @@ export function useReportAggregates({
   const filteredRowsRaw = useMemo(
     () =>
       applyProductFilter(
-        filterRows({
-          rows: normalizedRows as any,
-          selectedMonth,
-          selectedWeek,
-          selectedDevice,
-          selectedChannel,
-          selectedSource,
-        }) as any[],
+        (baseFilteredRows as any[]).filter((r) => {
+          const channelOk =
+            selectedChannel === "all" ||
+            asStr(r?.channel) === String(selectedChannel);
+          if (!channelOk) return false;
+
+          const sourceOk =
+            selectedSource === "all" ||
+            asStr(r?.source) === String(selectedSource);
+          return sourceOk;
+        }),
         selectedProduct
       ),
-    [
-      normalizedRows,
-      selectedMonth,
-      selectedWeek,
-      selectedDevice,
-      selectedChannel,
-      selectedSource,
-      selectedProduct,
-    ]
+    [baseFilteredRows, selectedChannel, selectedSource, selectedProduct]
   );
 
   /**
@@ -798,7 +785,7 @@ export function useReportAggregates({
   const byMonth = useMemo(() => {
     if (!needByMonth) return EMPTY_LIST;
     return groupByMonthRecent3({
-      rows: applyProductFilter(normalizedRows as any[], selectedProduct),
+      rows: applyProductFilter(productBaseRows as any[], selectedProduct),
       selectedMonth,
       selectedDevice,
       selectedChannel,
@@ -806,7 +793,7 @@ export function useReportAggregates({
     } as any);
   }, [
     needByMonth,
-    normalizedRows,
+    productBaseRows,
     selectedMonth,
     selectedDevice,
     selectedChannel,

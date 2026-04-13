@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { GoalState, MonthKey } from "../../src/lib/report/types";
+import type { GoalState, MonthKey, ReportType } from "../../src/lib/report/types";
 
 type InsightOk = { ok: true; result: string };
 type InsightFail = { ok: false; error?: string; aborted?: boolean };
@@ -60,11 +60,24 @@ async function requestInsight(payload: any, signal?: AbortSignal): Promise<Insig
   }
 }
 
+function getInsightNote(reportType?: ReportType) {
+  if (reportType === "db_acquisition") {
+    return "DB획득 리포트 기준으로 해석합니다. 전환, CPA, 리드 확보 효율 중심으로 설명하고 매출/ROAS 중심 해석은 제외합니다.";
+  }
+
+  if (reportType === "traffic") {
+    return "트래픽 리포트 기준으로 해석합니다. 유입/클릭/CTR 중심으로 설명하고 매출 중심 해석은 제외합니다.";
+  }
+
+  return "커머스 리포트 기준으로 해석합니다. 매출, ROAS, 전환 효율 중심으로 설명합니다.";
+}
+
 export function useInsights(params: {
   byMonth: any[];
   rowsLength: number;
   currentMonthKey: MonthKey;
   monthGoal: GoalState;
+  reportType?: ReportType;
 
   currentMonthActual: {
     impressions: number;
@@ -124,6 +137,10 @@ export function useInsights(params: {
     return a / g;
   };
 
+  const insightNote = useMemo(() => {
+    return getInsightNote(params.reportType);
+  }, [params.reportType]);
+
   // progress (목표 인사이트에 사용)
   const progress = useMemo(
     () => ({
@@ -166,12 +183,14 @@ export function useInsights(params: {
     try {
       return JSON.stringify({
         type: "monthly",
+        reportType: params.reportType ?? "commerce",
+        note: insightNote,
         data: params.byMonth.slice(0, 3),
       });
     } catch {
       return "";
     }
-  }, [params.byMonth, params.enableMonthlyInsight]);
+  }, [params.byMonth, params.enableMonthlyInsight, params.reportType, insightNote]);
 
   /**
    * [수정 포인트]
@@ -193,11 +212,12 @@ export function useInsights(params: {
     try {
       return JSON.stringify({
         type: "monthGoal",
+        reportType: params.reportType ?? "commerce",
         monthKey: params.currentMonthKey,
         goal,
         actual: params.currentMonthActual,
         progress,
-        note: "",
+        note: insightNote,
       });
     } catch {
       return "";
@@ -208,7 +228,9 @@ export function useInsights(params: {
     params.currentMonthKey,
     params.monthGoal,
     params.currentMonthActual,
+    params.reportType,
     progress,
+    insightNote,
   ]);
 
   // 1) 월별 성과 인사이트
@@ -241,7 +263,15 @@ export function useInsights(params: {
       setMonthlyInsight("");
       const monthlyData = params.byMonth.slice(0, 3);
 
-      const r = await requestInsight({ type: "monthly", data: monthlyData }, ac.signal);
+      const r = await requestInsight(
+        {
+          type: "monthly",
+          reportType: params.reportType ?? "commerce",
+          note: insightNote,
+          data: monthlyData,
+        },
+        ac.signal
+      );
 
       if (!r.ok) {
         if (r.aborted) return;
@@ -252,7 +282,13 @@ export function useInsights(params: {
     })();
 
     return () => ac.abort();
-  }, [params.byMonth, params.enableMonthlyInsight, monthlyRequestKey]);
+  }, [
+    params.byMonth,
+    params.enableMonthlyInsight,
+    params.reportType,
+    monthlyRequestKey,
+    insightNote,
+  ]);
 
   // 2) 당월 목표/결과 인사이트 (700ms 디바운스)
   useEffect(() => {
@@ -304,6 +340,7 @@ export function useInsights(params: {
       (async () => {
         const payload = {
           type: "monthGoal",
+          reportType: params.reportType ?? "commerce",
           monthKey: params.currentMonthKey,
           goal: {
             impressions: Number(params.monthGoal.impressions) || 0,
@@ -314,7 +351,7 @@ export function useInsights(params: {
           },
           actual: params.currentMonthActual,
           progress,
-          note: "",
+          note: insightNote,
         };
 
         const r = await requestInsight(payload, ac.signal);
@@ -336,6 +373,7 @@ export function useInsights(params: {
     params.enableMonthGoalInsight,
     params.rowsLength,
     params.currentMonthKey,
+    params.reportType,
 
     params.monthGoal.impressions,
     params.monthGoal.clicks,
@@ -359,6 +397,7 @@ export function useInsights(params: {
 
     progress,
     goalRequestKey,
+    insightNote,
   ]);
 
   return { monthlyInsight, monthGoalInsight };

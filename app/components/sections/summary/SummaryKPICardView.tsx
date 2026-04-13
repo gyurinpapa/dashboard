@@ -121,8 +121,8 @@ const DENSITY_CLASSES: Record<
     badge: "h-6 px-2.5 text-[10px]",
     dot: "mt-0.5 h-2.5 w-2.5",
     value: "mt-3 text-[24px] leading-none",
-    sub: "mt-0 text-[11px]",
-    footer: "mt-0 pt-0 text-[10px]",
+    sub: "mt-2 text-[11px]",
+    footer: "mt-3 pt-3 text-[10px]",
   },
   "export-full": {
     root: "rounded-[22px] px-4 py-3.5",
@@ -174,21 +174,12 @@ function SummaryKPICardViewComponent({
   const footerClass = FOOTER_CLASS_BY_TONE[tone];
   const densityClasses = DENSITY_CLASSES[density];
 
-  // 성능 최적화 포인트: 파생 문자열을 render 내 분기 대신 고정
   const helperText = subValue ?? footerText ?? "";
-  const isReportDensity = density === "report";
+  const hasHelperText = Boolean(helperText);
+  const hasFooterRow = Boolean(subValue && footerText);
 
-  // 성능 최적화 포인트: style object 참조 안정화
-  const accentBarStyle = useMemo(
-    () => ({ backgroundColor: accent }),
-    [accent]
-  );
-
-  const dotStyle = useMemo(
-    () => ({ backgroundColor: accent }),
-    [accent]
-  );
-
+  const accentBarStyle = useMemo(() => ({ backgroundColor: accent }), [accent]);
+  const dotStyle = useMemo(() => ({ backgroundColor: accent }), [accent]);
   const glowStyle = useMemo(() => GLOW_STYLE_BY_TONE[tone], [tone]);
 
   const rootClassName = useMemo(
@@ -198,7 +189,9 @@ function SummaryKPICardViewComponent({
         toneSurfaceClass,
         densityClasses.root,
         className ?? "",
-      ].join(" "),
+      ]
+        .filter(Boolean)
+        .join(" "),
     [toneSurfaceClass, densityClasses.root, className]
   );
 
@@ -213,11 +206,7 @@ function SummaryKPICardViewComponent({
   );
 
   const dotClassName = useMemo(
-    () =>
-      [
-        "inline-block rounded-full",
-        densityClasses.dot,
-      ].join(" "),
+    () => ["inline-block rounded-full", densityClasses.dot].join(" "),
     [densityClasses.dot]
   );
 
@@ -253,10 +242,7 @@ function SummaryKPICardViewComponent({
 
   return (
     <div className={rootClassName}>
-      <div
-        className="absolute inset-x-0 top-0 h-[3px]"
-        style={accentBarStyle}
-      />
+      <div className="absolute inset-x-0 top-0 h-[3px]" style={accentBarStyle} />
 
       <div
         className="pointer-events-none absolute inset-0 opacity-100"
@@ -269,22 +255,15 @@ function SummaryKPICardViewComponent({
         <div className={badgeClassName}>{title}</div>
 
         <div className="flex shrink-0 items-center gap-2">
-          <span
-            className={dotClassName}
-            style={dotStyle}
-          />
+          <span className={dotClassName} style={dotStyle} />
         </div>
       </div>
 
       <div className={valueClassName}>{value}</div>
 
-      {!isReportDensity && helperText ? (
-        <div className={helperClassName}>{helperText}</div>
-      ) : null}
+      {hasHelperText ? <div className={helperClassName}>{helperText}</div> : null}
 
-      {!isReportDensity && footerText ? (
-        <div className={footerClassName}>{footerText}</div>
-      ) : null}
+      {hasFooterRow ? <div className={footerClassName}>{footerText}</div> : null}
 
       <div
         className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-200 group-hover:opacity-100"

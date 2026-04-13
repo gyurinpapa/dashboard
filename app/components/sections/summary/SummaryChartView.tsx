@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useCallback, useMemo, useRef, useState } from "react";
+import type { ReportType } from "../../../../src/lib/report/types";
 import {
   KRW,
   toSafeNumber,
@@ -50,7 +51,7 @@ type Props = {
   density?: SummaryChartViewDensity;
   insight?: Partial<SummaryChartInsight>;
   className?: string;
-  reportType?: "commerce" | "traffic";
+  reportType?: ReportType;
 };
 
 type DensityClasses = {
@@ -75,6 +76,25 @@ type DensityClasses = {
   lineWidth: number;
   lineWidthActive: number;
   maxBarSize: number;
+};
+
+type MetricViewMode = {
+  isTraffic: boolean;
+  isDbAcquisition: boolean;
+  metricSummaryText: string;
+  costLabel: string;
+  revenueLabel: string;
+  roasLabel: string;
+  maxRevenueInsightLabel: string;
+  minCostInsightLabel: string;
+  costValueFormatter: (value: any) => string;
+  revenueValueFormatter: (value: any) => string;
+  roasValueFormatter: (value: any) => string;
+  leftAxisFormatter: (value: any) => string;
+  rightAxisFormatter: (value: any) => string;
+  renderRevenueAsBar: boolean;
+  useHiddenRevenueAxis: boolean;
+  revenueAxisId: "left" | "right" | "revenue_hidden";
 };
 
 const TOKENS = {
@@ -112,6 +132,8 @@ const EMPTY_INSIGHT: SummaryChartInsight = {
   maxRevenueLabel: "-",
   minCostLabel: "-",
 };
+
+const EMPTY_DATA: SummaryChartViewPoint[] = [];
 
 const TOOLTIP_CURSOR = { fill: TOKENS.surface.hoverBand };
 const HIDDEN_AXIS_DOMAIN: ["auto", "auto"] = ["auto", "auto"];
@@ -305,6 +327,73 @@ function getDensityClasses(density: SummaryChartViewDensity): DensityClasses {
   }
 }
 
+function getMetricViewMode(reportType?: ReportType): MetricViewMode {
+  const resolvedType: ReportType = reportType ?? "commerce";
+  const isTraffic = resolvedType === "traffic";
+  const isDbAcquisition = resolvedType === "db_acquisition";
+
+  if (isTraffic) {
+    return {
+      isTraffic: true,
+      isDbAcquisition: false,
+      metricSummaryText: "Impr · Click · CTR",
+      costLabel: "노출",
+      revenueLabel: "클릭",
+      roasLabel: "CTR",
+      maxRevenueInsightLabel: "최대 클릭",
+      minCostInsightLabel: "최고 CTR",
+      costValueFormatter: (value: any) => formatCount(toSafeNumber(value)),
+      revenueValueFormatter: (value: any) => formatCount(toSafeNumber(value)),
+      roasValueFormatter: (value: any) => formatPercentFromRate(value, 2),
+      leftAxisFormatter: (value: any) => formatCountAxisCompact(value),
+      rightAxisFormatter: (value: any) => formatPercentFromRate(value, 2),
+      renderRevenueAsBar: false,
+      useHiddenRevenueAxis: true,
+      revenueAxisId: "revenue_hidden",
+    };
+  }
+
+  if (isDbAcquisition) {
+    return {
+      isTraffic: false,
+      isDbAcquisition: true,
+      metricSummaryText: "Cost · Conv · CPA",
+      costLabel: "비용",
+      revenueLabel: "전환",
+      roasLabel: "CPA",
+      maxRevenueInsightLabel: "최대 전환",
+      minCostInsightLabel: "최저 CPA",
+      costValueFormatter: (value: any) => KRW(toSafeNumber(value)),
+      revenueValueFormatter: (value: any) => formatCount(toSafeNumber(value)),
+      roasValueFormatter: (value: any) => KRW(toSafeNumber(value)),
+      leftAxisFormatter: (value: any) => formatCurrencyAxisCompact(value),
+      rightAxisFormatter: (value: any) => formatCurrencyAxisCompact(value),
+      renderRevenueAsBar: true,
+      useHiddenRevenueAxis: true,
+      revenueAxisId: "revenue_hidden",
+    };
+  }
+
+  return {
+    isTraffic: false,
+    isDbAcquisition: false,
+    metricSummaryText: "Cost · Revenue · ROAS",
+    costLabel: "비용",
+    revenueLabel: "전환매출",
+    roasLabel: "ROAS",
+    maxRevenueInsightLabel: "최대 매출",
+    minCostInsightLabel: "최소 비용",
+    costValueFormatter: (value: any) => KRW(toSafeNumber(value)),
+    revenueValueFormatter: (value: any) => KRW(toSafeNumber(value)),
+    roasValueFormatter: (value: any) => formatPercentFromRoas(value, 1),
+    leftAxisFormatter: (value: any) => formatCurrencyAxisCompact(value),
+    rightAxisFormatter: (value: any) => formatPercentAxisFromRoas(value),
+    renderRevenueAsBar: true,
+    useHiddenRevenueAxis: false,
+    revenueAxisId: "left",
+  };
+}
+
 const CustomXAxisTick = memo(function CustomXAxisTick({
   x,
   y,
@@ -341,10 +430,10 @@ const CustomTooltip = memo(function CustomTooltip({
   payload,
   label,
   reportType,
-}: any & { reportType?: "commerce" | "traffic" }) {
+}: any & { reportType?: ReportType }) {
   if (!active || !payload?.length) return null;
 
-  const isTraffic = reportType === "traffic";
+  const mode = getMetricViewMode(reportType);
 
   const costItem = payload.find((item: any) => item?.dataKey === "cost");
   const revenueItem = payload.find((item: any) => item?.dataKey === "revenue");
@@ -365,12 +454,10 @@ const CustomTooltip = memo(function CustomTooltip({
               className="inline-block h-2.5 w-2.5 rounded-full"
               style={{ backgroundColor: TOKENS.metric.cost }}
             />
-            <span className="font-medium">{isTraffic ? "노출" : "비용"}</span>
+            <span className="font-medium">{mode.costLabel}</span>
           </div>
           <div className="font-semibold text-slate-900">
-            {isTraffic
-              ? formatCount(toSafeNumber(costItem?.value))
-              : KRW(toSafeNumber(costItem?.value))}
+            {mode.costValueFormatter(costItem?.value)}
           </div>
         </div>
 
@@ -380,14 +467,10 @@ const CustomTooltip = memo(function CustomTooltip({
               className="inline-block h-2.5 w-2.5 rounded-full"
               style={{ backgroundColor: TOKENS.metric.revenue }}
             />
-            <span className="font-medium">
-              {isTraffic ? "클릭" : "전환매출"}
-            </span>
+            <span className="font-medium">{mode.revenueLabel}</span>
           </div>
           <div className="font-semibold text-slate-900">
-            {isTraffic
-              ? formatCount(toSafeNumber(revenueItem?.value))
-              : KRW(toSafeNumber(revenueItem?.value))}
+            {mode.revenueValueFormatter(revenueItem?.value)}
           </div>
         </div>
 
@@ -397,12 +480,10 @@ const CustomTooltip = memo(function CustomTooltip({
               className="inline-block h-2.5 w-2.5 rounded-full"
               style={{ backgroundColor: TOKENS.metric.roas }}
             />
-            <span className="font-medium">{isTraffic ? "CTR" : "ROAS"}</span>
+            <span className="font-medium">{mode.roasLabel}</span>
           </div>
           <div className="font-semibold text-slate-900">
-            {isTraffic
-              ? formatPercentFromRate(roasItem?.value, 2)
-              : formatPercentFromRoas(roasItem?.value, 1)}
+            {mode.roasValueFormatter(roasItem?.value)}
           </div>
         </div>
       </div>
@@ -451,15 +532,15 @@ const InlineInsight = memo(function InlineInsight({
     tone === "sky"
       ? "bg-sky-500"
       : tone === "amber"
-      ? "bg-amber-500"
-      : "bg-slate-400";
+        ? "bg-amber-500"
+        : "bg-slate-400";
 
   const labelToneClass =
     tone === "sky"
       ? "text-sky-600"
       : tone === "amber"
-      ? "text-amber-600"
-      : "text-slate-500";
+        ? "text-amber-600"
+        : "text-slate-500";
 
   return (
     <div className="inline-flex min-w-0 items-center gap-2.5">
@@ -515,20 +596,14 @@ function SummaryChartView({
   density = "report",
   insight,
   className,
-  reportType,
+  reportType = "commerce",
 }: Props) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const activeIndexRef = useRef<number | null>(null);
 
-  const isTraffic = reportType === "traffic";
-
-  // 성능 최적화 포인트:
-  // - 부모가 동일 참조를 유지하면 하위 chart 계산도 그대로 유지
-  const safeData = useMemo(() => (Array.isArray(data) ? data : []), [data]);
-
-  // 성능 최적화 포인트:
-  // - density 분기 계산 1회만 수행
+  const safeData = useMemo(() => (Array.isArray(data) ? data : EMPTY_DATA), [data]);
   const densityClasses = useMemo(() => getDensityClasses(density), [density]);
+  const mode = useMemo(() => getMetricViewMode(reportType), [reportType]);
 
   const resolvedInsight = useMemo<SummaryChartInsight>(() => {
     return {
@@ -538,38 +613,21 @@ function SummaryChartView({
     };
   }, [insight]);
 
-  // 성능 최적화 포인트:
-  // - activeLabel을 별도 state로 들지 않고 activeIndex에서 파생
   const activeLabel = useMemo(() => {
     if (activeIndex == null) return null;
     return String(safeData[activeIndex]?.label || "");
   }, [activeIndex, safeData]);
 
   const rootClassName = useMemo(() => {
-    return [densityClasses.shell, className ?? ""].join(" ");
+    return [densityClasses.shell, className ?? ""].filter(Boolean).join(" ");
   }, [densityClasses.shell, className]);
-
-  const leftAxisFormatter = useCallback(
-    (value: any) => {
-      return isTraffic ? formatCountAxisCompact(value) : formatCurrencyAxisCompact(value);
-    },
-    [isTraffic]
-  );
-
-  const rightAxisFormatter = useCallback(
-    (value: any) => {
-      return isTraffic ? formatPercentFromRate(value, 2) : formatPercentAxisFromRoas(value);
-    },
-    [isTraffic]
-  );
 
   const handleMouseMove = useCallback((state: any) => {
     const nextIndex =
-      typeof state?.activeTooltipIndex === "number" ? state.activeTooltipIndex : null;
+      typeof state?.activeTooltipIndex === "number"
+        ? state.activeTooltipIndex
+        : null;
 
-    // 성능 최적화 포인트:
-    // - 같은 index hover에서는 state 업데이트를 생략해
-    //   불필요한 chart 재렌더를 줄임
     if (activeIndexRef.current === nextIndex) return;
 
     activeIndexRef.current = nextIndex;
@@ -641,7 +699,9 @@ function SummaryChartView({
   );
 
   const lineStrokeWidth =
-    activeIndex !== null ? densityClasses.lineWidthActive : densityClasses.lineWidth;
+    activeIndex !== null
+      ? densityClasses.lineWidthActive
+      : densityClasses.lineWidth;
 
   const costCells = useMemo(() => {
     const hasActive = activeIndex !== null;
@@ -656,8 +716,8 @@ function SummaryChartView({
             isActiveCell
               ? TOKENS.metric.cost
               : hasActive
-              ? TOKENS.metric.costSoft
-              : TOKENS.metric.cost
+                ? TOKENS.metric.costSoft
+                : TOKENS.metric.cost
           }
           fillOpacity={isActiveCell ? 1 : hasActive ? 0.58 : 0.95}
         />
@@ -666,7 +726,7 @@ function SummaryChartView({
   }, [safeData, activeIndex]);
 
   const revenueCells = useMemo(() => {
-    if (isTraffic) return null;
+    if (!mode.renderRevenueAsBar) return null;
 
     const hasActive = activeIndex !== null;
 
@@ -680,14 +740,14 @@ function SummaryChartView({
             isActiveCell
               ? TOKENS.metric.revenue
               : hasActive
-              ? TOKENS.metric.revenueSoft
-              : TOKENS.metric.revenue
+                ? TOKENS.metric.revenueSoft
+                : TOKENS.metric.revenue
           }
           fillOpacity={isActiveCell ? 1 : hasActive ? 0.58 : 0.95}
         />
       );
     });
-  }, [safeData, activeIndex, isTraffic]);
+  }, [safeData, activeIndex, mode.renderRevenueAsBar]);
 
   return (
     <div className={rootClassName}>
@@ -707,7 +767,7 @@ function SummaryChartView({
               Metric
             </div>
             <div className="mt-1 text-[12px] font-semibold text-slate-700">
-              {isTraffic ? "Impr · Click · CTR" : "Cost · Revenue · ROAS"}
+              {mode.metricSummaryText}
             </div>
           </div>
         </div>
@@ -719,31 +779,31 @@ function SummaryChartView({
             <div className="flex flex-wrap items-center gap-2">
               <SlimLegendItem
                 color={TOKENS.metric.roas}
-                label={isTraffic ? "CTR" : "ROAS"}
+                label={mode.roasLabel}
                 pillClass={densityClasses.legendPill}
               />
               <SlimLegendItem
                 color={TOKENS.metric.cost}
-                label={isTraffic ? "노출" : "비용"}
+                label={mode.costLabel}
                 pillClass={densityClasses.legendPill}
               />
               <SlimLegendItem
                 color={TOKENS.metric.revenue}
-                label={isTraffic ? "클릭" : "전환매출"}
+                label={mode.revenueLabel}
                 pillClass={densityClasses.legendPill}
               />
             </div>
 
             <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
               <InlineInsight
-                label="Current"
+                label="현재"
                 value={resolvedInsight.currentLabel}
                 labelClassName={densityClasses.insightLabel}
                 valueClassName={densityClasses.insightValue}
               />
               <StatusDivider />
               <InlineInsight
-                label={isTraffic ? "Max Clicks" : "Max Revenue"}
+                label={mode.maxRevenueInsightLabel}
                 value={resolvedInsight.maxRevenueLabel}
                 tone="sky"
                 labelClassName={densityClasses.insightLabel}
@@ -751,7 +811,7 @@ function SummaryChartView({
               />
               <StatusDivider />
               <InlineInsight
-                label={isTraffic ? "Max CTR" : "Min Cost"}
+                label={mode.minCostInsightLabel}
                 value={resolvedInsight.minCostLabel}
                 tone="amber"
                 labelClassName={densityClasses.insightLabel}
@@ -811,11 +871,11 @@ function SummaryChartView({
                 tickMargin={10}
                 minTickGap={14}
                 tick={{ fontSize: densityClasses.yTick, fill: TOKENS.text.muted }}
-                tickFormatter={leftAxisFormatter}
+                tickFormatter={mode.leftAxisFormatter}
               />
 
-              {isTraffic ? (
-                <YAxis yAxisId="clicks" hide domain={HIDDEN_AXIS_DOMAIN} />
+              {mode.useHiddenRevenueAxis ? (
+                <YAxis yAxisId="revenue_hidden" hide domain={HIDDEN_AXIS_DOMAIN} />
               ) : null}
 
               <YAxis
@@ -827,7 +887,7 @@ function SummaryChartView({
                 tickMargin={10}
                 minTickGap={14}
                 tick={{ fontSize: densityClasses.yTick, fill: TOKENS.text.muted }}
-                tickFormatter={rightAxisFormatter}
+                tickFormatter={mode.rightAxisFormatter}
               />
 
               <Tooltip
@@ -839,7 +899,7 @@ function SummaryChartView({
               <Bar
                 yAxisId="left"
                 dataKey="cost"
-                name={isTraffic ? "노출" : "비용"}
+                name={mode.costLabel}
                 fill={TOKENS.metric.cost}
                 radius={[10, 10, 0, 0]}
                 maxBarSize={densityClasses.maxBarSize}
@@ -851,12 +911,27 @@ function SummaryChartView({
                 {costCells}
               </Bar>
 
-              {isTraffic ? (
+              {mode.renderRevenueAsBar ? (
+                <Bar
+                  yAxisId={mode.revenueAxisId}
+                  dataKey="revenue"
+                  name={mode.revenueLabel}
+                  fill={TOKENS.metric.revenue}
+                  radius={[10, 10, 0, 0]}
+                  maxBarSize={densityClasses.maxBarSize}
+                  isAnimationActive
+                  animationBegin={80}
+                  animationDuration={MOTION.barDuration}
+                  animationEasing="ease-out"
+                >
+                  {revenueCells}
+                </Bar>
+              ) : (
                 <Line
-                  yAxisId="clicks"
+                  yAxisId={mode.revenueAxisId}
                   type="monotone"
                   dataKey="revenue"
-                  name="클릭"
+                  name={mode.revenueLabel}
                   stroke={TOKENS.metric.revenue}
                   strokeWidth={lineStrokeWidth}
                   strokeOpacity={1}
@@ -868,28 +943,13 @@ function SummaryChartView({
                   animationDuration={MOTION.lineDuration}
                   animationEasing="ease-out"
                 />
-              ) : (
-                <Bar
-                  yAxisId="left"
-                  dataKey="revenue"
-                  name="전환매출"
-                  fill={TOKENS.metric.revenue}
-                  radius={[10, 10, 0, 0]}
-                  maxBarSize={densityClasses.maxBarSize}
-                  isAnimationActive
-                  animationBegin={80}
-                  animationDuration={MOTION.barDuration}
-                  animationEasing="ease-out"
-                >
-                  {revenueCells}
-                </Bar>
               )}
 
               <Line
                 yAxisId="right"
                 type="natural"
                 dataKey="roas"
-                name={isTraffic ? "CTR" : "ROAS"}
+                name={mode.roasLabel}
                 stroke={TOKENS.metric.roas}
                 strokeWidth={lineStrokeWidth}
                 strokeOpacity={1}

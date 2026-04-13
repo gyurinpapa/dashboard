@@ -7,9 +7,9 @@ import {
   useMemo,
   useState,
 } from "react";
-import type { Row } from "../../../src/lib/report/types";
+import type { Row, ReportType } from "../../../src/lib/report/types";
 
-import SummaryGoal from "./summary/SummaryGoal";
+import SummarySection from "./SummarySection";
 
 import {
   summarize,
@@ -26,6 +26,17 @@ import {
   formatPercentFromRate,
   formatPercentFromRoas,
 } from "../../../src/lib/report/format";
+
+/** =========================
+ * Types / mode helpers
+ * ========================= */
+type ReportMode = "commerce" | "traffic" | "db_acquisition";
+
+function resolveReportMode(reportType?: ReportMode): ReportMode {
+  if (reportType === "traffic") return "traffic";
+  if (reportType === "db_acquisition") return "db_acquisition";
+  return "commerce";
+}
 
 /** =========================
  * Utils (안전 방어)
@@ -227,12 +238,13 @@ function groupByDayFromRows(rows: Row[]) {
 /** =========================
  * Badge helpers (TOP3)
  * ========================= */
-type BadgeKey = "ctr" | "conversions" | "roas";
+type BadgeKey = "ctr" | "conversions" | "roas" | "cpa";
 
 const BADGE_META: Record<BadgeKey, { label: string; className: string }> = {
   ctr: { label: "TOP CTR", className: "bg-blue-600 text-white" },
   conversions: { label: "TOP 전환", className: "bg-orange-600 text-white" },
   roas: { label: "TOP ROAS", className: "bg-emerald-600 text-white" },
+  cpa: { label: "TOP CPA", className: "bg-violet-600 text-white" },
 };
 
 const BadgePill = memo(function BadgePill({ k }: { k: BadgeKey }) {
@@ -254,7 +266,7 @@ const BadgePill = memo(function BadgePill({ k }: { k: BadgeKey }) {
  * Insight
  * ========================= */
 function buildCreativeDetailInsight(args: {
-  reportType?: "commerce" | "traffic";
+  reportMode: ReportMode;
   creative: string | null;
   allRowsScope: Row[];
   creativeRows: Row[];
@@ -263,7 +275,7 @@ function buildCreativeDetailInsight(args: {
   byDevice: any[];
 }) {
   const {
-    reportType,
+    reportMode,
     creative,
     allRowsScope,
     creativeRows,
@@ -271,8 +283,6 @@ function buildCreativeDetailInsight(args: {
     bySource,
     byDevice,
   } = args;
-
-  const isTraffic = reportType === "traffic";
 
   if (!creative) {
     return {
@@ -355,6 +365,18 @@ function buildCreativeDetailInsight(args: {
     wLast && wPrev
       ? diffRatio(toSafeNumber(wLast.cost), toSafeNumber(wPrev.cost)) ?? 0
       : 0;
+  const ctrWoW =
+    wLast && wPrev
+      ? diffRatio(toSafeNumber(wLast.ctr), toSafeNumber(wPrev.ctr)) ?? 0
+      : 0;
+  const cvrWoW =
+    wLast && wPrev
+      ? diffRatio(toSafeNumber(wLast.cvr), toSafeNumber(wPrev.cvr)) ?? 0
+      : 0;
+  const cpaWoW =
+    wLast && wPrev
+      ? diffRatio(toSafeNumber(wLast.cpa), toSafeNumber(wPrev.cpa)) ?? 0
+      : 0;
 
   const sources = [...(bySource || [])].sort(
     (a, b) => toSafeNumber(b.cost) - toSafeNumber(a.cost)
@@ -369,8 +391,9 @@ function buildCreativeDetailInsight(args: {
   const topD2 = devices[1] ?? null;
 
   const bullets: string[] = [];
+  const actions: string[] = [];
 
-  if (isTraffic) {
+  if (reportMode === "traffic") {
     const efficiencyLabel =
       toSafeNumber(me.ctr) >= 0.02
         ? "CTR이 2% 이상으로 반응성이 양호"
@@ -380,7 +403,9 @@ function buildCreativeDetailInsight(args: {
 
     const trendLabel =
       wLast && wPrev
-        ? `최근 1주 기준: 클릭 ${signPct(clickWoW)}, 광고비 ${signPct(costWoW)}`
+        ? `최근 1주 기준: CTR ${signPct(ctrWoW)}, 클릭 ${signPct(
+            clickWoW
+          )}, 광고비 ${signPct(costWoW)}`
         : "최근 주간 데이터가 부족하여 추세 비교는 제한적입니다.";
 
     bullets.push(
@@ -413,8 +438,6 @@ function buildCreativeDetailInsight(args: {
       bullets.push("기기별: 데이터가 부족하여 비교가 제한적입니다.");
     }
 
-    const actions: string[] = [];
-
     if (toSafeNumber(me.ctr) < 0.02 && toSafeNumber(me.impressions) > 0) {
       actions.push(
         "클릭 개선: CTR이 낮습니다. 썸네일/첫 프레임/헤드라인/CTA 훅을 2~3종으로 분리 테스트하고, 저반응 소재는 빠르게 교체하세요."
@@ -444,12 +467,105 @@ function buildCreativeDetailInsight(args: {
     return { title: "선택 소재 요약 인사이트", bullets, actions };
   }
 
+  if (reportMode === "db_acquisition") {
+    const efficiencyLabel =
+      toSafeNumber(me.cpa) > 0 && toSafeNumber(me.cpa) <= 50000
+        ? "CPA가 안정적이라 리드 확보 효율이 양호"
+        : toSafeNumber(me.cvr) >= 0.02
+        ? "CVR은 나쁘지 않지만 CPA 최적화 여지"
+        : "전환 효율 개선이 우선이며 CPA·CVR 점검이 필요";
+
+    const trendLabel =
+      wLast && wPrev
+        ? `최근 1주 기준: 클릭 ${signPct(clickWoW)}, 전환 ${signPct(
+            convWoW
+          )}, CVR ${signPct(cvrWoW)}, CPA ${signPct(cpaWoW)}`
+        : "최근 주간 데이터가 부족하여 추세 비교는 제한적입니다.";
+
+    bullets.push(
+      `선택 소재 “${creative}” 성과: 클릭 ${Math.round(
+        toSafeNumber(me.clicks)
+      )} / 전환 ${toSafeNumber(me.conversions).toFixed(
+        1
+      )} / CPA ${Math.round(toSafeNumber(me.cpa)).toLocaleString()}원 · ${efficiencyLabel}`
+    );
+    bullets.push(
+      `기여도(현재 탭 범위 대비): 비용 ${safePct(shareCost)}, 전환 ${safePct(
+        shareConv
+      )}, 클릭 ${safePct(shareClick)}`
+    );
+    bullets.push(trendLabel);
+
+    if (topD1) {
+      const d1 = pickDeviceLabel(String(topD1.device ?? "unknown"));
+      const d1Cpa = toSafeNumber(topD1.cpa);
+      const d1Cvr = toSafeNumber(topD1.cvr);
+
+      let deviceLine = `기기별: “${d1}” 비중이 가장 큽니다(CPA ${Math.round(
+        d1Cpa
+      ).toLocaleString()}원, CVR ${safePct(d1Cvr)}).`;
+
+      if (topD2) {
+        const d2 = pickDeviceLabel(String(topD2.device ?? "unknown"));
+        const d2Cpa = toSafeNumber(topD2.cpa);
+        deviceLine += ` 비교: “${d2}” CPA ${Math.round(d2Cpa).toLocaleString()}원.`;
+      }
+
+      bullets.push(deviceLine);
+    } else {
+      bullets.push("기기별: 데이터가 부족하여 비교가 제한적입니다.");
+    }
+
+    if (toSafeNumber(me.ctr) < 0.02 && toSafeNumber(me.impressions) > 0) {
+      actions.push(
+        "클릭 개선: CTR이 낮습니다. 썸네일/첫 프레임/헤드라인/CTA 훅을 2~3종으로 분리 테스트하고, 저반응 소재는 빠르게 교체하세요."
+      );
+    } else {
+      actions.push(
+        "유입 유지/확대: 클릭 반응은 급격히 나쁘지 않습니다. 전환 발생 소재와 유사한 메시지/포맷으로 확장을 검토하세요."
+      );
+    }
+
+    if (toSafeNumber(me.cvr) < 0.01 && toSafeNumber(me.clicks) >= 30) {
+      actions.push(
+        "전환 개선: CVR이 낮습니다. 랜딩 첫 화면 메시지 정렬, 폼 필드 축소, 문의 CTA 강조를 우선 적용하세요."
+      );
+    } else {
+      actions.push(
+        "전환 확대: CVR이 급격히 낮지 않습니다. 전환 상위 구간(기기/요일/소스)에 예산을 더 집중하세요."
+      );
+    }
+
+    if (toSafeNumber(me.cpa) > 0) {
+      actions.push(
+        "CPA 안정화: 전환이 발생한 소재는 저효율 세그먼트를 분리하고, CPA가 낮은 구간에 예산을 우선 배분하세요."
+      );
+    }
+
+    if (topS1) {
+      actions.push(
+        `소스 기준: 비용 상위 “${String(topS1.source)}”(CPA ${Math.round(
+          toSafeNumber(topS1.cpa)
+        ).toLocaleString()}원)를 중심으로 예산/세팅 최적화를 우선하세요.`
+      );
+    }
+    if (topS2) {
+      actions.push(
+        `소스 비교: 2순위 “${String(topS2.source)}”(CPA ${Math.round(
+          toSafeNumber(topS2.cpa)
+        ).toLocaleString()}원)와 함께 유지/축소 기준을 명확히 하세요.`
+      );
+    }
+
+    return { title: "선택 소재 요약 인사이트", bullets, actions };
+  }
+
   const efficiencyLabel =
     toSafeNumber(me.roas) >= 1.0
       ? "ROAS가 100% 이상으로 효율이 양호"
       : toSafeNumber(me.roas) >= 0.7
-      ? "ROAS가 70~100% 구간으로 개선 여지"
-      : "ROAS가 70% 미만으로 효율 개선이 우선";
+        ? "ROAS가 70~100% 구간으로 개선 여지"
+        : "ROAS가 70% 미만으로 효율 개선이 우선";
 
   const trendLabel =
     wLast && wPrev
@@ -493,8 +609,6 @@ function buildCreativeDetailInsight(args: {
     bullets.push("기기별: 데이터가 부족하여 비교가 제한적입니다.");
   }
 
-  const actions: string[] = [];
-
   if (toSafeNumber(me.ctr) < 0.02 && toSafeNumber(me.impressions) > 0) {
     actions.push(
       "클릭 개선: CTR이 낮습니다. 썸네일/첫 프레임/헤드라인/CTA 훅을 2~3종으로 분리 테스트하고, 저반응 소재는 빠르게 교체하세요."
@@ -537,7 +651,7 @@ function buildCreativeDetailInsight(args: {
  * Component
  * ========================= */
 type Props = {
-  reportType?: "commerce" | "traffic";
+  reportType?: ReportMode;
   rows: Row[];
 };
 
@@ -550,6 +664,7 @@ type CreativePerf = {
   revenue: number;
   ctr: number;
   roas: number;
+  cpa: number;
 };
 
 type CreativePreviewMeta = {
@@ -704,7 +819,7 @@ const SideThumbButton = memo(function SideThumbButton({
 });
 
 export default function CreativeDetailSection({ reportType, rows }: Props) {
-  const isTraffic = reportType === "traffic";
+  const reportMode = resolveReportMode(reportType);
 
   const creativeRowsMap = useMemo(() => buildCreativeRowsMap(rows), [rows]);
   const creatives = useMemo(
@@ -756,6 +871,7 @@ export default function CreativeDetailSection({ reportType, rows }: Props) {
         revenue: 0,
         ctr: 0,
         roas: 0,
+        cpa: 0,
       };
 
       prev.impressions += impr;
@@ -770,7 +886,8 @@ export default function CreativeDetailSection({ reportType, rows }: Props) {
     const arr = Array.from(map.values()).map((x) => {
       const ctr = x.impressions > 0 ? x.clicks / x.impressions : 0;
       const roas = x.cost > 0 ? x.revenue / x.cost : 0;
-      return { ...x, ctr, roas };
+      const cpa = x.conversions > 0 ? x.cost / x.conversions : 0;
+      return { ...x, ctr, roas, cpa };
     });
 
     return arr;
@@ -779,7 +896,7 @@ export default function CreativeDetailSection({ reportType, rows }: Props) {
   const badgeMap = useMemo(() => {
     const map = new Map<string, BadgeKey[]>();
 
-    const top3 = (key: BadgeKey) => {
+    const top3Desc = (key: BadgeKey) => {
       const sorted = [...perfList].sort((a, b) => {
         const av = toSafeNumber((a as any)[key]);
         const bv = toSafeNumber((b as any)[key]);
@@ -797,14 +914,41 @@ export default function CreativeDetailSection({ reportType, rows }: Props) {
       }
     };
 
-    top3("ctr");
-    if (!isTraffic) {
-      top3("conversions");
-      top3("roas");
+    const top3Asc = (key: BadgeKey) => {
+      const sorted = [...perfList].sort((a, b) => {
+        const av = toSafeNumber((a as any)[key]);
+        const bv = toSafeNumber((b as any)[key]);
+        return av - bv;
+      });
+
+      const picked = sorted
+        .filter((x) => toSafeNumber((x as any)[key]) > 0)
+        .slice(0, 3);
+
+      for (const it of picked) {
+        const prev = map.get(it.creative) ?? [];
+        if (!prev.includes(key)) prev.push(key);
+        map.set(it.creative, prev);
+      }
+    };
+
+    if (reportMode === "traffic") {
+      top3Desc("ctr");
+      return map;
     }
 
+    top3Desc("conversions");
+
+    if (reportMode === "db_acquisition") {
+      top3Desc("ctr");
+      top3Asc("cpa");
+      return map;
+    }
+
+    top3Desc("ctr");
+    top3Desc("roas");
     return map;
-  }, [perfList, isTraffic]);
+  }, [perfList, reportMode]);
 
   const selectedBadges = useMemo(() => {
     if (!selectedCreative) return [] as BadgeKey[];
@@ -926,7 +1070,7 @@ export default function CreativeDetailSection({ reportType, rows }: Props) {
   const insight = useMemo(
     () =>
       buildCreativeDetailInsight({
-        reportType,
+        reportMode,
         creative: selectedCreative,
         allRowsScope: rows,
         creativeRows: filteredRows,
@@ -934,90 +1078,30 @@ export default function CreativeDetailSection({ reportType, rows }: Props) {
         bySource,
         byDevice,
       }),
-    [reportType, selectedCreative, rows, filteredRows, byWeekOnly, bySource, byDevice]
+    [reportMode, selectedCreative, rows, filteredRows, byWeekOnly, bySource, byDevice]
   );
-
-  const emptyCurrentMonthGoalComputed = useMemo(
-    () => ({
-      impressions: 0,
-      clicks: 0,
-      cost: 0,
-      conversions: 0,
-      revenue: 0,
-      ctr: 0,
-      cpc: 0,
-      cvr: 0,
-      cpa: 0,
-      roas: 0,
-    }),
-    []
-  );
-
-  const currentMonthKey = useMemo(() => {
-    const candidate = (totals as any)?.currentMonthKey;
-    return candidate == null ? "" : String(candidate);
-  }, [totals]);
-
-  const currentMonthActual = useMemo(
-    () => (totals as any)?.currentMonthActual ?? totals,
-    [totals]
-  );
-
-  const monthGoal = useMemo(
-    () =>
-      (totals as any)?.monthGoal ?? {
-        impressions: 0,
-        clicks: 0,
-        cost: 0,
-        conversions: 0,
-        revenue: 0,
-      },
-    [totals]
-  );
-
-  const currentMonthGoalComputed = useMemo(
-    () =>
-      (totals as any)?.currentMonthGoalComputed ??
-      emptyCurrentMonthGoalComputed,
-    [totals, emptyCurrentMonthGoalComputed]
-  );
-
-  const lastDataDate = useMemo(() => {
-    let latest = "";
-    for (const row of filteredRows) {
-      const key = extractRowDateKey(row);
-      if (key && key > latest) latest = key;
-    }
-    return latest || undefined;
-  }, [filteredRows]);
-
-  const setMonthGoal = useCallback((_updater: any) => {}, []);
-  const monthGoalInsight = "";
 
   const summarySectionNode = useMemo(
     () => (
-      <SummaryGoal
-        reportType={reportType}
-        currentMonthKey={currentMonthKey}
-        currentMonthActual={currentMonthActual}
-        currentMonthGoalComputed={currentMonthGoalComputed}
-        monthGoal={monthGoal}
-        setMonthGoal={setMonthGoal}
-        monthGoalInsight={monthGoalInsight}
-        lastDataDate={lastDataDate}
+      <SummarySection
+        reportType={reportMode as ReportType}
+        totals={totals}
+        byMonth={byMonth}
+        byWeekOnly={byWeekOnly}
+        byWeekChart={byWeekChart}
+        bySource={bySource}
+        byDay={byDay}
       />
     ),
-    [
-      reportType,
-      currentMonthKey,
-      currentMonthActual,
-      currentMonthGoalComputed,
-      monthGoal,
-      setMonthGoal,
-      monthGoalInsight,
-      lastDataDate,
-    ]
+    [reportMode, totals, byMonth, byWeekOnly, byWeekChart, bySource, byDay]
   );
+
+  const actionTitle =
+    reportMode === "traffic"
+      ? "다음 운영 액션(클릭 · CTR)"
+      : reportMode === "db_acquisition"
+        ? "다음 운영 액션(클릭 · 전환 · CPA)"
+        : "다음 운영 액션(클릭 · 전환 · ROAS)";
 
   return (
     <section className="w-full min-w-0">
@@ -1156,7 +1240,7 @@ export default function CreativeDetailSection({ reportType, rows }: Props) {
 
                 <div className="mt-4 rounded-xl bg-gray-50 p-4">
                   <div className="text-sm font-semibold text-gray-900">
-                    다음 운영 액션
+                    {actionTitle}
                   </div>
                   <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-gray-700">
                     {insight.actions.map((a, i) => (

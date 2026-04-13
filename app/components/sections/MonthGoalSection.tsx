@@ -1,10 +1,11 @@
 // app/components/sections/MonthGoalSection.tsx
 "use client";
 
+import type { ReportType } from "@/src/lib/report/types";
 import SummaryGoal from "./summary/SummaryGoal";
 
 type Props = {
-  reportType?: "commerce" | "traffic";
+  reportType?: ReportType;
   currentMonthKey: string;
   currentMonthActual: any;
   currentMonthGoalComputed: any;
@@ -15,7 +16,7 @@ type Props = {
 };
 
 export default function MonthGoalSection({
-  reportType,
+  reportType = "commerce",
   currentMonthKey,
   currentMonthActual,
   currentMonthGoalComputed,

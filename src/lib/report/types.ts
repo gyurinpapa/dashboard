@@ -1,5 +1,8 @@
 // app/lib/report/types.ts
 
+// ===== Report Types =====
+export type ReportType = "commerce" | "traffic" | "db_acquisition";
+
 // ===== Tabs =====
 export type TabKey =
   | "summary"
@@ -11,7 +14,6 @@ export type TabKey =
   | "creativeDetail";
 
 // ===== FilterKey (HeaderBar에서 쓰는 상단 버튼: 월/주차/기기/채널/소스/상품) =====
-// 지금 page.tsx에서 초기값을 null로 쓰고 있으니 null 포함
 export type FilterKey =
   | "month"
   | "week"
@@ -23,12 +25,13 @@ export type FilterKey =
 
 // ===== Period keys =====
 export type MonthKey = "all" | string; // 예: "2022.07"
-export type WeekKey = "all" | string; // 예: "2022.07 1주차" 또는 "2022-07-W1" 등(프로젝트 데이터 포맷에 따라 string)
+export type WeekKey = "all" | string; // 예: "2022.07 1주차" | "2022-07-W1"
 
 // ===== Dimension keys =====
-export type DeviceKey = "all" | string; // 예: "pc" | "mobile" | ...
-export type ChannelKey = "all" | string; // 예: "search" | "display" | ...
-export type SourceKey = "all" | string; // 예: "naver" | "google" | "kakao" | "meta" | ...
+export type DeviceKey = "all" | string; // 예: "pc" | "mobile"
+export type ChannelKey = "all" | string; // 예: "search" | "display"
+export type SourceKey = "all" | string; // 예: "naver" | "google" | "kakao" | "meta"
+export type ProductKey = "all" | string; // 예: platform / product / 상품명 등
 
 // ===== Goals =====
 export type GoalState = {
@@ -40,8 +43,7 @@ export type GoalState = {
 };
 
 // ===== Aggregate Metrics =====
-// summarize() 기준 공통 집계 타입
-// ctr / cvr / roas 는 모두 "0~1 ratio" 기준으로 다룬다.
+// ctr / cvr / roas 는 모두 0~1 ratio 기준
 // 예: 215% => 2.15
 export type AggregateMetrics = {
   impressions: number;
@@ -57,9 +59,20 @@ export type AggregateMetrics = {
   roas: number;
 };
 
+// ===== Aggregate Row helpers =====
+export type AggregateRow = AggregateMetrics & {
+  label?: string;
+  key?: string;
+  month?: string;
+  week?: string;
+  device?: string;
+  channel?: string;
+  source?: string;
+  product?: string;
+};
+
 // ===== Row (CSV 한 줄의 최소 요구 스키마) =====
-// aggregate/normalize/filter에서 실제로 더 많은 컬럼을 쓸 수 있으니
-// "필수만 타입으로 고정 + 나머지는 확장 가능" 형태로 안전하게 설계
+// 필수만 고정하고, 나머지는 확장 가능하게 둔다.
 export type Row = {
   date: string;
 
@@ -70,18 +83,23 @@ export type Row = {
   revenue?: number | string;
   avgRank?: number | string;
 
-  // 필터링/그룹핑에 쓰일 수 있는 후보 키들
   month?: string;
   week?: string;
 
   device?: string;
   channel?: string;
-
   source?: string;
+  product?: string;
+  platform?: string;
+
   campaign?: string;
   group?: string;
   keyword?: string;
+  creative?: string;
+  creativeName?: string;
+  creativeFile?: string;
+  imageUrl?: string;
+  imagePath?: string;
 
-  // 데이터마다 컬럼명이 다를 수 있으니 확장 허용
   [key: string]: any;
 };

@@ -3,6 +3,7 @@
 
 import {
   memo,
+  useCallback,
   useDeferredValue,
   useEffect,
   useMemo,
@@ -473,26 +474,6 @@ function normalizeReportId(v: any) {
   return asStr(v);
 }
 
-function rowFingerprint(row: any) {
-  if (!row || typeof row !== "object") return "";
-  return [
-    asStr(row?.id),
-    asStr(row?.__row_id),
-    asStr(row?.date ?? row?.report_date ?? row?.day),
-    asStr(row?.campaign_name ?? row?.campaign),
-    asStr(row?.group_name ?? row?.group),
-    asStr(row?.keyword),
-    asStr(row?.channel),
-    asStr(row?.device),
-    asStr(row?.creative_file ?? row?.creativeFile ?? row?.imagepath_raw),
-    asStr(row?.impressions ?? row?.impr),
-    asStr(row?.clicks ?? row?.click ?? row?.clk),
-    asStr(row?.cost ?? row?.spend),
-    asStr(row?.conversions ?? row?.conv ?? row?.cv),
-    asStr(row?.revenue ?? row?.sales ?? row?.gmv),
-  ].join("|");
-}
-
 function extractIngestionInfo(
   detail: ReportDetail | null | undefined
 ): IngestionUiInfo {
@@ -707,13 +688,12 @@ function buildInitialReportPeriod(args: {
 }
 
 /* =========================================================
- * [변경 포인트] Preview 분리
+ * Preview 분리
  * 좌측 업로드/상태 변경이 발생해도
  * preview props가 같으면 ReportTemplate 재렌더를 최대한 막는다.
  * ========================================================= */
 
 type PreviewPaneProps = {
-  previewKey: string;
   loadingRows: boolean;
   rows: any[];
   creativesMap: Record<string, string>;
@@ -732,7 +712,6 @@ type PreviewPaneProps = {
 };
 
 const PreviewPane = memo(function PreviewPane({
-  previewKey,
   loadingRows,
   rows,
   creativesMap,
@@ -781,7 +760,6 @@ const PreviewPane = memo(function PreviewPane({
               }}
             >
               <ReportTemplate
-                key={previewKey}
                 rows={rows}
                 isLoading={loadingRows}
                 creativesMap={creativesMap}
@@ -826,7 +804,6 @@ export default function ReportDetailPage() {
     reportTypeName: "",
     reportTypeKey: "",
   });
-  const [previewVersion, setPreviewVersion] = useState(0);
 
   const [publishing, setPublishing] = useState(false);
   const [sharePath, setSharePath] = useState<string>("");
@@ -880,9 +857,7 @@ export default function ReportDetailPage() {
   const displayCreativesMap = creativesMap;
 
   /**
-   * [변경 포인트]
-   * 큰 rows / creativesMap 반영 시 UI 블로킹을 완화
-   * 미리보기는 약간 늦게 따라와도 안전한 영역이라 deferred 적용
+   * 큰 rows / creativesMap 반영 시 UI 블로킹 완화
    */
   const deferredDisplayRows = useDeferredValue(displayRows);
   const deferredDisplayCreativesMap = useDeferredValue(displayCreativesMap);
@@ -968,23 +943,6 @@ export default function ReportDetailPage() {
     };
   }, [reportId, reportPeriod]);
 
-  const rowsSignature = useMemo(() => {
-    if (!deferredDisplayRows.length) return "rows:0";
-
-    const first = deferredDisplayRows[0];
-    const second = deferredDisplayRows[1];
-    const last = deferredDisplayRows[deferredDisplayRows.length - 1];
-    const prev = deferredDisplayRows[deferredDisplayRows.length - 2];
-
-    return [
-      `len:${deferredDisplayRows.length}`,
-      `f1:${rowFingerprint(first)}`,
-      `f2:${rowFingerprint(second)}`,
-      `l2:${rowFingerprint(prev)}`,
-      `l1:${rowFingerprint(last)}`,
-    ].join("||");
-  }, [deferredDisplayRows]);
-
   const advertiserNameFromRows = useMemo(() => {
     return extractAdvertiserName(rows);
   }, [rows]);
@@ -1047,30 +1005,6 @@ export default function ReportDetailPage() {
     headerFallbackFromRows.reportTypeName,
   ]);
 
-  const previewKey = useMemo(() => {
-    return [
-      reportId || "",
-      effectivePreviewAdvertiserName,
-      effectivePreviewReportTypeName,
-      rowsSignature,
-      creativesUrlCount,
-      previewVersion,
-      reportPeriod.startDate,
-      reportPeriod.endDate,
-      reportPeriod.preset,
-    ].join("|");
-  }, [
-    reportId,
-    effectivePreviewAdvertiserName,
-    effectivePreviewReportTypeName,
-    rowsSignature,
-    creativesUrlCount,
-    previewVersion,
-    reportPeriod.startDate,
-    reportPeriod.endDate,
-    reportPeriod.preset,
-  ]);
-
   const previewPeriodLabel = useMemo(() => {
     return getPeriodLabel(reportPeriod);
   }, [reportPeriod]);
@@ -1088,7 +1022,7 @@ export default function ReportDetailPage() {
   const advertiserNameForDownload =
     effectivePreviewAdvertiserName || "advertiser";
 
-  async function refreshRows(): Promise<{ rowsCount: number }> {
+  const refreshRows = useCallback(async (): Promise<{ rowsCount: number }> => {
     if (!reportId) return { rowsCount: 0 };
 
     setLoadingRows(true);
@@ -1195,8 +1129,6 @@ export default function ReportDetailPage() {
         nextMsg += `header 조회 실패: ${e?.message || "unknown"}\n`;
       }
 
-      setPreviewVersion((v) => v + 1);
-
       if (nextMsg.trim()) {
         setMsg(nextMsg.trim());
       }
@@ -1205,64 +1137,62 @@ export default function ReportDetailPage() {
     } finally {
       setLoadingRows(false);
     }
-  }
+  }, [reportId]);
 
-  async function pollIngestionStatus(targetReportId: string) {
-    if (!targetReportId) return;
+  const pollIngestionStatus = useCallback(
+    async (targetReportId: string) => {
+      if (!targetReportId) return;
 
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current);
-      pollingRef.current = null;
-    }
-
-    pollingRef.current = setInterval(async () => {
-      /**
-       * [변경 포인트]
-       * polling 중첩 호출 방지
-       * 이전 요청이 끝나기 전에 다음 interval이 들어오면 skip
-       */
-      if (pollingBusyRef.current) return;
-      pollingBusyRef.current = true;
-
-      try {
-        const detail = await fetchReportDetail(targetReportId);
-        const info = extractIngestionInfo(detail);
-
-        setReport(detail);
-        setIngestionInfo(info);
-        setIngestionStatus(info.status);
-
-        if (info.status === "done") {
-          if (pollingRef.current) {
-            clearInterval(pollingRef.current);
-            pollingRef.current = null;
-          }
-
-          const refreshed = await refreshRows();
-          setSessionIngested((refreshed?.rowsCount ?? 0) > 0);
-
-          setMsg(
-            `파싱 완료${
-              info.inserted > 0 ? ` (inserted: ${formatInt(info.inserted)})` : ""
-            } → 미리보기에 반영되었습니다.`
-          );
-        }
-
-        if (info.status === "failed") {
-          if (pollingRef.current) {
-            clearInterval(pollingRef.current);
-            pollingRef.current = null;
-          }
-
-          setMsg(info.error || "CSV 파싱 실패");
-        }
-      } catch (e) {
-        console.error("[polling ingestion]", e);
-      } finally {
-        pollingBusyRef.current = false;
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
       }
-    }, 700);
-  }
+
+      pollingRef.current = setInterval(async () => {
+        if (pollingBusyRef.current) return;
+        pollingBusyRef.current = true;
+
+        try {
+          const detail = await fetchReportDetail(targetReportId);
+          const info = extractIngestionInfo(detail);
+
+          setReport(detail);
+          setIngestionInfo(info);
+          setIngestionStatus(info.status);
+
+          if (info.status === "done") {
+            if (pollingRef.current) {
+              clearInterval(pollingRef.current);
+              pollingRef.current = null;
+            }
+
+            const refreshed = await refreshRows();
+            setSessionIngested((refreshed?.rowsCount ?? 0) > 0);
+
+            setMsg(
+              `파싱 완료${
+                info.inserted > 0 ? ` (inserted: ${formatInt(info.inserted)})` : ""
+              } → 미리보기에 반영되었습니다.`
+            );
+          }
+
+          if (info.status === "failed") {
+            if (pollingRef.current) {
+              clearInterval(pollingRef.current);
+              pollingRef.current = null;
+            }
+
+            setMsg(info.error || "CSV 파싱 실패");
+          }
+        } catch (e) {
+          console.error("[polling ingestion]", e);
+        } finally {
+          pollingBusyRef.current = false;
+        }
+      }, 700);
+    },
+    [refreshRows]
+  );
 
   useEffect(() => {
     if (!reportId) return;
@@ -1286,7 +1216,6 @@ export default function ReportDetailPage() {
       reportTypeName: "",
       reportTypeKey: "",
     });
-    setPreviewVersion(0);
 
     didInitReportPeriodFromSourceRef.current = false;
     lastSavedReportPeriodKeyRef.current = "";
@@ -1322,8 +1251,7 @@ export default function ReportDetailPage() {
 
     const d = new Date(sessionStartedAtRef.current);
     setSessionStartedText(d.toLocaleString());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reportId]);
+  }, [reportId, refreshRows]);
 
   useEffect(() => {
     return () => {
@@ -1350,7 +1278,7 @@ export default function ReportDetailPage() {
     router.replace(nextUrl, { scroll: false });
   }, [pathname, router, searchParams]);
 
-  async function handleUploadCsv() {
+  const handleUploadCsv = useCallback(async () => {
     if (!reportId) return;
 
     if (!csvFile) {
@@ -1425,9 +1353,9 @@ export default function ReportDetailPage() {
     } finally {
       setCsvUploading(false);
     }
-  }
+  }, [csvFile, pollIngestionStatus, report, reportId]);
 
-  async function handleUploadCreatives() {
+  const handleUploadCreatives = useCallback(async () => {
     if (!reportId) return;
 
     if (!creativeFiles.length) {
@@ -1460,9 +1388,9 @@ export default function ReportDetailPage() {
     } finally {
       setUploadingCreatives(false);
     }
-  }
+  }, [creativeFiles, refreshRows, reportId]);
 
-  async function handlePublish() {
+  const handlePublish = useCallback(async () => {
     if (!reportId) return;
 
     if (!sessionIngested) {
@@ -1493,9 +1421,9 @@ export default function ReportDetailPage() {
     } finally {
       setPublishing(false);
     }
-  }
+  }, [refreshRows, reportId, sessionIngested]);
 
-  function handleOpenExportBuilder() {
+  const handleOpenExportBuilder = useCallback(() => {
     if (!reportId) return;
 
     if (!ENABLE_EXPORT_BUILDER_ENTRY) {
@@ -1519,9 +1447,19 @@ export default function ReportDetailPage() {
     qs.set("preset", "starter-default");
 
     router.push(`/report-builder/${reportId}/export-builder?${qs.toString()}`);
-  }
+  }, [
+    canOpenExportBuilder,
+    effectivePreviewAdvertiserName,
+    effectivePreviewReportTypeName,
+    previewPeriodLabel,
+    reportId,
+    reportPeriod.endDate,
+    reportPeriod.preset,
+    reportPeriod.startDate,
+    router,
+  ]);
 
-  async function handleDownloadPdf() {
+  const handleDownloadPdf = useCallback(async () => {
     try {
       setPdfLoading(true);
 
@@ -1560,9 +1498,9 @@ export default function ReportDetailPage() {
     } finally {
       setPdfLoading(false);
     }
-  }
+  }, [advertiserNameForDownload, reportTitleForDownload]);
 
-  async function handleDownloadPng() {
+  const handleDownloadPng = useCallback(async () => {
     try {
       setPngLoading(true);
 
@@ -1600,9 +1538,9 @@ export default function ReportDetailPage() {
     } finally {
       setPngLoading(false);
     }
-  }
+  }, [advertiserNameForDownload, reportTitleForDownload]);
 
-  async function handleDownloadCsv() {
+  const handleDownloadCsv = useCallback(async () => {
     try {
       setCsvLoading(true);
 
@@ -1629,7 +1567,7 @@ export default function ReportDetailPage() {
     } finally {
       setCsvLoading(false);
     }
-  }
+  }, [advertiserNameForDownload, displayRows, reportTitleForDownload]);
 
   return (
     <div className="mx-auto max-w-[1600px] px-6 py-6">
@@ -1981,7 +1919,6 @@ export default function ReportDetailPage() {
         </div>
 
         <PreviewPane
-          previewKey={previewKey}
           loadingRows={loadingRows}
           rows={deferredDisplayRows}
           creativesMap={deferredDisplayCreativesMap}

@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -26,8 +27,10 @@ import {
 import DataBarCell from "../ui/DataBarCell";
 import { groupByCreative } from "../../../src/lib/report/creative";
 
+type ReportMode = "commerce" | "traffic" | "db_acquisition";
+
 type Props = {
-  reportType?: "commerce" | "traffic";
+  reportType?: ReportMode;
   rows: any[];
 };
 
@@ -83,6 +86,30 @@ const PREVIEW_CARD_WIDTH = 288;
 const PREVIEW_OPEN_DELAY = 40;
 const PREVIEW_CLOSE_DELAY = 140;
 
+function resolveReportMode(reportType?: ReportMode): ReportMode {
+  if (reportType === "traffic") return "traffic";
+  if (reportType === "db_acquisition") return "db_acquisition";
+  return "commerce";
+}
+
+function getCreativeTableMeta(reportMode: ReportMode) {
+  const isTraffic = reportMode === "traffic";
+  const isCommerce = reportMode === "commerce";
+  const isDbAcquisition = reportMode === "db_acquisition";
+
+  return {
+    isTraffic,
+    isCommerce,
+    isDbAcquisition,
+    showConv: !isTraffic,
+    showCvr: !isTraffic,
+    showCpa: !isTraffic,
+    showRevenue: isCommerce,
+    showRoas: isCommerce,
+    colSpan: isTraffic ? 6 : isDbAcquisition ? 9 : 11,
+  };
+}
+
 function creativePreviewKey(item: CreativeAgg | null | undefined) {
   if (!item) return "";
   return `${String(item.creative ?? "")}__${String(item.imagePath ?? "")}`;
@@ -134,7 +161,7 @@ const SectionHeader = memo(function SectionHeader({
   badge: string;
   title: string;
   description: string;
-  right?: React.ReactNode;
+  right?: ReactNode;
 }) {
   return (
     <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -163,7 +190,7 @@ const ChartCard = memo(function ChartCard({
   badge: string;
   title: string;
   description: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition hover:shadow-md">
@@ -221,8 +248,7 @@ const Th = memo(function Th({
 
 const CreativeTableRow = memo(function CreativeTableRow({
   row,
-  rowIndex,
-  isTraffic,
+  reportMode,
   maxImpr,
   maxClicks,
   maxCost,
@@ -233,8 +259,7 @@ const CreativeTableRow = memo(function CreativeTableRow({
   onPreviewLeave,
 }: {
   row: CreativeAgg;
-  rowIndex: number;
-  isTraffic: boolean;
+  reportMode: ReportMode;
   maxImpr: number;
   maxClicks: number;
   maxCost: number;
@@ -244,6 +269,8 @@ const CreativeTableRow = memo(function CreativeTableRow({
   onPreviewEnter: (item: CreativeAgg, anchorEl: HTMLElement) => void;
   onPreviewLeave: () => void;
 }) {
+  const tableMeta = getCreativeTableMeta(reportMode);
+
   return (
     <tr
       className="cursor-pointer border-t border-gray-200 transition hover:bg-orange-50/40"
@@ -308,7 +335,7 @@ const CreativeTableRow = memo(function CreativeTableRow({
         />
       </td>
 
-      {!isTraffic && (
+      {tableMeta.showConv && (
         <td className="px-4 py-3.5">
           <DataBarCell
             value={toSafeNumber(row.conversions)}
@@ -318,17 +345,17 @@ const CreativeTableRow = memo(function CreativeTableRow({
         </td>
       )}
 
-      {!isTraffic && (
+      {tableMeta.showCvr && (
         <td className="px-4 py-3.5 text-right text-gray-700">
           {formatPercentFromRate(row.cvr, 2)}
         </td>
       )}
 
-      {!isTraffic && (
+      {tableMeta.showCpa && (
         <td className="px-4 py-3.5 text-right text-gray-700">{KRW(row.cpa)}</td>
       )}
 
-      {!isTraffic && (
+      {tableMeta.showRevenue && (
         <td className="px-4 py-3.5">
           <DataBarCell
             value={toSafeNumber(row.revenue)}
@@ -338,7 +365,7 @@ const CreativeTableRow = memo(function CreativeTableRow({
         </td>
       )}
 
-      {!isTraffic && (
+      {tableMeta.showRoas && (
         <td className="px-4 py-3.5 text-right text-gray-700">
           {formatPercentFromRoas(row.roas, 1)}
         </td>
@@ -436,7 +463,8 @@ const CreativePreviewOverlay = memo(function CreativePreviewOverlay({
 });
 
 export default function CreativeSection({ reportType, rows }: Props) {
-  const isTraffic = reportType === "traffic";
+  const reportMode = resolveReportMode(reportType);
+  const tableMeta = getCreativeTableMeta(reportMode);
 
   const creativeAgg: CreativeAgg[] = useMemo(() => {
     const rawAgg = groupByCreative(rows ?? []);
@@ -517,6 +545,16 @@ export default function CreativeSection({ reportType, rows }: Props) {
     () =>
       [...creativeAgg]
         .sort((a, b) => b.roas - a.roas)
+        .slice(0, 20)
+        .reverse(),
+    [creativeAgg]
+  );
+
+  const topCpa = useMemo(
+    () =>
+      [...creativeAgg]
+        .filter((a) => toSafeNumber(a.conversions) > 0)
+        .sort((a, b) => a.cpa - b.cpa)
         .slice(0, 20)
         .reverse(),
     [creativeAgg]
@@ -705,7 +743,7 @@ export default function CreativeSection({ reportType, rows }: Props) {
   }, []);
 
   const rankingCharts = useMemo(() => {
-    if (isTraffic) {
+    if (reportMode === "traffic") {
       return (
         <>
           <ChartCard
@@ -842,6 +880,156 @@ export default function CreativeSection({ reportType, rows }: Props) {
                   >
                     <LabelList
                       dataKey="cost"
+                      position="right"
+                      formatter={(v: any) => KRW(v)}
+                      style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                    />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </ChartCard>
+        </>
+      );
+    }
+
+    if (reportMode === "db_acquisition") {
+      return (
+        <>
+          <ChartCard
+            badge="Creative Ranking"
+            title="클릭수 TOP20 소재"
+            description="유입을 가장 많이 만든 소재를 우선순위 기준으로 정리했습니다."
+          >
+            <div style={{ width: "100%", height: 340 }}>
+              <ResponsiveContainer>
+                <BarChart
+                  data={topClicks}
+                  layout="vertical"
+                  margin={{ top: 6, right: 70, left: 0, bottom: 6 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis
+                    type="number"
+                    tick={{ fontSize: 11 }}
+                    tickFormatter={(v) => formatCurrencyAxisCompact(v)}
+                  />
+                  <YAxis
+                    type="category"
+                    dataKey="creative"
+                    width={100}
+                    tick={{ fontSize: 11 }}
+                    tickFormatter={(v) => short(v, 7)}
+                  />
+                  <Tooltip
+                    wrapperStyle={{ fontSize: 11 }}
+                    formatter={(v: any) => formatCount(v)}
+                  />
+                  <Bar
+                    dataKey="clicks"
+                    onClick={(_: any, idx: number) => {
+                      const item = topClicks?.[idx];
+                      if (item) setSelectedCreative(item);
+                    }}
+                  >
+                    <LabelList
+                      dataKey="clicks"
+                      position="right"
+                      formatter={(v: any) => formatCount(v)}
+                      style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                    />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </ChartCard>
+
+          <ChartCard
+            badge="Creative Ranking"
+            title="전환수 TOP20 소재"
+            description="리드/전환 기여도가 높은 소재를 중심으로 효율 우선순위를 파악합니다."
+          >
+            <div style={{ width: "100%", height: 340 }}>
+              <ResponsiveContainer>
+                <BarChart
+                  data={topConv}
+                  layout="vertical"
+                  margin={{ top: 6, right: 70, left: 0, bottom: 6 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis
+                    type="number"
+                    tick={{ fontSize: 11 }}
+                    tickFormatter={(v) => formatCurrencyAxisCompact(v)}
+                  />
+                  <YAxis
+                    type="category"
+                    dataKey="creative"
+                    width={100}
+                    tick={{ fontSize: 11 }}
+                    tickFormatter={(v) => short(v, 7)}
+                  />
+                  <Tooltip
+                    wrapperStyle={{ fontSize: 11 }}
+                    formatter={(v: any) => formatCount(v)}
+                  />
+                  <Bar
+                    dataKey="conversions"
+                    onClick={(_: any, idx: number) => {
+                      const item = topConv?.[idx];
+                      if (item) setSelectedCreative(item);
+                    }}
+                  >
+                    <LabelList
+                      dataKey="conversions"
+                      position="right"
+                      formatter={(v: any) => formatCount(v)}
+                      style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                    />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </ChartCard>
+
+          <ChartCard
+            badge="Creative Ranking"
+            title="CPA 우수 TOP20 소재"
+            description="전환이 발생한 소재만 기준으로 CPA가 낮은 순서대로 정리했습니다."
+          >
+            <div style={{ width: "100%", height: 340 }}>
+              <ResponsiveContainer>
+                <BarChart
+                  data={topCpa}
+                  layout="vertical"
+                  margin={{ top: 6, right: 82, left: 0, bottom: 6 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis
+                    type="number"
+                    tick={{ fontSize: 11 }}
+                    tickFormatter={(v) => formatCurrencyAxisCompact(v)}
+                  />
+                  <YAxis
+                    type="category"
+                    dataKey="creative"
+                    width={100}
+                    tick={{ fontSize: 11 }}
+                    tickFormatter={(v) => short(v, 7)}
+                  />
+                  <Tooltip
+                    wrapperStyle={{ fontSize: 11 }}
+                    formatter={(v: any) => KRW(v)}
+                  />
+                  <Bar
+                    dataKey="cpa"
+                    onClick={(_: any, idx: number) => {
+                      const item = topCpa?.[idx];
+                      if (item) setSelectedCreative(item);
+                    }}
+                  >
+                    <LabelList
+                      dataKey="cpa"
                       position="right"
                       formatter={(v: any) => KRW(v)}
                       style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
@@ -1003,13 +1191,13 @@ export default function CreativeSection({ reportType, rows }: Props) {
       </>
     );
   }, [
-    isTraffic,
+    reportMode,
     topImpressions,
     topClicks,
     topCost,
     topConv,
     topRoas,
-    setSelectedCreative,
+    topCpa,
   ]);
 
   const tableBody = useMemo(() => {
@@ -1018,7 +1206,7 @@ export default function CreativeSection({ reportType, rows }: Props) {
         <tr className="border-t border-gray-200">
           <td
             className="px-4 py-8 text-center text-sm text-gray-500"
-            colSpan={isTraffic ? 6 : 11}
+            colSpan={tableMeta.colSpan}
           >
             표시할 소재 데이터가 없습니다. (creative 컬럼을 확인해 주세요)
           </td>
@@ -1030,8 +1218,7 @@ export default function CreativeSection({ reportType, rows }: Props) {
       <CreativeTableRow
         key={`${row.creative}-${idx}`}
         row={row}
-        rowIndex={idx}
-        isTraffic={isTraffic}
+        reportMode={reportMode}
         maxImpr={maxImpr}
         maxClicks={maxClicks}
         maxCost={maxCost}
@@ -1044,7 +1231,8 @@ export default function CreativeSection({ reportType, rows }: Props) {
     ));
   }, [
     tableRows,
-    isTraffic,
+    tableMeta.colSpan,
+    reportMode,
     maxImpr,
     maxClicks,
     maxCost,
@@ -1064,7 +1252,13 @@ export default function CreativeSection({ reportType, rows }: Props) {
           <SectionHeader
             badge="Creative Table"
             title="소재 상세 성과"
-            description="정렬 기준에 따라 주요 소재 성과를 비교하고, 마우스를 올리면 미리보기를 확인할 수 있습니다."
+            description={
+              reportMode === "traffic"
+                ? "정렬 기준에 따라 주요 소재의 유입 성과를 비교하고, 마우스를 올리면 미리보기를 확인할 수 있습니다."
+                : reportMode === "db_acquisition"
+                ? "정렬 기준에 따라 주요 소재의 전환/CPA 성과를 비교하고, 마우스를 올리면 미리보기를 확인할 수 있습니다."
+                : "정렬 기준에 따라 주요 소재 성과를 비교하고, 마우스를 올리면 미리보기를 확인할 수 있습니다."
+            }
             right={
               <span className="inline-flex max-w-[280px] items-center truncate rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-[11px] font-medium text-gray-600">
                 {tableBadge}
@@ -1122,7 +1316,7 @@ export default function CreativeSection({ reportType, rows }: Props) {
                     sortDir={sortDir}
                     onClickHeader={onClickHeader}
                   />
-                  {!isTraffic && (
+                  {tableMeta.showConv && (
                     <Th
                       k="conversions"
                       sortKey={sortKey}
@@ -1130,7 +1324,7 @@ export default function CreativeSection({ reportType, rows }: Props) {
                       onClickHeader={onClickHeader}
                     />
                   )}
-                  {!isTraffic && (
+                  {tableMeta.showCvr && (
                     <Th
                       k="cvr"
                       sortKey={sortKey}
@@ -1138,7 +1332,7 @@ export default function CreativeSection({ reportType, rows }: Props) {
                       onClickHeader={onClickHeader}
                     />
                   )}
-                  {!isTraffic && (
+                  {tableMeta.showCpa && (
                     <Th
                       k="cpa"
                       sortKey={sortKey}
@@ -1146,7 +1340,7 @@ export default function CreativeSection({ reportType, rows }: Props) {
                       onClickHeader={onClickHeader}
                     />
                   )}
-                  {!isTraffic && (
+                  {tableMeta.showRevenue && (
                     <Th
                       k="revenue"
                       sortKey={sortKey}
@@ -1154,7 +1348,7 @@ export default function CreativeSection({ reportType, rows }: Props) {
                       onClickHeader={onClickHeader}
                     />
                   )}
-                  {!isTraffic && (
+                  {tableMeta.showRoas && (
                     <Th
                       k="roas"
                       sortKey={sortKey}

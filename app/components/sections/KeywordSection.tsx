@@ -10,6 +10,7 @@ import {
   useLayoutEffect,
   useCallback,
 } from "react";
+import type { ReactNode } from "react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -33,11 +34,82 @@ import {
 } from "../../../src/lib/report/format";
 import DataBarCell from "../ui/DataBarCell";
 
+type ReportMode = "commerce" | "traffic" | "db_acquisition";
+
 type Props = {
-  reportType?: "commerce" | "traffic";
+  reportType?: ReportMode;
   keywordAgg: any[];
   keywordInsight: string;
 };
+
+function resolveReportMode(reportType?: ReportMode): ReportMode {
+  if (reportType === "traffic") return "traffic";
+  if (reportType === "db_acquisition") return "db_acquisition";
+  return "commerce";
+}
+
+function getKeywordTableMeta(reportMode: ReportMode) {
+  const isTraffic = reportMode === "traffic";
+  const isCommerce = reportMode === "commerce";
+  const isDbAcquisition = reportMode === "db_acquisition";
+
+  return {
+    isTraffic,
+    isCommerce,
+    isDbAcquisition,
+    showConv: !isTraffic,
+    showCvr: !isTraffic,
+    showCpa: !isTraffic,
+    showRevenue: isCommerce,
+    showRoas: isCommerce,
+    colSpan: isTraffic ? 6 : isDbAcquisition ? 9 : 11,
+  };
+}
+
+function getKeywordCopy(reportMode: ReportMode) {
+  if (reportMode === "traffic") {
+    return {
+      insightDescription:
+        "현재 키워드 성과를 바탕으로 유입 중심의 중요한 흐름과 해석 포인트를 정리했습니다.",
+      tableDescription:
+        "정렬 기준과 필터 조건에 따라 주요 유입 키워드 성과를 비교할 수 있습니다.",
+      tableGuideMerged:
+        "통합 보기: 선택한 캠페인/그룹 범위 안에서 중복 키워드를 합산한 뒤 정렬 기준으로 Top50 키워드가 표시됩니다.",
+      tableGuideRaw:
+        "원본 보기: 선택한 캠페인/그룹 범위 안에서 기존 raw 기준으로 정렬된 Top50 키워드가 표시됩니다.",
+      tableFootnote:
+        "* 표는 선택한 정렬 기준으로 Top50 키워드입니다. (좌측 필터 조건에 따라 자동 변경)",
+    };
+  }
+
+  if (reportMode === "db_acquisition") {
+    return {
+      insightDescription:
+        "현재 키워드 성과를 바탕으로 DB 확보/리드 확보 중심의 중요한 흐름과 해석 포인트를 정리했습니다.",
+      tableDescription:
+        "정렬 기준과 필터 조건에 따라 주요 전환 키워드 성과를 비교할 수 있습니다.",
+      tableGuideMerged:
+        "통합 보기: 선택한 캠페인/그룹 범위 안에서 중복 키워드를 합산한 뒤 전환 효율 기준으로 Top50 키워드가 표시됩니다.",
+      tableGuideRaw:
+        "원본 보기: 선택한 캠페인/그룹 범위 안에서 기존 raw 기준으로 정렬된 Top50 키워드가 표시됩니다.",
+      tableFootnote:
+        "* 표는 선택한 정렬 기준으로 Top50 키워드입니다. (좌측 필터 조건에 따라 자동 변경)",
+    };
+  }
+
+  return {
+    insightDescription:
+      "현재 키워드 성과를 바탕으로 중요한 흐름과 해석 포인트를 정리했습니다.",
+    tableDescription:
+      "정렬 기준과 필터 조건에 따라 주요 키워드 성과를 비교할 수 있습니다.",
+    tableGuideMerged:
+      "통합 보기: 선택한 캠페인/그룹 범위 안에서 중복 키워드를 합산한 뒤 정렬 기준으로 Top50 키워드가 표시됩니다.",
+    tableGuideRaw:
+      "원본 보기: 선택한 캠페인/그룹 범위 안에서 기존 raw 기준으로 정렬된 Top50 키워드가 표시됩니다.",
+    tableFootnote:
+      "* 표는 선택한 정렬 기준으로 Top50 키워드입니다. (좌측 필터 조건에 따라 자동 변경)",
+  };
+}
 
 function cleanName(v: any): string | null {
   if (v == null) return null;
@@ -347,7 +419,7 @@ const SectionHeader = memo(function SectionHeader({
   badge: string;
   title: string;
   description: string;
-  right?: React.ReactNode;
+  right?: ReactNode;
 }) {
   return (
     <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -376,7 +448,7 @@ const ChartCard = memo(function ChartCard({
   badge: string;
   title: string;
   description: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition hover:shadow-md">
@@ -506,7 +578,7 @@ type TableRowModel = {
 
 const KeywordTableRow = memo(function KeywordTableRow({
   row,
-  isTraffic,
+  reportMode,
   kwMaxImpr,
   kwMaxClicks,
   kwMaxCost,
@@ -514,13 +586,15 @@ const KeywordTableRow = memo(function KeywordTableRow({
   kwMaxRev,
 }: {
   row: TableRowModel;
-  isTraffic: boolean;
+  reportMode: ReportMode;
   kwMaxImpr: number;
   kwMaxClicks: number;
   kwMaxCost: number;
   kwMaxConv: number;
   kwMaxRev: number;
 }) {
+  const tableMeta = getKeywordTableMeta(reportMode);
+
   return (
     <tr className="border-t border-gray-200 transition hover:bg-orange-50/40">
       <td className="whitespace-nowrap px-4 py-3.5 text-left font-medium text-gray-900">
@@ -555,7 +629,7 @@ const KeywordTableRow = memo(function KeywordTableRow({
         />
       </td>
 
-      {!isTraffic && (
+      {tableMeta.showConv && (
         <td className="px-4 py-3.5">
           <DataBarCell
             value={row.conversionsValue}
@@ -565,15 +639,15 @@ const KeywordTableRow = memo(function KeywordTableRow({
         </td>
       )}
 
-      {!isTraffic && (
+      {tableMeta.showCvr && (
         <td className="px-4 py-3.5 text-right text-gray-700">{row.cvrLabel}</td>
       )}
 
-      {!isTraffic && (
+      {tableMeta.showCpa && (
         <td className="px-4 py-3.5 text-right text-gray-700">{row.cpaLabel}</td>
       )}
 
-      {!isTraffic && (
+      {tableMeta.showRevenue && (
         <td className="px-4 py-3.5">
           <DataBarCell
             value={row.revenueValue}
@@ -583,7 +657,7 @@ const KeywordTableRow = memo(function KeywordTableRow({
         </td>
       )}
 
-      {!isTraffic && (
+      {tableMeta.showRoas && (
         <td className="px-4 py-3.5 text-right text-gray-700">{row.roasLabel}</td>
       )}
     </tr>
@@ -649,7 +723,9 @@ export default function KeywordSection({
   keywordAgg,
   keywordInsight,
 }: Props) {
-  const isTraffic = reportType === "traffic";
+  const reportMode = resolveReportMode(reportType);
+  const tableMeta = getKeywordTableMeta(reportMode);
+  const copy = getKeywordCopy(reportMode);
 
   const rows: Row[] = useMemo(() => {
     return (Array.isArray(keywordAgg) ? keywordAgg : []).map((r: any) => {
@@ -704,12 +780,14 @@ export default function KeywordSection({
     topCost,
     topConv,
     topRoas,
+    topCpa,
   }: {
     topImpressions: Row[];
     topClicks: Row[];
     topCost: Row[];
     topConv: Row[];
     topRoas: Row[];
+    topCpa: Row[];
   } = useMemo(() => {
     const top20 = (arr: Row[], sorter: (a: Row, b: Row) => number) =>
       [...arr].sort(sorter).slice(0, 20).reverse();
@@ -720,6 +798,10 @@ export default function KeywordSection({
       topCost: top20(chartRows, (a, b) => b.cost - a.cost),
       topConv: top20(chartRows, (a, b) => b.conversions - a.conversions),
       topRoas: top20(chartRows, (a, b) => b.roas - a.roas),
+      topCpa: top20(
+        chartRows.filter((r) => toSafeNumber(r.conversions) > 0),
+        (a, b) => a.cpa - b.cpa
+      ),
     };
   }, [chartRows]);
 
@@ -916,7 +998,7 @@ export default function KeywordSection({
   return (
     <section className="mt-2 space-y-6">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        {isTraffic ? (
+        {reportMode === "traffic" ? (
           <>
             <KeywordRankingChart
               badge="Keyword Ranking"
@@ -948,6 +1030,44 @@ export default function KeywordSection({
               description="중복 키워드를 통합 집계한 뒤 예산이 많이 집행된 순으로 정리했습니다."
               data={topCost}
               dataKey="cost"
+              xTickFormatter={formatCurrencyAxisCompact}
+              tooltipFormatter={KRW}
+              labelFormatter={KRW}
+              rightMargin={82}
+            />
+          </>
+        ) : reportMode === "db_acquisition" ? (
+          <>
+            <KeywordRankingChart
+              badge="Keyword Ranking"
+              title="클릭수 TOP20 키워드"
+              description="중복 키워드를 통합 집계한 뒤 유입을 가장 많이 만든 키워드 순으로 정리했습니다."
+              data={topClicks}
+              dataKey="clicks"
+              xTickFormatter={formatCurrencyAxisCompact}
+              tooltipFormatter={formatCount}
+              labelFormatter={formatCount}
+              rightMargin={70}
+            />
+
+            <KeywordRankingChart
+              badge="Keyword Ranking"
+              title="전환수 TOP20 키워드"
+              description="중복 키워드를 통합한 뒤 리드/전환 기여도가 높은 키워드 순으로 정리했습니다."
+              data={topConv}
+              dataKey="conversions"
+              xTickFormatter={formatCurrencyAxisCompact}
+              tooltipFormatter={formatCount}
+              labelFormatter={formatCount}
+              rightMargin={70}
+            />
+
+            <KeywordRankingChart
+              badge="Keyword Ranking"
+              title="CPA 우수 TOP20 키워드"
+              description="중복 키워드를 통합한 뒤 전환이 발생한 키워드만 대상으로 CPA가 낮은 순으로 정리했습니다."
+              data={topCpa}
+              dataKey="cpa"
               xTickFormatter={formatCurrencyAxisCompact}
               tooltipFormatter={KRW}
               labelFormatter={KRW}
@@ -1000,7 +1120,7 @@ export default function KeywordSection({
           <SectionHeader
             badge="AI Insight"
             title="키워드 요약 인사이트"
-            description="현재 키워드 성과를 바탕으로 중요한 흐름과 해석 포인트를 정리했습니다."
+            description={copy.insightDescription}
           />
           {keywordInsight ? (
             <div className="whitespace-pre-wrap text-sm leading-7 text-gray-800">
@@ -1019,7 +1139,7 @@ export default function KeywordSection({
           <SectionHeader
             badge="Keyword Table"
             title="키워드 상세 성과"
-            description="정렬 기준과 필터 조건에 따라 주요 키워드 성과를 비교할 수 있습니다."
+            description={copy.tableDescription}
             right={
               <div className="flex flex-wrap items-center gap-2">
                 <button
@@ -1057,9 +1177,7 @@ export default function KeywordSection({
 
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div className="text-xs text-gray-400">
-              {viewMode === "merged"
-                ? "통합 보기: 선택한 캠페인/그룹 범위 안에서 중복 키워드를 합산한 뒤 정렬 기준으로 Top50 키워드가 표시됩니다."
-                : "원본 보기: 선택한 캠페인/그룹 범위 안에서 기존 raw 기준으로 정렬된 Top50 키워드가 표시됩니다."}
+              {viewMode === "merged" ? copy.tableGuideMerged : copy.tableGuideRaw}
             </div>
 
             <div className="flex flex-wrap gap-3">
@@ -1125,7 +1243,7 @@ export default function KeywordSection({
                     sortDir={sortDir}
                     onClick={onClickHeader}
                   />
-                  {!isTraffic && (
+                  {tableMeta.showConv && (
                     <SortHeaderCell
                       k="conversions"
                       activeSortKey={sortKey}
@@ -1133,7 +1251,7 @@ export default function KeywordSection({
                       onClick={onClickHeader}
                     />
                   )}
-                  {!isTraffic && (
+                  {tableMeta.showCvr && (
                     <SortHeaderCell
                       k="cvr"
                       activeSortKey={sortKey}
@@ -1141,7 +1259,7 @@ export default function KeywordSection({
                       onClick={onClickHeader}
                     />
                   )}
-                  {!isTraffic && (
+                  {tableMeta.showCpa && (
                     <SortHeaderCell
                       k="cpa"
                       activeSortKey={sortKey}
@@ -1149,7 +1267,7 @@ export default function KeywordSection({
                       onClick={onClickHeader}
                     />
                   )}
-                  {!isTraffic && (
+                  {tableMeta.showRevenue && (
                     <SortHeaderCell
                       k="revenue"
                       activeSortKey={sortKey}
@@ -1157,7 +1275,7 @@ export default function KeywordSection({
                       onClick={onClickHeader}
                     />
                   )}
-                  {!isTraffic && (
+                  {tableMeta.showRoas && (
                     <SortHeaderCell
                       k="roas"
                       activeSortKey={sortKey}
@@ -1173,7 +1291,7 @@ export default function KeywordSection({
                   <tr className="border-t border-gray-200">
                     <td
                       className="px-4 py-8 text-center text-sm text-gray-500"
-                      colSpan={isTraffic ? 6 : 11}
+                      colSpan={tableMeta.colSpan}
                     >
                       표시할 키워드 데이터가 없습니다. (필터 조건/컬럼명을 확인해 주세요)
                     </td>
@@ -1183,7 +1301,7 @@ export default function KeywordSection({
                     <KeywordTableRow
                       key={row.key}
                       row={row}
-                      isTraffic={isTraffic}
+                      reportMode={reportMode}
                       kwMaxImpr={kwMaxImpr}
                       kwMaxClicks={kwMaxClicks}
                       kwMaxCost={kwMaxCost}
@@ -1196,9 +1314,7 @@ export default function KeywordSection({
             </table>
           </div>
 
-          <div className="mt-3 text-xs text-gray-400">
-            * 표는 선택한 정렬 기준으로 Top50 키워드입니다. (좌측 필터 조건에 따라 자동 변경)
-          </div>
+          <div className="mt-3 text-xs text-gray-400">{copy.tableFootnote}</div>
         </div>
       </section>
     </section>

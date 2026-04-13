@@ -1,17 +1,19 @@
 "use client";
 
 import { memo, useMemo } from "react";
+import type { ReportType } from "../../../../src/lib/report/types";
 import {
   KRW,
   toSafeNumber,
   normalizeRate01,
+  normalizeRoas01,
   formatPercentFromRate,
 } from "../../../../src/lib/report/format";
 import SummaryChartView from "./SummaryChartView";
 import type { SummaryChartViewPoint } from "./SummaryChartView";
 
 type Props = {
-  reportType?: "commerce" | "traffic";
+  reportType?: ReportType;
   data: any[];
 };
 
@@ -27,14 +29,25 @@ const EMPTY_INSIGHT: SummaryChartInsight = {
   minCostLabel: "-",
 };
 
-const REPORT_SUBTITLE = "최근 주차별 핵심 성과 흐름을 시각적으로 살펴봅니다";
+const EMPTY_DATA: any[] = [];
+
 const TRAFFIC_TITLE = "📈 주차별 노출 · 클릭 · CTR";
+const DB_ACQUISITION_TITLE = "📈 주차별 비용 · 전환 · CPA";
 const COMMERCE_TITLE = "📈 주차별 비용 · 전환매출 · ROAS";
 
-function buildChartModel(
-  safeData: any[],
-  isTraffic: boolean
-): {
+function getChartSubtitle(reportType: ReportType) {
+  if (reportType === "traffic") {
+    return "최근 주차별 유입 중심 핵심 성과 흐름을 시각적으로 살펴봅니다";
+  }
+
+  if (reportType === "db_acquisition") {
+    return "최근 주차별 DB 확보·전환 효율 흐름을 시각적으로 살펴봅니다";
+  }
+
+  return "최근 주차별 핵심 성과 흐름을 시각적으로 살펴봅니다";
+}
+
+function buildTrafficChartModel(safeData: any[]): {
   insight: SummaryChartInsight;
   chartData: SummaryChartViewPoint[];
 } {
@@ -48,50 +61,124 @@ function buildChartModel(
   const latest = safeData[safeData.length - 1];
   const chartData = new Array<SummaryChartViewPoint>(safeData.length);
 
-  // 성능 최적화 포인트:
-  // - safeData를 insight용 / chartData용으로 여러 번 순회하지 않고
-  //   한 번의 루프에서 함께 계산
-  if (isTraffic) {
-    let maxClicksRow = safeData[0];
-    let maxCtrRow = safeData[0];
+  let maxClicksRow = safeData[0];
+  let maxCtrRow = safeData[0];
 
-    for (let i = 0; i < safeData.length; i += 1) {
-      const item = safeData[i];
+  for (let i = 0; i < safeData.length; i += 1) {
+    const item = safeData[i];
 
-      const impressions = toSafeNumber(item?.impressions ?? item?.impr);
-      const clicks = toSafeNumber(item?.clicks);
-      const ctr = normalizeRate01(item?.ctr);
+    const impressions = toSafeNumber(item?.impressions ?? item?.impr);
+    const clicks = toSafeNumber(item?.clicks ?? item?.click);
+    const ctr = normalizeRate01(item?.ctr);
 
-      chartData[i] = {
-        label: String(item?.label || ""),
-        cost: impressions,
-        revenue: clicks,
-        roas: ctr,
-      };
+    chartData[i] = {
+      label: String(item?.label ?? ""),
+      cost: impressions,
+      revenue: clicks,
+      roas: ctr,
+    };
 
-      if (clicks > toSafeNumber(maxClicksRow?.clicks)) {
-        maxClicksRow = item;
-      }
-
-      if (ctr > normalizeRate01(maxCtrRow?.ctr)) {
-        maxCtrRow = item;
-      }
+    if (
+      clicks >
+      toSafeNumber(maxClicksRow?.clicks ?? maxClicksRow?.click)
+    ) {
+      maxClicksRow = item;
     }
 
+    if (ctr > normalizeRate01(maxCtrRow?.ctr)) {
+      maxCtrRow = item;
+    }
+  }
+
+  return {
+    insight: {
+      currentLabel: String(latest?.label ?? "-"),
+      maxRevenueLabel: `${String(maxClicksRow?.label ?? "-")} · ${toSafeNumber(
+        maxClicksRow?.clicks ?? maxClicksRow?.click
+      ).toLocaleString()}`,
+      minCostLabel: `${String(maxCtrRow?.label ?? "-")} · ${formatPercentFromRate(
+        maxCtrRow?.ctr,
+        2
+      )}`,
+    },
+    chartData,
+  };
+}
+
+function buildDbAcquisitionChartModel(safeData: any[]): {
+  insight: SummaryChartInsight;
+  chartData: SummaryChartViewPoint[];
+} {
+  if (!safeData.length) {
     return {
-      insight: {
-        currentLabel: String(latest?.label || "-"),
-        maxRevenueLabel: `${String(maxClicksRow?.label || "-")} · ${toSafeNumber(
-          maxClicksRow?.clicks
-        ).toLocaleString()}`,
-        minCostLabel: `${String(maxCtrRow?.label || "-")} · ${formatPercentFromRate(
-          maxCtrRow?.ctr,
-          2
-        )}`,
-      },
-      chartData,
+      insight: EMPTY_INSIGHT,
+      chartData: [],
     };
   }
+
+  const latest = safeData[safeData.length - 1];
+  const chartData = new Array<SummaryChartViewPoint>(safeData.length);
+
+  let maxConvRow = safeData[0];
+  let minCpaRow = safeData[0];
+
+  for (let i = 0; i < safeData.length; i += 1) {
+    const item = safeData[i];
+
+    const cost = toSafeNumber(item?.cost);
+    const conversions = toSafeNumber(item?.conversions ?? item?.conv);
+    const cpa = toSafeNumber(item?.cpa);
+
+    chartData[i] = {
+      label: String(item?.label ?? ""),
+      cost,
+      revenue: conversions,
+      roas: cpa,
+    };
+
+    if (
+      conversions >
+      toSafeNumber(maxConvRow?.conversions ?? maxConvRow?.conv)
+    ) {
+      maxConvRow = item;
+    }
+
+    const currentMinCpa = toSafeNumber(minCpaRow?.cpa);
+    if (
+      (currentMinCpa <= 0 && cpa > 0) ||
+      (cpa > 0 && currentMinCpa > 0 && cpa < currentMinCpa)
+    ) {
+      minCpaRow = item;
+    }
+  }
+
+  return {
+    insight: {
+      currentLabel: String(latest?.label ?? "-"),
+      maxRevenueLabel: `${String(maxConvRow?.label ?? "-")} · ${toSafeNumber(
+        maxConvRow?.conversions ?? maxConvRow?.conv
+      ).toLocaleString()}`,
+      minCostLabel: `${String(minCpaRow?.label ?? "-")} · ${KRW(
+        toSafeNumber(minCpaRow?.cpa)
+      )}`,
+    },
+    chartData,
+  };
+}
+
+function buildCommerceChartModel(safeData: any[]): {
+  insight: SummaryChartInsight;
+  chartData: SummaryChartViewPoint[];
+} {
+  if (!safeData.length) {
+    return {
+      insight: EMPTY_INSIGHT,
+      chartData: [],
+    };
+  }
+
+  const latest = safeData[safeData.length - 1];
+  const chartData = new Array<SummaryChartViewPoint>(safeData.length);
 
   let maxRevenueRow = safeData[0];
   let minCostRow = safeData[0];
@@ -100,32 +187,39 @@ function buildChartModel(
     const item = safeData[i];
 
     const cost = toSafeNumber(item?.cost);
-    const revenue = toSafeNumber(item?.revenue);
-    const roas = toSafeNumber(item?.roas);
+    const revenue = toSafeNumber(item?.revenue ?? item?.sales);
+    const roas = normalizeRoas01(item?.roas);
 
     chartData[i] = {
-      label: String(item?.label || ""),
+      label: String(item?.label ?? ""),
       cost,
       revenue,
       roas,
     };
 
-    if (revenue > toSafeNumber(maxRevenueRow?.revenue)) {
+    if (
+      revenue >
+      toSafeNumber(maxRevenueRow?.revenue ?? maxRevenueRow?.sales)
+    ) {
       maxRevenueRow = item;
     }
 
-    if (cost < toSafeNumber(minCostRow?.cost)) {
+    const currentMinCost = toSafeNumber(minCostRow?.cost);
+    if (
+      (currentMinCost <= 0 && cost > 0) ||
+      (cost > 0 && currentMinCost > 0 && cost < currentMinCost)
+    ) {
       minCostRow = item;
     }
   }
 
   return {
     insight: {
-      currentLabel: String(latest?.label || "-"),
-      maxRevenueLabel: `${String(maxRevenueRow?.label || "-")} · ${KRW(
-        toSafeNumber(maxRevenueRow?.revenue)
+      currentLabel: String(latest?.label ?? "-"),
+      maxRevenueLabel: `${String(maxRevenueRow?.label ?? "-")} · ${KRW(
+        toSafeNumber(maxRevenueRow?.revenue ?? maxRevenueRow?.sales)
       )}`,
-      minCostLabel: `${String(minCostRow?.label || "-")} · ${KRW(
+      minCostLabel: `${String(minCostRow?.label ?? "-")} · ${KRW(
         toSafeNumber(minCostRow?.cost)
       )}`,
     },
@@ -133,25 +227,44 @@ function buildChartModel(
   };
 }
 
-function SummaryChart({ reportType, data }: Props) {
-  const isTraffic = reportType === "traffic";
+function buildChartModel(
+  safeData: any[],
+  reportType: ReportType
+): {
+  insight: SummaryChartInsight;
+  chartData: SummaryChartViewPoint[];
+} {
+  if (reportType === "traffic") {
+    return buildTrafficChartModel(safeData);
+  }
 
-  // 성능 최적화 포인트:
-  // - 외부 props 구조는 유지하면서 배열 안정성만 보강
-  const safeData = useMemo(() => (Array.isArray(data) ? data : []), [data]);
+  if (reportType === "db_acquisition") {
+    return buildDbAcquisitionChartModel(safeData);
+  }
 
-  // 성능 최적화 포인트:
-  // - chartData / insight를 한 번에 계산하여 불필요한 반복 순회 제거
+  return buildCommerceChartModel(safeData);
+}
+
+function getChartTitle(reportType: ReportType) {
+  if (reportType === "traffic") return TRAFFIC_TITLE;
+  if (reportType === "db_acquisition") return DB_ACQUISITION_TITLE;
+  return COMMERCE_TITLE;
+}
+
+function SummaryChart({ reportType = "commerce", data }: Props) {
+  const safeData = useMemo(() => (Array.isArray(data) ? data : EMPTY_DATA), [data]);
+
   const { insight, chartData } = useMemo(() => {
-    return buildChartModel(safeData, isTraffic);
-  }, [safeData, isTraffic]);
+    return buildChartModel(safeData, reportType);
+  }, [safeData, reportType]);
 
-  const title = isTraffic ? TRAFFIC_TITLE : COMMERCE_TITLE;
+  const title = useMemo(() => getChartTitle(reportType), [reportType]);
+  const subtitle = useMemo(() => getChartSubtitle(reportType), [reportType]);
 
   return (
     <SummaryChartView
       title={title}
-      subtitle={REPORT_SUBTITLE}
+      subtitle={subtitle}
       data={chartData}
       density="report"
       insight={insight}

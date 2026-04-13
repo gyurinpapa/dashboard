@@ -1,6 +1,15 @@
 "use client";
 
-import { memo, useMemo } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type UIEvent,
+} from "react";
+import type { ReportType } from "../../../src/lib/report/types";
 import {
   KRW,
   toSafeNumber,
@@ -18,7 +27,7 @@ import TrendCell from "../ui/TrendCell";
 import DataBarCell from "../ui/DataBarCell";
 
 type Props = {
-  reportType?: "commerce" | "traffic";
+  reportType?: ReportType;
 
   totals: any;
   byMonth: any;
@@ -45,6 +54,12 @@ const FIRST_TD_CLASS =
 const TABLE_SURFACE_CLASS =
   "overflow-x-auto rounded-[24px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] shadow-[0_10px_30px_rgba(15,23,42,0.06)] ring-1 ring-white/60";
 
+const SOURCE_TABLE_SURFACE_CLASS =
+  "overflow-auto rounded-[24px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] shadow-[0_10px_30px_rgba(15,23,42,0.06)] ring-1 ring-white/60 max-h-[720px]";
+
+const DAILY_TABLE_SURFACE_CLASS =
+  "overflow-auto rounded-[24px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] shadow-[0_10px_30px_rgba(15,23,42,0.06)] ring-1 ring-white/60 max-h-[720px]";
+
 const TABLE_HEAD_CLASS =
   "sticky top-0 z-10 border-b border-slate-200/90 bg-[rgba(248,250,252,0.9)] backdrop-blur supports-[backdrop-filter]:bg-[rgba(248,250,252,0.82)]";
 
@@ -54,10 +69,128 @@ const EMPTY_STATE_CLASS =
 const CHART_SURFACE_CLASS = "mt-0";
 
 const TRAFFIC_TABLE_CLASS = "w-full table-fixed text-sm min-w-[860px]";
+const DB_ACQUISITION_TABLE_CLASS = "w-full table-fixed text-sm min-w-[1080px]";
 const COMMERCE_TABLE_CLASS = "w-full table-fixed text-sm min-w-[1320px]";
 
 const EMPTY_LIST: readonly any[] = Object.freeze([]);
 const EMPTY_MUTABLE_LIST: any[] = [];
+
+const SOURCE_ROW_HEIGHT = 57;
+const DAILY_ROW_HEIGHT = 57;
+const TABLE_OVERSCAN = 8;
+const TABLE_FALLBACK_VIEWPORT_HEIGHT = 720;
+
+type MetricMode = {
+  isTraffic: boolean;
+  isDbAcquisition: boolean;
+  showConversions: boolean;
+  showCvr: boolean;
+  showCpa: boolean;
+  showRevenue: boolean;
+  showRoas: boolean;
+  tableClassName: string;
+  colSpan: number;
+};
+
+type SummaryCopy = {
+  kpiTitle: string;
+  kpiDescription: string;
+  monthTitle: string;
+  monthDescription: string;
+  weeklyTitle: string;
+  weeklyDescription: string;
+  chartTitle: string;
+  chartDescription: string;
+  sourceTitle: string;
+  sourceDescription: string;
+  dailyTitle: string;
+  dailyDescription: string;
+};
+
+function getMetricMode(reportType?: ReportType): MetricMode {
+  const resolvedType: ReportType = reportType ?? "commerce";
+  const isTraffic = resolvedType === "traffic";
+  const isDbAcquisition = resolvedType === "db_acquisition";
+
+  return {
+    isTraffic,
+    isDbAcquisition,
+    showConversions: !isTraffic,
+    showCvr: !isTraffic,
+    showCpa: !isTraffic,
+    showRevenue: resolvedType === "commerce",
+    showRoas: resolvedType === "commerce",
+    tableClassName: isTraffic
+      ? TRAFFIC_TABLE_CLASS
+      : isDbAcquisition
+        ? DB_ACQUISITION_TABLE_CLASS
+        : COMMERCE_TABLE_CLASS,
+    colSpan: isTraffic ? 6 : isDbAcquisition ? 9 : 11,
+  };
+}
+
+function getSummaryCopy(reportType?: ReportType): SummaryCopy {
+  const resolvedType: ReportType = reportType ?? "commerce";
+
+  if (resolvedType === "traffic") {
+    return {
+      kpiTitle: "기간 성과 요약",
+      kpiDescription: "현재 필터 조건 기준의 유입 중심 핵심 KPI를 빠르게 확인합니다.",
+      monthTitle: "월별 성과 (최근 3개월)",
+      monthDescription: "최근 월별 유입 성과를 비교합니다.",
+      weeklyTitle: "주차별 성과",
+      weeklyDescription: "최근 주차별 유입 흐름과 전주 대비 변화량을 빠르게 확인합니다.",
+      chartTitle: "주차별 추이",
+      chartDescription:
+        "유입 중심 핵심 성과 흐름을 시각적으로 비교해 변화 구간을 빠르게 파악합니다.",
+      sourceTitle: "소스별 성과",
+      sourceDescription:
+        "소스별 유입 효율 차이를 비교해 예산과 운영 우선순위를 점검합니다.",
+      dailyTitle: "일자별 성과",
+      dailyDescription:
+        "일 단위 유입 흐름을 확인해 변동이 큰 날짜와 이슈 구간을 찾습니다.",
+    };
+  }
+
+  if (resolvedType === "db_acquisition") {
+    return {
+      kpiTitle: "기간 성과 요약",
+      kpiDescription: "현재 필터 조건 기준의 DB 확보·전환 효율 중심 핵심 KPI를 빠르게 확인합니다.",
+      monthTitle: "월별 DB 확보 성과 (최근 3개월)",
+      monthDescription: "최근 월별 DB 확보·리드 확보 성과를 비교합니다.",
+      weeklyTitle: "주차별 DB 확보 성과",
+      weeklyDescription:
+        "최근 주차별 전환 흐름과 전주 대비 변화량을 빠르게 확인합니다.",
+      chartTitle: "주차별 전환 추이",
+      chartDescription:
+        "전환·CPA 중심 핵심 성과 흐름을 시각적으로 비교해 변화 구간을 빠르게 파악합니다.",
+      sourceTitle: "소스별 리드 확보 성과",
+      sourceDescription:
+        "소스별 리드 확보 효율 차이를 비교해 예산과 운영 우선순위를 점검합니다.",
+      dailyTitle: "일자별 전환 성과",
+      dailyDescription:
+        "일 단위 전환 흐름을 확인해 변동이 큰 날짜와 이슈 구간을 찾습니다.",
+    };
+  }
+
+  return {
+    kpiTitle: "기간 성과 요약",
+    kpiDescription: "현재 필터 조건 기준의 핵심 KPI를 빠르게 확인합니다.",
+    monthTitle: "월별 성과 (최근 3개월)",
+    monthDescription: "최근 월별 핵심 성과를 비교합니다.",
+    weeklyTitle: "주차별 성과",
+    weeklyDescription: "최근 주차 흐름과 전주 대비 변화량을 빠르게 확인합니다.",
+    chartTitle: "주차별 추이",
+    chartDescription:
+      "핵심 성과 흐름을 시각적으로 비교해 변화 구간을 빠르게 파악합니다.",
+    sourceTitle: "소스별 성과",
+    sourceDescription:
+      "소스별 효율 차이를 비교해 예산과 운영 우선순위를 점검합니다.",
+    dailyTitle: "일자별 성과",
+    dailyDescription:
+      "일 단위 흐름을 확인해 변동이 큰 날짜와 이슈 구간을 찾습니다.",
+  };
+}
 
 const SectionIntro = memo(function SectionIntro({
   badge,
@@ -152,9 +285,9 @@ function getMaxValue<T>(rows: readonly T[], getter: (row: T) => number) {
 }
 
 const MetricColGroup = memo(function MetricColGroup({
-  isTraffic,
+  mode,
 }: {
-  isTraffic: boolean;
+  mode: MetricMode;
 }) {
   return (
     <colgroup>
@@ -164,19 +297,19 @@ const MetricColGroup = memo(function MetricColGroup({
       <col className="w-[90px]" />
       <col className="w-[90px]" />
       <col className="w-[110px]" />
-      {!isTraffic && <col className="w-[90px]" />}
-      {!isTraffic && <col className="w-[90px]" />}
-      {!isTraffic && <col className="w-[90px]" />}
-      {!isTraffic && <col className="w-[120px]" />}
-      {!isTraffic && <col className="w-[90px]" />}
+      {mode.showConversions && <col className="w-[90px]" />}
+      {mode.showCvr && <col className="w-[90px]" />}
+      {mode.showCpa && <col className="w-[90px]" />}
+      {mode.showRevenue && <col className="w-[120px]" />}
+      {mode.showRoas && <col className="w-[90px]" />}
     </colgroup>
   );
 });
 
 const WeeklyTableHead = memo(function WeeklyTableHead({
-  isTraffic,
+  mode,
 }: {
-  isTraffic: boolean;
+  mode: MetricMode;
 }) {
   return (
     <thead className={TABLE_HEAD_CLASS}>
@@ -187,20 +320,20 @@ const WeeklyTableHead = memo(function WeeklyTableHead({
         <th className={TH_CLASS}>CTR</th>
         <th className={TH_CLASS}>CPC</th>
         <th className={TH_CLASS}>Cost</th>
-        {!isTraffic && <th className={TH_CLASS}>Conv</th>}
-        {!isTraffic && <th className={TH_CLASS}>CVR</th>}
-        {!isTraffic && <th className={TH_CLASS}>CPA</th>}
-        {!isTraffic && <th className={TH_CLASS}>Revenue</th>}
-        {!isTraffic && <th className={TH_CLASS}>ROAS</th>}
+        {mode.showConversions && <th className={TH_CLASS}>Conv</th>}
+        {mode.showCvr && <th className={TH_CLASS}>CVR</th>}
+        {mode.showCpa && <th className={TH_CLASS}>CPA</th>}
+        {mode.showRevenue && <th className={TH_CLASS}>Revenue</th>}
+        {mode.showRoas && <th className={TH_CLASS}>ROAS</th>}
       </tr>
     </thead>
   );
 });
 
 const SourceTableHead = memo(function SourceTableHead({
-  isTraffic,
+  mode,
 }: {
-  isTraffic: boolean;
+  mode: MetricMode;
 }) {
   return (
     <thead className={TABLE_HEAD_CLASS}>
@@ -211,20 +344,20 @@ const SourceTableHead = memo(function SourceTableHead({
         <th className={TH_CLASS}>CTR</th>
         <th className={TH_CLASS}>CPC</th>
         <th className={TH_CLASS}>Cost</th>
-        {!isTraffic && <th className={TH_CLASS}>Conv</th>}
-        {!isTraffic && <th className={TH_CLASS}>CVR</th>}
-        {!isTraffic && <th className={TH_CLASS}>CPA</th>}
-        {!isTraffic && <th className={TH_CLASS}>Revenue</th>}
-        {!isTraffic && <th className={TH_CLASS}>ROAS</th>}
+        {mode.showConversions && <th className={TH_CLASS}>Conv</th>}
+        {mode.showCvr && <th className={TH_CLASS}>CVR</th>}
+        {mode.showCpa && <th className={TH_CLASS}>CPA</th>}
+        {mode.showRevenue && <th className={TH_CLASS}>Revenue</th>}
+        {mode.showRoas && <th className={TH_CLASS}>ROAS</th>}
       </tr>
     </thead>
   );
 });
 
 const DailyTableHead = memo(function DailyTableHead({
-  isTraffic,
+  mode,
 }: {
-  isTraffic: boolean;
+  mode: MetricMode;
 }) {
   return (
     <thead className={TABLE_HEAD_CLASS}>
@@ -235,11 +368,11 @@ const DailyTableHead = memo(function DailyTableHead({
         <th className={TH_CLASS}>CTR</th>
         <th className={TH_CLASS}>CPC</th>
         <th className={TH_CLASS}>Cost</th>
-        {!isTraffic && <th className={TH_CLASS}>Conv</th>}
-        {!isTraffic && <th className={TH_CLASS}>CVR</th>}
-        {!isTraffic && <th className={TH_CLASS}>CPA</th>}
-        {!isTraffic && <th className={TH_CLASS}>Revenue</th>}
-        {!isTraffic && <th className={TH_CLASS}>ROAS</th>}
+        {mode.showConversions && <th className={TH_CLASS}>Conv</th>}
+        {mode.showCvr && <th className={TH_CLASS}>CVR</th>}
+        {mode.showCpa && <th className={TH_CLASS}>CPA</th>}
+        {mode.showRevenue && <th className={TH_CLASS}>Revenue</th>}
+        {mode.showRoas && <th className={TH_CLASS}>ROAS</th>}
       </tr>
     </thead>
   );
@@ -264,11 +397,11 @@ type WeeklyDisplayRow = {
 };
 
 const WeeklyDeltaRow = memo(function WeeklyDeltaRow({
-  isTraffic,
+  mode,
   prevRow,
   lastRow,
 }: {
-  isTraffic: boolean;
+  mode: MetricMode;
   prevRow: any;
   lastRow: any;
 }) {
@@ -318,7 +451,7 @@ const WeeklyDeltaRow = memo(function WeeklyDeltaRow({
         <TrendCell v={diffRatio(lastRow?.cost ?? 0, prevRow?.cost ?? 0) ?? 0} />
       </td>
 
-      {!isTraffic && (
+      {mode.showConversions && (
         <td className={TD_CLASS}>
           <TrendCell
             v={
@@ -331,7 +464,7 @@ const WeeklyDeltaRow = memo(function WeeklyDeltaRow({
         </td>
       )}
 
-      {!isTraffic && (
+      {mode.showCvr && (
         <td className={TD_CLASS}>
           <TrendCell
             v={
@@ -345,7 +478,7 @@ const WeeklyDeltaRow = memo(function WeeklyDeltaRow({
         </td>
       )}
 
-      {!isTraffic && (
+      {mode.showCpa && (
         <td className={TD_CLASS}>
           <TrendCell
             v={diffRatio(lastRow?.cpa ?? 0, prevRow?.cpa ?? 0) ?? 0}
@@ -354,7 +487,7 @@ const WeeklyDeltaRow = memo(function WeeklyDeltaRow({
         </td>
       )}
 
-      {!isTraffic && (
+      {mode.showRevenue && (
         <td className={TD_CLASS}>
           <TrendCell
             v={diffRatio(lastRow?.revenue ?? 0, prevRow?.revenue ?? 0) ?? 0}
@@ -362,7 +495,7 @@ const WeeklyDeltaRow = memo(function WeeklyDeltaRow({
         </td>
       )}
 
-      {!isTraffic && (
+      {mode.showRoas && (
         <td className={TD_CLASS}>
           <TrendCell
             v={
@@ -380,7 +513,7 @@ const WeeklyDeltaRow = memo(function WeeklyDeltaRow({
 });
 
 const WeeklyPerformanceRow = memo(function WeeklyPerformanceRow({
-  isTraffic,
+  mode,
   row,
   maxImpr,
   maxClicks,
@@ -388,7 +521,7 @@ const WeeklyPerformanceRow = memo(function WeeklyPerformanceRow({
   maxConv,
   maxRev,
 }: {
-  isTraffic: boolean;
+  mode: MetricMode;
   row: WeeklyDisplayRow;
   maxImpr: number;
   maxClicks: number;
@@ -420,21 +553,21 @@ const WeeklyPerformanceRow = memo(function WeeklyPerformanceRow({
         <DataBarCell value={row.cost} max={maxCost} label={row.costText} />
       </td>
 
-      {!isTraffic && (
+      {mode.showConversions && (
         <td className={TD_CLASS}>
           <DataBarCell value={row.conversions} max={maxConv} />
         </td>
       )}
 
-      {!isTraffic && (
+      {mode.showCvr && (
         <td className={`${TD_CLASS} font-medium text-violet-600`}>
           {row.cvrText}
         </td>
       )}
 
-      {!isTraffic && <td className={TD_CLASS}>{row.cpaText}</td>}
+      {mode.showCpa && <td className={TD_CLASS}>{row.cpaText}</td>}
 
-      {!isTraffic && (
+      {mode.showRevenue && (
         <td className={TD_CLASS}>
           <DataBarCell
             value={row.revenue}
@@ -444,7 +577,7 @@ const WeeklyPerformanceRow = memo(function WeeklyPerformanceRow({
         </td>
       )}
 
-      {!isTraffic && (
+      {mode.showRoas && (
         <td className={`${TD_CLASS} font-semibold text-orange-600`}>
           {row.roasText}
         </td>
@@ -454,7 +587,7 @@ const WeeklyPerformanceRow = memo(function WeeklyPerformanceRow({
 });
 
 const WeeklyPerformanceTable = memo(function WeeklyPerformanceTable({
-  isTraffic,
+  mode,
   rows,
   prevRow,
   lastRow,
@@ -464,7 +597,7 @@ const WeeklyPerformanceTable = memo(function WeeklyPerformanceTable({
   maxConv,
   maxRev,
 }: {
-  isTraffic: boolean;
+  mode: MetricMode;
   rows: readonly any[];
   prevRow: any;
   lastRow: any;
@@ -474,8 +607,6 @@ const WeeklyPerformanceTable = memo(function WeeklyPerformanceTable({
   maxConv: number;
   maxRev: number;
 }) {
-  const tableClassName = isTraffic ? TRAFFIC_TABLE_CLASS : COMMERCE_TABLE_CLASS;
-
   const displayRows = useMemo<WeeklyDisplayRow[]>(
     () =>
       rows.map((w: any, idx: number) => {
@@ -510,21 +641,17 @@ const WeeklyPerformanceTable = memo(function WeeklyPerformanceTable({
 
   return (
     <div className={TABLE_SURFACE_CLASS}>
-      <table className={tableClassName}>
-        <MetricColGroup isTraffic={isTraffic} />
-        <WeeklyTableHead isTraffic={isTraffic} />
+      <table className={mode.tableClassName}>
+        <MetricColGroup mode={mode} />
+        <WeeklyTableHead mode={mode} />
 
         <tbody>
-          <WeeklyDeltaRow
-            isTraffic={isTraffic}
-            prevRow={prevRow}
-            lastRow={lastRow}
-          />
+          <WeeklyDeltaRow mode={mode} prevRow={prevRow} lastRow={lastRow} />
 
           {displayRows.map((row) => (
             <WeeklyPerformanceRow
               key={row.key}
-              isTraffic={isTraffic}
+              mode={mode}
               row={row}
               maxImpr={maxImpr}
               maxClicks={maxClicks}
@@ -557,8 +684,45 @@ type SourceDisplayRow = {
   roasText: string;
 };
 
+const SourceEmptyRow = memo(function SourceEmptyRow({
+  colSpan,
+}: {
+  colSpan: number;
+}) {
+  return (
+    <tr className="border-t border-slate-200/90">
+      <td className={EMPTY_STATE_CLASS} colSpan={colSpan}>
+        데이터가 없습니다.
+      </td>
+    </tr>
+  );
+});
+
+const TableSpacerRow = memo(function TableSpacerRow({
+  colSpan,
+  height,
+}: {
+  colSpan: number;
+  height: number;
+}) {
+  if (height <= 0) return null;
+
+  return (
+    <tr aria-hidden="true">
+      <td
+        colSpan={colSpan}
+        style={{
+          height: `${height}px`,
+          padding: 0,
+          border: 0,
+        }}
+      />
+    </tr>
+  );
+});
+
 const SourcePerformanceRow = memo(function SourcePerformanceRow({
-  isTraffic,
+  mode,
   row,
   maxImpr,
   maxClicks,
@@ -566,7 +730,7 @@ const SourcePerformanceRow = memo(function SourcePerformanceRow({
   maxConv,
   maxRev,
 }: {
-  isTraffic: boolean;
+  mode: MetricMode;
   row: SourceDisplayRow;
   maxImpr: number;
   maxClicks: number;
@@ -575,7 +739,10 @@ const SourcePerformanceRow = memo(function SourcePerformanceRow({
   maxRev: number;
 }) {
   return (
-    <tr className="border-t border-slate-200/90 even:bg-slate-50/45 hover:bg-emerald-50/45 transition-colors">
+    <tr
+      className="border-t border-slate-200/90 even:bg-slate-50/45 hover:bg-emerald-50/45 transition-colors"
+      style={{ height: `${SOURCE_ROW_HEIGHT}px` }}
+    >
       <td className={`${FIRST_TD_CLASS} truncate`} title={row.title}>
         {row.source}
       </td>
@@ -598,21 +765,21 @@ const SourcePerformanceRow = memo(function SourcePerformanceRow({
         <DataBarCell value={row.cost} max={maxCost} label={row.costText} />
       </td>
 
-      {!isTraffic && (
+      {mode.showConversions && (
         <td className={TD_CLASS}>
           <DataBarCell value={row.conversions} max={maxConv} />
         </td>
       )}
 
-      {!isTraffic && (
+      {mode.showCvr && (
         <td className={`${TD_CLASS} font-medium text-violet-600`}>
           {row.cvrText}
         </td>
       )}
 
-      {!isTraffic && <td className={TD_CLASS}>{row.cpaText}</td>}
+      {mode.showCpa && <td className={TD_CLASS}>{row.cpaText}</td>}
 
-      {!isTraffic && (
+      {mode.showRevenue && (
         <td className={TD_CLASS}>
           <DataBarCell
             value={row.revenue}
@@ -622,7 +789,7 @@ const SourcePerformanceRow = memo(function SourcePerformanceRow({
         </td>
       )}
 
-      {!isTraffic && (
+      {mode.showRoas && (
         <td className={`${TD_CLASS} font-semibold text-orange-600`}>
           {row.roasText}
         </td>
@@ -632,7 +799,7 @@ const SourcePerformanceRow = memo(function SourcePerformanceRow({
 });
 
 const SourcePerformanceTable = memo(function SourcePerformanceTable({
-  isTraffic,
+  mode,
   rows,
   maxImpr,
   maxClicks,
@@ -640,7 +807,7 @@ const SourcePerformanceTable = memo(function SourcePerformanceTable({
   maxConv,
   maxRev,
 }: {
-  isTraffic: boolean;
+  mode: MetricMode;
   rows: readonly any[];
   maxImpr: number;
   maxClicks: number;
@@ -648,7 +815,44 @@ const SourcePerformanceTable = memo(function SourcePerformanceTable({
   maxConv: number;
   maxRev: number;
 }) {
-  const tableClassName = isTraffic ? TRAFFIC_TABLE_CLASS : COMMERCE_TABLE_CLASS;
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(
+    TABLE_FALLBACK_VIEWPORT_HEIGHT
+  );
+
+  const handleScroll = useCallback((e: UIEvent<HTMLDivElement>) => {
+    setScrollTop(e.currentTarget.scrollTop);
+  }, []);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const updateViewportHeight = () => {
+      const nextHeight = el.clientHeight || TABLE_FALLBACK_VIEWPORT_HEIGHT;
+      setViewportHeight((prev) => (prev === nextHeight ? prev : nextHeight));
+    };
+
+    updateViewportHeight();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateViewportHeight);
+      return () => {
+        window.removeEventListener("resize", updateViewportHeight);
+      };
+    }
+
+    const observer = new ResizeObserver(() => {
+      updateViewportHeight();
+    });
+
+    observer.observe(el);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
 
   const displayRows = useMemo<SourceDisplayRow[]>(
     () =>
@@ -682,25 +886,92 @@ const SourcePerformanceTable = memo(function SourcePerformanceTable({
     [rows]
   );
 
+  const {
+    visibleRows,
+    topSpacerHeight,
+    bottomSpacerHeight,
+  } = useMemo(() => {
+    const total = displayRows.length;
+
+    if (total === 0) {
+      return {
+        visibleRows: [] as SourceDisplayRow[],
+        topSpacerHeight: 0,
+        bottomSpacerHeight: 0,
+      };
+    }
+
+    const startIndex = Math.max(
+      0,
+      Math.floor(scrollTop / SOURCE_ROW_HEIGHT) - TABLE_OVERSCAN
+    );
+
+    const endIndex = Math.min(
+      total,
+      Math.ceil((scrollTop + viewportHeight) / SOURCE_ROW_HEIGHT) + TABLE_OVERSCAN
+    );
+
+    return {
+      visibleRows: displayRows.slice(startIndex, endIndex),
+      topSpacerHeight: startIndex * SOURCE_ROW_HEIGHT,
+      bottomSpacerHeight: Math.max(0, (total - endIndex) * SOURCE_ROW_HEIGHT),
+    };
+  }, [displayRows, scrollTop, viewportHeight]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const maxScrollTop = Math.max(
+      0,
+      displayRows.length * SOURCE_ROW_HEIGHT - viewportHeight
+    );
+
+    if (el.scrollTop > maxScrollTop) {
+      el.scrollTop = maxScrollTop;
+      setScrollTop(maxScrollTop);
+    }
+  }, [displayRows.length, viewportHeight]);
+
   return (
-    <div className={TABLE_SURFACE_CLASS}>
-      <table className={tableClassName}>
-        <MetricColGroup isTraffic={isTraffic} />
-        <SourceTableHead isTraffic={isTraffic} />
+    <div
+      ref={containerRef}
+      className={SOURCE_TABLE_SURFACE_CLASS}
+      onScroll={handleScroll}
+    >
+      <table className={mode.tableClassName}>
+        <MetricColGroup mode={mode} />
+        <SourceTableHead mode={mode} />
 
         <tbody>
-          {displayRows.map((row) => (
-            <SourcePerformanceRow
-              key={row.key}
-              isTraffic={isTraffic}
-              row={row}
-              maxImpr={maxImpr}
-              maxClicks={maxClicks}
-              maxCost={maxCost}
-              maxConv={maxConv}
-              maxRev={maxRev}
-            />
-          ))}
+          {displayRows.length === 0 ? (
+            <SourceEmptyRow colSpan={mode.colSpan} />
+          ) : (
+            <>
+              <TableSpacerRow
+                colSpan={mode.colSpan}
+                height={topSpacerHeight}
+              />
+
+              {visibleRows.map((row) => (
+                <SourcePerformanceRow
+                  key={row.key}
+                  mode={mode}
+                  row={row}
+                  maxImpr={maxImpr}
+                  maxClicks={maxClicks}
+                  maxCost={maxCost}
+                  maxConv={maxConv}
+                  maxRev={maxRev}
+                />
+              ))}
+
+              <TableSpacerRow
+                colSpan={mode.colSpan}
+                height={bottomSpacerHeight}
+              />
+            </>
+          )}
         </tbody>
       </table>
     </div>
@@ -740,7 +1011,7 @@ const DailyEmptyRow = memo(function DailyEmptyRow({
 });
 
 const DailyPerformanceRow = memo(function DailyPerformanceRow({
-  isTraffic,
+  mode,
   row,
   maxImpr,
   maxClicks,
@@ -748,7 +1019,7 @@ const DailyPerformanceRow = memo(function DailyPerformanceRow({
   maxConv,
   maxRev,
 }: {
-  isTraffic: boolean;
+  mode: MetricMode;
   row: DailyDisplayRow;
   maxImpr: number;
   maxClicks: number;
@@ -757,7 +1028,10 @@ const DailyPerformanceRow = memo(function DailyPerformanceRow({
   maxRev: number;
 }) {
   return (
-    <tr className="border-t border-slate-200/90 even:bg-slate-50/45 hover:bg-amber-50/45 transition-colors">
+    <tr
+      className="border-t border-slate-200/90 even:bg-slate-50/45 hover:bg-amber-50/45 transition-colors"
+      style={{ height: `${DAILY_ROW_HEIGHT}px` }}
+    >
       <td className={`${FIRST_TD_CLASS} truncate`} title={row.title}>
         {row.label}
       </td>
@@ -780,21 +1054,21 @@ const DailyPerformanceRow = memo(function DailyPerformanceRow({
         <DataBarCell value={row.cost} max={maxCost} label={row.costText} />
       </td>
 
-      {!isTraffic && (
+      {mode.showConversions && (
         <td className={TD_CLASS}>
           <DataBarCell value={row.conversions} max={maxConv} />
         </td>
       )}
 
-      {!isTraffic && (
+      {mode.showCvr && (
         <td className={`${TD_CLASS} font-medium text-violet-600`}>
           {row.cvrText}
         </td>
       )}
 
-      {!isTraffic && <td className={TD_CLASS}>{row.cpaText}</td>}
+      {mode.showCpa && <td className={TD_CLASS}>{row.cpaText}</td>}
 
-      {!isTraffic && (
+      {mode.showRevenue && (
         <td className={TD_CLASS}>
           <DataBarCell
             value={row.revenue}
@@ -804,7 +1078,7 @@ const DailyPerformanceRow = memo(function DailyPerformanceRow({
         </td>
       )}
 
-      {!isTraffic && (
+      {mode.showRoas && (
         <td className={`${TD_CLASS} font-semibold text-orange-600`}>
           {row.roasText}
         </td>
@@ -814,7 +1088,7 @@ const DailyPerformanceRow = memo(function DailyPerformanceRow({
 });
 
 const DailyPerformanceTable = memo(function DailyPerformanceTable({
-  isTraffic,
+  mode,
   rows,
   maxImpr,
   maxClicks,
@@ -822,7 +1096,7 @@ const DailyPerformanceTable = memo(function DailyPerformanceTable({
   maxConv,
   maxRev,
 }: {
-  isTraffic: boolean;
+  mode: MetricMode;
   rows: readonly any[];
   maxImpr: number;
   maxClicks: number;
@@ -830,7 +1104,44 @@ const DailyPerformanceTable = memo(function DailyPerformanceTable({
   maxConv: number;
   maxRev: number;
 }) {
-  const tableClassName = isTraffic ? TRAFFIC_TABLE_CLASS : COMMERCE_TABLE_CLASS;
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(
+    TABLE_FALLBACK_VIEWPORT_HEIGHT
+  );
+
+  const handleScroll = useCallback((e: UIEvent<HTMLDivElement>) => {
+    setScrollTop(e.currentTarget.scrollTop);
+  }, []);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const updateViewportHeight = () => {
+      const nextHeight = el.clientHeight || TABLE_FALLBACK_VIEWPORT_HEIGHT;
+      setViewportHeight((prev) => (prev === nextHeight ? prev : nextHeight));
+    };
+
+    updateViewportHeight();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateViewportHeight);
+      return () => {
+        window.removeEventListener("resize", updateViewportHeight);
+      };
+    }
+
+    const observer = new ResizeObserver(() => {
+      updateViewportHeight();
+    });
+
+    observer.observe(el);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
 
   const displayRows = useMemo<DailyDisplayRow[]>(
     () =>
@@ -872,28 +1183,91 @@ const DailyPerformanceTable = memo(function DailyPerformanceTable({
     [rows]
   );
 
+  const {
+    visibleRows,
+    topSpacerHeight,
+    bottomSpacerHeight,
+  } = useMemo(() => {
+    const total = displayRows.length;
+
+    if (total === 0) {
+      return {
+        visibleRows: [] as DailyDisplayRow[],
+        topSpacerHeight: 0,
+        bottomSpacerHeight: 0,
+      };
+    }
+
+    const startIndex = Math.max(
+      0,
+      Math.floor(scrollTop / DAILY_ROW_HEIGHT) - TABLE_OVERSCAN
+    );
+
+    const endIndex = Math.min(
+      total,
+      Math.ceil((scrollTop + viewportHeight) / DAILY_ROW_HEIGHT) + TABLE_OVERSCAN
+    );
+
+    return {
+      visibleRows: displayRows.slice(startIndex, endIndex),
+      topSpacerHeight: startIndex * DAILY_ROW_HEIGHT,
+      bottomSpacerHeight: Math.max(0, (total - endIndex) * DAILY_ROW_HEIGHT),
+    };
+  }, [displayRows, scrollTop, viewportHeight]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const maxScrollTop = Math.max(
+      0,
+      displayRows.length * DAILY_ROW_HEIGHT - viewportHeight
+    );
+
+    if (el.scrollTop > maxScrollTop) {
+      el.scrollTop = maxScrollTop;
+      setScrollTop(maxScrollTop);
+    }
+  }, [displayRows.length, viewportHeight]);
+
   return (
-    <div className={TABLE_SURFACE_CLASS}>
-      <table className={tableClassName}>
-        <MetricColGroup isTraffic={isTraffic} />
-        <DailyTableHead isTraffic={isTraffic} />
+    <div
+      ref={containerRef}
+      className={DAILY_TABLE_SURFACE_CLASS}
+      onScroll={handleScroll}
+    >
+      <table className={mode.tableClassName}>
+        <MetricColGroup mode={mode} />
+        <DailyTableHead mode={mode} />
 
         <tbody>
           {displayRows.length === 0 ? (
-            <DailyEmptyRow colSpan={isTraffic ? 6 : 11} />
+            <DailyEmptyRow colSpan={mode.colSpan} />
           ) : (
-            displayRows.map((row) => (
-              <DailyPerformanceRow
-                key={row.key}
-                isTraffic={isTraffic}
-                row={row}
-                maxImpr={maxImpr}
-                maxClicks={maxClicks}
-                maxCost={maxCost}
-                maxConv={maxConv}
-                maxRev={maxRev}
+            <>
+              <TableSpacerRow
+                colSpan={mode.colSpan}
+                height={topSpacerHeight}
               />
-            ))
+
+              {visibleRows.map((row) => (
+                <DailyPerformanceRow
+                  key={row.key}
+                  mode={mode}
+                  row={row}
+                  maxImpr={maxImpr}
+                  maxClicks={maxClicks}
+                  maxCost={maxCost}
+                  maxConv={maxConv}
+                  maxRev={maxRev}
+                />
+              ))}
+
+              <TableSpacerRow
+                colSpan={mode.colSpan}
+                height={bottomSpacerHeight}
+              />
+            </>
           )}
         </tbody>
       </table>
@@ -903,7 +1277,7 @@ const DailyPerformanceTable = memo(function DailyPerformanceTable({
 
 function SummarySectionComponent(props: Props) {
   const {
-    reportType,
+    reportType = "commerce",
     totals,
     byMonth,
     byWeekOnly,
@@ -912,7 +1286,8 @@ function SummarySectionComponent(props: Props) {
     byDay,
   } = props;
 
-  const isTraffic = reportType === "traffic";
+  const mode = useMemo(() => getMetricMode(reportType), [reportType]);
+  const copy = useMemo(() => getSummaryCopy(reportType), [reportType]);
 
   const months = useMemo<any[]>(
     () => (Array.isArray(byMonth) ? [...byMonth] : EMPTY_MUTABLE_LIST),
@@ -1022,8 +1397,8 @@ function SummarySectionComponent(props: Props) {
       <div>
         <SectionIntro
           badge="📊 KPI"
-          title="기간 성과 요약"
-          description="현재 필터 조건 기준의 핵심 KPI를 빠르게 확인합니다."
+          title={copy.kpiTitle}
+          description={copy.kpiDescription}
           compact
         />
 
@@ -1035,8 +1410,8 @@ function SummarySectionComponent(props: Props) {
       <div>
         <SectionIntro
           badge="📋 SUMMARY TABLE"
-          title="월별 성과 (최근 3개월)"
-          description="최근 월별 핵심 성과를 비교합니다."
+          title={copy.monthTitle}
+          description={copy.monthDescription}
           compact
         />
         <SummaryTable reportType={reportType} byMonth={stableMonths} />
@@ -1046,13 +1421,13 @@ function SummarySectionComponent(props: Props) {
         <div>
           <SectionIntro
             badge="📅 WEEKLY"
-            title="주차별 성과"
-            description="최근 주차 흐름과 전주 대비 변화량을 빠르게 확인합니다."
+            title={copy.weeklyTitle}
+            description={copy.weeklyDescription}
             compact
           />
 
           <WeeklyPerformanceTable
-            isTraffic={isTraffic}
+            mode={mode}
             rows={sortedWeeks}
             prevRow={prevWeekSorted}
             lastRow={lastWeekSorted}
@@ -1067,8 +1442,8 @@ function SummarySectionComponent(props: Props) {
         <div>
           <SectionIntro
             badge="📈 CHART"
-            title="주차별 추이"
-            description="핵심 성과 흐름을 시각적으로 비교해 변화 구간을 빠르게 파악합니다."
+            title={copy.chartTitle}
+            description={copy.chartDescription}
             compact
           />
 
@@ -1080,13 +1455,13 @@ function SummarySectionComponent(props: Props) {
         <div>
           <SectionIntro
             badge="🧭 SOURCE"
-            title="소스별 성과"
-            description="소스별 효율 차이를 비교해 예산과 운영 우선순위를 점검합니다."
+            title={copy.sourceTitle}
+            description={copy.sourceDescription}
             compact
           />
 
           <SourcePerformanceTable
-            isTraffic={isTraffic}
+            mode={mode}
             rows={sources}
             maxImpr={srcMaxImpr}
             maxClicks={srcMaxClicks}
@@ -1099,13 +1474,13 @@ function SummarySectionComponent(props: Props) {
         <div>
           <SectionIntro
             badge="🗓️ DAILY"
-            title="일자별 성과"
-            description="일 단위 흐름을 확인해 변동이 큰 날짜와 이슈 구간을 찾습니다."
+            title={copy.dailyTitle}
+            description={copy.dailyDescription}
             compact
           />
 
           <DailyPerformanceTable
-            isTraffic={isTraffic}
+            mode={mode}
             rows={sortedDays}
             maxImpr={dayMaxImpr}
             maxClicks={dayMaxClicks}

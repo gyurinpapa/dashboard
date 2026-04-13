@@ -172,6 +172,17 @@ function HeaderIntro({
       return "E-COMMERCE";
     }
 
+    if (
+      key === "db_acquisition" ||
+      key.includes("db_acquisition") ||
+      key.includes("db acquisition") ||
+      name.includes("db획득") ||
+      name.includes("db 획득") ||
+      name.includes("db acquisition")
+    ) {
+      return "DB ACQUISITION";
+    }
+
     return "ONLINE AD";
   }, [cleanTypeKey, cleanTypeName]);
 

@@ -2,6 +2,7 @@
 "use client";
 
 import { memo, useMemo } from "react";
+import type { ReportType } from "../../../../src/lib/report/types";
 import TrendCell from "../../ui/TrendCell";
 import {
   KRW,
@@ -15,9 +16,11 @@ import {
 import DataBarCell from "../../ui/DataBarCell";
 
 type Props = {
-  reportType?: "commerce" | "traffic";
+  reportType?: ReportType;
   byMonth: any[];
 };
+
+const EMPTY_MONTHS: any[] = [];
 
 const monthKey = (m: any) => {
   const k = m?.monthKey ?? m?.month ?? m?.key ?? m?.label;
@@ -26,6 +29,10 @@ const monthKey = (m: any) => {
   const match = s.match(/^(\d{4})[-/.](\d{1,2})$/);
   if (!match) return s;
   return `${match[1]}-${match[2].padStart(2, "0")}`;
+};
+
+const monthLabel = (m: any) => {
+  return String(m?.month ?? m?.label ?? monthKey(m) ?? "-");
 };
 
 type TableMetrics = {
@@ -39,8 +46,35 @@ type TableMetrics = {
   maxRev: number;
 };
 
-type HeaderProps = {
+type MetricMode = {
   isTraffic: boolean;
+  isDbAcquisition: boolean;
+  showConversions: boolean;
+  showCvr: boolean;
+  showCpa: boolean;
+  showRevenue: boolean;
+  showRoas: boolean;
+  tableClassName: string;
+  emptyColSpan: number;
+};
+
+type HeaderLabels = {
+  month: string;
+  impressions: string;
+  clicks: string;
+  ctr: string;
+  cpc: string;
+  cost: string;
+  conversions: string;
+  cvr: string;
+  cpa: string;
+  revenue: string;
+  roas: string;
+};
+
+type HeaderProps = {
+  mode: MetricMode;
+  labels: HeaderLabels;
 };
 
 type DeltaCellItem = {
@@ -55,7 +89,6 @@ type DeltaRowModel = {
 };
 
 type DeltaRowProps = {
-  isTraffic: boolean;
   model: DeltaRowModel | null;
 };
 
@@ -104,6 +137,7 @@ const TD_BAR_CLASS =
 const WRAPPER_CLASS_NAME =
   "overflow-auto rounded-[22px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,1),rgba(248,250,252,0.72))] shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]";
 const TRAFFIC_TABLE_CLASS_NAME = "w-full min-w-[760px] text-sm";
+const DB_ACQUISITION_TABLE_CLASS_NAME = "w-full min-w-[980px] text-sm";
 const COMMERCE_TABLE_CLASS_NAME = "w-full min-w-[1120px] text-sm";
 const EMPTY_ROW_CLASS_NAME =
   "px-4 py-12 text-center text-sm font-medium text-slate-400";
@@ -112,30 +146,108 @@ const MONTH_ROW_TR_CLASS_NAME =
 const DELTA_ROW_TR_CLASS_NAME =
   "border-b border-slate-200/90 bg-[linear-gradient(180deg,rgba(241,245,249,0.88),rgba(248,250,252,0.94))] text-slate-800";
 
+function getMetricMode(reportType?: ReportType): MetricMode {
+  const resolvedType: ReportType = reportType ?? "commerce";
+  const isTraffic = resolvedType === "traffic";
+  const isDbAcquisition = resolvedType === "db_acquisition";
+
+  return {
+    isTraffic,
+    isDbAcquisition,
+    showConversions: !isTraffic,
+    showCvr: !isTraffic,
+    showCpa: !isTraffic,
+    showRevenue: resolvedType === "commerce",
+    showRoas: resolvedType === "commerce",
+    tableClassName: isTraffic
+      ? TRAFFIC_TABLE_CLASS_NAME
+      : isDbAcquisition
+        ? DB_ACQUISITION_TABLE_CLASS_NAME
+        : COMMERCE_TABLE_CLASS_NAME,
+    emptyColSpan: isTraffic ? 6 : isDbAcquisition ? 9 : 11,
+  };
+}
+
+function getHeaderLabels(reportType?: ReportType): HeaderLabels {
+  const resolvedType: ReportType = reportType ?? "commerce";
+
+  if (resolvedType === "traffic") {
+    return {
+      month: "Month",
+      impressions: "Impr",
+      clicks: "Clicks",
+      ctr: "CTR",
+      cpc: "CPC",
+      cost: "Cost",
+      conversions: "Conv",
+      cvr: "CVR",
+      cpa: "CPA",
+      revenue: "Revenue",
+      roas: "ROAS",
+    };
+  }
+
+  if (resolvedType === "db_acquisition") {
+    return {
+      month: "Month",
+      impressions: "Impr",
+      clicks: "Clicks",
+      ctr: "CTR",
+      cpc: "CPC",
+      cost: "Cost",
+      conversions: "Conv",
+      cvr: "CVR",
+      cpa: "CPA",
+      revenue: "Revenue",
+      roas: "ROAS",
+    };
+  }
+
+  return {
+    month: "Month",
+    impressions: "Impr",
+    clicks: "Clicks",
+    ctr: "CTR",
+    cpc: "CPC",
+    cost: "Cost",
+    conversions: "Conv",
+    cvr: "CVR",
+    cpa: "CPA",
+    revenue: "Revenue",
+    roas: "ROAS",
+  };
+}
+
 const SummaryTableHeader = memo(function SummaryTableHeader({
-  isTraffic,
+  mode,
+  labels,
 }: HeaderProps) {
   return (
     <thead className="sticky top-0 z-10 border-b border-slate-200 bg-[rgba(248,250,252,0.94)] backdrop-blur">
       <tr>
-        <th className={TABLE_HEAD_FIRST_TH_CLASS}>Month</th>
-        <th className={TABLE_HEAD_TH_CLASS}>Impr</th>
-        <th className={TABLE_HEAD_TH_CLASS}>Clicks</th>
-        <th className={TABLE_HEAD_TH_CLASS}>CTR</th>
-        <th className={TABLE_HEAD_TH_CLASS}>CPC</th>
-        <th className={TABLE_HEAD_TH_CLASS}>Cost</th>
-        {!isTraffic && <th className={TABLE_HEAD_TH_CLASS}>Conv</th>}
-        {!isTraffic && <th className={TABLE_HEAD_TH_CLASS}>CVR</th>}
-        {!isTraffic && <th className={TABLE_HEAD_TH_CLASS}>CPA</th>}
-        {!isTraffic && <th className={TABLE_HEAD_TH_CLASS}>Revenue</th>}
-        {!isTraffic && <th className={TABLE_HEAD_TH_CLASS}>ROAS</th>}
+        <th className={TABLE_HEAD_FIRST_TH_CLASS}>{labels.month}</th>
+        <th className={TABLE_HEAD_TH_CLASS}>{labels.impressions}</th>
+        <th className={TABLE_HEAD_TH_CLASS}>{labels.clicks}</th>
+        <th className={TABLE_HEAD_TH_CLASS}>{labels.ctr}</th>
+        <th className={TABLE_HEAD_TH_CLASS}>{labels.cpc}</th>
+        <th className={TABLE_HEAD_TH_CLASS}>{labels.cost}</th>
+        {mode.showConversions && (
+          <th className={TABLE_HEAD_TH_CLASS}>{labels.conversions}</th>
+        )}
+        {mode.showCvr && <th className={TABLE_HEAD_TH_CLASS}>{labels.cvr}</th>}
+        {mode.showCpa && <th className={TABLE_HEAD_TH_CLASS}>{labels.cpa}</th>}
+        {mode.showRevenue && (
+          <th className={TABLE_HEAD_TH_CLASS}>{labels.revenue}</th>
+        )}
+        {mode.showRoas && (
+          <th className={TABLE_HEAD_TH_CLASS}>{labels.roas}</th>
+        )}
       </tr>
     </thead>
   );
 });
 
 const SummaryTableDeltaRow = memo(function SummaryTableDeltaRow({
-  isTraffic,
   model,
 }: DeltaRowProps) {
   if (!model) return null;
@@ -151,8 +263,6 @@ const SummaryTableDeltaRow = memo(function SummaryTableDeltaRow({
           <TrendCell v={item.value} digits={item.digits} />
         </td>
       ))}
-
-      {!isTraffic && model.items.length < 10 && null}
     </tr>
   );
 });
@@ -187,9 +297,13 @@ const SummaryTableMonthRow = memo(function SummaryTableMonthRow({
   );
 });
 
-function SummaryTableComponent({ reportType, byMonth }: Props) {
-  const isTraffic = reportType === "traffic";
-  const months = Array.isArray(byMonth) ? byMonth : [];
+function SummaryTableComponent({ reportType = "commerce", byMonth }: Props) {
+  const mode = useMemo(() => getMetricMode(reportType), [reportType]);
+  const headerLabels = useMemo(
+    () => getHeaderLabels(reportType),
+    [reportType]
+  );
+  const months = Array.isArray(byMonth) ? byMonth : EMPTY_MONTHS;
 
   const {
     sortedMonths,
@@ -215,10 +329,10 @@ function SummaryTableComponent({ reportType, byMonth }: Props) {
       const row = sorted[i];
 
       const impr = toSafeNumber(row?.impressions ?? row?.impr);
-      const clicks = toSafeNumber(row?.clicks);
+      const clicks = toSafeNumber(row?.clicks ?? row?.click);
       const cost = toSafeNumber(row?.cost);
       const conv = toSafeNumber(row?.conversions ?? row?.conv);
-      const rev = toSafeNumber(row?.revenue);
+      const rev = toSafeNumber(row?.revenue ?? row?.sales);
 
       if (impr > nextMaxImpr) nextMaxImpr = impr;
       if (clicks > nextMaxClicks) nextMaxClicks = clicks;
@@ -247,13 +361,17 @@ function SummaryTableComponent({ reportType, byMonth }: Props) {
         key: "delta-impr",
         value:
           diffRatio(
-            lastMonth?.impressions ?? 0,
-            prevMonth?.impressions ?? 0
+            toSafeNumber(lastMonth?.impressions ?? lastMonth?.impr),
+            toSafeNumber(prevMonth?.impressions ?? prevMonth?.impr)
           ) ?? 0,
       },
       {
         key: "delta-clicks",
-        value: diffRatio(lastMonth?.clicks ?? 0, prevMonth?.clicks ?? 0) ?? 0,
+        value:
+          diffRatio(
+            toSafeNumber(lastMonth?.clicks ?? lastMonth?.click),
+            toSafeNumber(prevMonth?.clicks ?? prevMonth?.click)
+          ) ?? 0,
       },
       {
         key: "delta-ctr",
@@ -266,61 +384,86 @@ function SummaryTableComponent({ reportType, byMonth }: Props) {
       },
       {
         key: "delta-cpc",
-        value: diffRatio(lastMonth?.cpc ?? 0, prevMonth?.cpc ?? 0) ?? 0,
+        value:
+          diffRatio(
+            toSafeNumber(lastMonth?.cpc),
+            toSafeNumber(prevMonth?.cpc)
+          ) ?? 0,
         digits: 2,
       },
       {
         key: "delta-cost",
-        value: diffRatio(lastMonth?.cost ?? 0, prevMonth?.cost ?? 0) ?? 0,
+        value:
+          diffRatio(
+            toSafeNumber(lastMonth?.cost),
+            toSafeNumber(prevMonth?.cost)
+          ) ?? 0,
       },
     ];
 
-    if (!isTraffic) {
-      items.push(
-        {
-          key: "delta-conv",
-          value:
-            diffRatio(
-              lastMonth?.conversions ?? 0,
-              prevMonth?.conversions ?? 0
-            ) ?? 0,
-        },
-        {
-          key: "delta-cvr",
-          value:
-            diffRatio(
-              normalizeRate01(lastMonth?.cvr),
-              normalizeRate01(prevMonth?.cvr)
-            ) ?? 0,
-          digits: 2,
-        },
-        {
-          key: "delta-cpa",
-          value: diffRatio(lastMonth?.cpa ?? 0, prevMonth?.cpa ?? 0) ?? 0,
-          digits: 2,
-        },
-        {
-          key: "delta-revenue",
-          value:
-            diffRatio(lastMonth?.revenue ?? 0, prevMonth?.revenue ?? 0) ?? 0,
-        },
-        {
-          key: "delta-roas",
-          value:
-            diffRatio(
-              normalizeRoas01(lastMonth?.roas),
-              normalizeRoas01(prevMonth?.roas)
-            ) ?? 0,
-          digits: 2,
-        }
-      );
+    if (mode.showConversions) {
+      items.push({
+        key: "delta-conv",
+        value:
+          diffRatio(
+            toSafeNumber(lastMonth?.conversions ?? lastMonth?.conv),
+            toSafeNumber(prevMonth?.conversions ?? prevMonth?.conv)
+          ) ?? 0,
+      });
+    }
+
+    if (mode.showCvr) {
+      items.push({
+        key: "delta-cvr",
+        value:
+          diffRatio(
+            normalizeRate01(lastMonth?.cvr),
+            normalizeRate01(prevMonth?.cvr)
+          ) ?? 0,
+        digits: 2,
+      });
+    }
+
+    if (mode.showCpa) {
+      items.push({
+        key: "delta-cpa",
+        value:
+          diffRatio(
+            toSafeNumber(lastMonth?.cpa),
+            toSafeNumber(prevMonth?.cpa)
+          ) ?? 0,
+        digits: 2,
+      });
+    }
+
+    if (mode.showRevenue) {
+      items.push({
+        key: "delta-revenue",
+        value:
+          diffRatio(
+            toSafeNumber(lastMonth?.revenue ?? lastMonth?.sales),
+            toSafeNumber(prevMonth?.revenue ?? prevMonth?.sales)
+          ) ?? 0,
+      });
+    }
+
+    if (mode.showRoas) {
+      items.push({
+        key: "delta-roas",
+        value:
+          diffRatio(
+            normalizeRoas01(lastMonth?.roas),
+            normalizeRoas01(prevMonth?.roas)
+          ) ?? 0,
+        digits: 2,
+      });
     }
 
     return {
       label: "증감(최근월-전월)",
       items,
     };
-  }, [isTraffic, lastMonth, prevMonth]);
+  }, [mode, lastMonth, prevMonth]);
 
   const monthRowModels = useMemo<MonthRowModel[]>(() => {
     return sortedMonths.map((row: any, idx: number) => {
@@ -328,10 +471,10 @@ function SummaryTableComponent({ reportType, byMonth }: Props) {
         row?.monthKey ?? row?.month ?? row?.label ?? row?.key ?? `month-${idx}`;
 
       const impressionsValue = toSafeNumber(row?.impressions ?? row?.impr);
-      const clicksValue = toSafeNumber(row?.clicks);
+      const clicksValue = toSafeNumber(row?.clicks ?? row?.click);
       const costValue = toSafeNumber(row?.cost);
       const convValue = toSafeNumber(row?.conversions ?? row?.conv);
-      const revenueValue = toSafeNumber(row?.revenue);
+      const revenueValue = toSafeNumber(row?.revenue ?? row?.sales);
 
       const ctrText = formatPercentFromRate(row?.ctr, 2);
       const cpcText = KRW(toSafeNumber(row?.cpc));
@@ -378,67 +521,70 @@ function SummaryTableComponent({ reportType, byMonth }: Props) {
         },
       ];
 
-      if (!isTraffic) {
-        cells.push(
-          {
-            key: `${rowKey}-conv`,
-            kind: "bar",
-            value: convValue,
-            max: maxConv,
-            className: TD_BAR_CLASS,
-          },
-          {
-            key: `${rowKey}-cvr`,
-            kind: "text",
-            value: cvrText,
-            className: TD_TEXT_RIGHT_MEDIUM_CLASS,
-          },
-          {
-            key: `${rowKey}-cpa`,
-            kind: "text",
-            value: cpaText,
-            className: TD_TEXT_RIGHT_MEDIUM_CLASS,
-          },
-          {
-            key: `${rowKey}-revenue`,
-            kind: "bar",
-            value: revenueValue,
-            max: maxRev,
-            label: revenueText,
-            className: TD_BAR_CLASS,
-          },
-          {
-            key: `${rowKey}-roas`,
-            kind: "text",
-            value: roasText,
-            className: TD_TEXT_RIGHT_STRONG_CLASS,
-          }
-        );
+      if (mode.showConversions) {
+        cells.push({
+          key: `${rowKey}-conv`,
+          kind: "bar",
+          value: convValue,
+          max: maxConv,
+          className: TD_BAR_CLASS,
+        });
+      }
+
+      if (mode.showCvr) {
+        cells.push({
+          key: `${rowKey}-cvr`,
+          kind: "text",
+          value: cvrText,
+          className: TD_TEXT_RIGHT_MEDIUM_CLASS,
+        });
+      }
+
+      if (mode.showCpa) {
+        cells.push({
+          key: `${rowKey}-cpa`,
+          kind: "text",
+          value: cpaText,
+          className: TD_TEXT_RIGHT_MEDIUM_CLASS,
+        });
+      }
+
+      if (mode.showRevenue) {
+        cells.push({
+          key: `${rowKey}-revenue`,
+          kind: "bar",
+          value: revenueValue,
+          max: maxRev,
+          label: revenueText,
+          className: TD_BAR_CLASS,
+        });
+      }
+
+      if (mode.showRoas) {
+        cells.push({
+          key: `${rowKey}-roas`,
+          kind: "text",
+          value: roasText,
+          className: TD_TEXT_RIGHT_STRONG_CLASS,
+        });
       }
 
       return {
-        rowKey,
-        monthLabel: row?.month ?? row?.label ?? "-",
+        rowKey: String(rowKey),
+        monthLabel: monthLabel(row),
         trClassName: MONTH_ROW_TR_CLASS_NAME,
         cells,
       };
     });
-  }, [isTraffic, maxClicks, maxConv, maxCost, maxImpr, maxRev, sortedMonths]);
-
-  const tableClassName = useMemo(
-    () => (isTraffic ? TRAFFIC_TABLE_CLASS_NAME : COMMERCE_TABLE_CLASS_NAME),
-    [isTraffic]
-  );
-
-  const emptyColSpan = isTraffic ? 6 : 11;
+  }, [mode, maxClicks, maxConv, maxCost, maxImpr, maxRev, sortedMonths]);
 
   return (
     <div className={WRAPPER_CLASS_NAME}>
-      <table className={tableClassName}>
-        <SummaryTableHeader isTraffic={isTraffic} />
+      <table className={mode.tableClassName}>
+        <SummaryTableHeader mode={mode} labels={headerLabels} />
 
         <tbody>
-          <SummaryTableDeltaRow isTraffic={isTraffic} model={deltaRowModel} />
+          <SummaryTableDeltaRow model={deltaRowModel} />
 
           {monthRowModels.map((model) => (
             <SummaryTableMonthRow key={model.rowKey} model={model} />
@@ -446,7 +592,7 @@ function SummaryTableComponent({ reportType, byMonth }: Props) {
 
           {!monthRowModels.length && (
             <tr>
-              <td colSpan={emptyColSpan} className={EMPTY_ROW_CLASS_NAME}>
+              <td colSpan={mode.emptyColSpan} className={EMPTY_ROW_CLASS_NAME}>
                 표시할 월별 데이터가 없습니다.
               </td>
             </tr>

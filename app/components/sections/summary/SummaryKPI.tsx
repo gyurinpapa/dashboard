@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useMemo } from "react";
+import type { ReportType } from "../../../../src/lib/report/types";
 import {
   KRW,
   toSafeNumber,
@@ -15,7 +16,7 @@ import SummaryKPICardView, {
 } from "./SummaryKPICardView";
 
 type Props = {
-  reportType?: "commerce" | "traffic";
+  reportType?: ReportType;
   totals: any;
 };
 
@@ -27,10 +28,20 @@ type SummaryCardItem = {
   footerText?: string;
 };
 
-const GRID_CLASS = "grid gap-3 sm:gap-3.5 grid-cols-2 lg:grid-cols-5";
+function getGridClass(reportType?: ReportType) {
+  if (reportType === "traffic") {
+    return "grid gap-3 sm:gap-3.5 grid-cols-2 lg:grid-cols-5";
+  }
 
-function SummaryKPIComponent({ reportType, totals }: Props) {
-  const isTraffic = reportType === "traffic";
+  if (reportType === "db_acquisition") {
+    return "grid gap-3 sm:gap-3.5 grid-cols-2 lg:grid-cols-5";
+  }
+
+  return "grid gap-3 sm:gap-3.5 grid-cols-2 lg:grid-cols-5 xl:grid-cols-5";
+}
+
+function SummaryKPIComponent({ reportType = "commerce", totals }: Props) {
+  const gridClass = useMemo(() => getGridClass(reportType), [reportType]);
 
   // 성능 최적화:
   // - totals에서 파생되는 숫자 계산을 useMemo로 고정
@@ -79,89 +90,163 @@ function SummaryKPIComponent({ reportType, totals }: Props) {
       roas,
     } = metricValues;
 
-    const baseCards: SummaryCardItem[] = [
+    if (reportType === "traffic") {
+      return [
+        {
+          key: "impressions",
+          title: "노출",
+          value: formatCount(impressions),
+          tone: "neutral",
+          footerText: "유입 도달 규모",
+        },
+        {
+          key: "clicks",
+          title: "클릭",
+          value: formatCount(clicks),
+          tone: "neutral",
+          footerText: "유입 발생 수",
+        },
+        {
+          key: "ctr",
+          title: "CTR",
+          value: formatPercentFromRate(ctr, 2),
+          tone: "neutral",
+          footerText: "노출 대비 클릭률",
+        },
+        {
+          key: "cpc",
+          title: "CPC",
+          value: KRW(cpc),
+          tone: "cost",
+          footerText: "클릭당 유입 비용",
+        },
+        {
+          key: "cost",
+          title: "비용",
+          value: KRW(cost),
+          tone: "cost",
+          footerText: "총 집행 광고비",
+        },
+      ];
+    }
+
+    if (reportType === "db_acquisition") {
+      return [
+        {
+          key: "conversions",
+          title: "전환수",
+          value: formatCount(conversions),
+          tone: "neutral",
+          footerText: "확보된 리드·DB 수",
+        },
+        {
+          key: "cpa",
+          title: "CPA",
+          value: KRW(cpa),
+          tone: "cost",
+          footerText: "리드 1건 확보 비용",
+        },
+        {
+          key: "cvr",
+          title: "CVR",
+          value: formatPercentFromRate(cvr, 2),
+          tone: "neutral",
+          footerText: "클릭 대비 전환율",
+        },
+        {
+          key: "clicks",
+          title: "클릭",
+          value: formatCount(clicks),
+          tone: "neutral",
+          footerText: "전환 유입 모수",
+        },
+        {
+          key: "cost",
+          title: "비용",
+          value: KRW(cost),
+          tone: "cost",
+          footerText: "DB 확보 집행 비용",
+        },
+      ];
+    }
+
+    return [
       {
         key: "impressions",
         title: "노출",
         value: formatCount(impressions),
         tone: "neutral",
-        footerText: "노출 metric",
+        footerText: "광고 노출 규모",
       },
       {
         key: "clicks",
         title: "클릭",
         value: formatCount(clicks),
         tone: "neutral",
-        footerText: "클릭 metric",
+        footerText: "유입 발생 수",
       },
       {
         key: "ctr",
         title: "CTR",
         value: formatPercentFromRate(ctr, 2),
         tone: "neutral",
-        footerText: "CTR metric",
+        footerText: "노출 대비 클릭률",
       },
       {
         key: "cpc",
         title: "CPC",
         value: KRW(cpc),
         tone: "cost",
-        footerText: "CPC metric",
+        footerText: "클릭당 광고비",
       },
       {
         key: "cost",
         title: "비용",
         value: KRW(cost),
         tone: "cost",
-        footerText: "비용 metric",
+        footerText: "총 집행 광고비",
       },
-    ];
-
-    if (isTraffic) return baseCards;
-
-    return [
-      ...baseCards,
       {
         key: "conversions",
         title: "전환수",
         value: formatCount(conversions),
         tone: "neutral",
-        footerText: "전환수 metric",
+        footerText: "구매·전환 발생 수",
       },
       {
         key: "cvr",
         title: "CVR",
         value: formatPercentFromRate(cvr, 2),
         tone: "neutral",
-        footerText: "CVR metric",
+        footerText: "클릭 대비 전환율",
       },
       {
         key: "revenue",
         title: "전환매출",
         value: KRW(revenue),
         tone: "revenue",
-        footerText: "전환매출 metric",
+        footerText: "전환 기반 매출액",
       },
       {
         key: "cpa",
         title: "CPA",
         value: KRW(cpa),
         tone: "neutral",
-        footerText: "CPA metric",
+        footerText: "전환 1건당 비용",
       },
       {
         key: "roas",
         title: "ROAS",
         value: formatPercentFromRoas(roas, 1),
         tone: "roas",
-        footerText: "ROAS metric",
+        footerText: "광고비 대비 매출 효율",
       },
     ];
-  }, [isTraffic, metricValues]);
+  }, [reportType, metricValues]);
 
   return (
     <div className="px-0 py-0">
-      <div className={GRID_CLASS}>
+      <div className={gridClass}>
         {cards.map((card) => (
           <SummaryKPICardView
             key={card.key}

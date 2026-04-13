@@ -1,6 +1,7 @@
 // app/components/ReportTemplate.tsx
 "use client";
 
+import dynamic from "next/dynamic";
 import {
   memo,
   useCallback,
@@ -16,6 +17,7 @@ import type {
   FilterKey,
   GoalState,
   MonthKey,
+  ReportType,
   TabKey,
   WeekKey,
 } from "@/src/lib/report/types";
@@ -32,26 +34,76 @@ import { buildKeywordInsight } from "@/src/lib/report/insights/buildKeywordInsig
 import { buildDailySummaryRows } from "@/src/lib/report/aggregate";
 
 import HeaderBar from "@/app/components/sections/HeaderBar";
-import StructureSection from "@/app/components/sections/StructureSection";
-import KeywordSection from "@/app/components/sections/KeywordSection";
-import KeywordDetailSection from "@/app/components/sections/KeywordDetailSection";
-import SummarySection from "@/app/components/sections/SummarySection";
-import Summary2Section from "@/app/components/sections/Summary2Section";
-import CreativeSection from "@/app/components/sections/CreativeSection";
-import CreativeDetailSection from "@/app/components/sections/CreativeDetailSection";
-import MonthGoalSection from "@/app/components/sections/MonthGoalSection";
 import FloatingFilterRail from "./floating/FloatingFilterRail";
 import FloatingTabRail from "./floating/FloatingTabRail";
 
+const SummarySection = dynamic(
+  () => import("@/app/components/sections/SummarySection"),
+  {
+    ssr: false,
+    loading: () => <div className="rounded-2xl" />,
+  }
+);
+
+const Summary2Section = dynamic(
+  () => import("@/app/components/sections/Summary2Section"),
+  {
+    ssr: false,
+    loading: () => <div className="rounded-2xl" />,
+  }
+);
+
+const StructureSection = dynamic(
+  () => import("@/app/components/sections/StructureSection"),
+  {
+    ssr: false,
+    loading: () => <div className="rounded-2xl" />,
+  }
+);
+
+const KeywordSection = dynamic(
+  () => import("@/app/components/sections/KeywordSection"),
+  {
+    ssr: false,
+    loading: () => <div className="rounded-2xl" />,
+  }
+);
+
+const KeywordDetailSection = dynamic(
+  () => import("@/app/components/sections/KeywordDetailSection"),
+  {
+    ssr: false,
+    loading: () => <div className="rounded-2xl" />,
+  }
+);
+
+const CreativeSection = dynamic(
+  () => import("@/app/components/sections/CreativeSection"),
+  {
+    ssr: false,
+    loading: () => <div className="rounded-2xl" />,
+  }
+);
+
+const CreativeDetailSection = dynamic(
+  () => import("@/app/components/sections/CreativeDetailSection"),
+  {
+    ssr: false,
+    loading: () => <div className="rounded-2xl" />,
+  }
+);
+
+const MonthGoalSection = dynamic(
+  () => import("@/app/components/sections/MonthGoalSection"),
+  {
+    ssr: false,
+    loading: () => <div className="rounded-2xl" />,
+  }
+);
+
 const MemoHeaderBar = memo(HeaderBar);
-const MemoStructureSection = memo(StructureSection);
-const MemoKeywordSection = memo(KeywordSection);
-const MemoKeywordDetailSection = memo(KeywordDetailSection);
-const MemoSummarySection = memo(SummarySection);
-const MemoSummary2Section = memo(Summary2Section);
-const MemoCreativeSection = memo(CreativeSection);
-const MemoCreativeDetailSection = memo(CreativeDetailSection);
-const MemoMonthGoalSection = memo(MonthGoalSection);
+const MemoFloatingFilterRail = memo(FloatingFilterRail);
+const MemoFloatingTabRail = memo(FloatingTabRail);
 
 const MONTH_GOAL_KEY = "nature_report_month_goal_v1";
 
@@ -62,6 +114,9 @@ const DEFAULT_GOAL: GoalState = {
   conversions: 0,
   revenue: 0,
 };
+
+const EMPTY_ROWS: any[] = [];
+const EMPTY_STRING = "";
 
 type Props = {
   rows: any[];
@@ -77,8 +132,7 @@ type Props = {
   hideTabPeriodText?: boolean;
 };
 
-type ReportUiType = "commerce" | "traffic";
-type ReportFilterKey = FilterKey | "source" | "product";
+type ReportFilterKey = FilterKey;
 
 function asStr(v: any) {
   if (v == null) return "";
@@ -118,6 +172,40 @@ function normalizeKey(s: any) {
     v = v.normalize("NFC");
   } catch {}
   return v;
+}
+
+function resolveReportTypeFromProps(input: {
+  reportTypeKey?: string | null;
+  reportTypeName?: string | null;
+}): ReportType {
+  const key = firstNonEmpty(input.reportTypeKey).toLowerCase();
+  const name = firstNonEmpty(input.reportTypeName).toLowerCase();
+  const source = `${key} ${name}`;
+
+  if (
+    source.includes("db_acquisition") ||
+    source.includes("db acquisition") ||
+    source.includes("db획득") ||
+    source.includes("db 획득")
+  ) {
+    return "db_acquisition";
+  }
+
+  if (source.includes("traffic") || source.includes("트래픽")) {
+    return "traffic";
+  }
+
+  if (
+    source.includes("commerce") ||
+    source.includes("커머스") ||
+    source.includes("매출") ||
+    source.includes("e-commerce") ||
+    source.includes("ecommerce")
+  ) {
+    return "commerce";
+  }
+
+  return "commerce";
 }
 
 function basenameOf(v: string) {
@@ -199,6 +287,15 @@ function normalizeIncomingRow(rec: any) {
   if (base.platform == null) {
     base.platform =
       rec?.platform ?? base?.media_source ?? base?.ad_platform ?? null;
+  }
+
+  if (base.product == null) {
+    base.product =
+      rec?.product ??
+      base?.platform ??
+      base?.product_name ??
+      base?.productName ??
+      null;
   }
 
   if (base.campaign_name == null && base.campaign != null) {
@@ -692,6 +789,16 @@ function getLastDateFromRows(
   return toYmd(last);
 }
 
+function getReportTypeDisplayName(
+  resolvedType: ReportType,
+  rawName: string
+): string {
+  if (resolvedType === "traffic") return "트래픽 리포트";
+  if (resolvedType === "db_acquisition") return "DB획득 리포트";
+  if (resolvedType === "commerce") return "커머스 매출 리포트";
+  return rawName;
+}
+
 export default function ReportTemplate({
   rows,
   isLoading,
@@ -720,15 +827,27 @@ export default function ReportTemplate({
     DEFAULT_GOAL
   );
 
+  const stableReportPeriod = useStableShallowValue(reportPeriod);
+  const stableCreativesMapInput = useStableShallowValue(creativesMap ?? {});
+  const stableMonthGoal = useStableShallowValue(monthGoal);
+
   const normalizedRows = useMemo(() => {
-    return (rows ?? []).map(normalizeIncomingRow);
+    if (!rows?.length) return EMPTY_ROWS;
+    return rows.map(normalizeIncomingRow);
   }, [rows]);
 
   const reportPeriodRows = useMemo(() => {
-    return filterRowsByReportPeriod(normalizedRows as any[], reportPeriod);
-  }, [normalizedRows, reportPeriod]);
+    if (!normalizedRows.length) return EMPTY_ROWS;
+    return filterRowsByReportPeriod(normalizedRows as any[], stableReportPeriod);
+  }, [normalizedRows, stableReportPeriod]);
 
   const headerFallback = useMemo(() => {
+    if (!normalizedRows.length) {
+      return {
+        advertiserName: "",
+        reportTypeName: "",
+      };
+    }
     return pickHeaderFallbackFromRows(normalizedRows);
   }, [normalizedRows]);
 
@@ -736,103 +855,28 @@ export default function ReportTemplate({
     return firstNonEmpty(advertiserName, headerFallback.advertiserName);
   }, [advertiserName, headerFallback.advertiserName]);
 
-  const effectiveReportTypeKey = useMemo(() => {
-    const rawKey = firstNonEmpty(reportTypeKey);
-    const keyLower = rawKey.toLowerCase();
-
-    if (keyLower.includes("traffic") || keyLower.includes("트래픽")) {
-      return "traffic";
-    }
-
-    if (
-      keyLower.includes("commerce") ||
-      keyLower.includes("커머스") ||
-      keyLower.includes("e-commerce") ||
-      keyLower.includes("매출")
-    ) {
-      return "commerce";
-    }
-
-    const rawName = firstNonEmpty(reportTypeName, headerFallback.reportTypeName);
-    const nameLower = rawName.toLowerCase();
-
-    if (nameLower.includes("traffic") || nameLower.includes("트래픽")) {
-      return "traffic";
-    }
-
-    if (
-      nameLower.includes("commerce") ||
-      nameLower.includes("커머스") ||
-      nameLower.includes("e-commerce") ||
-      nameLower.includes("매출")
-    ) {
-      return "commerce";
-    }
-
-    return "";
+  const effectiveReportTypeKey = useMemo<ReportType>(() => {
+    return resolveReportTypeFromProps({
+      reportTypeKey,
+      reportTypeName: firstNonEmpty(reportTypeName, headerFallback.reportTypeName),
+    });
   }, [reportTypeKey, reportTypeName, headerFallback.reportTypeName]);
 
   const effectiveReportTypeName = useMemo(() => {
-    if (effectiveReportTypeKey === "traffic") return "트래픽 리포트";
-    if (effectiveReportTypeKey === "commerce") return "커머스 매출 리포트";
-
-    return firstNonEmpty(reportTypeName, headerFallback.reportTypeName);
+    const rawName = firstNonEmpty(reportTypeName, headerFallback.reportTypeName);
+    return getReportTypeDisplayName(effectiveReportTypeKey, rawName);
   }, [effectiveReportTypeKey, reportTypeName, headerFallback.reportTypeName]);
 
-  const reportType = useMemo<ReportUiType>(() => {
-    return effectiveReportTypeKey === "traffic" ? "traffic" : "commerce";
-  }, [effectiveReportTypeKey]);
-
-  const templateRenderKey = useMemo(() => {
-    const first = normalizedRows?.[0];
-    const last = normalizedRows?.[normalizedRows.length - 1];
-    const firstKey =
-      asStr(first?.id) ||
-      asStr(first?.__row_id) ||
-      asStr(first?.date) ||
-      asStr(first?.campaign_name) ||
-      "first";
-    const lastKey =
-      asStr(last?.id) ||
-      asStr(last?.__row_id) ||
-      asStr(last?.date) ||
-      asStr(last?.campaign_name) ||
-      "last";
-
-    return [
-      effectiveAdvertiserName,
-      effectiveReportTypeName,
-      normalizedRows.length,
-      firstKey,
-      lastKey,
-      Object.keys(creativesMap || {}).length,
-    ].join("|");
-  }, [
-    effectiveAdvertiserName,
-    effectiveReportTypeName,
-    normalizedRows,
-    creativesMap,
-  ]);
+  const reportType = effectiveReportTypeKey;
 
   useEffect(() => {
     try {
       const sp = new URLSearchParams(window.location.search);
       if (sp.get("debugRows") !== "1") return;
       (window as any).__ROWS__ = normalizedRows;
-      (window as any).__CREATIVES_MAP__ = creativesMap ?? {};
+      (window as any).__CREATIVES_MAP__ = stableCreativesMapInput;
     } catch {}
-  }, [normalizedRows, creativesMap]);
-
-  const originalRowById = useMemo(() => {
-    const m = new Map<string, any>();
-    for (const r of normalizedRows ?? []) {
-      const id = r?.__row_id ?? r?.id;
-      const key = id == null ? "" : String(id);
-      if (!key) continue;
-      if (!m.has(key)) m.set(key, r);
-    }
-    return m;
-  }, [normalizedRows]);
+  }, [normalizedRows, stableCreativesMapInput]);
 
   useEffect(() => {
     if (readOnlyHeader) return;
@@ -855,14 +899,24 @@ export default function ReportTemplate({
   const needByWeek = needSummaryAggregates;
   const needByMonth = needSummaryAggregates;
 
-  const needCreativeRows = useMemo(() => {
-    return (
-      tab === "structure" ||
-      tab === "keywordDetail" ||
-      tab === "creative" ||
-      tab === "creativeDetail"
-    );
-  }, [tab]);
+  const needCreativeRows =
+    tab === "structure" ||
+    tab === "keywordDetail" ||
+    tab === "creative" ||
+    tab === "creativeDetail";
+
+  const originalRowById = useMemo(() => {
+    if (!needCreativeRows || !normalizedRows.length) return null;
+
+    const m = new Map<string, any>();
+    for (const r of normalizedRows) {
+      const id = r?.__row_id ?? r?.id;
+      const key = id == null ? "" : String(id);
+      if (!key) continue;
+      if (!m.has(key)) m.set(key, r);
+    }
+    return m;
+  }, [needCreativeRows, normalizedRows]);
 
   const handleInvalidWeek = useCallback(() => {
     setSelectedWeek("all");
@@ -877,7 +931,7 @@ export default function ReportTemplate({
       selectedChannel,
       selectedSource,
       selectedProduct,
-      monthGoal,
+      monthGoal: stableMonthGoal,
       onInvalidWeek: handleInvalidWeek,
       needCurrentMonthActual,
       needTotals,
@@ -896,7 +950,7 @@ export default function ReportTemplate({
     selectedChannel,
     selectedSource,
     selectedProduct,
-    monthGoal,
+    stableMonthGoal,
     handleInvalidWeek,
     needCurrentMonthActual,
     needTotals,
@@ -907,6 +961,9 @@ export default function ReportTemplate({
     needByMonth,
     needCreativeRows,
   ]);
+
+  const stableReportAggregatesParams =
+    useStableShallowValue(reportAggregatesParams);
 
   const {
     monthOptions,
@@ -928,7 +985,7 @@ export default function ReportTemplate({
     byWeekOnly,
     byWeekChart,
     byMonth,
-  } = useReportAggregates(reportAggregatesParams);
+  } = useReportAggregates(stableReportAggregatesParams);
 
   const allowedDeviceSet = useMemo(() => {
     return new Set((deviceOptions ?? []).map((x: any) => String(x)));
@@ -947,13 +1004,16 @@ export default function ReportTemplate({
   }, [productOptions]);
 
   const byDay = useMemo(() => {
-    if (tab !== "summary") return [];
+    if (tab !== "summary") return EMPTY_ROWS;
+    if (!(filteredRows as any[])?.length) return EMPTY_ROWS;
     return buildDailySummaryRows(filteredRows as any[]);
   }, [tab, filteredRows]);
 
   const lastDataDate = useMemo(() => {
+    if (tab !== "summary") return EMPTY_STRING;
+    if (!(filteredRows as any[])?.length) return EMPTY_STRING;
     return getLastDateFromRows(filteredRows as any[], currentMonthKey);
-  }, [filteredRows, currentMonthKey]);
+  }, [tab, filteredRows, currentMonthKey]);
 
   useEffect(() => {
     if (readOnlyHeader) return;
@@ -998,57 +1058,81 @@ export default function ReportTemplate({
   }, [selectedProduct, allowedProductSet, readOnlyHeader]);
 
   const fullPeriod = useMemo(() => {
+    if (!normalizedRows.length) return "";
     const mm = minMaxYmd(normalizedRows as any[]);
     if (!mm.min || !mm.max) return "";
     return `${formatYmd(mm.min)} ~ ${formatYmd(mm.max)}`;
   }, [normalizedRows]);
 
   const periodFixed = useMemo(() => {
+    if (!(filteredRows as any[])?.length) return period;
     const mm = minMaxYmd(filteredRows as any[]);
     if (!mm.min || !mm.max) return period;
     return `${formatYmd(mm.min)} ~ ${formatYmd(mm.max)}`;
   }, [filteredRows, period]);
 
   const insightsCurrentMonthActual = useMemo(() => {
+    if (tab !== "summary") {
+      return {
+        impressions: 0,
+        clicks: 0,
+        cost: 0,
+        conversions: 0,
+        revenue: 0,
+        ctr: 0,
+        cpc: 0,
+        cvr: 0,
+        cpa: 0,
+        roas: 0,
+      };
+    }
+
     return {
-      impressions: currentMonthActual.impressions,
-      clicks: currentMonthActual.clicks,
-      cost: currentMonthActual.cost,
-      conversions: currentMonthActual.conversions,
-      revenue: currentMonthActual.revenue,
-      ctr: currentMonthActual.ctr,
-      cpc: currentMonthActual.cpc,
-      cvr: currentMonthActual.cvr,
-      cpa: currentMonthActual.cpa,
-      roas: currentMonthActual.roas,
+      impressions: Number(currentMonthActual?.impressions ?? 0),
+      clicks: Number(currentMonthActual?.clicks ?? 0),
+      cost: Number(currentMonthActual?.cost ?? 0),
+      conversions: Number(currentMonthActual?.conversions ?? 0),
+      revenue: Number(currentMonthActual?.revenue ?? 0),
+      ctr: Number(currentMonthActual?.ctr ?? 0),
+      cpc: Number(currentMonthActual?.cpc ?? 0),
+      cvr: Number(currentMonthActual?.cvr ?? 0),
+      cpa: Number(currentMonthActual?.cpa ?? 0),
+      roas: Number(currentMonthActual?.roas ?? 0),
     };
-  }, [currentMonthActual]);
+  }, [tab, currentMonthActual]);
+
+  const stableInsightsCurrentMonthActual =
+    useStableShallowValue(insightsCurrentMonthActual);
 
   const insightsParams = useMemo(() => {
     return {
       byMonth,
       rowsLength: reportPeriodRows.length,
       currentMonthKey,
-      monthGoal,
-      currentMonthActual: insightsCurrentMonthActual,
+      monthGoal: stableMonthGoal,
+      currentMonthActual: stableInsightsCurrentMonthActual,
       currentMonthGoalComputed,
       enableMonthlyInsight: tab === "summary",
       enableMonthGoalInsight: tab === "summary",
+      reportType,
     };
   }, [
     byMonth,
     reportPeriodRows.length,
     currentMonthKey,
-    monthGoal,
-    insightsCurrentMonthActual,
+    stableMonthGoal,
+    stableInsightsCurrentMonthActual,
     currentMonthGoalComputed,
     tab,
+    reportType,
   ]);
 
-  const { monthGoalInsight } = useInsights(insightsParams);
+  const stableInsightsParams = useStableShallowValue(insightsParams);
+  const { monthGoalInsight } = useInsights(stableInsightsParams);
 
   const keywordAgg = useMemo(() => {
-    if (tab !== "keyword") return [];
+    if (tab !== "keyword") return EMPTY_ROWS;
+    if (!(filteredRows as any[])?.length) return EMPTY_ROWS;
     return groupByKeyword(filteredRows as any[]);
   }, [tab, filteredRows]);
 
@@ -1059,23 +1143,33 @@ export default function ReportTemplate({
       keywordBaseRows: filteredRows as any[],
       currentMonthActual: currentMonthActual as any,
       currentMonthGoalComputed: currentMonthGoalComputed as any,
+      reportType,
     });
-  }, [tab, keywordAgg, filteredRows, currentMonthActual, currentMonthGoalComputed]);
+  }, [
+    tab,
+    keywordAgg,
+    filteredRows,
+    currentMonthActual,
+    currentMonthGoalComputed,
+    reportType,
+  ]);
 
   const creativesMapNormalized = useMemo(() => {
     if (!needCreativeRows) return {};
-    return normalizeCreativesMap(creativesMap ?? {});
-  }, [needCreativeRows, creativesMap]);
+    return normalizeCreativesMap(stableCreativesMapInput);
+  }, [needCreativeRows, stableCreativesMapInput]);
 
   const filteredRowsWithCreatives = useMemo(() => {
     if (!needCreativeRows) return filteredRows as any[];
+    if (!(filteredRows as any[])?.length) return EMPTY_ROWS;
 
     const map = creativesMapNormalized;
+    const originalRowMap = originalRowById;
 
     return (filteredRows as any[]).map((r) => {
       const ridValue = r?.__row_id ?? r?.id;
       const rid = ridValue == null ? "" : String(ridValue);
-      const orig = rid ? originalRowById.get(rid) : null;
+      const orig = rid && originalRowMap ? originalRowMap.get(rid) : null;
 
       const baseForCandidates = orig ?? r;
       const candidates = creativeCandidatesOfRow(baseForCandidates);
@@ -1134,12 +1228,12 @@ export default function ReportTemplate({
   }, [needCreativeRows, filteredRows, creativesMapNormalized, originalRowById]);
 
   const creativeBaseRows = useMemo(() => {
-    if (tab !== "creative" && tab !== "creativeDetail") return [];
-    const list = (filteredRowsWithCreatives as any[]) ?? [];
+    if (tab !== "creative" && tab !== "creativeDetail") return EMPTY_ROWS;
+    const list = (filteredRowsWithCreatives as any[]) ?? EMPTY_ROWS;
+    if (!list.length) return EMPTY_ROWS;
     return list.filter((r) => !!r?.creative_url);
   }, [tab, filteredRowsWithCreatives]);
 
-  const stableMonthGoal = useStableShallowValue(monthGoal);
   const stableCurrentMonthActual = useStableShallowValue(currentMonthActual);
   const stableCurrentMonthGoalComputed =
     useStableShallowValue(currentMonthGoalComputed);
@@ -1206,10 +1300,7 @@ export default function ReportTemplate({
   ]);
 
   return (
-    <main
-      key={templateRenderKey}
-      className="min-h-screen bg-slate-50 text-slate-900"
-    >
+    <main className="min-h-screen bg-slate-50 text-slate-900">
       <div className="relative">
         <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-slate-100/90 via-slate-50/70 to-transparent" />
 
@@ -1244,7 +1335,7 @@ export default function ReportTemplate({
             advertiserName={effectiveAdvertiserName}
             reportTypeName={effectiveReportTypeName}
             reportTypeKey={effectiveReportTypeKey}
-            reportPeriod={reportPeriod}
+            reportPeriod={stableReportPeriod}
             onChangeReportPeriod={onChangeReportPeriod}
             readOnlyHeader={readOnlyHeader}
             hidePeriodEditor={hidePeriodEditor}
@@ -1268,7 +1359,7 @@ export default function ReportTemplate({
 
           <div className="relative flex items-start justify-center gap-5 xl:gap-6">
             <div className="hidden xl:block xl:sticky xl:top-24 xl:self-start">
-              <FloatingFilterRail
+              <MemoFloatingFilterRail
                 selectedMonth={selectedMonth}
                 setSelectedMonth={setSelectedMonth}
                 monthOptions={monthOptions}
@@ -1299,18 +1390,18 @@ export default function ReportTemplate({
                   {tab === "summary" && (
                     <>
                       <div className="rounded-2xl">
-                        <MemoMonthGoalSection {...(monthGoalSectionProps as any)} />
+                        <MonthGoalSection {...(monthGoalSectionProps as any)} />
                       </div>
 
                       <div className="rounded-2xl">
-                        <MemoSummarySection {...(summarySectionProps as any)} />
+                        <SummarySection {...(summarySectionProps as any)} />
                       </div>
                     </>
                   )}
 
                   {tab === "summary2" && (
                     <div className="rounded-2xl">
-                      <MemoSummary2Section
+                      <Summary2Section
                         {...({ reportType } as any)}
                         rows={filteredRows as any[]}
                       />
@@ -1319,19 +1410,19 @@ export default function ReportTemplate({
 
                   {tab === "structure" && (
                     <div className="rounded-2xl">
-                      <MemoStructureSection
+                      <StructureSection
                         {...({ reportType } as any)}
                         bySource={bySource}
                         byCampaign={byCampaign}
                         rows={filteredRowsWithCreatives}
-                        monthGoal={monthGoal}
+                        monthGoal={stableMonthGoal}
                       />
                     </div>
                   )}
 
                   {tab === "keyword" && (
                     <div className="rounded-2xl">
-                      <MemoKeywordSection
+                      <KeywordSection
                         {...({ reportType } as any)}
                         keywordAgg={keywordAgg}
                         keywordInsight={keywordInsight}
@@ -1341,7 +1432,7 @@ export default function ReportTemplate({
 
                   {tab === "keywordDetail" && (
                     <div className="rounded-2xl">
-                      <MemoKeywordDetailSection
+                      <KeywordDetailSection
                         {...({ reportType } as any)}
                         rows={filteredRowsWithCreatives as any[]}
                       />
@@ -1350,7 +1441,7 @@ export default function ReportTemplate({
 
                   {tab === "creative" && (
                     <div className="rounded-2xl">
-                      <MemoCreativeSection
+                      <CreativeSection
                         {...({ reportType } as any)}
                         rows={creativeBaseRows}
                       />
@@ -1359,7 +1450,7 @@ export default function ReportTemplate({
 
                   {tab === "creativeDetail" && (
                     <div className="rounded-2xl">
-                      <MemoCreativeDetailSection
+                      <CreativeDetailSection
                         {...({ reportType } as any)}
                         rows={creativeBaseRows as any[]}
                       />
@@ -1370,7 +1461,7 @@ export default function ReportTemplate({
             </div>
 
             <div className="hidden xl:block xl:sticky xl:top-24 xl:self-start">
-              <FloatingTabRail
+              <MemoFloatingTabRail
                 tab={tab}
                 setTab={setTab}
                 readOnly={readOnlyHeader}

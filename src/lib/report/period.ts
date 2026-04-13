@@ -78,6 +78,10 @@ export function getRowDate(row: PeriodFilterableRow): Date | null {
   return parseDateLoose(getRowDateValue(row));
 }
 
+function getRowDateYmd(row: PeriodFilterableRow): string {
+  return normalizeYmd(getRowDateValue(row));
+}
+
 export function normalizeYmd(value: unknown): string {
   if (value == null) return "";
   if (value instanceof Date) {
@@ -206,9 +210,8 @@ export function getRowsDateRange<T extends PeriodFilterableRow>(rows: T[]): {
   let max = "";
 
   for (const row of rows ?? []) {
-    const d = getRowDate(row);
-    if (!d) continue;
-    const ymd = toYMDLocal(d);
+    const ymd = getRowDateYmd(row);
+    if (!ymd) continue;
 
     if (!min || ymd < min) min = ymd;
     if (!max || ymd > max) max = ymd;
@@ -226,16 +229,24 @@ export function filterRowsByReportPeriod<T extends PeriodFilterableRow>(
   rows: T[],
   period: ReportPeriod
 ): T[] {
+  const safeRows = rows ?? [];
+  if (safeRows.length === 0) return [];
+
   const safePeriod = makeReportPeriod(period);
   const startDate = safePeriod.startDate;
   const endDate = safePeriod.endDate;
 
-  return (rows ?? []).filter((row) => {
-    const d = getRowDate(row);
-    if (!d) return false;
-    const ymd = toYMDLocal(d);
-    return ymd >= startDate && ymd <= endDate;
-  });
+  const result: T[] = [];
+
+  for (let i = 0; i < safeRows.length; i += 1) {
+    const row = safeRows[i];
+    const ymd = getRowDateYmd(row);
+    if (!ymd) continue;
+    if (ymd < startDate || ymd > endDate) continue;
+    result.push(row);
+  }
+
+  return result;
 }
 
 export function getPeriodLabel(period: ReportPeriod): string {

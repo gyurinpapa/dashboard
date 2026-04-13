@@ -18,8 +18,10 @@ import {
   formatDeltaPercentFromRatio,
 } from "../../../src/lib/report/format";
 
+type ReportType = "commerce" | "traffic" | "db_acquisition";
+
 type Props = {
-  reportType?: "commerce" | "traffic";
+  reportType?: ReportType;
   rows: any[];
 };
 
@@ -29,7 +31,9 @@ type HeatmapMetricKey =
   | "conversions"
   | "cost"
   | "clicks"
-  | "impressions";
+  | "impressions"
+  | "cvr"
+  | "cpa";
 
 type DayAgg = {
   dateKey: string;
@@ -50,13 +54,13 @@ type SankeyLink = {
   target: string;
   value: number;
   sourceType: "channel" | "device";
-  targetType: "device" | "revenue";
+  targetType: "device" | "outcome";
 };
 
 type ChannelDeviceAgg = {
   channel: string;
   device: string;
-  revenue: number;
+  value: number;
 };
 
 type ChannelMetricAgg = {
@@ -64,7 +68,10 @@ type ChannelMetricAgg = {
   revenue: number;
   conversions: number;
   cost: number;
+  clicks: number;
   roas: number;
+  cvr: number;
+  cpa: number;
 };
 
 type FunnelItem = {
@@ -105,6 +112,18 @@ const COMMERCE_METRIC_BUTTONS: Array<{
   { key: "revenue", label: "매출" },
   { key: "roas", label: "ROAS" },
   { key: "conversions", label: "전환수" },
+  { key: "cost", label: "광고비" },
+  { key: "clicks", label: "클릭수" },
+  { key: "impressions", label: "노출수" },
+];
+
+const DB_ACQUISITION_METRIC_BUTTONS: Array<{
+  key: HeatmapMetricKey;
+  label: string;
+}> = [
+  { key: "conversions", label: "전환수" },
+  { key: "cpa", label: "CPA" },
+  { key: "cvr", label: "CVR" },
   { key: "cost", label: "광고비" },
   { key: "clicks", label: "클릭수" },
   { key: "impressions", label: "노출수" },
@@ -407,6 +426,8 @@ const FunnelCard = memo(function FunnelCard({
   transitionBadges,
   badge,
   overview,
+  title,
+  description,
 }: {
   items: FunnelItem[];
   isPlaying: boolean;
@@ -419,6 +440,8 @@ const FunnelCard = memo(function FunnelCard({
   transitionBadges: string[];
   badge: string;
   overview: string;
+  title: string;
+  description: string;
 }) {
   const barH = 54;
   const gapH = 32;
@@ -473,20 +496,27 @@ const FunnelCard = memo(function FunnelCard({
   return (
     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
       <div className="border-b border-gray-200 px-6 py-4">
-        <div>
-          <div className="mb-3">
-            <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] text-emerald-700">
-              {badge}
-            </span>
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <div className="mb-3">
+              <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] text-emerald-700">
+                {badge}
+              </span>
+            </div>
+
+            <h3 className="text-base font-semibold text-gray-900">{title}</h3>
+
+            <p className="mt-1 text-sm text-gray-500">{description}</p>
           </div>
 
-          <h3 className="text-base font-semibold text-gray-900">
-            성과 퍼널
-          </h3>
-
-          <p className="mt-1 text-sm text-gray-500">
-            현재 필터가 적용된 데이터 기준으로 요약합니다.
-          </p>
+          <div className="min-w-[220px] rounded-2xl border border-gray-200 bg-gray-50/80 px-4 py-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400">
+              Overview
+            </div>
+            <div className="mt-1 text-sm font-semibold text-gray-900">
+              {overview}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -807,22 +837,42 @@ const DonutCard = memo(function DonutCard({
   );
 });
 
-const RoasBarCard = memo(function RoasBarCard({
+const EfficiencyBarCard = memo(function EfficiencyBarCard({
   items,
   badge,
   overview,
+  title,
+  description,
+  primaryMetricLabel,
+  primaryMetricFormatter,
+  primaryMetricValue,
+  sortValue,
+  secondaryLabel,
+  secondaryValue,
+  secondaryFormatter,
+  tertiaryLabel,
+  tertiaryValue,
+  tertiaryFormatter,
+  emptyMessage,
 }: {
-  items: Array<{
-    channel: string;
-    revenue: number;
-    conversions: number;
-    cost: number;
-    roas: number;
-  }>;
+  items: ChannelMetricAgg[];
   badge: string;
   overview: string;
+  title: string;
+  description: string;
+  primaryMetricLabel: string;
+  primaryMetricFormatter: (v: number) => string;
+  primaryMetricValue: (item: ChannelMetricAgg) => number;
+  sortValue: (item: ChannelMetricAgg) => number;
+  secondaryLabel: string;
+  secondaryValue: (item: ChannelMetricAgg) => number;
+  secondaryFormatter: (v: number) => string;
+  tertiaryLabel: string;
+  tertiaryValue: (item: ChannelMetricAgg) => number;
+  tertiaryFormatter: (v: number) => string;
+  emptyMessage: string;
 }) {
-  const maxRoas = Math.max(0, ...items.map((x) => x.roas));
+  const maxMetric = Math.max(0, ...items.map((x) => sortValue(x)));
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
@@ -834,12 +884,8 @@ const RoasBarCard = memo(function RoasBarCard({
                 {badge}
               </span>
             </div>
-            <h3 className="text-base font-semibold text-gray-900">
-              채널별 ROAS 비교
-            </h3>
-            <p className="mt-1 text-sm text-gray-500">
-              채널별 총매출 ÷ 총광고비 기준으로 계산한 ROAS입니다.
-            </p>
+            <h3 className="text-base font-semibold text-gray-900">{title}</h3>
+            <p className="mt-1 text-sm text-gray-500">{description}</p>
           </div>
 
           <div className="min-w-[220px] rounded-2xl border border-gray-200 bg-gray-50/80 px-4 py-3">
@@ -857,7 +903,9 @@ const RoasBarCard = memo(function RoasBarCard({
         {items.length > 0 ? (
           <div className="space-y-4">
             {items.map((item) => {
-              const pct = maxRoas > 0 ? (item.roas / maxRoas) * 100 : 0;
+              const current = sortValue(item);
+              const pct = maxMetric > 0 ? (current / maxMetric) * 100 : 0;
+
               return (
                 <div
                   key={item.channel}
@@ -874,7 +922,7 @@ const RoasBarCard = memo(function RoasBarCard({
                       </span>
                     </div>
                     <span className="text-sm font-semibold text-gray-900">
-                      {formatPercentFromRoas(item.roas, 1)}
+                      {primaryMetricFormatter(primaryMetricValue(item))}
                     </span>
                   </div>
 
@@ -890,21 +938,21 @@ const RoasBarCard = memo(function RoasBarCard({
 
                   <div className="mt-3 grid grid-cols-3 gap-3 text-xs text-gray-500">
                     <div>
-                      <div>매출</div>
+                      <div>{primaryMetricLabel}</div>
                       <div className="mt-1 font-semibold text-gray-900">
-                        {KRW(item.revenue)}
+                        {primaryMetricFormatter(primaryMetricValue(item))}
                       </div>
                     </div>
                     <div>
-                      <div>광고비</div>
+                      <div>{secondaryLabel}</div>
                       <div className="mt-1 font-semibold text-gray-900">
-                        {KRW(item.cost)}
+                        {secondaryFormatter(secondaryValue(item))}
                       </div>
                     </div>
                     <div>
-                      <div>전환수</div>
+                      <div>{tertiaryLabel}</div>
                       <div className="mt-1 font-semibold text-gray-900">
-                        {formatCount(item.conversions)}
+                        {tertiaryFormatter(tertiaryValue(item))}
                       </div>
                     </div>
                   </div>
@@ -914,7 +962,7 @@ const RoasBarCard = memo(function RoasBarCard({
           </div>
         ) : (
           <div className="rounded-2xl border border-gray-200 bg-gray-50 px-6 py-10 text-sm text-gray-500">
-            ROAS 비교용 데이터가 없습니다.
+            {emptyMessage}
           </div>
         )}
       </div>
@@ -931,7 +979,7 @@ const HeatmapCell = memo(function HeatmapCell({
   isHovered,
   isDimmed,
   metric,
-  isTraffic,
+  mode,
   selectedMetricLabel,
   onHoverStart,
   onHoverEnd,
@@ -944,19 +992,26 @@ const HeatmapCell = memo(function HeatmapCell({
   isHovered: boolean;
   isDimmed: boolean;
   metric: HeatmapMetricKey;
-  isTraffic: boolean;
+  mode: ReportType;
   selectedMetricLabel: string;
   onHoverStart: (key: string, hasAgg: boolean) => void;
   onHoverEnd: () => void;
 }) {
-  // ✅ 성능 최소 수정: 셀 단위 title 문자열을 memo로 고정
   const title = useMemo(() => {
     if (!agg) return dateKey;
 
-    return [
-      `${agg.dateKey}`,
-      ...(isTraffic
+    const lines =
+      mode === "traffic"
         ? [
+            `광고비: ${formatMetricValue("cost", agg.cost)}`,
+            `클릭수: ${formatMetricValue("clicks", agg.clicks)}`,
+            `노출수: ${formatMetricValue("impressions", agg.impressions)}`,
+          ]
+        : mode === "db_acquisition"
+        ? [
+            `전환수: ${formatMetricValue("conversions", agg.conversions)}`,
+            `CPA: ${formatMetricValue("cpa", agg.cpa)}`,
+            `CVR: ${formatMetricValue("cvr", agg.cvr)}`,
             `광고비: ${formatMetricValue("cost", agg.cost)}`,
             `클릭수: ${formatMetricValue("clicks", agg.clicks)}`,
             `노출수: ${formatMetricValue("impressions", agg.impressions)}`,
@@ -968,9 +1023,10 @@ const HeatmapCell = memo(function HeatmapCell({
             `광고비: ${formatMetricValue("cost", agg.cost)}`,
             `클릭수: ${formatMetricValue("clicks", agg.clicks)}`,
             `노출수: ${formatMetricValue("impressions", agg.impressions)}`,
-          ]),
-    ].join("\n");
-  }, [agg, dateKey, isTraffic]);
+          ];
+
+    return [`${agg.dateKey}`, ...lines].join("\n");
+  }, [agg, dateKey, mode]);
 
   return (
     <div
@@ -1003,7 +1059,17 @@ const HeatmapCell = memo(function HeatmapCell({
 });
 
 export default function Summary2Section({ reportType, rows }: Props) {
-  const isTraffic = reportType === "traffic";
+  const mode: ReportType =
+    reportType === "traffic"
+      ? "traffic"
+      : reportType === "db_acquisition"
+      ? "db_acquisition"
+      : "commerce";
+
+  const isTraffic = mode === "traffic";
+  const isDbAcquisition = mode === "db_acquisition";
+  const isCommerce = mode === "commerce";
+
   const [metric, setMetric] = useState<HeatmapMetricKey>("cost");
   const [isPlaying, setIsPlaying] = useState(false);
   const [playIndex, setPlayIndex] = useState(0);
@@ -1074,17 +1140,19 @@ export default function Summary2Section({ reportType, rows }: Props) {
     return dayList.map((d) => Number(d[metric] ?? 0));
   }, [dayList, metric]);
 
-  // ✅ 성능 최소 수정: 버튼 배열 reference 고정
-  const metricButtons = useMemo(
-    () => (isTraffic ? TRAFFIC_METRIC_BUTTONS : COMMERCE_METRIC_BUTTONS),
-    [isTraffic]
-  );
+  const metricButtons = useMemo(() => {
+    if (isTraffic) return TRAFFIC_METRIC_BUTTONS;
+    if (isDbAcquisition) return DB_ACQUISITION_METRIC_BUTTONS;
+    return COMMERCE_METRIC_BUTTONS;
+  }, [isTraffic, isDbAcquisition]);
 
   useEffect(() => {
     if (!metricButtons.some((item) => item.key === metric)) {
-      setMetric(isTraffic ? "cost" : "revenue");
+      setMetric(
+        isTraffic ? "cost" : isDbAcquisition ? "conversions" : "revenue"
+      );
     }
-  }, [metric, metricButtons, isTraffic]);
+  }, [metric, metricButtons, isTraffic, isDbAcquisition]);
 
   const calendar = useMemo(() => {
     if (!dayList.length) {
@@ -1161,47 +1229,50 @@ export default function Summary2Section({ reportType, rows }: Props) {
     for (const r of rows ?? []) {
       const channel = normalizeChannel(r?.channel ?? r?.source ?? r?.platform);
       const device = normalizeDevice(r?.device);
-      const revenue = toSafeNumber(
-        r?.revenue ?? r?.sales ?? r?.purchase_amount ?? r?.gmv
-      );
 
-      if (revenue <= 0) continue;
+      const value = isDbAcquisition
+        ? toSafeNumber(r?.conversions ?? r?.conv ?? r?.cv)
+        : toSafeNumber(
+            r?.revenue ?? r?.sales ?? r?.purchase_amount ?? r?.gmv
+          );
+
+      if (value <= 0) continue;
 
       const key = `${channel}__${device}`;
       const prev = map.get(key);
 
       if (prev) {
-        prev.revenue += revenue;
+        prev.value += value;
       } else {
         map.set(key, {
           channel,
           device,
-          revenue,
+          value,
         });
       }
     }
 
-    return Array.from(map.values()).sort((a, b) => b.revenue - a.revenue);
-  }, [rows]);
+    return Array.from(map.values()).sort((a, b) => b.value - a.value);
+  }, [rows, isDbAcquisition]);
 
-  const channelRevenue = useMemo(() => {
+  const channelOutcome = useMemo(() => {
     const map = new Map<string, number>();
     for (const item of channelDeviceAgg) {
-      map.set(item.channel, (map.get(item.channel) ?? 0) + item.revenue);
+      map.set(item.channel, (map.get(item.channel) ?? 0) + item.value);
     }
     return Array.from(map.entries())
-      .map(([channel, revenue]) => ({ channel, revenue }))
-      .sort((a, b) => b.revenue - a.revenue);
+      .map(([channel, value]) => ({ channel, value }))
+      .sort((a, b) => b.value - a.value);
   }, [channelDeviceAgg]);
 
-  const deviceRevenue = useMemo(() => {
+  const deviceOutcome = useMemo(() => {
     const map = new Map<string, number>();
     for (const item of channelDeviceAgg) {
-      map.set(item.device, (map.get(item.device) ?? 0) + item.revenue);
+      map.set(item.device, (map.get(item.device) ?? 0) + item.value);
     }
     return Array.from(map.entries())
-      .map(([device, revenue]) => ({ device, revenue }))
-      .sort((a, b) => b.revenue - a.revenue);
+      .map(([device, value]) => ({ device, value }))
+      .sort((a, b) => b.value - a.value);
   }, [channelDeviceAgg]);
 
   const channelMetricAgg = useMemo(() => {
@@ -1214,6 +1285,7 @@ export default function Summary2Section({ reportType, rows }: Props) {
       );
       const conversions = toSafeNumber(r?.conversions ?? r?.conv ?? r?.cv);
       const cost = toSafeNumber(r?.cost ?? r?.spend ?? r?.ad_cost);
+      const clicks = toSafeNumber(r?.clicks ?? r?.click ?? r?.clk);
 
       const prev = map.get(channel);
 
@@ -1221,13 +1293,17 @@ export default function Summary2Section({ reportType, rows }: Props) {
         prev.revenue += revenue;
         prev.conversions += conversions;
         prev.cost += cost;
+        prev.clicks += clicks;
       } else {
         map.set(channel, {
           channel,
           revenue,
           conversions,
           cost,
+          clicks,
           roas: 0,
+          cvr: 0,
+          cpa: 0,
         });
       }
     }
@@ -1235,10 +1311,16 @@ export default function Summary2Section({ reportType, rows }: Props) {
     const list = Array.from(map.values());
     for (const item of list) {
       item.roas = item.cost > 0 ? item.revenue / item.cost : 0;
+      item.cvr = item.clicks > 0 ? item.conversions / item.clicks : 0;
+      item.cpa = item.conversions > 0 ? item.cost / item.conversions : 0;
     }
 
-    return list.sort((a, b) => b.revenue - a.revenue);
-  }, [rows]);
+    return list.sort((a, b) => {
+      if (isCommerce) return b.revenue - a.revenue;
+      if (isDbAcquisition) return b.conversions - a.conversions;
+      return b.cost - a.cost;
+    });
+  }, [rows, isCommerce, isDbAcquisition]);
 
   const funnelTimeline = useMemo(() => {
     const map = new Map<
@@ -1442,41 +1524,44 @@ export default function Summary2Section({ reportType, rows }: Props) {
     const cpc = point.clicks > 0 ? point.cost / point.clicks : 0;
     const cvr = point.clicks > 0 ? point.conversions / point.clicks : 0;
 
-    return isTraffic
-      ? [`CTR ${formatPercentFromRate(ctr, 2)}`, `CPC ${KRW(cpc)}`]
-      : [
-          `CTR ${formatPercentFromRate(ctr, 2)}`,
-          `CVR ${formatPercentFromRate(cvr, 2)}`,
-        ];
-  }, [currentFunnelPoint, isTraffic]);
+    if (isTraffic) {
+      return [`CTR ${formatPercentFromRate(ctr, 2)}`, `CPC ${KRW(cpc)}`];
+    }
+
+    if (isDbAcquisition) {
+      return [`CTR ${formatPercentFromRate(ctr, 2)}`, `CVR ${formatPercentFromRate(cvr, 2)}`];
+    }
+
+    return [
+      `CTR ${formatPercentFromRate(ctr, 2)}`,
+      `CVR ${formatPercentFromRate(cvr, 2)}`,
+    ];
+  }, [currentFunnelPoint, isTraffic, isDbAcquisition]);
 
   const sankeyData = useMemo(() => {
-    const totalRevenue = channelDeviceAgg.reduce(
-      (acc, cur) => acc + cur.revenue,
-      0
-    );
+    const totalValue = channelDeviceAgg.reduce((acc, cur) => acc + cur.value, 0);
 
     const linksA: SankeyLink[] = channelDeviceAgg.map((item) => ({
       source: item.channel,
       target: item.device,
-      value: item.revenue,
+      value: item.value,
       sourceType: "channel",
       targetType: "device",
     }));
 
-    const linksB: SankeyLink[] = deviceRevenue.map((item) => ({
+    const linksB: SankeyLink[] = deviceOutcome.map((item) => ({
       source: item.device,
-      target: "Revenue",
-      value: item.revenue,
+      target: isDbAcquisition ? "Conversions" : "Revenue",
+      value: item.value,
       sourceType: "device",
-      targetType: "revenue",
+      targetType: "outcome",
     }));
 
     return {
-      totalRevenue,
+      totalValue,
       links: [...linksA, ...linksB],
     };
-  }, [channelDeviceAgg, deviceRevenue]);
+  }, [channelDeviceAgg, deviceOutcome, isDbAcquisition]);
 
   const sankeyLayout = useMemo(() => {
     const width = 800;
@@ -1487,7 +1572,7 @@ export default function Summary2Section({ reportType, rows }: Props) {
     const usableHeight = height - topPad - bottomPad;
     const gap = 12;
     const minNodeH = 20;
-    const totalRevenue = Math.max(sankeyData.totalRevenue, 1);
+    const totalValue = Math.max(sankeyData.totalValue, 1);
 
     const buildColumn = (
       items: { key: string; label: string; value: number; color: string }[]
@@ -1529,28 +1614,28 @@ export default function Summary2Section({ reportType, rows }: Props) {
     };
 
     const channels = buildColumn(
-      channelRevenue.map((item) => ({
+      channelOutcome.map((item) => ({
         key: item.channel,
         label: item.channel,
-        value: item.revenue,
+        value: item.value,
         color: channelColor(item.channel),
       }))
     ).map((n) => ({ ...n, x: 80 }));
 
     const devices = buildColumn(
-      deviceRevenue.map((item) => ({
+      deviceOutcome.map((item) => ({
         key: item.device,
         label: item.device,
-        value: item.revenue,
+        value: item.value,
         color: deviceColor(item.device),
       }))
     ).map((n) => ({ ...n, x: 355 }));
 
-    const revenueNode = [
+    const outcomeNode = [
       {
-        key: "Revenue",
-        label: "Revenue",
-        value: totalRevenue,
+        key: isDbAcquisition ? "Conversions" : "Revenue",
+        label: isDbAcquisition ? "Conversions" : "Revenue",
+        value: totalValue,
         color: "#111827",
         x: 690,
         y: topPad + 22,
@@ -1562,13 +1647,13 @@ export default function Summary2Section({ reportType, rows }: Props) {
 
     const channelMap = new Map(channels.map((n) => [n.key, n]));
     const deviceMap = new Map(devices.map((n) => [n.key, n]));
-    const revenueMap = new Map(revenueNode.map((n) => [n.key, n]));
+    const outcomeMap = new Map(outcomeNode.map((n) => [n.key, n]));
 
     const sourceOffsets = new Map<string, number>();
     const targetOffsets = new Map<string, number>();
 
     const thickness = (value: number) => {
-      const t = (value / totalRevenue) * (usableHeight - 24);
+      const t = (value / totalValue) * (usableHeight - 24);
       return Math.max(10, t);
     };
 
@@ -1581,7 +1666,7 @@ export default function Summary2Section({ reportType, rows }: Props) {
       const targetNode =
         link.targetType === "device"
           ? deviceMap.get(link.target)
-          : revenueMap.get(link.target);
+          : outcomeMap.get(link.target);
 
       if (!sourceNode || !targetNode) return null;
 
@@ -1626,12 +1711,12 @@ export default function Summary2Section({ reportType, rows }: Props) {
       height,
       channels,
       devices,
-      revenueNode,
+      outcomeNode,
       links: links.filter(Boolean) as Array<
         SankeyLink & { widthPx: number; path: string; fill: string }
       >,
     };
-  }, [channelRevenue, deviceRevenue, sankeyData]);
+  }, [channelOutcome, deviceOutcome, sankeyData, isDbAcquisition]);
 
   const revenueDonutData = useMemo(() => {
     const total = channelMetricAgg.reduce((acc, cur) => acc + cur.revenue, 0);
@@ -1682,10 +1767,43 @@ export default function Summary2Section({ reportType, rows }: Props) {
       });
   }, [channelMetricAgg]);
 
+  const costDonutData = useMemo(() => {
+    const total = channelMetricAgg.reduce((acc, cur) => acc + cur.cost, 0);
+    let start = 0;
+
+    return channelMetricAgg
+      .filter((item) => item.cost > 0)
+      .map((item) => {
+        const pct = total > 0 ? item.cost / total : 0;
+        const angle = pct * 360;
+        const segment = {
+          key: `cost-${item.channel}`,
+          label: item.channel,
+          value: item.cost,
+          pct,
+          startAngle: start,
+          endAngle: start + angle,
+          color: channelColor(item.channel),
+        };
+        start += angle;
+        return segment;
+      });
+  }, [channelMetricAgg]);
+
   const roasBarData = useMemo(() => {
     return [...channelMetricAgg]
       .filter((item) => item.cost > 0 || item.revenue > 0)
       .sort((a, b) => b.roas - a.roas);
+  }, [channelMetricAgg]);
+
+  const cpaBarData = useMemo(() => {
+    return [...channelMetricAgg]
+      .filter((item) => item.cost > 0 || item.conversions > 0)
+      .sort((a, b) => {
+        const aScore = a.cpa > 0 ? a.cpa : Number.POSITIVE_INFINITY;
+        const bScore = b.cpa > 0 ? b.cpa : Number.POSITIVE_INFINITY;
+        return aScore - bScore;
+      });
   }, [channelMetricAgg]);
 
   if (!rows?.length) {
@@ -1706,6 +1824,8 @@ export default function Summary2Section({ reportType, rows }: Props) {
     (acc, cur) => acc + cur.conversions,
     0
   );
+  const totalRevenue = channelMetricAgg.reduce((acc, cur) => acc + cur.revenue, 0);
+  const totalCost = channelMetricAgg.reduce((acc, cur) => acc + cur.cost, 0);
 
   const selectedMetricLabel =
     metricButtons.find((m) => m.key === metric)?.label ?? "-";
@@ -1718,9 +1838,14 @@ export default function Summary2Section({ reportType, rows }: Props) {
     ? `기준일 ${currentFunnelPoint.dateKey} · 단계 ${funnelData.length}개`
     : "기준일 데이터 없음";
 
+  const sankeyOutcomeLabel = isDbAcquisition ? "전환" : "매출";
+  const sankeyOutcomeFormatter = isDbAcquisition
+    ? (v: number) => formatCount(v)
+    : (v: number) => KRW(v);
+
   const sankeyOverview =
-    sankeyData.totalRevenue > 0
-      ? `채널 ${channelRevenue.length}개 · 기기 ${deviceRevenue.length}개`
+    sankeyData.totalValue > 0
+      ? `채널 ${channelOutcome.length}개 · 기기 ${deviceOutcome.length}개`
       : "흐름 데이터 없음";
 
   const topRevenueChannel =
@@ -1729,15 +1854,19 @@ export default function Summary2Section({ reportType, rows }: Props) {
   const topConversionChannel =
     conversionDonutData.length > 0 ? conversionDonutData[0]?.label ?? "-" : "-";
 
+  const topCostChannel =
+    costDonutData.length > 0 ? costDonutData[0]?.label ?? "-" : "-";
+
   const topRoasChannel =
     roasBarData.length > 0 ? roasBarData[0]?.channel ?? "-" : "-";
 
-  // ✅ 성능 최소 수정: quantize 기준을 셀마다 다시 만들지 않고 metric 변경 시 1회만 계산
+  const bestCpaChannel =
+    cpaBarData.length > 0 ? cpaBarData[0]?.channel ?? "-" : "-";
+
   const heatThresholds = useMemo(() => {
     return buildHeatThresholds(metricValues);
   }, [metricValues]);
 
-  // ✅ 성능 최소 수정: 셀 모델을 사전 계산해서 JSX 직전 inline 계산 제거
   const heatmapRows = useMemo(() => {
     return Array.from({ length: 7 }).map((_, dayIdx) =>
       calendar.weeks.map((week, weekIdx) => {
@@ -1759,7 +1888,6 @@ export default function Summary2Section({ reportType, rows }: Props) {
     );
   }, [calendar.weeks, dailyMap, metric, heatThresholds]);
 
-  // ✅ 성능 최소 수정: hover handler stable reference
   const handleHeatHoverStart = useCallback(
     (key: string, hasAgg: boolean) => {
       if (!hasAgg) return;
@@ -1786,6 +1914,24 @@ export default function Summary2Section({ reportType, rows }: Props) {
     setMetric((prev) => (prev === next ? prev : next));
   }, []);
 
+  const heatmapBadge = isTraffic
+    ? "TRAFFIC HEATMAP"
+    : isDbAcquisition
+    ? "ACQUISITION HEATMAP"
+    : "HEATMAP";
+
+  const heatmapDescription = isTraffic
+    ? "현재 필터가 적용된 데이터 기준으로 유입 성과 강도를 일자별로 확인합니다."
+    : isDbAcquisition
+    ? "현재 필터가 적용된 데이터 기준으로 리드 확보 효율을 일자별로 확인합니다."
+    : "현재 필터가 적용된 데이터 기준으로 일자별 성과 강도를 확인합니다.";
+
+  const funnelBadge = isDbAcquisition ? "ACQUISITION FUNNEL" : "FUNNEL";
+  const funnelTitle = isDbAcquisition ? "리드 확보 퍼널" : "성과 퍼널";
+  const funnelDescription = isDbAcquisition
+    ? "노출부터 클릭, 전환까지의 흐름을 기준일 단위로 확인합니다."
+    : "현재 필터가 적용된 데이터 기준으로 요약합니다.";
+
   return (
     <section className="mt-2">
       <div className="space-y-10 pt-4">
@@ -1795,14 +1941,14 @@ export default function Summary2Section({ reportType, rows }: Props) {
               <div>
                 <div className="mb-2">
                   <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] text-sky-700">
-                    HEATMAP
+                    {heatmapBadge}
                   </span>
                 </div>
                 <h3 className="text-base font-semibold text-gray-900">
                   일자별 성과 히트맵
                 </h3>
                 <p className="mt-1 text-sm text-gray-500">
-                  현재 필터가 적용된 데이터 기준으로 일자별 성과 강도를 확인합니다.
+                  {heatmapDescription}
                 </p>
               </div>
 
@@ -1940,7 +2086,7 @@ export default function Summary2Section({ reportType, rows }: Props) {
                               isHovered={isHovered}
                               isDimmed={isDimmed}
                               metric={metric}
-                              isTraffic={isTraffic}
+                              mode={mode}
                               selectedMetricLabel={selectedMetricLabel}
                               onHoverStart={handleHeatHoverStart}
                               onHoverEnd={handleHeatHoverEnd}
@@ -1990,8 +2136,10 @@ export default function Summary2Section({ reportType, rows }: Props) {
               maxIndex={Math.max(0, funnelTimeline.length - 1)}
               onScrubChange={handleScrubChange}
               transitionBadges={funnelTransitionBadges}
-              badge="FUNNEL"
+              badge={funnelBadge}
               overview={funnelOverview}
+              title={funnelTitle}
+              description={funnelDescription}
             />
 
             <div className="flex min-w-0 flex-col rounded-2xl border border-gray-200 bg-white shadow-sm">
@@ -2000,15 +2148,18 @@ export default function Summary2Section({ reportType, rows }: Props) {
                   <div>
                     <div className="mb-2">
                       <span className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] text-indigo-700">
-                        SANKEY
+                        {isDbAcquisition ? "ACQUISITION FLOW" : "SANKEY"}
                       </span>
                     </div>
                     <h3 className="text-base font-semibold text-gray-900">
-                      채널 → 기기 → 매출 흐름
+                      {isDbAcquisition
+                        ? "채널 → 기기 → 전환 흐름"
+                        : "채널 → 기기 → 매출 흐름"}
                     </h3>
                     <p className="mt-1 text-sm text-gray-500">
-                      현재 필터가 적용된 데이터 기준으로, 어떤 채널의 매출이 어떤 기기에서
-                      발생했는지 흐름으로 보여줍니다.
+                      {isDbAcquisition
+                        ? "현재 필터가 적용된 데이터 기준으로, 어떤 채널의 전환이 어떤 기기에서 발생했는지 흐름으로 보여줍니다."
+                        : "현재 필터가 적용된 데이터 기준으로, 어떤 채널의 매출이 어떤 기기에서 발생했는지 흐름으로 보여줍니다."}
                     </p>
                   </div>
 
@@ -2024,21 +2175,24 @@ export default function Summary2Section({ reportType, rows }: Props) {
 
                 {sankeyCollapsed ? (
                   <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                    현재 데이터는 기기 값이 1개만 보여 Sankey의 중간 기기 구간이 단순하게
-                    보일 수 있습니다.
+                    현재 데이터는 기기 값이 1개만 보여 중간 기기 구간이 단순하게 보일 수 있습니다.
                   </div>
                 ) : null}
               </div>
 
               <div className="flex flex-1 flex-col justify-between px-6 py-4">
-                {sankeyData.totalRevenue > 0 ? (
-                  <div className="flex justify-center pt-22 pb-6">
+                {sankeyData.totalValue > 0 ? (
+                  <div className="flex justify-center pb-6 pt-22">
                     <div className="w-full max-w-[800px]">
                       <svg
                         viewBox="0 0 800 270"
                         className="h-auto w-full"
                         role="img"
-                        aria-label="채널에서 기기를 거쳐 매출로 이어지는 흐름 차트"
+                        aria-label={
+                          isDbAcquisition
+                            ? "채널에서 기기를 거쳐 전환으로 이어지는 흐름 차트"
+                            : "채널에서 기기를 거쳐 매출로 이어지는 흐름 차트"
+                        }
                       >
                         {sankeyLayout.links.map((link, idx) => (
                           <path
@@ -2047,7 +2201,7 @@ export default function Summary2Section({ reportType, rows }: Props) {
                             fill={link.fill}
                           >
                             <title>
-                              {`${link.source} → ${link.target}\n매출: ${KRW(
+                              {`${link.source} → ${link.target}\n${sankeyOutcomeLabel}: ${sankeyOutcomeFormatter(
                                 link.value
                               )}`}
                             </title>
@@ -2102,8 +2256,8 @@ export default function Summary2Section({ reportType, rows }: Props) {
                           </g>
                         ))}
 
-                        {sankeyLayout.revenueNode.map((node) => (
-                          <g key={`revenue-${node.key}`}>
+                        {sankeyLayout.outcomeNode.map((node) => (
+                          <g key={`outcome-${node.key}`}>
                             <rect
                               x={node.x}
                               y={node.y}
@@ -2121,7 +2275,7 @@ export default function Summary2Section({ reportType, rows }: Props) {
                               fontWeight="700"
                               fill="#111827"
                             >
-                              {KRW(node.value)}
+                              {sankeyOutcomeFormatter(node.value)}
                             </text>
                           </g>
                         ))}
@@ -2130,7 +2284,9 @@ export default function Summary2Section({ reportType, rows }: Props) {
                   </div>
                 ) : (
                   <div className="rounded-2xl border border-gray-200 bg-gray-50 px-6 py-10 text-sm text-gray-500">
-                    Sankey 차트를 표시할 매출 데이터가 없습니다.
+                    {isDbAcquisition
+                      ? "흐름 차트를 표시할 전환 데이터가 없습니다."
+                      : "Sankey 차트를 표시할 매출 데이터가 없습니다."}
                   </div>
                 )}
               </div>
@@ -2139,38 +2295,95 @@ export default function Summary2Section({ reportType, rows }: Props) {
         ) : null}
 
         {!isTraffic ? (
-          <div className="grid gap-6 xl:grid-cols-3">
-            <DonutCard
-              title="채널별 매출 비중"
-              description="전체 매출 중 각 채널이 차지하는 비중입니다."
-              totalLabel="총 매출"
-              totalValue={channelMetricAgg.reduce(
-                (acc, cur) => acc + cur.revenue,
-                0
-              )}
-              items={revenueDonutData}
-              valueFormatter={(v) => KRW(v)}
-              badge="REVENUE MIX"
-              overview={`Top channel ${topRevenueChannel}`}
-            />
+          isDbAcquisition ? (
+            <div className="grid gap-6 xl:grid-cols-3">
+              <DonutCard
+                title="채널별 리드 비중"
+                description="전체 전환 중 각 채널이 차지하는 비중입니다."
+                totalLabel="총 전환"
+                totalValue={totalConversions}
+                items={conversionDonutData}
+                valueFormatter={(v) => formatCount(v)}
+                badge="LEAD MIX"
+                overview={`Top channel ${topConversionChannel}`}
+              />
 
-            <DonutCard
-              title="채널별 전환 비중"
-              description="전체 전환 중 각 채널이 차지하는 비중입니다."
-              totalLabel="총 전환"
-              totalValue={totalConversions}
-              items={conversionDonutData}
-              valueFormatter={(v) => formatCount(v)}
-              badge="CONVERSION MIX"
-              overview={`Top channel ${topConversionChannel}`}
-            />
+              <DonutCard
+                title="채널별 광고비 비중"
+                description="전체 광고비 중 각 채널이 차지하는 비중입니다."
+                totalLabel="총 광고비"
+                totalValue={totalCost}
+                items={costDonutData}
+                valueFormatter={(v) => KRW(v)}
+                badge="COST MIX"
+                overview={`Top channel ${topCostChannel}`}
+              />
 
-            <RoasBarCard
-              items={roasBarData}
-              badge="ROAS COMPARE"
-              overview={`Best ROAS ${topRoasChannel}`}
-            />
-          </div>
+              <EfficiencyBarCard
+                items={cpaBarData}
+                badge="CPA COMPARE"
+                overview={`Best CPA ${bestCpaChannel}`}
+                title="채널별 CPA 비교"
+                description="채널별 광고비 ÷ 전환수 기준으로 계산한 CPA입니다."
+                primaryMetricLabel="CPA"
+                primaryMetricFormatter={(v) => KRW(v)}
+                primaryMetricValue={(item) => item.cpa}
+                sortValue={(item) =>
+                  item.cpa > 0 ? Math.max(1, 1 / item.cpa) : 0
+                }
+                secondaryLabel="광고비"
+                secondaryValue={(item) => item.cost}
+                secondaryFormatter={(v) => KRW(v)}
+                tertiaryLabel="CVR"
+                tertiaryValue={(item) => item.cvr}
+                tertiaryFormatter={(v) => formatPercentFromRate(v, 1)}
+                emptyMessage="CPA 비교용 데이터가 없습니다."
+              />
+            </div>
+          ) : (
+            <div className="grid gap-6 xl:grid-cols-3">
+              <DonutCard
+                title="채널별 매출 비중"
+                description="전체 매출 중 각 채널이 차지하는 비중입니다."
+                totalLabel="총 매출"
+                totalValue={totalRevenue}
+                items={revenueDonutData}
+                valueFormatter={(v) => KRW(v)}
+                badge="REVENUE MIX"
+                overview={`Top channel ${topRevenueChannel}`}
+              />
+
+              <DonutCard
+                title="채널별 전환 비중"
+                description="전체 전환 중 각 채널이 차지하는 비중입니다."
+                totalLabel="총 전환"
+                totalValue={totalConversions}
+                items={conversionDonutData}
+                valueFormatter={(v) => formatCount(v)}
+                badge="CONVERSION MIX"
+                overview={`Top channel ${topConversionChannel}`}
+              />
+
+              <EfficiencyBarCard
+                items={roasBarData}
+                badge="ROAS COMPARE"
+                overview={`Best ROAS ${topRoasChannel}`}
+                title="채널별 ROAS 비교"
+                description="채널별 총매출 ÷ 총광고비 기준으로 계산한 ROAS입니다."
+                primaryMetricLabel="ROAS"
+                primaryMetricFormatter={(v) => formatPercentFromRoas(v, 1)}
+                primaryMetricValue={(item) => item.roas}
+                sortValue={(item) => item.roas}
+                secondaryLabel="매출"
+                secondaryValue={(item) => item.revenue}
+                secondaryFormatter={(v) => KRW(v)}
+                tertiaryLabel="전환수"
+                tertiaryValue={(item) => item.conversions}
+                tertiaryFormatter={(v) => formatCount(v)}
+                emptyMessage="ROAS 비교용 데이터가 없습니다."
+              />
+            </div>
+          )
         ) : null}
       </div>
     </section>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import ReportTemplate from "@/app/components/ReportTemplate";
 import type { ReportPeriod } from "@/src/lib/report/period";
@@ -89,21 +89,17 @@ function pickReportTypeKey(report: ReportRow | null) {
   );
 }
 
+const MemoReportTemplate = memo(ReportTemplate);
+
 export default function ShareReportPage() {
   const params = useParams<{ token: string }>();
   const token = useMemo(() => String(params?.token ?? "").trim(), [params]);
-
-  const [mounted, setMounted] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [report, setReport] = useState<ReportRow | null>(null);
   const [rows, setRows] = useState<any[]>([]);
   const [creativesMap, setCreativesMap] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const advertiserName = useMemo(() => pickAdvertiserName(report), [report]);
   const reportTypeName = useMemo(() => pickReportTypeName(report), [report]);
@@ -154,23 +150,7 @@ export default function ShareReportPage() {
     rows,
   ]);
 
-  const versionKey = useMemo(() => {
-    const id = report?.id ?? "no-report";
-    const updatedAt = report?.updated_at ?? "";
-    const startDate = shareReportPeriod.startDate;
-    const endDate = shareReportPeriod.endDate;
-    const typeKey = reportTypeKey;
-    return `${id}:${updatedAt}:${startDate}:${endDate}:${typeKey}`;
-  }, [
-    report?.id,
-    report?.updated_at,
-    shareReportPeriod.startDate,
-    shareReportPeriod.endDate,
-    reportTypeKey,
-  ]);
-
   useEffect(() => {
-    if (!mounted) return;
     if (!token) {
       setError("공유 토큰이 없습니다.");
       setLoading(false);
@@ -215,9 +195,9 @@ export default function ShareReportPage() {
     return () => {
       alive = false;
     };
-  }, [mounted, token]);
+  }, [token]);
 
-  if (!mounted || loading) {
+  if (loading) {
     return <main className="p-6">Loading...</main>;
   }
 
@@ -226,8 +206,7 @@ export default function ShareReportPage() {
   }
 
   return (
-    <ReportTemplate
-      key={versionKey}
+    <MemoReportTemplate
       rows={rows}
       isLoading={false}
       creativesMap={creativesMap}

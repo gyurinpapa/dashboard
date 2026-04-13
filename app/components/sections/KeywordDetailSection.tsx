@@ -6,6 +6,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ChangeEvent,
 } from "react";
@@ -28,6 +29,17 @@ import {
   formatPercentFromRate,
   formatPercentFromRoas,
 } from "../../../src/lib/report/format";
+
+/** =========================
+ * Types / mode helpers
+ * ========================= */
+type ReportMode = "commerce" | "traffic" | "db_acquisition";
+
+function resolveReportMode(reportType?: ReportMode): ReportMode {
+  if (reportType === "traffic") return "traffic";
+  if (reportType === "db_acquisition") return "db_acquisition";
+  return "commerce";
+}
 
 /** =========================
  * Utils
@@ -265,9 +277,10 @@ function buildKeywordMetricsIndex(rows: Row[]) {
 }
 
 /**
- * ✅ 인사이트 생성(근거 기반 v2: 기기 근거 포함)
+ * ✅ 인사이트 생성(유형별 분기)
  */
 function buildKeywordDetailInsight(args: {
+  reportMode: ReportMode;
   keyword: string | null;
   allRowsScope: Row[];
   keywordRows: Row[];
@@ -276,12 +289,23 @@ function buildKeywordDetailInsight(args: {
   byDevice: any[];
   avgRank: number | null;
 }) {
-  const { keyword, allRowsScope, keywordRows, byWeekOnly, bySource, byDevice, avgRank } = args;
+  const {
+    reportMode,
+    keyword,
+    allRowsScope,
+    keywordRows,
+    byWeekOnly,
+    bySource,
+    byDevice,
+    avgRank,
+  } = args;
 
   if (!keyword) {
     return {
       title: "선택 키워드 요약 인사이트",
-      bullets: ["키워드를 선택하면 해당 키워드의 실적/기여도/추세/기기 근거 기반 인사이트가 표시됩니다."],
+      bullets: [
+        "키워드를 선택하면 해당 키워드의 실적/기여도/추세/기기 근거 기반 인사이트가 표시됩니다.",
+      ],
       actions: [],
     };
   }
@@ -292,6 +316,8 @@ function buildKeywordDetailInsight(args: {
   const shareCost = all.cost ? me.cost / all.cost : 0;
   const shareRev = all.revenue ? me.revenue / all.revenue : 0;
   const shareConv = all.conversions ? me.conversions / all.conversions : 0;
+  const shareClicks = all.clicks ? me.clicks / all.clicks : 0;
+  const shareImpr = all.impressions ? me.impressions / all.impressions : 0;
 
   const weeks = [...(byWeekOnly || [])].sort((a, b) =>
     String(a.weekKey ?? "").localeCompare(String(b.weekKey ?? ""))
@@ -309,6 +335,12 @@ function buildKeywordDetailInsight(args: {
       : 0;
   const costWoW =
     wLast && wPrev ? diffRatio(toSafeNumber(wLast.cost), toSafeNumber(wPrev.cost)) ?? 0 : 0;
+  const ctrWoW =
+    wLast && wPrev ? diffRatio(toSafeNumber(wLast.ctr), toSafeNumber(wPrev.ctr)) ?? 0 : 0;
+  const cvrWoW =
+    wLast && wPrev ? diffRatio(toSafeNumber(wLast.cvr), toSafeNumber(wPrev.cvr)) ?? 0 : 0;
+  const cpaWoW =
+    wLast && wPrev ? diffRatio(toSafeNumber(wLast.cpa), toSafeNumber(wPrev.cpa)) ?? 0 : 0;
 
   const sources = [...(bySource || [])].sort((a, b) => (b.cost ?? 0) - (a.cost ?? 0));
   const topS1 = sources[0] ?? null;
@@ -317,6 +349,263 @@ function buildKeywordDetailInsight(args: {
   const devices = [...(byDevice || [])].sort((a, b) => (b.cost ?? 0) - (a.cost ?? 0));
   const topD1 = devices[0] ?? null;
   const topD2 = devices[1] ?? null;
+
+  const bullets: string[] = [];
+  const actions: string[] = [];
+
+  if (reportMode === "traffic") {
+    const efficiencyLabel =
+      me.ctr >= 0.03
+        ? "CTR이 양호해 유입 반응성이 좋은 편입니다."
+        : me.ctr >= 0.015
+        ? "CTR은 보통 수준이며 광고문구/매칭 정교화 여지가 있습니다."
+        : "CTR이 낮아 클릭 반응 개선이 우선입니다.";
+
+    const trendLabel =
+      wLast && wPrev
+        ? `최근 1주 기준: 노출 CTR ${signPct(ctrWoW)}, 클릭 ${signPct(
+            clickWoW
+          )}, 비용 ${signPct(costWoW)}`
+        : "최근 주간 데이터가 부족하여 추세 비교는 제한적입니다.";
+
+    bullets.push(
+      `선택 키워드 “${keyword}” 성과: 노출 ${Math.round(me.impressions)} / 클릭 ${Math.round(
+        me.clicks
+      )} / CTR ${safePct0(me.ctr)} · ${efficiencyLabel}`
+    );
+    bullets.push(
+      `기여도(현재 탭 범위 대비): 노출 ${safePct(shareImpr)}, 클릭 ${safePct(
+        shareClicks
+      )}, 비용 ${safePct(shareCost)}`
+    );
+    bullets.push(trendLabel);
+
+    if (avgRank != null) {
+      bullets.push(`평균노출순위(Avg.rank): ${avgRank.toFixed(2)} (낮을수록 상단 노출)`);
+    } else {
+      bullets.push("평균노출순위(Avg.rank): 데이터 없음");
+    }
+
+    if (topD1) {
+      const d1 = pickDeviceLabel(String(topD1.device ?? "unknown"));
+      const d1Ctr = toSafeNumber(topD1.ctr);
+      const d1Cpc = toSafeNumber(topD1.cpc);
+
+      let deviceLine = `기기별: “${d1}” 비중이 가장 큽니다(CTR ${safePct(
+        d1Ctr
+      )}, CPC ${Math.round(d1Cpc).toLocaleString()}원 수준).`;
+
+      if (topD2) {
+        const d2 = pickDeviceLabel(String(topD2.device ?? "unknown"));
+        const d2Ctr = toSafeNumber(topD2.ctr);
+        deviceLine += ` 비교: “${d2}” CTR ${safePct(d2Ctr)}.`;
+      }
+
+      bullets.push(deviceLine);
+    } else {
+      bullets.push("기기별: 데이터가 부족하여 비교가 제한적입니다.");
+    }
+
+    if (me.ctr < 0.02 && me.impressions > 0) {
+      actions.push(
+        "클릭 개선: CTR이 낮습니다. 광고문구/제목/혜택 표현, 검색 의도 일치도, 제외키워드 정리를 우선 점검하세요."
+      );
+    } else {
+      actions.push(
+        "유입 확대: CTR이 극단적으로 낮지 않습니다. 유사 키워드 확장과 입찰/예산 조정으로 노출 볼륨을 단계적으로 늘리세요."
+      );
+    }
+
+    if (me.cpc > 0 && me.clicks >= 20) {
+      actions.push(
+        "비용 효율화: 클릭은 발생하지만 단가가 높을 수 있습니다. 매칭타입 분리, 검색어 정제, 저효율 구간 차단으로 CPC를 안정화하세요."
+      );
+    } else {
+      actions.push(
+        "데이터 축적: 아직 클릭 데이터가 많지 않다면 성급한 축소보다 최소 학습량을 확보한 뒤 성과를 비교하세요."
+      );
+    }
+
+    if (topS1) {
+      const s1 = `소스: 비용 상위 “${String(topS1.source)}”(CTR ${safePct(
+        toSafeNumber(topS1.ctr)
+      )}).`;
+      actions.push(`${s1} 클릭 반응이 평균 이상이면 해당 소스 내 세부 세그먼트를 확장하세요.`);
+    }
+
+    if (topS2) {
+      actions.push(
+        `소스 비교: 2순위 “${String(topS2.source)}”와 함께 CTR/CPC 기준으로 증액·유지·축소 기준을 명확히 하세요.`
+      );
+    }
+
+    if (topD1 && topD2) {
+      const d1 = String(topD1.device ?? "unknown");
+      const d2 = String(topD2.device ?? "unknown");
+      const d1Ctr = toSafeNumber(topD1.ctr);
+      const d2Ctr = toSafeNumber(topD2.ctr);
+
+      if (d1Ctr > d2Ctr * 1.1) {
+        actions.push(
+          `기기 최적화: “${pickDeviceLabel(d1)}” CTR이 “${pickDeviceLabel(
+            d2
+          )}”보다 높습니다. 반응 좋은 기기 중심으로 카피·입찰을 분리 운영하세요.`
+        );
+      } else if (d2Ctr > d1Ctr * 1.1) {
+        actions.push(
+          `기기 최적화: “${pickDeviceLabel(d2)}” CTR이 더 높습니다. 저반응 기기는 노출/입찰을 줄이고 고반응 기기에 예산을 이동하세요.`
+        );
+      } else {
+        actions.push(
+          "기기 최적화: 기기 간 CTR 차이가 크지 않습니다. CTR보다 CPC/검색어 품질 차이를 함께 비교해 미세 조정하세요."
+        );
+      }
+    } else if (topD1) {
+      actions.push(
+        `기기 최적화: “${pickDeviceLabel(
+          String(topD1.device)
+        )}” 중심으로 데이터가 쌓였습니다. 다른 기기도 최소 노출을 확보해 비교 가능한 상태를 만드세요.`
+      );
+    }
+
+    return {
+      title: "선택 키워드 요약 인사이트",
+      bullets,
+      actions,
+    };
+  }
+
+  if (reportMode === "db_acquisition") {
+    const efficiencyLabel =
+      me.cpa > 0 && me.cpa <= 50000
+        ? "CPA가 안정적이라 리드 확보 효율이 양호한 편입니다."
+        : me.cvr >= 0.02
+        ? "CVR은 나쁘지 않지만 CPA 최적화 여지가 있습니다."
+        : "전환 효율 개선이 우선이며 CPA·CVR을 함께 점검해야 합니다.";
+
+    const trendLabel =
+      wLast && wPrev
+        ? `최근 1주 기준: 전환 ${signPct(convWoW)}, CVR ${signPct(cvrWoW)}, CPA ${signPct(
+            cpaWoW
+          )} (비용 ${signPct(costWoW)})`
+        : "최근 주간 데이터가 부족하여 추세 비교는 제한적입니다.";
+
+    bullets.push(
+      `선택 키워드 “${keyword}” 성과: 클릭 ${Math.round(me.clicks)} / 전환 ${toSafeNumber(
+        me.conversions
+      ).toFixed(1)} / CPA ${Math.round(toSafeNumber(me.cpa)).toLocaleString()}원 · ${efficiencyLabel}`
+    );
+    bullets.push(
+      `기여도(현재 탭 범위 대비): 비용 ${safePct(shareCost)}, 전환 ${safePct(
+        shareConv
+      )}, 클릭 ${safePct(shareClicks)}`
+    );
+    bullets.push(trendLabel);
+
+    if (avgRank != null) {
+      bullets.push(`평균노출순위(Avg.rank): ${avgRank.toFixed(2)} (낮을수록 상단 노출)`);
+    } else {
+      bullets.push("평균노출순위(Avg.rank): 데이터 없음");
+    }
+
+    if (topD1) {
+      const d1 = pickDeviceLabel(String(topD1.device ?? "unknown"));
+      const d1Cpa = toSafeNumber(topD1.cpa);
+      const d1Cvr = toSafeNumber(topD1.cvr);
+
+      let deviceLine = `기기별: “${d1}” 비중이 가장 큽니다(CPA ${Math.round(
+        d1Cpa
+      ).toLocaleString()}원, CVR ${safePct(d1Cvr)}).`;
+
+      if (topD2) {
+        const d2 = pickDeviceLabel(String(topD2.device ?? "unknown"));
+        const d2Cpa = toSafeNumber(topD2.cpa);
+        deviceLine += ` 비교: “${d2}” CPA ${Math.round(d2Cpa).toLocaleString()}원.`;
+      }
+
+      bullets.push(deviceLine);
+    } else {
+      bullets.push("기기별: 데이터가 부족하여 비교가 제한적입니다.");
+    }
+
+    if (me.ctr < 0.02 && me.impressions > 0) {
+      actions.push(
+        "클릭 개선: CTR이 낮습니다. 리드 유도형 문구, 혜택/신뢰 요소, 확장소재를 보강해 유입 품질을 먼저 확보하세요."
+      );
+    } else {
+      actions.push(
+        "유입 유지/확대: 클릭 반응은 급격히 나쁘지 않습니다. 전환 발생 구간 중심으로 유사 키워드 확장과 예산 재배분을 검토하세요."
+      );
+    }
+
+    if (me.cvr < 0.01 && me.clicks >= 30) {
+      actions.push(
+        "전환 개선: CVR이 낮습니다. 랜딩 첫 화면 메시지 정렬, 폼 필드 축소, 상담/문의 CTA 가시성 개선을 우선 적용하세요."
+      );
+    } else {
+      actions.push(
+        "전환 확대: CVR이 급격히 낮지 않습니다. 전환 상위 구간(기기/소스/시간대)을 찾아 그 구간 중심으로 증액하세요."
+      );
+    }
+
+    if (me.cpa > 0) {
+      actions.push(
+        "CPA 안정화: 전환이 발생한 키워드는 저효율 검색어/소재를 분리하고, CPA가 낮은 세그먼트에 예산을 우선 배분하세요."
+      );
+    }
+
+    if (topS1) {
+      const s1 = `소스: 비용 상위 “${String(topS1.source)}”(CPA ${Math.round(
+        toSafeNumber(topS1.cpa)
+      ).toLocaleString()}원).`;
+      if (toSafeNumber(topS1.cpa) <= toSafeNumber(me.cpa)) {
+        actions.push(`${s1} 평균 이상 효율이면 동일 소스 내 전환 키워드 확장이 안전합니다.`);
+      } else {
+        actions.push(`${s1} 평균 미만 효율이면 저효율 구간 차단과 예산 분산을 우선하세요.`);
+      }
+    }
+
+    if (topS2) {
+      actions.push(
+        `소스 비교: 2순위 “${String(topS2.source)}”와 함께 CPA/CVR 기준으로 증액·유지·축소 기준을 명확히 하세요.`
+      );
+    }
+
+    if (topD1 && topD2) {
+      const d1 = String(topD1.device ?? "unknown");
+      const d2 = String(topD2.device ?? "unknown");
+      const d1Cpa = toSafeNumber(topD1.cpa);
+      const d2Cpa = toSafeNumber(topD2.cpa);
+
+      if (d1Cpa > 0 && d2Cpa > 0 && d1Cpa < d2Cpa * 0.9) {
+        actions.push(
+          `기기 최적화: “${pickDeviceLabel(d1)}” CPA가 “${pickDeviceLabel(
+            d2
+          )}”보다 낮습니다. 효율 좋은 기기 중심으로 입찰/예산/랜딩을 분리 운영하세요.`
+        );
+      } else if (d1Cpa > 0 && d2Cpa > 0 && d2Cpa < d1Cpa * 0.9) {
+        actions.push(
+          `기기 최적화: “${pickDeviceLabel(d2)}” CPA가 더 낮습니다. 저효율 기기는 노출을 줄이고 고효율 기기에 예산을 이동하세요.`
+        );
+      } else {
+        actions.push(
+          "기기 최적화: 기기 간 CPA 차이가 크지 않습니다. CPA보다 CVR/폼전환 품질 차이를 함께 비교해 미세 조정하세요."
+        );
+      }
+    } else if (topD1) {
+      actions.push(
+        `기기 최적화: “${pickDeviceLabel(
+          String(topD1.device)
+        )}” 중심으로 데이터가 모였습니다. 다른 기기도 최소 학습량을 확보한 뒤 CPA 비교 최적화를 진행하세요.`
+      );
+    }
+
+    return {
+      title: "선택 키워드 요약 인사이트",
+      bullets,
+      actions,
+    };
+  }
 
   const efficiencyLabel =
     me.roas >= 1.0
@@ -332,7 +621,6 @@ function buildKeywordDetailInsight(args: {
         )} (비용 ${signPct(costWoW)})`
       : "최근 주간 데이터가 부족하여 추세 비교는 제한적입니다.";
 
-  const bullets: string[] = [];
   bullets.push(
     `선택 키워드 “${keyword}” 성과: 클릭 ${Math.round(me.clicks)} / 전환 ${toSafeNumber(
       me.conversions
@@ -371,8 +659,6 @@ function buildKeywordDetailInsight(args: {
   } else {
     bullets.push("기기별: 데이터가 부족하여 비교가 제한적입니다.");
   }
-
-  const actions: string[] = [];
 
   if (me.ctr < 0.02 && me.impressions > 0) {
     actions.push(
@@ -473,7 +759,7 @@ const KeywordListItem = memo(function KeywordListItem({
       type="button"
       onClick={handleClick}
       className={[
-        "block w-full rounded-xl border px-3 py-2 text-left text-sm font-semibold transition",
+        "block h-10 w-full rounded-xl border px-3 text-left text-sm font-semibold transition",
         "overflow-hidden text-ellipsis whitespace-nowrap",
         active
           ? "border-orange-700 bg-orange-700 text-white"
@@ -483,6 +769,148 @@ const KeywordListItem = memo(function KeywordListItem({
     >
       {keyword}
     </button>
+  );
+});
+
+const VIRTUAL_ROW_HEIGHT = 48;
+const VIRTUAL_OVERSCAN = 8;
+const FALLBACK_VIEWPORT_HEIGHT = 480;
+
+type VirtualKeywordListProps = {
+  keywords: string[];
+  selectedKeyword: string | null;
+  onSelectKeyword: (keyword: string) => void;
+};
+
+const VirtualKeywordList = memo(function VirtualKeywordList({
+  keywords,
+  selectedKeyword,
+  onSelectKeyword,
+}: VirtualKeywordListProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(FALLBACK_VIEWPORT_HEIGHT);
+
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    setScrollTop(e.currentTarget.scrollTop);
+  }, []);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const updateHeight = () => {
+      const next = el.clientHeight || FALLBACK_VIEWPORT_HEIGHT;
+      setViewportHeight((prev) => (prev === next ? prev : next));
+    };
+
+    updateHeight();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateHeight);
+      return () => {
+        window.removeEventListener("resize", updateHeight);
+      };
+    }
+
+    const observer = new ResizeObserver(() => {
+      updateHeight();
+    });
+
+    observer.observe(el);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || !selectedKeyword) return;
+
+    const index = keywords.indexOf(selectedKeyword);
+    if (index < 0) return;
+
+    const itemTop = index * VIRTUAL_ROW_HEIGHT;
+    const itemBottom = itemTop + VIRTUAL_ROW_HEIGHT;
+    const visibleTop = el.scrollTop;
+    const visibleBottom = visibleTop + viewportHeight;
+
+    if (itemTop < visibleTop) {
+      el.scrollTop = itemTop;
+      return;
+    }
+
+    if (itemBottom > visibleBottom) {
+      el.scrollTop = Math.max(0, itemBottom - viewportHeight);
+    }
+  }, [keywords, selectedKeyword, viewportHeight]);
+
+  const { totalHeight, visibleItems } = useMemo(() => {
+    const total = keywords.length * VIRTUAL_ROW_HEIGHT;
+
+    if (keywords.length === 0) {
+      return {
+        totalHeight: 0,
+        visibleItems: [] as Array<{ keyword: string; index: number }>,
+      };
+    }
+
+    const startIndex = Math.max(
+      0,
+      Math.floor(scrollTop / VIRTUAL_ROW_HEIGHT) - VIRTUAL_OVERSCAN
+    );
+    const endIndex = Math.min(
+      keywords.length,
+      Math.ceil((scrollTop + viewportHeight) / VIRTUAL_ROW_HEIGHT) + VIRTUAL_OVERSCAN
+    );
+
+    const items: Array<{ keyword: string; index: number }> = [];
+    for (let i = startIndex; i < endIndex; i += 1) {
+      items.push({
+        keyword: keywords[i],
+        index: i,
+      });
+    }
+
+    return {
+      totalHeight: total,
+      visibleItems: items,
+    };
+  }, [keywords, scrollTop, viewportHeight]);
+
+  return (
+    <div
+      ref={containerRef}
+      onScroll={handleScroll}
+      className="mt-3 overflow-auto pr-1 lg:max-h-[calc(100vh-17rem)]"
+    >
+      <div
+        className="relative w-full"
+        style={{
+          height: totalHeight,
+        }}
+      >
+        {visibleItems.map(({ keyword, index }) => (
+          <div
+            key={keyword}
+            className="absolute left-0 right-0 px-0"
+            style={{
+              top: index * VIRTUAL_ROW_HEIGHT,
+              height: VIRTUAL_ROW_HEIGHT,
+            }}
+          >
+            <div className="h-10">
+              <KeywordListItem
+                keyword={keyword}
+                active={keyword === selectedKeyword}
+                onSelect={onSelectKeyword}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 });
 
@@ -529,24 +957,17 @@ const KeywordListPanel = memo(function KeywordListPanel({
         />
       </div>
 
-      <div className="mt-3 overflow-auto pr-1 lg:max-h-[calc(100vh-17rem)]">
-        <div className="flex flex-col gap-2">
-          {keywords.length === 0 ? (
-            <div className="rounded-xl bg-gray-50 p-4 text-sm text-gray-600">
-              {hasQuery ? "검색 결과가 없습니다." : "키워드 데이터가 없습니다."}
-            </div>
-          ) : (
-            keywords.map((k) => (
-              <KeywordListItem
-                key={k}
-                keyword={k}
-                active={k === selectedKeyword}
-                onSelect={onSelectKeyword}
-              />
-            ))
-          )}
+      {keywords.length === 0 ? (
+        <div className="mt-3 rounded-xl bg-gray-50 p-4 text-sm text-gray-600">
+          {hasQuery ? "검색 결과가 없습니다." : "키워드 데이터가 없습니다."}
         </div>
-      </div>
+      ) : (
+        <VirtualKeywordList
+          keywords={keywords}
+          selectedKeyword={selectedKeyword}
+          onSelectKeyword={onSelectKeyword}
+        />
+      )}
 
       <div className="mt-4 rounded-xl bg-gray-50 p-3 text-xs text-gray-600">
         <b>메모</b>
@@ -559,6 +980,7 @@ const KeywordListPanel = memo(function KeywordListPanel({
 });
 
 type InsightPanelProps = {
+  reportMode: ReportMode;
   title: string;
   selectedKeyword: string | null;
   avgRank: number | null;
@@ -567,12 +989,20 @@ type InsightPanelProps = {
 };
 
 const InsightPanel = memo(function InsightPanel({
+  reportMode,
   title,
   selectedKeyword,
   avgRank,
   bullets,
   actions,
 }: InsightPanelProps) {
+  const actionTitle =
+    reportMode === "traffic"
+      ? "다음 운영 액션(클릭 · 유입 효율)"
+      : reportMode === "db_acquisition"
+      ? "다음 운영 액션(클릭 · 전환 · CPA)"
+      : "다음 운영 액션(클릭 · 전환 · ROAS)";
+
   return (
     <section className="min-w-0 rounded-2xl border border-gray-200 bg-white p-6">
       <div className="flex items-start justify-between gap-4">
@@ -598,9 +1028,7 @@ const InsightPanel = memo(function InsightPanel({
       </ul>
 
       <div className="mt-4 rounded-xl bg-gray-50 p-4">
-        <div className="text-sm font-semibold text-gray-900">
-          다음 운영 액션(클릭 · 전환 · ROAS)
-        </div>
+        <div className="text-sm font-semibold text-gray-900">{actionTitle}</div>
         <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-gray-700">
           {actions.map((a, i) => (
             <li key={i}>{a}</li>
@@ -612,7 +1040,7 @@ const InsightPanel = memo(function InsightPanel({
 });
 
 type SummarySectionBlockProps = {
-  reportType?: "commerce" | "traffic";
+  reportType?: ReportMode;
   totals: any;
   byMonth: any;
   byWeekOnly: any;
@@ -634,7 +1062,7 @@ const SummarySectionBlock = memo(function SummarySectionBlock({
     <div className="keyword-detail-week-table-fix min-w-0">
       <div className="min-w-0">
         <SummarySection
-          reportType={reportType}
+          reportType={reportType as any}
           totals={totals as any}
           byMonth={byMonth as any}
           byWeekOnly={byWeekOnly as any}
@@ -652,12 +1080,13 @@ const SummarySectionBlock = memo(function SummarySectionBlock({
  * ========================= */
 
 type Props = {
-  reportType?: "commerce" | "traffic";
+  reportType?: ReportMode;
   rows: Row[];
 };
 
 export default function KeywordDetailSection(props: Props) {
   const { reportType, rows } = props;
+  const reportMode = resolveReportMode(reportType);
 
   const { keywords, keywordLookup, metricsMap } = useMemo(
     () => buildKeywordMetricsIndex(rows),
@@ -724,6 +1153,7 @@ export default function KeywordDetailSection(props: Props) {
   const insight = useMemo(
     () =>
       buildKeywordDetailInsight({
+        reportMode,
         keyword: selectedKeyword,
         allRowsScope: rows,
         keywordRows: filteredRows,
@@ -732,7 +1162,7 @@ export default function KeywordDetailSection(props: Props) {
         byDevice,
         avgRank,
       }),
-    [selectedKeyword, rows, filteredRows, byWeekOnly, bySource, byDevice, avgRank]
+    [reportMode, selectedKeyword, rows, filteredRows, byWeekOnly, bySource, byDevice, avgRank]
   );
 
   return (
@@ -748,6 +1178,7 @@ export default function KeywordDetailSection(props: Props) {
 
         <div className="min-w-0 space-y-6">
           <InsightPanel
+            reportMode={reportMode}
             title={insight.title}
             selectedKeyword={selectedKeyword}
             avgRank={avgRank}
@@ -756,7 +1187,7 @@ export default function KeywordDetailSection(props: Props) {
           />
 
           <SummarySectionBlock
-            reportType={reportType}
+            reportType={reportMode}
             totals={totals}
             byMonth={byMonth}
             byWeekOnly={byWeekOnly}

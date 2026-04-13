@@ -5,8 +5,10 @@ import { KRW } from "../../../src/lib/report/format";
 import { groupByGroup } from "../../../src/lib/report/aggregate";
 import DataBarCell from "../ui/DataBarCell";
 
+type ReportMode = "commerce" | "traffic" | "db_acquisition";
+
 type Props = {
-  reportType?: "commerce" | "traffic";
+  reportType?: ReportMode;
   bySource: any;
   byCampaign: any;
   rows: any; // ✅ 전역필터가 반영된 raw rows
@@ -57,6 +59,74 @@ const FIRST_TD_CLASS =
 
 const EMPTY_STATE_CLASS =
   "px-4 py-10 text-center text-sm font-medium text-slate-500";
+
+function resolveReportMode(reportType?: ReportMode): ReportMode {
+  if (reportType === "traffic") return "traffic";
+  if (reportType === "db_acquisition") return "db_acquisition";
+  return "commerce";
+}
+
+function getTableMeta(reportMode: ReportMode) {
+  const isTraffic = reportMode === "traffic";
+  const isCommerce = reportMode === "commerce";
+  const isDbAcquisition = reportMode === "db_acquisition";
+
+  return {
+    isTraffic,
+    isCommerce,
+    isDbAcquisition,
+    showConv: !isTraffic,
+    showCvr: !isTraffic,
+    showCpa: !isTraffic,
+    showRevenue: isCommerce,
+    showRoas: isCommerce,
+    minWidthClass: isTraffic
+      ? "min-w-[860px]"
+      : isDbAcquisition
+      ? "min-w-[1120px]"
+      : "min-w-[1320px]",
+    colSpan: isTraffic ? 6 : isDbAcquisition ? 9 : 11,
+  };
+}
+
+function getStructureCopy(reportMode: ReportMode) {
+  if (reportMode === "traffic") {
+    return {
+      sourceDescription:
+        "소스 단위 유입 구조를 비교해 클릭 볼륨과 CTR 중심의 운영 우선순위를 빠르게 확인합니다.",
+      insightDescription:
+        "현재 소스 구조를 유입 효율 기준으로 해석해 우선 점검 포인트를 정리합니다.",
+      campaignDescription:
+        "캠페인 단위 유입 성과를 비교해 어떤 캠페인이 전체 트래픽 구조를 주도하는지 확인합니다.",
+      groupDescription:
+        "선택한 캠페인 기준으로 그룹 구조를 확인해 세부 운영 단위의 클릭/CTR 편차를 점검합니다.",
+    };
+  }
+
+  if (reportMode === "db_acquisition") {
+    return {
+      sourceDescription:
+        "소스 단위 리드 확보 구조를 비교해 전환 볼륨과 CPA 중심의 운영 우선순위를 빠르게 확인합니다.",
+      insightDescription:
+        "현재 소스 구조를 리드 확보 효율 기준으로 해석해 우선 점검 포인트를 정리합니다.",
+      campaignDescription:
+        "캠페인 단위 전환 성과를 비교해 어떤 캠페인이 전체 DB 확보 구조를 주도하는지 확인합니다.",
+      groupDescription:
+        "선택한 캠페인 기준으로 그룹 구조를 확인해 세부 운영 단위의 전환/CPA 편차를 점검합니다.",
+    };
+  }
+
+  return {
+    sourceDescription:
+      "소스 단위 성과 구조를 비교해 운영 우선순위와 효율 편차를 빠르게 확인합니다.",
+    insightDescription:
+      "현재 소스 구조를 목표 기준으로 해석해 우선 점검 포인트를 정리합니다.",
+    campaignDescription:
+      "캠페인 단위 성과를 비교해 어떤 캠페인이 전체 구조를 주도하는지 확인합니다.",
+    groupDescription:
+      "선택한 캠페인 기준으로 그룹 구조를 확인해 세부 운영 단위의 편차를 점검합니다.",
+  };
+}
 
 function SectionIntro({
   badge,
@@ -133,7 +203,11 @@ function pickTopBottom(rows: any[], keyFn: (r: any) => number) {
   return { top: sorted[0], bottom: sorted[sorted.length - 1] };
 }
 
-function generateSourceInsights(bySource: any[], monthGoal: any) {
+function generateSourceInsights(
+  reportMode: ReportMode,
+  bySource: any[],
+  monthGoal: any
+) {
   const goal = computeGoalKpis(monthGoal);
 
   const norm = (Array.isArray(bySource) ? bySource : []).map((r) => {
@@ -166,22 +240,124 @@ function generateSourceInsights(bySource: any[], monthGoal: any) {
 
   const total = norm.reduce(
     (acc, r) => {
+      acc.impressions += r.impressions;
+      acc.clicks += r.clicks;
       acc.cost += r.cost;
       acc.revenue += r.revenue;
       acc.conversions += r.conversions;
       return acc;
     },
-    { cost: 0, revenue: 0, conversions: 0 }
+    { impressions: 0, clicks: 0, cost: 0, revenue: 0, conversions: 0 }
   );
 
+  const totalCtr = safeDiv(total.clicks, total.impressions);
+  const totalCvr = safeDiv(total.conversions, total.clicks);
   const totalRoas = safeDiv(total.revenue, total.cost);
   const totalCpa = safeDiv(total.cost, total.conversions);
+
+  const maxCostSource = [...norm].sort((a, b) => b.cost - a.cost)[0];
+
+  if (reportMode === "traffic") {
+    const { top: topCtr, bottom: bottomCtr } = pickTopBottom(norm, (r) => r.ctr);
+    const { top: topClicks, bottom: bottomClicks } = pickTopBottom(
+      norm,
+      (r) => r.clicks
+    );
+
+    const ctrStatus =
+      goal.ctr === 0 ? "unknown" : totalCtr >= goal.ctr ? "over" : "under";
+
+    const s1 =
+      goal.ctr === 0
+        ? `소스 합산 CTR은 ${pctText(
+            totalCtr
+          )}이며, 목표 CTR이 미입력 상태라 목표 대비 판정은 보류됩니다.`
+        : ctrStatus === "over"
+        ? `소스 합산 CTR은 ${pctText(
+            totalCtr
+          )}로 목표 ${pctText(
+            goal.ctr
+          )}를 상회하며, 유입 효율이 안정적으로 확보된 상태입니다.`
+        : `소스 합산 CTR은 ${pctText(
+            totalCtr
+          )}로 목표 ${pctText(
+            goal.ctr
+          )} 대비 미달이며, 저반응 소스의 영향이 반영되고 있습니다.`;
+
+    const s2 =
+      goal.cpc === 0
+        ? `CPC 목표가 미입력 상태라 클릭 단가 기준의 우선순위 판정은 제한됩니다.`
+        : `평균 CPC는 ${KRW(safeDiv(total.cost, total.clicks))}로 목표 ${KRW(
+            goal.cpc
+          )} 대비 ${
+            safeDiv(total.cost, total.clicks) <= goal.cpc ? "양호" : "높은"
+          } 상태입니다.`;
+
+    const s3 = `CTR 상위 소스는 "${topCtr.source}"(${pctText(
+      topCtr.ctr
+    )}), 하위 소스는 "${bottomCtr.source}"(${pctText(
+      bottomCtr.ctr
+    )})로 확인됩니다.`;
+
+    const s4 = `클릭 볼륨 상위 소스는 "${topClicks.source}"(${topClicks.clicks.toLocaleString()} clicks), 하위 소스는 "${bottomClicks.source}"(${bottomClicks.clicks.toLocaleString()} clicks)이며, 볼륨 편차가 분명합니다.`;
+
+    const s5 = `비용 비중이 큰 "${maxCostSource.source}"는 전체 유입 효율에 미치는 영향이 크므로, CTR·CPC를 우선 점검하는 것이 가장 빠른 개선 경로입니다.`;
+
+    return [s1, s2, s3, s4, s5];
+  }
+
+  if (reportMode === "db_acquisition") {
+    const { top: topConv, bottom: bottomConv } = pickTopBottom(
+      norm,
+      (r) => r.conversions
+    );
+    const { top: bestCpa, bottom: worstCpa } = pickTopBottom(norm, (r) =>
+      r.conversions > 0 ? -r.cpa : Number.NEGATIVE_INFINITY
+    );
+
+    const cpaStatus =
+      goal.cpa === 0 ? "unknown" : totalCpa <= goal.cpa ? "over" : "under";
+
+    const s1 =
+      goal.cpa === 0
+        ? `소스 합산 CPA는 ${KRW(
+            totalCpa
+          )}이며, 목표 CPA가 미입력 상태라 목표 대비 판정은 보류됩니다.`
+        : cpaStatus === "over"
+        ? `소스 합산 CPA는 ${KRW(totalCpa)}로 목표 ${KRW(
+            goal.cpa
+          )} 이내이며, DB 확보 효율이 안정적으로 유지되고 있습니다.`
+        : `소스 합산 CPA는 ${KRW(totalCpa)}로 목표 ${KRW(
+            goal.cpa
+          )}를 상회하며, 리드 확보 효율 개선이 필요한 상태입니다.`;
+
+    const s2 =
+      goal.cvr === 0
+        ? `CVR 목표가 미입력 상태라 전환율 기준의 정밀 우선순위 판정은 제한됩니다.`
+        : `합산 CVR은 ${pctText(totalCvr)}로 목표 ${pctText(goal.cvr)} 대비 ${
+            totalCvr >= goal.cvr ? "양호" : "미달"
+          } 상태입니다.`;
+
+    const s3 = `전환 확보 상위 소스는 "${topConv.source}"(${topConv.conversions.toLocaleString()} conv), 하위 소스는 "${bottomConv.source}"(${bottomConv.conversions.toLocaleString()} conv)로 확인됩니다.`;
+
+    const s4 =
+      bestCpa && worstCpa
+        ? `CPA 기준 우수 소스는 "${bestCpa.source}"(${KRW(
+            bestCpa.cpa
+          )}), 열위 소스는 "${worstCpa.source}"(${KRW(
+            worstCpa.cpa
+          )})로 확인됩니다.`
+        : `소스별 CPA 편차를 기준으로 전환 효율 우수/열위 소스를 나눠 점검하는 것이 필요합니다.`;
+
+    const s5 = `비용 비중이 큰 "${maxCostSource.source}"는 전체 리드 확보 효율에 미치는 영향이 크므로, 이 소스의 CPA·CVR을 우선 점검하는 것이 가장 빠른 개선 경로입니다.`;
+
+    return [s1, s2, s3, s4, s5];
+  }
 
   const { top: topRoas, bottom: bottomRoas } = pickTopBottom(
     norm,
     (r) => r.roas
   );
-  const maxCostSource = [...norm].sort((a, b) => b.cost - a.cost)[0];
 
   const roasStatus =
     goal.roas === 0 ? "unknown" : totalRoas >= goal.roas ? "over" : "under";
@@ -232,7 +408,7 @@ function highlightInsightText(text: string) {
   const rules: Array<{ pattern: RegExp; className: string }> = [
     {
       pattern:
-        /(ROAS|CPA|CVR|CTR|CPC|Revenue|Cost|목표|미달|상회|양호|높은|저효율|상위|하위|확장|축소|재배분|우선 점검|개선 경로|효율)/g,
+        /(ROAS|CPA|CVR|CTR|CPC|Revenue|Cost|Conv|DB 확보|리드 확보|전환 확보|유입 효율|전환 효율|목표|미달|상회|양호|높은|저효율|상위|하위|확장|축소|재배분|우선 점검|개선 경로|효율)/g,
       className: "font-semibold text-slate-900",
     },
     {
@@ -299,25 +475,23 @@ function getMetricMaxes(rows: any[]) {
 }
 
 type SourceTableProps = {
-  isTraffic: boolean;
+  reportMode: ReportMode;
   sourceRows: any[];
   allRowsLoading?: boolean;
 };
 
 const SourceTable = memo(function SourceTable({
-  isTraffic,
+  reportMode,
   sourceRows,
   allRowsLoading,
 }: SourceTableProps) {
   const srcMax = useMemo(() => getMetricMaxes(sourceRows), [sourceRows]);
+  const tableMeta = getTableMeta(reportMode);
 
   return (
     <div className={TABLE_SURFACE_CLASS}>
       <table
-        className={[
-          "w-full text-sm",
-          isTraffic ? "min-w-[860px]" : "min-w-[1320px]",
-        ].join(" ")}
+        className={["w-full text-sm", tableMeta.minWidthClass].join(" ")}
       >
         <thead className={TABLE_HEAD_CLASS}>
           <tr>
@@ -327,18 +501,18 @@ const SourceTable = memo(function SourceTable({
             <th className={TH_CLASS}>CTR</th>
             <th className={TH_CLASS}>CPC</th>
             <th className={TH_CLASS}>Cost</th>
-            {!isTraffic && <th className={TH_CLASS}>Conv</th>}
-            {!isTraffic && <th className={TH_CLASS}>CVR</th>}
-            {!isTraffic && <th className={TH_CLASS}>CPA</th>}
-            {!isTraffic && <th className={TH_CLASS}>Revenue</th>}
-            {!isTraffic && <th className={TH_CLASS}>ROAS</th>}
+            {tableMeta.showConv && <th className={TH_CLASS}>Conv</th>}
+            {tableMeta.showCvr && <th className={TH_CLASS}>CVR</th>}
+            {tableMeta.showCpa && <th className={TH_CLASS}>CPA</th>}
+            {tableMeta.showRevenue && <th className={TH_CLASS}>Revenue</th>}
+            {tableMeta.showRoas && <th className={TH_CLASS}>ROAS</th>}
           </tr>
         </thead>
 
         <tbody>
           {sourceRows.length === 0 ? (
             <tr className="border-t border-slate-200/90">
-              <td className={EMPTY_STATE_CLASS} colSpan={isTraffic ? 6 : 11}>
+              <td className={EMPTY_STATE_CLASS} colSpan={tableMeta.colSpan}>
                 {(allRowsLoading ?? false)
                   ? "데이터 로딩 중..."
                   : "표시할 소스 데이터가 없습니다. (필터 조건을 확인해 주세요)"}
@@ -386,21 +560,21 @@ const SourceTable = memo(function SourceTable({
                     />
                   </td>
 
-                  {!isTraffic && (
+                  {tableMeta.showConv && (
                     <td className={TD_CLASS}>
                       <DataBarCell value={conv} max={srcMax.maxConv} />
                     </td>
                   )}
 
-                  {!isTraffic && (
+                  {tableMeta.showCvr && (
                     <td className={`${TD_CLASS} font-medium text-violet-600`}>
                       {(cvr * 100).toFixed(2)}%
                     </td>
                   )}
 
-                  {!isTraffic && <td className={TD_CLASS}>{KRW(cpa)}</td>}
+                  {tableMeta.showCpa && <td className={TD_CLASS}>{KRW(cpa)}</td>}
 
-                  {!isTraffic && (
+                  {tableMeta.showRevenue && (
                     <td className={TD_CLASS}>
                       <DataBarCell
                         value={revenue}
@@ -410,7 +584,7 @@ const SourceTable = memo(function SourceTable({
                     </td>
                   )}
 
-                  {!isTraffic && (
+                  {tableMeta.showRoas && (
                     <td className={`${TD_CLASS} font-semibold text-orange-600`}>
                       {(roas * 100).toFixed(1)}%
                     </td>
@@ -426,20 +600,24 @@ const SourceTable = memo(function SourceTable({
 });
 
 type InsightPanelProps = {
+  reportMode: ReportMode;
   sourceRows: any[];
   monthGoal: any;
   insightLoading: boolean;
+  description: string;
 };
 
 const InsightPanel = memo(function InsightPanel({
+  reportMode,
   sourceRows,
   monthGoal,
   insightLoading,
+  description,
 }: InsightPanelProps) {
   const sentences = useMemo(() => {
     if (sourceRows.length === 0) return [];
-    return generateSourceInsights(sourceRows, monthGoal);
-  }, [sourceRows, monthGoal]);
+    return generateSourceInsights(reportMode, sourceRows, monthGoal);
+  }, [reportMode, sourceRows, monthGoal]);
 
   return (
     <div className="overflow-hidden rounded-[26px] border border-slate-200/90 bg-[linear-gradient(135deg,rgba(15,23,42,0.02),rgba(255,255,255,0.98)_18%,rgba(245,243,255,0.92)_56%,rgba(255,247,237,0.92)_100%)] shadow-[0_14px_34px_rgba(15,23,42,0.08)] ring-1 ring-white/70">
@@ -457,10 +635,7 @@ const InsightPanel = memo(function InsightPanel({
 
           <span className="font-normal text-slate-400">-</span>
 
-          <span className="font-normal text-slate-500">
-            현재 소스 구조를 목표 기준으로 해석해 우선 점검 포인트를
-            정리합니다.
-          </span>
+          <span className="font-normal text-slate-500">{description}</span>
         </div>
       </div>
 
@@ -524,22 +699,23 @@ const InsightPanel = memo(function InsightPanel({
 });
 
 type CampaignTableProps = {
-  isTraffic: boolean;
+  reportMode: ReportMode;
   campaignRows: any[];
 };
 
 const CampaignTable = memo(function CampaignTable({
-  isTraffic,
+  reportMode,
   campaignRows,
 }: CampaignTableProps) {
   const campMax = useMemo(() => getMetricMaxes(campaignRows), [campaignRows]);
+  const tableMeta = getTableMeta(reportMode);
 
   return (
     <div className={TABLE_SURFACE_CLASS}>
       <table
         className={[
           "w-full text-sm border-collapse",
-          isTraffic ? "min-w-[860px]" : "min-w-[1320px]",
+          tableMeta.minWidthClass,
         ].join(" ")}
       >
         <thead className={TABLE_HEAD_CLASS}>
@@ -550,11 +726,11 @@ const CampaignTable = memo(function CampaignTable({
             <th className={TH_CLASS}>CTR</th>
             <th className={TH_CLASS}>CPC</th>
             <th className={TH_CLASS}>Cost</th>
-            {!isTraffic && <th className={TH_CLASS}>Conv</th>}
-            {!isTraffic && <th className={TH_CLASS}>CVR</th>}
-            {!isTraffic && <th className={TH_CLASS}>CPA</th>}
-            {!isTraffic && <th className={TH_CLASS}>Revenue</th>}
-            {!isTraffic && <th className={TH_CLASS}>ROAS</th>}
+            {tableMeta.showConv && <th className={TH_CLASS}>Conv</th>}
+            {tableMeta.showCvr && <th className={TH_CLASS}>CVR</th>}
+            {tableMeta.showCpa && <th className={TH_CLASS}>CPA</th>}
+            {tableMeta.showRevenue && <th className={TH_CLASS}>Revenue</th>}
+            {tableMeta.showRoas && <th className={TH_CLASS}>ROAS</th>}
           </tr>
         </thead>
 
@@ -600,21 +776,21 @@ const CampaignTable = memo(function CampaignTable({
                   />
                 </td>
 
-                {!isTraffic && (
+                {tableMeta.showConv && (
                   <td className={TD_CLASS}>
                     <DataBarCell value={conv} max={campMax.maxConv} />
                   </td>
                 )}
 
-                {!isTraffic && (
+                {tableMeta.showCvr && (
                   <td className={`${TD_CLASS} font-medium text-violet-600`}>
                     {(cvr * 100).toFixed(2)}%
                   </td>
                 )}
 
-                {!isTraffic && <td className={TD_CLASS}>{KRW(cpa)}</td>}
+                {tableMeta.showCpa && <td className={TD_CLASS}>{KRW(cpa)}</td>}
 
-                {!isTraffic && (
+                {tableMeta.showRevenue && (
                   <td className={TD_CLASS}>
                     <DataBarCell
                       value={revenue}
@@ -624,7 +800,7 @@ const CampaignTable = memo(function CampaignTable({
                   </td>
                 )}
 
-                {!isTraffic && (
+                {tableMeta.showRoas && (
                   <td className={`${TD_CLASS} font-semibold text-orange-600`}>
                     {(roas * 100).toFixed(1)}%
                   </td>
@@ -635,7 +811,7 @@ const CampaignTable = memo(function CampaignTable({
 
           {campaignRows.length === 0 && (
             <tr className="border-t border-slate-200/90">
-              <td className={EMPTY_STATE_CLASS} colSpan={isTraffic ? 6 : 11}>
+              <td className={EMPTY_STATE_CLASS} colSpan={tableMeta.colSpan}>
                 표시할 캠페인 데이터가 없습니다. (필터/컬럼명을 확인)
               </td>
             </tr>
@@ -647,22 +823,23 @@ const CampaignTable = memo(function CampaignTable({
 });
 
 type GroupTableProps = {
-  isTraffic: boolean;
+  reportMode: ReportMode;
   groupAggRows: any[];
 };
 
 const GroupTable = memo(function GroupTable({
-  isTraffic,
+  reportMode,
   groupAggRows,
 }: GroupTableProps) {
   const grpMax = useMemo(() => getMetricMaxes(groupAggRows), [groupAggRows]);
+  const tableMeta = getTableMeta(reportMode);
 
   return (
     <div className={TABLE_SURFACE_CLASS}>
       <table
         className={[
           "w-full text-sm border-collapse",
-          isTraffic ? "min-w-[860px]" : "min-w-[1320px]",
+          tableMeta.minWidthClass,
         ].join(" ")}
       >
         <thead className={TABLE_HEAD_CLASS}>
@@ -673,11 +850,11 @@ const GroupTable = memo(function GroupTable({
             <th className={TH_CLASS}>CTR</th>
             <th className={TH_CLASS}>CPC</th>
             <th className={TH_CLASS}>Cost</th>
-            {!isTraffic && <th className={TH_CLASS}>Conv</th>}
-            {!isTraffic && <th className={TH_CLASS}>CVR</th>}
-            {!isTraffic && <th className={TH_CLASS}>CPA</th>}
-            {!isTraffic && <th className={TH_CLASS}>Revenue</th>}
-            {!isTraffic && <th className={TH_CLASS}>ROAS</th>}
+            {tableMeta.showConv && <th className={TH_CLASS}>Conv</th>}
+            {tableMeta.showCvr && <th className={TH_CLASS}>CVR</th>}
+            {tableMeta.showCpa && <th className={TH_CLASS}>CPA</th>}
+            {tableMeta.showRevenue && <th className={TH_CLASS}>Revenue</th>}
+            {tableMeta.showRoas && <th className={TH_CLASS}>ROAS</th>}
           </tr>
         </thead>
 
@@ -723,21 +900,21 @@ const GroupTable = memo(function GroupTable({
                   />
                 </td>
 
-                {!isTraffic && (
+                {tableMeta.showConv && (
                   <td className={TD_CLASS}>
                     <DataBarCell value={conv} max={grpMax.maxConv} />
                   </td>
                 )}
 
-                {!isTraffic && (
+                {tableMeta.showCvr && (
                   <td className={`${TD_CLASS} font-medium text-violet-600`}>
                     {(cvr * 100).toFixed(2)}%
                   </td>
                 )}
 
-                {!isTraffic && <td className={TD_CLASS}>{KRW(cpa)}</td>}
+                {tableMeta.showCpa && <td className={TD_CLASS}>{KRW(cpa)}</td>}
 
-                {!isTraffic && (
+                {tableMeta.showRevenue && (
                   <td className={TD_CLASS}>
                     <DataBarCell
                       value={revenue}
@@ -747,7 +924,7 @@ const GroupTable = memo(function GroupTable({
                   </td>
                 )}
 
-                {!isTraffic && (
+                {tableMeta.showRoas && (
                   <td className={`${TD_CLASS} font-semibold text-orange-600`}>
                     {(roas * 100).toFixed(1)}%
                   </td>
@@ -758,7 +935,7 @@ const GroupTable = memo(function GroupTable({
 
           {groupAggRows.length === 0 && (
             <tr className="border-t border-slate-200/90">
-              <td className={EMPTY_STATE_CLASS} colSpan={isTraffic ? 6 : 11}>
+              <td className={EMPTY_STATE_CLASS} colSpan={tableMeta.colSpan}>
                 표시할 그룹 데이터가 없습니다. (필터/캠페인 선택/컬럼명을
                 확인)
               </td>
@@ -771,13 +948,15 @@ const GroupTable = memo(function GroupTable({
 });
 
 type GroupSectionProps = {
-  isTraffic: boolean;
+  reportMode: ReportMode;
   scopedRows: any[];
+  description: string;
 };
 
 const GroupSection = memo(function GroupSection({
-  isTraffic,
+  reportMode,
   scopedRows,
+  description,
 }: GroupSectionProps) {
   const [selectedCampaign, setSelectedCampaign] = useState<string | null>(null);
   const [campaignOpen, setCampaignOpen] = useState(false);
@@ -806,7 +985,7 @@ const GroupSection = memo(function GroupSection({
       <SectionIntro
         badge="🧩 GROUP"
         title="그룹별 성과"
-        description="선택한 캠페인 기준으로 그룹 구조를 확인해 세부 운영 단위의 편차를 점검합니다."
+        description={description}
         compact
       />
 
@@ -867,7 +1046,7 @@ const GroupSection = memo(function GroupSection({
         </div>
       </div>
 
-      <GroupTable isTraffic={isTraffic} groupAggRows={groupAggRows} />
+      <GroupTable reportMode={reportMode} groupAggRows={groupAggRows} />
     </div>
   );
 });
@@ -880,7 +1059,8 @@ export default function StructureSection({
   monthGoal,
   allRowsLoading,
 }: Props) {
-  const isTraffic = reportType === "traffic";
+  const reportMode = resolveReportMode(reportType);
+  const copy = getStructureCopy(reportMode);
 
   const scopedRows = Array.isArray(rows) ? rows : [];
   const sourceRows = Array.isArray(bySource) ? bySource : [];
@@ -894,12 +1074,12 @@ export default function StructureSection({
         <SectionIntro
           badge="🧭 SOURCE"
           title="소스별 구조 성과"
-          description="소스 단위 성과 구조를 비교해 운영 우선순위와 효율 편차를 빠르게 확인합니다."
+          description={copy.sourceDescription}
           compact
         />
 
         <SourceTable
-          isTraffic={isTraffic}
+          reportMode={reportMode}
           sourceRows={sourceRows}
           allRowsLoading={allRowsLoading}
         />
@@ -907,9 +1087,11 @@ export default function StructureSection({
 
       <div>
         <InsightPanel
+          reportMode={reportMode}
           sourceRows={sourceRows}
           monthGoal={monthGoal}
           insightLoading={insightLoading}
+          description={copy.insightDescription}
         />
       </div>
 
@@ -917,14 +1099,18 @@ export default function StructureSection({
         <SectionIntro
           badge="📣 CAMPAIGN"
           title="캠페인별 성과"
-          description="캠페인 단위 성과를 비교해 어떤 캠페인이 전체 구조를 주도하는지 확인합니다."
+          description={copy.campaignDescription}
           compact
         />
 
-        <CampaignTable isTraffic={isTraffic} campaignRows={campaignRows} />
+        <CampaignTable reportMode={reportMode} campaignRows={campaignRows} />
       </div>
 
-      <GroupSection isTraffic={isTraffic} scopedRows={scopedRows} />
+      <GroupSection
+        reportMode={reportMode}
+        scopedRows={scopedRows}
+        description={copy.groupDescription}
+      />
     </div>
   );
 }
