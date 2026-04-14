@@ -52,16 +52,16 @@ const FIRST_TD_CLASS =
   "px-4 py-3.5 text-left text-sm font-medium text-slate-900 whitespace-nowrap align-middle";
 
 const TABLE_SURFACE_CLASS =
-  "overflow-x-auto rounded-[24px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] shadow-[0_10px_30px_rgba(15,23,42,0.06)] ring-1 ring-white/60";
+  "overflow-x-auto rounded-[24px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] shadow-[0_1px_3px_rgba(15,23,42,0.03)] ring-1 ring-white/60";
 
 const SOURCE_TABLE_SURFACE_CLASS =
-  "overflow-auto rounded-[24px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] shadow-[0_10px_30px_rgba(15,23,42,0.06)] ring-1 ring-white/60 max-h-[720px]";
+  "overflow-auto rounded-[24px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] shadow-[0_1px_3px_rgba(15,23,42,0.03)] ring-1 ring-white/60 max-h-[720px]";
 
 const DAILY_TABLE_SURFACE_CLASS =
-  "overflow-auto rounded-[24px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] shadow-[0_10px_30px_rgba(15,23,42,0.06)] ring-1 ring-white/60 max-h-[720px]";
+  "overflow-x-auto rounded-[24px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] shadow-[0_1px_3px_rgba(15,23,42,0.03)] ring-1 ring-white/60";
 
 const TABLE_HEAD_CLASS =
-  "sticky top-0 z-10 border-b border-slate-200/90 bg-[rgba(248,250,252,0.9)] backdrop-blur supports-[backdrop-filter]:bg-[rgba(248,250,252,0.82)]";
+  "sticky top-0 z-10 border-b border-slate-200/90 bg-slate-50/95";
 
 const EMPTY_STATE_CLASS =
   "px-4 py-10 text-center text-sm font-medium text-slate-500";
@@ -79,6 +79,7 @@ const SOURCE_ROW_HEIGHT = 57;
 const DAILY_ROW_HEIGHT = 57;
 const TABLE_OVERSCAN = 8;
 const TABLE_FALLBACK_VIEWPORT_HEIGHT = 720;
+const DAILY_ACTIVATION_ROOT_MARGIN = "1200px 0px";
 
 type MetricMode = {
   isTraffic: boolean;
@@ -155,7 +156,8 @@ function getSummaryCopy(reportType?: ReportType): SummaryCopy {
   if (resolvedType === "db_acquisition") {
     return {
       kpiTitle: "기간 성과 요약",
-      kpiDescription: "현재 필터 조건 기준의 DB 확보·전환 효율 중심 핵심 KPI를 빠르게 확인합니다.",
+      kpiDescription:
+        "현재 필터 조건 기준의 DB 확보·전환 효율 중심 핵심 KPI를 빠르게 확인합니다.",
       monthTitle: "월별 DB 확보 성과 (최근 3개월)",
       monthDescription: "최근 월별 DB 확보·리드 확보 성과를 비교합니다.",
       weeklyTitle: "주차별 DB 확보 성과",
@@ -282,6 +284,146 @@ function getMaxValue<T>(rows: readonly T[], getter: (row: T) => number) {
     if (v > max) max = v;
   }
   return max;
+}
+
+function buildWeeklyDisplayRows(rows: readonly any[]): WeeklyDisplayRow[] {
+  return rows.map((w: any, idx: number) => {
+    const impressions = toSafeNumber(w?.impressions ?? w?.impr);
+    const clicks = toSafeNumber(w?.clicks);
+    const cost = toSafeNumber(w?.cost);
+    const conversions = toSafeNumber(w?.conversions ?? w?.conv);
+    const revenue = toSafeNumber(w?.revenue);
+    const cpc = toSafeNumber(w?.cpc);
+    const cpa = toSafeNumber(w?.cpa);
+
+    return {
+      key: w?.weekKey ?? `${weekSortKey(w)}-${idx}`,
+      title: String(w?.label ?? ""),
+      label: w?.label,
+      impressions,
+      clicks,
+      ctrText: formatPercentFromRate(w?.ctr, 2),
+      cpcText: KRW(cpc),
+      cost,
+      costText: KRW(cost),
+      conversions,
+      cvrText: formatPercentFromRate(w?.cvr, 2),
+      cpaText: KRW(cpa),
+      revenue,
+      revenueText: KRW(revenue),
+      roasText: formatPercentFromRoas(w?.roas, 1),
+    };
+  });
+}
+
+function buildSourceDisplayRows(rows: readonly any[]): SourceDisplayRow[] {
+  return rows.map((r: any, idx: number) => {
+    const impressions = toSafeNumber(r?.impressions ?? r?.impr);
+    const clicks = toSafeNumber(r?.clicks);
+    const cost = toSafeNumber(r?.cost);
+    const conversions = toSafeNumber(r?.conversions ?? r?.conv);
+    const revenue = toSafeNumber(r?.revenue);
+    const cpc = toSafeNumber(r?.cpc);
+    const cpa = toSafeNumber(r?.cpa);
+
+    return {
+      key: r?.source ?? idx,
+      title: String(r?.source ?? ""),
+      source: r?.source,
+      impressions,
+      clicks,
+      ctrText: formatPercentFromRate(r?.ctr, 2),
+      cpcText: KRW(cpc),
+      cost,
+      costText: KRW(cost),
+      conversions,
+      cvrText: formatPercentFromRate(r?.cvr, 2),
+      cpaText: KRW(cpa),
+      revenue,
+      revenueText: KRW(revenue),
+      roasText: formatPercentFromRoas(r?.roas, 1),
+    };
+  });
+}
+
+function buildDailyDisplayRows(rows: readonly any[]): DailyDisplayRow[] {
+  return rows.map((d: any, idx: number) => {
+    const impressions = toSafeNumber(d?.impressions ?? d?.impr);
+    const clicks = toSafeNumber(d?.clicks);
+    const cost = toSafeNumber(d?.cost);
+    const conversions = toSafeNumber(d?.conversions ?? d?.conv);
+    const revenue = toSafeNumber(d?.revenue);
+    const cpc = toSafeNumber(d?.cpc);
+    const cpa = toSafeNumber(d?.cpa);
+    const label = dayLabel(d);
+
+    return {
+      key:
+        d?.date ??
+        d?.dateKey ??
+        d?.day ??
+        d?.ymd ??
+        d?.report_date ??
+        d?.reportDate ??
+        `${daySortKey(d)}-${idx}`,
+      title: label,
+      label,
+      impressions,
+      clicks,
+      ctrText: formatPercentFromRate(d?.ctr, 2),
+      cpcText: KRW(cpc),
+      cost,
+      costText: KRW(cost),
+      conversions,
+      cvrText: formatPercentFromRate(d?.cvr, 2),
+      cpaText: KRW(cpa),
+      revenue,
+      revenueText: KRW(revenue),
+      roasText: formatPercentFromRoas(d?.roas, 1),
+    };
+  });
+}
+
+function useActivateWhenNearViewport<T extends HTMLElement>(
+  rootMargin = DAILY_ACTIVATION_ROOT_MARGIN
+) {
+  const ref = useRef<T | null>(null);
+  const [isActive, setIsActive] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || isActive) return;
+
+    if (typeof IntersectionObserver === "undefined") {
+      setIsActive(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry) return;
+
+        if (entry.isIntersecting || entry.intersectionRatio > 0) {
+          setIsActive(true);
+          observer.disconnect();
+        }
+      },
+      {
+        root: null,
+        rootMargin,
+        threshold: 0,
+      }
+    );
+
+    observer.observe(el);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [isActive, rootMargin]);
+
+  return { ref, isActive };
 }
 
 const MetricColGroup = memo(function MetricColGroup({
@@ -598,7 +740,7 @@ const WeeklyPerformanceTable = memo(function WeeklyPerformanceTable({
   maxRev,
 }: {
   mode: MetricMode;
-  rows: readonly any[];
+  rows: readonly WeeklyDisplayRow[];
   prevRow: any;
   lastRow: any;
   maxImpr: number;
@@ -607,38 +749,6 @@ const WeeklyPerformanceTable = memo(function WeeklyPerformanceTable({
   maxConv: number;
   maxRev: number;
 }) {
-  const displayRows = useMemo<WeeklyDisplayRow[]>(
-    () =>
-      rows.map((w: any, idx: number) => {
-        const impressions = toSafeNumber(w?.impressions ?? w?.impr);
-        const clicks = toSafeNumber(w?.clicks);
-        const cost = toSafeNumber(w?.cost);
-        const conversions = toSafeNumber(w?.conversions ?? w?.conv);
-        const revenue = toSafeNumber(w?.revenue);
-        const cpc = toSafeNumber(w?.cpc);
-        const cpa = toSafeNumber(w?.cpa);
-
-        return {
-          key: w?.weekKey ?? `${weekSortKey(w)}-${idx}`,
-          title: String(w?.label ?? ""),
-          label: w?.label,
-          impressions,
-          clicks,
-          ctrText: formatPercentFromRate(w?.ctr, 2),
-          cpcText: KRW(cpc),
-          cost,
-          costText: KRW(cost),
-          conversions,
-          cvrText: formatPercentFromRate(w?.cvr, 2),
-          cpaText: KRW(cpa),
-          revenue,
-          revenueText: KRW(revenue),
-          roasText: formatPercentFromRoas(w?.roas, 1),
-        };
-      }),
-    [rows]
-  );
-
   return (
     <div className={TABLE_SURFACE_CLASS}>
       <table className={mode.tableClassName}>
@@ -648,7 +758,7 @@ const WeeklyPerformanceTable = memo(function WeeklyPerformanceTable({
         <tbody>
           <WeeklyDeltaRow mode={mode} prevRow={prevRow} lastRow={lastRow} />
 
-          {displayRows.map((row) => (
+          {rows.map((row) => (
             <WeeklyPerformanceRow
               key={row.key}
               mode={mode}
@@ -808,7 +918,7 @@ const SourcePerformanceTable = memo(function SourcePerformanceTable({
   maxRev,
 }: {
   mode: MetricMode;
-  rows: readonly any[];
+  rows: readonly SourceDisplayRow[];
   maxImpr: number;
   maxClicks: number;
   maxCost: number;
@@ -816,35 +926,103 @@ const SourcePerformanceTable = memo(function SourcePerformanceTable({
   maxRev: number;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [scrollTop, setScrollTop] = useState(0);
+  const frameRef = useRef<number | null>(null);
+  const rangeRef = useRef({ startIndex: 0, endIndex: 0 });
+
   const [viewportHeight, setViewportHeight] = useState(
     TABLE_FALLBACK_VIEWPORT_HEIGHT
   );
+  const [visibleRange, setVisibleRange] = useState({
+    startIndex: 0,
+    endIndex: 0,
+  });
 
-  const handleScroll = useCallback((e: UIEvent<HTMLDivElement>) => {
-    setScrollTop(e.currentTarget.scrollTop);
-  }, []);
+  const updateVisibleRange = useCallback(
+    (nextScrollTop: number, nextViewportHeight: number, total: number) => {
+      if (total <= 0) {
+        const emptyRange = { startIndex: 0, endIndex: 0 };
+        const prev = rangeRef.current;
+
+        if (
+          prev.startIndex !== emptyRange.startIndex ||
+          prev.endIndex !== emptyRange.endIndex
+        ) {
+          rangeRef.current = emptyRange;
+          setVisibleRange(emptyRange);
+        }
+        return;
+      }
+
+      const nextStartIndex = Math.max(
+        0,
+        Math.floor(nextScrollTop / SOURCE_ROW_HEIGHT) - TABLE_OVERSCAN
+      );
+
+      const nextEndIndex = Math.min(
+        total,
+        Math.ceil((nextScrollTop + nextViewportHeight) / SOURCE_ROW_HEIGHT) +
+          TABLE_OVERSCAN
+      );
+
+      const prev = rangeRef.current;
+      if (
+        prev.startIndex === nextStartIndex &&
+        prev.endIndex === nextEndIndex
+      ) {
+        return;
+      }
+
+      const nextRange = {
+        startIndex: nextStartIndex,
+        endIndex: nextEndIndex,
+      };
+
+      rangeRef.current = nextRange;
+      setVisibleRange(nextRange);
+    },
+    []
+  );
+
+  const handleScroll = useCallback(
+    (e: UIEvent<HTMLDivElement>) => {
+      const nextScrollTop = e.currentTarget.scrollTop;
+      const nextViewportHeight =
+        e.currentTarget.clientHeight || TABLE_FALLBACK_VIEWPORT_HEIGHT;
+      const total = rows.length;
+
+      if (frameRef.current != null) {
+        cancelAnimationFrame(frameRef.current);
+      }
+
+      frameRef.current = requestAnimationFrame(() => {
+        updateVisibleRange(nextScrollTop, nextViewportHeight, total);
+      });
+    },
+    [rows.length, updateVisibleRange]
+  );
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
-    const updateViewportHeight = () => {
+    const updateViewportHeightAndRange = () => {
       const nextHeight = el.clientHeight || TABLE_FALLBACK_VIEWPORT_HEIGHT;
+
       setViewportHeight((prev) => (prev === nextHeight ? prev : nextHeight));
+      updateVisibleRange(el.scrollTop, nextHeight, rows.length);
     };
 
-    updateViewportHeight();
+    updateViewportHeightAndRange();
 
     if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", updateViewportHeight);
+      window.addEventListener("resize", updateViewportHeightAndRange);
       return () => {
-        window.removeEventListener("resize", updateViewportHeight);
+        window.removeEventListener("resize", updateViewportHeightAndRange);
       };
     }
 
     const observer = new ResizeObserver(() => {
-      updateViewportHeight();
+      updateViewportHeightAndRange();
     });
 
     observer.observe(el);
@@ -852,71 +1030,7 @@ const SourcePerformanceTable = memo(function SourcePerformanceTable({
     return () => {
       observer.disconnect();
     };
-  }, []);
-
-  const displayRows = useMemo<SourceDisplayRow[]>(
-    () =>
-      rows.map((r: any, idx: number) => {
-        const impressions = toSafeNumber(r?.impressions ?? r?.impr);
-        const clicks = toSafeNumber(r?.clicks);
-        const cost = toSafeNumber(r?.cost);
-        const conversions = toSafeNumber(r?.conversions ?? r?.conv);
-        const revenue = toSafeNumber(r?.revenue);
-        const cpc = toSafeNumber(r?.cpc);
-        const cpa = toSafeNumber(r?.cpa);
-
-        return {
-          key: r?.source ?? idx,
-          title: String(r?.source ?? ""),
-          source: r?.source,
-          impressions,
-          clicks,
-          ctrText: formatPercentFromRate(r?.ctr, 2),
-          cpcText: KRW(cpc),
-          cost,
-          costText: KRW(cost),
-          conversions,
-          cvrText: formatPercentFromRate(r?.cvr, 2),
-          cpaText: KRW(cpa),
-          revenue,
-          revenueText: KRW(revenue),
-          roasText: formatPercentFromRoas(r?.roas, 1),
-        };
-      }),
-    [rows]
-  );
-
-  const {
-    visibleRows,
-    topSpacerHeight,
-    bottomSpacerHeight,
-  } = useMemo(() => {
-    const total = displayRows.length;
-
-    if (total === 0) {
-      return {
-        visibleRows: [] as SourceDisplayRow[],
-        topSpacerHeight: 0,
-        bottomSpacerHeight: 0,
-      };
-    }
-
-    const startIndex = Math.max(
-      0,
-      Math.floor(scrollTop / SOURCE_ROW_HEIGHT) - TABLE_OVERSCAN
-    );
-
-    const endIndex = Math.min(
-      total,
-      Math.ceil((scrollTop + viewportHeight) / SOURCE_ROW_HEIGHT) + TABLE_OVERSCAN
-    );
-
-    return {
-      visibleRows: displayRows.slice(startIndex, endIndex),
-      topSpacerHeight: startIndex * SOURCE_ROW_HEIGHT,
-      bottomSpacerHeight: Math.max(0, (total - endIndex) * SOURCE_ROW_HEIGHT),
-    };
-  }, [displayRows, scrollTop, viewportHeight]);
+  }, [rows.length, updateVisibleRange]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -924,14 +1038,38 @@ const SourcePerformanceTable = memo(function SourcePerformanceTable({
 
     const maxScrollTop = Math.max(
       0,
-      displayRows.length * SOURCE_ROW_HEIGHT - viewportHeight
+      rows.length * SOURCE_ROW_HEIGHT - viewportHeight
     );
 
     if (el.scrollTop > maxScrollTop) {
       el.scrollTop = maxScrollTop;
-      setScrollTop(maxScrollTop);
     }
-  }, [displayRows.length, viewportHeight]);
+
+    updateVisibleRange(el.scrollTop, viewportHeight, rows.length);
+  }, [rows.length, viewportHeight, updateVisibleRange]);
+
+  useEffect(() => {
+    return () => {
+      if (frameRef.current != null) {
+        cancelAnimationFrame(frameRef.current);
+      }
+    };
+  }, []);
+
+  const { visibleRows, topSpacerHeight, bottomSpacerHeight } = useMemo(() => {
+    const total = rows.length;
+    const startIndex = Math.min(visibleRange.startIndex, total);
+    const endIndex = Math.min(
+      Math.max(visibleRange.endIndex, startIndex),
+      total
+    );
+
+    return {
+      visibleRows: rows.slice(startIndex, endIndex),
+      topSpacerHeight: startIndex * SOURCE_ROW_HEIGHT,
+      bottomSpacerHeight: Math.max(0, (total - endIndex) * SOURCE_ROW_HEIGHT),
+    };
+  }, [rows, visibleRange]);
 
   return (
     <div
@@ -944,7 +1082,7 @@ const SourcePerformanceTable = memo(function SourcePerformanceTable({
         <SourceTableHead mode={mode} />
 
         <tbody>
-          {displayRows.length === 0 ? (
+          {rows.length === 0 ? (
             <SourceEmptyRow colSpan={mode.colSpan} />
           ) : (
             <>
@@ -1097,151 +1235,173 @@ const DailyPerformanceTable = memo(function DailyPerformanceTable({
   maxRev,
 }: {
   mode: MetricMode;
-  rows: readonly any[];
+  rows: readonly DailyDisplayRow[];
   maxImpr: number;
   maxClicks: number;
   maxCost: number;
   maxConv: number;
   maxRev: number;
 }) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const [scrollTop, setScrollTop] = useState(0);
+  const activation = useActivateWhenNearViewport<HTMLDivElement>();
+  const wrapperRef = activation.ref;
+  const isActive = activation.isActive;
+
+  const frameRef = useRef<number | null>(null);
+  const rangeRef = useRef({ startIndex: 0, endIndex: 0 });
+
   const [viewportHeight, setViewportHeight] = useState(
     TABLE_FALLBACK_VIEWPORT_HEIGHT
   );
+  const [visibleRange, setVisibleRange] = useState({
+    startIndex: 0,
+    endIndex: 0,
+  });
 
-  const handleScroll = useCallback((e: UIEvent<HTMLDivElement>) => {
-    setScrollTop(e.currentTarget.scrollTop);
-  }, []);
+  const updateVisibleRange = useCallback(
+    (nextScrollTop: number, nextViewportHeight: number, total: number) => {
+      if (total <= 0) {
+        const emptyRange = { startIndex: 0, endIndex: 0 };
+        const prev = rangeRef.current;
 
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
+        if (
+          prev.startIndex !== emptyRange.startIndex ||
+          prev.endIndex !== emptyRange.endIndex
+        ) {
+          rangeRef.current = emptyRange;
+          setVisibleRange(emptyRange);
+        }
+        return;
+      }
 
-    const updateViewportHeight = () => {
-      const nextHeight = el.clientHeight || TABLE_FALLBACK_VIEWPORT_HEIGHT;
-      setViewportHeight((prev) => (prev === nextHeight ? prev : nextHeight));
-    };
+      const nextStartIndex = Math.max(
+        0,
+        Math.floor(nextScrollTop / DAILY_ROW_HEIGHT) - TABLE_OVERSCAN
+      );
 
-    updateViewportHeight();
+      const nextEndIndex = Math.min(
+        total,
+        Math.ceil((nextScrollTop + nextViewportHeight) / DAILY_ROW_HEIGHT) +
+          TABLE_OVERSCAN
+      );
 
-    if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", updateViewportHeight);
-      return () => {
-        window.removeEventListener("resize", updateViewportHeight);
+      const prev = rangeRef.current;
+      if (
+        prev.startIndex === nextStartIndex &&
+        prev.endIndex === nextEndIndex
+      ) {
+        return;
+      }
+
+      const nextRange = {
+        startIndex: nextStartIndex,
+        endIndex: nextEndIndex,
       };
-    }
 
-    const observer = new ResizeObserver(() => {
-      updateViewportHeight();
-    });
-
-    observer.observe(el);
-
-    return () => {
-      observer.disconnect();
-    };
-  }, []);
-
-  const displayRows = useMemo<DailyDisplayRow[]>(
-    () =>
-      rows.map((d: any, idx: number) => {
-        const impressions = toSafeNumber(d?.impressions ?? d?.impr);
-        const clicks = toSafeNumber(d?.clicks);
-        const cost = toSafeNumber(d?.cost);
-        const conversions = toSafeNumber(d?.conversions ?? d?.conv);
-        const revenue = toSafeNumber(d?.revenue);
-        const cpc = toSafeNumber(d?.cpc);
-        const cpa = toSafeNumber(d?.cpa);
-        const label = dayLabel(d);
-
-        return {
-          key:
-            d?.date ??
-            d?.dateKey ??
-            d?.day ??
-            d?.ymd ??
-            d?.report_date ??
-            d?.reportDate ??
-            `${daySortKey(d)}-${idx}`,
-          title: label,
-          label,
-          impressions,
-          clicks,
-          ctrText: formatPercentFromRate(d?.ctr, 2),
-          cpcText: KRW(cpc),
-          cost,
-          costText: KRW(cost),
-          conversions,
-          cvrText: formatPercentFromRate(d?.cvr, 2),
-          cpaText: KRW(cpa),
-          revenue,
-          revenueText: KRW(revenue),
-          roasText: formatPercentFromRoas(d?.roas, 1),
-        };
-      }),
-    [rows]
+      rangeRef.current = nextRange;
+      setVisibleRange(nextRange);
+    },
+    []
   );
 
-  const {
-    visibleRows,
-    topSpacerHeight,
-    bottomSpacerHeight,
-  } = useMemo(() => {
-    const total = displayRows.length;
+  const updateFromWindowScroll = useCallback(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
 
-    if (total === 0) {
+    const rect = el.getBoundingClientRect();
+    const elementHeight = el.offsetHeight || TABLE_FALLBACK_VIEWPORT_HEIGHT;
+
+    const visibleTop = Math.max(0, -rect.top);
+    const visibleBottom = Math.min(elementHeight, window.innerHeight - rect.top);
+    const nextViewportHeight =
+      Math.max(0, visibleBottom - visibleTop) || TABLE_FALLBACK_VIEWPORT_HEIGHT;
+
+    setViewportHeight((prev) =>
+      prev === nextViewportHeight ? prev : nextViewportHeight
+    );
+
+    updateVisibleRange(visibleTop, nextViewportHeight, rows.length);
+  }, [rows.length, updateVisibleRange, wrapperRef]);
+
+  useEffect(() => {
+    if (!isActive) return;
+
+    const handleWindowScroll = () => {
+      if (frameRef.current != null) {
+        cancelAnimationFrame(frameRef.current);
+      }
+
+      frameRef.current = requestAnimationFrame(() => {
+        updateFromWindowScroll();
+      });
+    };
+
+    handleWindowScroll();
+
+    window.addEventListener("scroll", handleWindowScroll, { passive: true });
+    window.addEventListener("resize", handleWindowScroll);
+
+    let observer: ResizeObserver | null = null;
+    const el = wrapperRef.current;
+
+    if (el && typeof ResizeObserver !== "undefined") {
+      observer = new ResizeObserver(() => {
+        handleWindowScroll();
+      });
+      observer.observe(el);
+    }
+
+    return () => {
+      window.removeEventListener("scroll", handleWindowScroll);
+      window.removeEventListener("resize", handleWindowScroll);
+
+      if (observer) observer.disconnect();
+
+      if (frameRef.current != null) {
+        cancelAnimationFrame(frameRef.current);
+      }
+    };
+  }, [isActive, updateFromWindowScroll, wrapperRef]);
+
+  useEffect(() => {
+    if (!isActive) return;
+    updateFromWindowScroll();
+  }, [isActive, rows.length, updateFromWindowScroll]);
+
+  const { visibleRows, topSpacerHeight, bottomSpacerHeight } = useMemo(() => {
+    if (!isActive) {
+      const eagerCount = Math.min(rows.length, 12);
       return {
-        visibleRows: [] as DailyDisplayRow[],
+        visibleRows: rows.slice(0, eagerCount),
         topSpacerHeight: 0,
-        bottomSpacerHeight: 0,
+        bottomSpacerHeight: Math.max(
+          0,
+          (rows.length - eagerCount) * DAILY_ROW_HEIGHT
+        ),
       };
     }
 
-    const startIndex = Math.max(
-      0,
-      Math.floor(scrollTop / DAILY_ROW_HEIGHT) - TABLE_OVERSCAN
-    );
-
+    const total = rows.length;
+    const startIndex = Math.min(visibleRange.startIndex, total);
     const endIndex = Math.min(
-      total,
-      Math.ceil((scrollTop + viewportHeight) / DAILY_ROW_HEIGHT) + TABLE_OVERSCAN
+      Math.max(visibleRange.endIndex, startIndex),
+      total
     );
 
     return {
-      visibleRows: displayRows.slice(startIndex, endIndex),
+      visibleRows: rows.slice(startIndex, endIndex),
       topSpacerHeight: startIndex * DAILY_ROW_HEIGHT,
       bottomSpacerHeight: Math.max(0, (total - endIndex) * DAILY_ROW_HEIGHT),
     };
-  }, [displayRows, scrollTop, viewportHeight]);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-
-    const maxScrollTop = Math.max(
-      0,
-      displayRows.length * DAILY_ROW_HEIGHT - viewportHeight
-    );
-
-    if (el.scrollTop > maxScrollTop) {
-      el.scrollTop = maxScrollTop;
-      setScrollTop(maxScrollTop);
-    }
-  }, [displayRows.length, viewportHeight]);
+  }, [isActive, rows, visibleRange]);
 
   return (
-    <div
-      ref={containerRef}
-      className={DAILY_TABLE_SURFACE_CLASS}
-      onScroll={handleScroll}
-    >
+    <div ref={wrapperRef} className={DAILY_TABLE_SURFACE_CLASS}>
       <table className={mode.tableClassName}>
         <MetricColGroup mode={mode} />
         <DailyTableHead mode={mode} />
 
         <tbody>
-          {displayRows.length === 0 ? (
+          {rows.length === 0 ? (
             <DailyEmptyRow colSpan={mode.colSpan} />
           ) : (
             <>
@@ -1290,7 +1450,7 @@ function SummarySectionComponent(props: Props) {
   const copy = useMemo(() => getSummaryCopy(reportType), [reportType]);
 
   const months = useMemo<any[]>(
-    () => (Array.isArray(byMonth) ? [...byMonth] : EMPTY_MUTABLE_LIST),
+    () => (Array.isArray(byMonth) ? byMonth : EMPTY_MUTABLE_LIST),
     [byMonth]
   );
   const weeks = useMemo(
@@ -1298,7 +1458,7 @@ function SummarySectionComponent(props: Props) {
     [byWeekOnly]
   );
   const weekChartData = useMemo<any[]>(
-    () => (Array.isArray(byWeekChart) ? [...byWeekChart] : EMPTY_MUTABLE_LIST),
+    () => (Array.isArray(byWeekChart) ? byWeekChart : EMPTY_MUTABLE_LIST),
     [byWeekChart]
   );
   const sources = useMemo(
@@ -1314,81 +1474,48 @@ function SummarySectionComponent(props: Props) {
   const stableMonths = months;
   const stableWeekChartData = weekChartData;
 
-  const {
-    sortedWeeks,
-    sortedDays,
-    prevWeekSorted,
-    lastWeekSorted,
-    maxImpr,
-    maxClicks,
-    maxCost,
-    maxConv,
-    maxRev,
-    srcMaxImpr,
-    srcMaxClicks,
-    srcMaxCost,
-    srcMaxConv,
-    srcMaxRev,
-    dayMaxImpr,
-    dayMaxClicks,
-    dayMaxCost,
-    dayMaxConv,
-    dayMaxRev,
-  } = useMemo(() => {
-    const nextSortedWeeks = [...weeks].sort((a, b) =>
+  const derived = useMemo(() => {
+    const sortedWeeks = [...weeks].sort((a, b) =>
       weekSortKey(a).localeCompare(weekSortKey(b))
     );
 
-    const nextSortedDays = [...days].sort((a, b) =>
+    const sortedDays = [...days].sort((a, b) =>
       daySortKey(a).localeCompare(daySortKey(b))
     );
 
+    const weeklyDisplayRows = buildWeeklyDisplayRows(sortedWeeks);
+    const sourceDisplayRows = buildSourceDisplayRows(sources);
+    const dailyDisplayRows = buildDailyDisplayRows(sortedDays);
+
     return {
-      sortedWeeks: nextSortedWeeks,
-      sortedDays: nextSortedDays,
-      prevWeekSorted: nextSortedWeeks.at(-2),
-      lastWeekSorted: nextSortedWeeks.at(-1),
+      sortedWeeks,
+      prevWeekSorted: sortedWeeks.at(-2),
+      lastWeekSorted: sortedWeeks.at(-1),
+
+      weeklyDisplayRows,
+      sourceDisplayRows,
+      dailyDisplayRows,
 
       maxImpr: getMaxValue(
-        nextSortedWeeks,
-        (r: any) => toSafeNumber(r?.impressions ?? r?.impr)
+        weeklyDisplayRows,
+        (r) => r.impressions
       ),
-      maxClicks: getMaxValue(nextSortedWeeks, (r: any) =>
-        toSafeNumber(r?.clicks)
-      ),
-      maxCost: getMaxValue(nextSortedWeeks, (r: any) => toSafeNumber(r?.cost)),
-      maxConv: getMaxValue(nextSortedWeeks, (r: any) =>
-        toSafeNumber(r?.conversions ?? r?.conv)
-      ),
-      maxRev: getMaxValue(nextSortedWeeks, (r: any) =>
-        toSafeNumber(r?.revenue)
-      ),
+      maxClicks: getMaxValue(weeklyDisplayRows, (r) => r.clicks),
+      maxCost: getMaxValue(weeklyDisplayRows, (r) => r.cost),
+      maxConv: getMaxValue(weeklyDisplayRows, (r) => r.conversions),
+      maxRev: getMaxValue(weeklyDisplayRows, (r) => r.revenue),
 
-      srcMaxImpr: getMaxValue(sources, (r: any) =>
-        toSafeNumber(r?.impressions ?? r?.impr)
-      ),
-      srcMaxClicks: getMaxValue(sources, (r: any) => toSafeNumber(r?.clicks)),
-      srcMaxCost: getMaxValue(sources, (r: any) => toSafeNumber(r?.cost)),
-      srcMaxConv: getMaxValue(sources, (r: any) =>
-        toSafeNumber(r?.conversions ?? r?.conv)
-      ),
-      srcMaxRev: getMaxValue(sources, (r: any) => toSafeNumber(r?.revenue)),
+      srcMaxImpr: getMaxValue(sourceDisplayRows, (r) => r.impressions),
+      srcMaxClicks: getMaxValue(sourceDisplayRows, (r) => r.clicks),
+      srcMaxCost: getMaxValue(sourceDisplayRows, (r) => r.cost),
+      srcMaxConv: getMaxValue(sourceDisplayRows, (r) => r.conversions),
+      srcMaxRev: getMaxValue(sourceDisplayRows, (r) => r.revenue),
 
-      dayMaxImpr: getMaxValue(nextSortedDays, (r: any) =>
-        toSafeNumber(r?.impressions ?? r?.impr)
-      ),
-      dayMaxClicks: getMaxValue(nextSortedDays, (r: any) =>
-        toSafeNumber(r?.clicks)
-      ),
-      dayMaxCost: getMaxValue(nextSortedDays, (r: any) =>
-        toSafeNumber(r?.cost)
-      ),
-      dayMaxConv: getMaxValue(nextSortedDays, (r: any) =>
-        toSafeNumber(r?.conversions ?? r?.conv)
-      ),
-      dayMaxRev: getMaxValue(nextSortedDays, (r: any) =>
-        toSafeNumber(r?.revenue)
-      ),
+      dayMaxImpr: getMaxValue(dailyDisplayRows, (r) => r.impressions),
+      dayMaxClicks: getMaxValue(dailyDisplayRows, (r) => r.clicks),
+      dayMaxCost: getMaxValue(dailyDisplayRows, (r) => r.cost),
+      dayMaxConv: getMaxValue(dailyDisplayRows, (r) => r.conversions),
+      dayMaxRev: getMaxValue(dailyDisplayRows, (r) => r.revenue),
     };
   }, [weeks, days, sources]);
 
@@ -1428,14 +1555,14 @@ function SummarySectionComponent(props: Props) {
 
           <WeeklyPerformanceTable
             mode={mode}
-            rows={sortedWeeks}
-            prevRow={prevWeekSorted}
-            lastRow={lastWeekSorted}
-            maxImpr={maxImpr}
-            maxClicks={maxClicks}
-            maxCost={maxCost}
-            maxConv={maxConv}
-            maxRev={maxRev}
+            rows={derived.weeklyDisplayRows}
+            prevRow={derived.prevWeekSorted}
+            lastRow={derived.lastWeekSorted}
+            maxImpr={derived.maxImpr}
+            maxClicks={derived.maxClicks}
+            maxCost={derived.maxCost}
+            maxConv={derived.maxConv}
+            maxRev={derived.maxRev}
           />
         </div>
 
@@ -1462,12 +1589,12 @@ function SummarySectionComponent(props: Props) {
 
           <SourcePerformanceTable
             mode={mode}
-            rows={sources}
-            maxImpr={srcMaxImpr}
-            maxClicks={srcMaxClicks}
-            maxCost={srcMaxCost}
-            maxConv={srcMaxConv}
-            maxRev={srcMaxRev}
+            rows={derived.sourceDisplayRows}
+            maxImpr={derived.srcMaxImpr}
+            maxClicks={derived.srcMaxClicks}
+            maxCost={derived.srcMaxCost}
+            maxConv={derived.srcMaxConv}
+            maxRev={derived.srcMaxRev}
           />
         </div>
 
@@ -1481,12 +1608,12 @@ function SummarySectionComponent(props: Props) {
 
           <DailyPerformanceTable
             mode={mode}
-            rows={sortedDays}
-            maxImpr={dayMaxImpr}
-            maxClicks={dayMaxClicks}
-            maxCost={dayMaxCost}
-            maxConv={dayMaxConv}
-            maxRev={dayMaxRev}
+            rows={derived.dailyDisplayRows}
+            maxImpr={derived.dayMaxImpr}
+            maxClicks={derived.dayMaxClicks}
+            maxCost={derived.dayMaxCost}
+            maxConv={derived.dayMaxConv}
+            maxRev={derived.dayMaxRev}
           />
         </div>
       </section>

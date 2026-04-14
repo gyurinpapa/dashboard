@@ -100,31 +100,6 @@ function getCreativePreviewUrl(r: Row) {
     .trim();
 }
 
-/** ✅ creative별 rows bucket 사전 계산 */
-function buildCreativeRowsMap(rows: Row[]) {
-  const map = new Map<string, Row[]>();
-
-  for (const row of rows ?? []) {
-    const creative = getCreativeKey(row);
-    if (!creative) continue;
-
-    const bucket = map.get(creative);
-    if (bucket) {
-      bucket.push(row);
-    } else {
-      map.set(creative, [row]);
-    }
-  }
-
-  return map;
-}
-
-function extractCreativesFromMap(creativeRowsMap: Map<string, Row[]>) {
-  return Array.from(creativeRowsMap.keys()).sort((a, b) =>
-    a.localeCompare(b, "ko")
-  );
-}
-
 /** ✅ 절대 안 터지는 safe wrappers */
 function safeCall<T>(fn: () => T, fallback: T): T {
   try {
@@ -671,6 +646,13 @@ type CreativePreviewMeta = {
   url: string;
 };
 
+type CreativeIndexData = {
+  creativeRowsMap: Map<string, Row[]>;
+  previewMetaByCreative: Map<string, CreativePreviewMeta>;
+  perfList: CreativePerf[];
+  creatives: string[];
+};
+
 type CreativeOptionButtonProps = {
   creative: string;
   active: boolean;
@@ -818,14 +800,146 @@ const SideThumbButton = memo(function SideThumbButton({
   );
 });
 
+function buildCreativeIndex(rows: Row[]): CreativeIndexData {
+  const creativeRowsMap = new Map<string, Row[]>();
+  const previewMetaByCreative = new Map<string, CreativePreviewMeta>();
+  const perfAccumulator = new Map<string, Omit<CreativePerf, "ctr" | "roas" | "cpa">>();
+
+  for (const row of rows ?? []) {
+    const creative = getCreativeKey(row);
+    if (!creative) continue;
+
+    const existingRows = creativeRowsMap.get(creative);
+    if (existingRows) {
+      existingRows.push(row);
+    } else {
+      creativeRowsMap.set(creative, [row]);
+    }
+
+    if (!previewMetaByCreative.has(creative)) {
+      previewMetaByCreative.set(creative, {
+        url: getCreativePreviewUrl(row),
+      });
+    }
+
+    const anyR = row as any;
+    const impr = toSafeNumber(anyR.impressions ?? anyR.impr ?? anyR.imp ?? 0);
+    const clk = toSafeNumber(anyR.clicks ?? anyR.clk ?? anyR.click ?? 0);
+    const cost = toSafeNumber(anyR.cost ?? 0);
+    const conv = toSafeNumber(anyR.conversions ?? anyR.conv ?? 0);
+    const rev = toSafeNumber(anyR.revenue ?? 0);
+
+    const prev = perfAccumulator.get(creative) ?? {
+      creative,
+      impressions: 0,
+      clicks: 0,
+      cost: 0,
+      conversions: 0,
+      revenue: 0,
+    };
+
+    prev.impressions += impr;
+    prev.clicks += clk;
+    prev.cost += cost;
+    prev.conversions += conv;
+    prev.revenue += rev;
+
+    perfAccumulator.set(creative, prev);
+  }
+
+  const creatives = Array.from(creativeRowsMap.keys()).sort((a, b) =>
+    a.localeCompare(b, "ko")
+  );
+
+  const perfList: CreativePerf[] = Array.from(perfAccumulator.values()).map((x) => {
+    const ctr = x.impressions > 0 ? x.clicks / x.impressions : 0;
+    const roas = x.cost > 0 ? x.revenue / x.cost : 0;
+    const cpa = x.conversions > 0 ? x.cost / x.conversions : 0;
+
+    return {
+      ...x,
+      ctr,
+      roas,
+      cpa,
+    };
+  });
+
+  return {
+    creativeRowsMap,
+    previewMetaByCreative,
+    perfList,
+    creatives,
+  };
+}
+
+function buildBadgeMap(perfList: CreativePerf[], reportMode: ReportMode) {
+  const map = new Map<string, BadgeKey[]>();
+
+  const top3Desc = (key: BadgeKey) => {
+    const sorted = [...perfList].sort((a, b) => {
+      const av = toSafeNumber((a as any)[key]);
+      const bv = toSafeNumber((b as any)[key]);
+      return bv - av;
+    });
+
+    const picked = sorted
+      .filter((x) => toSafeNumber((x as any)[key]) > 0)
+      .slice(0, 3);
+
+    for (const it of picked) {
+      const prev = map.get(it.creative) ?? [];
+      if (!prev.includes(key)) prev.push(key);
+      map.set(it.creative, prev);
+    }
+  };
+
+  const top3Asc = (key: BadgeKey) => {
+    const sorted = [...perfList].sort((a, b) => {
+      const av = toSafeNumber((a as any)[key]);
+      const bv = toSafeNumber((b as any)[key]);
+      return av - bv;
+    });
+
+    const picked = sorted
+      .filter((x) => toSafeNumber((x as any)[key]) > 0)
+      .slice(0, 3);
+
+    for (const it of picked) {
+      const prev = map.get(it.creative) ?? [];
+      if (!prev.includes(key)) prev.push(key);
+      map.set(it.creative, prev);
+    }
+  };
+
+  if (reportMode === "traffic") {
+    top3Desc("ctr");
+    return map;
+  }
+
+  top3Desc("conversions");
+
+  if (reportMode === "db_acquisition") {
+    top3Desc("ctr");
+    top3Asc("cpa");
+    return map;
+  }
+
+  top3Desc("ctr");
+  top3Desc("roas");
+  return map;
+}
+
 export default function CreativeDetailSection({ reportType, rows }: Props) {
   const reportMode = resolveReportMode(reportType);
 
-  const creativeRowsMap = useMemo(() => buildCreativeRowsMap(rows), [rows]);
-  const creatives = useMemo(
-    () => extractCreativesFromMap(creativeRowsMap),
-    [creativeRowsMap]
-  );
+  const {
+    creativeRowsMap,
+    previewMetaByCreative,
+    perfList,
+    creatives,
+  } = useMemo(() => buildCreativeIndex(rows), [rows]);
+
+  const creativeSet = useMemo(() => new Set(creatives), [creatives]);
 
   const [selectedCreative, setSelectedCreative] = useState<string | null>(null);
   const [searchText, setSearchText] = useState("");
@@ -840,115 +954,15 @@ export default function CreativeDetailSection({ reportType, rows }: Props) {
       return;
     }
 
-    if (selectedCreative && !creatives.includes(selectedCreative)) {
+    if (selectedCreative && !creativeSet.has(selectedCreative)) {
       setSelectedCreative(creatives[0] ?? null);
     }
-  }, [creatives, selectedCreative]);
+  }, [creatives, creativeSet, selectedCreative]);
 
-  /** =========================
-   * ✅ Performance aggregation
-   * ========================= */
-  const perfList: CreativePerf[] = useMemo(() => {
-    const map = new Map<string, CreativePerf>();
-
-    for (const r of rows ?? []) {
-      const k = getCreativeKey(r);
-      if (!k) continue;
-
-      const anyR = r as any;
-      const impr = toSafeNumber(anyR.impressions ?? anyR.impr ?? anyR.imp ?? 0);
-      const clk = toSafeNumber(anyR.clicks ?? anyR.clk ?? anyR.click ?? 0);
-      const cost = toSafeNumber(anyR.cost ?? 0);
-      const conv = toSafeNumber(anyR.conversions ?? anyR.conv ?? 0);
-      const rev = toSafeNumber(anyR.revenue ?? 0);
-
-      const prev = map.get(k) ?? {
-        creative: k,
-        impressions: 0,
-        clicks: 0,
-        cost: 0,
-        conversions: 0,
-        revenue: 0,
-        ctr: 0,
-        roas: 0,
-        cpa: 0,
-      };
-
-      prev.impressions += impr;
-      prev.clicks += clk;
-      prev.cost += cost;
-      prev.conversions += conv;
-      prev.revenue += rev;
-
-      map.set(k, prev);
-    }
-
-    const arr = Array.from(map.values()).map((x) => {
-      const ctr = x.impressions > 0 ? x.clicks / x.impressions : 0;
-      const roas = x.cost > 0 ? x.revenue / x.cost : 0;
-      const cpa = x.conversions > 0 ? x.cost / x.conversions : 0;
-      return { ...x, ctr, roas, cpa };
-    });
-
-    return arr;
-  }, [rows]);
-
-  const badgeMap = useMemo(() => {
-    const map = new Map<string, BadgeKey[]>();
-
-    const top3Desc = (key: BadgeKey) => {
-      const sorted = [...perfList].sort((a, b) => {
-        const av = toSafeNumber((a as any)[key]);
-        const bv = toSafeNumber((b as any)[key]);
-        return bv - av;
-      });
-
-      const picked = sorted
-        .filter((x) => toSafeNumber((x as any)[key]) > 0)
-        .slice(0, 3);
-
-      for (const it of picked) {
-        const prev = map.get(it.creative) ?? [];
-        if (!prev.includes(key)) prev.push(key);
-        map.set(it.creative, prev);
-      }
-    };
-
-    const top3Asc = (key: BadgeKey) => {
-      const sorted = [...perfList].sort((a, b) => {
-        const av = toSafeNumber((a as any)[key]);
-        const bv = toSafeNumber((b as any)[key]);
-        return av - bv;
-      });
-
-      const picked = sorted
-        .filter((x) => toSafeNumber((x as any)[key]) > 0)
-        .slice(0, 3);
-
-      for (const it of picked) {
-        const prev = map.get(it.creative) ?? [];
-        if (!prev.includes(key)) prev.push(key);
-        map.set(it.creative, prev);
-      }
-    };
-
-    if (reportMode === "traffic") {
-      top3Desc("ctr");
-      return map;
-    }
-
-    top3Desc("conversions");
-
-    if (reportMode === "db_acquisition") {
-      top3Desc("ctr");
-      top3Asc("cpa");
-      return map;
-    }
-
-    top3Desc("ctr");
-    top3Desc("roas");
-    return map;
-  }, [perfList, reportMode]);
+  const badgeMap = useMemo(
+    () => buildBadgeMap(perfList, reportMode),
+    [perfList, reportMode]
+  );
 
   const selectedBadges = useMemo(() => {
     if (!selectedCreative) return [] as BadgeKey[];
@@ -967,22 +981,6 @@ export default function CreativeDetailSection({ reportType, rows }: Props) {
   }, [rows, selectedCreative, creativeRowsMap]);
 
   const byDay = useMemo(() => groupByDayFromRows(filteredRows), [filteredRows]);
-
-  /** ✅ rows.find 반복 제거용 preview 사전 계산 */
-  const previewMetaByCreative = useMemo(() => {
-    const map = new Map<string, CreativePreviewMeta>();
-
-    for (const row of rows ?? []) {
-      const creative = getCreativeKey(row);
-      if (!creative || map.has(creative)) continue;
-
-      map.set(creative, {
-        url: getCreativePreviewUrl(row),
-      });
-    }
-
-    return map;
-  }, [rows]);
 
   const selectedPreviewUrl = useMemo(() => {
     if (!selectedCreative) return "";
@@ -1078,7 +1076,15 @@ export default function CreativeDetailSection({ reportType, rows }: Props) {
         bySource,
         byDevice,
       }),
-    [reportMode, selectedCreative, rows, filteredRows, byWeekOnly, bySource, byDevice]
+    [
+      reportMode,
+      selectedCreative,
+      rows,
+      filteredRows,
+      byWeekOnly,
+      bySource,
+      byDevice,
+    ]
   );
 
   const summarySectionNode = useMemo(

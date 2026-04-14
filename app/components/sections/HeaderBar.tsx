@@ -1,7 +1,7 @@
 // app/components/sections/HeaderBar.tsx
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 
 import type {
   ChannelKey,
@@ -129,7 +129,7 @@ function periodPresetLabel(preset: ReportPeriodPreset) {
   }
 }
 
-function HeaderIntro({
+const HeaderIntro = memo(function HeaderIntro({
   advertiserName,
   reportTypeName,
   reportTypeKey,
@@ -233,9 +233,9 @@ function HeaderIntro({
       </div>
     </div>
   );
-}
+});
 
-function ReadOnlyHeaderBar({
+const ReadOnlyHeaderBar = memo(function ReadOnlyHeaderBar({
   advertiserName,
   reportTypeName,
   reportTypeKey,
@@ -276,7 +276,120 @@ function ReadOnlyHeaderBar({
       </div>
     </div>
   );
-}
+});
+
+const TabButtons = memo(function TabButtons({
+  tab,
+  setTab,
+}: {
+  tab: TabKey;
+  setTab: (t: TabKey) => void;
+}) {
+  const tabItems = useMemo(
+    () =>
+      [
+        { key: "summary", label: "요약" },
+        { key: "summary2", label: "요약2" },
+        { key: "structure", label: "구조" },
+        { key: "keyword", label: "키워드" },
+        { key: "keywordDetail", label: "키워드(상세)" },
+        { key: "creative", label: "소재" },
+        { key: "creativeDetail", label: "소재(상세)" },
+      ] as const,
+    []
+  );
+
+  const handleTabClick = useCallback(
+    (nextTab: TabKey) => {
+      if (nextTab === tab) return;
+      setTab(nextTab);
+    },
+    [setTab, tab]
+  );
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {tabItems.map((item) => (
+        <button
+          key={item.key}
+          type="button"
+          onClick={() => handleTabClick(item.key)}
+          className={tabClass(tab === item.key)}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  );
+});
+
+const FilterToolbar = memo(function FilterToolbar({
+  filterKey,
+  onToggleMonth,
+  onToggleWeek,
+  onToggleDevice,
+  onToggleChannel,
+  onToggleSource,
+  onToggleProduct,
+  hasSourceOptions,
+  hasProductOptions,
+}: {
+  filterKey: HeaderFilterKey;
+  onToggleMonth: () => void;
+  onToggleWeek: () => void;
+  onToggleDevice: () => void;
+  onToggleChannel: () => void;
+  onToggleSource: () => void;
+  onToggleProduct: () => void;
+  hasSourceOptions: boolean;
+  hasProductOptions: boolean;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      <FilterBtn active={filterKey === "month"} onClick={onToggleMonth}>
+        월
+      </FilterBtn>
+      <FilterBtn active={filterKey === "week"} onClick={onToggleWeek}>
+        주차
+      </FilterBtn>
+      <FilterBtn active={filterKey === "device"} onClick={onToggleDevice}>
+        기기
+      </FilterBtn>
+      <FilterBtn active={filterKey === "channel"} onClick={onToggleChannel}>
+        채널
+      </FilterBtn>
+
+      {hasSourceOptions ? (
+        <FilterBtn active={filterKey === "source"} onClick={onToggleSource}>
+          소스
+        </FilterBtn>
+      ) : null}
+
+      {hasProductOptions ? (
+        <FilterBtn active={filterKey === "product"} onClick={onToggleProduct}>
+          상품
+        </FilterBtn>
+      ) : null}
+    </div>
+  );
+});
+
+const OptionPopover = memo(function OptionPopover({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="absolute left-0 top-full z-50 mt-3 w-[520px] max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200/90 bg-white/95 p-4 shadow-[0_24px_50px_rgba(15,23,42,0.18)] backdrop-blur-md">
+      <div className="mb-3 text-sm font-semibold text-slate-800">{title}</div>
+      <div className="flex max-h-[220px] flex-wrap gap-2 overflow-auto">
+        {children}
+      </div>
+    </div>
+  );
+});
 
 function EditorHeaderBar(props: Props) {
   const {
@@ -318,16 +431,43 @@ function EditorHeaderBar(props: Props) {
   const disableDisplayChannel = tab === "keyword" || tab === "keywordDetail";
   const filterRootRef = useRef<HTMLDivElement | null>(null);
 
-  const hasSourceOptions = (sourceOptions ?? []).length > 0;
-  const hasProductOptions = (productOptions ?? []).length > 0;
+  const hasSourceOptions = sourceOptions.length > 0;
+  const hasProductOptions = productOptions.length > 0;
 
-  const toggleFilter = (k: Exclude<HeaderFilterKey, null>) => {
-    setFilterKey(filterKey === k ? null : k);
-  };
+  const closeFilter = useCallback(() => {
+    if (filterKey !== null) setFilterKey(null);
+  }, [filterKey, setFilterKey]);
+
+  const toggleFilter = useCallback(
+    (k: Exclude<HeaderFilterKey, null>) => {
+      setFilterKey(filterKey === k ? null : k);
+    },
+    [filterKey, setFilterKey]
+  );
+
+  const handleToggleMonth = useCallback(() => toggleFilter("month"), [toggleFilter]);
+  const handleToggleWeek = useCallback(() => toggleFilter("week"), [toggleFilter]);
+  const handleToggleDevice = useCallback(
+    () => toggleFilter("device"),
+    [toggleFilter]
+  );
+  const handleToggleChannel = useCallback(
+    () => toggleFilter("channel"),
+    [toggleFilter]
+  );
+  const handleToggleSource = useCallback(
+    () => toggleFilter("source"),
+    [toggleFilter]
+  );
+  const handleToggleProduct = useCallback(
+    () => toggleFilter("product"),
+    [toggleFilter]
+  );
 
   useEffect(() => {
+    if (!filterKey) return;
+
     const onPointerDown = (e: MouseEvent | TouchEvent) => {
-      if (!filterKey) return;
       const el = filterRootRef.current;
       if (!el) return;
 
@@ -352,34 +492,227 @@ function EditorHeaderBar(props: Props) {
     };
   }, [filterKey, setFilterKey]);
 
-  const handlePresetChange = (preset: ReportPeriodPreset) => {
-    if (preset === "custom") {
+  const handlePresetChange = useCallback(
+    (preset: ReportPeriodPreset) => {
+      if (preset === "custom") {
+        onChangeReportPeriod({
+          preset: "custom",
+          startDate: reportPeriod.startDate,
+          endDate: reportPeriod.endDate,
+        });
+        return;
+      }
+
+      onChangeReportPeriod(resolvePresetPeriod({ preset }));
+    },
+    [onChangeReportPeriod, reportPeriod.endDate, reportPeriod.startDate]
+  );
+
+  const handleStartDateChange = useCallback(
+    (nextStartDate: string) => {
+      onChangeReportPeriod({
+        preset: "custom",
+        startDate: nextStartDate,
+        endDate: reportPeriod.endDate,
+      });
+    },
+    [onChangeReportPeriod, reportPeriod.endDate]
+  );
+
+  const handleEndDateChange = useCallback(
+    (nextEndDate: string) => {
       onChangeReportPeriod({
         preset: "custom",
         startDate: reportPeriod.startDate,
-        endDate: reportPeriod.endDate,
+        endDate: nextEndDate,
       });
-      return;
-    }
+    },
+    [onChangeReportPeriod, reportPeriod.startDate]
+  );
 
-    onChangeReportPeriod(resolvePresetPeriod({ preset }));
-  };
+  const handleSelectMonthAll = useCallback(() => {
+    setSelectedMonth("all");
+    closeFilter();
+  }, [setSelectedMonth, closeFilter]);
 
-  const handleStartDateChange = (nextStartDate: string) => {
-    onChangeReportPeriod({
-      preset: "custom",
-      startDate: nextStartDate,
-      endDate: reportPeriod.endDate,
+  const monthOptionNodes = useMemo(() => {
+    return monthOptions.map((m) => {
+      const dim = !enabledMonthKeySet.has(m);
+      const isActive = selectedMonth === m;
+
+      return (
+        <button
+          key={m}
+          type="button"
+          onClick={() => {
+            setSelectedMonth(m);
+            closeFilter();
+          }}
+          className={optionBtnClass(isActive, dim)}
+        >
+          {monthLabelOf(m)}
+        </button>
+      );
     });
-  };
+  }, [
+    monthOptions,
+    enabledMonthKeySet,
+    selectedMonth,
+    setSelectedMonth,
+    closeFilter,
+  ]);
 
-  const handleEndDateChange = (nextEndDate: string) => {
-    onChangeReportPeriod({
-      preset: "custom",
-      startDate: reportPeriod.startDate,
-      endDate: nextEndDate,
+  const handleSelectWeekAll = useCallback(() => {
+    setSelectedWeek("all");
+    closeFilter();
+  }, [setSelectedWeek, closeFilter]);
+
+  const weekOptionNodes = useMemo(() => {
+    return weekOptions.map((w) => {
+      const wk = w.weekKey;
+      const dim = !enabledWeekKeySet.has(wk);
+      const isActive = selectedWeek === wk;
+
+      return (
+        <button
+          key={wk}
+          type="button"
+          onClick={() => {
+            setSelectedWeek(wk);
+            closeFilter();
+          }}
+          className={optionBtnClass(isActive, dim)}
+        >
+          {w.label}
+        </button>
+      );
     });
-  };
+  }, [
+    weekOptions,
+    enabledWeekKeySet,
+    selectedWeek,
+    setSelectedWeek,
+    closeFilter,
+  ]);
+
+  const handleSelectDeviceAll = useCallback(() => {
+    setSelectedDevice("all");
+    closeFilter();
+  }, [setSelectedDevice, closeFilter]);
+
+  const deviceOptionNodes = useMemo(() => {
+    return deviceOptions.map((d) => {
+      const isActive = selectedDevice === d;
+
+      return (
+        <button
+          key={d}
+          type="button"
+          onClick={() => {
+            setSelectedDevice(d);
+            closeFilter();
+          }}
+          className={optionBtnClass(isActive)}
+        >
+          {d}
+        </button>
+      );
+    });
+  }, [deviceOptions, selectedDevice, setSelectedDevice, closeFilter]);
+
+  const handleSelectChannelAll = useCallback(() => {
+    setSelectedChannel("all");
+    closeFilter();
+  }, [setSelectedChannel, closeFilter]);
+
+  const channelOptionNodes = useMemo(() => {
+    return channelOptions.map((c) => {
+      const isDisplay =
+        c === "display" ||
+        c === ("display ad" as any) ||
+        c === ("display_ad" as any);
+
+      const disabled = disableDisplayChannel && isDisplay;
+      const isActive = selectedChannel === c;
+
+      return (
+        <button
+          key={c}
+          type="button"
+          disabled={disabled}
+          onClick={() => {
+            if (disabled) return;
+            setSelectedChannel(c);
+            closeFilter();
+          }}
+          title={
+            disabled
+              ? "키워드 탭에서는 display ad를 선택할 수 없습니다."
+              : String(c)
+          }
+          className={optionBtnClass(isActive, false, disabled)}
+        >
+          {c}
+        </button>
+      );
+    });
+  }, [
+    channelOptions,
+    disableDisplayChannel,
+    selectedChannel,
+    setSelectedChannel,
+    closeFilter,
+  ]);
+
+  const handleSelectSourceAll = useCallback(() => {
+    setSelectedSource("all");
+    closeFilter();
+  }, [setSelectedSource, closeFilter]);
+
+  const sourceOptionNodes = useMemo(() => {
+    return sourceOptions.map((s) => {
+      const isActive = selectedSource === s;
+
+      return (
+        <button
+          key={s}
+          type="button"
+          onClick={() => {
+            setSelectedSource(s);
+            closeFilter();
+          }}
+          className={optionBtnClass(isActive)}
+        >
+          {s}
+        </button>
+      );
+    });
+  }, [sourceOptions, selectedSource, setSelectedSource, closeFilter]);
+
+  const handleSelectProductAll = useCallback(() => {
+    setSelectedProduct("all");
+    closeFilter();
+  }, [setSelectedProduct, closeFilter]);
+
+  const productOptionNodes = useMemo(() => {
+    return productOptions.map((p) => {
+      const isActive = selectedProduct === p;
+
+      return (
+        <button
+          key={p}
+          type="button"
+          onClick={() => {
+            setSelectedProduct(p);
+            closeFilter();
+          }}
+          className={optionBtnClass(isActive)}
+        >
+          {p}
+        </button>
+      );
+    });
+  }, [productOptions, selectedProduct, setSelectedProduct, closeFilter]);
 
   return (
     <div className="grid gap-4">
@@ -446,50 +779,17 @@ function EditorHeaderBar(props: Props) {
               </div>
             ) : null}
 
-            <div className="flex flex-wrap gap-2">
-              <FilterBtn
-                active={filterKey === "month"}
-                onClick={() => toggleFilter("month")}
-              >
-                월
-              </FilterBtn>
-              <FilterBtn
-                active={filterKey === "week"}
-                onClick={() => toggleFilter("week")}
-              >
-                주차
-              </FilterBtn>
-              <FilterBtn
-                active={filterKey === "device"}
-                onClick={() => toggleFilter("device")}
-              >
-                기기
-              </FilterBtn>
-              <FilterBtn
-                active={filterKey === "channel"}
-                onClick={() => toggleFilter("channel")}
-              >
-                채널
-              </FilterBtn>
-
-              {hasSourceOptions ? (
-                <FilterBtn
-                  active={filterKey === "source"}
-                  onClick={() => toggleFilter("source")}
-                >
-                  소스
-                </FilterBtn>
-              ) : null}
-
-              {hasProductOptions ? (
-                <FilterBtn
-                  active={filterKey === "product"}
-                  onClick={() => toggleFilter("product")}
-                >
-                  상품
-                </FilterBtn>
-              ) : null}
-            </div>
+            <FilterToolbar
+              filterKey={filterKey}
+              onToggleMonth={handleToggleMonth}
+              onToggleWeek={handleToggleWeek}
+              onToggleDevice={handleToggleDevice}
+              onToggleChannel={handleToggleChannel}
+              onToggleSource={handleToggleSource}
+              onToggleProduct={handleToggleProduct}
+              hasSourceOptions={hasSourceOptions}
+              hasProductOptions={hasProductOptions}
+            />
           </div>
 
           <div className="relative mt-4 min-h-[24px] border-t border-white/10 pt-3 text-sm text-slate-300">
@@ -503,297 +803,86 @@ function EditorHeaderBar(props: Props) {
           </div>
 
           {filterKey === "month" && (
-            <div className="absolute left-0 top-full z-50 mt-3 w-[520px] max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200/90 bg-white/95 p-4 shadow-[0_24px_50px_rgba(15,23,42,0.18)] backdrop-blur-md">
-              <div className="mb-3 text-sm font-semibold text-slate-800">
-                월 선택
-              </div>
-              <div className="flex max-h-[220px] flex-wrap gap-2 overflow-auto">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedMonth("all");
-                    setFilterKey(null);
-                  }}
-                  className={optionBtnClass(selectedMonth === "all")}
-                >
-                  전체
-                </button>
-
-                {monthOptions.map((m) => {
-                  const dim = !enabledMonthKeySet.has(m);
-
-                  return (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => {
-                        setSelectedMonth(m);
-                        setFilterKey(null);
-                      }}
-                      className={optionBtnClass(selectedMonth === m, dim)}
-                    >
-                      {monthLabelOf(m)}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            <OptionPopover title="월 선택">
+              <button
+                type="button"
+                onClick={handleSelectMonthAll}
+                className={optionBtnClass(selectedMonth === "all")}
+              >
+                전체
+              </button>
+              {monthOptionNodes}
+            </OptionPopover>
           )}
 
           {filterKey === "week" && (
-            <div className="absolute left-0 top-full z-50 mt-3 w-[520px] max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200/90 bg-white/95 p-4 shadow-[0_24px_50px_rgba(15,23,42,0.18)] backdrop-blur-md">
-              <div className="mb-3 text-sm font-semibold text-slate-800">
-                주차 선택
-              </div>
-              <div className="flex max-h-[220px] flex-wrap gap-2 overflow-auto">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedWeek("all");
-                    setFilterKey(null);
-                  }}
-                  className={optionBtnClass(selectedWeek === "all")}
-                >
-                  전체
-                </button>
-
-                {weekOptions.map((w) => {
-                  const wk = w.weekKey;
-                  const dim = !enabledWeekKeySet.has(wk);
-
-                  return (
-                    <button
-                      key={wk}
-                      type="button"
-                      onClick={() => {
-                        setSelectedWeek(wk);
-                        setFilterKey(null);
-                      }}
-                      className={optionBtnClass(selectedWeek === wk, dim)}
-                    >
-                      {w.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            <OptionPopover title="주차 선택">
+              <button
+                type="button"
+                onClick={handleSelectWeekAll}
+                className={optionBtnClass(selectedWeek === "all")}
+              >
+                전체
+              </button>
+              {weekOptionNodes}
+            </OptionPopover>
           )}
 
           {filterKey === "device" && (
-            <div className="absolute left-0 top-full z-50 mt-3 w-[520px] max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200/90 bg-white/95 p-4 shadow-[0_24px_50px_rgba(15,23,42,0.18)] backdrop-blur-md">
-              <div className="mb-3 text-sm font-semibold text-slate-800">
-                기기 선택
-              </div>
-              <div className="flex max-h-[220px] flex-wrap gap-2 overflow-auto">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedDevice("all");
-                    setFilterKey(null);
-                  }}
-                  className={optionBtnClass(selectedDevice === "all")}
-                >
-                  전체
-                </button>
-
-                {deviceOptions.map((d) => (
-                  <button
-                    key={d}
-                    type="button"
-                    onClick={() => {
-                      setSelectedDevice(d);
-                      setFilterKey(null);
-                    }}
-                    className={optionBtnClass(selectedDevice === d)}
-                  >
-                    {d}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <OptionPopover title="기기 선택">
+              <button
+                type="button"
+                onClick={handleSelectDeviceAll}
+                className={optionBtnClass(selectedDevice === "all")}
+              >
+                전체
+              </button>
+              {deviceOptionNodes}
+            </OptionPopover>
           )}
 
           {filterKey === "channel" && (
-            <div className="absolute left-0 top-full z-50 mt-3 w-[520px] max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200/90 bg-white/95 p-4 shadow-[0_24px_50px_rgba(15,23,42,0.18)] backdrop-blur-md">
-              <div className="mb-3 text-sm font-semibold text-slate-800">
-                채널 선택
-              </div>
-              <div className="flex max-h-[220px] flex-wrap gap-2 overflow-auto">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedChannel("all");
-                    setFilterKey(null);
-                  }}
-                  className={optionBtnClass(selectedChannel === "all")}
-                >
-                  전체
-                </button>
-
-                {channelOptions.map((c) => {
-                  const isDisplay =
-                    c === "display" ||
-                    c === ("display ad" as any) ||
-                    c === ("display_ad" as any);
-
-                  const disabled = disableDisplayChannel && isDisplay;
-
-                  return (
-                    <button
-                      key={c}
-                      type="button"
-                      disabled={disabled}
-                      onClick={() => {
-                        if (disabled) return;
-                        setSelectedChannel(c);
-                        setFilterKey(null);
-                      }}
-                      title={
-                        disabled
-                          ? "키워드 탭에서는 display ad를 선택할 수 없습니다."
-                          : String(c)
-                      }
-                      className={optionBtnClass(
-                        selectedChannel === c,
-                        false,
-                        disabled
-                      )}
-                    >
-                      {c}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            <OptionPopover title="채널 선택">
+              <button
+                type="button"
+                onClick={handleSelectChannelAll}
+                className={optionBtnClass(selectedChannel === "all")}
+              >
+                전체
+              </button>
+              {channelOptionNodes}
+            </OptionPopover>
           )}
 
           {hasSourceOptions && filterKey === "source" && (
-            <div className="absolute left-0 top-full z-50 mt-3 w-[520px] max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200/90 bg-white/95 p-4 shadow-[0_24px_50px_rgba(15,23,42,0.18)] backdrop-blur-md">
-              <div className="mb-3 text-sm font-semibold text-slate-800">
-                소스 선택
-              </div>
-              <div className="flex max-h-[220px] flex-wrap gap-2 overflow-auto">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedSource("all");
-                    setFilterKey(null);
-                  }}
-                  className={optionBtnClass(selectedSource === "all")}
-                >
-                  전체
-                </button>
-
-                {sourceOptions.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => {
-                      setSelectedSource(s);
-                      setFilterKey(null);
-                    }}
-                    className={optionBtnClass(selectedSource === s)}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <OptionPopover title="소스 선택">
+              <button
+                type="button"
+                onClick={handleSelectSourceAll}
+                className={optionBtnClass(selectedSource === "all")}
+              >
+                전체
+              </button>
+              {sourceOptionNodes}
+            </OptionPopover>
           )}
 
           {hasProductOptions && filterKey === "product" && (
-            <div className="absolute left-0 top-full z-50 mt-3 w-[520px] max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200/90 bg-white/95 p-4 shadow-[0_24px_50px_rgba(15,23,42,0.18)] backdrop-blur-md">
-              <div className="mb-3 text-sm font-semibold text-slate-800">
-                상품 선택
-              </div>
-              <div className="flex max-h-[220px] flex-wrap gap-2 overflow-auto">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedProduct("all");
-                    setFilterKey(null);
-                  }}
-                  className={optionBtnClass(selectedProduct === "all")}
-                >
-                  전체
-                </button>
-
-                {productOptions.map((p) => (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => {
-                      setSelectedProduct(p);
-                      setFilterKey(null);
-                    }}
-                    className={optionBtnClass(selectedProduct === p)}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <OptionPopover title="상품 선택">
+              <button
+                type="button"
+                onClick={handleSelectProductAll}
+                className={optionBtnClass(selectedProduct === "all")}
+              >
+                전체
+              </button>
+              {productOptionNodes}
+            </OptionPopover>
           )}
         </div>
 
         <div className="flex min-h-[116px] min-w-0 flex-col justify-between rounded-[24px] border border-white/12 bg-white/[0.08] px-3 py-3 shadow-[0_16px_38px_rgba(2,6,23,0.18)] backdrop-blur-xl">
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setTab("summary")}
-              className={tabClass(tab === "summary")}
-            >
-              요약
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setTab("summary2")}
-              className={tabClass(tab === "summary2")}
-            >
-              요약2
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setTab("structure")}
-              className={tabClass(tab === "structure")}
-            >
-              구조
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setTab("keyword")}
-              className={tabClass(tab === "keyword")}
-            >
-              키워드
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setTab("keywordDetail")}
-              className={tabClass(tab === "keywordDetail")}
-            >
-              키워드(상세)
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setTab("creative")}
-              className={tabClass(tab === "creative")}
-            >
-              소재
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setTab("creativeDetail")}
-              className={tabClass(tab === "creativeDetail")}
-            >
-              소재(상세)
-            </button>
-          </div>
+          <TabButtons tab={tab} setTab={setTab} />
 
           <div className="mt-4 flex min-h-[24px] items-end justify-between gap-3 border-t border-white/10 pt-3">
             <div className="text-xs text-slate-300">

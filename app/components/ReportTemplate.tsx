@@ -5,10 +5,12 @@ import dynamic from "next/dynamic";
 import {
   memo,
   useCallback,
+  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
   useState,
+  type ComponentProps,
 } from "react";
 
 import type {
@@ -117,6 +119,18 @@ const DEFAULT_GOAL: GoalState = {
 
 const EMPTY_ROWS: any[] = [];
 const EMPTY_STRING = "";
+const EMPTY_SET = new Set<string>();
+
+const AGGREGATE_FLAGS = {
+  needCurrentMonthActual: true,
+  needTotals: true,
+  needBySource: true,
+  needByCampaign: true,
+  needByGroup: false,
+  needByWeek: true,
+  needByMonth: true,
+  needHydratedFilteredRows: true,
+} as const;
 
 type Props = {
   rows: any[];
@@ -133,6 +147,7 @@ type Props = {
 };
 
 type ReportFilterKey = FilterKey;
+type HeaderBarProps = ComponentProps<typeof HeaderBar>;
 
 function asStr(v: any) {
   if (v == null) return "";
@@ -580,6 +595,7 @@ function minMaxYmd(rows: any[]) {
     if (!min || d < min) min = d;
     if (!max || d > max) max = d;
   }
+
   return { min, max };
 }
 
@@ -615,10 +631,29 @@ function shallowEqualStable(a: any, b: any) {
   return true;
 }
 
+function equalSetValues(a: Set<string>, b: Set<string>) {
+  if (a === b) return true;
+  if (a.size !== b.size) return false;
+  for (const value of a) {
+    if (!b.has(value)) return false;
+  }
+  return true;
+}
+
 function useStableShallowValue<T>(value: T): T {
   const ref = useRef(value);
 
   if (!shallowEqualStable(ref.current, value)) {
+    ref.current = value;
+  }
+
+  return ref.current;
+}
+
+function useStableSetValue(value: Set<string>): Set<string> {
+  const ref = useRef(value);
+
+  if (!equalSetValues(ref.current, value)) {
     ref.current = value;
   }
 
@@ -789,6 +824,22 @@ function getLastDateFromRows(
   return toYmd(last);
 }
 
+function getRowsForMonthKey(rows: readonly any[], monthKey: string) {
+  if (!monthKey) return EMPTY_ROWS;
+  const prefix = `${monthKey}-`;
+  const out: any[] = [];
+
+  for (let i = 0; i < rows.length; i += 1) {
+    const row = rows[i];
+    const ymd = pickDateStrLoose(row);
+    if (!ymd) continue;
+    if (!ymd.startsWith(prefix)) continue;
+    out.push(row);
+  }
+
+  return out;
+}
+
 function getReportTypeDisplayName(
   resolvedType: ReportType,
   rawName: string
@@ -798,6 +849,14 @@ function getReportTypeDisplayName(
   if (resolvedType === "commerce") return "커머스 매출 리포트";
   return rawName;
 }
+
+const HeaderSurface = memo(function HeaderSurface(props: HeaderBarProps) {
+  return (
+    <div className="border-b border-slate-200 bg-white">
+      <MemoHeaderBar {...props} />
+    </div>
+  );
+});
 
 export default function ReportTemplate({
   rows,
@@ -821,6 +880,14 @@ export default function ReportTemplate({
   const [selectedChannel, setSelectedChannel] = useState<ChannelKey>("all");
   const [selectedSource, setSelectedSource] = useState<string>("all");
   const [selectedProduct, setSelectedProduct] = useState<string>("all");
+
+  const deferredTab = useDeferredValue(tab);
+  const deferredSelectedMonth = useDeferredValue(selectedMonth);
+  const deferredSelectedWeek = useDeferredValue(selectedWeek);
+  const deferredSelectedDevice = useDeferredValue(selectedDevice);
+  const deferredSelectedChannel = useDeferredValue(selectedChannel);
+  const deferredSelectedSource = useDeferredValue(selectedSource);
+  const deferredSelectedProduct = useDeferredValue(selectedProduct);
 
   const [monthGoal, setMonthGoal] = useLocalStorageState<GoalState>(
     MONTH_GOAL_KEY,
@@ -887,23 +954,11 @@ export default function ReportTemplate({
     }
   }, [tab, selectedChannel, readOnlyHeader]);
 
-  const needSummaryAggregates = tab === "summary";
-  const needStructureAggregates = tab === "structure";
-  const needKeywordAggregates = tab === "keyword";
-
-  const needCurrentMonthActual = needSummaryAggregates || needKeywordAggregates;
-  const needTotals = needSummaryAggregates;
-  const needBySource = needSummaryAggregates || needStructureAggregates;
-  const needByCampaign = needStructureAggregates;
-  const needByGroup = false;
-  const needByWeek = needSummaryAggregates;
-  const needByMonth = needSummaryAggregates;
-
   const needCreativeRows =
-    tab === "structure" ||
-    tab === "keywordDetail" ||
-    tab === "creative" ||
-    tab === "creativeDetail";
+    deferredTab === "structure" ||
+    deferredTab === "keywordDetail" ||
+    deferredTab === "creative" ||
+    deferredTab === "creativeDetail";
 
   const originalRowById = useMemo(() => {
     if (!needCreativeRows || !normalizedRows.length) return null;
@@ -922,44 +977,31 @@ export default function ReportTemplate({
     setSelectedWeek("all");
   }, []);
 
+  const noopInvalidWeek = useCallback(() => {}, []);
+
   const reportAggregatesParams = useMemo(() => {
     return {
       rows: reportPeriodRows as any,
-      selectedMonth,
-      selectedWeek,
-      selectedDevice,
-      selectedChannel,
-      selectedSource,
-      selectedProduct,
+      selectedMonth: deferredSelectedMonth,
+      selectedWeek: deferredSelectedWeek,
+      selectedDevice: deferredSelectedDevice,
+      selectedChannel: deferredSelectedChannel,
+      selectedSource: deferredSelectedSource,
+      selectedProduct: deferredSelectedProduct,
       monthGoal: stableMonthGoal,
       onInvalidWeek: handleInvalidWeek,
-      needCurrentMonthActual,
-      needTotals,
-      needBySource,
-      needByCampaign,
-      needByGroup,
-      needByWeek,
-      needByMonth,
-      needHydratedFilteredRows: needCreativeRows,
+      ...AGGREGATE_FLAGS,
     };
   }, [
     reportPeriodRows,
-    selectedMonth,
-    selectedWeek,
-    selectedDevice,
-    selectedChannel,
-    selectedSource,
-    selectedProduct,
+    deferredSelectedMonth,
+    deferredSelectedWeek,
+    deferredSelectedDevice,
+    deferredSelectedChannel,
+    deferredSelectedSource,
+    deferredSelectedProduct,
     stableMonthGoal,
     handleInvalidWeek,
-    needCurrentMonthActual,
-    needTotals,
-    needBySource,
-    needByCampaign,
-    needByGroup,
-    needByWeek,
-    needByMonth,
-    needCreativeRows,
   ]);
 
   const stableReportAggregatesParams =
@@ -987,75 +1029,149 @@ export default function ReportTemplate({
     byMonth,
   } = useReportAggregates(stableReportAggregatesParams);
 
+  const summaryGoalAggregatesParams = useMemo(() => {
+    return {
+      rows: reportPeriodRows as any,
+      selectedMonth: "all" as MonthKey,
+      selectedWeek: "all" as WeekKey,
+      selectedDevice: "all" as DeviceKey,
+      selectedChannel: "all" as ChannelKey,
+      selectedSource: "all",
+      selectedProduct: "all",
+      monthGoal: stableMonthGoal,
+      onInvalidWeek: noopInvalidWeek,
+      ...AGGREGATE_FLAGS,
+    };
+  }, [reportPeriodRows, stableMonthGoal, noopInvalidWeek]);
+
+  const stableSummaryGoalAggregatesParams = useStableShallowValue(
+    summaryGoalAggregatesParams
+  );
+
+  const {
+    currentMonthKey: summaryGoalCurrentMonthKey,
+    currentMonthActual: summaryGoalCurrentMonthActual,
+    currentMonthGoalComputed: summaryGoalCurrentMonthGoalComputed,
+  } = useReportAggregates(stableSummaryGoalAggregatesParams);
+
+  const summaryGoalBaseRows = useMemo(() => {
+    if (!reportPeriodRows.length) return EMPTY_ROWS;
+    if (!summaryGoalCurrentMonthKey) return EMPTY_ROWS;
+    return getRowsForMonthKey(
+      reportPeriodRows as any[],
+      summaryGoalCurrentMonthKey
+    );
+  }, [reportPeriodRows, summaryGoalCurrentMonthKey]);
+
+  const summaryGoalLastDataDate = useMemo(() => {
+    if (!summaryGoalBaseRows.length) return EMPTY_STRING;
+    return getLastDateFromRows(
+      summaryGoalBaseRows as any[],
+      summaryGoalCurrentMonthKey
+    );
+  }, [summaryGoalBaseRows, summaryGoalCurrentMonthKey]);
+
+  const stableMonthOptions = useStableShallowValue(monthOptions ?? EMPTY_ROWS);
+  const stableWeekOptions = useStableShallowValue(weekOptions ?? EMPTY_ROWS);
+  const stableDeviceOptions = useStableShallowValue(deviceOptions ?? EMPTY_ROWS);
+  const stableChannelOptions = useStableShallowValue(channelOptions ?? EMPTY_ROWS);
+  const stableSourceOptions = useStableShallowValue(sourceOptions ?? EMPTY_ROWS);
+  const stableProductOptions = useStableShallowValue(productOptions ?? EMPTY_ROWS);
+
+  const stableEnabledMonthKeySet = useStableSetValue(
+    enabledMonthKeySet ?? EMPTY_SET
+  );
+  const stableEnabledWeekKeySet = useStableSetValue(
+    enabledWeekKeySet ?? EMPTY_SET
+  );
+
   const allowedDeviceSet = useMemo(() => {
-    return new Set((deviceOptions ?? []).map((x: any) => String(x)));
-  }, [deviceOptions]);
+    return new Set((stableDeviceOptions ?? []).map((x: any) => String(x)));
+  }, [stableDeviceOptions]);
 
   const allowedChannelSet = useMemo(() => {
-    return new Set((channelOptions ?? []).map((x: any) => String(x)));
-  }, [channelOptions]);
+    return new Set((stableChannelOptions ?? []).map((x: any) => String(x)));
+  }, [stableChannelOptions]);
 
   const allowedSourceSet = useMemo(() => {
-    return new Set((sourceOptions ?? []).map((x: any) => String(x)));
-  }, [sourceOptions]);
+    return new Set((stableSourceOptions ?? []).map((x: any) => String(x)));
+  }, [stableSourceOptions]);
 
   const allowedProductSet = useMemo(() => {
-    return new Set((productOptions ?? []).map((x: any) => String(x)));
-  }, [productOptions]);
+    return new Set((stableProductOptions ?? []).map((x: any) => String(x)));
+  }, [stableProductOptions]);
 
   const byDay = useMemo(() => {
-    if (tab !== "summary") return EMPTY_ROWS;
+    if (deferredTab !== "summary") return EMPTY_ROWS;
     if (!(filteredRows as any[])?.length) return EMPTY_ROWS;
     return buildDailySummaryRows(filteredRows as any[]);
-  }, [tab, filteredRows]);
+  }, [deferredTab, filteredRows]);
 
   const lastDataDate = useMemo(() => {
-    if (tab !== "summary") return EMPTY_STRING;
+    if (deferredTab !== "summary") return EMPTY_STRING;
     if (!(filteredRows as any[])?.length) return EMPTY_STRING;
     return getLastDateFromRows(filteredRows as any[], currentMonthKey);
-  }, [tab, filteredRows, currentMonthKey]);
+  }, [deferredTab, filteredRows, currentMonthKey]);
 
   useEffect(() => {
     if (readOnlyHeader) return;
-    if (selectedMonth !== "all" && !enabledMonthKeySet.has(selectedMonth)) {
+    if (
+      deferredSelectedMonth !== "all" &&
+      !stableEnabledMonthKeySet.has(deferredSelectedMonth)
+    ) {
       setSelectedMonth("all");
     }
-  }, [selectedMonth, enabledMonthKeySet, readOnlyHeader]);
+  }, [deferredSelectedMonth, stableEnabledMonthKeySet, readOnlyHeader]);
 
   useEffect(() => {
     if (readOnlyHeader) return;
-    if (selectedWeek !== "all" && !enabledWeekKeySet.has(selectedWeek)) {
+    if (
+      deferredSelectedWeek !== "all" &&
+      !stableEnabledWeekKeySet.has(deferredSelectedWeek)
+    ) {
       setSelectedWeek("all");
     }
-  }, [selectedWeek, enabledWeekKeySet, readOnlyHeader]);
+  }, [deferredSelectedWeek, stableEnabledWeekKeySet, readOnlyHeader]);
 
   useEffect(() => {
     if (readOnlyHeader) return;
-    if (selectedDevice !== "all" && !allowedDeviceSet.has(String(selectedDevice))) {
+    if (
+      deferredSelectedDevice !== "all" &&
+      !allowedDeviceSet.has(String(deferredSelectedDevice))
+    ) {
       setSelectedDevice("all");
     }
-  }, [selectedDevice, allowedDeviceSet, readOnlyHeader]);
+  }, [deferredSelectedDevice, allowedDeviceSet, readOnlyHeader]);
 
   useEffect(() => {
     if (readOnlyHeader) return;
-    if (selectedChannel !== "all" && !allowedChannelSet.has(String(selectedChannel))) {
+    if (
+      deferredSelectedChannel !== "all" &&
+      !allowedChannelSet.has(String(deferredSelectedChannel))
+    ) {
       setSelectedChannel("all");
     }
-  }, [selectedChannel, allowedChannelSet, readOnlyHeader]);
+  }, [deferredSelectedChannel, allowedChannelSet, readOnlyHeader]);
 
   useEffect(() => {
     if (readOnlyHeader) return;
-    if (selectedSource !== "all" && !allowedSourceSet.has(String(selectedSource))) {
+    if (
+      deferredSelectedSource !== "all" &&
+      !allowedSourceSet.has(String(deferredSelectedSource))
+    ) {
       setSelectedSource("all");
     }
-  }, [selectedSource, allowedSourceSet, readOnlyHeader]);
+  }, [deferredSelectedSource, allowedSourceSet, readOnlyHeader]);
 
   useEffect(() => {
     if (readOnlyHeader) return;
-    if (selectedProduct !== "all" && !allowedProductSet.has(String(selectedProduct))) {
+    if (
+      deferredSelectedProduct !== "all" &&
+      !allowedProductSet.has(String(deferredSelectedProduct))
+    ) {
       setSelectedProduct("all");
     }
-  }, [selectedProduct, allowedProductSet, readOnlyHeader]);
+  }, [deferredSelectedProduct, allowedProductSet, readOnlyHeader]);
 
   const fullPeriod = useMemo(() => {
     if (!normalizedRows.length) return "";
@@ -1071,8 +1187,11 @@ export default function ReportTemplate({
     return `${formatYmd(mm.min)} ~ ${formatYmd(mm.max)}`;
   }, [filteredRows, period]);
 
+  const stableFullPeriod = useStableShallowValue(fullPeriod);
+  const stablePeriodFixed = useStableShallowValue(periodFixed);
+
   const insightsCurrentMonthActual = useMemo(() => {
-    if (tab !== "summary") {
+    if (deferredTab !== "summary") {
       return {
         impressions: 0,
         clicks: 0,
@@ -1099,7 +1218,7 @@ export default function ReportTemplate({
       cpa: Number(currentMonthActual?.cpa ?? 0),
       roas: Number(currentMonthActual?.roas ?? 0),
     };
-  }, [tab, currentMonthActual]);
+  }, [deferredTab, currentMonthActual]);
 
   const stableInsightsCurrentMonthActual =
     useStableShallowValue(insightsCurrentMonthActual);
@@ -1112,8 +1231,8 @@ export default function ReportTemplate({
       monthGoal: stableMonthGoal,
       currentMonthActual: stableInsightsCurrentMonthActual,
       currentMonthGoalComputed,
-      enableMonthlyInsight: tab === "summary",
-      enableMonthGoalInsight: tab === "summary",
+      enableMonthlyInsight: deferredTab === "summary",
+      enableMonthGoalInsight: deferredTab === "summary",
       reportType,
     };
   }, [
@@ -1123,7 +1242,7 @@ export default function ReportTemplate({
     stableMonthGoal,
     stableInsightsCurrentMonthActual,
     currentMonthGoalComputed,
-    tab,
+    deferredTab,
     reportType,
   ]);
 
@@ -1131,13 +1250,13 @@ export default function ReportTemplate({
   const { monthGoalInsight } = useInsights(stableInsightsParams);
 
   const keywordAgg = useMemo(() => {
-    if (tab !== "keyword") return EMPTY_ROWS;
+    if (deferredTab !== "keyword") return EMPTY_ROWS;
     if (!(filteredRows as any[])?.length) return EMPTY_ROWS;
     return groupByKeyword(filteredRows as any[]);
-  }, [tab, filteredRows]);
+  }, [deferredTab, filteredRows]);
 
   const keywordInsight = useMemo(() => {
-    if (tab !== "keyword") return "";
+    if (deferredTab !== "keyword") return "";
     return buildKeywordInsight({
       keywordAgg: keywordAgg as any[],
       keywordBaseRows: filteredRows as any[],
@@ -1146,7 +1265,7 @@ export default function ReportTemplate({
       reportType,
     });
   }, [
-    tab,
+    deferredTab,
     keywordAgg,
     filteredRows,
     currentMonthActual,
@@ -1228,11 +1347,20 @@ export default function ReportTemplate({
   }, [needCreativeRows, filteredRows, creativesMapNormalized, originalRowById]);
 
   const creativeBaseRows = useMemo(() => {
-    if (tab !== "creative" && tab !== "creativeDetail") return EMPTY_ROWS;
+    if (deferredTab !== "creative" && deferredTab !== "creativeDetail") {
+      return EMPTY_ROWS;
+    }
     const list = (filteredRowsWithCreatives as any[]) ?? EMPTY_ROWS;
     if (!list.length) return EMPTY_ROWS;
     return list.filter((r) => !!r?.creative_url);
-  }, [tab, filteredRowsWithCreatives]);
+  }, [deferredTab, filteredRowsWithCreatives]);
+
+  const stableSummaryGoalCurrentMonthActual = useStableShallowValue(
+    summaryGoalCurrentMonthActual
+  );
+  const stableSummaryGoalCurrentMonthGoalComputed = useStableShallowValue(
+    summaryGoalCurrentMonthGoalComputed
+  );
 
   const stableCurrentMonthActual = useStableShallowValue(currentMonthActual);
   const stableCurrentMonthGoalComputed =
@@ -1248,23 +1376,23 @@ export default function ReportTemplate({
   const monthGoalSectionProps = useMemo(() => {
     return {
       reportType,
-      currentMonthKey,
-      currentMonthActual: stableCurrentMonthActual,
-      currentMonthGoalComputed: stableCurrentMonthGoalComputed,
+      currentMonthKey: summaryGoalCurrentMonthKey,
+      currentMonthActual: stableSummaryGoalCurrentMonthActual,
+      currentMonthGoalComputed: stableSummaryGoalCurrentMonthGoalComputed,
       monthGoal: stableMonthGoal,
       setMonthGoal,
       monthGoalInsight: stableMonthGoalInsight,
-      lastDataDate,
+      lastDataDate: summaryGoalLastDataDate,
     };
   }, [
     reportType,
-    currentMonthKey,
-    stableCurrentMonthActual,
-    stableCurrentMonthGoalComputed,
+    summaryGoalCurrentMonthKey,
+    stableSummaryGoalCurrentMonthActual,
+    stableSummaryGoalCurrentMonthGoalComputed,
     stableMonthGoal,
     setMonthGoal,
     stableMonthGoalInsight,
-    lastDataDate,
+    summaryGoalLastDataDate,
   ]);
 
   const summarySectionProps = useMemo(() => {
@@ -1299,52 +1427,77 @@ export default function ReportTemplate({
     stableMonthGoalInsight,
   ]);
 
+  const headerBarProps = useMemo<HeaderBarProps>(() => {
+    return {
+      tab,
+      setTab,
+      filterKey,
+      setFilterKey,
+      selectedMonth,
+      setSelectedMonth,
+      selectedWeek,
+      setSelectedWeek,
+      selectedDevice,
+      setSelectedDevice,
+      selectedChannel,
+      setSelectedChannel,
+      selectedSource,
+      setSelectedSource,
+      selectedProduct,
+      setSelectedProduct,
+      monthOptions: stableMonthOptions,
+      weekOptions: stableWeekOptions,
+      deviceOptions: stableDeviceOptions,
+      channelOptions: stableChannelOptions,
+      sourceOptions: stableSourceOptions,
+      productOptions: stableProductOptions,
+      enabledMonthKeySet: stableEnabledMonthKeySet,
+      enabledWeekKeySet: stableEnabledWeekKeySet,
+      fullPeriod: stableFullPeriod,
+      period: stablePeriodFixed,
+      advertiserName: effectiveAdvertiserName,
+      reportTypeName: effectiveReportTypeName,
+      reportTypeKey: effectiveReportTypeKey,
+      reportPeriod: stableReportPeriod,
+      onChangeReportPeriod,
+      readOnlyHeader,
+      hidePeriodEditor,
+      hideTabPeriodText,
+    };
+  }, [
+    tab,
+    filterKey,
+    selectedMonth,
+    selectedWeek,
+    selectedDevice,
+    selectedChannel,
+    selectedSource,
+    selectedProduct,
+    stableMonthOptions,
+    stableWeekOptions,
+    stableDeviceOptions,
+    stableChannelOptions,
+    stableSourceOptions,
+    stableProductOptions,
+    stableEnabledMonthKeySet,
+    stableEnabledWeekKeySet,
+    stableFullPeriod,
+    stablePeriodFixed,
+    effectiveAdvertiserName,
+    effectiveReportTypeName,
+    effectiveReportTypeKey,
+    stableReportPeriod,
+    onChangeReportPeriod,
+    readOnlyHeader,
+    hidePeriodEditor,
+    hideTabPeriodText,
+  ]);
+
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="relative">
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-slate-100/90 via-slate-50/70 to-transparent" />
+      <HeaderSurface {...headerBarProps} />
 
-        <div className="relative z-10 border-b border-slate-200/80 bg-white/85 backdrop-blur-md shadow-[0_1px_0_rgba(15,23,42,0.03)]">
-          <MemoHeaderBar
-            tab={tab}
-            setTab={setTab}
-            filterKey={filterKey}
-            setFilterKey={setFilterKey}
-            selectedMonth={selectedMonth}
-            setSelectedMonth={setSelectedMonth}
-            selectedWeek={selectedWeek}
-            setSelectedWeek={setSelectedWeek}
-            selectedDevice={selectedDevice}
-            setSelectedDevice={setSelectedDevice}
-            selectedChannel={selectedChannel}
-            setSelectedChannel={setSelectedChannel}
-            selectedSource={selectedSource}
-            setSelectedSource={setSelectedSource}
-            selectedProduct={selectedProduct}
-            setSelectedProduct={setSelectedProduct}
-            monthOptions={monthOptions}
-            weekOptions={weekOptions}
-            deviceOptions={deviceOptions}
-            channelOptions={channelOptions}
-            sourceOptions={sourceOptions}
-            productOptions={productOptions}
-            enabledMonthKeySet={enabledMonthKeySet}
-            enabledWeekKeySet={enabledWeekKeySet}
-            fullPeriod={fullPeriod}
-            period={periodFixed}
-            advertiserName={effectiveAdvertiserName}
-            reportTypeName={effectiveReportTypeName}
-            reportTypeKey={effectiveReportTypeKey}
-            reportPeriod={stableReportPeriod}
-            onChangeReportPeriod={onChangeReportPeriod}
-            readOnlyHeader={readOnlyHeader}
-            hidePeriodEditor={hidePeriodEditor}
-            hideTabPeriodText={hideTabPeriodText}
-          />
-        </div>
-      </div>
-
-      <div className="px-4 pb-10 pt-8 sm:px-6 lg:px-8 lg:pt-10">
+      <div className="px-4 pb-10 pt-2 sm:px-6 lg:px-8 lg:pt-3">
         <div className="mx-auto w-full max-w-[1660px]">
           {isLoading ? (
             <div className="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -1362,24 +1515,24 @@ export default function ReportTemplate({
               <MemoFloatingFilterRail
                 selectedMonth={selectedMonth}
                 setSelectedMonth={setSelectedMonth}
-                monthOptions={monthOptions}
+                monthOptions={stableMonthOptions}
                 selectedWeek={selectedWeek}
                 setSelectedWeek={setSelectedWeek}
-                weekOptions={weekOptions}
+                weekOptions={stableWeekOptions}
                 selectedDevice={selectedDevice}
                 setSelectedDevice={setSelectedDevice}
-                deviceOptions={deviceOptions}
+                deviceOptions={stableDeviceOptions}
                 selectedChannel={selectedChannel}
                 setSelectedChannel={setSelectedChannel}
-                channelOptions={channelOptions}
+                channelOptions={stableChannelOptions}
                 selectedSource={selectedSource}
                 setSelectedSource={setSelectedSource}
-                sourceOptions={sourceOptions}
+                sourceOptions={stableSourceOptions}
                 selectedProduct={selectedProduct}
                 setSelectedProduct={setSelectedProduct}
-                productOptions={productOptions}
-                enabledMonthKeySet={enabledMonthKeySet}
-                enabledWeekKeySet={enabledWeekKeySet}
+                productOptions={stableProductOptions}
+                enabledMonthKeySet={stableEnabledMonthKeySet}
+                enabledWeekKeySet={stableEnabledWeekKeySet}
                 readOnly={readOnlyHeader}
               />
             </div>
@@ -1387,7 +1540,7 @@ export default function ReportTemplate({
             <div className="min-w-0 flex-1">
               <div className="mx-auto w-full max-w-[1440px]">
                 <div className="space-y-8">
-                  {tab === "summary" && (
+                  {deferredTab === "summary" && (
                     <>
                       <div className="rounded-2xl">
                         <MonthGoalSection {...(monthGoalSectionProps as any)} />
@@ -1399,7 +1552,7 @@ export default function ReportTemplate({
                     </>
                   )}
 
-                  {tab === "summary2" && (
+                  {deferredTab === "summary2" && (
                     <div className="rounded-2xl">
                       <Summary2Section
                         {...({ reportType } as any)}
@@ -1408,7 +1561,7 @@ export default function ReportTemplate({
                     </div>
                   )}
 
-                  {tab === "structure" && (
+                  {deferredTab === "structure" && (
                     <div className="rounded-2xl">
                       <StructureSection
                         {...({ reportType } as any)}
@@ -1420,7 +1573,7 @@ export default function ReportTemplate({
                     </div>
                   )}
 
-                  {tab === "keyword" && (
+                  {deferredTab === "keyword" && (
                     <div className="rounded-2xl">
                       <KeywordSection
                         {...({ reportType } as any)}
@@ -1430,7 +1583,7 @@ export default function ReportTemplate({
                     </div>
                   )}
 
-                  {tab === "keywordDetail" && (
+                  {deferredTab === "keywordDetail" && (
                     <div className="rounded-2xl">
                       <KeywordDetailSection
                         {...({ reportType } as any)}
@@ -1439,7 +1592,7 @@ export default function ReportTemplate({
                     </div>
                   )}
 
-                  {tab === "creative" && (
+                  {deferredTab === "creative" && (
                     <div className="rounded-2xl">
                       <CreativeSection
                         {...({ reportType } as any)}
@@ -1448,7 +1601,7 @@ export default function ReportTemplate({
                     </div>
                   )}
 
-                  {tab === "creativeDetail" && (
+                  {deferredTab === "creativeDetail" && (
                     <div className="rounded-2xl">
                       <CreativeDetailSection
                         {...({ reportType } as any)}

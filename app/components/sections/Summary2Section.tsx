@@ -425,7 +425,6 @@ const FunnelCard = memo(function FunnelCard({
   onScrubChange,
   transitionBadges,
   badge,
-  overview,
   title,
   description,
 }: {
@@ -504,18 +503,13 @@ const FunnelCard = memo(function FunnelCard({
               </span>
             </div>
 
-            <h3 className="text-base font-semibold text-gray-900">{title}</h3>
+            <h3 className="text-base font-semibold text-gray-900 whitespace-nowrap overflow-hidden text-ellipsis">
+              {title}
+            </h3>
 
-            <p className="mt-1 text-sm text-gray-500">{description}</p>
-          </div>
-
-          <div className="min-w-[220px] rounded-2xl border border-gray-200 bg-gray-50/80 px-4 py-3">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400">
-              Overview
-            </div>
-            <div className="mt-1 text-sm font-semibold text-gray-900">
-              {overview}
-            </div>
+            <p className="mt-1 text-sm text-gray-500 whitespace-nowrap overflow-hidden text-ellipsis">
+              {description}
+            </p>
           </div>
         </div>
       </div>
@@ -692,25 +686,20 @@ const DonutCard = memo(function DonutCard({
   return (
     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
       <div className="border-b border-gray-200 px-6 py-5">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-          <div>
-            <div className="mb-2">
-              <span className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] text-violet-700">
+          <div className="min-w-0 flex-1">
+            <div className="mb-3">
+              <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] text-emerald-700">
                 {badge}
               </span>
             </div>
-            <h3 className="text-base font-semibold text-gray-900">{title}</h3>
-            <p className="mt-1 text-sm text-gray-500">{description}</p>
-          </div>
 
-          <div className="min-w-[220px] rounded-2xl border border-gray-200 bg-gray-50/80 px-4 py-3">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400">
-              Overview
-            </div>
-            <div className="mt-1 text-sm font-semibold text-gray-900">
-              {overview}
-            </div>
-          </div>
+            <h3 className="whitespace-nowrap overflow-hidden text-ellipsis text-base font-semibold text-gray-900">
+              {title}
+            </h3>
+
+            <p className="mt-1 whitespace-nowrap overflow-hidden text-ellipsis text-sm text-gray-500">
+              {description}
+            </p>
         </div>
       </div>
 
@@ -2125,7 +2114,7 @@ export default function Summary2Section({ reportType, rows }: Props) {
         </div>
 
         {!isTraffic ? (
-          <div className="grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)]">
+          <div className="grid gap-6 xl:grid-cols-[440px_minmax(0,1fr)]">
             <FunnelCard
               items={funnelData}
               isPlaying={isPlaying}
@@ -2137,7 +2126,6 @@ export default function Summary2Section({ reportType, rows }: Props) {
               onScrubChange={handleScrubChange}
               transitionBadges={funnelTransitionBadges}
               badge={funnelBadge}
-              overview={funnelOverview}
               title={funnelTitle}
               description={funnelDescription}
             />

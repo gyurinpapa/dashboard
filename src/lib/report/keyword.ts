@@ -4,6 +4,7 @@ export function groupByKeyword(rows: any[]) {
   const map = new Map<string, any>();
 
   const s = (v: any) => (v == null ? "" : String(v).trim());
+
   const toNum = (v: any) => {
     if (v == null) return 0;
     if (typeof v === "number") return Number.isFinite(v) ? v : 0;
@@ -11,10 +12,9 @@ export function groupByKeyword(rows: any[]) {
     return Number.isFinite(n) ? n : 0;
   };
 
-  // ✅ 키워드 + 캠페인 + 그룹 기준으로 집계 (A안)
-  const getKeyword = (r: any) => s(r.keyword ?? r.query ?? r.term ?? r.name ?? r.label);
+  const getKeyword = (r: any) =>
+    s(r.keyword ?? r.query ?? r.term ?? r.name ?? r.label);
 
-  // 원천 rows에 실려 있을 수 있는 키들(프로젝트 톤 맞춰 최대한 안전하게)
   const getCampaign = (r: any) =>
     s(
       r.campaign_name ??
@@ -41,7 +41,6 @@ export function groupByKeyword(rows: any[]) {
         r.grp_nm
     );
 
-  // 구분자 충돌 방지(희귀 문자)
   const getKey = (r: any) => {
     const kw = getKeyword(r);
     const c = getCampaign(r);
@@ -55,16 +54,14 @@ export function groupByKeyword(rows: any[]) {
 
     const c = getCampaign(r);
     const g = getGroup(r);
-    const k = `${kw}␟${c}␟${g}`;
+    const k = getKey(r);
+    if (!k) continue;
 
     if (!map.has(k)) {
       map.set(k, {
         keyword: kw,
-
-        // ✅ KeywordSection에서 읽을 수 있도록 포함
         campaign_name: c || null,
         group_name: g || null,
-
         impressions: 0,
         clicks: 0,
         cost: 0,
@@ -75,21 +72,40 @@ export function groupByKeyword(rows: any[]) {
 
     const t = map.get(k);
 
-    // ✅ 기존 코드(Number(..)||0)보다 안전하게 숫자 정규화
     t.impressions += toNum(r.impressions ?? r.impr ?? r.imp);
-    t.clicks += toNum(r.clicks ?? r.clk);
-    t.cost += toNum(r.cost);
-    t.conversions += toNum(r.conversions ?? r.conv);
-    t.revenue += toNum(r.revenue);
+    t.clicks += toNum(r.clicks ?? r.clk ?? r.click);
+    t.cost += toNum(r.cost ?? r.spend ?? r.ad_cost);
+    t.conversions += toNum(r.conversions ?? r.conv ?? r.cv);
+    t.revenue += toNum(r.revenue ?? r.sales ?? r.purchase_amount ?? r.gmv);
   }
 
-  // ✅ 기존 결과 유지: roas만 추가
-  const arr = Array.from(map.values()).map((x) => ({
-    ...x,
-    roas: x.cost > 0 ? x.revenue / x.cost : 0,
-  }));
+  const arr = Array.from(map.values()).map((x) => {
+    const impressions = toNum(x.impressions);
+    const clicks = toNum(x.clicks);
+    const cost = toNum(x.cost);
+    const conversions = toNum(x.conversions);
+    const revenue = toNum(x.revenue);
 
-  // ✅ 기존 정렬/슬라이스 유지 (Top20, clicks desc)
-  arr.sort((a, b) => (b.clicks || 0) - (a.clicks || 0));
-  return arr.slice(0, 20);
+    return {
+      ...x,
+      impressions,
+      clicks,
+      cost,
+      conversions,
+      revenue,
+      ctr: impressions > 0 ? clicks / impressions : 0,
+      cpc: clicks > 0 ? cost / clicks : 0,
+      cvr: clicks > 0 ? conversions / clicks : 0,
+      cpa: conversions > 0 ? cost / conversions : 0,
+      roas: cost > 0 ? revenue / cost : 0,
+    };
+  });
+
+  arr.sort((a, b) => {
+    const clickDiff = toNum(b.clicks) - toNum(a.clicks);
+    if (clickDiff !== 0) return clickDiff;
+    return String(a.keyword ?? "").localeCompare(String(b.keyword ?? ""), "ko");
+  });
+
+  return arr;
 }
