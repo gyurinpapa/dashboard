@@ -1,4 +1,3 @@
-// app/reports/[id]/page.tsx
 "use client";
 
 import {
@@ -834,9 +833,7 @@ export default function ReportDetailPage() {
   });
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollingBusyRef = useRef(false);
-  const postDoneRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null
-  );
+  const postDoneRefreshTimerRef = useRef<number | null>(null);
 
   const creativesInputRef = useRef<HTMLInputElement | null>(null);
   const [creativeFiles, setCreativeFiles] = useState<File[]>([]);
@@ -1139,8 +1136,8 @@ export default function ReportDetailPage() {
         pollingRef.current = null;
       }
 
-      if (postDoneRefreshTimerRef.current) {
-        clearTimeout(postDoneRefreshTimerRef.current);
+      if (postDoneRefreshTimerRef.current !== null) {
+        window.clearTimeout(postDoneRefreshTimerRef.current);
         postDoneRefreshTimerRef.current = null;
       }
 
@@ -1205,8 +1202,8 @@ export default function ReportDetailPage() {
               pollingRef.current = null;
             }
 
-            if (postDoneRefreshTimerRef.current) {
-              clearTimeout(postDoneRefreshTimerRef.current);
+            if (postDoneRefreshTimerRef.current !== null) {
+              window.clearTimeout(postDoneRefreshTimerRef.current);
               postDoneRefreshTimerRef.current = null;
             }
 
@@ -1256,8 +1253,8 @@ export default function ReportDetailPage() {
       clearInterval(pollingRef.current);
       pollingRef.current = null;
     }
-    if (postDoneRefreshTimerRef.current) {
-      clearTimeout(postDoneRefreshTimerRef.current);
+    if (postDoneRefreshTimerRef.current !== null) {
+      window.clearTimeout(postDoneRefreshTimerRef.current);
       postDoneRefreshTimerRef.current = null;
     }
     pollingBusyRef.current = false;
@@ -1291,8 +1288,8 @@ export default function ReportDetailPage() {
         clearInterval(pollingRef.current);
         pollingRef.current = null;
       }
-      if (postDoneRefreshTimerRef.current) {
-        clearTimeout(postDoneRefreshTimerRef.current);
+      if (postDoneRefreshTimerRef.current !== null) {
+        window.clearTimeout(postDoneRefreshTimerRef.current);
         postDoneRefreshTimerRef.current = null;
       }
       pollingBusyRef.current = false;

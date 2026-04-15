@@ -116,10 +116,8 @@ export default function ShareReportPage() {
   const deferredRows = useDeferredValue(rows);
   const deferredCreativesMap = useDeferredValue(creativesMap);
 
-  const creativesCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null
-  );
-  const rowsRangeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const creativesCommitTimerRef = useRef<number | null>(null);
+  const rowsRangeTimerRef = useRef<number | null>(null);
 
   const advertiserName = useMemo(() => pickAdvertiserName(report), [report]);
   const reportTypeName = useMemo(() => pickReportTypeName(report), [report]);
@@ -178,8 +176,8 @@ export default function ShareReportPage() {
     const hasReportPeriod =
       (publishedStart && publishedEnd) || (legacyStart && legacyEnd);
 
-    if (rowsRangeTimerRef.current) {
-      clearTimeout(rowsRangeTimerRef.current);
+    if (rowsRangeTimerRef.current !== null) {
+      window.clearTimeout(rowsRangeTimerRef.current);
       rowsRangeTimerRef.current = null;
     }
 
@@ -206,8 +204,8 @@ export default function ShareReportPage() {
     }, 0);
 
     return () => {
-      if (rowsRangeTimerRef.current) {
-        clearTimeout(rowsRangeTimerRef.current);
+      if (rowsRangeTimerRef.current !== null) {
+        window.clearTimeout(rowsRangeTimerRef.current);
         rowsRangeTimerRef.current = null;
       }
     };
@@ -229,12 +227,12 @@ export default function ShareReportPage() {
 
     let alive = true;
 
-    if (creativesCommitTimerRef.current) {
-      clearTimeout(creativesCommitTimerRef.current);
+    if (creativesCommitTimerRef.current !== null) {
+      window.clearTimeout(creativesCommitTimerRef.current);
       creativesCommitTimerRef.current = null;
     }
-    if (rowsRangeTimerRef.current) {
-      clearTimeout(rowsRangeTimerRef.current);
+    if (rowsRangeTimerRef.current !== null) {
+      window.clearTimeout(rowsRangeTimerRef.current);
       rowsRangeTimerRef.current = null;
     }
 
@@ -296,13 +294,13 @@ export default function ShareReportPage() {
     return () => {
       alive = false;
 
-      if (creativesCommitTimerRef.current) {
-        clearTimeout(creativesCommitTimerRef.current);
+      if (creativesCommitTimerRef.current !== null) {
+        window.clearTimeout(creativesCommitTimerRef.current);
         creativesCommitTimerRef.current = null;
       }
 
-      if (rowsRangeTimerRef.current) {
-        clearTimeout(rowsRangeTimerRef.current);
+      if (rowsRangeTimerRef.current !== null) {
+        window.clearTimeout(rowsRangeTimerRef.current);
         rowsRangeTimerRef.current = null;
       }
     };
