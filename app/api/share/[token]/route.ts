@@ -80,6 +80,10 @@ function extractRowObject(rec: any) {
   return copy;
 }
 
+/**
+ * rows 조회는 기존 안전 버전 유지
+ * - 여기 건드렸다가 rows 자체가 비는 회귀가 생겼으므로 원복
+ */
 async function fetchAllReportRows(
   sb: any,
   reportId: string,
@@ -390,6 +394,33 @@ async function fetchReportNames(sb: any, report: any) {
   };
 }
 
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  if (!Array.isArray(items) || items.length === 0) return [];
+
+  const safeLimit = Math.max(1, Math.floor(limit || 1));
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+
+  async function run() {
+    while (true) {
+      const index = cursor;
+      cursor += 1;
+      if (index >= items.length) return;
+      results[index] = await worker(items[index], index);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(safeLimit, items.length) }, () => run())
+  );
+
+  return results;
+}
+
 /**
  * GET /api/share/[token]
  */
@@ -406,7 +437,6 @@ export async function GET(req: Request, ctx: Ctx) {
 
   const sb = getSupabaseAdmin();
 
-  // ✅ 안전 버전: preset/label 컬럼 제거 유지
   const { data: report, error: repErr } = await sb
     .from("reports")
     .select(
@@ -510,51 +540,62 @@ export async function GET(req: Request, ctx: Ctx) {
 
   if (creErr) return jsonError(500, creErr.message || "Creatives DB error");
 
-  const creativesUrlMap: Record<string, string> = {};
   const creativeErrors: any[] = [];
 
-  for (const c of creatives ?? []) {
-    const bucket =
-      String((c as any).storage_bucket ?? "report_uploads").trim() || "report_uploads";
-    const path = String((c as any).storage_path ?? "").trim();
+  const signedCreativeEntries = await mapWithConcurrency(
+    creatives ?? [],
+    6,
+    async (c: any) => {
+      const bucket =
+        String((c as any).storage_bucket ?? "report_uploads").trim() || "report_uploads";
+      const path = String((c as any).storage_path ?? "").trim();
 
-    if (!bucket || !path) {
-      if (debugOn) {
-        creativeErrors.push({
-          reason: "MISSING_STORAGE",
-          creative_key: String((c as any).creative_key ?? ""),
-          file_name: String((c as any).file_name ?? ""),
-          storage_bucket: bucket,
-          storage_path: path,
-        });
+      if (!bucket || !path) {
+        if (debugOn) {
+          creativeErrors.push({
+            reason: "MISSING_STORAGE",
+            creative_key: String((c as any).creative_key ?? ""),
+            file_name: String((c as any).file_name ?? ""),
+            storage_bucket: bucket,
+            storage_path: path,
+          });
+        }
+        return null;
       }
-      continue;
-    }
 
-    const { data: signed, error: signErr } = await sb.storage
-      .from(bucket)
-      .createSignedUrl(path, expiresIn);
+      const { data: signed, error: signErr } = await sb.storage
+        .from(bucket)
+        .createSignedUrl(path, expiresIn);
 
-    if (signErr || !signed?.signedUrl) {
-      if (debugOn) {
-        creativeErrors.push({
-          reason: "SIGNED_URL_FAILED",
-          creative_key: String((c as any).creative_key ?? ""),
-          file_name: String((c as any).file_name ?? ""),
-          storage_bucket: bucket,
-          storage_path: path,
-          signErr: signErr ? String((signErr as any).message ?? signErr) : "NO_URL",
-        });
+      if (signErr || !signed?.signedUrl) {
+        if (debugOn) {
+          creativeErrors.push({
+            reason: "SIGNED_URL_FAILED",
+            creative_key: String((c as any).creative_key ?? ""),
+            file_name: String((c as any).file_name ?? ""),
+            storage_bucket: bucket,
+            storage_path: path,
+            signErr: signErr ? String((signErr as any).message ?? signErr) : "NO_URL",
+          });
+        }
+        return null;
       }
-      continue;
+
+      return {
+        signedUrl: signed.signedUrl,
+        keys: makeCreativeKeyCandidates(c),
+      };
     }
+  );
 
-    const signedUrl = signed.signedUrl;
-    const keys = makeCreativeKeyCandidates(c);
+  const creativesUrlMap: Record<string, string> = {};
 
-    for (const k of keys) {
+  for (const entry of signedCreativeEntries) {
+    if (!entry?.signedUrl || !Array.isArray(entry.keys)) continue;
+
+    for (const k of entry.keys) {
       if (!k) continue;
-      if (!creativesUrlMap[k]) creativesUrlMap[k] = signedUrl;
+      if (!creativesUrlMap[k]) creativesUrlMap[k] = entry.signedUrl;
     }
   }
 

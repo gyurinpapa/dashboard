@@ -164,7 +164,8 @@ export default function ShareReportPage() {
     report?.published_period_end,
     report?.period_start,
     report?.period_end,
-    fallbackRowsRange,
+    fallbackRowsRange?.startDate,
+    fallbackRowsRange?.endDate,
   ]);
 
   useEffect(() => {
@@ -182,25 +183,37 @@ export default function ShareReportPage() {
     }
 
     if (hasReportPeriod) {
-      if (fallbackRowsRange !== null) setFallbackRowsRange(null);
+      setFallbackRowsRange((prev) => (prev === null ? prev : null));
       return;
     }
 
     if (!rows.length) {
-      if (fallbackRowsRange !== null) setFallbackRowsRange(null);
+      setFallbackRowsRange((prev) => (prev === null ? prev : null));
       return;
     }
 
     rowsRangeTimerRef.current = window.setTimeout(() => {
       const range = getRowsDateRange(rows as any[]);
-      setFallbackRowsRange(
+      const nextRange =
         range?.startDate && range?.endDate
           ? {
               startDate: range.startDate,
               endDate: range.endDate,
             }
-          : null
-      );
+          : null;
+
+      setFallbackRowsRange((prev) => {
+        const prevStart = prev?.startDate ?? "";
+        const prevEnd = prev?.endDate ?? "";
+        const nextStart = nextRange?.startDate ?? "";
+        const nextEnd = nextRange?.endDate ?? "";
+
+        if (prevStart === nextStart && prevEnd === nextEnd) {
+          return prev;
+        }
+
+        return nextRange;
+      });
     }, 0);
 
     return () => {
@@ -215,7 +228,6 @@ export default function ShareReportPage() {
     report?.period_start,
     report?.period_end,
     rows,
-    fallbackRowsRange,
   ]);
 
   useEffect(() => {
@@ -266,20 +278,10 @@ export default function ShareReportPage() {
             ? json.creativesMap
             : {};
 
-        /**
-         * 핵심 반영 먼저:
-         * report + rows 먼저 넣고 loading을 해제해
-         * 본문이 더 빨리 열리도록 한다.
-         */
         setReport(nextReport);
         setRows(nextRows);
         setLoading(false);
 
-        /**
-         * 부가 반영 나중:
-         * creativesMap은 다음 틱에 반영해서
-         * 첫 paint 경쟁을 줄인다.
-         */
         creativesCommitTimerRef.current = window.setTimeout(() => {
           if (!alive) return;
           setCreativesMap(nextCreativesMap);
