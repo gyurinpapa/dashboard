@@ -414,20 +414,20 @@ function describeArc(
   ].join(" ");
 }
 
-const FunnelCard = memo(function FunnelCard({
-  items,
-  isPlaying,
-  onTogglePlay,
-  currentDateLabel,
-  totalDates,
-  playIndex,
-  maxIndex,
-  onScrubChange,
-  transitionBadges,
-  badge,
-  title,
-  description,
-}: {
+  const FunnelCard = memo(function FunnelCard({
+    items,
+    isPlaying,
+    onTogglePlay,
+    currentDateLabel,
+    totalDates,
+    playIndex,
+    maxIndex,
+    onScrubChange,
+    transitionBadges,
+    badge,
+    title,
+    description,
+  }: {
   items: FunnelItem[];
   isPlaying: boolean;
   onTogglePlay: () => void;
@@ -438,7 +438,6 @@ const FunnelCard = memo(function FunnelCard({
   onScrubChange: (next: number) => void;
   transitionBadges: string[];
   badge: string;
-  overview: string;
   title: string;
   description: string;
 }) {
