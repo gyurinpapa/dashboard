@@ -514,47 +514,53 @@ function extractIngestionInfo(
   };
 }
 
+function normalizeHeaderInfoFromReport(
+  report: ReportDetail | null | undefined
+): ReportHeaderInfo {
+  const meta =
+    report?.meta && typeof report.meta === "object" ? report.meta : {};
+
+  const reportTypeKey =
+    asStr((report as any)?.report_type_key) ||
+    asStr((report as any)?.reportTypeKey) ||
+    asStr(meta?.report_type_key) ||
+    asStr(meta?.reportTypeKey) ||
+    asStr(meta?.report_type);
+
+  let reportTypeName =
+    asStr((report as any)?.report_type_name) ||
+    asStr((report as any)?.reportTypeName) ||
+    asStr(meta?.report_type_name) ||
+    asStr(meta?.reportTypeName);
+
+  const keyLower = reportTypeKey.toLowerCase();
+
+  if (keyLower === "traffic") {
+    reportTypeName = "트래픽 리포트";
+  } else if (keyLower === "commerce") {
+    reportTypeName = reportTypeName || "커머스 매출 리포트";
+  }
+
+  return {
+    advertiserName:
+      asStr((report as any)?.advertiser_name) ||
+      asStr((report as any)?.advertiserName) ||
+      asStr((report as any)?.advertiser) ||
+      asStr(meta?.advertiser_name) ||
+      asStr(meta?.advertiserName) ||
+      asStr(meta?.advertiser) ||
+      "",
+    reportTypeName,
+    reportTypeKey,
+  };
+}
+
 async function fetchReportHeaderInfo(
   reportId: string
 ): Promise<ReportHeaderInfo> {
   try {
     const report = await fetchReportDetail(reportId);
-    const meta =
-      report?.meta && typeof report.meta === "object" ? report.meta : {};
-
-    const reportTypeKey =
-      asStr((report as any)?.report_type_key) ||
-      asStr((report as any)?.reportTypeKey) ||
-      asStr(meta?.report_type_key) ||
-      asStr(meta?.reportTypeKey) ||
-      asStr(meta?.report_type);
-
-    let reportTypeName =
-      asStr((report as any)?.report_type_name) ||
-      asStr((report as any)?.reportTypeName) ||
-      asStr(meta?.report_type_name) ||
-      asStr(meta?.reportTypeName);
-
-    const keyLower = reportTypeKey.toLowerCase();
-
-    if (keyLower === "traffic") {
-      reportTypeName = "트래픽 리포트";
-    } else if (keyLower === "commerce") {
-      reportTypeName = reportTypeName || "커머스 매출 리포트";
-    }
-
-    return {
-      advertiserName:
-        asStr((report as any)?.advertiser_name) ||
-        asStr((report as any)?.advertiserName) ||
-        asStr((report as any)?.advertiser) ||
-        asStr(meta?.advertiser_name) ||
-        asStr(meta?.advertiserName) ||
-        asStr(meta?.advertiser) ||
-        "",
-      reportTypeName,
-      reportTypeKey,
-    };
+    return normalizeHeaderInfoFromReport(report);
   } catch {
     return {
       advertiserName: "",
@@ -689,8 +695,6 @@ function buildInitialReportPeriod(args: {
 
 /* =========================================================
  * Preview 분리
- * 좌측 업로드/상태 변경이 발생해도
- * preview props가 같으면 ReportTemplate 재렌더를 최대한 막는다.
  * ========================================================= */
 
 type PreviewPaneProps = {
@@ -830,6 +834,9 @@ export default function ReportDetailPage() {
   });
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollingBusyRef = useRef(false);
+  const postDoneRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
 
   const creativesInputRef = useRef<HTMLInputElement | null>(null);
   const [creativeFiles, setCreativeFiles] = useState<File[]>([]);
@@ -856,9 +863,6 @@ export default function ReportDetailPage() {
   const displayRows = rows;
   const displayCreativesMap = creativesMap;
 
-  /**
-   * 큰 rows / creativesMap 반영 시 UI 블로킹 완화
-   */
   const deferredDisplayRows = useDeferredValue(displayRows);
   const deferredDisplayCreativesMap = useDeferredValue(displayCreativesMap);
 
@@ -1012,9 +1016,8 @@ export default function ReportDetailPage() {
   const canPublish =
     sessionIngested &&
     !publishing &&
-    !loadingRows &&
-    Array.isArray(rows) &&
-    rows.length > 0;
+    ingestionStatus === "done" &&
+    Math.max(ingestionInfo.inserted, ingestionInfo.validRows) > 0;
 
   const canOpenExportBuilder = ENABLE_EXPORT_BUILDER_ENTRY && canPublish;
 
@@ -1032,18 +1035,6 @@ export default function ReportDetailPage() {
     let fetchedRowsCount = 0;
 
     try {
-      try {
-        const detail = await fetchReportDetail(reportId);
-        setReport(detail);
-
-        const info = extractIngestionInfo(detail);
-        setIngestionInfo(info);
-        setIngestionStatus(info.status);
-      } catch (e: any) {
-        console.error("[refreshRows] report detail failed", e);
-        nextMsg += `report 조회 실패: ${e?.message || "unknown"}\n`;
-      }
-
       try {
         const rws = await fetchRows(reportId);
         const nextRows = Array.isArray(rws) ? [...rws] : [];
@@ -1082,51 +1073,51 @@ export default function ReportDetailPage() {
         nextMsg += `rows 조회 실패: ${e?.message || "unknown"}\n`;
       }
 
-      try {
-        const cmap = await fetchCreativesMap(reportId);
-        const nextCreativesMap = { ...(cmap ?? {}) };
-        setCreativesMap(nextCreativesMap);
+      setLoadingRows(false);
 
-        console.log("[refreshRows] creativesMap ok", {
-          keyCount: Object.keys(nextCreativesMap).length,
-        });
-      } catch (e: any) {
-        console.error("[refreshRows] creativesMap failed", e);
-        setCreativesMap({});
-        nextMsg += `creativesMap 조회 실패: ${e?.message || "unknown"}\n`;
-      }
+      const [detailResult, creativesResult] = await Promise.allSettled([
+        fetchReportDetail(reportId),
+        fetchCreativesMap(reportId),
+      ]);
 
-      try {
-        const hdr = await fetchReportHeaderInfo(reportId);
+      if (detailResult.status === "fulfilled") {
+        const detail = detailResult.value;
+        setReport(detail);
 
-        const nextReportTypeKey = asStr(hdr?.reportTypeKey);
-        let nextReportTypeName = asStr(hdr?.reportTypeName);
+        const info = extractIngestionInfo(detail);
+        setIngestionInfo(info);
+        setIngestionStatus(info.status);
 
-        const typeLower =
-          `${nextReportTypeKey} ${nextReportTypeName}`.toLowerCase();
+        setHeaderInfo(normalizeHeaderInfoFromReport(detail));
+      } else {
+        console.error("[refreshRows] report detail failed", detailResult.reason);
+        nextMsg += `report 조회 실패: ${
+          (detailResult.reason as any)?.message || "unknown"
+        }\n`;
 
-        if (typeLower.includes("traffic") || typeLower.includes("트래픽")) {
-          nextReportTypeName = "트래픽 리포트";
-        } else if (
-          nextReportTypeKey.toLowerCase() === "commerce" &&
-          !nextReportTypeName
-        ) {
-          nextReportTypeName = "커머스 매출 리포트";
-        }
-
-        setHeaderInfo({
-          advertiserName: asStr(hdr?.advertiserName),
-          reportTypeName: nextReportTypeName,
-          reportTypeKey: nextReportTypeKey,
-        });
-      } catch (e: any) {
-        console.error("[refreshRows] headerInfo failed", e);
         setHeaderInfo({
           advertiserName: "",
           reportTypeName: "",
           reportTypeKey: "",
         });
-        nextMsg += `header 조회 실패: ${e?.message || "unknown"}\n`;
+      }
+
+      if (creativesResult.status === "fulfilled") {
+        const nextCreativesMap = { ...(creativesResult.value ?? {}) };
+        setCreativesMap(nextCreativesMap);
+
+        console.log("[refreshRows] creativesMap ok", {
+          keyCount: Object.keys(nextCreativesMap).length,
+        });
+      } else {
+        console.error(
+          "[refreshRows] creativesMap failed",
+          creativesResult.reason
+        );
+        setCreativesMap({});
+        nextMsg += `creativesMap 조회 실패: ${
+          (creativesResult.reason as any)?.message || "unknown"
+        }\n`;
       }
 
       if (nextMsg.trim()) {
@@ -1148,6 +1139,11 @@ export default function ReportDetailPage() {
         pollingRef.current = null;
       }
 
+      if (postDoneRefreshTimerRef.current) {
+        clearTimeout(postDoneRefreshTimerRef.current);
+        postDoneRefreshTimerRef.current = null;
+      }
+
       pollingRef.current = setInterval(async () => {
         if (pollingBusyRef.current) return;
         pollingBusyRef.current = true;
@@ -1166,20 +1162,52 @@ export default function ReportDetailPage() {
               pollingRef.current = null;
             }
 
-            const refreshed = await refreshRows();
-            setSessionIngested((refreshed?.rowsCount ?? 0) > 0);
+            const hasInsertedRows =
+              Math.max(info.inserted, info.validRows) > 0;
+
+            setSessionIngested(hasInsertedRows);
 
             setMsg(
               `파싱 완료${
                 info.inserted > 0 ? ` (inserted: ${formatInt(info.inserted)})` : ""
-              } → 미리보기에 반영되었습니다.`
+              }${
+                hasInsertedRows
+                  ? " → 발행 가능 상태로 전환되었습니다."
+                  : ""
+              }`
             );
+
+            /**
+             * done 직후에는 상단 상태/버튼 반응을 먼저 끝내고,
+             * rows + creatives 재반영은 한 박자 뒤에 시작한다.
+             * 즉시 0ms 경쟁 대신 짧은 지연을 줘서 완료 직후 체감 버벅임을 줄인다.
+             */
+            postDoneRefreshTimerRef.current = window.setTimeout(() => {
+              void refreshRows().then((refreshed) => {
+                if (!hasInsertedRows && (refreshed?.rowsCount ?? 0) > 0) {
+                  setSessionIngested(true);
+                }
+
+                setMsg(
+                  `파싱 완료${
+                    info.inserted > 0
+                      ? ` (inserted: ${formatInt(info.inserted)})`
+                      : ""
+                  } → 미리보기에 반영되었습니다.`
+                );
+              });
+            }, 180);
           }
 
           if (info.status === "failed") {
             if (pollingRef.current) {
               clearInterval(pollingRef.current);
               pollingRef.current = null;
+            }
+
+            if (postDoneRefreshTimerRef.current) {
+              clearTimeout(postDoneRefreshTimerRef.current);
+              postDoneRefreshTimerRef.current = null;
             }
 
             setMsg(info.error || "CSV 파싱 실패");
@@ -1228,6 +1256,10 @@ export default function ReportDetailPage() {
       clearInterval(pollingRef.current);
       pollingRef.current = null;
     }
+    if (postDoneRefreshTimerRef.current) {
+      clearTimeout(postDoneRefreshTimerRef.current);
+      postDoneRefreshTimerRef.current = null;
+    }
     pollingBusyRef.current = false;
 
     setIngestionStatus("idle");
@@ -1258,6 +1290,10 @@ export default function ReportDetailPage() {
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
         pollingRef.current = null;
+      }
+      if (postDoneRefreshTimerRef.current) {
+        clearTimeout(postDoneRefreshTimerRef.current);
+        postDoneRefreshTimerRef.current = null;
       }
       pollingBusyRef.current = false;
     };

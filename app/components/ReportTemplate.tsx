@@ -1,4 +1,3 @@
-// app/components/ReportTemplate.tsx
 "use client";
 
 import dynamic from "next/dynamic";
@@ -982,6 +981,7 @@ export default function ReportTemplate({
   const reportAggregatesParams = useMemo(() => {
     return {
       rows: reportPeriodRows as any,
+      rowsArePreNormalized: true,
       selectedMonth: deferredSelectedMonth,
       selectedWeek: deferredSelectedWeek,
       selectedDevice: deferredSelectedDevice,
@@ -1032,6 +1032,7 @@ export default function ReportTemplate({
   const summaryGoalAggregatesParams = useMemo(() => {
     return {
       rows: reportPeriodRows as any,
+      rowsArePreNormalized: true,
       selectedMonth: "all" as MonthKey,
       selectedWeek: "all" as WeekKey,
       selectedDevice: "all" as DeviceKey,

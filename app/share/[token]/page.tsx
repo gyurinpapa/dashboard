@@ -1,6 +1,13 @@
 "use client";
 
-import { memo, useEffect, useMemo, useState } from "react";
+import {
+  memo,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useParams } from "next/navigation";
 import ReportTemplate from "@/app/components/ReportTemplate";
 import type { ReportPeriod } from "@/src/lib/report/period";
@@ -101,6 +108,19 @@ export default function ShareReportPage() {
   const [creativesMap, setCreativesMap] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
 
+  const [fallbackRowsRange, setFallbackRowsRange] = useState<{
+    startDate: string;
+    endDate: string;
+  } | null>(null);
+
+  const deferredRows = useDeferredValue(rows);
+  const deferredCreativesMap = useDeferredValue(creativesMap);
+
+  const creativesCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const rowsRangeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const advertiserName = useMemo(() => pickAdvertiserName(report), [report]);
   const reportTypeName = useMemo(() => pickReportTypeName(report), [report]);
   const reportTypeKey = useMemo(() => pickReportTypeKey(report), [report]);
@@ -128,12 +148,11 @@ export default function ShareReportPage() {
       };
     }
 
-    const range = getRowsDateRange(rows as any[]);
-    if (range?.startDate && range?.endDate) {
+    if (fallbackRowsRange?.startDate && fallbackRowsRange?.endDate) {
       return {
         preset: "custom",
-        startDate: range.startDate,
-        endDate: range.endDate,
+        startDate: fallbackRowsRange.startDate,
+        endDate: fallbackRowsRange.endDate,
       };
     }
 
@@ -147,7 +166,58 @@ export default function ShareReportPage() {
     report?.published_period_end,
     report?.period_start,
     report?.period_end,
+    fallbackRowsRange,
+  ]);
+
+  useEffect(() => {
+    const publishedStart = asStr(report?.published_period_start);
+    const publishedEnd = asStr(report?.published_period_end);
+    const legacyStart = asStr(report?.period_start);
+    const legacyEnd = asStr(report?.period_end);
+
+    const hasReportPeriod =
+      (publishedStart && publishedEnd) || (legacyStart && legacyEnd);
+
+    if (rowsRangeTimerRef.current) {
+      clearTimeout(rowsRangeTimerRef.current);
+      rowsRangeTimerRef.current = null;
+    }
+
+    if (hasReportPeriod) {
+      if (fallbackRowsRange !== null) setFallbackRowsRange(null);
+      return;
+    }
+
+    if (!rows.length) {
+      if (fallbackRowsRange !== null) setFallbackRowsRange(null);
+      return;
+    }
+
+    rowsRangeTimerRef.current = window.setTimeout(() => {
+      const range = getRowsDateRange(rows as any[]);
+      setFallbackRowsRange(
+        range?.startDate && range?.endDate
+          ? {
+              startDate: range.startDate,
+              endDate: range.endDate,
+            }
+          : null
+      );
+    }, 0);
+
+    return () => {
+      if (rowsRangeTimerRef.current) {
+        clearTimeout(rowsRangeTimerRef.current);
+        rowsRangeTimerRef.current = null;
+      }
+    };
+  }, [
+    report?.published_period_start,
+    report?.published_period_end,
+    report?.period_start,
+    report?.period_end,
     rows,
+    fallbackRowsRange,
   ]);
 
   useEffect(() => {
@@ -159,11 +229,24 @@ export default function ShareReportPage() {
 
     let alive = true;
 
+    if (creativesCommitTimerRef.current) {
+      clearTimeout(creativesCommitTimerRef.current);
+      creativesCommitTimerRef.current = null;
+    }
+    if (rowsRangeTimerRef.current) {
+      clearTimeout(rowsRangeTimerRef.current);
+      rowsRangeTimerRef.current = null;
+    }
+
+    setLoading(true);
+    setError("");
+    setReport(null);
+    setRows([]);
+    setCreativesMap({});
+    setFallbackRowsRange(null);
+
     (async () => {
       try {
-        setLoading(true);
-        setError("");
-
         const res = await fetch(`/api/share/${token}`, {
           cache: "no-store",
         });
@@ -174,26 +257,54 @@ export default function ShareReportPage() {
 
         if (!res.ok || !json?.ok) {
           setError(asStr(json?.error) || "공유 리포트 조회 실패");
+          setLoading(false);
           return;
         }
 
-        setReport((json.report ?? null) as ReportRow | null);
-        setRows(Array.isArray(json.rows) ? json.rows : []);
-        setCreativesMap(
+        const nextReport = (json.report ?? null) as ReportRow | null;
+        const nextRows = Array.isArray(json.rows) ? json.rows : [];
+        const nextCreativesMap =
           json.creativesMap && typeof json.creativesMap === "object"
             ? json.creativesMap
-            : {}
-        );
+            : {};
+
+        /**
+         * 핵심 반영 먼저:
+         * report + rows 먼저 넣고 loading을 해제해
+         * 본문이 더 빨리 열리도록 한다.
+         */
+        setReport(nextReport);
+        setRows(nextRows);
+        setLoading(false);
+
+        /**
+         * 부가 반영 나중:
+         * creativesMap은 다음 틱에 반영해서
+         * 첫 paint 경쟁을 줄인다.
+         */
+        creativesCommitTimerRef.current = window.setTimeout(() => {
+          if (!alive) return;
+          setCreativesMap(nextCreativesMap);
+        }, 0);
       } catch (e: any) {
         if (!alive) return;
         setError(asStr(e?.message) || "Unknown error");
-      } finally {
-        if (alive) setLoading(false);
+        setLoading(false);
       }
     })();
 
     return () => {
       alive = false;
+
+      if (creativesCommitTimerRef.current) {
+        clearTimeout(creativesCommitTimerRef.current);
+        creativesCommitTimerRef.current = null;
+      }
+
+      if (rowsRangeTimerRef.current) {
+        clearTimeout(rowsRangeTimerRef.current);
+        rowsRangeTimerRef.current = null;
+      }
     };
   }, [token]);
 
@@ -207,9 +318,9 @@ export default function ShareReportPage() {
 
   return (
     <MemoReportTemplate
-      rows={rows}
+      rows={deferredRows}
       isLoading={false}
-      creativesMap={creativesMap}
+      creativesMap={deferredCreativesMap}
       advertiserName={advertiserName}
       reportTypeName={reportTypeName}
       reportTypeKey={reportTypeKey}

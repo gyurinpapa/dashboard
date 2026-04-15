@@ -780,9 +780,12 @@ export async function POST(req: Request, ctx: Ctx) {
     let inFlight: Promise<
       { ok: true; size: number } | { ok: false; error: any }
     >[] = [];
-    let lastMetaUpdateAt = 0;
-    let lastCommittedBatchMeta = 0;
+
     let lastByteProgress = 3;
+    let lastBytesProcessed = 0;
+    let lastMetaFlushAt = 0;
+    let lastCommittedBatchMeta = 0;
+    let isMetaFlushInFlight = false;
 
     const startedParseAt = Date.now();
     const startedInsertAt = Date.now();
@@ -804,45 +807,54 @@ export async function POST(req: Request, ctx: Ctx) {
       | { ok: true; size: number }
       | { ok: false; error: any };
 
-    const PROGRESS_UPDATE_MIN_INTERVAL_MS = 1500;
+    const META_FLUSH_MIN_INTERVAL_MS = 3500;
 
-    const updateProgressMeta = async (force = false) => {
-    const now = Date.now();
+    const flushProgressMeta = async (force = false) => {
+      if (isMetaFlushInFlight) return;
 
-    const shouldUpdate =
+      const now = Date.now();
+      const progressFromInsert = calcProgress(
+        insertedCount,
+        Math.max(validRowCount, insertedCount || 1)
+      );
+      const progress = Math.max(lastByteProgress, progressFromInsert);
+
+      const shouldUpdate =
         force ||
         committedBatchCount === 1 ||
         committedBatchCount - lastCommittedBatchMeta >= updateEveryBatches ||
-        now - lastMetaUpdateAt >= PROGRESS_UPDATE_MIN_INTERVAL_MS;
+        now - lastMetaFlushAt >= META_FLUSH_MIN_INTERVAL_MS;
 
       if (!shouldUpdate) return;
 
-      lastCommittedBatchMeta = committedBatchCount;
-      lastMetaUpdateAt = now;
+      isMetaFlushInFlight = true;
 
-      reportMetaForError = await updateReportIngestionMeta(
-        sb!,
-        reportId,
-        reportMetaForError,
-        {
-          status: "processing",
-          inserted: insertedCount,
-          valid_rows: validRowCount,
-          parsed_lines: parsedLines,
-          total_lines: totalLines,
-          progress: Math.max(
-            lastByteProgress,
-            calcProgress(
-              insertedCount,
-              Math.max(validRowCount, insertedCount || 1)
-            )
-          ),
-          min_date: min_date || null,
-          max_date: max_date || null,
-          committed_batches: committedBatchCount,
-          in_flight_inserts: inFlight.length,
-        }
-      );
+      try {
+        reportMetaForError = await updateReportIngestionMeta(
+          sb!,
+          reportId,
+          reportMetaForError,
+          {
+            status: "processing",
+            inserted: insertedCount,
+            valid_rows: validRowCount,
+            parsed_lines: parsedLines,
+            total_lines: totalLines,
+            progress,
+            bytes_total: blobSize || 0,
+            bytes_processed: lastBytesProcessed || 0,
+            min_date: min_date || null,
+            max_date: max_date || null,
+            committed_batches: committedBatchCount,
+            in_flight_inserts: inFlight.length,
+          }
+        );
+
+        lastMetaFlushAt = now;
+        lastCommittedBatchMeta = committedBatchCount;
+      } finally {
+        isMetaFlushInFlight = false;
+      }
     };
 
     const settleOneInsert = async (forceMeta = false) => {
@@ -862,7 +874,7 @@ export async function POST(req: Request, ctx: Ctx) {
       insertedCount += settled.result.size;
       committedBatchCount += 1;
 
-      await updateProgressMeta(forceMeta);
+      await flushProgressMeta(forceMeta);
     };
 
     const enqueueBatchInsert = async (rows: any[]) => {
@@ -1036,37 +1048,10 @@ export async function POST(req: Request, ctx: Ctx) {
       },
 
       onChunkProgress: async (processedBytes, totalBytes) => {
-        const progress = calcProgress(processedBytes, totalBytes || 1);
-        lastByteProgress = progress;
+        lastBytesProcessed = processedBytes || 0;
+        lastByteProgress = calcProgress(processedBytes, totalBytes || 1);
 
-        const now = Date.now();
-        const shouldUpdateMeta =
-          now - lastMetaUpdateAt >= 900 &&
-          progress !== reportMetaForError?.ingestion?.progress;
-
-        if (!shouldUpdateMeta) return;
-
-        lastMetaUpdateAt = now;
-
-        reportMetaForError = await updateReportIngestionMeta(
-          sb!,
-          reportId,
-          reportMetaForError,
-          {
-            status: "processing",
-            inserted: insertedCount,
-            valid_rows: validRowCount,
-            parsed_lines: parsedLines,
-            total_lines: totalLines,
-            progress,
-            bytes_total: totalBytes || 0,
-            bytes_processed: processedBytes || 0,
-            min_date: min_date || null,
-            max_date: max_date || null,
-            committed_batches: committedBatchCount,
-            in_flight_inserts: inFlight.length,
-          }
-        );
+        await flushProgressMeta(false);
       },
     });
 

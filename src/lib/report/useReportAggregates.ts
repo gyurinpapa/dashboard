@@ -1,4 +1,3 @@
-// src/lib/report/useReportAggregates.ts
 "use client";
 
 import { useEffect, useMemo } from "react";
@@ -41,6 +40,14 @@ type Args = {
 
   monthGoal: GoalState;
   onInvalidWeek?: () => void;
+
+  /**
+   * 이미 상위에서 normalizeIncomingRow / filterRowsByReportPeriod 등을 거친
+   * pre-normalized rows 인지 여부
+   * - true면 normalizeCsvRows 재실행을 건너뜀
+   * - false면 기존 동작 유지
+   */
+  rowsArePreNormalized?: boolean;
 
   /**
    * [수정 포인트]
@@ -281,6 +288,7 @@ export function useReportAggregates({
   selectedProduct = "all",
   monthGoal,
   onInvalidWeek,
+  rowsArePreNormalized = false,
 
   needCurrentMonthActual = true,
   needTotals = true,
@@ -291,10 +299,12 @@ export function useReportAggregates({
   needByMonth = true,
   needHydratedFilteredRows = true,
 }: Args) {
-  const normalizedRows = useMemo(
-    () => normalizeCsvRows((rows ?? []) as any[]),
-    [rows]
-  );
+  const normalizedRows = useMemo(() => {
+    const list = (rows ?? []) as any[];
+    if (!list.length) return EMPTY_LIST;
+    if (rowsArePreNormalized) return list;
+    return normalizeCsvRows(list);
+  }, [rows, rowsArePreNormalized]);
 
   /**
    * [수정 포인트]
@@ -511,6 +521,7 @@ export function useReportAggregates({
       selectedChannel,
       selectedSource,
       selectedProduct,
+      rowsArePreNormalized,
     });
 
     if (sample) {
@@ -539,6 +550,7 @@ export function useReportAggregates({
     selectedChannel,
     selectedSource,
     selectedProduct,
+    rowsArePreNormalized,
   ]);
 
   useEffect(() => {
@@ -555,7 +567,9 @@ export function useReportAggregates({
       "UA.DEBUG NORMALIZED len=",
       normalizedRows.length,
       "creativeCnt=",
-      cnt
+      cnt,
+      "rowsArePreNormalized=",
+      rowsArePreNormalized
     );
 
     if (sample) {
@@ -575,7 +589,7 @@ export function useReportAggregates({
     } else {
       console.log("UA.DEBUG NORMALIZED firstCreativeSample = NONE");
     }
-  }, [debugUA, normalizedRows]);
+  }, [debugUA, normalizedRows, rowsArePreNormalized]);
 
   useEffect(() => {
     if (!debugUA) return;
