@@ -6,6 +6,7 @@ export type ReportType = "commerce" | "traffic" | "db_acquisition";
 // ===== Tabs =====
 export type TabKey =
   | "summary"
+  | "decision"
   | "summary2"
   | "structure"
   | "keyword"

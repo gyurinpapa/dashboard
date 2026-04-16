@@ -102,6 +102,14 @@ const MonthGoalSection = dynamic(
   }
 );
 
+const DecisionPanel = dynamic(
+  () => import("@/app/components/decision/DecisionPanel"),
+  {
+    ssr: false,
+    loading: () => <div className="rounded-2xl" />,
+  }
+);
+
 const MemoHeaderBar = memo(HeaderBar);
 const MemoFloatingFilterRail = memo(FloatingFilterRail);
 const MemoFloatingTabRail = memo(FloatingTabRail);
@@ -1367,6 +1375,7 @@ export default function ReportTemplate({
   const stableCurrentMonthGoalComputed =
     useStableShallowValue(currentMonthGoalComputed);
   const stableTotals = useStableShallowValue(totals);
+  const stableByCampaign = useStableShallowValue(byCampaign);
   const stableByMonth = useStableShallowValue(byMonth);
   const stableByWeekOnly = useStableShallowValue(byWeekOnly);
   const stableByWeekChart = useStableShallowValue(byWeekChart);
@@ -1426,6 +1435,34 @@ export default function ReportTemplate({
     stableMonthGoal,
     setMonthGoal,
     stableMonthGoalInsight,
+  ]);
+
+  const decisionPanelProps = useMemo(() => {
+    return {
+      reportType,
+      currentMonthKey: summaryGoalCurrentMonthKey,
+      currentMonthActual: stableSummaryGoalCurrentMonthActual,
+      currentMonthGoalComputed: stableSummaryGoalCurrentMonthGoalComputed,
+      monthGoal: stableMonthGoal,
+      lastDataDate: summaryGoalLastDataDate,
+      rows: reportPeriodRows as any[],
+      byCampaign: stableByCampaign,
+      byWeek: stableByWeekOnly,
+      byMonth: stableByMonth,
+      reportPeriod: stableReportPeriod,
+    };
+  }, [
+    reportType,
+    summaryGoalCurrentMonthKey,
+    stableSummaryGoalCurrentMonthActual,
+    stableSummaryGoalCurrentMonthGoalComputed,
+    stableMonthGoal,
+    summaryGoalLastDataDate,
+    reportPeriodRows,
+    stableByCampaign,
+    stableByWeekOnly,
+    stableByMonth,
+    stableReportPeriod,
   ]);
 
   const headerBarProps = useMemo<HeaderBarProps>(() => {
@@ -1551,6 +1588,12 @@ export default function ReportTemplate({
                         <SummarySection {...(summarySectionProps as any)} />
                       </div>
                     </>
+                  )}
+
+                  {deferredTab === "decision" && (
+                    <div className="rounded-2xl">
+                      <DecisionPanel {...(decisionPanelProps as any)} />
+                    </div>
                   )}
 
                   {deferredTab === "summary2" && (

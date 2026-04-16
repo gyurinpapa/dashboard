@@ -289,6 +289,7 @@ const TabButtons = memo(function TabButtons({
     () =>
       [
         { key: "summary", label: "요약" },
+        { key: "decision", label: "Decision" },
         { key: "summary2", label: "요약2" },
         { key: "structure", label: "구조" },
         { key: "keyword", label: "키워드" },
