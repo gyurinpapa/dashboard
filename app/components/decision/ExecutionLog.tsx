@@ -159,10 +159,16 @@ function getPrioritySnapshotPreviousRank(snapshot?: PrioritySnapshotLike) {
 
 function getPrioritySnapshotCurrentRank(snapshot?: PrioritySnapshotLike) {
   if (!snapshot) return undefined;
-  if ("afterRank" in snapshot && snapshot.afterRank != null) {
+
+  if ("afterRank" in snapshot && typeof snapshot.afterRank === "number") {
     return snapshot.afterRank;
   }
-  return snapshot.currentRank;
+
+  if ("currentRank" in snapshot && typeof snapshot.currentRank === "number") {
+    return snapshot.currentRank;
+  }
+
+  return undefined;
 }
 
 function getPrioritySnapshotChangedAt(snapshot?: PrioritySnapshotLike) {
