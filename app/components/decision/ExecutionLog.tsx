@@ -210,16 +210,30 @@ function formatStrategyBucketLabel(
 
 function getStrategySnapshotPreviousBucket(snapshot?: StrategySnapshotLike) {
   if (!snapshot) return undefined;
-  if ("beforeBucket" in snapshot) return snapshot.beforeBucket;
-  return snapshot.previousBucket;
+
+  if ("beforeBucket" in snapshot && snapshot.beforeBucket) {
+    return snapshot.beforeBucket;
+  }
+
+  if ("previousBucket" in snapshot && snapshot.previousBucket) {
+    return snapshot.previousBucket;
+  }
+
+  return undefined;
 }
 
 function getStrategySnapshotCurrentBucket(snapshot?: StrategySnapshotLike) {
   if (!snapshot) return undefined;
-  if ("afterBucket" in snapshot && snapshot.afterBucket != null) {
+
+  if ("afterBucket" in snapshot && snapshot.afterBucket) {
     return snapshot.afterBucket;
   }
-  return snapshot.currentBucket;
+
+  if ("currentBucket" in snapshot && snapshot.currentBucket) {
+    return snapshot.currentBucket;
+  }
+
+  return undefined;
 }
 
 function getStrategySnapshotChangedAt(snapshot?: StrategySnapshotLike) {
