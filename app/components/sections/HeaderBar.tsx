@@ -129,6 +129,25 @@ function periodPresetLabel(preset: ReportPeriodPreset) {
   }
 }
 
+const PRIMARY_TABS: ReadonlyArray<{ key: TabKey; label: string }> = [
+  { key: "summary", label: "요약" },
+  { key: "summary2", label: "요약2" },
+  { key: "structure", label: "구조" },
+  { key: "keyword", label: "키워드" },
+  { key: "keywordDetail", label: "키워드(상세)" },
+  { key: "creative", label: "소재" },
+  { key: "creativeDetail", label: "소재(상세)" },
+];
+
+const DECISION_TABS: ReadonlyArray<{ key: TabKey; label: string }> = [
+  { key: "decision", label: "Decision" },
+  { key: "hypothesis1", label: "가설 1" },
+  { key: "hypothesis2", label: "가설 2" },
+  { key: "hypothesis3", label: "가설 3" },
+  { key: "hypothesis4", label: "가설 4" },
+  { key: "hypothesis5", label: "가설 5" },
+];
+
 const HeaderIntro = memo(function HeaderIntro({
   advertiserName,
   reportTypeName,
@@ -140,13 +159,8 @@ const HeaderIntro = memo(function HeaderIntro({
   reportTypeKey?: string | null;
   fullPeriod: string;
 }) {
-  const cleanTypeKey = useMemo(() => {
-    return cleanText(reportTypeKey);
-  }, [reportTypeKey]);
-
-  const cleanTypeName = useMemo(() => {
-    return cleanText(reportTypeName);
-  }, [reportTypeName]);
+  const cleanTypeKey = useMemo(() => cleanText(reportTypeKey), [reportTypeKey]);
+  const cleanTypeName = useMemo(() => cleanText(reportTypeName), [reportTypeName]);
 
   const badgeText = useMemo(() => {
     const key = cleanTypeKey.toLowerCase();
@@ -188,17 +202,13 @@ const HeaderIntro = memo(function HeaderIntro({
 
   const headerTitle = useMemo(() => {
     const adv = cleanText(advertiserName);
-    const typeName = cleanTypeName;
-
     if (adv) return `${adv} 광고 리포트`;
-    if (typeName) return typeName;
+    if (cleanTypeName) return cleanTypeName;
     return "온라인광고";
   }, [advertiserName, cleanTypeName]);
 
   const headerSubTitle = useMemo(() => {
-    const typeName = cleanTypeName;
-
-    if (typeName) return typeName;
+    if (cleanTypeName) return cleanTypeName;
     return "광고 성과 리포트";
   }, [cleanTypeName]);
 
@@ -221,7 +231,7 @@ const HeaderIntro = memo(function HeaderIntro({
             <span className="font-medium text-slate-200">{headerSubTitle}</span>
             {fullPeriod ? (
               <>
-                <span className="hidden sm:inline text-white/20">•</span>
+                <span className="hidden text-white/20 sm:inline">•</span>
                 <span>
                   데이터 전체 기간{" "}
                   <span className="font-semibold text-white">{fullPeriod}</span>
@@ -281,36 +291,23 @@ const ReadOnlyHeaderBar = memo(function ReadOnlyHeaderBar({
 const TabButtons = memo(function TabButtons({
   tab,
   setTab,
+  items,
 }: {
   tab: TabKey;
   setTab: (t: TabKey) => void;
+  items: ReadonlyArray<{ key: TabKey; label: string }>;
 }) {
-  const tabItems = useMemo(
-    () =>
-      [
-        { key: "summary", label: "요약" },
-        { key: "decision", label: "Decision" },
-        { key: "summary2", label: "요약2" },
-        { key: "structure", label: "구조" },
-        { key: "keyword", label: "키워드" },
-        { key: "keywordDetail", label: "키워드(상세)" },
-        { key: "creative", label: "소재" },
-        { key: "creativeDetail", label: "소재(상세)" },
-      ] as const,
-    []
-  );
-
   const handleTabClick = useCallback(
     (nextTab: TabKey) => {
       if (nextTab === tab) return;
       setTab(nextTab);
     },
-    [setTab, tab]
+    [setTab, tab],
   );
 
   return (
     <div className="flex flex-wrap gap-2">
-      {tabItems.map((item) => (
+      {items.map((item) => (
         <button
           key={item.key}
           type="button"
@@ -443,27 +440,15 @@ function EditorHeaderBar(props: Props) {
     (k: Exclude<HeaderFilterKey, null>) => {
       setFilterKey(filterKey === k ? null : k);
     },
-    [filterKey, setFilterKey]
+    [filterKey, setFilterKey],
   );
 
   const handleToggleMonth = useCallback(() => toggleFilter("month"), [toggleFilter]);
   const handleToggleWeek = useCallback(() => toggleFilter("week"), [toggleFilter]);
-  const handleToggleDevice = useCallback(
-    () => toggleFilter("device"),
-    [toggleFilter]
-  );
-  const handleToggleChannel = useCallback(
-    () => toggleFilter("channel"),
-    [toggleFilter]
-  );
-  const handleToggleSource = useCallback(
-    () => toggleFilter("source"),
-    [toggleFilter]
-  );
-  const handleToggleProduct = useCallback(
-    () => toggleFilter("product"),
-    [toggleFilter]
-  );
+  const handleToggleDevice = useCallback(() => toggleFilter("device"), [toggleFilter]);
+  const handleToggleChannel = useCallback(() => toggleFilter("channel"), [toggleFilter]);
+  const handleToggleSource = useCallback(() => toggleFilter("source"), [toggleFilter]);
+  const handleToggleProduct = useCallback(() => toggleFilter("product"), [toggleFilter]);
 
   useEffect(() => {
     if (!filterKey) return;
@@ -506,7 +491,7 @@ function EditorHeaderBar(props: Props) {
 
       onChangeReportPeriod(resolvePresetPeriod({ preset }));
     },
-    [onChangeReportPeriod, reportPeriod.endDate, reportPeriod.startDate]
+    [onChangeReportPeriod, reportPeriod.endDate, reportPeriod.startDate],
   );
 
   const handleStartDateChange = useCallback(
@@ -517,7 +502,7 @@ function EditorHeaderBar(props: Props) {
         endDate: reportPeriod.endDate,
       });
     },
-    [onChangeReportPeriod, reportPeriod.endDate]
+    [onChangeReportPeriod, reportPeriod.endDate],
   );
 
   const handleEndDateChange = useCallback(
@@ -528,7 +513,7 @@ function EditorHeaderBar(props: Props) {
         endDate: nextEndDate,
       });
     },
-    [onChangeReportPeriod, reportPeriod.startDate]
+    [onChangeReportPeriod, reportPeriod.startDate],
   );
 
   const handleSelectMonthAll = useCallback(() => {
@@ -555,13 +540,7 @@ function EditorHeaderBar(props: Props) {
         </button>
       );
     });
-  }, [
-    monthOptions,
-    enabledMonthKeySet,
-    selectedMonth,
-    setSelectedMonth,
-    closeFilter,
-  ]);
+  }, [monthOptions, enabledMonthKeySet, selectedMonth, setSelectedMonth, closeFilter]);
 
   const handleSelectWeekAll = useCallback(() => {
     setSelectedWeek("all");
@@ -588,13 +567,7 @@ function EditorHeaderBar(props: Props) {
         </button>
       );
     });
-  }, [
-    weekOptions,
-    enabledWeekKeySet,
-    selectedWeek,
-    setSelectedWeek,
-    closeFilter,
-  ]);
+  }, [weekOptions, enabledWeekKeySet, selectedWeek, setSelectedWeek, closeFilter]);
 
   const handleSelectDeviceAll = useCallback(() => {
     setSelectedDevice("all");
@@ -657,13 +630,7 @@ function EditorHeaderBar(props: Props) {
         </button>
       );
     });
-  }, [
-    channelOptions,
-    disableDisplayChannel,
-    selectedChannel,
-    setSelectedChannel,
-    closeFilter,
-  ]);
+  }, [channelOptions, disableDisplayChannel, selectedChannel, setSelectedChannel, closeFilter]);
 
   const handleSelectSourceAll = useCallback(() => {
     setSelectedSource("all");
@@ -883,24 +850,26 @@ function EditorHeaderBar(props: Props) {
         </div>
 
         <div className="flex min-h-[116px] min-w-0 flex-col justify-between rounded-[24px] border border-white/12 bg-white/[0.08] px-3 py-3 shadow-[0_16px_38px_rgba(2,6,23,0.18)] backdrop-blur-xl">
-          <TabButtons tab={tab} setTab={setTab} />
+          <TabButtons tab={tab} setTab={setTab} items={PRIMARY_TABS} />
 
-          <div className="mt-4 flex min-h-[24px] items-end justify-between gap-3 border-t border-white/10 pt-3">
-            <div className="text-xs text-slate-300">
-              {!hideTabPeriodText ? (
-                <>
-                  기준 기간{" "}
-                  <span className="font-semibold text-white">
-                    {reportPeriod.startDate || "-"} ~ {reportPeriod.endDate || "-"}
-                  </span>
-                </>
-              ) : null}
+          <div className="mt-4 flex min-h-[24px] flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-3">
+            <div className="min-w-0 flex-1">
+              <TabButtons tab={tab} setTab={setTab} items={DECISION_TABS} />
             </div>
 
-            <div className="rounded-full border border-white/12 bg-white/10 px-3 py-1 text-xs font-semibold text-white shadow-sm backdrop-blur-sm">
+            <div className="shrink-0 rounded-full border border-white/12 bg-white/10 px-3 py-1 text-xs font-semibold text-white shadow-sm backdrop-blur-sm">
               +VAT
             </div>
           </div>
+
+          {!hideTabPeriodText ? (
+            <div className="mt-2 text-xs text-slate-300">
+              기준 기간{" "}
+              <span className="font-semibold text-white">
+                {reportPeriod.startDate || "-"} ~ {reportPeriod.endDate || "-"}
+              </span>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

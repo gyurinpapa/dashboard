@@ -5,6 +5,32 @@ import type {
 
 export type ExecutionStatus = "planned" | "running" | "done" | "failed";
 
+export type ExecutionStrategyBucketKey =
+  | "expand"
+  | "optimize"
+  | "review"
+  | "observe";
+
+export type ExecutionOutcomePrioritySnapshot = {
+  beforeRank?: number;
+  afterRank?: number;
+  direction: "up" | "down" | "same" | "new";
+  changedAt?: string;
+};
+
+export type ExecutionOutcomeStrategySnapshot = {
+  beforeBucket?: ExecutionStrategyBucketKey;
+  afterBucket?: ExecutionStrategyBucketKey;
+  direction: "shifted" | "same" | "new";
+  changedAt?: string;
+};
+
+export type ExecutionOutcomeSnapshot = {
+  recordedAt?: string;
+  priority?: ExecutionOutcomePrioritySnapshot;
+  strategy?: ExecutionOutcomeStrategySnapshot;
+};
+
 export type ExecutionItem = {
   executionId: string;
   hypothesisId: string;
@@ -19,6 +45,8 @@ export type ExecutionItem = {
 
   baselineValue?: number;
   baselineCapturedAt?: string;
+
+  executionOutcomeSnapshot?: ExecutionOutcomeSnapshot;
 };
 
 type UpdateExecutionStatusOptions = {
@@ -31,6 +59,14 @@ type AppendLearningHistoryArgs = {
   item: ExecutionItem;
   direction: PriorityLearningHistoryItem["direction"];
   evaluatedAt?: string;
+};
+
+type AttachExecutionOutcomeSnapshotArgs = {
+  beforePriorityRank?: number;
+  afterPriorityRank?: number;
+  beforeStrategyBucket?: ExecutionStrategyBucketKey;
+  afterStrategyBucket?: ExecutionStrategyBucketKey;
+  changedAt?: string;
 };
 
 const EXECUTION_STATUS_TRANSITIONS: Record<
@@ -67,6 +103,31 @@ function inferTargetMetricFromPriorityItem(item: PriorityItem): string {
   if (text.includes("impression") || text.includes("노출")) return "IMPRESSIONS";
 
   return "PRIMARY_METRIC";
+}
+
+function resolvePriorityOutcomeDirection(args: {
+  beforePriorityRank?: number;
+  afterPriorityRank?: number;
+}): ExecutionOutcomePrioritySnapshot["direction"] {
+  const { beforePriorityRank, afterPriorityRank } = args;
+
+  if (afterPriorityRank == null) return "same";
+  if (beforePriorityRank == null) return "new";
+  if (afterPriorityRank < beforePriorityRank) return "up";
+  if (afterPriorityRank > beforePriorityRank) return "down";
+  return "same";
+}
+
+function resolveStrategyOutcomeDirection(args: {
+  beforeStrategyBucket?: ExecutionStrategyBucketKey;
+  afterStrategyBucket?: ExecutionStrategyBucketKey;
+}): ExecutionOutcomeStrategySnapshot["direction"] {
+  const { beforeStrategyBucket, afterStrategyBucket } = args;
+
+  if (!afterStrategyBucket) return "same";
+  if (!beforeStrategyBucket) return "new";
+  if (beforeStrategyBucket !== afterStrategyBucket) return "shifted";
+  return "same";
 }
 
 export function createExecutionItemFromPriority(item: PriorityItem): ExecutionItem {
@@ -152,6 +213,46 @@ export function updateExecutionItemStatus(
     baselineCapturedAt: shouldCaptureBaseline
       ? options?.baselineCapturedAt ?? updatedAt
       : item.baselineCapturedAt,
+  };
+}
+
+export function attachExecutionOutcomeSnapshot(
+  item: ExecutionItem,
+  args: AttachExecutionOutcomeSnapshotArgs,
+): ExecutionItem {
+  const {
+    beforePriorityRank,
+    afterPriorityRank,
+    beforeStrategyBucket,
+    afterStrategyBucket,
+    changedAt,
+  } = args;
+
+  const safeChangedAt = changedAt ?? item.updatedAt ?? nowIso();
+
+  return {
+    ...item,
+    executionOutcomeSnapshot: {
+      recordedAt: safeChangedAt,
+      priority: {
+        beforeRank: beforePriorityRank,
+        afterRank: afterPriorityRank,
+        direction: resolvePriorityOutcomeDirection({
+          beforePriorityRank,
+          afterPriorityRank,
+        }),
+        changedAt: safeChangedAt,
+      },
+      strategy: {
+        beforeBucket: beforeStrategyBucket,
+        afterBucket: afterStrategyBucket,
+        direction: resolveStrategyOutcomeDirection({
+          beforeStrategyBucket,
+          afterStrategyBucket,
+        }),
+        changedAt: safeChangedAt,
+      },
+    },
   };
 }
 

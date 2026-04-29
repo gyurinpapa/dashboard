@@ -93,6 +93,10 @@ function isLowerBetterMetric(metric: GoalMetric): boolean {
   return metric === "cpa" || metric === "cpc";
 }
 
+function isAheadNoGap(snapshot: GoalSnapshot): boolean {
+  return snapshot.pacingStatus === "ahead" && snapshot.gapValue <= 0;
+}
+
 function pickFirstString(obj: any, keys: string[]): string {
   if (!obj || typeof obj !== "object") return "";
   for (const key of keys) {
@@ -169,7 +173,13 @@ function resolveRowMetricValue(row: any, metric: GoalMetric): number {
     case "conversions":
       return pickFirstNumber(row, ["conversions", "conversion", "conv", "cv"]);
     case "revenue":
-      return pickFirstNumber(row, ["revenue", "sales", "purchase", "purchase_amount", "gmv"]);
+      return pickFirstNumber(row, [
+        "revenue",
+        "sales",
+        "purchase",
+        "purchase_amount",
+        "gmv",
+      ]);
     case "spend":
       return pickFirstNumber(row, ["spend", "cost", "ad_cost"]);
     case "ctr": {
@@ -225,6 +235,20 @@ function pickTopSpendRows(rows?: any[]): any[] {
 function buildBasePacingHypothesis(snapshot: GoalSnapshot): DecisionHypothesis {
   const lowerBetter = isLowerBetterMetric(snapshot.primaryMetric);
   const metricName = metricLabel(snapshot.primaryMetric);
+  const aheadNoGap = isAheadNoGap(snapshot);
+
+  if (aheadNoGap) {
+    return {
+      id: "pace-hold",
+      title: "초과 달성 유지 가설",
+      axis: "week",
+      confidence: "high",
+      currentProblem: `현재 pace 기준으로는 ${metricName} 목표를 이미 방어 중이지만, 남은 기간 동안 성과 기여 구조가 흔들리면 초과 달성 폭이 빠르게 축소될 수 있습니다.`,
+      causeEstimate: `현재는 시간 진도율 ${formatPercent(snapshot.timeProgressRate)} 대비 실적 페이스가 앞서 있으나, 어떤 구간이 실제로 초과 달성을 만들고 있는지 검증되지 않으면 과도한 조정으로 강한 흐름을 스스로 약화시킬 수 있습니다.`,
+      action: `즉시 큰 보정보다 현재 초과 달성 흐름을 만든 구간을 우선 식별하고, 유지해야 할 구간과 소규모 검증이 필요한 구간을 분리합니다.`,
+      expectedChange: `불필요한 구조 변경 없이도 현재 초과 달성 흐름을 유지하면서, 이후 확대 가능한 핵심 구간을 더 신뢰도 있게 확인할 수 있습니다.`,
+    };
+  }
 
   const problemText =
     snapshot.gapValue > 0
@@ -273,6 +297,7 @@ function buildCampaignEfficiencyHypothesis(
   const topRows = candidates.slice(0, Math.min(5, candidates.length));
   const lowerBetter = isLowerBetterMetric(snapshot.primaryMetric);
   const metricName = metricLabel(snapshot.primaryMetric);
+  const aheadNoGap = isAheadNoGap(snapshot);
 
   const ranked = [...topRows].sort((a, b) => {
     const av = resolveRowMetricValue(a, snapshot.primaryMetric);
@@ -294,9 +319,28 @@ function buildCampaignEfficiencyHypothesis(
   const hasMeaningfulGap =
     lowerBetter
       ? worstMetric > 0 && bestMetric > 0 && worstMetric > bestMetric * 1.15
-      : bestMetric > 0 && worstMetric >= 0 && bestMetric > Math.max(worstMetric * 1.15, 0);
+      : bestMetric > 0 &&
+        worstMetric >= 0 &&
+        bestMetric > Math.max(worstMetric * 1.15, 0);
 
   if (!hasMeaningfulGap) return null;
+
+  if (aheadNoGap) {
+    return {
+      id: "campaign-reallocation",
+      title: "캠페인 기여도 검증 가설",
+      axis: "campaign",
+      confidence: "high",
+      currentProblem: lowerBetter
+        ? `상위 지출 캠페인 내에서도 ${worstName}의 ${metricName}가 ${formatMetricValue(snapshot.primaryMetric, worstMetric)}로, ${bestName}의 ${formatMetricValue(snapshot.primaryMetric, bestMetric)} 대비 비효율 편차가 존재합니다. 다만 현재는 목표 pace가 이미 앞서 있어 즉시 전면 재배분이 최우선은 아닙니다.`
+        : `상위 지출 캠페인 중 ${bestName}는 ${metricName} ${formatMetricValue(snapshot.primaryMetric, bestMetric)}를 만들고 있고, ${worstName}는 ${formatMetricValue(snapshot.primaryMetric, worstMetric)} 수준에 머물러 기여도 편차가 존재합니다. 다만 현재는 목표 pace가 이미 앞서 있어 즉시 전면 재배분이 최우선은 아닙니다.`,
+      causeEstimate: lowerBetter
+        ? `현재 초과 달성 흐름 안에서도 캠페인별 효율 차이는 분명하지만, 어떤 캠페인이 실제로 안정적 효율을 반복하는지 검증 없이 강하게 움직이면 오히려 좋은 흐름을 흔들 수 있습니다.`
+        : `현재 초과 달성 흐름 안에서도 캠페인별 성과 기여 차이는 분명하지만, 어떤 캠페인이 초과 달성을 지속적으로 만들고 있는지 검증 없이 크게 재배분하면 강한 캠페인 구조를 손상시킬 수 있습니다.`,
+      action: `캠페인 간 예산을 크게 옮기기보다 ${bestName}와 ${worstName} 주변 구간의 반응 차이를 소규모로 검증해, 실제로 유지·확대해야 할 캠페인과 관찰이 필요한 캠페인을 먼저 분리합니다.`,
+      expectedChange: `즉시 구조를 크게 흔들지 않고도 캠페인별 기여도 신뢰도를 높여, 다음 단계의 재배분 판단을 더 안정적으로 만들 수 있습니다.`,
+    };
+  }
 
   const currentProblem = lowerBetter
     ? `상위 집행 캠페인 내에서도 ${worstName}의 ${metricName}가 ${formatMetricValue(snapshot.primaryMetric, worstMetric)}로, ${bestName}의 ${formatMetricValue(snapshot.primaryMetric, bestMetric)} 대비 비효율이 큽니다.`
@@ -343,15 +387,32 @@ function buildWeeklyTrendHypothesis(
   const previousName = resolveAxisName(previous, "week");
   const lowerBetter = isLowerBetterMetric(snapshot.primaryMetric);
   const metricName = metricLabel(snapshot.primaryMetric);
+  const aheadNoGap = isAheadNoGap(snapshot);
 
   if (latestMetric <= 0 && previousMetric <= 0) return null;
 
-  const deltaRate = previousMetric > 0 ? safeDivide(latestMetric - previousMetric, previousMetric) : 0;
+  const deltaRate =
+    previousMetric > 0
+      ? safeDivide(latestMetric - previousMetric, previousMetric)
+      : 0;
 
   const isDeteriorating = lowerBetter ? deltaRate > 0.08 : deltaRate < -0.08;
   const isImproving = lowerBetter ? deltaRate < -0.08 : deltaRate > 0.08;
 
   if (!isDeteriorating && !isImproving) {
+    if (aheadNoGap) {
+      return {
+        id: "weekly-stability",
+        title: "주차 안정성 검증 가설",
+        axis: "week",
+        confidence: "medium",
+        currentProblem: `${previousName} 대비 ${latestName}의 ${metricName} 변동폭이 제한적이며, 현재는 목표 pace도 이미 앞서 있습니다. 문제는 부족이 아니라 이 안정 흐름이 남은 기간에도 유지되는지 여부입니다.`,
+        causeEstimate: `최근 주차 성과는 안정적이지만, 어떤 주차 패턴이 초과 달성을 실제로 지지하는지 검증되지 않으면 성급한 확장이나 조정이 오히려 안정성을 깨뜨릴 수 있습니다.`,
+        action: `현재 주차 구조를 크게 흔들지 말고, 다음 주차에는 소규모 증감 테스트만 분리해 어떤 요인이 안정 흐름을 계속 만드는지 확인합니다.`,
+        expectedChange: `초과 달성 흐름을 방어하면서도 다음 주차에 유지해야 할 조건과 검증이 필요한 조건을 더 분명하게 구분할 수 있습니다.`,
+      };
+    }
+
     return {
       id: "weekly-stability",
       title: "주차 안정화 가설",
@@ -381,6 +442,19 @@ function buildWeeklyTrendHypothesis(
     };
   }
 
+  if (aheadNoGap) {
+    return {
+      id: "weekly-expansion",
+      title: "최근 주차 강세 검증 가설",
+      axis: "week",
+      confidence: "medium",
+      currentProblem: `${latestName}의 ${metricName}가 ${formatMetricValue(snapshot.primaryMetric, latestMetric)}로, 직전 ${previousName} 대비 개선되었습니다. 다만 현재는 이미 목표 pace가 앞서 있으므로, 이 신호를 곧바로 확장 근거로 보기보다 반복 가능성을 먼저 확인해야 합니다.`,
+      causeEstimate: `최근 주차에 좋은 반응이 확인됐더라도 그것이 일시적 반등인지, 반복 가능한 강세 패턴인지는 아직 분리되지 않았을 수 있습니다.`,
+      action: `최근 주차에 개선을 만든 세그먼트를 즉시 크게 확장하기보다, 동일 조건에서 소규모 반복 테스트를 진행해 강세의 재현 가능성을 먼저 확인합니다.`,
+      expectedChange: `현재 초과 달성 흐름을 해치지 않으면서도, 이후 실제로 확장 가능한 주차 패턴을 더 신뢰도 있게 검증할 수 있습니다.`,
+    };
+  }
+
   return {
     id: "weekly-expansion",
     title: "최근 주차 확장 가설",
@@ -396,6 +470,20 @@ function buildWeeklyTrendHypothesis(
 function buildFallbackHypothesis(snapshot: GoalSnapshot): DecisionHypothesis {
   const metricName = metricLabel(snapshot.primaryMetric);
   const lowerBetter = isLowerBetterMetric(snapshot.primaryMetric);
+  const aheadNoGap = isAheadNoGap(snapshot);
+
+  if (aheadNoGap) {
+    return {
+      id: "fallback-structure",
+      title: "성과 유지 검증 가설",
+      axis: "campaign",
+      confidence: "medium",
+      currentProblem: `현재 ${metricName} 목표는 방어 중이지만, 어떤 축이 실제 초과 달성에 기여하는지 아직 충분히 분해되지 않았습니다.`,
+      causeEstimate: `캠페인/주차 축 외에 추가 세그먼트 정보가 연결되면 초과 달성 유지에 필요한 핵심 구조를 더 정확히 확인할 수 있습니다.`,
+      action: `우선 캠페인 상위 기여 구간과 최근 주차 흐름을 검증 중심으로 확인하고, 다음 단계에서 키워드/소재/채널 축으로 확장합니다.`,
+      expectedChange: `현재 의사결정 레이어를 유지한 채, 공격적 변경 없이도 유지해야 할 구조와 검증이 필요한 구조를 자연스럽게 분리할 수 있습니다.`,
+    };
+  }
 
   return {
     id: "fallback-structure",
