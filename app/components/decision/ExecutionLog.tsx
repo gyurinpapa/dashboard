@@ -145,8 +145,16 @@ function formatKpiFlowText(args: {
 
 function getPrioritySnapshotPreviousRank(snapshot?: PrioritySnapshotLike) {
   if (!snapshot) return undefined;
-  if ("beforeRank" in snapshot) return snapshot.beforeRank;
-  return snapshot.previousRank;
+
+  if ("beforeRank" in snapshot && typeof snapshot.beforeRank === "number") {
+    return snapshot.beforeRank;
+  }
+
+  if ("previousRank" in snapshot && typeof snapshot.previousRank === "number") {
+    return snapshot.previousRank;
+  }
+
+  return undefined;
 }
 
 function getPrioritySnapshotCurrentRank(snapshot?: PrioritySnapshotLike) {
