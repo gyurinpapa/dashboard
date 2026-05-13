@@ -129,18 +129,24 @@ function periodPresetLabel(preset: ReportPeriodPreset) {
   }
 }
 
-const PRIMARY_TABS: ReadonlyArray<{ key: TabKey; label: string }> = [
+const PRIMARY_TABS_TOP: ReadonlyArray<{ key: TabKey; label: string }> = [
   { key: "summary", label: "요약" },
   { key: "summary2", label: "요약2" },
   { key: "structure", label: "구조" },
+];
+
+const PRIMARY_TABS_BOTTOM: ReadonlyArray<{ key: TabKey; label: string }> = [
   { key: "keyword", label: "키워드" },
   { key: "keywordDetail", label: "키워드(상세)" },
   { key: "creative", label: "소재" },
   { key: "creativeDetail", label: "소재(상세)" },
 ];
 
-const DECISION_TABS: ReadonlyArray<{ key: TabKey; label: string }> = [
+const DECISION_TABS_TOP: ReadonlyArray<{ key: TabKey; label: string }> = [
   { key: "decision", label: "Decision" },
+];
+
+const DECISION_TABS_BOTTOM: ReadonlyArray<{ key: TabKey; label: string }> = [
   { key: "hypothesis1", label: "가설 1" },
   { key: "hypothesis2", label: "가설 2" },
   { key: "hypothesis3", label: "가설 3" },
@@ -691,29 +697,44 @@ function EditorHeaderBar(props: Props) {
         fullPeriod={fullPeriod}
       />
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-stretch">
+      <div className="grid gap-3 xl:grid-cols-[minmax(360px,0.9fr)_minmax(420px,1.05fr)_minmax(360px,0.95fr)] xl:items-stretch">
         <div
           ref={filterRootRef}
-          className="relative flex min-h-[116px] min-w-0 flex-col justify-between rounded-[24px] border border-white/12 bg-white/[0.08] px-4 py-4 shadow-[0_16px_38px_rgba(2,6,23,0.18)] backdrop-blur-xl"
+          className="relative min-w-0 rounded-[24px] border border-white/12 bg-white/[0.08] px-4 py-4 shadow-[0_16px_38px_rgba(2,6,23,0.18)] backdrop-blur-xl"
         >
           <div className="pointer-events-none absolute inset-0 rounded-[24px] bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.08),transparent_30%)]" />
 
-          <div className="relative flex min-w-0 flex-col gap-4">
+          <div className="relative grid gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-white/90">1단 필터</div>
+                <div className="mt-1 text-xs text-slate-400">
+                  월, 주차, 기기, 채널, 소스, 상품
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="rounded-full border border-white/12 bg-white/10 px-3 py-1 text-xs font-semibold text-white shadow-sm backdrop-blur-sm">
+                  +VAT
+                </div>
+              </div>
+            </div>
+
             {!hidePeriodEditor ? (
-              <div className="grid gap-3 xl:grid-cols-[140px_minmax(0,1fr)] xl:items-start">
-                <div className="pt-2 text-sm font-semibold text-white/90">
+              <div className="grid gap-3">
+                <div className="text-sm font-semibold text-white/90">
                   보고서 기간
                 </div>
 
                 <div className="min-w-0">
-                  <div className="flex flex-col gap-3 xl:flex-row xl:flex-wrap xl:items-center">
+                  <div className="flex flex-col gap-3">
                     <div className="shrink-0">
                       <select
                         value={reportPeriod.preset}
                         onChange={(e) =>
                           handlePresetChange(e.target.value as ReportPeriodPreset)
                         }
-                        className="h-11 w-full min-w-[160px] rounded-xl border border-white/12 bg-white/95 px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-slate-400 focus:bg-white xl:w-[168px]"
+                        className="h-11 w-full rounded-xl border border-white/12 bg-white/95 px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-slate-400 focus:bg-white"
                       >
                         {REPORT_PERIOD_PRESETS.map((preset) => (
                           <option key={preset} value={preset}>
@@ -723,13 +744,13 @@ function EditorHeaderBar(props: Props) {
                       </select>
                     </div>
 
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <input
                           type="date"
                           value={reportPeriod.startDate}
                           onChange={(e) => handleStartDateChange(e.target.value)}
-                          className="h-11 w-[190px] max-w-full rounded-xl border border-white/12 bg-white/95 px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400 focus:bg-white"
+                          className="h-11 min-w-[150px] flex-1 rounded-xl border border-white/12 bg-white/95 px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400 focus:bg-white"
                         />
                         <span className="shrink-0 text-sm font-medium text-slate-400">
                           ~
@@ -738,7 +759,7 @@ function EditorHeaderBar(props: Props) {
                           type="date"
                           value={reportPeriod.endDate}
                           onChange={(e) => handleEndDateChange(e.target.value)}
-                          className="h-11 w-[190px] max-w-full rounded-xl border border-white/12 bg-white/95 px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400 focus:bg-white"
+                          className="h-11 min-w-[150px] flex-1 rounded-xl border border-white/12 bg-white/95 px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400 focus:bg-white"
                         />
                       </div>
                     </div>
@@ -758,16 +779,17 @@ function EditorHeaderBar(props: Props) {
               hasSourceOptions={hasSourceOptions}
               hasProductOptions={hasProductOptions}
             />
-          </div>
 
-          <div className="relative mt-4 min-h-[24px] border-t border-white/10 pt-3 text-sm text-slate-300">
-            {period ? (
-              <>
-                조회 기간 <span className="font-semibold text-white">{period}</span>
-              </>
-            ) : (
-              <span className="text-slate-400">조회 기간 정보 없음</span>
-            )}
+            <div className="border-t border-white/10 pt-3 text-sm text-slate-300">
+              {period ? (
+                <>
+                  조회 기간{" "}
+                  <span className="font-semibold text-white">{period}</span>
+                </>
+              ) : (
+                <span className="text-slate-400">조회 기간 정보 없음</span>
+              )}
+            </div>
           </div>
 
           {filterKey === "month" && (
@@ -849,27 +871,55 @@ function EditorHeaderBar(props: Props) {
           )}
         </div>
 
-        <div className="flex min-h-[116px] min-w-0 flex-col justify-between rounded-[24px] border border-white/12 bg-white/[0.08] px-3 py-3 shadow-[0_16px_38px_rgba(2,6,23,0.18)] backdrop-blur-xl">
-          <TabButtons tab={tab} setTab={setTab} items={PRIMARY_TABS} />
-
-          <div className="mt-4 flex min-h-[24px] flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-3">
-            <div className="min-w-0 flex-1">
-              <TabButtons tab={tab} setTab={setTab} items={DECISION_TABS} />
+        <div className="min-w-0 rounded-[24px] border border-white/12 bg-white/[0.08] px-4 py-4 shadow-[0_16px_38px_rgba(2,6,23,0.18)] backdrop-blur-xl">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-white/90">
+                2단 일반 리포트 탭
+              </div>
+              <div className="mt-1 text-xs text-slate-400">
+                요약, 구조, 키워드, 소재
+              </div>
             </div>
 
-            <div className="shrink-0 rounded-full border border-white/12 bg-white/10 px-3 py-1 text-xs font-semibold text-white shadow-sm backdrop-blur-sm">
-              +VAT
-            </div>
+            {!hideTabPeriodText ? (
+              <div className="rounded-full border border-white/12 bg-white/10 px-3 py-1 text-xs font-semibold text-white shadow-sm backdrop-blur-sm">
+                기준 기간
+              </div>
+            ) : null}
+          </div>
+
+          <div className="grid gap-3">
+            <TabButtons tab={tab} setTab={setTab} items={PRIMARY_TABS_TOP} />
+            <TabButtons tab={tab} setTab={setTab} items={PRIMARY_TABS_BOTTOM} />
           </div>
 
           {!hideTabPeriodText ? (
-            <div className="mt-2 text-xs text-slate-300">
+            <div className="mt-3 border-t border-white/10 pt-3 text-xs text-slate-300">
               기준 기간{" "}
               <span className="font-semibold text-white">
                 {reportPeriod.startDate || "-"} ~ {reportPeriod.endDate || "-"}
               </span>
             </div>
           ) : null}
+        </div>
+
+        <div className="min-w-0 rounded-[24px] border border-white/12 bg-white/[0.08] px-4 py-4 shadow-[0_16px_38px_rgba(2,6,23,0.18)] backdrop-blur-xl">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-white/90">
+                3단 Decision Engine
+              </div>
+              <div className="mt-1 text-xs text-slate-400">
+                Decision, 가설 1~5
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-3">
+          <TabButtons tab={tab} setTab={setTab} items={DECISION_TABS_TOP} />
+          <TabButtons tab={tab} setTab={setTab} items={DECISION_TABS_BOTTOM} />
+        </div>
         </div>
       </div>
     </div>

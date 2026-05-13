@@ -176,6 +176,15 @@ type HypothesisTabKey =
   | "hypothesis4"
   | "hypothesis5";
 
+type ManualHypothesisDraft = {
+  title: string;
+  summary: string;
+  targetMetric: string;
+  impact: number;
+  confidence: number;
+  ease: number;
+};
+
 function isHypothesisTab(tab: TabKey): tab is HypothesisTabKey {
   return (
     tab === "hypothesis1" ||
@@ -216,17 +225,435 @@ function pctLabel(value: any) {
   return `${Math.round(n * 100)}`;
 }
 
+function clampManualScore(value: number) {
+  if (!Number.isFinite(value)) return 0.5;
+  return Math.min(0.75, Math.max(0.35, value));
+}
+
+function normalizeManualHypothesisText(...values: any[]) {
+  return values
+    .map((value) => String(value ?? ""))
+    .join(" ")
+    .toLowerCase()
+    .replace(/[\s\n\r\t]+/g, " ")
+    .trim();
+}
+
+function hasAnyManualSignal(input: {
+  title?: string;
+  summary?: string;
+  targetMetric?: string;
+}) {
+  return [input.title, input.summary, input.targetMetric].some(
+    (value) => String(value ?? "").trim().length > 0,
+  );
+}
+
+function countManualKeywordHits(text: string, keywords: string[]) {
+  if (!text) return 0;
+  return keywords.reduce((count, keyword) => {
+    return text.includes(keyword.toLowerCase()) ? count + 1 : count;
+  }, 0);
+}
+
+function boundedManualBoost(value: number, max: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(max, Math.max(-max, value));
+}
+
+function inferManualHypothesisScores({
+  title,
+  summary,
+  targetMetric,
+  reportType,
+}: {
+  title?: string;
+  summary?: string;
+  targetMetric?: string;
+  reportType: ReportType;
+}) {
+  if (!hasAnyManualSignal({ title, summary, targetMetric })) {
+    return {
+      impact: 0.5,
+      confidence: 0.5,
+      ease: 0.5,
+    };
+  }
+
+  const source = normalizeManualHypothesisText(title, summary, targetMetric);
+  const metricText = normalizeManualHypothesisText(targetMetric);
+
+  const trafficGoalHits = countManualKeywordHits(source, [
+    "클릭",
+    "클릭수",
+    "ctr",
+    "유입",
+    "방문",
+    "트래픽",
+    "노출",
+    "도달",
+    "impression",
+    "impressions",
+    "click",
+    "clicks",
+  ]);
+
+  const conversionGoalHits = countManualKeywordHits(source, [
+    "전환",
+    "전환수",
+    "cvr",
+    "구매",
+    "주문",
+    "회원가입",
+    "상담",
+    "문의",
+    "신청",
+    "db",
+    "lead",
+    "리드",
+    "cpa",
+  ]);
+
+  const commerceGoalHits = countManualKeywordHits(source, [
+    "매출",
+    "roas",
+    "객단가",
+    "구매액",
+    "상품",
+    "장바구니",
+    "결제",
+    "revenue",
+    "sales",
+    "gmv",
+  ]);
+
+  const efficiencyGoalHits = countManualKeywordHits(source, [
+    "효율",
+    "cpc",
+    "cpa",
+    "비용",
+    "단가",
+    "낭비",
+    "저효율",
+    "고효율",
+    "비용 효율",
+  ]);
+
+  const keywordDimensionHits = countManualKeywordHits(source, [
+    "키워드",
+    "검색어",
+    "쿼리",
+    "대표키워드",
+    "확장 키워드",
+  ]);
+
+  const creativeDimensionHits = countManualKeywordHits(source, [
+    "소재",
+    "카피",
+    "문구",
+    "이미지",
+    "배너",
+    "썸네일",
+    "creative",
+  ]);
+
+  const campaignDimensionHits = countManualKeywordHits(source, [
+    "캠페인",
+    "광고그룹",
+    "그룹",
+    "세트",
+    "adset",
+    "campaign",
+  ]);
+
+  const segmentDimensionHits = countManualKeywordHits(source, [
+    "기기",
+    "디바이스",
+    "요일",
+    "시간대",
+    "지역",
+    "성별",
+    "연령",
+    "타겟",
+    "잠재고객",
+    "오디언스",
+    "소스",
+    "매체",
+    "플랫폼",
+  ]);
+
+  const productDimensionHits = countManualKeywordHits(source, [
+    "상품",
+    "제품",
+    "카테고리",
+    "sku",
+    "핵심 상품",
+    "주력 상품",
+  ]);
+
+  const expansionActionHits = countManualKeywordHits(source, [
+    "확장",
+    "확대",
+    "추가",
+    "추가 등록",
+    "등록",
+    "스케일",
+    "늘리",
+    "증가",
+    "증액",
+    "확보",
+  ]);
+
+  const optimizationActionHits = countManualKeywordHits(source, [
+    "조정",
+    "최적화",
+    "개선",
+    "재배분",
+    "이동",
+    "분리",
+    "상향",
+    "하향",
+    "제외",
+    "중단",
+    "off",
+    "on",
+  ]);
+
+  const heavyActionHits = countManualKeywordHits(source, [
+    "구조 개편",
+    "전면 개편",
+    "랜딩",
+    "랜딩페이지",
+    "상품 전략",
+    "가격",
+    "프로모션",
+    "대규모",
+    "개발",
+    "연동",
+    "설계",
+    "리뉴얼",
+  ]);
+
+  const evidenceHits = countManualKeywordHits(source, [
+    "기존",
+    "검증",
+    "데이터",
+    "성과 좋은",
+    "고효율",
+    "상위",
+    "대표",
+    "핵심",
+    "우수",
+    "전월",
+    "최근",
+    "이미",
+    "확인",
+  ]);
+
+  const uncertaintyHits = countManualKeywordHits(source, [
+    "신규",
+    "테스트",
+    "실험",
+    "탐색",
+    "불확실",
+    "확인 필요",
+    "가설",
+    "파일럿",
+    "초기",
+    "시도",
+    "추정",
+  ]);
+
+  const sizeOrComplexityHits = countManualKeywordHits(source, [
+    "대량",
+    "대규모",
+    "전체",
+    "전면",
+    "일괄",
+    "모든",
+    "전체 캠페인",
+  ]);
+
+  const hasMetric = metricText.length > 0 && metricText !== "목표 kpi";
+  const hasSpecificDimension =
+    keywordDimensionHits +
+      creativeDimensionHits +
+      campaignDimensionHits +
+      segmentDimensionHits +
+      productDimensionHits >
+    0;
+  const hasClearAction = expansionActionHits + optimizationActionHits + heavyActionHits > 0;
+
+  const reportGoalAlignment =
+    reportType === "traffic"
+      ? trafficGoalHits * 0.035 + keywordDimensionHits * 0.018 + creativeDimensionHits * 0.012
+      : reportType === "db_acquisition"
+        ? conversionGoalHits * 0.035 + efficiencyGoalHits * 0.018 + segmentDimensionHits * 0.012
+        : commerceGoalHits * 0.035 + conversionGoalHits * 0.02 + productDimensionHits * 0.018;
+
+  const crossReportGoalSupport =
+    trafficGoalHits * 0.012 +
+    conversionGoalHits * 0.018 +
+    commerceGoalHits * 0.018 +
+    efficiencyGoalHits * 0.014;
+
+  const dimensionSupport =
+    keywordDimensionHits * 0.016 +
+    creativeDimensionHits * 0.014 +
+    campaignDimensionHits * 0.014 +
+    segmentDimensionHits * 0.012 +
+    productDimensionHits * 0.014;
+
+  const actionImpactSupport =
+    expansionActionHits * 0.016 +
+    optimizationActionHits * 0.014 +
+    heavyActionHits * 0.012;
+
+  const actionEaseSupport =
+    keywordDimensionHits * 0.018 +
+    creativeDimensionHits * 0.018 +
+    optimizationActionHits * 0.018 +
+    expansionActionHits * 0.012;
+
+  const impact = clampManualScore(
+    0.5 +
+      boundedManualBoost(reportGoalAlignment, 0.12) +
+      boundedManualBoost(crossReportGoalSupport, 0.08) +
+      boundedManualBoost(dimensionSupport, 0.07) +
+      boundedManualBoost(actionImpactSupport, 0.06) +
+      (hasMetric ? 0.015 : 0) -
+      (!hasClearAction ? 0.015 : 0),
+  );
+
+  const confidence = clampManualScore(
+    0.5 +
+      boundedManualBoost(evidenceHits * 0.026, 0.13) +
+      boundedManualBoost(hasSpecificDimension ? 0.025 : -0.015, 0.03) +
+      boundedManualBoost(hasClearAction ? 0.025 : -0.015, 0.03) -
+      boundedManualBoost(uncertaintyHits * 0.035, 0.14) -
+      boundedManualBoost(heavyActionHits * 0.018, 0.08),
+  );
+
+  const ease = clampManualScore(
+    0.5 +
+      boundedManualBoost(actionEaseSupport, 0.14) +
+      boundedManualBoost(campaignDimensionHits * 0.008 + segmentDimensionHits * 0.008, 0.03) -
+      boundedManualBoost(heavyActionHits * 0.045, 0.16) -
+      boundedManualBoost(sizeOrComplexityHits * 0.025, 0.08),
+  );
+
+  return {
+    impact,
+    confidence,
+    ease,
+  };
+}
+
+
+function inferManualHypothesisScoreReason({
+  title,
+  summary,
+  targetMetric,
+  reportType,
+}: {
+  title?: string;
+  summary?: string;
+  targetMetric?: string;
+  reportType: ReportType;
+}) {
+  if (!hasAnyManualSignal({ title, summary, targetMetric })) {
+    return "입력된 수동 가설이 아직 없어 기본값으로 표시됩니다.";
+  }
+
+  const source = normalizeManualHypothesisText(title, summary, targetMetric);
+  const reportTypeLabel =
+    reportType === "traffic"
+      ? "트래픽 목적"
+      : reportType === "db_acquisition"
+        ? "DB획득 목적"
+        : "커머스 목적";
+
+  const trafficGoalHits = countManualKeywordHits(source, ["클릭", "클릭수", "ctr", "유입", "방문", "트래픽", "노출", "도달"]);
+  const conversionGoalHits = countManualKeywordHits(source, ["전환", "전환수", "cvr", "구매", "주문", "회원가입", "상담", "문의", "신청", "db", "lead", "리드", "cpa"]);
+  const commerceGoalHits = countManualKeywordHits(source, ["매출", "roas", "객단가", "구매액", "상품", "장바구니", "결제"]);
+  const keywordDimensionHits = countManualKeywordHits(source, ["키워드", "검색어", "쿼리", "대표키워드", "확장 키워드"]);
+  const creativeDimensionHits = countManualKeywordHits(source, ["소재", "카피", "문구", "이미지", "배너", "썸네일"]);
+  const campaignDimensionHits = countManualKeywordHits(source, ["캠페인", "광고그룹", "그룹", "세트"]);
+  const segmentDimensionHits = countManualKeywordHits(source, ["기기", "디바이스", "요일", "시간대", "지역", "성별", "연령", "타겟", "잠재고객", "오디언스", "소스", "매체", "플랫폼"]);
+  const productDimensionHits = countManualKeywordHits(source, ["상품", "제품", "카테고리", "sku", "핵심 상품", "주력 상품"]);
+  const expansionActionHits = countManualKeywordHits(source, ["확장", "확대", "추가", "추가 등록", "등록", "스케일", "늘리", "증가", "증액", "확보"]);
+  const optimizationActionHits = countManualKeywordHits(source, ["조정", "최적화", "개선", "재배분", "이동", "분리", "상향", "하향", "제외", "중단", "off", "on"]);
+  const heavyActionHits = countManualKeywordHits(source, ["구조 개편", "전면 개편", "랜딩", "랜딩페이지", "상품 전략", "가격", "프로모션", "대규모", "개발", "연동", "설계", "리뉴얼"]);
+  const evidenceHits = countManualKeywordHits(source, ["기존", "검증", "데이터", "성과 좋은", "고효율", "상위", "대표", "핵심", "우수", "전월", "최근", "이미", "확인"]);
+  const uncertaintyHits = countManualKeywordHits(source, ["신규", "테스트", "실험", "탐색", "불확실", "확인 필요", "가설", "파일럿", "초기", "시도", "추정"]);
+
+  const goalLabel =
+    trafficGoalHits >= conversionGoalHits && trafficGoalHits >= commerceGoalHits && trafficGoalHits > 0
+      ? "트래픽/클릭 개선 목표"
+      : conversionGoalHits >= trafficGoalHits && conversionGoalHits >= commerceGoalHits && conversionGoalHits > 0
+        ? "전환/DB 개선 목표"
+        : commerceGoalHits > 0
+          ? "매출/ROAS 개선 목표"
+          : targetMetric?.trim()
+            ? "입력된 목표 KPI"
+            : "목표 KPI 미입력";
+
+  const dimensionLabel =
+    keywordDimensionHits > 0
+      ? "키워드 기준"
+      : creativeDimensionHits > 0
+        ? "소재 기준"
+        : campaignDimensionHits > 0
+          ? "캠페인/그룹 기준"
+          : segmentDimensionHits > 0
+            ? "세그먼트 기준"
+            : productDimensionHits > 0
+              ? "상품 기준"
+              : "측정기준 미지정";
+
+  const actionLabel =
+    heavyActionHits > 0
+      ? "구조 변경성 액션"
+      : optimizationActionHits > 0
+        ? "최적화 액션"
+        : expansionActionHits > 0
+          ? "확장 액션"
+          : "액션 미지정";
+
+  const confidenceLabel =
+    evidenceHits > uncertaintyHits
+      ? "근거 표현이 있어 신뢰도를 소폭 높였습니다"
+      : uncertaintyHits > evidenceHits
+        ? "테스트/불확실 표현이 있어 신뢰도는 보수적으로 잡았습니다"
+        : "근거와 불확실 표현이 중립이라 신뢰도는 중간값에 가깝게 유지했습니다";
+
+  const easeLabel =
+    heavyActionHits > 0
+      ? "구조·랜딩·전략성 작업은 실행 난이도를 보수적으로 반영했습니다"
+      : expansionActionHits + optimizationActionHits > 0
+        ? "추가·조정·제외처럼 바로 실행 가능한 표현은 실행 용이성을 높였습니다"
+        : "실행 방식이 명확하지 않아 실행 용이성은 중간값에 가깝게 유지했습니다";
+
+  return reportTypeLabel + "에서 " + goalLabel + ", " + dimensionLabel + ", " + actionLabel + "으로 해석했습니다. " + confidenceLabel + ". " + easeLabel + ".";
+}
+
 const HypothesisOperationPanel = memo(function HypothesisOperationPanel({
   index,
   item,
+  isManual = false,
+  onChangeManualHypothesis,
 }: {
   index: number;
   item?: PriorityItem | null;
+  isManual?: boolean;
+  onChangeManualHypothesis?: (next: ManualHypothesisDraft) => void;
 }) {
   const [executionStatus, setExecutionStatus] = useState<
     "not_started" | "running" | "done" | "stopped"
   >("not_started");
   const [executionStartDate, setExecutionStartDate] = useState("");
+  const [executionEndDate, setExecutionEndDate] = useState("");
+  const [reviewDate, setReviewDate] = useState("");
   const [executionMemo, setExecutionMemo] = useState("");
   const [reviewResult, setReviewResult] = useState<
     "improved" | "worsened" | "hold" | ""
@@ -245,8 +672,8 @@ const HypothesisOperationPanel = memo(function HypothesisOperationPanel({
           </h2>
 
           <p className="mt-2 text-sm leading-6 text-slate-600">
-            Decision 탭의 Top 5 가설 계산 결과에 가설 {index}이 생성되면 이
-            페이지에 자동 연결됩니다.
+            Decision 탭의 자동 추천 또는 운영자 수동 가설이 생성되면 가설{" "}
+            {index}이 이 페이지에 연결됩니다.
           </p>
         </div>
 
@@ -262,7 +689,7 @@ const HypothesisOperationPanel = memo(function HypothesisOperationPanel({
             },
             {
               title: "리뷰",
-              desc: "리뷰일, 결과 판단, 개선/악화/보류 판단을 준비합니다.",
+              desc: "실행 종료일, 리뷰일, 결과 판단, 개선/악화/보류 판단을 준비합니다.",
             },
             {
               title: "다음 액션 제안",
@@ -289,12 +716,34 @@ const HypothesisOperationPanel = memo(function HypothesisOperationPanel({
     );
   }
 
-  const targetMetric = getPriorityMetric(item);
   const prioritySummary = getPrioritySummary(item);
+  const targetMetric = getPriorityMetric(item);
   const score = Number((item as any)?.score ?? 0);
   const impact = Number((item as any)?.impact ?? 0);
   const confidence = Number((item as any)?.confidence ?? 0);
   const ease = Number((item as any)?.ease ?? 0);
+
+  const manualTitle = String((item as any)?.title ?? "");
+  const manualSummary = prioritySummary;
+  const manualTargetMetric = targetMetric;
+  const manualScoreReason = String(
+    (item as any)?.manualScoreReason ||
+      "수동 가설의 목표 KPI, 측정기준, 액션 유형을 기준으로 자동 추정합니다.",
+  );
+
+  const updateManualHypothesis = (patch: Partial<ManualHypothesisDraft>) => {
+    if (!isManual || !onChangeManualHypothesis) return;
+
+    onChangeManualHypothesis({
+      title: manualTitle,
+      summary: manualSummary,
+      targetMetric: manualTargetMetric,
+      impact,
+      confidence,
+      ease,
+      ...patch,
+    });
+  };
 
   const executionStatusLabel =
     executionStatus === "running"
@@ -343,13 +792,25 @@ const HypothesisOperationPanel = memo(function HypothesisOperationPanel({
 
   const hasExecutionMemo = executionMemo.trim().length > 0;
   const hasExecutionStartDate = executionStartDate.trim().length > 0;
+  const hasExecutionEndDate = executionEndDate.trim().length > 0;
+  const hasReviewDate = reviewDate.trim().length > 0;
   const hasExecutionStarted =
     executionStatus !== "not_started" ||
     hasExecutionStartDate ||
+    hasExecutionEndDate ||
+    hasReviewDate ||
     hasExecutionMemo;
 
   const executionStartDateTone = hasExecutionStartDate
     ? "border-blue-200 bg-blue-50 text-blue-700"
+    : "border-slate-200 bg-slate-50 text-slate-600";
+
+  const executionEndDateTone = hasExecutionEndDate
+    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+    : "border-slate-200 bg-slate-50 text-slate-600";
+
+  const reviewDateTone = hasReviewDate
+    ? "border-amber-200 bg-amber-50 text-amber-700"
     : "border-slate-200 bg-slate-50 text-slate-600";
 
   const executionMemoTone = hasExecutionMemo
@@ -359,15 +820,17 @@ const HypothesisOperationPanel = memo(function HypothesisOperationPanel({
   const operationCompletionCount =
     (executionStatus !== "not_started" ? 1 : 0) +
     (hasExecutionStartDate ? 1 : 0) +
+    (hasExecutionEndDate ? 1 : 0) +
+    (hasReviewDate ? 1 : 0) +
     (hasExecutionMemo ? 1 : 0) +
     (reviewResult ? 1 : 0);
 
-  const operationCompletionLabel = `${operationCompletionCount}/4 작성됨`;
+  const operationCompletionLabel = `${operationCompletionCount}/6 작성됨`;
 
   const operationCompletionTone =
-    operationCompletionCount <= 1
+    operationCompletionCount <= 2
       ? "border-slate-200 bg-slate-50 text-slate-600"
-      : operationCompletionCount <= 3
+      : operationCompletionCount <= 5
         ? "border-amber-200 bg-amber-50 text-amber-700"
         : "border-emerald-200 bg-emerald-50 text-emerald-700";
 
@@ -525,6 +988,11 @@ const HypothesisOperationPanel = memo(function HypothesisOperationPanel({
           <div className="inline-flex rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold tracking-[0.14em] text-slate-600">
             {targetMetric}
           </div>
+          {isManual ? (
+            <div className="inline-flex rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-[11px] font-semibold tracking-[0.14em] text-violet-700">
+              MANUAL
+            </div>
+          ) : null}
         </div>
 
         <h2 className="mt-3 text-xl font-semibold text-slate-900">
@@ -572,7 +1040,63 @@ const HypothesisOperationPanel = memo(function HypothesisOperationPanel({
             </div>
           </div>
         </div>
+
+        {isManual ? (
+          <div className="mt-3 rounded-2xl border border-violet-100 bg-violet-50/70 px-4 py-3 text-xs font-semibold leading-5 text-violet-700">
+            규칙 기반 자동 추정: {manualScoreReason}
+          </div>
+        ) : null}
       </div>
+
+      {isManual ? (
+        <div className="rounded-3xl border border-violet-200 bg-violet-50/70 px-4 py-4">
+          <div className="text-[11px] font-semibold tracking-[0.14em] text-violet-700">
+            MANUAL HYPOTHESIS
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <label className="rounded-2xl border border-violet-100 bg-white px-4 py-3 md:col-span-2">
+              <div className="text-xs font-semibold text-slate-600">
+                수동 가설 제목
+              </div>
+              <input
+                value={manualTitle}
+                onChange={(e) =>
+                  updateManualHypothesis({ title: e.target.value })
+                }
+                placeholder="예: 고효율 상품군 중심으로 예산을 재배분한다"
+                className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900 outline-none"
+              />
+            </label>
+
+            <label className="rounded-2xl border border-violet-100 bg-white px-4 py-3">
+              <div className="text-xs font-semibold text-slate-600">
+                목표 KPI
+              </div>
+              <input
+                value={manualTargetMetric}
+                onChange={(e) =>
+                  updateManualHypothesis({ targetMetric: e.target.value })
+                }
+                placeholder="예: ROAS / CPA / 전환수 / 매출"
+                className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900 outline-none"
+              />
+            </label>
+
+            <label className="rounded-2xl border border-violet-100 bg-white px-4 py-3">
+              <div className="text-xs font-semibold text-slate-600">요약</div>
+              <input
+                value={manualSummary}
+                onChange={(e) =>
+                  updateManualHypothesis({ summary: e.target.value })
+                }
+                placeholder="이 가설을 실행하는 이유를 짧게 입력"
+                className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900 outline-none"
+              />
+            </label>
+          </div>
+        </div>
+      ) : null}
 
       <div className="rounded-3xl border border-indigo-100 bg-indigo-50/60 px-5 py-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -595,6 +1119,16 @@ const HypothesisOperationPanel = memo(function HypothesisOperationPanel({
               className={`rounded-full border px-3 py-1 text-xs font-semibold ${executionStartDateTone}`}
             >
               시작일: {executionStartDate || "미입력"}
+            </span>
+            <span
+              className={`rounded-full border px-3 py-1 text-xs font-semibold ${executionEndDateTone}`}
+            >
+              종료일: {executionEndDate || "미입력"}
+            </span>
+            <span
+              className={`rounded-full border px-3 py-1 text-xs font-semibold ${reviewDateTone}`}
+            >
+              리뷰일: {reviewDate || "미입력"}
             </span>
             <span
               className={`rounded-full border px-3 py-1 text-xs font-semibold ${executionMemoTone}`}
@@ -761,16 +1295,37 @@ const HypothesisOperationPanel = memo(function HypothesisOperationPanel({
           <h3 className="mt-2 text-base font-semibold text-slate-900">리뷰</h3>
 
           <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+            <label className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+              <div className="text-[11px] font-semibold tracking-[0.14em] text-slate-500">
+                실행 종료일
+              </div>
+              <input
+                type="date"
+                value={executionEndDate}
+                onChange={(e) => setExecutionEndDate(e.target.value)}
+                className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900 outline-none"
+              />
+              <p className="mt-2 text-xs leading-5 text-slate-500">
+                실제 액션을 멈추거나 완료한 날짜를 기록합니다.
+              </p>
+            </label>
+
+            <label className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
               <div className="text-[11px] font-semibold tracking-[0.14em] text-slate-500">
                 리뷰일
               </div>
-              <p className="mt-2 text-sm font-semibold text-slate-900">
-                실행 후 확인 시점에 입력 예정
+              <input
+                type="date"
+                value={reviewDate}
+                onChange={(e) => setReviewDate(e.target.value)}
+                className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900 outline-none"
+              />
+              <p className="mt-2 text-xs leading-5 text-slate-500">
+                실행 결과를 확인하고 판단한 날짜를 기록합니다.
               </p>
-            </div>
+            </label>
 
-            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 md:col-span-2">
               <div className="text-[11px] font-semibold tracking-[0.14em] text-slate-500">
                 결과 판단
               </div>
@@ -1687,6 +2242,10 @@ export default function ReportTemplate({
     DEFAULT_GOAL,
   );
 
+  const [manualHypothesisDrafts, setManualHypothesisDrafts] = useState<
+    Record<number, ManualHypothesisDraft>
+  >({});
+
   const stableReportPeriod = useStableShallowValue(reportPeriod);
   const stableCreativesMapInput = useStableShallowValue(creativesMap ?? {});
   const stableMonthGoal = useStableShallowValue(monthGoal);
@@ -2222,6 +2781,52 @@ export default function ReportTemplate({
     [decisionHypotheses, decisionSimulationResults],
   );
 
+  const manualHypotheses = useMemo<PriorityItem[]>(() => {
+    const autoCount = topFiveHypotheses.length;
+    const missingCount = Math.max(0, 5 - autoCount);
+
+    return Array.from({ length: missingCount }).map((_, i) => {
+      const rank = autoCount + i + 1;
+      const draft = manualHypothesisDrafts[rank];
+
+      const inferredScores = inferManualHypothesisScores({
+        title: draft?.title,
+        summary: draft?.summary,
+        targetMetric: draft?.targetMetric,
+        reportType,
+      });
+      const manualScoreReason = inferManualHypothesisScoreReason({
+        title: draft?.title,
+        summary: draft?.summary,
+        targetMetric: draft?.targetMetric,
+        reportType,
+      });
+
+      const impact = inferredScores.impact;
+      const confidence = inferredScores.confidence;
+      const ease = inferredScores.ease;
+
+      return {
+        hypothesisId: `manual-hypothesis-${rank}`,
+        title: draft?.title || `운영자 수동 가설 ${rank}`,
+        summary:
+          draft?.summary ||
+          "자동 추천으로 채워지지 않은 슬롯입니다. 운영자가 직접 가설 제목, 목표 KPI, 실행 계획을 정리해서 사용할 수 있습니다.",
+        targetMetric: draft?.targetMetric || "목표 KPI",
+        impact,
+        confidence,
+        ease,
+        score: impact * confidence * ease,
+        rank,
+        manualScoreReason,
+      } as PriorityItem;
+    });
+  }, [topFiveHypotheses, manualHypothesisDrafts, reportType]);
+
+  const operationHypotheses = useMemo(() => {
+    return [...topFiveHypotheses, ...manualHypotheses].slice(0, 5);
+  }, [topFiveHypotheses, manualHypotheses]);
+
   const monthGoalSectionProps = useMemo(() => {
     return {
       reportType,
@@ -2456,8 +3061,25 @@ export default function ReportTemplate({
                       <HypothesisOperationPanel
                         index={hypothesisNumberOf(deferredTab)}
                         item={
-                          topFiveHypotheses[hypothesisNumberOf(deferredTab) - 1]
+                          operationHypotheses[
+                            hypothesisNumberOf(deferredTab) - 1
+                          ]
                         }
+                        isManual={String(
+                          (
+                            operationHypotheses[
+                              hypothesisNumberOf(deferredTab) - 1
+                            ] as any
+                          )?.hypothesisId ?? "",
+                        ).startsWith("manual-hypothesis-")}
+                        onChangeManualHypothesis={(next) => {
+                          const index = hypothesisNumberOf(deferredTab);
+
+                          setManualHypothesisDrafts((prev) => ({
+                            ...prev,
+                            [index]: next,
+                          }));
+                        }}
                       />
                     </div>
                   )}
