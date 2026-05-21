@@ -29,8 +29,8 @@ export default function FloatingTabRail({
     <aside className={className}>
       <div
         className={[
-          "flex w-[132px] flex-col gap-3 overflow-hidden rounded-[24px] border border-slate-200/90 bg-white/95",
-          "p-3 shadow-[0_8px_28px_rgba(15,23,42,0.08)] backdrop-blur-sm",
+          "flex w-[132px] flex-col gap-3 overflow-hidden rounded-[24px] border border-[var(--nature-border)] bg-[var(--nature-surface)]/95",
+          "p-3 shadow-[0_8px_28px_rgba(127,166,196,0.16)] backdrop-blur-sm",
         ].join(" ")}
       >
         <div className="px-1 pt-0.5 text-[11px] font-semibold tracking-[-0.01em] text-slate-500">
@@ -52,10 +52,10 @@ export default function FloatingTabRail({
                   "flex min-h-[36px] items-center justify-center",
                   "whitespace-nowrap overflow-hidden text-ellipsis",
                   active
-                    ? "border-slate-900 bg-slate-900 text-white shadow-[0_6px_18px_rgba(15,23,42,0.18)]"
-                    : "border-slate-200 bg-white text-slate-700 hover:-translate-y-[1px] hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900",
+                    ? "border-[var(--nature-blue)] bg-[var(--nature-blue)] text-white shadow-[0_6px_18px_rgba(127,166,196,0.34)]"
+                    : "border-[var(--nature-border)] bg-[var(--nature-shell)] text-slate-700 hover:-translate-y-[1px] hover:border-[var(--nature-blue-light)] hover:bg-[var(--nature-cream)]/70 hover:text-slate-900",
                   readOnly
-                    ? "cursor-not-allowed opacity-50 hover:translate-y-0 hover:border-slate-200 hover:bg-white hover:text-slate-700"
+                    ? "cursor-not-allowed opacity-50 hover:translate-y-0 hover:border-[var(--nature-border)] hover:bg-[var(--nature-shell)] hover:text-slate-700"
                     : "cursor-pointer",
                 ].join(" ")}
                 title={item.label}

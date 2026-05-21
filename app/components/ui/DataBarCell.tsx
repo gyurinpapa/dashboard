@@ -42,9 +42,9 @@ function DataBarCellComponent({
       width: `${pct}%`,
       height: `${height}px`,
       background:
-        "linear-gradient(90deg,#fb923c 0%,#f97316 60%,#ea580c 100%)",
+        "linear-gradient(90deg,#B7D7E3 0%,#7FA6C4 68%,#5F87A3 100%)",
       boxShadow:
-        "inset 0 0 0 1px rgba(255,255,255,0.18), 0 1px 2px rgba(15,23,42,0.08)",
+        "inset 0 0 0 1px rgba(255,255,255,0.22), 0 1px 2px rgba(127,166,196,0.12)",
     }),
     [pct, height]
   );
@@ -56,7 +56,7 @@ function DataBarCellComponent({
 
   return (
     <div className="group flex w-full items-center gap-2.5">
-      <div className="relative w-full overflow-hidden rounded-xl border border-gray-200/80 bg-gray-50/80">
+      <div className="relative w-full overflow-hidden rounded-xl border border-[#CFC2B1]/55 bg-[#F3E4D2]/35">
         <div
           className="rounded-xl transition-all duration-700 ease-out group-hover:brightness-[1.03]"
           style={barStyle}
@@ -64,7 +64,7 @@ function DataBarCellComponent({
 
         {!isSmall && (
           <div
-            className="absolute inset-y-0 right-2.5 flex items-center text-[11px] font-semibold tracking-[-0.01em] text-slate-900"
+            className="absolute inset-y-0 right-2.5 flex items-center text-[11px] font-semibold tracking-[-0.01em] text-[#27364A]"
             style={insideLabelStyle}
           >
             {text}
@@ -73,7 +73,7 @@ function DataBarCellComponent({
       </div>
 
       {isSmall && (
-        <div className="whitespace-nowrap text-[11px] font-semibold tracking-[-0.01em] text-gray-700">
+        <div className="whitespace-nowrap text-[11px] font-semibold tracking-[-0.01em] text-[#52606D]">
           {text}
         </div>
       )}

@@ -291,16 +291,16 @@ const FilterDropdown = memo(function FilterDropdown({
         title={disabled ? `${label} (캠페인을 먼저 선택하세요)` : buttonText}
         className={[
           "inline-flex items-center gap-1.5",
-          "rounded-xl border px-4 py-2.5 text-sm font-semibold shadow-sm transition",
+          "rounded-xl border px-4 py-2.5 text-sm font-semibold shadow-[0_8px_20px_rgba(127,166,196,0.08)] transition",
           "focus:outline-none",
           maxButtonWidthClass,
           disabled
-            ? "cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400"
-            : "border-orange-200 bg-white text-gray-800 hover:border-orange-300 hover:bg-orange-50/70",
+            ? "cursor-not-allowed border-[#CFC2B1]/50 bg-[#F3E4D2]/45 text-[#9A8F81]"
+            : "border-[#B7D7E3]/80 bg-white text-[#334155] hover:border-[#7FA6C4]/70 hover:bg-[#B7D7E3]/20",
         ].join(" ")}
       >
         <span className="truncate">{buttonText}</span>
-        <span className={disabled ? "text-gray-300" : "text-orange-500"}>▼</span>
+        <span className={disabled ? "text-[#CFC2B1]" : "text-[#7FA6C4]"}>▼</span>
       </button>
 
       {open && !disabled && (
@@ -308,14 +308,14 @@ const FilterDropdown = memo(function FilterDropdown({
           className={[
             "absolute left-0 mt-2",
             "z-50 max-h-72 min-w-full w-80 max-w-[70vw] overflow-auto",
-            "rounded-2xl border border-gray-200 bg-white shadow-xl",
+            "rounded-2xl border border-[#CFC2B1]/60 bg-white shadow-[0_14px_32px_rgba(127,166,196,0.14)]"
           ].join(" ")}
         >
           <button
             type="button"
             className={[
               "flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left text-sm",
-              !value ? "bg-orange-50" : "hover:bg-orange-50",
+              !value ? "bg-[#B7D7E3]/20" : "hover:bg-[#B7D7E3]/16",
             ].join(" ")}
             title={`전체 ${label}`}
             onClick={() => {
@@ -325,14 +325,14 @@ const FilterDropdown = memo(function FilterDropdown({
           >
             <span className="truncate whitespace-nowrap">{`전체 ${label}`}</span>
             {!value ? (
-              <span className="font-bold text-orange-600">✓</span>
+              <span className="font-bold text-[#7FA6C4]">✓</span>
             ) : (
               <span />
             )}
           </button>
 
           {sortedOptions.length === 0 ? (
-            <div className="px-4 py-3 text-sm text-gray-500">옵션이 없습니다.</div>
+            <div className="px-4 py-3 text-sm text-[#7A8794]">옵션이 없습니다.</div>
           ) : (
             sortedOptions.map((opt) => {
               const active = value === opt;
@@ -342,7 +342,7 @@ const FilterDropdown = memo(function FilterDropdown({
                   type="button"
                   className={[
                     "flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left text-sm",
-                    active ? "bg-orange-50" : "hover:bg-orange-50",
+                    active ? "bg-[#B7D7E3]/20" : "hover:bg-[#B7D7E3]/16",
                   ].join(" ")}
                   title={opt}
                   onClick={() => {
@@ -352,7 +352,7 @@ const FilterDropdown = memo(function FilterDropdown({
                 >
                   <span className="truncate whitespace-nowrap">{opt}</span>
                   {active ? (
-                    <span className="font-bold text-orange-600">✓</span>
+                    <span className="font-bold text-[#7FA6C4]">✓</span>
                   ) : (
                     <span />
                   )}
@@ -425,14 +425,14 @@ const SectionHeader = memo(function SectionHeader({
     <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
         <div className="mb-2">
-          <span className="inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-orange-700">
+          <span className="inline-flex items-center rounded-full border border-[#B7D7E3]/80 bg-[#B7D7E3]/18 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-[#5F87A3]">
             {badge}
           </span>
         </div>
-        <div className="text-[17px] font-semibold tracking-[-0.02em] text-gray-900">
+        <div className="text-[17px] font-semibold tracking-[-0.02em] text-[#27364A]">
           {title}
         </div>
-        <div className="mt-1 text-sm leading-6 text-gray-500">{description}</div>
+        <div className="mt-1 text-sm leading-6 text-[#6F7B86]">{description}</div>
       </div>
       {right ? <div className="shrink-0">{right}</div> : null}
     </div>
@@ -451,7 +451,7 @@ const ChartCard = memo(function ChartCard({
   children: ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition hover:shadow-md">
+    <div className="rounded-2xl border border-[#CFC2B1]/55 bg-white p-5 shadow-[0_8px_22px_rgba(127,166,196,0.10)] transition hover:shadow-[0_12px_28px_rgba(127,166,196,0.14)]">
       <SectionHeader badge={badge} title={title} description={description} />
       {children}
     </div>
@@ -512,7 +512,7 @@ const KeywordRankingChart = memo(function KeywordRankingChart({
                 style={{
                   fontSize: 11,
                   fontWeight: 700,
-                  fill: "#F97316",
+                  fill: "#7FA6C4",
                 }}
               />
             </Bar>
@@ -541,14 +541,14 @@ const SortHeaderCell = memo(function SortHeaderCell({
       className={[
         "select-none whitespace-nowrap px-4 py-3.5 text-[11px] font-semibold uppercase tracking-[0.08em]",
         align === "left" ? "text-left" : "text-right",
-        "cursor-pointer border-b border-gray-200 text-gray-500 transition hover:bg-gray-100/80 hover:text-gray-700",
+        "cursor-pointer border-b border-[#CFC2B1]/55 text-[#7A8794] transition hover:bg-[#F3E4D2]/35 hover:text-[#5F87A3]",
       ].join(" ")}
       onClick={() => onClick(k)}
       title={`정렬: ${SORT_LABEL[k]}`}
     >
       {SORT_LABEL[k]}
       {activeSortKey === k ? (
-        <span className="ml-1 inline-block align-middle text-[10px] text-orange-500">
+        <span className="ml-1 inline-block align-middle text-[10px] text-[#7FA6C4]">
           {sortDir === "asc" ? "▲" : "▼"}
         </span>
       ) : null}
@@ -596,8 +596,8 @@ const KeywordTableRow = memo(function KeywordTableRow({
   const tableMeta = getKeywordTableMeta(reportMode);
 
   return (
-    <tr className="border-t border-gray-200 transition hover:bg-orange-50/40">
-      <td className="whitespace-nowrap px-4 py-3.5 text-left font-medium text-gray-900">
+    <tr className="border-t border-[#CFC2B1]/45 transition hover:bg-[#B7D7E3]/16">
+      <td className="whitespace-nowrap px-4 py-3.5 text-left font-medium text-[#27364A]">
         {row.keyword || "(empty)"}
       </td>
 
@@ -617,9 +617,9 @@ const KeywordTableRow = memo(function KeywordTableRow({
         />
       </td>
 
-      <td className="px-4 py-3.5 text-right text-gray-700">{row.ctrLabel}</td>
+      <td className="px-4 py-3.5 text-right text-[#52606D]">{row.ctrLabel}</td>
 
-      <td className="px-4 py-3.5 text-right text-gray-700">{row.cpcLabel}</td>
+      <td className="px-4 py-3.5 text-right text-[#52606D]">{row.cpcLabel}</td>
 
       <td className="px-4 py-3.5">
         <DataBarCell
@@ -640,11 +640,11 @@ const KeywordTableRow = memo(function KeywordTableRow({
       )}
 
       {tableMeta.showCvr && (
-        <td className="px-4 py-3.5 text-right text-gray-700">{row.cvrLabel}</td>
+        <td className="px-4 py-3.5 text-right text-[#52606D]">{row.cvrLabel}</td>
       )}
 
       {tableMeta.showCpa && (
-        <td className="px-4 py-3.5 text-right text-gray-700">{row.cpaLabel}</td>
+        <td className="px-4 py-3.5 text-right text-[#52606D]">{row.cpaLabel}</td>
       )}
 
       {tableMeta.showRevenue && (
@@ -658,7 +658,7 @@ const KeywordTableRow = memo(function KeywordTableRow({
       )}
 
       {tableMeta.showRoas && (
-        <td className="px-4 py-3.5 text-right text-gray-700">{row.roasLabel}</td>
+        <td className="px-4 py-3.5 text-right text-[#52606D]">{row.roasLabel}</td>
       )}
     </tr>
   );
@@ -1116,18 +1116,18 @@ export default function KeywordSection({
       </div>
 
       <section>
-        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="rounded-2xl border border-[#CFC2B1]/55 bg-white p-5 shadow-[0_8px_22px_rgba(127,166,196,0.10)] sm:p-6">
           <SectionHeader
             badge="AI Insight"
             title="키워드 요약 인사이트"
             description={copy.insightDescription}
           />
           {keywordInsight ? (
-            <div className="whitespace-pre-wrap text-sm leading-7 text-gray-800">
+            <div className="whitespace-pre-wrap text-sm leading-7 text-[#334155]">
               {keywordInsight}
             </div>
           ) : (
-            <div className="text-sm text-gray-500">
+            <div className="text-sm text-[#7A8794]">
               키워드 데이터가 없어 인사이트를 생성할 수 없습니다.
             </div>
           )}
@@ -1135,7 +1135,7 @@ export default function KeywordSection({
       </section>
 
       <section>
-        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="rounded-2xl border border-[#CFC2B1]/55 bg-white p-5 shadow-[0_8px_22px_rgba(127,166,196,0.10)] sm:p-6">
           <SectionHeader
             badge="Keyword Table"
             title="키워드 상세 성과"
@@ -1148,8 +1148,8 @@ export default function KeywordSection({
                   className={[
                     "inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold transition",
                     viewMode === "merged"
-                      ? "border-orange-300 bg-orange-500 text-white"
-                      : "border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100",
+                      ? "border-[#7FA6C4] bg-[#7FA6C4] text-white"
+                      : "border-[#CFC2B1]/55 bg-[#F3E4D2]/25 text-[#6F7B86] hover:bg-[#F3E4D2]/45",
                   ].join(" ")}
                 >
                   통합 보기
@@ -1161,14 +1161,14 @@ export default function KeywordSection({
                   className={[
                     "inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold transition",
                     viewMode === "raw"
-                      ? "border-orange-300 bg-orange-500 text-white"
-                      : "border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100",
+                      ? "border-[#7FA6C4] bg-[#7FA6C4] text-white"
+                      : "border-[#CFC2B1]/55 bg-[#F3E4D2]/25 text-[#6F7B86] hover:bg-[#F3E4D2]/45",
                   ].join(" ")}
                 >
                   원본 보기
                 </button>
 
-                <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-[11px] font-medium text-gray-600">
+                <span className="inline-flex items-center rounded-full border border-[#CFC2B1]/55 bg-[#F3E4D2]/25 px-3 py-1 text-[11px] font-medium text-[#6F7B86]">
                   {filterBadge}
                 </span>
               </div>
@@ -1176,7 +1176,7 @@ export default function KeywordSection({
           />
 
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div className="text-xs text-gray-400">
+            <div className="text-xs text-[#9A8F81]">
               {viewMode === "merged" ? copy.tableGuideMerged : copy.tableGuideRaw}
             </div>
 
@@ -1201,10 +1201,10 @@ export default function KeywordSection({
 
           <div
             ref={tableScrollRef}
-            className="overflow-auto rounded-2xl border border-gray-200/90 bg-white shadow-sm"
+            className="overflow-auto rounded-2xl border border-[#CFC2B1]/55 bg-white shadow-[0_8px_20px_rgba(127,166,196,0.08)]"
           >
             <table className="w-full border-collapse text-sm">
-              <thead className="sticky top-0 z-10 bg-gray-50/95 backdrop-blur">
+              <thead className="sticky top-0 z-10 bg-[#F3E4D2]/45 backdrop-blur">
                 <tr>
                   <SortHeaderCell
                     k="keyword"
@@ -1288,9 +1288,9 @@ export default function KeywordSection({
 
               <tbody>
                 {tableRowModels.length === 0 ? (
-                  <tr className="border-t border-gray-200">
+                  <tr className="border-t border-[#CFC2B1]/45">
                     <td
-                      className="px-4 py-8 text-center text-sm text-gray-500"
+                      className="px-4 py-8 text-center text-sm text-[#7A8794]"
                       colSpan={tableMeta.colSpan}
                     >
                       표시할 키워드 데이터가 없습니다. (필터 조건/컬럼명을 확인해 주세요)
@@ -1314,7 +1314,7 @@ export default function KeywordSection({
             </table>
           </div>
 
-          <div className="mt-3 text-xs text-gray-400">{copy.tableFootnote}</div>
+          <div className="mt-3 text-xs text-[#9A8F81]">{copy.tableFootnote}</div>
         </div>
       </section>
     </section>

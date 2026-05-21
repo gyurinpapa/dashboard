@@ -1,3 +1,4 @@
+// app/reports/[id]/page.tsx
 "use client";
 
 import {
@@ -554,21 +555,6 @@ function normalizeHeaderInfoFromReport(
   };
 }
 
-async function fetchReportHeaderInfo(
-  reportId: string
-): Promise<ReportHeaderInfo> {
-  try {
-    const report = await fetchReportDetail(reportId);
-    return normalizeHeaderInfoFromReport(report);
-  } catch {
-    return {
-      advertiserName: "",
-      reportTypeName: "",
-      reportTypeKey: "",
-    };
-  }
-}
-
 /* =========================================================
  * localStorage helpers
  * ========================================================= */
@@ -692,93 +678,88 @@ function buildInitialReportPeriod(args: {
   return null;
 }
 
-/* =========================================================
- * Preview 분리
- * ========================================================= */
+function waitForExportRender() {
+  return new Promise<void>((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        resolve();
+      });
+    });
+  });
+}
 
-type PreviewPaneProps = {
-  loadingRows: boolean;
-  rows: any[];
-  creativesMap: Record<string, string>;
-  advertiserName: string;
-  reportTypeName: string;
-  reportTypeKey: string;
-  reportPeriod: ReportPeriod;
-  onChangeReportPeriod: React.Dispatch<React.SetStateAction<ReportPeriod>>;
-  reportCaptureRef: React.RefObject<HTMLDivElement | null>;
-  onDownloadPdf: () => Promise<void>;
-  onDownloadPng: () => Promise<void>;
-  onDownloadCsv: () => Promise<void>;
-  pdfLoading: boolean;
-  pngLoading: boolean;
-  csvLoading: boolean;
-};
-
-const PreviewPane = memo(function PreviewPane({
-  loadingRows,
-  rows,
-  creativesMap,
-  advertiserName,
-  reportTypeName,
-  reportTypeKey,
-  reportPeriod,
-  onChangeReportPeriod,
-  reportCaptureRef,
+const DownloadPanel = memo(function DownloadPanel({
   onDownloadPdf,
   onDownloadPng,
   onDownloadCsv,
   pdfLoading,
   pngLoading,
   csvLoading,
-}: PreviewPaneProps) {
+  canPublish,
+  publishing,
+  onPublish,
+  canOpenExportBuilder,
+  onOpenExportBuilder,
+}: {
+  onDownloadPdf: () => Promise<void>;
+  onDownloadPng: () => Promise<void>;
+  onDownloadCsv: () => Promise<void>;
+  pdfLoading: boolean;
+  pngLoading: boolean;
+  csvLoading: boolean;
+  canPublish: boolean;
+  publishing: boolean;
+  onPublish: () => Promise<void>;
+  canOpenExportBuilder: boolean;
+  onOpenExportBuilder: () => void;
+}) {
   return (
-    <div className="col-span-12 lg:col-span-8">
-      <div className="rounded-lg border">
-        <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
-          <div className="min-w-0">
-            <div className="text-sm font-semibold">미리보기</div>
-            <div className="text-xs text-gray-500">
-              draft period 기준 편집 미리보기
-            </div>
+    <section className="rounded-2xl border bg-white p-5 shadow-sm">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <div className="text-base font-semibold text-gray-900">
+            다운로드 / 발행
           </div>
-
-          <div className="shrink-0">
-            <ReportDownloadButtons
-              onDownloadPdf={onDownloadPdf}
-              onDownloadPng={onDownloadPng}
-              onDownloadCsv={onDownloadCsv}
-              pdfLoading={pdfLoading}
-              pngLoading={pngLoading}
-              csvLoading={csvLoading}
-            />
+          <div className="mt-1 text-sm text-gray-500">
+            미리보기 렌더링 없이 필요한 파일 다운로드와 발행만 진행합니다.
           </div>
         </div>
 
-        <div className="p-4">
-          <div ref={reportCaptureRef}>
-            <div
-              style={{
-                transform: "scale(1)",
-                transformOrigin: "top center",
-              }}
+        <div className="flex flex-wrap items-center gap-2">
+          <ReportDownloadButtons
+            onDownloadPdf={onDownloadPdf}
+            onDownloadPng={onDownloadPng}
+            onDownloadCsv={onDownloadCsv}
+            pdfLoading={pdfLoading}
+            pngLoading={pngLoading}
+            csvLoading={csvLoading}
+          />
+
+          {canOpenExportBuilder ? (
+            <button
+              type="button"
+              className="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-gray-50"
+              onClick={onOpenExportBuilder}
             >
-              <ReportTemplate
-                rows={rows}
-                isLoading={loadingRows}
-                creativesMap={creativesMap}
-                advertiserName={advertiserName}
-                reportTypeName={reportTypeName}
-                reportTypeKey={reportTypeKey}
-                reportPeriod={reportPeriod}
-                onChangeReportPeriod={onChangeReportPeriod}
-                hidePeriodEditor={true}
-                hideTabPeriodText={true}
-              />
-            </div>
-          </div>
+              Export Builder 열기
+            </button>
+          ) : null}
+
+          <button
+            type="button"
+            className={`rounded-lg px-4 py-2 text-sm font-medium text-white ${
+              canPublish
+                ? "bg-black hover:opacity-90"
+                : "cursor-not-allowed bg-gray-300"
+            }`}
+            onClick={onPublish}
+            disabled={!canPublish}
+          >
+            {publishing ? "발행 중..." : "발행"}
+          </button>
         </div>
       </div>
-    </div>
+    </section>
   );
 });
 
@@ -843,6 +824,7 @@ export default function ReportDetailPage() {
     useState<number>(0);
 
   const reportCaptureRef = useRef<HTMLDivElement | null>(null);
+  const [exportRenderActive, setExportRenderActive] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pngLoading, setPngLoading] = useState(false);
   const [csvLoading, setCsvLoading] = useState(false);
@@ -1010,11 +992,13 @@ export default function ReportDetailPage() {
     return getPeriodLabel(reportPeriod);
   }, [reportPeriod]);
 
-  const canPublish =
-    sessionIngested &&
-    !publishing &&
-    ingestionStatus === "done" &&
+  const hasPublishableRows =
     Math.max(ingestionInfo.inserted, ingestionInfo.validRows) > 0;
+
+  const isPublishReady =
+    sessionIngested && ingestionStatus === "done" && hasPublishableRows;
+
+  const canPublish = !publishing && isPublishReady;
 
   const canOpenExportBuilder = ENABLE_EXPORT_BUILDER_ENTRY && canPublish;
 
@@ -1174,15 +1158,16 @@ export default function ReportDetailPage() {
               }`
             );
 
-            /**
-             * done 직후에는 상단 상태/버튼 반응을 먼저 끝내고,
-             * rows + creatives 재반영은 한 박자 뒤에 시작한다.
-             * 즉시 0ms 경쟁 대신 짧은 지연을 줘서 완료 직후 체감 버벅임을 줄인다.
-             */
             postDoneRefreshTimerRef.current = window.setTimeout(() => {
               void refreshRows().then((refreshed) => {
-                if (!hasInsertedRows && (refreshed?.rowsCount ?? 0) > 0) {
+                if (hasInsertedRows) {
+                  setIngestionStatus("done");
                   setSessionIngested(true);
+                } else {
+                  setSessionIngested(false);
+                  setMsg(
+                    "파싱 상태는 완료로 응답됐지만 inserted/valid rows가 0입니다. CSV 파싱 결과가 실제로 저장되지 않아 아직 발행할 수 없습니다."
+                  );
                 }
 
                 setMsg(
@@ -1190,7 +1175,7 @@ export default function ReportDetailPage() {
                     info.inserted > 0
                       ? ` (inserted: ${formatInt(info.inserted)})`
                       : ""
-                  } → 미리보기에 반영되었습니다.`
+                  } → 발행 가능 상태로 전환되었습니다.`
                 );
               });
             }, 180);
@@ -1360,18 +1345,59 @@ export default function ReportDetailPage() {
         error: "",
       }));
 
-      runIngestion(reportId).catch((e) => {
-        console.error("[runIngestion async failed]", e);
-        setIngestionStatus("failed");
-        setIngestionInfo((prev) => ({
-          ...prev,
-          status: "failed",
-          error: e?.message || "CSV 파싱 시작 실패",
-        }));
-        setMsg(e?.message || "CSV 파싱 시작 실패");
-      });
+      runIngestion(reportId)
+        .then(async (result) => {
+          const inserted = asNum(result?.inserted);
+          const validRows = asNum(result?.validRows ?? result?.valid_rows);
+          const parsedLines = asNum(result?.parsedLines ?? result?.parsed_lines);
+          const totalLines = asNum(result?.totalLines ?? result?.total_lines);
 
-      void pollIngestionStatus(reportId);
+          const refreshed = await refreshRows();
+
+          const finalInserted = Math.max(inserted, validRows);
+          const hasSavedRows = finalInserted > 0;
+
+          if (hasSavedRows) {
+            setIngestionStatus("done");
+            setSessionIngested(true);
+            setIngestionInfo((prev) => ({
+              ...prev,
+              status: "done",
+              progress: 100,
+              parsedLines: parsedLines || prev.parsedLines,
+              totalLines: totalLines || prev.totalLines,
+              inserted: inserted || prev.inserted,
+              validRows: validRows || prev.validRows,
+              error: "",
+            }));
+
+            setMsg(
+              `파싱 완료 (inserted: ${formatInt(
+                finalInserted
+              )}) → 발행 가능 상태로 전환되었습니다.`
+            );
+            return;
+          }
+
+          setSessionIngested(false);
+          setIngestionStatus("failed");
+          setMsg(
+            `파싱은 종료됐지만 inserted/valid rows가 0입니다. 실제 저장된 rows: ${
+              refreshed?.rowsCount ?? 0
+            }개입니다. 아직 발행할 수 없습니다.`
+          );
+        })
+        .catch((e) => {
+          console.error("[runIngestion async failed]", e);
+          setIngestionStatus("failed");
+          setSessionIngested(false);
+          setIngestionInfo((prev) => ({
+            ...prev,
+            status: "failed",
+            error: e?.message || "CSV 파싱 시작 실패",
+          }));
+          setMsg(e?.message || "CSV 파싱 시작 실패");
+        });
 
       setCsvFile(null);
       if (csvInputRef.current) csvInputRef.current.value = "";
@@ -1426,9 +1452,9 @@ export default function ReportDetailPage() {
   const handlePublish = useCallback(async () => {
     if (!reportId) return;
 
-    if (!sessionIngested) {
+    if (!isPublishReady || !hasPublishableRows) {
       setMsg(
-        "이번 세션에서 CSV 업로드 + 파싱(ingestion/run)을 먼저 완료해야 발행할 수 있습니다."
+        "CSV 업로드 + 파싱이 완료되어 rows 데이터가 준비되어야 발행할 수 있습니다."
       );
       return;
     }
@@ -1495,6 +1521,8 @@ export default function ReportDetailPage() {
   const handleDownloadPdf = useCallback(async () => {
     try {
       setPdfLoading(true);
+      setExportRenderActive(true);
+      await waitForExportRender();
 
       const el = reportCaptureRef.current;
 
@@ -1529,6 +1557,7 @@ export default function ReportDetailPage() {
       console.error("[download:pdf:error]", e);
       setMsg(e?.message || "PDF 다운로드 중 오류가 발생했습니다.");
     } finally {
+      setExportRenderActive(false);
       setPdfLoading(false);
     }
   }, [advertiserNameForDownload, reportTitleForDownload]);
@@ -1536,6 +1565,8 @@ export default function ReportDetailPage() {
   const handleDownloadPng = useCallback(async () => {
     try {
       setPngLoading(true);
+      setExportRenderActive(true);
+      await waitForExportRender();
 
       const el = reportCaptureRef.current;
 
@@ -1569,6 +1600,7 @@ export default function ReportDetailPage() {
       console.error("[download:png:error]", e);
       setMsg(e?.message || "PNG 다운로드 중 오류가 발생했습니다.");
     } finally {
+      setExportRenderActive(false);
       setPngLoading(false);
     }
   }, [advertiserNameForDownload, reportTitleForDownload]);
@@ -1608,48 +1640,23 @@ export default function ReportDetailPage() {
         <div>
           <div className="text-2xl font-bold tracking-tight">리포트 편집</div>
           <div className="mt-1 text-sm text-gray-500">
-            업로드/파싱/소재 매칭/발행까지 한 화면에서 진행합니다.
+            업로드/파싱/소재 매칭/다운로드/발행까지 한 화면에서 진행합니다.
           </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {canOpenExportBuilder ? (
-            <button
-              type="button"
-              className="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-gray-50"
-              onClick={handleOpenExportBuilder}
-            >
-              Export Builder 열기
-            </button>
-          ) : null}
-
-          <button
-            type="button"
-            className={`rounded-lg px-4 py-2 text-sm font-medium text-white ${
-              canPublish
-                ? "bg-black hover:opacity-90"
-                : "cursor-not-allowed bg-gray-300"
-            }`}
-            onClick={handlePublish}
-            disabled={!canPublish}
-          >
-            {publishing ? "발행 중..." : "발행"}
-          </button>
         </div>
       </div>
 
-      <div className="mb-4 grid gap-3 rounded-xl border bg-white p-4 lg:grid-cols-4">
-        <div className="rounded-lg border p-3">
+      <div className="mb-5 grid gap-3 rounded-2xl border bg-white p-4 shadow-sm lg:grid-cols-4">
+        <div className="rounded-xl border p-3">
           <div className="text-xs text-gray-500">Report ID</div>
           <div className="mt-1 break-all font-mono text-sm">{reportId || "-"}</div>
         </div>
 
-        <div className="rounded-lg border p-3">
+        <div className="rounded-xl border p-3">
           <div className="text-xs text-gray-500">세션 시작</div>
           <div className="mt-1 text-sm font-medium">{sessionStartedText}</div>
         </div>
 
-        <div className="rounded-lg border p-3">
+        <div className="rounded-xl border p-3">
           <div className="text-xs text-gray-500">CSV 파싱 상태</div>
           <div className="mt-1 text-sm font-medium">{ingestionStatusLabel}</div>
           <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-gray-100">
@@ -1658,8 +1665,8 @@ export default function ReportDetailPage() {
                 ingestionStatus === "failed"
                   ? "bg-red-500"
                   : ingestionStatus === "done"
-                  ? "bg-green-500"
-                  : "bg-black"
+                    ? "bg-green-500"
+                    : "bg-black"
               }`}
               style={{
                 width: `${Math.max(
@@ -1679,7 +1686,7 @@ export default function ReportDetailPage() {
           </div>
         </div>
 
-        <div className="rounded-lg border p-3">
+        <div className="rounded-xl border p-3">
           <div className="text-xs text-gray-500">공유 URL</div>
           <div className="mt-1 text-sm">
             {sharePath ? (
@@ -1699,237 +1706,220 @@ export default function ReportDetailPage() {
       </div>
 
       {msg ? (
-        <div className="mb-4 rounded-lg border bg-gray-50 px-4 py-3 text-sm whitespace-pre-wrap">
+        <div className="mb-5 rounded-xl border bg-gray-50 px-4 py-3 text-sm whitespace-pre-wrap">
           {msg}
         </div>
       ) : null}
 
-      <div className="grid grid-cols-12 gap-5">
-        <div className="col-span-12 space-y-5 lg:col-span-4">
-          <div className="rounded-lg border p-4">
-            <div className="mb-1 text-sm font-semibold">CSV 업로드</div>
-            <div className="mb-3 text-xs text-gray-500">
-              브라우저에서 Storage로 직접 업로드 후 finalize 합니다.
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        <section className="rounded-2xl border bg-white p-5 shadow-sm">
+          <div className="mb-1 text-base font-semibold text-gray-900">
+            CSV 업로드
+          </div>
+          <div className="mb-4 text-sm text-gray-500">
+            브라우저에서 Storage로 직접 업로드 후 finalize 합니다.
+          </div>
+
+          <div className="space-y-3">
+            <input
+              ref={csvInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              onChange={(e) => {
+                const next = e.target.files?.[0] ?? null;
+                setCsvFile(next);
+              }}
+              className="block w-full text-sm"
+            />
+
+            <div className="text-sm text-gray-600">
+              {csvFile ? (
+                <>
+                  선택됨: <span className="font-medium">{csvFile.name}</span>{" "}
+                  <span className="text-gray-400">·</span>{" "}
+                  {humanSize(csvFile.size)}
+                </>
+              ) : lastUploadedCsvName ? (
+                <>
+                  마지막 업로드:{" "}
+                  <span className="font-medium">{lastUploadedCsvName}</span>
+                </>
+              ) : (
+                "CSV 파일을 선택하세요"
+              )}
             </div>
 
-            <div className="space-y-3">
-              <input
-                ref={csvInputRef}
-                type="file"
-                accept=".csv,text/csv"
-                onChange={(e) => {
-                  const next = e.target.files?.[0] ?? null;
-                  setCsvFile(next);
-                }}
-                className="block w-full text-sm"
-              />
-
-              <div className="text-xs text-gray-600">
-                {csvFile ? (
-                  <>
-                    선택됨: <span className="font-medium">{csvFile.name}</span>{" "}
-                    <span className="text-gray-400">·</span>{" "}
-                    {humanSize(csvFile.size)}
-                  </>
-                ) : lastUploadedCsvName ? (
-                  <>
-                    마지막 업로드:{" "}
-                    <span className="font-medium">{lastUploadedCsvName}</span>
-                  </>
-                ) : (
-                  "CSV 파일을 선택하세요"
-                )}
-              </div>
-
-              <button
-                type="button"
-                className={`rounded-lg px-4 py-2 text-sm font-medium text-white ${
-                  csvUploading ||
-                  ingestionStatus === "queued" ||
-                  ingestionStatus === "processing"
-                    ? "cursor-not-allowed bg-gray-400"
-                    : "bg-black hover:opacity-90"
-                }`}
-                onClick={handleUploadCsv}
-                disabled={
-                  csvUploading ||
-                  ingestionStatus === "queued" ||
-                  ingestionStatus === "processing"
-                }
-              >
-                {csvUploading
-                  ? "업로드 중..."
-                  : ingestionStatus === "queued"
+            <button
+              type="button"
+              className={`rounded-lg px-4 py-2 text-sm font-medium text-white ${
+                csvUploading ||
+                ingestionStatus === "queued" ||
+                ingestionStatus === "processing"
+                  ? "cursor-not-allowed bg-gray-400"
+                  : "bg-black hover:opacity-90"
+              }`}
+              onClick={handleUploadCsv}
+              disabled={
+                csvUploading ||
+                ingestionStatus === "queued" ||
+                ingestionStatus === "processing"
+              }
+            >
+              {csvUploading
+                ? "업로드 중..."
+                : ingestionStatus === "queued"
                   ? "파싱 시작 중..."
                   : ingestionStatus === "processing"
-                  ? `파싱 중... ${formatInt(ingestionInfo.progress)}%`
-                  : "CSV 업로드"}
-              </button>
+                    ? `파싱 중... ${formatInt(ingestionInfo.progress)}%`
+                    : "CSV 업로드"}
+            </button>
 
-              <div className="rounded-lg border bg-gray-50 p-3">
-                <div className="flex items-center justify-between gap-3 text-xs">
-                  <span className="font-medium text-gray-700">
-                    {ingestionStatusLabel}
-                  </span>
-                  <span className="text-gray-500">
-                    {formatInt(ingestionInfo.progress)}%
-                  </span>
-                </div>
+            <div className="rounded-xl border bg-gray-50 p-3">
+              <div className="flex items-center justify-between gap-3 text-xs">
+                <span className="font-medium text-gray-700">
+                  {ingestionStatusLabel}
+                </span>
+                <span className="text-gray-500">
+                  {formatInt(ingestionInfo.progress)}%
+                </span>
+              </div>
 
-                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-gray-200">
-                  <div
-                    className={`h-full rounded-full transition-all ${
-                      ingestionStatus === "failed"
-                        ? "bg-red-500"
-                        : ingestionStatus === "done"
+              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    ingestionStatus === "failed"
+                      ? "bg-red-500"
+                      : ingestionStatus === "done"
                         ? "bg-green-500"
                         : "bg-black"
-                    }`}
-                    style={{
-                      width: `${Math.max(
-                        ingestionStatus === "queued" ? 5 : 0,
-                        ingestionInfo.progress
-                      )}%`,
-                    }}
-                  />
-                </div>
-
-                <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-600">
-                  <div>
-                    parsed:{" "}
-                    <span className="font-medium text-gray-800">
-                      {formatInt(ingestionInfo.parsedLines)}
-                    </span>
-                  </div>
-                  <div>
-                    total:{" "}
-                    <span className="font-medium text-gray-800">
-                      {formatInt(ingestionInfo.totalLines)}
-                    </span>
-                  </div>
-                  <div>
-                    inserted:{" "}
-                    <span className="font-medium text-gray-800">
-                      {formatInt(ingestionInfo.inserted)}
-                    </span>
-                  </div>
-                  <div>
-                    valid:{" "}
-                    <span className="font-medium text-gray-800">
-                      {formatInt(ingestionInfo.validRows)}
-                    </span>
-                  </div>
-                  <div>
-                    batch size:{" "}
-                    <span className="font-medium text-gray-800">
-                      {formatInt(ingestionInfo.batchSize)}
-                    </span>
-                  </div>
-                  <div>
-                    batches:{" "}
-                    <span className="font-medium text-gray-800">
-                      {formatInt(ingestionInfo.committedBatches)}
-                    </span>
-                  </div>
-                </div>
-
-                {ingestionInfo.error ? (
-                  <div className="mt-2 text-xs text-red-600">
-                    {ingestionInfo.error}
-                  </div>
-                ) : null}
+                  }`}
+                  style={{
+                    width: `${Math.max(
+                      ingestionStatus === "queued" ? 5 : 0,
+                      ingestionInfo.progress
+                    )}%`,
+                  }}
+                />
               </div>
 
-              <div className="text-xs text-gray-500">
-                업로드 완료 후 파싱 상태와 진행률은 자동으로 갱신됩니다.
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-600">
+                <div>
+                  parsed:{" "}
+                  <span className="font-medium text-gray-800">
+                    {formatInt(ingestionInfo.parsedLines)}
+                  </span>
+                </div>
+                <div>
+                  total:{" "}
+                  <span className="font-medium text-gray-800">
+                    {formatInt(ingestionInfo.totalLines)}
+                  </span>
+                </div>
+                <div>
+                  inserted:{" "}
+                  <span className="font-medium text-gray-800">
+                    {formatInt(ingestionInfo.inserted)}
+                  </span>
+                </div>
+                <div>
+                  valid:{" "}
+                  <span className="font-medium text-gray-800">
+                    {formatInt(ingestionInfo.validRows)}
+                  </span>
+                </div>
+                <div>
+                  batch size:{" "}
+                  <span className="font-medium text-gray-800">
+                    {formatInt(ingestionInfo.batchSize)}
+                  </span>
+                </div>
+                <div>
+                  batches:{" "}
+                  <span className="font-medium text-gray-800">
+                    {formatInt(ingestionInfo.committedBatches)}
+                  </span>
+                </div>
               </div>
+
+              {ingestionInfo.error ? (
+                <div className="mt-2 text-xs text-red-600">
+                  {ingestionInfo.error}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="text-xs text-gray-500">
+              업로드 완료 후 파싱 상태와 진행률은 자동으로 갱신됩니다.
             </div>
           </div>
+        </section>
 
-          <div className="rounded-lg border p-4">
-            <div className="mb-1 text-sm font-semibold">소재 업로드</div>
-            <div className="mb-3 text-xs text-gray-500">
-              소재 이미지를 업로드하면 creative key 기준으로 매칭됩니다.
+        <section className="rounded-2xl border bg-white p-5 shadow-sm">
+          <div className="mb-1 text-base font-semibold text-gray-900">
+            소재 업로드
+          </div>
+          <div className="mb-4 text-sm text-gray-500">
+            소재 이미지를 업로드하면 creative key 기준으로 매칭됩니다.
+          </div>
+
+          <div className="space-y-3">
+            <input
+              ref={creativesInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={(e) => {
+                const list = Array.from(e.target.files || []);
+                setCreativeFiles(list);
+              }}
+              className="block w-full text-sm"
+            />
+
+            <div className="text-sm text-gray-600">
+              {creativeFiles.length > 0 ? (
+                <>
+                  선택됨:{" "}
+                  <span className="font-medium">{creativeFiles.length}</span>개
+                </>
+              ) : lastUploadedCreativeCount > 0 ? (
+                <>
+                  마지막 업로드:{" "}
+                  <span className="font-medium">
+                    {lastUploadedCreativeCount}
+                  </span>
+                  개
+                </>
+              ) : (
+                "이미지 파일을 선택하세요"
+              )}
             </div>
 
-            <div className="space-y-3">
-              <input
-                ref={creativesInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={(e) => {
-                  const list = Array.from(e.target.files || []);
-                  setCreativeFiles(list);
-                }}
-                className="block w-full text-sm"
-              />
+            <button
+              type="button"
+              className={`rounded-lg px-4 py-2 text-sm font-medium text-white ${
+                uploadingCreatives
+                  ? "cursor-not-allowed bg-gray-400"
+                  : "bg-black hover:opacity-90"
+              }`}
+              onClick={handleUploadCreatives}
+              disabled={uploadingCreatives}
+            >
+              {uploadingCreatives ? "업로드 중..." : "소재 업로드"}
+            </button>
 
-              <div className="text-xs text-gray-600">
-                {creativeFiles.length > 0 ? (
-                  <>
-                    선택됨:{" "}
-                    <span className="font-medium">{creativeFiles.length}</span>개
-                  </>
-                ) : lastUploadedCreativeCount > 0 ? (
-                  <>
-                    마지막 업로드:{" "}
-                    <span className="font-medium">
-                      {lastUploadedCreativeCount}
-                    </span>
-                    개
-                  </>
-                ) : (
-                  "이미지 파일을 선택하세요"
-                )}
-              </div>
-
-              <button
-                type="button"
-                className={`rounded-lg px-4 py-2 text-sm font-medium text-white ${
-                  uploadingCreatives
-                    ? "cursor-not-allowed bg-gray-400"
-                    : "bg-black hover:opacity-90"
-                }`}
-                onClick={handleUploadCreatives}
-                disabled={uploadingCreatives}
-              >
-                {uploadingCreatives ? "업로드 중..." : "소재 업로드"}
-              </button>
-
-              <div className="text-xs text-gray-600">
-                {creativeFiles.length > 0
-                  ? "업로드 준비 완료"
-                  : lastUploadedCreativeCount > 0
+            <div className="text-xs text-gray-600">
+              {creativeFiles.length > 0
+                ? "업로드 준비 완료"
+                : lastUploadedCreativeCount > 0
                   ? "이미지를 바꾸려면 위 박스를 클릭"
                   : "먼저 이미지를 선택하세요"}
-              </div>
             </div>
-
-            {creativeUploadLog.length > 0 ? (
-              <div className="mt-3 rounded-md border bg-white p-2">
-                <div className="mb-2 text-xs font-semibold">
-                  업로드 결과(이번 세션)
-                </div>
-                <div className="max-h-40 space-y-1 overflow-auto">
-                  {creativeUploadLog.map((it, idx) => (
-                    <div key={idx} className="text-xs text-gray-700">
-                      {it.ok ? "✅" : "❌"}{" "}
-                      <span className="font-medium">{it.file}</span>{" "}
-                      <span className="text-gray-500">→ key:</span>{" "}
-                      <span className="font-mono">{it.creative_key}</span>
-                      {!it.ok && it.error ? (
-                        <span className="text-red-600"> ({it.error})</span>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
           </div>
 
-          <div className="rounded-lg border p-4">
-            <div className="mb-1 text-sm font-semibold">매칭된 소재</div>
+          <div className="mt-5 rounded-xl border bg-gray-50 p-4">
+            <div className="mb-1 text-sm font-semibold text-gray-900">
+              매칭된 소재
+            </div>
 
             <div className="text-sm text-gray-700">
               고유 URL: <b>{creativesUrlCount}</b>개{" "}
@@ -1949,28 +1939,47 @@ export default function ReportDetailPage() {
               있습니다. 실제 이미지 파일 수 감은 고유 URL이 더 정확합니다.
             </div>
           </div>
-        </div>
 
-        <PreviewPane
-          loadingRows={loadingRows}
-          rows={deferredDisplayRows}
-          creativesMap={deferredDisplayCreativesMap}
-          advertiserName={effectivePreviewAdvertiserName}
-          reportTypeName={effectivePreviewReportTypeName}
-          reportTypeKey={headerInfo.reportTypeKey}
-          reportPeriod={reportPeriod}
-          onChangeReportPeriod={setReportPeriod}
-          reportCaptureRef={reportCaptureRef}
+          {creativeUploadLog.length > 0 ? (
+            <div className="mt-4 rounded-xl border bg-white p-3">
+              <div className="mb-2 text-xs font-semibold">
+                업로드 결과(이번 세션)
+              </div>
+              <div className="max-h-40 space-y-1 overflow-auto">
+                {creativeUploadLog.map((it, idx) => (
+                  <div key={idx} className="text-xs text-gray-700">
+                    {it.ok ? "✅" : "❌"}{" "}
+                    <span className="font-medium">{it.file}</span>{" "}
+                    <span className="text-gray-500">→ key:</span>{" "}
+                    <span className="font-mono">{it.creative_key}</span>
+                    {!it.ok && it.error ? (
+                      <span className="text-red-600"> ({it.error})</span>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </section>
+      </div>
+
+      <div className="mt-5">
+        <DownloadPanel
           onDownloadPdf={handleDownloadPdf}
           onDownloadPng={handleDownloadPng}
           onDownloadCsv={handleDownloadCsv}
           pdfLoading={pdfLoading}
           pngLoading={pngLoading}
           csvLoading={csvLoading}
+          canPublish={canPublish}
+          publishing={publishing}
+          onPublish={handlePublish}
+          canOpenExportBuilder={canOpenExportBuilder}
+          onOpenExportBuilder={handleOpenExportBuilder}
         />
       </div>
 
-      <div className="mt-2 text-xs text-gray-500">
+      <div className="mt-3 text-xs text-gray-500">
         서버 rows(실제): {rows.length}개{" "}
         <span className="text-gray-400">·</span> 현재 표시 rows:{" "}
         {displayRows.length}개{" "}
@@ -1981,6 +1990,28 @@ export default function ReportDetailPage() {
         <span className="text-gray-400">·</span> 기준 기간:{" "}
         {previewPeriodLabel || "-"}
       </div>
+
+      {exportRenderActive ? (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none fixed left-[-10000px] top-0 z-[-1] w-[1440px] bg-white"
+        >
+          <div ref={reportCaptureRef}>
+            <ReportTemplate
+              rows={deferredDisplayRows}
+              isLoading={loadingRows}
+              creativesMap={deferredDisplayCreativesMap}
+              advertiserName={effectivePreviewAdvertiserName}
+              reportTypeName={effectivePreviewReportTypeName}
+              reportTypeKey={headerInfo.reportTypeKey}
+              reportPeriod={reportPeriod}
+              onChangeReportPeriod={setReportPeriod}
+              hidePeriodEditor={true}
+              hideTabPeriodText={true}
+            />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

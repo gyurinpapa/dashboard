@@ -130,13 +130,13 @@ const DB_ACQUISITION_METRIC_BUTTONS: Array<{
 ];
 
 const HEAT_LEGEND_PALETTE = [
-  "bg-gray-100 border-gray-200",
-  "bg-orange-100 border-orange-100",
-  "bg-orange-200 border-orange-200",
-  "bg-orange-300 border-orange-300",
-  "bg-orange-400 border-orange-400",
-  "bg-orange-500 border-orange-500",
-  "bg-orange-600 border-orange-600",
+  "bg-[#F3E4D2]/35 border-[#CFC2B1]/45",
+  "bg-[#B7D7E3]/18 border-[#B7D7E3]/35",
+  "bg-[#B7D7E3]/28 border-[#B7D7E3]/45",
+  "bg-[#B7D7E3]/42 border-[#B7D7E3]/60",
+  "bg-[#7FA6C4]/55 border-[#7FA6C4]/65",
+  "bg-[#7FA6C4]/75 border-[#7FA6C4]/80",
+  "bg-[#5F87A3] border-[#5F87A3]",
 ] as const;
 
 function asStr(v: any) {
@@ -275,13 +275,13 @@ function quantizeWithThresholds(value: number, thresholds: HeatmapThresholds) {
 
 function heatColorClass(level: number) {
   const palette = [
-    "bg-gray-100 border-gray-200 text-gray-500",
-    "bg-orange-100 border-orange-100 text-orange-700",
-    "bg-orange-200 border-orange-200 text-orange-800",
-    "bg-orange-300 border-orange-300 text-orange-900",
-    "bg-orange-400 border-orange-400 text-white",
-    "bg-orange-500 border-orange-500 text-white",
-    "bg-orange-600 border-orange-600 text-white",
+    "bg-[#F3E4D2]/35 border-[#CFC2B1]/45 text-[#7A8794]",
+    "bg-[#B7D7E3]/18 border-[#B7D7E3]/35 text-[#5F87A3]",
+    "bg-[#B7D7E3]/28 border-[#B7D7E3]/45 text-[#5F87A3]",
+    "bg-[#B7D7E3]/42 border-[#B7D7E3]/60 text-[#27364A]",
+    "bg-[#7FA6C4]/55 border-[#7FA6C4]/65 text-white",
+    "bg-[#7FA6C4]/75 border-[#7FA6C4]/80 text-white",
+    "bg-[#5F87A3] border-[#5F87A3] text-white",
   ];
 
   return palette[Math.max(0, Math.min(level, palette.length - 1))];
@@ -492,21 +492,21 @@ function describeArc(
     items.length > 0 ? items.length * barH + (items.length - 1) * gapH : 0;
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
-      <div className="border-b border-gray-200 px-6 py-4">
+    <div className="rounded-2xl border border-[#CFC2B1]/55 bg-white shadow-[0_8px_22px_rgba(127,166,196,0.10)]">
+      <div className="border-b border-[#CFC2B1]/45 px-6 py-4">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
           <div>
             <div className="mb-3">
-              <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] text-emerald-700">
+              <span className="inline-flex items-center rounded-full border border-[#B7D7E3]/70 bg-[#B7D7E3]/22 px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] text-[#5F87A3]">
                 {badge}
               </span>
             </div>
 
-            <h3 className="text-base font-semibold text-gray-900 whitespace-nowrap overflow-hidden text-ellipsis">
+            <h3 className="text-base font-semibold text-[#27364A] whitespace-nowrap overflow-hidden text-ellipsis">
               {title}
             </h3>
 
-            <p className="mt-1 text-sm text-gray-500 whitespace-nowrap overflow-hidden text-ellipsis">
+            <p className="mt-1 text-sm text-[#7A8794] whitespace-nowrap overflow-hidden text-ellipsis">
               {description}
             </p>
           </div>
@@ -518,9 +518,9 @@ function describeArc(
           <div>
             <div className="mb-4 space-y-3">
               <div className="flex items-center justify-between gap-3">
-                <div className="text-sm text-gray-600">
+                <div className="text-sm text-[#6F7B86]">
                   기준일:{" "}
-                  <span className="font-semibold text-gray-900">
+                  <span className="font-semibold text-[#27364A]">
                     {totalDates > 0 ? currentDateLabel : "-"}
                   </span>
                 </div>
@@ -531,8 +531,8 @@ function describeArc(
                   className={[
                     "rounded-xl border px-3 py-2 text-sm font-semibold transition",
                     isPlaying
-                      ? "border-black bg-black text-white"
-                      : "border-gray-300 bg-white text-gray-900 hover:bg-gray-100",
+                      ? "border-[#7FA6C4] bg-[#7FA6C4] text-white"
+                      : "border-[#CFC2B1]/55 bg-white text-[#27364A] hover:bg-[#F3E4D2]/35",
                   ].join(" ")}
                 >
                   {isPlaying ? "일시정지" : "재생"}
@@ -547,7 +547,7 @@ function describeArc(
                   step={1}
                   value={Math.min(playIndex, Math.max(0, maxIndex))}
                   onChange={(e) => onScrubChange(Number(e.target.value))}
-                  className="h-2 w-full cursor-pointer rounded-lg accent-black"
+                  className="h-2 w-full cursor-pointer rounded-lg accent-[#7FA6C4]"
                 />
               </div>
             </div>
@@ -577,10 +577,10 @@ function describeArc(
                 {items.map((item, idx) => (
                   <div key={item.key} className="space-y-2">
                     <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm font-semibold text-gray-900">
+                      <span className="text-sm font-semibold text-[#27364A]">
                         {item.label}
                       </span>
-                      <span className="text-xs font-medium text-gray-500">
+                      <span className="text-xs font-medium text-[#7A8794]">
                         {item.sharePctText}
                       </span>
                     </div>
@@ -612,7 +612,7 @@ function describeArc(
                             item.dayDiffText,
                           ].join("\n")}
                         >
-                          <div className="text-base font-bold tracking-tight text-gray-900">
+                          <div className="text-base font-bold tracking-tight text-[#27364A]">
                             {item.displayValue}
                           </div>
                         </div>
@@ -620,20 +620,20 @@ function describeArc(
                     </div>
 
                     <div className="grid grid-cols-1 gap-1 text-center sm:grid-cols-3">
-                      <div className="text-[11px] text-gray-500">
+                      <div className="text-[11px] text-[#7A8794]">
                         {item.sharePctText}
                       </div>
-                      <div className="text-[11px] text-gray-500">
+                      <div className="text-[11px] text-[#7A8794]">
                         {item.peakPctText}
                       </div>
-                      <div className="text-[11px] text-gray-500">
+                      <div className="text-[11px] text-[#7A8794]">
                         {item.dayDiffText}
                       </div>
                     </div>
 
                     {idx < items.length - 1 ? (
                       <div className="flex h-8 items-center justify-center">
-                        <span className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-[11px] font-semibold text-gray-600 shadow-sm">
+                        <span className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-[11px] font-semibold text-[#6F7B86] shadow-sm">
                           {transitionBadges[idx] ?? "-"}
                         </span>
                       </div>
@@ -644,7 +644,7 @@ function describeArc(
             </div>
           </div>
         ) : (
-          <div className="rounded-2xl border border-gray-200 bg-gray-50 px-6 py-10 text-sm text-gray-500">
+          <div className="rounded-2xl border border-gray-200 bg-gray-50 px-6 py-10 text-sm text-[#7A8794]">
             표시할 데이터가 없습니다.
           </div>
         )}
@@ -692,11 +692,11 @@ const DonutCard = memo(function DonutCard({
               </span>
             </div>
 
-            <h3 className="whitespace-nowrap overflow-hidden text-ellipsis text-base font-semibold text-gray-900">
+            <h3 className="whitespace-nowrap overflow-hidden text-ellipsis text-base font-semibold text-[#27364A]">
               {title}
             </h3>
 
-            <p className="mt-1 whitespace-nowrap overflow-hidden text-ellipsis text-sm text-gray-500">
+            <p className="mt-1 whitespace-nowrap overflow-hidden text-ellipsis text-sm text-[#7A8794]">
               {description}
             </p>
         </div>
@@ -797,17 +797,17 @@ const DonutCard = memo(function DonutCard({
                           className="inline-block h-3.5 w-3.5 shrink-0 rounded-full"
                           style={{ backgroundColor: item.color }}
                         />
-                        <span className="truncate text-sm font-semibold text-gray-900">
+                        <span className="truncate text-sm font-semibold text-[#27364A]">
                           {item.label}
                         </span>
                       </div>
 
-                      <div className="shrink-0 text-sm font-semibold text-gray-900">
+                      <div className="shrink-0 text-sm font-semibold text-[#27364A]">
                         {formatPercentFromRate(item.pct, 1)}
                       </div>
                     </div>
 
-                    <div className="mt-2 break-all text-center text-xl font-semibold text-gray-900">
+                    <div className="mt-2 break-all text-center text-xl font-semibold text-[#27364A]">
                       {valueFormatter(item.value)}
                     </div>
                   </div>
@@ -816,7 +816,7 @@ const DonutCard = memo(function DonutCard({
             </div>
           </div>
         ) : (
-          <div className="rounded-2xl border border-gray-200 bg-gray-50 px-6 py-10 text-sm text-gray-500">
+          <div className="rounded-2xl border border-gray-200 bg-gray-50 px-6 py-10 text-sm text-[#7A8794]">
             표시할 데이터가 없습니다.
           </div>
         )}
@@ -868,19 +868,19 @@ const EfficiencyBarCard = memo(function EfficiencyBarCard({
         <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
           <div>
             <div className="mb-2">
-              <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] text-amber-700">
+              <span className="inline-flex items-center rounded-full border [#CFC2B1]/65 bg-[#F3E4D2]/45 px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] text-[#7B7166]">
                 {badge}
               </span>
             </div>
-            <h3 className="text-base font-semibold text-gray-900">{title}</h3>
-            <p className="mt-1 text-sm text-gray-500">{description}</p>
+            <h3 className="text-base font-semibold text-[#27364A]">{title}</h3>
+            <p className="mt-1 text-sm text-[#7A8794]">{description}</p>
           </div>
 
           <div className="min-w-[220px] rounded-2xl border border-gray-200 bg-gray-50/80 px-4 py-3">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9A8F81]">
               Overview
             </div>
-            <div className="mt-1 text-sm font-semibold text-gray-900">
+            <div className="mt-1 text-sm font-semibold text-[#27364A]">
               {overview}
             </div>
           </div>
@@ -905,11 +905,11 @@ const EfficiencyBarCard = memo(function EfficiencyBarCard({
                         className="inline-block h-3.5 w-3.5 rounded-full"
                         style={{ backgroundColor: channelColor(item.channel) }}
                       />
-                      <span className="text-sm font-semibold text-gray-900">
+                      <span className="text-sm font-semibold text-[#27364A]">
                         {item.channel}
                       </span>
                     </div>
-                    <span className="text-sm font-semibold text-gray-900">
+                    <span className="text-sm font-semibold text-[#27364A]">
                       {primaryMetricFormatter(primaryMetricValue(item))}
                     </span>
                   </div>
@@ -924,22 +924,22 @@ const EfficiencyBarCard = memo(function EfficiencyBarCard({
                     />
                   </div>
 
-                  <div className="mt-3 grid grid-cols-3 gap-3 text-xs text-gray-500">
+                  <div className="mt-3 grid grid-cols-3 gap-3 text-xs text-[#7A8794]">
                     <div>
                       <div>{primaryMetricLabel}</div>
-                      <div className="mt-1 font-semibold text-gray-900">
+                      <div className="mt-1 font-semibold text-[#27364A]">
                         {primaryMetricFormatter(primaryMetricValue(item))}
                       </div>
                     </div>
                     <div>
                       <div>{secondaryLabel}</div>
-                      <div className="mt-1 font-semibold text-gray-900">
+                      <div className="mt-1 font-semibold text-[#27364A]">
                         {secondaryFormatter(secondaryValue(item))}
                       </div>
                     </div>
                     <div>
                       <div>{tertiaryLabel}</div>
-                      <div className="mt-1 font-semibold text-gray-900">
+                      <div className="mt-1 font-semibold text-[#27364A]">
                         {tertiaryFormatter(tertiaryValue(item))}
                       </div>
                     </div>
@@ -949,7 +949,7 @@ const EfficiencyBarCard = memo(function EfficiencyBarCard({
             })}
           </div>
         ) : (
-          <div className="rounded-2xl border border-gray-200 bg-gray-50 px-6 py-10 text-sm text-gray-500">
+          <div className="rounded-2xl border border-gray-200 bg-gray-50 px-6 py-10 text-sm text-[#7A8794]">
             {emptyMessage}
           </div>
         )}
@@ -1031,11 +1031,11 @@ const HeatmapCell = memo(function HeatmapCell({
     >
       {agg ? (
         <div className="pointer-events-none absolute left-1/2 top-full z-20 hidden w-max -translate-x-1/2 pt-2 group-hover:block">
-          <div className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs shadow-lg">
-            <div className="font-bold text-gray-900">{agg.dateKey}</div>
-            <div className="mt-1 text-gray-600">
+          <div className="rounded-xl border border-[#CFC2B1]/55 bg-white px-3 py-2 text-xs shadow-[0_12px_28px_rgba(127,166,196,0.14)]">
+            <div className="font-bold text-[#27364A]">{agg.dateKey}</div>
+            <div className="mt-1 text-[#6F7B86]">
               {selectedMetricLabel}:{" "}
-              <span className="font-semibold text-gray-900">
+              <span className="font-semibold text-[#27364A]">
                 {formatMetricValue(metric, value)}
               </span>
             </div>
@@ -1797,7 +1797,7 @@ export default function Summary2Section({ reportType, rows }: Props) {
   if (!rows?.length) {
     return (
       <section className="mt-0 pt-8">
-        <div className="rounded-2xl border border-gray-200 bg-white px-2 py-10 text-sm text-gray-500 shadow-sm">
+        <div className="rounded-2xl border border-gray-200 bg-white px-2 py-10 text-sm text-[#7A8794] shadow-sm">
           표시할 데이터가 없습니다.
         </div>
       </section>
@@ -1928,24 +1928,24 @@ export default function Summary2Section({ reportType, rows }: Props) {
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div>
                 <div className="mb-2">
-                  <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] text-sky-700">
+                  <span className="inline-flex items-center rounded-full border border-[#B7D7E3]/70 bg-[#B7D7E3]/22 px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] text-[#5F87A3]">
                     {heatmapBadge}
                   </span>
                 </div>
-                <h3 className="text-base font-semibold text-gray-900">
+                <h3 className="text-base font-semibold text-[#27364A]">
                   일자별 성과 히트맵
                 </h3>
-                <p className="mt-1 text-sm text-gray-500">
+                <p className="mt-1 text-sm text-[#7A8794]">
                   {heatmapDescription}
                 </p>
               </div>
 
               <div className="flex min-w-[240px] flex-col gap-3 xl:items-end">
-                <div className="rounded-2xl border border-gray-200 bg-gray-50/80 px-4 py-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400">
+                <div className="rounded-2xl border border-[#CFC2B1]/45 bg-[#F3E4D2]/30 px-4 py-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9A8F81]">
                     Overview
                   </div>
-                  <div className="mt-1 text-sm font-semibold text-gray-900">
+                  <div className="mt-1 text-sm font-semibold text-[#27364A]">
                     {heatmapOverview}
                   </div>
                 </div>
@@ -1974,32 +1974,32 @@ export default function Summary2Section({ reportType, rows }: Props) {
           <div className="px-6 py-5">
             <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-4">
-                <div className="text-xs text-gray-500">활성 일수</div>
-                <div className="mt-2 text-2xl font-semibold text-gray-900">
+                <div className="text-xs text-[#7A8794]">활성 일수</div>
+                <div className="mt-2 text-2xl font-semibold text-[#27364A]">
                   {heatmapSummary.activeDays}일
                 </div>
               </div>
 
               <div className="rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-4">
-                <div className="text-xs text-gray-500">평균</div>
-                <div className="mt-2 text-2xl font-semibold text-gray-900">
+                <div className="text-xs text-[#7A8794]">평균</div>
+                <div className="mt-2 text-2xl font-semibold text-[#27364A]">
                   {formatMetricValue(metric, heatmapSummary.avgValue)}
                 </div>
               </div>
 
               <div className="rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-4">
-                <div className="text-xs text-gray-500">최대</div>
-                <div className="mt-2 text-2xl font-semibold text-gray-900">
+                <div className="text-xs text-[#7A8794]">최대</div>
+                <div className="mt-2 text-2xl font-semibold text-[#27364A]">
                   {formatMetricValue(metric, heatmapSummary.maxValue)}
                 </div>
               </div>
 
               <div className="rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-4">
-                <div className="text-xs text-gray-500">최고 성과 일자</div>
-                <div className="mt-2 text-lg font-semibold text-gray-900">
+                <div className="text-xs text-[#7A8794]">최고 성과 일자</div>
+                <div className="mt-2 text-lg font-semibold text-[#27364A]">
                   {heatmapSummary.bestDay?.dateKey ?? "-"}
                 </div>
-                <div className="mt-1 text-sm text-gray-500">
+                <div className="mt-1 text-sm text-[#7A8794]">
                   {heatmapSummary.bestDay
                     ? formatMetricValue(
                         metric,
@@ -2019,7 +2019,7 @@ export default function Summary2Section({ reportType, rows }: Props) {
                     {Array.from({ length: 7 }).map((_, dayIdx) => (
                       <div
                         key={`weekday-${dayIdx}`}
-                        className="flex h-10 items-center justify-start pr-2 text-sm font-semibold text-gray-500"
+                        className="flex h-10 items-center justify-start pr-2 text-sm font-semibold text-[#7A8794]"
                       >
                         {dayLabelKor(dayIdx)}
                       </div>
@@ -2040,7 +2040,7 @@ export default function Summary2Section({ reportType, rows }: Props) {
                     {calendar.monthRow.map((label, idx) => (
                       <div
                         key={`month-row-${idx}`}
-                        className="flex h-6 items-center text-xs font-semibold tracking-[0.02em] text-gray-500"
+                        className="flex h-6 items-center text-xs font-semibold tracking-[0.02em] text-[#7A8794]"
                       >
                         {label}
                       </div>
@@ -2049,7 +2049,7 @@ export default function Summary2Section({ reportType, rows }: Props) {
                     {calendar.weeks.map((week, weekIdx) => (
                       <div
                         key={`week-header-${weekIdx}`}
-                        className="flex h-6 items-center justify-center text-center text-[11px] font-medium text-gray-400"
+                        className="flex h-6 items-center justify-center text-center text-[11px] font-medium text-[#9A8F81]"
                       >
                         {week[0].getMonth() + 1}/{week[0].getDate()}
                       </div>
@@ -2088,16 +2088,16 @@ export default function Summary2Section({ reportType, rows }: Props) {
               </div>
             </div>
 
-            <div className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-gray-100 bg-white/80 px-4 py-3">
-              <div className="text-sm text-gray-600">
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[#CFC2B1]/40 bg-white/85 px-4 py-3">
+              <div className="text-sm text-[#6F7B86]">
                 선택 지표:{" "}
-                <span className="rounded-full bg-black px-2.5 py-1 text-xs font-semibold text-white">
+                <span className="rounded-full bg-[#7FA6C4] px-2.5 py-1 text-xs font-semibold text-white">
                   {selectedMetricLabel}
                 </span>
               </div>
 
               <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                <div className="flex items-center gap-1.5 text-xs text-[#7A8794]">
                   <span>낮음</span>
                   {HEAT_LEGEND_PALETTE.map((klass, idx) => (
                     <span
@@ -2134,16 +2134,16 @@ export default function Summary2Section({ reportType, rows }: Props) {
                 <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
                   <div>
                     <div className="mb-2">
-                      <span className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] text-indigo-700">
+                      <span className="inline-flex items-center rounded-full border border-[#B7D7E3]/70 bg-[#B7D7E3]/22 px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] text-[#5F87A3]">
                         {isDbAcquisition ? "ACQUISITION FLOW" : "SANKEY"}
                       </span>
                     </div>
-                    <h3 className="text-base font-semibold text-gray-900">
+                    <h3 className="text-base font-semibold text-[#27364A]">
                       {isDbAcquisition
                         ? "채널 → 기기 → 전환 흐름"
                         : "채널 → 기기 → 매출 흐름"}
                     </h3>
-                    <p className="mt-1 text-sm text-gray-500">
+                    <p className="mt-1 text-sm text-[#7A8794]">
                       {isDbAcquisition
                         ? "현재 필터가 적용된 데이터 기준으로, 어떤 채널의 전환이 어떤 기기에서 발생했는지 흐름으로 보여줍니다."
                         : "현재 필터가 적용된 데이터 기준으로, 어떤 채널의 매출이 어떤 기기에서 발생했는지 흐름으로 보여줍니다."}
@@ -2151,10 +2151,10 @@ export default function Summary2Section({ reportType, rows }: Props) {
                   </div>
 
                   <div className="min-w-[220px] rounded-2xl border border-gray-200 bg-gray-50/80 px-4 py-3">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9A8F81]">
                       Overview
                     </div>
-                    <div className="mt-1 text-sm font-semibold text-gray-900">
+                    <div className="mt-1 text-sm font-semibold text-[#27364A]">
                       {sankeyOverview}
                     </div>
                   </div>
@@ -2270,7 +2270,7 @@ export default function Summary2Section({ reportType, rows }: Props) {
                     </div>
                   </div>
                 ) : (
-                  <div className="rounded-2xl border border-gray-200 bg-gray-50 px-6 py-10 text-sm text-gray-500">
+                  <div className="rounded-2xl border border-gray-200 bg-gray-50 px-6 py-10 text-sm text-[#7A8794]">
                     {isDbAcquisition
                       ? "흐름 차트를 표시할 전환 데이터가 없습니다."
                       : "Sankey 차트를 표시할 매출 데이터가 없습니다."}

@@ -256,38 +256,46 @@ async function getUserId(req: Request) {
 }
 
 function getSafeBatchSize(totalRows: number, fileSizeBytes = 0) {
+  /**
+   * 3만 행 내외 CSV에서 500~800 row batch는 Supabase 왕복 횟수가 많아진다.
+   * 행 단위 결과/집계/필터 로직은 그대로 두고 insert 묶음 크기만 보수적으로 키운다.
+   */
   if (totalRows > 0) {
-    if (totalRows >= 600000) return 5000;
-    if (totalRows >= 400000) return 4000;
-    if (totalRows >= 300000) return 3200;
-    if (totalRows >= 200000) return 2600;
-    if (totalRows >= 120000) return 2000;
-    if (totalRows >= 80000) return 1600;
-    if (totalRows >= 50000) return 1200;
-    if (totalRows >= 10000) return 800;
-    return 500;
+    if (totalRows >= 600000) return 6000;
+    if (totalRows >= 400000) return 5200;
+    if (totalRows >= 300000) return 4500;
+    if (totalRows >= 200000) return 4000;
+    if (totalRows >= 120000) return 3600;
+    if (totalRows >= 80000) return 3200;
+    if (totalRows >= 50000) return 3000;
+    if (totalRows >= 10000) return 3000;
+    return 1500;
   }
 
-  if (fileSizeBytes >= 300 * 1024 * 1024) return 4000;
-  if (fileSizeBytes >= 150 * 1024 * 1024) return 3000;
-  if (fileSizeBytes >= 80 * 1024 * 1024) return 2000;
-  if (fileSizeBytes >= 20 * 1024 * 1024) return 1200;
-  if (fileSizeBytes >= 5 * 1024 * 1024) return 800;
-  return 500;
+  if (fileSizeBytes >= 300 * 1024 * 1024) return 6000;
+  if (fileSizeBytes >= 150 * 1024 * 1024) return 5200;
+  if (fileSizeBytes >= 80 * 1024 * 1024) return 4500;
+  if (fileSizeBytes >= 20 * 1024 * 1024) return 3600;
+  if (fileSizeBytes >= 5 * 1024 * 1024) return 3000;
+  return 1500;
 }
 
 function getMetaUpdateEveryBatches(totalRows: number, fileSizeBytes = 0) {
+  /**
+   * progress meta 저장은 UI 확인용이다.
+   * report_rows insert 결과에는 영향이 없으므로 작은 파일에서도 매 batch 저장을 피한다.
+   */
   if (totalRows > 0) {
-    if (totalRows >= 300000) return 3;
-    if (totalRows >= 100000) return 2;
-    if (totalRows >= 50000) return 2;
-    return 1;
+    if (totalRows >= 300000) return 5;
+    if (totalRows >= 100000) return 4;
+    if (totalRows >= 50000) return 3;
+    return 2;
   }
 
-  if (fileSizeBytes >= 120 * 1024 * 1024) return 3;
-  if (fileSizeBytes >= 60 * 1024 * 1024) return 2;
-  if (fileSizeBytes >= 20 * 1024 * 1024) return 2;
-  return 1;
+  if (fileSizeBytes >= 120 * 1024 * 1024) return 5;
+  if (fileSizeBytes >= 60 * 1024 * 1024) return 4;
+  if (fileSizeBytes >= 20 * 1024 * 1024) return 3;
+  return 2;
 }
 
 function calcProgress(done: number, total: number) {
@@ -751,7 +759,7 @@ export async function POST(req: Request, ctx: Ctx) {
 
     const batchSize = getSafeBatchSize(0, blobSize);
     const updateEveryBatches = getMetaUpdateEveryBatches(0, blobSize);
-    const MAX_PARALLEL_INSERTS = 2;
+    const MAX_PARALLEL_INSERTS = 4;
 
     reportMetaForError = await updateReportIngestionMeta(
       sb,
@@ -807,7 +815,7 @@ export async function POST(req: Request, ctx: Ctx) {
       | { ok: true; size: number }
       | { ok: false; error: any };
 
-    const META_FLUSH_MIN_INTERVAL_MS = 3500;
+    const META_FLUSH_MIN_INTERVAL_MS = 7000;
 
     const flushProgressMeta = async (force = false) => {
       if (isMetaFlushInFlight) return;

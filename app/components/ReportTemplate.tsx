@@ -2200,7 +2200,7 @@ function getReportTypeDisplayName(
 
 const HeaderSurface = memo(function HeaderSurface(props: HeaderBarProps) {
   return (
-    <div className="border-b border-slate-200 bg-white">
+    <div className="border-b border-[var(--nature-border)] bg-[var(--nature-surface)]">
       <MemoHeaderBar {...props} />
     </div>
   );
@@ -2991,16 +2991,16 @@ export default function ReportTemplate({
     hideTabPeriodText,
   ]);
 
-  return (
-    <main className="min-h-screen bg-slate-50 text-slate-900">
+    return (
+    <main className="min-h-screen w-full min-w-0 max-w-full overflow-hidden bg-[var(--nature-page)] text-slate-900">
       <HeaderSurface {...headerBarProps} />
 
       <div className="px-4 pb-10 pt-2 sm:px-6 lg:px-8 lg:pt-3">
-        <div className="mx-auto w-full max-w-[1660px]">
+       <div className="mx-auto w-full min-w-0 max-w-full overflow-hidden rounded-[32px] border border-[var(--nature-border)] bg-[var(--nature-shell)]/70 p-3 shadow-sm">
           {isLoading ? (
-            <div className="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <div className="flex items-center gap-3 px-5 py-4">
-                <div className="h-2.5 w-2.5 animate-pulse rounded-full bg-blue-500" />
+            <div className="mb-6 overflow-hidden rounded-2xl border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] shadow-sm">
+                <div className="flex items-center gap-3 px-5 py-4">
+                <div className="h-2.5 w-2.5 animate-pulse rounded-full bg-[var(--nature-blue)]" />
                 <div className="text-sm font-medium text-slate-600">
                   Loading rows...
                 </div>
@@ -3008,7 +3008,7 @@ export default function ReportTemplate({
             </div>
           ) : null}
 
-          <div className="relative flex items-start justify-center gap-5 xl:gap-6">
+          <div className="relative flex min-w-0 max-w-full items-start justify-center gap-4 overflow-hidden xl:gap-5">
             <div className="hidden xl:block xl:sticky xl:top-24 xl:self-start">
               <MemoFloatingFilterRail
                 selectedMonth={selectedMonth}
@@ -3036,7 +3036,7 @@ export default function ReportTemplate({
             </div>
 
             <div className="min-w-0 flex-1">
-              <div className="mx-auto w-full max-w-[1440px]">
+              <div className="mx-auto w-full min-w-0 max-w-full">
                 <div className="space-y-8">
                   {deferredTab === "summary" && (
                     <>

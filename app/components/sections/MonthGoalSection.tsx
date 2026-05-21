@@ -27,7 +27,7 @@ export default function MonthGoalSection({
 }: Props) {
   return (
     <section className="mb-8 mt-2">
-      <div className="overflow-hidden rounded-[28px] border border-slate-200/90 bg-gradient-to-br from-white via-white to-slate-50 shadow-[0_14px_36px_rgba(15,23,42,0.08)]">
+      <div className="overflow-hidden rounded-[28px] border border-[var(--nature-border-blue)] bg-gradient-to-br from-[var(--nature-surface)] via-[var(--nature-surface)] to-[var(--nature-cream)]/70 shadow-[0_14px_36px_rgba(127,166,196,0.16)]">
         <div className="px-5 py-5 sm:px-6">
           <SummaryGoal
             reportType={reportType}

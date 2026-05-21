@@ -52,16 +52,16 @@ const FIRST_TD_CLASS =
   "px-4 py-3.5 text-left text-sm font-medium text-slate-900 whitespace-nowrap align-middle";
 
 const TABLE_SURFACE_CLASS =
-  "overflow-x-auto rounded-[24px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] shadow-[0_1px_3px_rgba(15,23,42,0.03)] ring-1 ring-white/60";
+  "overflow-x-auto rounded-[24px] border border-[var(--nature-border-blue)] bg-[linear-gradient(180deg,var(--nature-surface),rgba(243,228,210,0.46))] shadow-[0_1px_3px_rgba(127,166,196,0.08)] ring-1 ring-white/70";
 
 const SOURCE_TABLE_SURFACE_CLASS =
-  "overflow-auto rounded-[24px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] shadow-[0_1px_3px_rgba(15,23,42,0.03)] ring-1 ring-white/60 max-h-[720px]";
+  "overflow-auto rounded-[24px] border border-[var(--nature-border-blue)] bg-[linear-gradient(180deg,var(--nature-surface),rgba(243,228,210,0.46))] shadow-[0_1px_3px_rgba(127,166,196,0.08)] ring-1 ring-white/70 max-h-[720px]";
 
 const DAILY_TABLE_SURFACE_CLASS =
-  "overflow-x-auto rounded-[24px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] shadow-[0_1px_3px_rgba(15,23,42,0.03)] ring-1 ring-white/60";
+  "overflow-x-auto rounded-[24px] border border-[var(--nature-border-blue)] bg-[linear-gradient(180deg,var(--nature-surface),rgba(243,228,210,0.46))] shadow-[0_1px_3px_rgba(127,166,196,0.08)] ring-1 ring-white/70";
 
 const TABLE_HEAD_CLASS =
-  "sticky top-0 z-10 border-b border-slate-200/90 bg-slate-50/95";
+  "sticky top-0 z-10 border-b border-[var(--nature-border)] bg-[var(--nature-cream)]/85";
 
 const EMPTY_STATE_CLASS =
   "px-4 py-10 text-center text-sm font-medium text-slate-500";
@@ -211,7 +211,7 @@ const SectionIntro = memo(function SectionIntro({
         compact ? "mb-5 flex flex-col gap-2" : "mb-6 flex flex-col gap-2.5"
       }
     >
-      <div className="inline-flex w-fit items-center rounded-full border border-slate-200/90 bg-white px-3 py-1 text-[10px] font-semibold tracking-[0.12em] text-slate-500 shadow-sm">
+      <div className="inline-flex w-fit items-center rounded-full border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/35 px-3 py-1 text-[10px] font-semibold tracking-[0.12em] text-slate-600 shadow-sm">
         {badge}
       </div>
 
@@ -550,7 +550,7 @@ const WeeklyDeltaRow = memo(function WeeklyDeltaRow({
   if (!lastRow || !prevRow) return null;
 
   return (
-    <tr className="border-b border-slate-200 bg-[linear-gradient(180deg,rgba(241,245,249,0.9),rgba(248,250,252,0.96))] font-medium text-slate-800">
+    <tr className="border-b border-[var(--nature-border)] bg-[linear-gradient(180deg,rgba(243,228,210,0.72),rgba(255,250,243,0.94))] font-medium text-slate-800">
       <td className={`${FIRST_TD_CLASS} truncate`}>증감(최근주-전주)</td>
 
       <td className={TD_CLASS}>
@@ -672,7 +672,7 @@ const WeeklyPerformanceRow = memo(function WeeklyPerformanceRow({
   maxRev: number;
 }) {
   return (
-    <tr className="border-t border-slate-200/90 even:bg-slate-50/45 hover:bg-sky-50/55 transition-colors">
+    <tr className="border-t border-[var(--nature-border)] even:bg-[var(--nature-cream)]/24 hover:bg-[var(--nature-blue-light)]/28 transition-colors">
       <td className={`${FIRST_TD_CLASS} truncate`} title={row.title}>
         {row.label}
       </td>
@@ -800,7 +800,7 @@ const SourceEmptyRow = memo(function SourceEmptyRow({
   colSpan: number;
 }) {
   return (
-    <tr className="border-t border-slate-200/90">
+    <tr className="border-t border-[var(--nature-border)]">
       <td className={EMPTY_STATE_CLASS} colSpan={colSpan}>
         데이터가 없습니다.
       </td>
@@ -850,7 +850,7 @@ const SourcePerformanceRow = memo(function SourcePerformanceRow({
 }) {
   return (
     <tr
-      className="border-t border-slate-200/90 even:bg-slate-50/45 hover:bg-emerald-50/45 transition-colors"
+      className="border-t border-[var(--nature-border)] even:bg-[var(--nature-cream)]/24 hover:bg-[var(--nature-blue-light)]/28 transition-colors"
       style={{ height: `${SOURCE_ROW_HEIGHT}px` }}
     >
       <td className={`${FIRST_TD_CLASS} truncate`} title={row.title}>
@@ -1140,7 +1140,10 @@ const DailyEmptyRow = memo(function DailyEmptyRow({
   colSpan: number;
 }) {
   return (
-    <tr className="border-t border-slate-200/90">
+    <tr
+      className="border-t border-[var(--nature-border)] even:bg-[var(--nature-cream)]/24 hover:bg-[var(--nature-blue-light)]/28 transition-colors"
+      style={{ height: `${DAILY_ROW_HEIGHT}px` }}
+    >
       <td className={EMPTY_STATE_CLASS} colSpan={colSpan}>
         데이터가 없습니다.
       </td>
@@ -1529,7 +1532,7 @@ function SummarySectionComponent(props: Props) {
           compact
         />
 
-        <div className="rounded-[26px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(248,250,252,0.72))] p-2.5 shadow-[0_8px_22px_rgba(15,23,42,0.035)] sm:p-3">
+        <div className="rounded-[26px] border border-[var(--nature-border-blue)] bg-[linear-gradient(180deg,var(--nature-surface),rgba(243,228,210,0.48))] p-2.5 shadow-[0_8px_22px_rgba(127,166,196,0.10)] sm:p-3">
           <SummaryKPI reportType={reportType} totals={stableTotals} />
         </div>
       </div>

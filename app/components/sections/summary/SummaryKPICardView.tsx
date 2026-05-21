@@ -27,10 +27,10 @@ type Props = {
 
 const TOKENS = {
   metric: {
-    cost: "#F59E0B",
-    revenue: "#0EA5E9",
-    roas: "#EF4444",
-    neutral: "#94A3B8",
+    cost: "#CFC2B1",
+    revenue: "#7FA6C4",
+    roas: "#B7D7E3",
+    neutral: "#7FA6C4",
   },
 } as const;
 
@@ -51,58 +51,58 @@ const ACCENT_BY_TONE: Record<SummaryKPICardTone, string> = {
 
 const VALUE_CLASS_BY_TONE: Record<SummaryKPICardTone, string> = {
   neutral: "text-slate-900",
-  cost: "text-amber-600",
-  revenue: "text-sky-600",
-  roas: "text-rose-600",
+  cost: "text-stone-700",
+  revenue: "text-sky-700",
+  roas: "text-cyan-700",
 };
 
 const BADGE_CLASS_BY_TONE: Record<SummaryKPICardTone, string> = {
-  neutral: "border-slate-200 bg-slate-50 text-slate-600",
-  cost: "border-amber-100 bg-amber-50 text-amber-700",
-  revenue: "border-sky-100 bg-sky-50 text-sky-700",
-  roas: "border-rose-100 bg-rose-50 text-rose-700",
+  neutral: "border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/30 text-slate-600",
+  cost: "border-[var(--nature-border)] bg-[var(--nature-cream)]/70 text-stone-700",
+  revenue: "border-[var(--nature-border-blue)] bg-[var(--nature-blue)]/12 text-sky-700",
+  roas: "border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/40 text-cyan-700",
 };
 
 const TONE_SURFACE_CLASS_BY_TONE: Record<SummaryKPICardTone, string> = {
   neutral:
-    "bg-[linear-gradient(180deg,rgba(248,250,252,0.82),rgba(255,255,255,1))]",
+    "bg-[linear-gradient(180deg,var(--nature-surface),rgba(243,228,210,0.34))]",
   cost:
-    "bg-[linear-gradient(180deg,rgba(255,251,235,0.95),rgba(255,255,255,1))]",
+    "bg-[linear-gradient(180deg,rgba(243,228,210,0.76),var(--nature-surface))]",
   revenue:
-    "bg-[linear-gradient(180deg,rgba(240,249,255,0.95),rgba(255,255,255,1))]",
+    "bg-[linear-gradient(180deg,rgba(183,215,227,0.44),var(--nature-surface))]",
   roas:
-    "bg-[linear-gradient(180deg,rgba(255,241,242,0.9),rgba(255,255,255,1))]",
+    "bg-[linear-gradient(180deg,rgba(183,215,227,0.34),rgba(243,228,210,0.28))]",
 };
 
 const FOOTER_CLASS_BY_TONE: Record<SummaryKPICardTone, string> = {
-  neutral: "text-slate-400",
-  cost: "text-amber-500",
-  revenue: "text-sky-500",
-  roas: "text-rose-500",
+  neutral: "text-slate-500",
+  cost: "text-stone-500",
+  revenue: "text-sky-600",
+  roas: "text-cyan-600",
 };
 
 const GLOW_STYLE_BY_TONE: Record<SummaryKPICardTone, { background: string }> = {
   neutral: {
     background:
-      "radial-gradient(circle at top right, rgba(148,163,184,0.12), rgba(148,163,184,0) 58%)",
+      "radial-gradient(circle at top right, rgba(127,166,196,0.14), rgba(127,166,196,0) 58%)",
   },
   cost: {
     background:
-      "radial-gradient(circle at top right, rgba(245,158,11,0.14), rgba(245,158,11,0) 58%)",
+      "radial-gradient(circle at top right, rgba(207,194,177,0.22), rgba(207,194,177,0) 58%)",
   },
   revenue: {
     background:
-      "radial-gradient(circle at top right, rgba(14,165,233,0.14), rgba(14,165,233,0) 58%)",
+      "radial-gradient(circle at top right, rgba(127,166,196,0.18), rgba(127,166,196,0) 58%)",
   },
   roas: {
     background:
-      "radial-gradient(circle at top right, rgba(239,68,68,0.12), rgba(239,68,68,0) 58%)",
+      "radial-gradient(circle at top right, rgba(183,215,227,0.22), rgba(183,215,227,0) 58%)",
   },
 };
 
 const HOVER_OVERLAY_STYLE = {
   background:
-    "linear-gradient(135deg, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0) 62%)",
+    "linear-gradient(135deg, rgba(255,255,255,0.34) 0%, rgba(255,255,255,0) 62%)",
 } as const;
 
 const DENSITY_CLASSES: Record<
@@ -185,7 +185,7 @@ function SummaryKPICardViewComponent({
   const rootClassName = useMemo(
     () =>
       [
-        "group relative overflow-hidden border border-slate-200/90 shadow-[0_10px_30px_rgba(15,23,42,0.06)] transition-all duration-200 hover:-translate-y-[1px] hover:border-slate-300 hover:shadow-[0_14px_34px_rgba(15,23,42,0.08)]",
+        "group relative overflow-hidden border border-[var(--nature-border-blue)] shadow-[0_10px_30px_rgba(127,166,196,0.12)] transition-all duration-200 hover:-translate-y-[1px] hover:border-[var(--nature-blue-light)] hover:shadow-[0_14px_34px_rgba(127,166,196,0.16)]",
         toneSurfaceClass,
         densityClasses.root,
         className ?? "",
@@ -233,7 +233,7 @@ function SummaryKPICardViewComponent({
   const footerClassName = useMemo(
     () =>
       [
-        "relative border-t border-slate-200/70 font-semibold uppercase tracking-[0.08em]",
+        "relative border-t border-[var(--nature-border)] font-semibold uppercase tracking-[0.08em]",
         footerClass,
         densityClasses.footer,
       ].join(" "),

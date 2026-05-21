@@ -9,7 +9,7 @@ type Props = {
 };
 
 const EMPTY_CLASS_NAME =
-  "inline-flex items-center rounded-xl border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-semibold tracking-[-0.01em] text-gray-400";
+  "inline-flex items-center rounded-xl border border-[var(--nature-border)] bg-[var(--nature-surface)] px-2.5 py-1 text-[11px] font-semibold tracking-[-0.01em] text-slate-400";
 
 const ROOT_BASE_CLASS_NAME = [
   "inline-flex",
@@ -28,9 +28,9 @@ const ROOT_BASE_CLASS_NAME = [
 ].join(" ");
 
 const COLOR_CLASS_BY_STATE = {
-  up: "text-red-600 bg-red-50 border-red-100",
-  down: "text-blue-600 bg-blue-50 border-blue-100",
-  flat: "text-gray-500 bg-gray-100 border-gray-200",
+  up: "text-sky-700 bg-[var(--nature-blue-light)]/45 border-[var(--nature-border-blue)]",
+  down: "text-rose-600 bg-rose-50/70 border-rose-100",
+  flat: "text-slate-500 bg-[var(--nature-cream)]/55 border-[var(--nature-border)]",
 } as const;
 
 /**

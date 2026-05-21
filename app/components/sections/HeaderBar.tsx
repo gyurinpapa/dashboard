@@ -93,8 +93,8 @@ function tabClass(active: boolean) {
   return [
     "inline-flex h-11 items-center justify-center rounded-full border px-4 text-sm font-semibold tracking-tight transition-all duration-200",
     active
-      ? "border-slate-950 bg-slate-950 text-white shadow-[0_12px_28px_rgba(15,23,42,0.28)] ring-2 ring-white/10"
-      : "border-slate-300/80 bg-white/88 text-slate-700 shadow-sm hover:border-slate-400 hover:bg-white hover:text-slate-950 hover:-translate-y-[1px]",
+      ? "border-[var(--nature-blue)] bg-[var(--nature-blue)] text-white shadow-[0_12px_28px_rgba(127,166,196,0.28)] ring-2 ring-white/30"
+      : "border-[var(--nature-border)] bg-[var(--nature-surface)]/90 text-slate-700 shadow-sm hover:border-[var(--nature-blue-light)] hover:bg-[var(--nature-cream)]/70 hover:text-slate-950 hover:-translate-y-[1px]",
   ].join(" ");
 }
 
@@ -103,11 +103,11 @@ function optionBtnClass(active: boolean, dim = false, disabled = false) {
     "px-3 py-1.5 rounded-lg border text-sm font-semibold transition-all duration-200",
     !disabled ? "hover:-translate-y-[1px] hover:shadow-md" : "",
     active
-      ? "bg-slate-950 text-white border-slate-950 shadow-sm"
-      : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50",
+      ? "bg-[var(--nature-blue)] text-white border-[var(--nature-blue)] shadow-sm"
+      : "bg-[var(--nature-surface)] text-slate-700 border-[var(--nature-border)] hover:bg-[var(--nature-cream)]/70",
     dim ? "opacity-40" : "",
     disabled
-      ? "opacity-40 cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-100 hover:translate-y-0 hover:shadow-none"
+      ? "opacity-40 cursor-not-allowed bg-[var(--nature-shell)] text-slate-400 border-[var(--nature-border)] hover:bg-[var(--nature-shell)] hover:translate-y-0 hover:shadow-none"
       : "",
   ].join(" ");
 }
@@ -219,28 +219,28 @@ const HeaderIntro = memo(function HeaderIntro({
   }, [cleanTypeName]);
 
   return (
-    <div className="relative mb-6 overflow-hidden rounded-3xl border border-white/12 bg-white/[0.08] px-6 py-6 shadow-[0_18px_48px_rgba(2,6,23,0.22)] backdrop-blur-xl">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.12),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(148,163,184,0.18),transparent_34%)]" />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/20" />
+    <div className="relative mb-6 overflow-hidden rounded-3xl border border-[var(--nature-border-blue)] bg-[var(--nature-surface)]/85 px-6 py-6 shadow-[0_18px_48px_rgba(127,166,196,0.18)] backdrop-blur-xl">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(183,215,227,0.42),transparent_30%),radial-gradient(circle_at_bottom_left,rgba(243,228,210,0.72),transparent_36%)]" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/70" />
 
       <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0">
-          <div className="mb-2 inline-flex items-center rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold tracking-[0.12em] text-white/85 shadow-sm backdrop-blur-sm">
+          <div className="mb-2 inline-flex items-center rounded-full border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/45 px-3 py-1 text-[11px] font-semibold tracking-[0.12em] text-slate-700 shadow-sm backdrop-blur-sm">
             {badgeText}
           </div>
 
-          <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
             {headerTitle}
           </h1>
 
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-300">
-            <span className="font-medium text-slate-200">{headerSubTitle}</span>
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-600">
+            <span className="font-medium text-slate-700">{headerSubTitle}</span>
             {fullPeriod ? (
               <>
-                <span className="hidden text-white/20 sm:inline">•</span>
+                <span className="hidden text-slate-300 sm:inline">•</span>
                 <span>
                   데이터 전체 기간{" "}
-                  <span className="font-semibold text-white">{fullPeriod}</span>
+                  <span className="font-semibold text-slate-900">{fullPeriod}</span>
                 </span>
               </>
             ) : null}
@@ -275,18 +275,18 @@ const ReadOnlyHeaderBar = memo(function ReadOnlyHeaderBar({
         fullPeriod={fullPeriod}
       />
 
-      <div className="rounded-[24px] border border-white/12 bg-white/[0.08] px-4 py-4 shadow-[0_14px_34px_rgba(2,6,23,0.18)] backdrop-blur-xl">
+      <div className="rounded-[24px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)]/85 px-4 py-4 shadow-[0_14px_34px_rgba(127,166,196,0.16)] backdrop-blur-xl">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
-            <div className="text-sm font-semibold text-white/90">기준 기간</div>
-            <div className="mt-1 text-sm text-slate-300">
+            <div className="text-sm font-semibold text-slate-800">기준 기간</div>
+            <div className="mt-1 text-sm text-slate-600">
               {reportPeriod.startDate || "-"} ~ {reportPeriod.endDate || "-"}
             </div>
           </div>
 
           <div className="min-w-0 sm:text-right">
-            <div className="text-sm font-semibold text-white/90">조회 기간</div>
-            <div className="mt-1 text-sm text-slate-300">{period || "-"}</div>
+            <div className="text-sm font-semibold text-slate-800">조회 기간</div>
+            <div className="mt-1 text-sm text-slate-600">{period || "-"}</div>
           </div>
         </div>
       </div>
@@ -386,7 +386,7 @@ const OptionPopover = memo(function OptionPopover({
   children: React.ReactNode;
 }) {
   return (
-    <div className="absolute left-0 top-full z-50 mt-3 w-[520px] max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200/90 bg-white/95 p-4 shadow-[0_24px_50px_rgba(15,23,42,0.18)] backdrop-blur-md">
+    <div className="absolute left-0 top-full z-50 mt-3 w-[520px] max-w-[calc(100vw-2rem)] rounded-2xl border border-[var(--nature-border)] bg-[var(--nature-surface)]/95 p-4 shadow-[0_24px_50px_rgba(127,166,196,0.20)] backdrop-blur-md">
       <div className="mb-3 text-sm font-semibold text-slate-800">{title}</div>
       <div className="flex max-h-[220px] flex-wrap gap-2 overflow-auto">
         {children}
@@ -700,21 +700,21 @@ function EditorHeaderBar(props: Props) {
       <div className="grid gap-3 xl:grid-cols-[minmax(360px,0.9fr)_minmax(420px,1.05fr)_minmax(360px,0.95fr)] xl:items-stretch">
         <div
           ref={filterRootRef}
-          className="relative min-w-0 rounded-[24px] border border-white/12 bg-white/[0.08] px-4 py-4 shadow-[0_16px_38px_rgba(2,6,23,0.18)] backdrop-blur-xl"
+          className="relative min-w-0 rounded-[24px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)]/82 px-4 py-4 shadow-[0_16px_38px_rgba(127,166,196,0.16)] backdrop-blur-xl"
         >
-          <div className="pointer-events-none absolute inset-0 rounded-[24px] bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.08),transparent_30%)]" />
+          <div className="pointer-events-none absolute inset-0 rounded-[24px] bg-[radial-gradient(circle_at_top_right,rgba(183,215,227,0.22),transparent_32%)]" />
 
           <div className="relative grid gap-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="text-sm font-semibold text-white/90">1단 필터</div>
-                <div className="mt-1 text-xs text-slate-400">
+                <div className="text-sm font-semibold text-slate-800">1단 필터</div>
+                <div className="mt-1 text-xs text-slate-500">
                   월, 주차, 기기, 채널, 소스, 상품
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
-                <div className="rounded-full border border-white/12 bg-white/10 px-3 py-1 text-xs font-semibold text-white shadow-sm backdrop-blur-sm">
+                <div className="rounded-full border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/40 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm backdrop-blur-sm">
                   +VAT
                 </div>
               </div>
@@ -722,7 +722,7 @@ function EditorHeaderBar(props: Props) {
 
             {!hidePeriodEditor ? (
               <div className="grid gap-3">
-                <div className="text-sm font-semibold text-white/90">
+                <div className="text-sm font-semibold text-slate-800">
                   보고서 기간
                 </div>
 
@@ -734,7 +734,7 @@ function EditorHeaderBar(props: Props) {
                         onChange={(e) =>
                           handlePresetChange(e.target.value as ReportPeriodPreset)
                         }
-                        className="h-11 w-full rounded-xl border border-white/12 bg-white/95 px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-slate-400 focus:bg-white"
+                        className="h-11 w-full rounded-xl border border-[var(--nature-border)] bg-[var(--nature-surface)]/95 px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-[var(--nature-blue)] focus:bg-white"
                       >
                         {REPORT_PERIOD_PRESETS.map((preset) => (
                           <option key={preset} value={preset}>
@@ -750,16 +750,16 @@ function EditorHeaderBar(props: Props) {
                           type="date"
                           value={reportPeriod.startDate}
                           onChange={(e) => handleStartDateChange(e.target.value)}
-                          className="h-11 min-w-[150px] flex-1 rounded-xl border border-white/12 bg-white/95 px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400 focus:bg-white"
+                          className="h-11 min-w-[150px] flex-1 rounded-xl border border-[var(--nature-border)] bg-[var(--nature-surface)]/95 px-3 text-sm text-slate-700 outline-none transition focus:border-[var(--nature-blue)] focus:bg-white"
                         />
-                        <span className="shrink-0 text-sm font-medium text-slate-400">
+                        <span className="shrink-0 text-sm font-medium text-slate-500">
                           ~
                         </span>
                         <input
                           type="date"
                           value={reportPeriod.endDate}
                           onChange={(e) => handleEndDateChange(e.target.value)}
-                          className="h-11 min-w-[150px] flex-1 rounded-xl border border-white/12 bg-white/95 px-3 text-sm text-slate-700 outline-none transition focus:border-slate-400 focus:bg-white"
+                          className="h-11 min-w-[150px] flex-1 rounded-xl border border-[var(--nature-border)] bg-[var(--nature-surface)]/95 px-3 text-sm text-slate-700 outline-none transition focus:border-[var(--nature-blue)] focus:bg-white"
                         />
                       </div>
                     </div>
@@ -780,14 +780,14 @@ function EditorHeaderBar(props: Props) {
               hasProductOptions={hasProductOptions}
             />
 
-            <div className="border-t border-white/10 pt-3 text-sm text-slate-300">
+            <div className="border-t border-[var(--nature-border)] pt-3 text-sm text-slate-600">
               {period ? (
                 <>
                   조회 기간{" "}
-                  <span className="font-semibold text-white">{period}</span>
+                  <span className="font-semibold text-slate-900">{period}</span>
                 </>
               ) : (
-                <span className="text-slate-400">조회 기간 정보 없음</span>
+                <span className="text-slate-500">조회 기간 정보 없음</span>
               )}
             </div>
           </div>
@@ -871,19 +871,19 @@ function EditorHeaderBar(props: Props) {
           )}
         </div>
 
-        <div className="min-w-0 rounded-[24px] border border-white/12 bg-white/[0.08] px-4 py-4 shadow-[0_16px_38px_rgba(2,6,23,0.18)] backdrop-blur-xl">
+        <div className="min-w-0 rounded-[24px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)]/82 px-4 py-4 shadow-[0_16px_38px_rgba(127,166,196,0.16)] backdrop-blur-xl">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-sm font-semibold text-white/90">
+              <div className="text-sm font-semibold text-slate-800">
                 2단 일반 리포트 탭
               </div>
-              <div className="mt-1 text-xs text-slate-400">
+              <div className="mt-1 text-xs text-slate-500">
                 요약, 구조, 키워드, 소재
               </div>
             </div>
 
             {!hideTabPeriodText ? (
-              <div className="rounded-full border border-white/12 bg-white/10 px-3 py-1 text-xs font-semibold text-white shadow-sm backdrop-blur-sm">
+              <div className="rounded-full border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/40 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm backdrop-blur-sm">
                 기준 기간
               </div>
             ) : null}
@@ -895,22 +895,22 @@ function EditorHeaderBar(props: Props) {
           </div>
 
           {!hideTabPeriodText ? (
-            <div className="mt-3 border-t border-white/10 pt-3 text-xs text-slate-300">
+            <div className="mt-3 border-t border-[var(--nature-border)] pt-3 text-xs text-slate-600">
               기준 기간{" "}
-              <span className="font-semibold text-white">
+              <span className="font-semibold text-slate-900">
                 {reportPeriod.startDate || "-"} ~ {reportPeriod.endDate || "-"}
               </span>
             </div>
           ) : null}
         </div>
 
-        <div className="min-w-0 rounded-[24px] border border-white/12 bg-white/[0.08] px-4 py-4 shadow-[0_16px_38px_rgba(2,6,23,0.18)] backdrop-blur-xl">
+        <div className="min-w-0 rounded-[24px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)]/82 px-4 py-4 shadow-[0_16px_38px_rgba(127,166,196,0.16)] backdrop-blur-xl">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-sm font-semibold text-white/90">
+              <div className="text-sm font-semibold text-slate-800">
                 3단 Decision Engine
               </div>
-              <div className="mt-1 text-xs text-slate-400">
+              <div className="mt-1 text-xs text-slate-500">
                 Decision, 가설 1~5
               </div>
             </div>
@@ -930,9 +930,9 @@ export default function HeaderBar(props: Props) {
   const { readOnlyHeader = false } = props;
 
   return (
-    <header className="sticky top-0 z-50 border-b border-slate-900/40 bg-[linear-gradient(135deg,#0f172a_0%,#162033_38%,#1e293b_72%,#334155_100%)] shadow-[0_18px_50px_rgba(2,6,23,0.24)] backdrop-blur-xl">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.10),transparent_22%),radial-gradient(circle_at_bottom_left,rgba(148,163,184,0.12),transparent_28%)]" />
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-b from-transparent to-slate-950/10" />
+    <header className="sticky top-0 z-50 border-b border-[var(--nature-border)] bg-[linear-gradient(135deg,#f7f3ec_0%,#f3e4d2_38%,#dbeef4_72%,#b7d7e3_100%)] shadow-[0_18px_50px_rgba(127,166,196,0.18)] backdrop-blur-xl">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.42),transparent_24%),radial-gradient(circle_at_bottom_left,rgba(127,166,196,0.16),transparent_30%)]" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-b from-transparent to-white/20" />
 
       <div className="relative px-4 pb-4 pt-6 sm:px-6 lg:px-8">
         <div className="mx-auto w-full max-w-[1440px]">

@@ -216,10 +216,10 @@ function groupByDayFromRows(rows: Row[]) {
 type BadgeKey = "ctr" | "conversions" | "roas" | "cpa";
 
 const BADGE_META: Record<BadgeKey, { label: string; className: string }> = {
-  ctr: { label: "TOP CTR", className: "bg-blue-600 text-white" },
-  conversions: { label: "TOP 전환", className: "bg-orange-600 text-white" },
-  roas: { label: "TOP ROAS", className: "bg-emerald-600 text-white" },
-  cpa: { label: "TOP CPA", className: "bg-violet-600 text-white" },
+  ctr: { label: "TOP CTR", className: "bg-[#7FA6C4] text-white" },
+  conversions: { label: "TOP 전환", className: "bg-[#5F87A3] text-white" },
+  roas: { label: "TOP ROAS", className: "bg-[#8FB9B0] text-white" },
+  cpa: { label: "TOP CPA", className: "bg-[#CFC2B1] text-[#27364A]" },
 };
 
 const BadgePill = memo(function BadgePill({ k }: { k: BadgeKey }) {
@@ -301,6 +301,158 @@ function buildCreativeDetailInsight(args: {
     } as any
   );
 
+  const creativePerfList = safeCall(() => {
+    const map = new Map<string, Row[]>();
+
+    for (const row of allRowsScope ?? []) {
+      const key = getCreativeKey(row);
+      if (!key) continue;
+
+      const bucket = map.get(key) ?? [];
+      bucket.push(row);
+      map.set(key, bucket);
+    }
+
+    return Array.from(map.entries()).map(([name, bucket]) => {
+      const s = safeCall(
+        () => summarize(bucket as any),
+        {
+          impressions: 0,
+          clicks: 0,
+          cost: 0,
+          conversions: 0,
+          revenue: 0,
+          ctr: 0,
+          cpc: 0,
+          cvr: 0,
+          cpa: 0,
+          roas: 0,
+        } as any
+      );
+
+      return {
+        creative: name,
+        impressions: toSafeNumber((s as any)?.impressions ?? (s as any)?.impr),
+        clicks: toSafeNumber((s as any)?.clicks),
+        cost: toSafeNumber((s as any)?.cost),
+        conversions: toSafeNumber(
+          (s as any)?.conversions ?? (s as any)?.conv
+        ),
+        revenue: toSafeNumber((s as any)?.revenue),
+        ctr: toSafeNumber((s as any)?.ctr),
+        cpc: toSafeNumber((s as any)?.cpc),
+        cvr: toSafeNumber((s as any)?.cvr),
+        cpa: toSafeNumber((s as any)?.cpa),
+        roas: toSafeNumber((s as any)?.roas),
+      };
+    });
+  }, [] as any[]);
+
+  const selectedPerf =
+    creativePerfList.find((item) => item.creative === creative) ?? {
+      creative,
+      impressions: toSafeNumber((me as any)?.impressions ?? (me as any)?.impr),
+      clicks: toSafeNumber((me as any)?.clicks),
+      cost: toSafeNumber((me as any)?.cost),
+      conversions: toSafeNumber(
+        (me as any)?.conversions ?? (me as any)?.conv
+      ),
+      revenue: toSafeNumber((me as any)?.revenue),
+      ctr: toSafeNumber((me as any)?.ctr),
+      cpc: toSafeNumber((me as any)?.cpc),
+      cvr: toSafeNumber((me as any)?.cvr),
+      cpa: toSafeNumber((me as any)?.cpa),
+      roas: toSafeNumber((me as any)?.roas),
+    };
+
+  const getRankInfo = (
+    metric: "ctr" | "clicks" | "conversions" | "roas" | "cpa",
+    lowerIsBetter = false
+  ) => {
+    const selectedValue = toSafeNumber((selectedPerf as any)[metric]);
+    const sorted = [...creativePerfList]
+      .filter((item) => {
+        const value = toSafeNumber((item as any)[metric]);
+        if (metric === "cpa") return value > 0;
+        return value >= 0;
+      })
+      .sort((a, b) => {
+        const av = toSafeNumber((a as any)[metric]);
+        const bv = toSafeNumber((b as any)[metric]);
+        return lowerIsBetter ? av - bv : bv - av;
+      });
+
+    const rankIndex = sorted.findIndex((item) => item.creative === creative);
+    const rank = rankIndex >= 0 ? rankIndex + 1 : 0;
+    const count = sorted.length;
+    const values = sorted.map((item) => toSafeNumber((item as any)[metric]));
+    const avg =
+      values.length > 0
+        ? values.reduce((sum, value) => sum + value, 0) / values.length
+        : 0;
+
+    const top = sorted[0] ?? null;
+    const topValue = top ? toSafeNumber((top as any)[metric]) : 0;
+    const percentile = count > 0 && rank > 0 ? rank / count : 1;
+
+    const grade =
+      count < 2 || rank <= 0
+        ? "비교 제한"
+        : percentile <= 0.25
+          ? "우수"
+          : percentile <= 0.5
+            ? "보통 이상"
+            : percentile <= 0.75
+              ? "보통"
+              : "열위";
+
+    return {
+      selectedValue,
+      rank,
+      count,
+      avg,
+      topCreative: top ? String(top.creative) : "",
+      topValue,
+      grade,
+    };
+  };
+
+  const formatMetricValue = (
+    metric: "ctr" | "clicks" | "conversions" | "roas" | "cpa",
+    value: number
+  ) => {
+    if (metric === "ctr") return safePct(value);
+    if (metric === "roas") return safeRoasPct0(value);
+    if (metric === "cpa") return `${Math.round(value).toLocaleString()}원`;
+    if (metric === "conversions") return value.toFixed(1);
+    return Math.round(value).toLocaleString();
+  };
+
+  const buildCompareLine = (
+    label: string,
+    metric: "ctr" | "clicks" | "conversions" | "roas" | "cpa",
+    rankInfo: ReturnType<typeof getRankInfo>
+  ) => {
+    if (rankInfo.count < 2 || rankInfo.rank <= 0) {
+      return `${label} 비교: 비교 가능한 등록 소재가 부족하여 객관적 순위 판단은 제한적입니다. 현재 값은 ${formatMetricValue(
+        metric,
+        rankInfo.selectedValue
+      )}입니다.`;
+    }
+
+    const avgText = formatMetricValue(metric, rankInfo.avg);
+    const selectedText = formatMetricValue(metric, rankInfo.selectedValue);
+    const topText = formatMetricValue(metric, rankInfo.topValue);
+
+    return `${label} 비교: 전체 ${rankInfo.count}개 소재 중 ${rankInfo.rank}위(${rankInfo.grade})입니다. 선택 소재 ${selectedText}, 전체 평균 ${avgText}, 1위 “${rankInfo.topCreative}” ${topText} 기준으로 판단했습니다.`;
+  };
+
+  const ctrRank = getRankInfo("ctr");
+  const clickRank = getRankInfo("clicks");
+  const convRank = getRankInfo("conversions");
+  const roasRank = getRankInfo("roas");
+  const cpaRank = getRankInfo("cpa", true);
+
   const shareCost = all.cost ? toSafeNumber(me.cost) / toSafeNumber(all.cost) : 0;
   const shareRev = all.revenue
     ? toSafeNumber(me.revenue) / toSafeNumber(all.revenue)
@@ -369,13 +521,6 @@ function buildCreativeDetailInsight(args: {
   const actions: string[] = [];
 
   if (reportMode === "traffic") {
-    const efficiencyLabel =
-      toSafeNumber(me.ctr) >= 0.02
-        ? "CTR이 2% 이상으로 반응성이 양호"
-        : toSafeNumber(me.ctr) >= 0.01
-        ? "CTR이 1~2% 구간으로 개선 여지"
-        : "CTR이 1% 미만으로 클릭 반응 개선이 우선";
-
     const trendLabel =
       wLast && wPrev
         ? `최근 1주 기준: CTR ${signPct(ctrWoW)}, 클릭 ${signPct(
@@ -388,8 +533,10 @@ function buildCreativeDetailInsight(args: {
         toSafeNumber(me.impressions)
       )} / 클릭 ${Math.round(
         toSafeNumber(me.clicks)
-      )} / CTR ${safePct(toSafeNumber(me.ctr))} · ${efficiencyLabel}`
+      )} / CTR ${safePct(toSafeNumber(me.ctr))}`
     );
+    bullets.push(buildCompareLine("CTR", "ctr", ctrRank));
+    bullets.push(buildCompareLine("클릭수", "clicks", clickRank));
     bullets.push(
       `기여도(현재 탭 범위 대비): 노출 ${safePct(shareImpr)}, 클릭 ${safePct(
         shareClick
@@ -413,13 +560,23 @@ function buildCreativeDetailInsight(args: {
       bullets.push("기기별: 데이터가 부족하여 비교가 제한적입니다.");
     }
 
-    if (toSafeNumber(me.ctr) < 0.02 && toSafeNumber(me.impressions) > 0) {
+    if (ctrRank.grade === "우수" || ctrRank.grade === "보통 이상") {
       actions.push(
-        "클릭 개선: CTR이 낮습니다. 썸네일/첫 프레임/헤드라인/CTA 훅을 2~3종으로 분리 테스트하고, 저반응 소재는 빠르게 교체하세요."
+        `클릭 운영: CTR이 전체 소재 대비 ${ctrRank.grade} 구간입니다. 현재 훅/썸네일/CTA 방향은 유지하고, 동일 메시지를 다른 포맷으로 복제해 노출을 확장하세요.`
       );
     } else {
       actions.push(
-        "클릭 확장: CTR이 극단적으로 낮지 않습니다. 성과 좋은 훅/메시지를 다른 포맷(이미지/영상/캐러셀)로 확장하여 노출을 늘려보세요."
+        `클릭 개선: CTR이 전체 소재 대비 ${ctrRank.grade} 구간입니다. 선택 소재는 확장보다 첫 화면 훅, 헤드라인, CTA 문구를 우선 교체 테스트해야 합니다.`
+      );
+    }
+
+    if (clickRank.grade === "우수" || clickRank.grade === "보통 이상") {
+      actions.push(
+        `클릭 볼륨: 클릭수가 전체 소재 대비 ${clickRank.grade}입니다. 반응이 확인된 소재이므로 예산 확대 전 빈도·도달 중복만 점검하세요.`
+      );
+    } else {
+      actions.push(
+        `클릭 볼륨: 클릭수가 전체 소재 대비 ${clickRank.grade}입니다. 낮은 CTR 때문인지, 노출 부족 때문인지 분리해 예산/소재 문제를 따로 판단하세요.`
       );
     }
 
@@ -443,13 +600,6 @@ function buildCreativeDetailInsight(args: {
   }
 
   if (reportMode === "db_acquisition") {
-    const efficiencyLabel =
-      toSafeNumber(me.cpa) > 0 && toSafeNumber(me.cpa) <= 50000
-        ? "CPA가 안정적이라 리드 확보 효율이 양호"
-        : toSafeNumber(me.cvr) >= 0.02
-        ? "CVR은 나쁘지 않지만 CPA 최적화 여지"
-        : "전환 효율 개선이 우선이며 CPA·CVR 점검이 필요";
-
     const trendLabel =
       wLast && wPrev
         ? `최근 1주 기준: 클릭 ${signPct(clickWoW)}, 전환 ${signPct(
@@ -462,8 +612,11 @@ function buildCreativeDetailInsight(args: {
         toSafeNumber(me.clicks)
       )} / 전환 ${toSafeNumber(me.conversions).toFixed(
         1
-      )} / CPA ${Math.round(toSafeNumber(me.cpa)).toLocaleString()}원 · ${efficiencyLabel}`
+      )} / CPA ${Math.round(toSafeNumber(me.cpa)).toLocaleString()}원`
     );
+    bullets.push(buildCompareLine("CTR", "ctr", ctrRank));
+    bullets.push(buildCompareLine("전환수", "conversions", convRank));
+    bullets.push(buildCompareLine("CPA", "cpa", cpaRank));
     bullets.push(
       `기여도(현재 탭 범위 대비): 비용 ${safePct(shareCost)}, 전환 ${safePct(
         shareConv
@@ -491,29 +644,33 @@ function buildCreativeDetailInsight(args: {
       bullets.push("기기별: 데이터가 부족하여 비교가 제한적입니다.");
     }
 
-    if (toSafeNumber(me.ctr) < 0.02 && toSafeNumber(me.impressions) > 0) {
+    if (ctrRank.grade === "열위" || ctrRank.grade === "보통") {
       actions.push(
-        "클릭 개선: CTR이 낮습니다. 썸네일/첫 프레임/헤드라인/CTA 훅을 2~3종으로 분리 테스트하고, 저반응 소재는 빠르게 교체하세요."
+        `클릭 개선: CTR이 전체 소재 대비 ${ctrRank.grade}입니다. DB 확보용 메시지의 문제를 먼저 의심하고, 혜택/조건/긴급성/CTA를 분리 테스트하세요.`
       );
     } else {
       actions.push(
-        "유입 유지/확대: 클릭 반응은 급격히 나쁘지 않습니다. 전환 발생 소재와 유사한 메시지/포맷으로 확장을 검토하세요."
+        `클릭 유지: CTR이 전체 소재 대비 ${ctrRank.grade}입니다. 유입 반응은 확보되어 있으므로 클릭 확장보다 전환 품질 점검을 우선하세요.`
       );
     }
 
-    if (toSafeNumber(me.cvr) < 0.01 && toSafeNumber(me.clicks) >= 30) {
+    if (convRank.grade === "우수" || convRank.grade === "보통 이상") {
       actions.push(
-        "전환 개선: CVR이 낮습니다. 랜딩 첫 화면 메시지 정렬, 폼 필드 축소, 문의 CTA 강조를 우선 적용하세요."
+        `전환 확대: 전환수가 전체 소재 대비 ${convRank.grade}입니다. 동일 콘셉트의 파생 소재를 만들고, 전환이 발생한 소스/기기 조합에 예산을 더 배분하세요.`
       );
     } else {
       actions.push(
-        "전환 확대: CVR이 급격히 낮지 않습니다. 전환 상위 구간(기기/요일/소스)에 예산을 더 집중하세요."
+        `전환 개선: 전환수가 전체 소재 대비 ${convRank.grade}입니다. 클릭 이후 랜딩 메시지 일치도, 폼 길이, 상담 CTA 가시성을 먼저 점검하세요.`
       );
     }
 
-    if (toSafeNumber(me.cpa) > 0) {
+    if (cpaRank.grade === "우수" || cpaRank.grade === "보통 이상") {
       actions.push(
-        "CPA 안정화: 전환이 발생한 소재는 저효율 세그먼트를 분리하고, CPA가 낮은 구간에 예산을 우선 배분하세요."
+        `CPA 운영: CPA가 전체 소재 대비 ${cpaRank.grade}입니다. 비용 확대 여지가 있으나, 증액 후 CPA가 평균선 이상으로 악화되는지 주간 단위로 감시하세요.`
+      );
+    } else {
+      actions.push(
+        `CPA 안정화: CPA가 전체 소재 대비 ${cpaRank.grade}입니다. 즉시 확장보다 저효율 소스/기기/시간대를 분리하고 비용 누수를 먼저 줄이세요.`
       );
     }
 
@@ -535,13 +692,6 @@ function buildCreativeDetailInsight(args: {
     return { title: "선택 소재 요약 인사이트", bullets, actions };
   }
 
-  const efficiencyLabel =
-    toSafeNumber(me.roas) >= 1.0
-      ? "ROAS가 100% 이상으로 효율이 양호"
-      : toSafeNumber(me.roas) >= 0.7
-        ? "ROAS가 70~100% 구간으로 개선 여지"
-        : "ROAS가 70% 미만으로 효율 개선이 우선";
-
   const trendLabel =
     wLast && wPrev
       ? `최근 1주 기준: 클릭 ${signPct(clickWoW)}, 전환 ${signPct(
@@ -554,8 +704,11 @@ function buildCreativeDetailInsight(args: {
       toSafeNumber(me.clicks)
     )} / 전환 ${toSafeNumber(me.conversions).toFixed(
       1
-    )} / ROAS ${safeRoasPct0(toSafeNumber(me.roas))} · ${efficiencyLabel}`
+    )} / ROAS ${safeRoasPct0(toSafeNumber(me.roas))}`
   );
+  bullets.push(buildCompareLine("CTR", "ctr", ctrRank));
+  bullets.push(buildCompareLine("전환수", "conversions", convRank));
+  bullets.push(buildCompareLine("ROAS", "roas", roasRank));
   bullets.push(
     `기여도(현재 탭 범위 대비): 비용 ${safePct(shareCost)}, 전환 ${safePct(
       shareConv
@@ -584,23 +737,33 @@ function buildCreativeDetailInsight(args: {
     bullets.push("기기별: 데이터가 부족하여 비교가 제한적입니다.");
   }
 
-  if (toSafeNumber(me.ctr) < 0.02 && toSafeNumber(me.impressions) > 0) {
+  if (ctrRank.grade === "열위" || ctrRank.grade === "보통") {
     actions.push(
-      "클릭 개선: CTR이 낮습니다. 썸네일/첫 프레임/헤드라인/CTA 훅을 2~3종으로 분리 테스트하고, 저반응 소재는 빠르게 교체하세요."
+      `클릭 개선: CTR이 전체 소재 대비 ${ctrRank.grade}입니다. 현재 소재는 확장보다 썸네일/첫 프레임/상품 베네핏/CTA를 먼저 교체 테스트하세요.`
     );
   } else {
     actions.push(
-      "클릭 확장: CTR이 극단적으로 낮지 않습니다. 성과 좋은 훅/메시지를 다른 포맷(이미지/영상/캐러셀)로 확장하여 노출을 늘려보세요."
+      `클릭 확장: CTR이 전체 소재 대비 ${ctrRank.grade}입니다. 상위 반응 요소를 유지한 채 이미지/영상/카피 변형 소재로 노출을 확장하세요.`
     );
   }
 
-  if (toSafeNumber(me.cvr) < 0.01 && toSafeNumber(me.clicks) >= 30) {
+  if (convRank.grade === "우수" || convRank.grade === "보통 이상") {
     actions.push(
-      "전환 개선: CVR이 낮습니다. 랜딩 첫 화면(USP+신뢰+CTA) 간소화, 폼 필드 축소, 상담/전화 CTA 가시성 개선을 우선 적용하세요."
+      `전환 운영: 전환수가 전체 소재 대비 ${convRank.grade}입니다. 구매 의도가 확인된 소재이므로 전환 상위 소스/기기 조합으로 예산을 집중하세요.`
     );
   } else {
     actions.push(
-      "전환 유지/확대: CVR이 급격히 낮지 않습니다. 전환 상위 구간(기기/요일/소스)을 찾아 그 구간 중심으로 예산을 이동하세요."
+      `전환 개선: 전환수가 전체 소재 대비 ${convRank.grade}입니다. 클릭 대비 구매 설득력이 약할 수 있으므로 상세페이지 첫 화면, 가격/혜택, 리뷰 신뢰 요소를 점검하세요.`
+    );
+  }
+
+  if (roasRank.grade === "우수" || roasRank.grade === "보통 이상") {
+    actions.push(
+      `ROAS 확대: ROAS가 전체 소재 대비 ${roasRank.grade}입니다. 단기 확장 후보로 두되, 증액 후 전환수와 ROAS가 동시에 유지되는지 확인하세요.`
+    );
+  } else {
+    actions.push(
+      `ROAS 방어: ROAS가 전체 소재 대비 ${roasRank.grade}입니다. 즉시 예산 확대는 보류하고, 매출 기여가 낮은 소스/기기/상품 조합을 축소하세요.`
     );
   }
 
@@ -679,8 +842,8 @@ const CreativeOptionButton = memo(function CreativeOptionButton({
       className={[
         "group relative block w-full overflow-hidden rounded-2xl border text-left transition-all",
         active
-          ? "border-orange-300 bg-[linear-gradient(180deg,rgba(255,247,237,1),rgba(255,255,255,1))] shadow-[0_10px_24px_rgba(249,115,22,0.14)]"
-          : "border-slate-200 bg-white hover:border-orange-200 hover:bg-orange-50/40 hover:shadow-sm",
+          ? "border-[#7FA6C4] bg-[linear-gradient(180deg,rgba(183,215,227,0.26),rgba(255,255,255,1))] shadow-[0_10px_24px_rgba(127,166,196,0.14)]"
+          : "border-[#CFC2B1]/55 bg-white hover:border-[#7FA6C4]/70 hover:bg-[#B7D7E3]/16 hover:shadow-[0_6px_16px_rgba(127,166,196,0.08)]",
       ].join(" ")}
       title={creative}
     >

@@ -1,4 +1,3 @@
-// app/components/floating/FloatingFilterRail.tsx
 "use client";
 
 import { useMemo, useState } from "react";
@@ -153,10 +152,10 @@ function GroupSection({
   return (
     <section
       className={[
-        "overflow-hidden rounded-[24px] border bg-white/95 shadow-[0_8px_28px_rgba(15,23,42,0.08)] backdrop-blur-sm transition-all duration-200",
+        "overflow-hidden rounded-[24px] border bg-[var(--nature-surface)]/95 shadow-[0_8px_28px_rgba(127,166,196,0.14)] backdrop-blur-sm transition-all duration-200",
         open
-          ? "border-slate-200/90"
-          : "border-slate-200/80 hover:border-slate-300/80 hover:shadow-[0_10px_30px_rgba(15,23,42,0.10)]",
+          ? "border-[var(--nature-border-blue)]"
+          : "border-[var(--nature-border)] hover:border-[var(--nature-blue-light)] hover:shadow-[0_10px_30px_rgba(127,166,196,0.18)]",
       ].join(" ")}
     >
       <button
@@ -164,7 +163,9 @@ function GroupSection({
         onClick={onToggle}
         className={[
           "group flex w-full items-center gap-2 px-4 py-3.5 transition-colors",
-          open ? "bg-white" : "bg-white hover:bg-slate-50/90",
+          open
+            ? "bg-[var(--nature-surface)]"
+            : "bg-[var(--nature-shell)] hover:bg-[var(--nature-cream)]/70",
         ].join(" ")}
       >
         <div className="min-w-0 flex-1 text-center">
@@ -182,8 +183,8 @@ function GroupSection({
           className={[
             "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[12px] font-semibold transition-all",
             open
-              ? "border-slate-200 bg-slate-50 text-slate-500"
-              : "border-slate-200 bg-white text-slate-400 group-hover:border-slate-300 group-hover:text-slate-600",
+              ? "border-[var(--nature-border-blue)] bg-[var(--nature-cream)] text-slate-600"
+              : "border-[var(--nature-border)] bg-[var(--nature-surface)] text-slate-400 group-hover:border-[var(--nature-blue-light)] group-hover:text-slate-600",
           ].join(" ")}
           aria-hidden="true"
         >
@@ -192,7 +193,7 @@ function GroupSection({
       </button>
 
       {open ? (
-        <div className="border-t border-slate-100 bg-gradient-to-b from-slate-50/70 to-white px-3 pb-3 pt-3">
+        <div className="border-t border-[var(--nature-border)] bg-gradient-to-b from-[var(--nature-cream)]/55 to-[var(--nature-surface)] px-3 pb-3 pt-3">
           <div className="flex max-h-[280px] flex-col gap-2 overflow-y-auto pr-1">
             {options.map((option) => {
               const active = selectedValue === option.value;
@@ -209,10 +210,10 @@ function GroupSection({
                     "flex min-h-[46px] items-center justify-center",
                     "whitespace-nowrap overflow-hidden text-ellipsis",
                     active
-                      ? "border-slate-900 bg-slate-900 text-white shadow-[0_6px_18px_rgba(15,23,42,0.18)]"
-                      : "border-slate-200 bg-white text-slate-700 hover:-translate-y-[1px] hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900",
+                      ? "border-[var(--nature-blue)] bg-[var(--nature-blue)] text-white shadow-[0_6px_18px_rgba(127,166,196,0.32)]"
+                      : "border-[var(--nature-border)] bg-[var(--nature-surface)] text-slate-700 hover:-translate-y-[1px] hover:border-[var(--nature-blue-light)] hover:bg-[var(--nature-cream)]/70 hover:text-slate-900",
                     disabled
-                      ? "cursor-not-allowed opacity-40 hover:translate-y-0 hover:border-slate-200 hover:bg-white hover:text-slate-700"
+                      ? "cursor-not-allowed opacity-40 hover:translate-y-0 hover:border-[var(--nature-border)] hover:bg-[var(--nature-surface)] hover:text-slate-700"
                       : "cursor-pointer",
                   ].join(" ")}
                   title={option.label}

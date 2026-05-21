@@ -762,8 +762,8 @@ const KeywordListItem = memo(function KeywordListItem({
         "block h-10 w-full rounded-xl border px-3 text-left text-sm font-semibold transition",
         "overflow-hidden text-ellipsis whitespace-nowrap",
         active
-          ? "border-orange-700 bg-orange-700 text-white"
-          : "border-gray-200 bg-white text-gray-900 hover:border-orange-200 hover:bg-orange-50",
+          ? "border-[#7FA6C4] bg-[#7FA6C4] text-white"
+          : "border-[#CFC2B1]/55 bg-white text-[#27364A] hover:border-[#7FA6C4] hover:bg-[#B7D7E3]/16",
       ].join(" ")}
       title={keyword}
     >
@@ -939,10 +939,10 @@ const KeywordListPanel = memo(function KeywordListPanel({
   );
 
   return (
-    <aside className="min-w-0 rounded-2xl border border-gray-200 bg-white p-4 lg:sticky lg:top-24 lg:max-h-[calc(100vh-6rem)] lg:overflow-hidden">
+    <aside className="min-w-0 rounded-2xl border border-[#CFC2B1]/55 bg-white p-4 lg:sticky lg:top-24 lg:max-h-[calc(100vh-6rem)] lg:overflow-hidden">
       <div className="flex items-center justify-between gap-3">
         <div className="text-sm font-semibold">키워드 리스트</div>
-        <div className="min-w-0 truncate text-xs text-gray-500">
+        <div className="min-w-0 truncate text-xs text-[#7A8794]">
           {selectedKeyword ? `선택: ${selectedKeyword}` : "선택 없음"}
         </div>
       </div>
@@ -953,12 +953,12 @@ const KeywordListPanel = memo(function KeywordListPanel({
           value={keywordQuery}
           onChange={handleChange}
           placeholder="키워드 검색"
-          className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+          className="h-10 w-full rounded-xl border border-[#CFC2B1]/55 bg-white px-3 text-sm text-[#27364A] outline-none transition placeholder:text-[#9A8F81] focus:border-[#7FA6C4] focus:ring-2 focus:ring-[#B7D7E3]/40"
         />
       </div>
 
       {keywords.length === 0 ? (
-        <div className="mt-3 rounded-xl bg-gray-50 p-4 text-sm text-gray-600">
+        <div className="mt-3 rounded-xl bg-[#F3E4D2]/35 p-4 text-sm text-[#6F7B86]">
           {hasQuery ? "검색 결과가 없습니다." : "키워드 데이터가 없습니다."}
         </div>
       ) : (
@@ -969,7 +969,7 @@ const KeywordListPanel = memo(function KeywordListPanel({
         />
       )}
 
-      <div className="mt-4 rounded-xl bg-gray-50 p-3 text-xs text-gray-600">
+      <div className="mt-4 rounded-xl bg-[#F3E4D2]/35 p-3 text-xs text-[#6F7B86]">
         <b>메모</b>
         <div className="mt-1">
           오른쪽은 선택 키워드 기준으로 요약 탭 성과 구성(월별/주별/소스별/일자별)을 재사용합니다.
@@ -1004,32 +1004,32 @@ const InsightPanel = memo(function InsightPanel({
       : "다음 운영 액션(클릭 · 전환 · ROAS)";
 
   return (
-    <section className="min-w-0 rounded-2xl border border-gray-200 bg-white p-6">
+    <section className="min-w-0 rounded-2xl border border-[#CFC2B1]/55 bg-white p-6">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <h3 className="text-base font-semibold">{title}</h3>
-          <div className="mt-1 truncate text-xs text-gray-500">
+          <div className="mt-1 truncate text-xs text-[#7A8794]">
             {selectedKeyword ? `키워드: ${selectedKeyword}` : "키워드를 선택하세요"}
           </div>
         </div>
 
         <div className="shrink-0 text-right">
-          <div className="text-xs text-gray-500">Avg.rank</div>
+          <div className="text-xs text-[#7A8794]">Avg.rank</div>
           <div className="mt-1 text-lg font-semibold">
             {avgRank == null ? "-" : avgRank.toFixed(2)}
           </div>
         </div>
       </div>
 
-      <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-gray-700">
+      <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-[#52606D]">
         {bullets.map((b, i) => (
           <li key={i}>{b}</li>
         ))}
       </ul>
 
-      <div className="mt-4 rounded-xl bg-gray-50 p-4">
-        <div className="text-sm font-semibold text-gray-900">{actionTitle}</div>
-        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-gray-700">
+      <div className="mt-4 rounded-xl bg-[#F3E4D2]/35 p-4">
+        <div className="text-sm font-semibold text-[#27364A]">{actionTitle}</div>
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-[#52606D]">
           {actions.map((a, i) => (
             <li key={i}>{a}</li>
           ))}

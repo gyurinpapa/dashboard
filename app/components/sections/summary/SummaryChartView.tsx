@@ -99,11 +99,11 @@ type MetricViewMode = {
 
 const TOKENS = {
   metric: {
-    cost: "#F59E0B",
-    costSoft: "#FDE7B0",
-    revenue: "#0EA5E9",
-    revenueSoft: "#CFEFFF",
-    roas: "#EF4444",
+    cost: "#CFC2B1",
+    costSoft: "#F3E4D2",
+    revenue: "#7FA6C4",
+    revenueSoft: "#B7D7E3",
+    roas: "#5F8FAA",
   },
   text: {
     strong: "#0F172A",
@@ -112,13 +112,13 @@ const TOKENS = {
     faint: "#94A3B8",
   },
   surface: {
-    card: "#FFFFFF",
-    subtle: "#F8FAFC",
-    strip: "rgba(248,250,252,0.72)",
-    border: "#E2E8F0",
-    grid: "#E2E8F0",
-    hoverBand: "rgba(148, 163, 184, 0.10)",
-    crosshair: "#CBD5E1",
+    card: "#FFFAF3",
+    subtle: "#F7F3EC",
+    strip: "rgba(243,228,210,0.58)",
+    border: "#D9CDBC",
+    grid: "#D9CDBC",
+    hoverBand: "rgba(127,166,196,0.10)",
+    crosshair: "#7FA6C4",
   },
 };
 
@@ -140,18 +140,18 @@ const HIDDEN_AXIS_DOMAIN: ["auto", "auto"] = ["auto", "auto"];
 
 const REPORT_DENSITY: DensityClasses = {
   shell:
-    "overflow-hidden rounded-[24px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(248,250,252,0.78),rgba(255,255,255,1))] shadow-[0_10px_30px_rgba(15,23,42,0.06)]",
+  "overflow-hidden rounded-[24px] border border-[var(--nature-border-blue)] bg-[linear-gradient(180deg,var(--nature-surface),rgba(243,228,210,0.42))] shadow-[0_10px_30px_rgba(127,166,196,0.12)]",
   headerWrap:
-    "relative border-b border-slate-200/80 bg-[linear-gradient(180deg,rgba(248,250,252,0.86),rgba(255,255,255,0.98))] px-5 py-4 sm:px-6 sm:py-5",
+    "relative border-b border-[var(--nature-border)] bg-[linear-gradient(180deg,rgba(255,250,243,0.96),rgba(243,228,210,0.46))] px-5 py-4 sm:px-6 sm:py-5",
   title: "text-[15px] font-semibold tracking-[-0.02em] text-slate-900 sm:text-[16px]",
   subtitle: "mt-1.5 text-xs font-medium text-slate-500 sm:text-[12px]",
   topStripWrap: "px-4 pt-4 sm:px-6 sm:pt-5",
   topStrip:
-    "rounded-[20px] border border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.88))] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]",
+    "rounded-[20px] border border-[var(--nature-border-blue)] bg-[linear-gradient(180deg,var(--nature-surface),rgba(183,215,227,0.24))] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]",
   chartWrap: "h-[430px] px-4 pb-4 pt-3 sm:h-[470px] sm:px-6 sm:pb-5 sm:pt-4",
   chartMinHeight: 340,
   legendPill:
-    "inline-flex h-7 items-center gap-2 rounded-full border border-slate-200/90 bg-white px-3 text-[11px] font-semibold tracking-[-0.01em] text-slate-700 shadow-sm",
+    "inline-flex h-7 items-center gap-2 rounded-full border border-[var(--nature-border)] bg-[var(--nature-surface)] px-3 text-[11px] font-semibold tracking-[-0.01em] text-slate-700 shadow-sm",
   insightLabel: "text-[10px]",
   insightValue:
     "max-w-[220px] truncate text-[12px] font-semibold tracking-[-0.01em] text-slate-800",
@@ -440,12 +440,12 @@ const CustomTooltip = memo(function CustomTooltip({
   const roasItem = payload.find((item: any) => item?.dataKey === "roas");
 
   return (
-    <div className="min-w-[220px] rounded-[20px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.96))] px-4 py-3 shadow-[0_12px_32px_rgba(15,23,42,0.12)]">
+    <div className="min-w-[220px] rounded-[20px] border border-[var(--nature-border-blue)] bg-[linear-gradient(180deg,var(--nature-surface),rgba(243,228,210,0.48))] px-4 py-3 shadow-[0_12px_32px_rgba(127,166,196,0.18)]">
       <div className="text-[12px] font-semibold tracking-[-0.02em] text-slate-900">
         {label}
       </div>
 
-      <div className="mt-2 h-px bg-slate-100" />
+      <div className="mt-2 h-px bg-[var(--nature-border)]" />
 
       <div className="mt-3 space-y-2.5">
         <div className="flex items-center justify-between gap-4 text-[12px]">
@@ -512,7 +512,7 @@ const SlimLegendItem = memo(function SlimLegendItem({
 });
 
 const StatusDivider = memo(function StatusDivider() {
-  return <div className="hidden h-4 w-px bg-slate-200 sm:block" />;
+  return <div className="hidden h-4 w-px bg-[var(--nature-border)] sm:block" />;
 });
 
 const InlineInsight = memo(function InlineInsight({
@@ -529,18 +529,18 @@ const InlineInsight = memo(function InlineInsight({
   valueClassName: string;
 }) {
   const dotClass =
-    tone === "sky"
-      ? "bg-sky-500"
-      : tone === "amber"
-        ? "bg-amber-500"
-        : "bg-slate-400";
+  tone === "sky"
+    ? "bg-[var(--nature-blue)]"
+    : tone === "amber"
+      ? "bg-[var(--nature-warm-gray)]"
+      : "bg-slate-400";
 
-  const labelToneClass =
-    tone === "sky"
-      ? "text-sky-600"
-      : tone === "amber"
-        ? "text-amber-600"
-        : "text-slate-500";
+const labelToneClass =
+  tone === "sky"
+    ? "text-sky-700"
+    : tone === "amber"
+      ? "text-stone-600"
+      : "text-slate-500";
 
   return (
     <div className="inline-flex min-w-0 items-center gap-2.5">
@@ -755,14 +755,14 @@ function SummaryChartView({
         <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-slate-200/80 to-transparent" />
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="inline-flex items-center rounded-full border border-slate-200/90 bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow-sm">
+            <div className="inline-flex items-center rounded-full border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/35 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 shadow-sm">
               Chart View
             </div>
             <div className={densityClasses.title}>{title}</div>
             <div className={densityClasses.subtitle}>{subtitle}</div>
           </div>
 
-          <div className="hidden shrink-0 rounded-2xl border border-slate-200/80 bg-white/85 px-3 py-2 text-right shadow-sm sm:block">
+          <div className="hidden shrink-0 rounded-2xl border border-[var(--nature-border-blue)] bg-[var(--nature-surface)]/85 px-3 py-2 text-right shadow-sm sm:block">
             <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">
               Metric
             </div>
@@ -823,7 +823,7 @@ function SummaryChartView({
       </div>
 
       <div className={densityClasses.chartWrap}>
-        <div className="h-full rounded-[20px] border border-slate-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.76))] px-2 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:px-3 sm:py-3">
+        <div className="h-full rounded-[20px] border border-[var(--nature-border)] bg-[linear-gradient(180deg,var(--nature-surface),rgba(243,228,210,0.36))] px-2 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:px-3 sm:py-3">
           <ResponsiveContainer
             width="100%"
             height="100%"

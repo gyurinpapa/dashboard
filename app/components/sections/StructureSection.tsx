@@ -40,25 +40,25 @@ const pctText = (rate01: number, digits = 1) =>
 const safeDiv = (a: number, b: number) => (b === 0 ? 0 : a / b);
 
 const TABLE_SURFACE_CLASS =
-  "overflow-x-auto rounded-[24px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] shadow-[0_10px_30px_rgba(15,23,42,0.06)] ring-1 ring-white/60";
+  "overflow-x-auto rounded-[24px] border border-[#CFC2B1]/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(243,228,210,0.24))] shadow-[0_10px_30px_rgba(127,166,196,0.10)] ring-1 ring-white/70";
 
 const TABLE_HEAD_CLASS =
-  "border-b border-slate-200/90 bg-[rgba(248,250,252,0.9)] backdrop-blur supports-[backdrop-filter]:bg-[rgba(248,250,252,0.82)]";
+  "border-b border-[#CFC2B1]/55 bg-[rgba(243,228,210,0.42)] backdrop-blur supports-[backdrop-filter]:bg-[rgba(243,228,210,0.34)]";
 
 const TH_CLASS =
-  "whitespace-nowrap px-4 py-3.5 text-right text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500";
+  "whitespace-nowrap px-4 py-3.5 text-right text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7B7166]";
 
 const FIRST_TH_CLASS =
-  "whitespace-nowrap px-4 py-3.5 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500";
+  "whitespace-nowrap px-4 py-3.5 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7B7166]";
 
 const TD_CLASS =
-  "whitespace-nowrap px-4 py-3.5 text-right text-sm text-slate-700 align-middle";
+  "whitespace-nowrap px-4 py-3.5 text-right text-sm text-[#5F554B] align-middle";
 
 const FIRST_TD_CLASS =
-  "whitespace-nowrap px-4 py-3.5 text-left text-sm font-medium text-slate-900 align-middle";
+  "whitespace-nowrap px-4 py-3.5 text-left text-sm font-medium text-[#2F3A40] align-middle";
 
 const EMPTY_STATE_CLASS =
-  "px-4 py-10 text-center text-sm font-medium text-slate-500";
+  "px-4 py-10 text-center text-sm font-medium text-[#7B7166]";
 
 function resolveReportMode(reportType?: ReportMode): ReportMode {
   if (reportType === "traffic") return "traffic";
@@ -145,14 +145,14 @@ function SectionIntro({
         compact ? "mb-5 flex flex-col gap-2" : "mb-6 flex flex-col gap-2.5"
       }
     >
-      <div className="inline-flex w-fit items-center rounded-full border border-slate-200/90 bg-white px-3 py-1 text-[10px] font-semibold tracking-[0.12em] text-slate-500 shadow-sm">
+      <div className="inline-flex w-fit items-center rounded-full border border-[#CFC2B1]/60 bg-white/95 px-3 py-1 text-[10px] font-semibold tracking-[0.12em] text-[#7B7166] shadow-[0_6px_16px_rgba(127,166,196,0.08)]">
         {badge}
       </div>
 
       <div>
         <h3
           className={[
-            "font-semibold tracking-[-0.02em] text-slate-900",
+            "font-semibold tracking-[-0.02em] text-[#2F3A40]",
             compact ? "text-[18px]" : "text-[20px]",
           ].join(" ")}
         >
@@ -160,7 +160,7 @@ function SectionIntro({
         </h3>
         <p
           className={[
-            "text-slate-500",
+            "text-[#7B7166]",
             compact ? "mt-1.5 text-sm leading-6" : "mt-2 text-sm leading-6",
           ].join(" ")}
         >
@@ -409,11 +409,11 @@ function highlightInsightText(text: string) {
     {
       pattern:
         /(ROAS|CPA|CVR|CTR|CPC|Revenue|Cost|Conv|DB 확보|리드 확보|전환 확보|유입 효율|전환 효율|목표|미달|상회|양호|높은|저효율|상위|하위|확장|축소|재배분|우선 점검|개선 경로|효율)/g,
-      className: "font-semibold text-slate-900",
+      className: "font-semibold text-[#2F3A40]",
     },
     {
       pattern: /([A-Za-z가-힣0-9_-]+\.?\d*%|₩[\d,]+|\"[^\"]+\")/g,
-      className: "font-semibold text-violet-700",
+      className: "font-semibold text-[#4F7F9E]",
     },
   ];
 
@@ -511,7 +511,7 @@ const SourceTable = memo(function SourceTable({
 
         <tbody>
           {sourceRows.length === 0 ? (
-            <tr className="border-t border-slate-200/90">
+            <tr className="border-t border-[#CFC2B1]/60">
               <td className={EMPTY_STATE_CLASS} colSpan={tableMeta.colSpan}>
                 {(allRowsLoading ?? false)
                   ? "데이터 로딩 중..."
@@ -534,7 +534,7 @@ const SourceTable = memo(function SourceTable({
               return (
                 <tr
                   key={r.source ?? idx}
-                  className="border-t border-slate-200/90 even:bg-slate-50/45 hover:bg-emerald-50/45 transition-colors"
+                  className="border-t border-[#CFC2B1]/60 even:bg-[#F3E4D2]/20 hover:bg-[#B7D7E3]/24 transition-colors"
                 >
                   <td className={FIRST_TD_CLASS}>{r.source}</td>
 
@@ -546,7 +546,7 @@ const SourceTable = memo(function SourceTable({
                     <DataBarCell value={clicks} max={srcMax.maxClicks} />
                   </td>
 
-                  <td className={`${TD_CLASS} font-medium text-violet-600`}>
+                  <td className={`${TD_CLASS} font-medium text-[#5F8FAE]`}>
                     {(ctr * 100).toFixed(2)}%
                   </td>
 
@@ -567,7 +567,7 @@ const SourceTable = memo(function SourceTable({
                   )}
 
                   {tableMeta.showCvr && (
-                    <td className={`${TD_CLASS} font-medium text-violet-600`}>
+                    <td className={`${TD_CLASS} font-medium text-[#5F8FAE]`}>
                       {(cvr * 100).toFixed(2)}%
                     </td>
                   )}
@@ -585,7 +585,7 @@ const SourceTable = memo(function SourceTable({
                   )}
 
                   {tableMeta.showRoas && (
-                    <td className={`${TD_CLASS} font-semibold text-orange-600`}>
+                    <td className={`${TD_CLASS} font-semibold text-[#B98252]`}>
                       {(roas * 100).toFixed(1)}%
                     </td>
                   )}
@@ -620,37 +620,37 @@ const InsightPanel = memo(function InsightPanel({
   }, [reportMode, sourceRows, monthGoal]);
 
   return (
-    <div className="overflow-hidden rounded-[26px] border border-slate-200/90 bg-[linear-gradient(135deg,rgba(15,23,42,0.02),rgba(255,255,255,0.98)_18%,rgba(245,243,255,0.92)_56%,rgba(255,247,237,0.92)_100%)] shadow-[0_14px_34px_rgba(15,23,42,0.08)] ring-1 ring-white/70">
-      <div className="border-b border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(248,250,252,0.84))] px-5 py-4">
-        <div className="flex flex-wrap items-center gap-2 text-sm text-slate-700">
-          <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-violet-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(245,243,255,0.9))] shadow-sm">
+    <div className="overflow-hidden rounded-[26px] border border-[#CFC2B1]/60 bg-[linear-gradient(135deg,rgba(127,166,196,0.06),rgba(255,255,255,0.98)_18%,rgba(183,215,227,0.28)_56%,rgba(243,228,210,0.34)_100%)] shadow-[0_14px_34px_rgba(127,166,196,0.12)] ring-1 ring-white/70">
+      <div className="border-b border-[#CFC2B1]/55 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(243,228,210,0.28))] px-5 py-4">
+        <div className="flex flex-wrap items-center gap-2 text-sm text-[#5F554B]">
+          <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#B7D7E3]/65 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(183,215,227,0.22)] shadow-[0_6px_16px_rgba(127,166,196,0.08)]">
             🧠
           </span>
 
-          <span className="inline-flex items-center rounded-full border border-violet-200/80 bg-violet-50/80 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-violet-700">
+          <span className="inline-flex items-center rounded-full border border-[#B7D7E3]/70 bg-[#B7D7E3]/22 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#4F7F9E]">
             AI Insight
           </span>
 
-          <span className="font-semibold text-slate-900">구조 분석 포인트</span>
+          <span className="font-semibold text-[#2F3A40]">구조 분석 포인트</span>
 
-          <span className="font-normal text-slate-400">-</span>
+          <span className="font-normal text-[#9B8F81]">-</span>
 
-          <span className="font-normal text-slate-500">{description}</span>
+          <span className="font-normal text-[#7B7166]">{description}</span>
         </div>
       </div>
 
       <div className="px-5 py-5">
         {insightLoading ? (
-          <div className="rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-4 text-sm text-slate-500 shadow-sm">
+          <div className="rounded-2xl border border-[#CFC2B1]/55 bg-white/80 px-4 py-4 text-sm text-[#7B7166] shadow-sm">
             인사이트 생성 중...
           </div>
         ) : sourceRows.length === 0 ? (
-          <div className="rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-4 text-sm text-slate-500 shadow-sm">
+          <div className="rounded-2xl border border-[#CFC2B1]/55 bg-white/80 px-4 py-4 text-sm text-[#7B7166] shadow-sm">
             소스 데이터가 없어서 인사이트를 만들 수 없습니다. (필터/데이터
             확인)
           </div>
         ) : sentences.length === 0 ? (
-          <div className="rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-4 text-sm text-slate-500 shadow-sm">
+          <div className="rounded-2xl border border-[#CFC2B1]/55 bg-white/80 px-4 py-4 text-sm text-[#7B7166] shadow-sm">
             인사이트 생성 실패: sourceRows는 있는데 문장이 비어있습니다.
             (값/키 확인)
           </div>
@@ -659,25 +659,25 @@ const InsightPanel = memo(function InsightPanel({
             {sentences.map((s, i) => (
               <div
                 key={i}
-                className="group rounded-[22px] border border-slate-200/80 bg-white/88 px-4 py-4 shadow-[0_8px_22px_rgba(15,23,42,0.035)] transition hover:-translate-y-[1px] hover:shadow-[0_12px_28px_rgba(15,23,42,0.06)]"
+                className="group rounded-[22px] border border-[#CFC2B1]/55 bg-white/88 px-4 py-4 shadow-[0_8px_22px_rgba(127,166,196,0.08)] transition hover:-translate-y-[1px] hover:shadow-[0_12px_28px_rgba(127,166,196,0.10)]"
               >
                 <div className="flex items-start gap-3">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(180deg,rgba(79,70,229,0.12),rgba(124,58,237,0.08))] text-xs font-bold text-violet-700 ring-1 ring-violet-200/70">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(180deg,rgba(127,166,196,0.18),rgba(183,215,227,0.14))] text-xs font-bold text-[#4F7F9E] ring-1 ring-[#B7D7E3]/70">
                     {i + 1}
                   </div>
 
                   <div className="min-w-0 flex-1 pt-0.5">
                     <div className="mb-1 flex items-center gap-2">
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#9B8F81]">
                         Insight
                       </span>
-                      <span className="h-1 w-1 rounded-full bg-slate-300" />
-                      <span className="text-[11px] font-medium text-slate-400">
+                      <span className="h-1 w-1 rounded-full bg-[#CFC2B1]" />
+                      <span className="text-[11px] font-medium text-[#9B8F81]">
                         구조 분석
                       </span>
                     </div>
 
-                    <p className="whitespace-pre-wrap text-[15px] leading-7 text-slate-700">
+                    <p className="whitespace-pre-wrap text-[15px] leading-7 text-[#5F554B]">
                       {highlightInsightText(s).map((part, idx) => (
                         <span
                           key={`${i}-${idx}`}
@@ -750,7 +750,7 @@ const CampaignTable = memo(function CampaignTable({
             return (
               <tr
                 key={r.campaign ?? idx}
-                className="border-t border-slate-200/90 even:bg-slate-50/45 hover:bg-sky-50/45 transition-colors"
+                className="border-t border-[#CFC2B1]/60 even:bg-[#F3E4D2]/20 hover:bg-[#B7D7E3]/24 transition-colors"
               >
                 <td className={FIRST_TD_CLASS}>{r.campaign}</td>
 
@@ -762,7 +762,7 @@ const CampaignTable = memo(function CampaignTable({
                   <DataBarCell value={clicks} max={campMax.maxClicks} />
                 </td>
 
-                <td className={`${TD_CLASS} font-medium text-violet-600`}>
+                <td className={`${TD_CLASS} font-medium text-[#5F8FAE]`}>
                   {(ctr * 100).toFixed(2)}%
                 </td>
 
@@ -783,7 +783,7 @@ const CampaignTable = memo(function CampaignTable({
                 )}
 
                 {tableMeta.showCvr && (
-                  <td className={`${TD_CLASS} font-medium text-violet-600`}>
+                  <td className={`${TD_CLASS} font-medium text-[#5F8FAE]`}>
                     {(cvr * 100).toFixed(2)}%
                   </td>
                 )}
@@ -801,7 +801,7 @@ const CampaignTable = memo(function CampaignTable({
                 )}
 
                 {tableMeta.showRoas && (
-                  <td className={`${TD_CLASS} font-semibold text-orange-600`}>
+                  <td className={`${TD_CLASS} font-semibold text-[#B98252]`}>
                     {(roas * 100).toFixed(1)}%
                   </td>
                 )}
@@ -810,7 +810,7 @@ const CampaignTable = memo(function CampaignTable({
           })}
 
           {campaignRows.length === 0 && (
-            <tr className="border-t border-slate-200/90">
+            <tr className="border-t border-[#CFC2B1]/60">
               <td className={EMPTY_STATE_CLASS} colSpan={tableMeta.colSpan}>
                 표시할 캠페인 데이터가 없습니다. (필터/컬럼명을 확인)
               </td>
@@ -874,7 +874,7 @@ const GroupTable = memo(function GroupTable({
             return (
               <tr
                 key={r.group ?? idx}
-                className="border-t border-slate-200/90 even:bg-slate-50/45 hover:bg-amber-50/45 transition-colors"
+                className="border-t border-[#CFC2B1]/60 even:bg-[#F3E4D2]/20 hover:bg-[#B7D7E3]/24 transition-colors"
               >
                 <td className={FIRST_TD_CLASS}>{r.group}</td>
 
@@ -886,7 +886,7 @@ const GroupTable = memo(function GroupTable({
                   <DataBarCell value={clicks} max={grpMax.maxClicks} />
                 </td>
 
-                <td className={`${TD_CLASS} font-medium text-violet-600`}>
+                <td className={`${TD_CLASS} font-medium text-[#5F8FAE]`}>
                   {(ctr * 100).toFixed(2)}%
                 </td>
 
@@ -907,7 +907,7 @@ const GroupTable = memo(function GroupTable({
                 )}
 
                 {tableMeta.showCvr && (
-                  <td className={`${TD_CLASS} font-medium text-violet-600`}>
+                  <td className={`${TD_CLASS} font-medium text-[#5F8FAE]`}>
                     {(cvr * 100).toFixed(2)}%
                   </td>
                 )}
@@ -925,7 +925,7 @@ const GroupTable = memo(function GroupTable({
                 )}
 
                 {tableMeta.showRoas && (
-                  <td className={`${TD_CLASS} font-semibold text-orange-600`}>
+                  <td className={`${TD_CLASS} font-semibold text-[#B98252]`}>
                     {(roas * 100).toFixed(1)}%
                   </td>
                 )}
@@ -934,7 +934,7 @@ const GroupTable = memo(function GroupTable({
           })}
 
           {groupAggRows.length === 0 && (
-            <tr className="border-t border-slate-200/90">
+            <tr className="border-t border-[#CFC2B1]/60">
               <td className={EMPTY_STATE_CLASS} colSpan={tableMeta.colSpan}>
                 표시할 그룹 데이터가 없습니다. (필터/캠페인 선택/컬럼명을
                 확인)
@@ -997,14 +997,14 @@ const GroupSection = memo(function GroupSection({
               e.stopPropagation();
               setCampaignOpen((prev) => !prev);
             }}
-            className="rounded-xl border border-slate-200/90 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+            className="rounded-xl border border-[#CFC2B1]/60 bg-white/95 px-4 py-2 text-sm font-semibold text-[#5F554B] shadow-[0_6px_16px_rgba(127,166,196,0.08)] transition hover:border-[#B7D7E3] hover:bg-[#F3E4D2]/25"
           >
             캠페인명 {campaignOpen ? "▲" : "▼"}
           </button>
 
           {campaignOpen && (
             <div
-              className="absolute right-0 z-50 mt-2 w-64 rounded-2xl border border-slate-200/90 bg-white p-2 shadow-[0_18px_40px_rgba(15,23,42,0.14)]"
+              className="absolute right-0 z-50 mt-2 w-64 rounded-2xl border border-[#CFC2B1]/60 bg-white/95 p-2 shadow-[0_18px_40px_rgba(127,166,196,0.18)]"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="max-h-80 space-y-1 overflow-auto">
@@ -1016,8 +1016,8 @@ const GroupSection = memo(function GroupSection({
                   }}
                   className={`w-full rounded-xl px-3 py-2 text-left text-sm transition ${
                     selectedCampaign == null
-                      ? "bg-slate-900 text-white"
-                      : "bg-slate-50 text-slate-700 hover:bg-slate-100"
+                      ? "bg-[#7FA6C4] text-white"
+                      : "bg-[#F3E4D2]/28 text-[#5F554B] hover:bg-[#B7D7E3]/22"
                   }`}
                 >
                   전체
@@ -1033,8 +1033,8 @@ const GroupSection = memo(function GroupSection({
                     }}
                     className={`w-full rounded-xl px-3 py-2 text-left text-sm transition ${
                       selectedCampaign === c
-                        ? "bg-slate-900 text-white"
-                        : "bg-slate-50 text-slate-700 hover:bg-slate-100"
+                        ? "bg-[#7FA6C4] text-white"
+                        : "bg-[#F3E4D2]/28 text-[#5F554B] hover:bg-[#B7D7E3]/22"
                     }`}
                   >
                     {c}

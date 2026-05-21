@@ -167,14 +167,14 @@ const SectionHeader = memo(function SectionHeader({
     <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
         <div className="mb-2">
-          <span className="inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-orange-700">
+          <span className="inline-flex items-center rounded-full border border-[#B7D7E3]/70 bg-[#B7D7E3]/22 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-[#5F87A3]">
             {badge}
           </span>
         </div>
-        <div className="text-[17px] font-semibold tracking-[-0.02em] text-gray-900">
+        <div className="text-[17px] font-semibold tracking-[-0.02em] text-[#27364A]">
           {title}
         </div>
-        <div className="mt-1 text-sm leading-6 text-gray-500">{description}</div>
+        <div className="mt-1 text-sm leading-6 text-[#7A8794]">{description}</div>
       </div>
       {right ? <div className="shrink-0">{right}</div> : null}
     </div>
@@ -193,7 +193,7 @@ const ChartCard = memo(function ChartCard({
   children: ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition hover:shadow-md">
+    <div className="rounded-2xl border border-[#CFC2B1]/55 bg-white p-5 shadow-[0_8px_22px_rgba(127,166,196,0.10)] transition hover:shadow-[0_12px_28px_rgba(127,166,196,0.14)]">
       <SectionHeader badge={badge} title={title} description={description} />
       {children}
     </div>
@@ -211,7 +211,7 @@ const SortArrow = memo(function SortArrow({
 }) {
   if (sortKey !== k) return null;
   return (
-    <span className="ml-1 inline-block align-middle text-[10px] text-orange-500">
+    <span className="ml-1 inline-block align-middle text-[10px] text-[#7FA6C4]">
       {sortDir === "asc" ? "▲" : "▼"}
     </span>
   );
@@ -235,7 +235,7 @@ const Th = memo(function Th({
       className={[
         "select-none whitespace-nowrap px-4 py-3.5 text-[11px] font-semibold uppercase tracking-[0.08em]",
         align === "left" ? "text-left" : "text-right",
-        "cursor-pointer border-b border-gray-200 text-gray-500 transition hover:bg-gray-100/80 hover:text-gray-700",
+        "cursor-pointer border-b border-[#CFC2B1]/55 text-[#7A8794] transition hover:bg-[#F3E4D2]/35 hover:text-[#5F87A3]",
       ].join(" ")}
       onClick={() => onClickHeader(k)}
       title={`정렬: ${SORT_LABEL[k]}`}
@@ -273,16 +273,16 @@ const CreativeTableRow = memo(function CreativeTableRow({
 
   return (
     <tr
-      className="cursor-pointer border-t border-gray-200 transition hover:bg-orange-50/40"
+      className="cursor-pointer border-t border-[#CFC2B1]/45 transition hover:bg-[#B7D7E3]/16"
       onClick={() => onSelectCreative(row)}
     >
-      <td className="whitespace-nowrap px-4 py-3.5 text-left font-medium text-gray-900">
+      <td className="whitespace-nowrap px-4 py-3.5 text-left font-medium text-[#27364A]">
         <div
           className="inline-flex max-w-[260px] items-center gap-2"
           onMouseEnter={(e) => onPreviewEnter(row, e.currentTarget as HTMLElement)}
           onMouseLeave={onPreviewLeave}
         >
-          <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 px-2 text-[11px] font-semibold text-gray-500">
+          <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-lg border border-[#CFC2B1]/45 bg-[#F3E4D2]/30 px-2 text-[11px] font-semibold text-[#7A8794]">
             AD
           </span>
 
@@ -294,11 +294,11 @@ const CreativeTableRow = memo(function CreativeTableRow({
           </span>
 
           {!!row.imagePath ? (
-            <span className="shrink-0 rounded-full bg-orange-50 px-2 py-0.5 text-[10px] font-semibold text-orange-600">
+            <span className="shrink-0 rounded-full bg-[#B7D7E3]/22 px-2 py-0.5 text-[10px] font-semibold text-[#5F87A3]">
               Preview
             </span>
           ) : (
-            <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-500">
+            <span className="shrink-0 rounded-full bg-[#F3E4D2]/35 px-2 py-0.5 text-[10px] font-semibold text-[#7A8794]">
               No image
             </span>
           )}
@@ -321,11 +321,11 @@ const CreativeTableRow = memo(function CreativeTableRow({
         />
       </td>
 
-      <td className="px-4 py-3.5 text-right text-gray-700">
+      <td className="px-4 py-3.5 text-right text-[#52606D]">
         {formatPercentFromRate(row.ctr, 2)}
       </td>
 
-      <td className="px-4 py-3.5 text-right text-gray-700">{KRW(row.cpc)}</td>
+      <td className="px-4 py-3.5 text-right text-[#52606D]">{KRW(row.cpc)}</td>
 
       <td className="px-4 py-3.5">
         <DataBarCell
@@ -346,13 +346,13 @@ const CreativeTableRow = memo(function CreativeTableRow({
       )}
 
       {tableMeta.showCvr && (
-        <td className="px-4 py-3.5 text-right text-gray-700">
+        <td className="px-4 py-3.5 text-right text-[#52606D]">
           {formatPercentFromRate(row.cvr, 2)}
         </td>
       )}
 
       {tableMeta.showCpa && (
-        <td className="px-4 py-3.5 text-right text-gray-700">{KRW(row.cpa)}</td>
+        <td className="px-4 py-3.5 text-right text-[#52606D]">{KRW(row.cpa)}</td>
       )}
 
       {tableMeta.showRevenue && (
@@ -366,7 +366,7 @@ const CreativeTableRow = memo(function CreativeTableRow({
       )}
 
       {tableMeta.showRoas && (
-        <td className="px-4 py-3.5 text-right text-gray-700">
+        <td className="px-4 py-3.5 text-right text-[#52606D]">
           {formatPercentFromRoas(row.roas, 1)}
         </td>
       )}
@@ -404,21 +404,21 @@ const CreativePreviewOverlay = memo(function CreativePreviewOverlay({
       onMouseEnter={keepPreviewOpen}
       onMouseLeave={closePreview}
     >
-      <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl">
-        <div className="border-b border-gray-100 px-4 py-3">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-400">
+      <div className="overflow-hidden rounded-2xl border border-[#CFC2B1]/55 bg-white shadow-[0_14px_32px_rgba(127,166,196,0.14)]">
+        <div className="border-b border-[#CFC2B1]/40 px-4 py-3">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#9A8F81]">
             Creative Preview
           </div>
           <div
-            className="mt-1 line-clamp-2 text-sm font-semibold text-gray-900"
+            className="mt-1 line-clamp-2 text-sm font-semibold text-[#27364A]"
             title={hoveredCreative.creative || "(empty)"}
           >
             {hoveredCreative.creative || "(empty)"}
           </div>
         </div>
 
-        <div className="bg-gray-50 p-3">
-          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+        <div className="bg-[#F3E4D2]/25 p-3">
+          <div className="overflow-hidden rounded-xl border border-[#CFC2B1]/45 bg-white">
             {hasPreviewImage ? (
               <img
                 src={hoveredCreative.imagePath}
@@ -428,12 +428,12 @@ const CreativePreviewOverlay = memo(function CreativePreviewOverlay({
                 onError={() => onImageError(previewKey)}
               />
             ) : (
-              <div className="flex h-52 items-center justify-center bg-gray-50 px-4 text-center">
+              <div className="flex h-52 items-center justify-center bg-[#F3E4D2]/25 px-4 text-center">
                 <div>
-                  <div className="text-sm font-semibold text-gray-500">
+                  <div className="text-sm font-semibold text-[#7A8794]">
                     미리보기 없음
                   </div>
-                  <div className="mt-1 text-xs text-gray-400">
+                  <div className="mt-1 text-xs text-[#9A8F81]">
                     이미지 URL이 없거나 로딩에 실패했습니다.
                   </div>
                 </div>
@@ -442,7 +442,7 @@ const CreativePreviewOverlay = memo(function CreativePreviewOverlay({
           </div>
         </div>
 
-        <div className="flex items-center justify-between px-4 py-3 text-[11px] text-gray-500">
+        <div className="flex items-center justify-between px-4 py-3 text-[11px] text-[#7A8794]">
           <span className="truncate">
             {hoveredCreative.imagePath ? "이미지 미리보기" : "Fallback preview"}
           </span>
@@ -450,8 +450,8 @@ const CreativePreviewOverlay = memo(function CreativePreviewOverlay({
             className={[
               "rounded-full px-2 py-0.5 font-semibold",
               hoveredCreative.imagePath
-                ? "bg-orange-50 text-orange-600"
-                : "bg-gray-100 text-gray-500",
+                ? "bg-[#B7D7E3]/22 text-[#5F87A3]"
+                : "bg-[#F3E4D2]/35 text-[#7A8794]",
             ].join(" ")}
           >
             {hoveredCreative.imagePath ? "IMAGE" : "EMPTY"}
@@ -786,7 +786,7 @@ export default function CreativeSection({ reportType, rows }: Props) {
                       dataKey="impressions"
                       position="right"
                       formatter={(v: any) => formatCount(v)}
-                      style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                      style={{ fontSize: 11, fontWeight: 700, fill: "#7FA6C4" }}
                     />
                   </Bar>
                 </BarChart>
@@ -834,7 +834,7 @@ export default function CreativeSection({ reportType, rows }: Props) {
                       dataKey="clicks"
                       position="right"
                       formatter={(v: any) => formatCount(v)}
-                      style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                      style={{ fontSize: 11, fontWeight: 700, fill: "#7FA6C4" }}
                     />
                   </Bar>
                 </BarChart>
@@ -882,7 +882,7 @@ export default function CreativeSection({ reportType, rows }: Props) {
                       dataKey="cost"
                       position="right"
                       formatter={(v: any) => KRW(v)}
-                      style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                      style={{ fontSize: 11, fontWeight: 700, fill: "#7FA6C4" }}
                     />
                   </Bar>
                 </BarChart>
@@ -936,7 +936,7 @@ export default function CreativeSection({ reportType, rows }: Props) {
                       dataKey="clicks"
                       position="right"
                       formatter={(v: any) => formatCount(v)}
-                      style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                      style={{ fontSize: 11, fontWeight: 700, fill: "#7FA6C4" }}
                     />
                   </Bar>
                 </BarChart>
@@ -984,7 +984,7 @@ export default function CreativeSection({ reportType, rows }: Props) {
                       dataKey="conversions"
                       position="right"
                       formatter={(v: any) => formatCount(v)}
-                      style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                      style={{ fontSize: 11, fontWeight: 700, fill: "#7FA6C4" }}
                     />
                   </Bar>
                 </BarChart>
@@ -1032,7 +1032,7 @@ export default function CreativeSection({ reportType, rows }: Props) {
                       dataKey="cpa"
                       position="right"
                       formatter={(v: any) => KRW(v)}
-                      style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                      style={{ fontSize: 11, fontWeight: 700, fill: "#7FA6C4" }}
                     />
                   </Bar>
                 </BarChart>
@@ -1085,7 +1085,7 @@ export default function CreativeSection({ reportType, rows }: Props) {
                     dataKey="clicks"
                     position="right"
                     formatter={(v: any) => formatCount(v)}
-                    style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                    style={{ fontSize: 11, fontWeight: 700, fill: "#7FA6C4" }}
                   />
                 </Bar>
               </BarChart>
@@ -1133,7 +1133,7 @@ export default function CreativeSection({ reportType, rows }: Props) {
                     dataKey="conversions"
                     position="right"
                     formatter={(v: any) => formatCount(v)}
-                    style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                    style={{ fontSize: 11, fontWeight: 700, fill: "#7FA6C4" }}
                   />
                 </Bar>
               </BarChart>
@@ -1181,7 +1181,7 @@ export default function CreativeSection({ reportType, rows }: Props) {
                     dataKey="roas"
                     position="right"
                     formatter={(v: any) => formatPercentFromRoas(v, 1)}
-                    style={{ fontSize: 11, fontWeight: 700, fill: "#F97316" }}
+                    style={{ fontSize: 11, fontWeight: 700, fill: "#7FA6C4" }}
                   />
                 </Bar>
               </BarChart>
@@ -1203,9 +1203,9 @@ export default function CreativeSection({ reportType, rows }: Props) {
   const tableBody = useMemo(() => {
     if (tableRows.length === 0) {
       return (
-        <tr className="border-t border-gray-200">
+        <tr className="border-t border-[#CFC2B1]/45">
           <td
-            className="px-4 py-8 text-center text-sm text-gray-500"
+            className="px-4 py-8 text-center text-sm text-[#7A8794]"
             colSpan={tableMeta.colSpan}
           >
             표시할 소재 데이터가 없습니다. (creative 컬럼을 확인해 주세요)
@@ -1248,7 +1248,7 @@ export default function CreativeSection({ reportType, rows }: Props) {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">{rankingCharts}</div>
 
       <section>
-        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="rounded-2xl border border-[#CFC2B1]/55 bg-white p-5 shadow-[0_8px_22px_rgba(127,166,196,0.10)] sm:p-6">
           <SectionHeader
             badge="Creative Table"
             title="소재 상세 성과"
@@ -1260,24 +1260,24 @@ export default function CreativeSection({ reportType, rows }: Props) {
                 : "정렬 기준에 따라 주요 소재 성과를 비교하고, 마우스를 올리면 미리보기를 확인할 수 있습니다."
             }
             right={
-              <span className="inline-flex max-w-[280px] items-center truncate rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-[11px] font-medium text-gray-600">
+              <span className="inline-flex max-w-[280px] items-center truncate rounded-full border border-[#CFC2B1] bg-[#F3E4D2]/25 px-3 py-1 text-[11px] font-medium text-[#6F7B86]">
                 {tableBadge}
               </span>
             }
           />
 
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div className="text-xs text-gray-400">
+            <div className="text-xs text-[#9A8F81]">
               선택한 정렬 기준으로 Top50 소재가 표시됩니다.
             </div>
-            <div className="text-xs text-gray-400">
+            <div className="text-xs text-[#9A8F81]">
               소재명에 마우스를 올리면 이미지 미리보기가 나타납니다.
             </div>
           </div>
 
-          <div className="overflow-auto rounded-2xl border border-gray-200/90 bg-white shadow-sm">
+          <div className="overflow-auto rounded-2xl border border-[#CFC2B1]/55 bg-white shadow-[0_8px_20px_rgba(127,166,196,0.08)]">
             <table className="w-full border-collapse text-sm">
-              <thead className="sticky top-0 z-10 bg-gray-50/95 backdrop-blur">
+              <thead className="sticky top-0 z-10 bg-[#F3E4D2]/45 backdrop-blur">
                 <tr>
                   <Th
                     k="creative"
@@ -1363,7 +1363,7 @@ export default function CreativeSection({ reportType, rows }: Props) {
             </table>
           </div>
 
-          <div className="mt-3 text-xs text-gray-400">
+          <div className="mt-3 text-xs text-[#9A8F81]">
             * 표는 선택한 정렬 기준으로 Top50 소재입니다. (월/주/기기/채널 필터 조건에 따라 자동 변경)
           </div>
         </div>
