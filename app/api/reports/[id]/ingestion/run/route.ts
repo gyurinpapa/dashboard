@@ -190,6 +190,161 @@ function pickImagePathLike(obj: any) {
   return img ? String(img).trim() : "";
 }
 
+type ReportRowLevel = "keyword" | "creative" | "mixed" | "unknown";
+
+function pickKeywordLike(obj: any) {
+  return pickDim(obj, [
+    "keyword",
+    "keyword_name",
+    "search_term",
+    "searchterm",
+    "query",
+    "query_text",
+    "search_query",
+    "대표키워드",
+    "키워드",
+    "검색어",
+    "검색_키워드",
+    "검색키워드",
+    "검색쿼리",
+    "쿼리",
+  ]);
+}
+
+function hasMeaningfulMetric(obj: any) {
+  const metricKeys = [
+    "impressions",
+    "impr",
+    "clicks",
+    "cost",
+    "conversions",
+    "conv",
+    "revenue",
+    "sales",
+    "ctr",
+    "cpc",
+    "cvr",
+    "cpa",
+    "roas",
+  ];
+
+  return metricKeys.some((key) => {
+    const v = obj?.[key];
+    if (v == null) return false;
+    if (typeof v === "number") return Number.isFinite(v) && v !== 0;
+    return String(v).trim() !== "";
+  });
+}
+
+function inferReportRowLevel(obj: any): {
+  row_level: ReportRowLevel;
+  row_level_reason: string;
+} {
+  const keyword = asString(
+    obj?.keyword ||
+      obj?.keyword_name ||
+      obj?.search_term ||
+      obj?.searchterm ||
+      obj?.query ||
+      obj?.query_text ||
+      obj?.search_query ||
+      obj?.대표키워드 ||
+      obj?.키워드 ||
+      obj?.검색어 ||
+      obj?.검색_키워드 ||
+      obj?.검색키워드 ||
+      obj?.검색쿼리 ||
+      obj?.쿼리
+  );
+
+  const creative = asString(
+    obj?.creative ||
+      obj?.creative_name ||
+      obj?.creative_label ||
+      obj?.ad_creative ||
+      obj?.adcreative ||
+      obj?.asset_name ||
+      obj?.소재 ||
+      obj?.소재명 ||
+      obj?.광고소재 ||
+      obj?.소재_명 ||
+      obj?.소재명칭 ||
+      obj?.소재제목 ||
+      obj?.["소재명(광고)"] ||
+      obj?.크리에이티브 ||
+      obj?.크리에이티브명
+  );
+
+  const creativeFile = asString(
+    obj?.creative_file ||
+      obj?.creative_filename ||
+      obj?.file_name ||
+      obj?.filename ||
+      obj?.image_file ||
+      obj?.img_file ||
+      obj?.소재파일 ||
+      obj?.소재파일명 ||
+      obj?.이미지파일 ||
+      obj?.이미지파일명 ||
+      obj?.파일명
+  );
+
+  const imagePath = asString(
+    obj?.imagepath ||
+      obj?.imagePath ||
+      obj?.image_path ||
+      obj?.image_url ||
+      obj?.imageurl ||
+      obj?.img_url ||
+      obj?.imgurl ||
+      obj?.thumbnail ||
+      obj?.thumb ||
+      obj?.thumbnail_url ||
+      obj?.thumb_url ||
+      obj?.소재이미지 ||
+      obj?.이미지 ||
+      obj?.이미지url ||
+      obj?.이미지_url
+  );
+
+  const hasKeywordSignal = !!keyword;
+  const hasCreativeSignal = !!creative || !!creativeFile || !!imagePath;
+  const hasMetricSignal = hasMeaningfulMetric(obj);
+
+  if (hasKeywordSignal && hasCreativeSignal) {
+    return {
+      row_level: "mixed",
+      row_level_reason: "keyword_and_creative_signal",
+    };
+  }
+
+  if (hasKeywordSignal) {
+    return {
+      row_level: "keyword",
+      row_level_reason: "keyword_signal",
+    };
+  }
+
+  if (hasCreativeSignal) {
+    return {
+      row_level: "creative",
+      row_level_reason: "creative_signal",
+    };
+  }
+
+  if (hasMetricSignal) {
+    return {
+      row_level: "unknown",
+      row_level_reason: "metric_only",
+    };
+  }
+
+  return {
+    row_level: "unknown",
+    row_level_reason: "no_dimension_signal",
+  };
+}
+
 function toArray(v: any) {
   if (Array.isArray(v)) return v;
   if (v && typeof v === "object") return [v];
@@ -410,6 +565,22 @@ function buildHeaderIndexMap(headerRaw: string[], headers: string[]) {
       "이미지파일",
       "이미지파일명",
       "파일명",
+    ]),
+    keyword: find([
+      "keyword",
+      "keyword_name",
+      "search_term",
+      "searchterm",
+      "query",
+      "query_text",
+      "search_query",
+      "대표키워드",
+      "키워드",
+      "검색어",
+      "검색_키워드",
+      "검색키워드",
+      "검색쿼리",
+      "쿼리",
     ]),
   };
 }
@@ -727,6 +898,11 @@ export async function POST(req: Request, ctx: Ctx) {
         error: null,
         inserted: 0,
         valid_rows: 0,
+        keyword_rows: 0,
+        creative_rows: 0,
+        mixed_rows: 0,
+        unknown_rows: 0,
+        representative_summary_level: null,
         parsed_lines: 0,
         total_lines: 0,
         bytes_total: blobSize || 0,
@@ -778,6 +954,10 @@ export async function POST(req: Request, ctx: Ctx) {
     let totalLines = 0;
     let parsedLines = 0;
     let validRowCount = 0;
+    let keywordRowCount = 0;
+    let creativeRowCount = 0;
+    let mixedRowCount = 0;
+    let unknownRowCount = 0;
     let insertedCount = 0;
     let committedBatchCount = 0;
     let rowIndex = 0;
@@ -846,6 +1026,16 @@ export async function POST(req: Request, ctx: Ctx) {
             status: "processing",
             inserted: insertedCount,
             valid_rows: validRowCount,
+            keyword_rows: keywordRowCount,
+            creative_rows: creativeRowCount,
+            mixed_rows: mixedRowCount,
+            unknown_rows: unknownRowCount,
+            representative_summary_level:
+              keywordRowCount + mixedRowCount > 0
+                ? "keyword"
+                : creativeRowCount > 0
+                  ? "creative"
+                  : "unknown",
             parsed_lines: parsedLines,
             total_lines: totalLines,
             progress,
@@ -1017,6 +1207,22 @@ export async function POST(req: Request, ctx: Ctx) {
           obj.imagepath_raw = fileLike;
         }
 
+        let keyword = "";
+        if (headerMap.keyword >= 0) {
+          keyword = String(line?.[headerMap.keyword] ?? "").trim();
+        }
+        if (!keyword) {
+          keyword = asString(pickKeywordLike(obj));
+        }
+        if (keyword && !String(obj.keyword ?? "").trim()) {
+          obj.keyword = keyword;
+        }
+
+        const rowLevel = inferReportRowLevel(obj);
+        obj.row_level = rowLevel.row_level;
+        obj.data_level = rowLevel.row_level;
+        obj.row_level_reason = rowLevel.row_level_reason;
+
         let channel: string | null =
           headerMap.channel >= 0 ? asString(line?.[headerMap.channel]) : null;
         if (!channel) channel = pickDim(obj, ["channel", "채널"]);
@@ -1043,6 +1249,15 @@ export async function POST(req: Request, ctx: Ctx) {
         });
 
         validRowCount += 1;
+        if (rowLevel.row_level === "keyword") {
+          keywordRowCount += 1;
+        } else if (rowLevel.row_level === "creative") {
+          creativeRowCount += 1;
+        } else if (rowLevel.row_level === "mixed") {
+          mixedRowCount += 1;
+        } else {
+          unknownRowCount += 1;
+        }
         rowIndex += 1;
 
         if (!min_date || ymd < min_date) min_date = ymd;
@@ -1074,6 +1289,10 @@ export async function POST(req: Request, ctx: Ctx) {
       updateEveryBatches,
       took_ms: Date.now() - startedParseAt,
       header_count: headerRaw.length,
+      keywordRowCount,
+      creativeRowCount,
+      mixedRowCount,
+      unknownRowCount,
     });
 
     if (!validRowCount) {
@@ -1116,6 +1335,10 @@ export async function POST(req: Request, ctx: Ctx) {
       totalLines,
       committedBatchCount,
       batchSize,
+      keywordRowCount,
+      creativeRowCount,
+      mixedRowCount,
+      unknownRowCount,
       took_ms: Date.now() - startedInsertAt,
     });
 
@@ -1130,6 +1353,16 @@ export async function POST(req: Request, ctx: Ctx) {
         mode,
         inserted: insertedCount,
         valid_rows: validRowCount,
+        keyword_rows: keywordRowCount,
+        creative_rows: creativeRowCount,
+        mixed_rows: mixedRowCount,
+        unknown_rows: unknownRowCount,
+        representative_summary_level:
+          keywordRowCount + mixedRowCount > 0
+            ? "keyword"
+            : creativeRowCount > 0
+              ? "creative"
+              : "unknown",
         parsed_lines: parsedLines,
         total_lines: totalLines,
         progress: 100,
@@ -1158,6 +1391,16 @@ export async function POST(req: Request, ctx: Ctx) {
         valid_rows: validRowCount,
         parsed_lines: parsedLines,
         total_lines: totalLines,
+        keyword_rows: keywordRowCount,
+        creative_rows: creativeRowCount,
+        mixed_rows: mixedRowCount,
+        unknown_rows: unknownRowCount,
+        representative_summary_level:
+          keywordRowCount + mixedRowCount > 0
+            ? "keyword"
+            : creativeRowCount > 0
+              ? "creative"
+              : "unknown",
         min_date,
         max_date,
         batch_size: batchSize,

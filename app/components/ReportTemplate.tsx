@@ -185,6 +185,17 @@ type ManualHypothesisDraft = {
   ease: number;
 };
 
+type ReportRowLevel = "keyword" | "creative" | "mixed" | "unknown";
+
+type ReportRowLevelBuckets = {
+  keywordRows: any[];
+  creativeRows: any[];
+  mixedRows: any[];
+  unknownRows: any[];
+  representativeRows: any[];
+  representativeLevel: ReportRowLevel;
+};
+
 function isHypothesisTab(tab: TabKey): tab is HypothesisTabKey {
   return (
     tab === "hypothesis1" ||
@@ -1716,10 +1727,247 @@ function normalizeIncomingRow(rec: any) {
   }
   if (base.revenue == null && base.gmv != null) base.revenue = base.gmv;
 
+  if (base.row_level == null && rec?.row_level != null) {
+    base.row_level = rec.row_level;
+  }
+  if (base.rowLevel == null && rec?.rowLevel != null) {
+    base.rowLevel = rec.rowLevel;
+  }
+  if (base.data_level == null && rec?.data_level != null) {
+    base.data_level = rec.data_level;
+  }
+  if (base.dataLevel == null && rec?.dataLevel != null) {
+    base.dataLevel = rec.dataLevel;
+  }
+
   if (base.__row_id == null && rec?.id != null) base.__row_id = rec.id;
   if (base.id == null && rec?.id != null) base.id = rec.id;
 
   return base;
+}
+
+function getNormalizedRowLevelValue(row: any): ReportRowLevel {
+  const raw = firstNonEmpty(
+    row?.row_level,
+    row?.rowLevel,
+    row?.data_level,
+    row?.dataLevel,
+    row?.level,
+  ).toLowerCase();
+
+  if (raw === "keyword") return "keyword";
+  if (raw === "creative") return "creative";
+  if (raw === "mixed") return "mixed";
+  return "unknown";
+}
+
+function hasKeywordSignal(row: any) {
+  return !!firstNonEmpty(
+    row?.keyword,
+    row?.keyword_name,
+    row?.keywordName,
+    row?.search_term,
+    row?.searchTerm,
+    row?.query,
+    row?.검색어,
+    row?.키워드,
+  );
+}
+
+function hasCreativeSignal(row: any) {
+  return !!firstNonEmpty(
+    row?.creative,
+    row?.creative_name,
+    row?.creativeName,
+    row?.creative_file,
+    row?.creativeFile,
+    row?.creative_key,
+    row?.creativeKey,
+    row?.imagepath,
+    row?.imagePath,
+    row?.image_path,
+    row?.image_url,
+    row?.imageUrl,
+    row?.thumbnail?.imagePath,
+    row?.thumbUrl,
+    row?.소재,
+    row?.소재명,
+  );
+}
+
+function resolveLegacyRowLevel(row: any): ReportRowLevel {
+  const keywordSignal = hasKeywordSignal(row);
+  const creativeSignal = hasCreativeSignal(row);
+
+  if (keywordSignal && creativeSignal) return "mixed";
+  if (keywordSignal) return "keyword";
+  if (creativeSignal) return "creative";
+  return "unknown";
+}
+
+function createEmptyRowLevelBuckets(): ReportRowLevelBuckets {
+  return {
+    keywordRows: EMPTY_ROWS,
+    creativeRows: EMPTY_ROWS,
+    mixedRows: EMPTY_ROWS,
+    unknownRows: EMPTY_ROWS,
+    representativeRows: EMPTY_ROWS,
+    representativeLevel: "unknown",
+  };
+}
+
+function resolveRepresentativeRowLevel(input: {
+  keywordRows: any[];
+  creativeRows: any[];
+  mixedRows: any[];
+  unknownRows: any[];
+}): ReportRowLevel {
+  if (input.keywordRows.length > 0) return "keyword";
+  if (input.creativeRows.length > 0) return "creative";
+  if (input.mixedRows.length > 0) return "mixed";
+  return "unknown";
+}
+
+function pickRepresentativeRows(input: {
+  keywordRows: any[];
+  creativeRows: any[];
+  mixedRows: any[];
+  unknownRows: any[];
+}) {
+  if (input.keywordRows.length > 0) return input.keywordRows;
+  if (input.creativeRows.length > 0) return input.creativeRows;
+  if (input.mixedRows.length > 0) return input.mixedRows;
+  if (input.unknownRows.length > 0) return input.unknownRows;
+  return EMPTY_ROWS;
+}
+
+function buildRowLevelBuckets(rows: any[]): ReportRowLevelBuckets {
+  if (!rows?.length) return createEmptyRowLevelBuckets();
+
+  const keywordRows: any[] = [];
+  const creativeRows: any[] = [];
+  const mixedRows: any[] = [];
+  const unknownRows: any[] = [];
+
+  let knownTaggedRowCount = 0;
+
+  /**
+   * 신규 ingestion 이후에는 row.row_level/data_level 값이 이미 저장된다.
+   * 이 경우 렌더링 단계에서 키워드/소재 신호를 다시 판별하지 않고,
+   * 저장된 row_level만 읽어서 3만 행 재판단 비용을 줄인다.
+   */
+  for (const row of rows ?? []) {
+    const explicitLevel = getNormalizedRowLevelValue(row);
+
+    if (explicitLevel === "keyword") {
+      knownTaggedRowCount += 1;
+      keywordRows.push(row);
+      continue;
+    }
+
+    if (explicitLevel === "creative") {
+      knownTaggedRowCount += 1;
+      creativeRows.push(row);
+      continue;
+    }
+
+    if (explicitLevel === "mixed") {
+      knownTaggedRowCount += 1;
+      mixedRows.push(row);
+      continue;
+    }
+
+    unknownRows.push(row);
+  }
+
+  if (knownTaggedRowCount > 0) {
+    const representativeRows = pickRepresentativeRows({
+      keywordRows,
+      creativeRows,
+      mixedRows,
+      unknownRows,
+    });
+    const representativeLevel = resolveRepresentativeRowLevel({
+      keywordRows,
+      creativeRows,
+      mixedRows,
+      unknownRows,
+    });
+
+    return {
+      keywordRows,
+      creativeRows,
+      mixedRows,
+      unknownRows,
+      representativeRows,
+      representativeLevel,
+    };
+  }
+
+  /**
+   * legacy fallback:
+   * 과거에 업로드되어 row_level이 없는 rows만 있을 때만 신호 기반 판별을 수행한다.
+   * 신규 데이터에서는 이 경로를 타지 않는다.
+   */
+  const legacyKeywordRows: any[] = [];
+  const legacyCreativeRows: any[] = [];
+  const legacyMixedRows: any[] = [];
+  const legacyUnknownRows: any[] = [];
+
+  for (const row of rows ?? []) {
+    const legacyLevel = resolveLegacyRowLevel(row);
+
+    if (legacyLevel === "keyword") {
+      legacyKeywordRows.push(row);
+      continue;
+    }
+
+    if (legacyLevel === "creative") {
+      legacyCreativeRows.push(row);
+      continue;
+    }
+
+    if (legacyLevel === "mixed") {
+      legacyMixedRows.push(row);
+      continue;
+    }
+
+    legacyUnknownRows.push(row);
+  }
+
+  const representativeRows = pickRepresentativeRows({
+    keywordRows: legacyKeywordRows,
+    creativeRows: legacyCreativeRows,
+    mixedRows: legacyMixedRows,
+    unknownRows: legacyUnknownRows,
+  });
+  const representativeLevel = resolveRepresentativeRowLevel({
+    keywordRows: legacyKeywordRows,
+    creativeRows: legacyCreativeRows,
+    mixedRows: legacyMixedRows,
+    unknownRows: legacyUnknownRows,
+  });
+
+  return {
+    keywordRows: legacyKeywordRows,
+    creativeRows: legacyCreativeRows,
+    mixedRows: legacyMixedRows,
+    unknownRows: legacyUnknownRows,
+    representativeRows,
+    representativeLevel,
+  };
+}
+
+function pickKeywordRowsForTabs(buckets: ReportRowLevelBuckets) {
+  if (buckets.keywordRows.length > 0) return buckets.keywordRows;
+  if (buckets.mixedRows.length > 0) return buckets.mixedRows;
+  return EMPTY_ROWS;
+}
+
+function pickCreativeRowsForTabs(buckets: ReportRowLevelBuckets) {
+  if (buckets.creativeRows.length > 0) return buckets.creativeRows;
+  if (buckets.mixedRows.length > 0) return buckets.mixedRows;
+  return EMPTY_ROWS;
 }
 
 function pickHeaderFallbackFromRows(rows: any[]) {
@@ -2260,6 +2508,25 @@ export default function ReportTemplate({
     return filterRowsByReportPeriod(normalizedRows as any[], stableReportPeriod);
   }, [normalizedRows, stableReportPeriod]);
 
+  const rowLevelBuckets = useMemo(() => {
+    if (!reportPeriodRows.length) {
+      return buildRowLevelBuckets(EMPTY_ROWS);
+    }
+    return buildRowLevelBuckets(reportPeriodRows as any[]);
+  }, [reportPeriodRows]);
+
+  const representativeReportRows = useMemo(() => {
+    return rowLevelBuckets.representativeRows;
+  }, [rowLevelBuckets]);
+
+  const keywordReportRows = useMemo(() => {
+    return pickKeywordRowsForTabs(rowLevelBuckets);
+  }, [rowLevelBuckets]);
+
+  const creativeReportRows = useMemo(() => {
+    return pickCreativeRowsForTabs(rowLevelBuckets);
+  }, [rowLevelBuckets]);
+
   const headerFallback = useMemo(() => {
     if (!normalizedRows.length) {
       return {
@@ -2333,7 +2600,7 @@ export default function ReportTemplate({
 
   const reportAggregatesParams = useMemo(() => {
     return {
-      rows: reportPeriodRows as any,
+      rows: representativeReportRows as any,
       rowsArePreNormalized: true,
       selectedMonth: deferredSelectedMonth,
       selectedWeek: deferredSelectedWeek,
@@ -2346,7 +2613,7 @@ export default function ReportTemplate({
       ...AGGREGATE_FLAGS,
     };
   }, [
-    reportPeriodRows,
+    representativeReportRows,
     deferredSelectedMonth,
     deferredSelectedWeek,
     deferredSelectedDevice,
@@ -2369,7 +2636,7 @@ export default function ReportTemplate({
     productOptions,
     enabledMonthKeySet,
     enabledWeekKeySet,
-    filteredRows,
+    filteredRows: summaryFilteredRows,
     period,
     currentMonthKey,
     currentMonthActual,
@@ -2382,9 +2649,89 @@ export default function ReportTemplate({
     byMonth,
   } = useReportAggregates(stableReportAggregatesParams);
 
+  const keywordRowsForActiveTab = useMemo(() => {
+    if (deferredTab !== "keyword" && deferredTab !== "keywordDetail") {
+      return EMPTY_ROWS;
+    }
+    return keywordReportRows;
+  }, [deferredTab, keywordReportRows]);
+
+  const keywordAggregatesParams = useMemo(() => {
+    return {
+      rows: keywordRowsForActiveTab as any,
+      rowsArePreNormalized: true,
+      selectedMonth: deferredSelectedMonth,
+      selectedWeek: deferredSelectedWeek,
+      selectedDevice: deferredSelectedDevice,
+      selectedChannel: deferredSelectedChannel,
+      selectedSource: deferredSelectedSource,
+      selectedProduct: deferredSelectedProduct,
+      monthGoal: stableMonthGoal,
+      onInvalidWeek: noopInvalidWeek,
+      ...AGGREGATE_FLAGS,
+    };
+  }, [
+    keywordRowsForActiveTab,
+    deferredSelectedMonth,
+    deferredSelectedWeek,
+    deferredSelectedDevice,
+    deferredSelectedChannel,
+    deferredSelectedSource,
+    deferredSelectedProduct,
+    stableMonthGoal,
+    noopInvalidWeek,
+  ]);
+
+  const stableKeywordAggregatesParams =
+    useStableShallowValue(keywordAggregatesParams);
+
+  const { filteredRows: keywordOnlyRows } = useReportAggregates(
+    stableKeywordAggregatesParams,
+  );
+
+  const creativeRowsForActiveTab = useMemo(() => {
+    if (deferredTab !== "creative" && deferredTab !== "creativeDetail") {
+      return EMPTY_ROWS;
+    }
+    return creativeReportRows;
+  }, [deferredTab, creativeReportRows]);
+
+  const creativeAggregatesParams = useMemo(() => {
+    return {
+      rows: creativeRowsForActiveTab as any,
+      rowsArePreNormalized: true,
+      selectedMonth: deferredSelectedMonth,
+      selectedWeek: deferredSelectedWeek,
+      selectedDevice: deferredSelectedDevice,
+      selectedChannel: deferredSelectedChannel,
+      selectedSource: deferredSelectedSource,
+      selectedProduct: deferredSelectedProduct,
+      monthGoal: stableMonthGoal,
+      onInvalidWeek: noopInvalidWeek,
+      ...AGGREGATE_FLAGS,
+    };
+  }, [
+    creativeRowsForActiveTab,
+    deferredSelectedMonth,
+    deferredSelectedWeek,
+    deferredSelectedDevice,
+    deferredSelectedChannel,
+    deferredSelectedSource,
+    deferredSelectedProduct,
+    stableMonthGoal,
+    noopInvalidWeek,
+  ]);
+
+  const stableCreativeAggregatesParams =
+    useStableShallowValue(creativeAggregatesParams);
+
+  const { filteredRows: creativeOnlyRows } = useReportAggregates(
+    stableCreativeAggregatesParams,
+  );
+
   const summaryGoalAggregatesParams = useMemo(() => {
     return {
-      rows: reportPeriodRows as any,
+      rows: representativeReportRows as any,
       rowsArePreNormalized: true,
       selectedMonth: "all" as MonthKey,
       selectedWeek: "all" as WeekKey,
@@ -2396,7 +2743,7 @@ export default function ReportTemplate({
       onInvalidWeek: noopInvalidWeek,
       ...AGGREGATE_FLAGS,
     };
-  }, [reportPeriodRows, stableMonthGoal, noopInvalidWeek]);
+  }, [representativeReportRows, stableMonthGoal, noopInvalidWeek]);
 
   const stableSummaryGoalAggregatesParams = useStableShallowValue(
     summaryGoalAggregatesParams,
@@ -2409,13 +2756,13 @@ export default function ReportTemplate({
   } = useReportAggregates(stableSummaryGoalAggregatesParams);
 
   const summaryGoalBaseRows = useMemo(() => {
-    if (!reportPeriodRows.length) return EMPTY_ROWS;
+    if (!representativeReportRows.length) return EMPTY_ROWS;
     if (!summaryGoalCurrentMonthKey) return EMPTY_ROWS;
     return getRowsForMonthKey(
-      reportPeriodRows as any[],
+      representativeReportRows as any[],
       summaryGoalCurrentMonthKey,
     );
-  }, [reportPeriodRows, summaryGoalCurrentMonthKey]);
+  }, [representativeReportRows, summaryGoalCurrentMonthKey]);
 
   const summaryGoalLastDataDate = useMemo(() => {
     if (!summaryGoalBaseRows.length) return EMPTY_STRING;
@@ -2457,9 +2804,9 @@ export default function ReportTemplate({
 
   const byDay = useMemo(() => {
     if (deferredTab !== "summary") return EMPTY_ROWS;
-    if (!(filteredRows as any[])?.length) return EMPTY_ROWS;
-    return buildDailySummaryRows(filteredRows as any[]);
-  }, [deferredTab, filteredRows]);
+    if (!(summaryFilteredRows as any[])?.length) return EMPTY_ROWS;
+    return buildDailySummaryRows(summaryFilteredRows as any[]);
+  }, [deferredTab, summaryFilteredRows]);
 
   useEffect(() => {
     if (readOnlyHeader) return;
@@ -2529,11 +2876,11 @@ export default function ReportTemplate({
   }, [normalizedRows]);
 
   const periodFixed = useMemo(() => {
-    if (!(filteredRows as any[])?.length) return period;
-    const mm = minMaxYmd(filteredRows as any[]);
+    if (!(summaryFilteredRows as any[])?.length) return period;
+    const mm = minMaxYmd(summaryFilteredRows as any[]);
     if (!mm.min || !mm.max) return period;
     return `${formatYmd(mm.min)} ~ ${formatYmd(mm.max)}`;
-  }, [filteredRows, period]);
+  }, [summaryFilteredRows, period]);
 
   const stableFullPeriod = useStableShallowValue(fullPeriod);
   const stablePeriodFixed = useStableShallowValue(periodFixed);
@@ -2574,7 +2921,7 @@ export default function ReportTemplate({
   const insightsParams = useMemo(() => {
     return {
       byMonth,
-      rowsLength: reportPeriodRows.length,
+      rowsLength: representativeReportRows.length,
       currentMonthKey,
       monthGoal: stableMonthGoal,
       currentMonthActual: stableInsightsCurrentMonthActual,
@@ -2585,7 +2932,7 @@ export default function ReportTemplate({
     };
   }, [
     byMonth,
-    reportPeriodRows.length,
+    representativeReportRows.length,
     currentMonthKey,
     stableMonthGoal,
     stableInsightsCurrentMonthActual,
@@ -2599,15 +2946,15 @@ export default function ReportTemplate({
 
   const keywordAgg = useMemo(() => {
     if (deferredTab !== "keyword") return EMPTY_ROWS;
-    if (!(filteredRows as any[])?.length) return EMPTY_ROWS;
-    return groupByKeyword(filteredRows as any[]);
-  }, [deferredTab, filteredRows]);
+    if (!(keywordOnlyRows as any[])?.length) return EMPTY_ROWS;
+    return groupByKeyword(keywordOnlyRows as any[]);
+  }, [deferredTab, keywordOnlyRows]);
 
   const keywordInsight = useMemo(() => {
     if (deferredTab !== "keyword") return "";
     return buildKeywordInsight({
       keywordAgg: keywordAgg as any[],
-      keywordBaseRows: filteredRows as any[],
+      keywordBaseRows: keywordOnlyRows as any[],
       currentMonthActual: currentMonthActual as any,
       currentMonthGoalComputed: currentMonthGoalComputed as any,
       reportType,
@@ -2615,7 +2962,7 @@ export default function ReportTemplate({
   }, [
     deferredTab,
     keywordAgg,
-    filteredRows,
+    keywordOnlyRows,
     currentMonthActual,
     currentMonthGoalComputed,
     reportType,
@@ -2626,14 +2973,26 @@ export default function ReportTemplate({
     return normalizeCreativesMap(stableCreativesMapInput);
   }, [needCreativeRows, stableCreativesMapInput]);
 
-  const filteredRowsWithCreatives = useMemo(() => {
-    if (!needCreativeRows) return filteredRows as any[];
-    if (!(filteredRows as any[])?.length) return EMPTY_ROWS;
+  const rowsForCreativeHydration = useMemo(() => {
+    if (deferredTab === "creative" || deferredTab === "creativeDetail") {
+      return (creativeOnlyRows as any[]) ?? EMPTY_ROWS;
+    }
+
+    if (deferredTab === "keywordDetail") {
+      return (keywordOnlyRows as any[]) ?? EMPTY_ROWS;
+    }
+
+    return (summaryFilteredRows as any[]) ?? EMPTY_ROWS;
+  }, [deferredTab, summaryFilteredRows, keywordOnlyRows, creativeOnlyRows]);
+
+  const summaryFilteredRowsWithCreatives = useMemo(() => {
+    if (!needCreativeRows) return rowsForCreativeHydration as any[];
+    if (!(rowsForCreativeHydration as any[])?.length) return EMPTY_ROWS;
 
     const map = creativesMapNormalized;
     const originalRowMap = originalRowById;
 
-    return (filteredRows as any[]).map((r) => {
+    return (rowsForCreativeHydration as any[]).map((r) => {
       const ridValue = r?.__row_id ?? r?.id;
       const rid = ridValue == null ? "" : String(ridValue);
       const orig = rid && originalRowMap ? originalRowMap.get(rid) : null;
@@ -2692,16 +3051,16 @@ export default function ReportTemplate({
 
       return out;
     });
-  }, [needCreativeRows, filteredRows, creativesMapNormalized, originalRowById]);
+  }, [needCreativeRows, rowsForCreativeHydration, creativesMapNormalized, originalRowById]);
 
   const creativeBaseRows = useMemo(() => {
     if (deferredTab !== "creative" && deferredTab !== "creativeDetail") {
       return EMPTY_ROWS;
     }
-    const list = (filteredRowsWithCreatives as any[]) ?? EMPTY_ROWS;
+    const list = (summaryFilteredRowsWithCreatives as any[]) ?? EMPTY_ROWS;
     if (!list.length) return EMPTY_ROWS;
     return list.filter((r) => !!r?.creative_url);
-  }, [deferredTab, filteredRowsWithCreatives]);
+  }, [deferredTab, summaryFilteredRowsWithCreatives]);
 
   const stableSummaryGoalCurrentMonthActual = useStableShallowValue(
     summaryGoalCurrentMonthActual,
@@ -2731,7 +3090,7 @@ export default function ReportTemplate({
         currentMonthGoalComputed: stableSummaryGoalCurrentMonthGoalComputed,
         monthGoal: stableMonthGoal,
         lastDataDate: summaryGoalLastDataDate,
-        rows: reportPeriodRows as any[],
+        rows: representativeReportRows as any[],
         byCampaign: stableByCampaign,
         byWeek: stableByWeekOnly,
         byMonth: stableByMonth,
@@ -2744,7 +3103,7 @@ export default function ReportTemplate({
       stableSummaryGoalCurrentMonthGoalComputed,
       stableMonthGoal,
       summaryGoalLastDataDate,
-      reportPeriodRows,
+      representativeReportRows,
       stableByCampaign,
       stableByWeekOnly,
       stableByMonth,
@@ -2903,7 +3262,7 @@ export default function ReportTemplate({
       currentMonthGoalComputed: stableSummaryGoalCurrentMonthGoalComputed,
       monthGoal: stableMonthGoal,
       lastDataDate: summaryGoalLastDataDate,
-      rows: reportPeriodRows as any[],
+      rows: representativeReportRows as any[],
       byCampaign: stableByCampaign,
       byWeek: stableByWeekOnly,
       byMonth: stableByMonth,
@@ -2917,7 +3276,7 @@ export default function ReportTemplate({
     stableSummaryGoalCurrentMonthGoalComputed,
     stableMonthGoal,
     summaryGoalLastDataDate,
-    reportPeriodRows,
+    representativeReportRows,
     stableByCampaign,
     stableByWeekOnly,
     stableByMonth,
@@ -3088,7 +3447,7 @@ export default function ReportTemplate({
                     <div className="rounded-2xl">
                       <Summary2Section
                         {...({ reportType } as any)}
-                        rows={filteredRows as any[]}
+                        rows={summaryFilteredRows as any[]}
                       />
                     </div>
                   )}
@@ -3099,7 +3458,7 @@ export default function ReportTemplate({
                         {...({ reportType } as any)}
                         bySource={bySource}
                         byCampaign={byCampaign}
-                        rows={filteredRowsWithCreatives}
+                        rows={summaryFilteredRowsWithCreatives}
                         monthGoal={stableMonthGoal}
                       />
                     </div>
@@ -3119,7 +3478,7 @@ export default function ReportTemplate({
                     <div className="rounded-2xl">
                       <KeywordDetailSection
                         {...({ reportType } as any)}
-                        rows={filteredRowsWithCreatives as any[]}
+                        rows={keywordOnlyRows as any[]}
                       />
                     </div>
                   )}
@@ -3128,7 +3487,7 @@ export default function ReportTemplate({
                     <div className="rounded-2xl">
                       <CreativeSection
                         {...({ reportType } as any)}
-                        rows={creativeBaseRows}
+                        rows={creativeOnlyRows}
                       />
                     </div>
                   )}
@@ -3137,7 +3496,7 @@ export default function ReportTemplate({
                     <div className="rounded-2xl">
                       <CreativeDetailSection
                         {...({ reportType } as any)}
-                        rows={creativeBaseRows as any[]}
+                        rows={creativeOnlyRows as any[]}
                       />
                     </div>
                   )}
