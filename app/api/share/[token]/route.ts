@@ -558,13 +558,6 @@ export async function GET(req: Request, ctx: Ctx) {
     .select("creative_key, file_name, storage_bucket, storage_path, mime_type, bytes")
     .eq("report_id", reportId);
 
-  if (publishedCreativesBatchId) {
-    creativeQuery = creativeQuery.eq(
-      "creatives_batch_id",
-      publishedCreativesBatchId
-    );
-  }
-
   const { data: creatives, error: creErr } = await creativeQuery;
 
   if (creErr) return jsonError(500, creErr.message || "Creatives DB error");
