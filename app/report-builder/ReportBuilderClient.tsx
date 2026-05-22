@@ -79,6 +79,45 @@ function norm(s: any) {
   return String(s ?? "").trim().toLowerCase();
 }
 
+const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
+
+function isOnlyMasterEmail(email?: string | null) {
+  return norm(email) === ONLY_MASTER_EMAIL;
+}
+
+function canManageMembersPage(
+  role: MemberRole,
+  email?: string | null
+) {
+  if (role === "director") {
+    return true;
+  }
+
+  if (role === "master") {
+    return isOnlyMasterEmail(email);
+  }
+
+  return false;
+}
+
+function canUseTrueMasterPower(
+  role: MemberRole,
+  email?: string | null
+) {
+  return role === "master" && isOnlyMasterEmail(email);
+}
+
+function canDeleteReportsByRole(
+  role: MemberRole,
+  email?: string | null
+) {
+  if (role === "director") {
+    return true;
+  }
+
+  return canUseTrueMasterPower(role, email);
+}
+
 function normalizeRole(v: any): MemberRole {
   const s = norm(v);
   if (
@@ -203,9 +242,9 @@ export default function ReportBuilderPage() {
 
   const canCreateReport = hasMinRole(memberRole, "staff");
   const canManageAdvertisers = hasMinRole(memberRole, "staff");
-  const canDeleteReports = hasMinRole(memberRole, "staff");
-  const canManageMembers = hasMinRole(memberRole, "director");
-  const canDeleteAdvertisers = memberRole === "master";
+  const canDeleteReports = canDeleteReportsByRole(memberRole, userEmail);
+  const canManageMembers = canManageMembersPage(memberRole, userEmail);
+  const canDeleteAdvertisers = canUseTrueMasterPower(memberRole, userEmail);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -633,6 +672,12 @@ export default function ReportBuilderPage() {
       setSelectedReportIds([]);
     }
   }, [canDeleteReports, selectedReportIds.length]);
+
+  useEffect(() => {
+    if (!canDeleteAdvertisers && selectedAdvertiserIds.length > 0) {
+      setSelectedAdvertiserIds([]);
+    }
+  }, [canDeleteAdvertisers, selectedAdvertiserIds.length]);
 
   async function signIn() {
     setLocalMsg("");

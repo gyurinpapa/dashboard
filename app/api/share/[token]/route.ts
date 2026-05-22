@@ -81,14 +81,19 @@ function extractRowObject(rec: any) {
 }
 
 /**
- * rows 조회는 기존 안전 버전 유지
- * - 여기 건드렸다가 rows 자체가 비는 회귀가 생겼으므로 원복
+ * rows 조회는 published_ingestion_id 기준만 허용
+ * - 공개 공유 API에서는 draft/current/old rows fallback 금지
+ * - published_ingestion_id가 없으면 rows를 조회하지 않는다
  */
 async function fetchAllReportRows(
   sb: any,
   reportId: string,
   publishedIngestionId?: string | null
 ) {
+  if (!publishedIngestionId) {
+    return [];
+  }
+
   const pageSize = 1000;
   let from = 0;
   const all: any[] = [];
@@ -96,13 +101,12 @@ async function fetchAllReportRows(
   while (true) {
     const to = from + pageSize - 1;
 
-    let query = sb.from("report_rows").select("*").eq("report_id", reportId);
-
-    if (publishedIngestionId) {
-      query = query.eq("ingestion_id", publishedIngestionId);
-    }
-
-    const { data, error } = await query.range(from, to);
+    const { data, error } = await sb
+      .from("report_rows")
+      .select("*")
+      .eq("report_id", reportId)
+      .eq("ingestion_id", publishedIngestionId)
+      .range(from, to);
 
     if (error) throw new Error(error.message || "Rows DB error");
     if (!data || data.length === 0) break;
@@ -471,8 +475,24 @@ export async function GET(req: Request, ctx: Ctx) {
   if (status !== "ready") return jsonError(403, "Report is not published");
 
   const reportId = String((report as any).id);
+  const workspaceId = asStr((report as any)?.workspace_id);
+
+  if (!workspaceId) {
+    return jsonError(500, "REPORT_WORKSPACE_MISSING");
+  }
+
   const meta: any = (report as any)?.meta ?? {};
-  const publishedIngestionId = asStr((report as any)?.published_ingestion_id) || null;
+  const publishedIngestionId =
+    asStr((report as any)?.published_ingestion_id) || null;
+
+  if (!publishedIngestionId) {
+    return jsonError(409, "SHARE_BLOCKED_NO_PUBLISHED_INGESTION", {
+      hint: "published_ingestion_id가 없는 공유 리포트는 공개 조회할 수 없습니다.",
+    });
+  }
+
+  const publishedCreativesBatchId =
+    asStr((report as any)?.published_creatives_batch_id) || null;
 
   const names = await fetchReportNames(sb, report);
 
@@ -533,10 +553,19 @@ export async function GET(req: Request, ctx: Ctx) {
 
   const mm = minMaxDate(rows);
 
-  const { data: creatives, error: creErr } = await sb
+  let creativeQuery = sb
     .from("report_creatives")
     .select("creative_key, file_name, storage_bucket, storage_path, mime_type, bytes")
     .eq("report_id", reportId);
+
+  if (publishedCreativesBatchId) {
+    creativeQuery = creativeQuery.eq(
+      "creatives_batch_id",
+      publishedCreativesBatchId
+    );
+  }
+
+  const { data: creatives, error: creErr } = await creativeQuery;
 
   if (creErr) return jsonError(500, creErr.message || "Creatives DB error");
 
@@ -677,11 +706,11 @@ export async function GET(req: Request, ctx: Ctx) {
         max_date: mm.max_date,
         strict,
         published_ingestion_id: publishedIngestionId,
+        published_creatives_batch_id: publishedCreativesBatchId,
         ...(debugOn
           ? {
               creativeErrors,
               rowSample: debugRowSample,
-              meta,
               advertiser_name: reportForResponse.advertiser_name,
               report_type_name: reportForResponse.report_type_name,
               report_type_key: reportForResponse.report_type_key,

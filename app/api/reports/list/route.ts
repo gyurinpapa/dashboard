@@ -8,6 +8,8 @@ import { isPlatformOwner } from "@/src/lib/supabase/platform-role";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
+
 function jsonError(status: number, message: string, extra?: Record<string, any>) {
   return NextResponse.json(
     { ok: false, error: message, ...(extra ?? {}) },
@@ -84,6 +86,51 @@ async function getUserId(
   return { ok: true, userId: auth.user.id };
 }
 
+async function getProfileEmailByUserId(userId: string) {
+  const id = asString(userId);
+  if (!id) return "";
+
+  const { data, error } = await supabaseAdmin
+    .from("profiles")
+    .select("email")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`FAILED_TO_FETCH_PROFILE_EMAIL:${error.message}`);
+  }
+
+  return asString(data?.email).toLowerCase();
+}
+
+async function hasMasterMembership(userId: string) {
+  const id = asString(userId);
+  if (!id) return false;
+
+  const { data, error } = await supabaseAdmin
+    .from("workspace_members")
+    .select("workspace_id")
+    .eq("user_id", id)
+    .eq("role", "master")
+    .limit(1);
+
+  if (error) {
+    throw new Error(`FAILED_TO_FETCH_MASTER_MEMBERSHIP:${error.message}`);
+  }
+
+  return Array.isArray(data) && data.length > 0;
+}
+
+async function isTrueMasterUser(userId: string) {
+  const email = await getProfileEmailByUserId(userId);
+
+  if (email !== ONLY_MASTER_EMAIL) {
+    return false;
+  }
+
+  return await hasMasterMembership(userId);
+}
+
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
@@ -105,11 +152,15 @@ export async function GET(req: Request) {
 
     const userId = auth.userId;
     const actorIsPlatformOwner = await isPlatformOwner(userId);
+    const actorIsTrueMaster = await isTrueMasterUser(userId);
+    const actorCanBypassWorkspaceMembership =
+      actorIsPlatformOwner && actorIsTrueMaster;
 
     // ✅ workspace membership 확인
-    // - platform_owner면 membership 없이 통과
-    // - 아니면 요청한 workspace가 실제로 이 사용자의 접근 가능한 workspace인지 검증
-    if (!actorIsPlatformOwner) {
+    // - platform_owner 단독으로는 통과 불가
+    // - platform_owner + true master만 membership 없이 통과
+    // - 그 외 사용자는 요청한 workspace가 실제로 이 사용자의 접근 가능한 workspace인지 검증
+    if (!actorCanBypassWorkspaceMembership) {
       const { data: wm, error: wmErr } = await supabaseAdmin
         .from("workspace_members")
         .select("workspace_id")
@@ -210,6 +261,20 @@ export async function GET(req: Request) {
       reports,
     });
   } catch (e: any) {
+    const msg = e?.message ?? "";
+
+    if (String(msg).startsWith("FAILED_TO_FETCH_PROFILE_EMAIL:")) {
+      return jsonError(500, "FAILED_TO_FETCH_PROFILE_EMAIL", {
+        detail: String(msg).replace("FAILED_TO_FETCH_PROFILE_EMAIL:", ""),
+      });
+    }
+
+    if (String(msg).startsWith("FAILED_TO_FETCH_MASTER_MEMBERSHIP:")) {
+      return jsonError(500, "FAILED_TO_FETCH_MASTER_MEMBERSHIP", {
+        detail: String(msg).replace("FAILED_TO_FETCH_MASTER_MEMBERSHIP:", ""),
+      });
+    }
+
     return jsonError(500, e?.message ?? "server error");
   }
 }

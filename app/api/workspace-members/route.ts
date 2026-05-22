@@ -38,6 +38,11 @@ function isRole(v: any): v is Role {
   return ALLOWED_ROLES.includes(v);
 }
 
+function normalizeRole(v: any): Role | null {
+  const s = asString(v).toLowerCase();
+  return isRole(s) ? s : null;
+}
+
 function getBearerToken(req: Request) {
   const h =
     req.headers.get("authorization") || req.headers.get("Authorization") || "";
@@ -193,11 +198,7 @@ async function attachProfileFields<T extends Record<string, any>>(members: T[]) 
   const rows = Array.isArray(members) ? members : [];
 
   const userIds = Array.from(
-    new Set(
-      rows
-        .map((m) => asString(m?.user_id))
-        .filter(Boolean)
-    )
+    new Set(rows.map((m) => asString(m?.user_id)).filter(Boolean))
   );
 
   const profileMap = await getProfilesByUserIds(userIds);
@@ -217,11 +218,7 @@ async function attachWorkspaceFields<T extends Record<string, any>>(members: T[]
   const rows = Array.isArray(members) ? members : [];
 
   const workspaceIds = Array.from(
-    new Set(
-      rows
-        .map((m) => asString(m?.workspace_id))
-        .filter(Boolean)
-    )
+    new Set(rows.map((m) => asString(m?.workspace_id)).filter(Boolean))
   );
 
   const workspaceMap = await getWorkspaceNamesByIds(workspaceIds);
@@ -284,10 +281,11 @@ export async function GET(req: Request) {
     }
 
     const isTrueMaster = trueMasterCheck.isTrueMaster;
+    const actorCanUsePlatformOwnerPower = actorIsPlatformOwner && isTrueMaster;
 
     let actorMembership: any = null;
 
-    if (actorIsPlatformOwner) {
+    if (actorCanUsePlatformOwnerPower) {
       if (workspace_id) {
         const found = await getMembershipForWorkspace(actorResult.user.id, workspace_id);
         if (found.error) {
@@ -493,14 +491,14 @@ export async function PATCH(req: Request) {
 
     const workspace_id = asString(body.workspace_id);
     const member_user_id = asString(body.member_user_id);
-    const role = asString(body.role);
+    const role = normalizeRole(body.role);
     const division = normalizeNullable(body.division);
     const department = normalizeNullable(body.department);
     const team = normalizeNullable(body.team);
 
     if (!workspace_id) return jsonError(400, "workspace_id is required");
     if (!member_user_id) return jsonError(400, "member_user_id is required");
-    if (!role || !isRole(role)) return jsonError(400, "invalid role");
+    if (!role) return jsonError(400, "invalid role");
 
     const actorIsPlatformOwner = await isPlatformOwner(actorResult.user.id);
 
@@ -512,10 +510,11 @@ export async function PATCH(req: Request) {
     }
 
     const isTrueMaster = trueMasterCheck.isTrueMaster;
+    const actorCanUsePlatformOwnerPower = actorIsPlatformOwner && isTrueMaster;
 
     let actorMembership: any = null;
 
-    if (actorIsPlatformOwner) {
+    if (actorCanUsePlatformOwnerPower) {
       const actorMembershipResult = await getMembershipForWorkspace(
         actorResult.user.id,
         workspace_id
@@ -604,7 +603,7 @@ export async function PATCH(req: Request) {
     const isActorOnlyMasterEmail = actorEmail === ONLY_MASTER_EMAIL;
     const isTargetOnlyMasterEmail = targetEmail === ONLY_MASTER_EMAIL;
 
-    if (!actorIsPlatformOwner && !isTrueMaster && actorMembership.role === "director") {
+    if (!actorCanUsePlatformOwnerPower && !isTrueMaster && actorMembership.role === "director") {
       if (!canDirectorEditTarget(targetMembership.role)) {
         return jsonError(403, "DIRECTOR_CANNOT_EDIT_MASTER_OR_DIRECTOR");
       }
@@ -612,6 +611,16 @@ export async function PATCH(req: Request) {
       if (role === "master" || role === "director") {
         return jsonError(403, "DIRECTOR_CANNOT_ASSIGN_MASTER_OR_DIRECTOR");
       }
+    }
+
+    if (
+      (role === "master" || role === "director") &&
+      !actorCanUsePlatformOwnerPower &&
+      (actorMembership.role !== "master" || !isActorOnlyMasterEmail || !isTrueMaster)
+    ) {
+      return jsonError(403, "ONLY_TRUE_MASTER_CAN_ASSIGN_PRIVILEGED_ROLE", {
+        allowed_master_email: ONLY_MASTER_EMAIL,
+      });
     }
 
     if (role === "master" && !isTargetOnlyMasterEmail) {
@@ -631,7 +640,7 @@ export async function PATCH(req: Request) {
 
     if (isMasterSensitiveChange) {
       if (
-        !actorIsPlatformOwner &&
+        !actorCanUsePlatformOwnerPower &&
         (actorMembership.role !== "master" || !isActorOnlyMasterEmail || !isTrueMaster)
       ) {
         return jsonError(403, "ONLY_TRUE_MASTER_CAN_CHANGE_MASTER_STATE", {
@@ -699,10 +708,11 @@ export async function DELETE(req: Request) {
     }
 
     const isTrueMaster = trueMasterCheck.isTrueMaster;
+    const actorCanUsePlatformOwnerPower = actorIsPlatformOwner && isTrueMaster;
 
     let actorMembership: any = null;
 
-    if (actorIsPlatformOwner) {
+    if (actorCanUsePlatformOwnerPower) {
       const actorMembershipResult = await getMembershipForWorkspace(
         actorResult.user.id,
         workspace_id
@@ -803,7 +813,7 @@ export async function DELETE(req: Request) {
     /**
      * ✅ director는 master/director 제거 불가
      */
-    if (!actorIsPlatformOwner && !isTrueMaster && actorMembership.role === "director") {
+    if (!actorCanUsePlatformOwnerPower && !isTrueMaster && actorMembership.role === "director") {
       if (!canDirectorEditTarget(targetMembership.role)) {
         return jsonError(403, "DIRECTOR_CANNOT_REMOVE_MASTER_OR_DIRECTOR");
       }
@@ -811,13 +821,13 @@ export async function DELETE(req: Request) {
 
     /**
      * ✅ master 상태가 얽힌 제거는 true master만 가능
-     * - 잘못 들어간 master 정리도 true master 또는 platform_owner만
+     * - 잘못 들어간 master 정리도 true master 또는 platform_owner + true master만
      */
     const isMasterSensitiveDelete = targetMembership.role === "master";
 
     if (isMasterSensitiveDelete) {
       if (
-        !actorIsPlatformOwner &&
+        !actorCanUsePlatformOwnerPower &&
         (actorMembership.role !== "master" || !isActorOnlyMasterEmail || !isTrueMaster)
       ) {
         return jsonError(403, "ONLY_TRUE_MASTER_CAN_REMOVE_MASTER_STATE_MEMBER", {

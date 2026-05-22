@@ -4,10 +4,16 @@ import { sbAuth } from "@/src/lib/supabase/auth-server";
 
 type Ctx = { params: Promise<{ id: string }> };
 
+const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
+
 function asString(v: any) {
   if (v == null) return undefined;
   const s = String(v).trim();
   return s ? s : undefined;
+}
+
+function normalizeEmail(v: any) {
+  return String(v ?? "").trim().toLowerCase();
 }
 
 function jsonError(status: number, message: string, extra?: any) {
@@ -17,6 +23,29 @@ function jsonError(status: number, message: string, extra?: any) {
 function getWorkspaceIdFromReport(report: any): string | undefined {
   if (!report || typeof report !== "object") return undefined;
   return asString((report as any).workspace_id);
+}
+
+function getRoleFromWorkspaceMember(member: any): string {
+  return String(member?.role ?? "").trim().toLowerCase();
+}
+
+function isOnlyMasterEmail(email: any) {
+  return normalizeEmail(email) === ONLY_MASTER_EMAIL;
+}
+
+function isTrueMaster(member: any, userEmail: any) {
+  return getRoleFromWorkspaceMember(member) === "master" && isOnlyMasterEmail(userEmail);
+}
+
+function canPatchReport(member: any, userEmail: any) {
+  const role = getRoleFromWorkspaceMember(member);
+
+  if (role === "master") return isTrueMaster(member, userEmail);
+  if (role === "director") return true;
+  if (role === "admin") return true;
+  if (role === "staff") return true;
+
+  return false;
 }
 
 async function getUserFromSbAuth() {
@@ -263,6 +292,10 @@ export async function PATCH(req: Request, ctx: Ctx) {
     if (wmErr) return jsonError(500, wmErr.message);
     if (!wm) {
       return jsonError(403, "Forbidden: you are not a member of this workspace");
+    }
+
+    if (!canPatchReport(wm, user.email)) {
+      return jsonError(403, "Forbidden: you do not have permission to update this report");
     }
 
     const body = await req.json().catch(() => ({}));

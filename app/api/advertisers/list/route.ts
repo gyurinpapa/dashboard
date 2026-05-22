@@ -7,6 +7,8 @@ import { isPlatformOwner } from "@/src/lib/supabase/platform-role";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
+
 function jsonError(status: number, message: string, extra?: Record<string, any>) {
   return NextResponse.json({ ok: false, error: message, ...(extra ?? {}) }, { status });
 }
@@ -16,11 +18,15 @@ function asString(v: any) {
   return String(v).trim();
 }
 
+function normalizeEmail(v: any) {
+  return asString(v).toLowerCase();
+}
+
 function getBearerToken(req: Request) {
   const h =
     req.headers.get("authorization") || req.headers.get("Authorization") || "";
   const m = h.match(/^Bearer\s+(.+)$/i);
-  return m?.[1] ?? null;
+  return m?.[1]?.trim() ?? null;
 }
 
 async function getActor(req: Request) {
@@ -42,14 +48,66 @@ async function getActor(req: Request) {
 }
 
 async function getMembershipForWorkspace(userId: string, workspaceId: string) {
+  const id = asString(userId);
+  const wid = asString(workspaceId);
+
+  if (!id || !wid) {
+    return { data: null, error: null };
+  }
+
   const { data, error } = await supabaseAdmin
     .from("workspace_members")
     .select("workspace_id, user_id, role")
-    .eq("user_id", userId)
-    .eq("workspace_id", workspaceId)
+    .eq("user_id", id)
+    .eq("workspace_id", wid)
     .maybeSingle();
 
   return { data, error };
+}
+
+async function getProfileEmailByUserId(userId: string) {
+  const id = asString(userId);
+  if (!id) return "";
+
+  const { data, error } = await supabaseAdmin
+    .from("profiles")
+    .select("email")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`FAILED_TO_FETCH_PROFILE_EMAIL:${error.message}`);
+  }
+
+  return normalizeEmail(data?.email);
+}
+
+async function hasMasterMembership(userId: string) {
+  const id = asString(userId);
+  if (!id) return false;
+
+  const { data, error } = await supabaseAdmin
+    .from("workspace_members")
+    .select("workspace_id")
+    .eq("user_id", id)
+    .eq("role", "master")
+    .limit(1);
+
+  if (error) {
+    throw new Error(`FAILED_TO_FETCH_MASTER_MEMBERSHIP:${error.message}`);
+  }
+
+  return Array.isArray(data) && data.length > 0;
+}
+
+async function isTrueMasterUser(userId: string) {
+  const email = await getProfileEmailByUserId(userId);
+
+  if (email !== ONLY_MASTER_EMAIL) {
+    return false;
+  }
+
+  return await hasMasterMembership(userId);
 }
 
 export async function GET(req: Request) {
@@ -67,8 +125,12 @@ export async function GET(req: Request) {
     }
 
     const actorIsPlatformOwner = await isPlatformOwner(actorResult.user.id);
+    const actorIsTrueMaster = await isTrueMasterUser(actorResult.user.id);
 
-    if (!actorIsPlatformOwner) {
+    const actorCanBypassWorkspaceMembership =
+      actorIsPlatformOwner && actorIsTrueMaster;
+
+    if (!actorCanBypassWorkspaceMembership) {
       const membershipResult = await getMembershipForWorkspace(
         actorResult.user.id,
         workspace_id
@@ -97,12 +159,14 @@ export async function GET(req: Request) {
       });
     }
 
-    const advertisers = (data ?? []).map((row: any) => ({
-      id: asString(row?.id),
-      name: asString(row?.name),
-      workspace_id: asString(row?.workspace_id),
-      created_at: row?.created_at ? String(row.created_at) : null,
-    }));
+    const advertisers = (data ?? [])
+      .filter((row: any) => asString(row?.workspace_id) === workspace_id)
+      .map((row: any) => ({
+        id: asString(row?.id),
+        name: asString(row?.name),
+        workspace_id: asString(row?.workspace_id),
+        created_at: row?.created_at ? String(row.created_at) : null,
+      }));
 
     return NextResponse.json({
       ok: true,
@@ -110,6 +174,20 @@ export async function GET(req: Request) {
       advertisers,
     });
   } catch (e: any) {
+    const msg = e?.message ?? "";
+
+    if (String(msg).startsWith("FAILED_TO_FETCH_PROFILE_EMAIL:")) {
+      return jsonError(500, "FAILED_TO_FETCH_PROFILE_EMAIL", {
+        detail: String(msg).replace("FAILED_TO_FETCH_PROFILE_EMAIL:", ""),
+      });
+    }
+
+    if (String(msg).startsWith("FAILED_TO_FETCH_MASTER_MEMBERSHIP:")) {
+      return jsonError(500, "FAILED_TO_FETCH_MASTER_MEMBERSHIP", {
+        detail: String(msg).replace("FAILED_TO_FETCH_MASTER_MEMBERSHIP:", ""),
+      });
+    }
+
     return jsonError(500, "INTERNAL_SERVER_ERROR", { detail: e?.message });
   }
 }

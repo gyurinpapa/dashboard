@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 
 const BUCKET = "report_uploads";
 const MAX_BYTES = 20 * 1024 * 1024;
+const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
 
 type CsvItem = {
   id: string;
@@ -39,6 +40,10 @@ function nowIso() {
 
 function safeObj(v: any) {
   return v && typeof v === "object" ? v : {};
+}
+
+function normalizeEmail(v: any) {
+  return asString(v).toLowerCase();
 }
 
 function getBearerToken(req: Request) {
@@ -80,6 +85,28 @@ async function getUserId(req: Request) {
   return { ok: true as const, userId: user.id };
 }
 
+async function getProfileEmailByUserId(params: {
+  supabaseAdmin: ReturnType<typeof getSupabaseAdmin>;
+  userId: string;
+}) {
+  const { supabaseAdmin, userId } = params;
+
+  const id = asString(userId);
+  if (!id) return "";
+
+  const { data, error } = await supabaseAdmin
+    .from("profiles")
+    .select("email")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`PROFILE_EMAIL_FETCH_FAILED:${error.message}`);
+  }
+
+  return normalizeEmail(data?.email);
+}
+
 async function assertCanAccessReport(params: {
   supabaseAdmin: ReturnType<typeof getSupabaseAdmin>;
   reportId: string;
@@ -112,8 +139,20 @@ async function assertCanAccessReport(params: {
   if (wmErr) throw new Error(`workspace_members read error: ${wmErr.message}`);
 
   const role = (wm as any)?.role ?? null;
-  const canWrite =
-    role === "admin" || role === "director" || role === "master";
+
+  let canWrite =
+    role === "staff" ||
+    role === "admin" ||
+    role === "director";
+
+  if (role === "master") {
+    const email = await getProfileEmailByUserId({
+      supabaseAdmin,
+      userId,
+    });
+
+    canWrite = email === ONLY_MASTER_EMAIL;
+  }
 
   if (!canWrite) {
     return { ok: false as const, status: 403, message: "Forbidden" };

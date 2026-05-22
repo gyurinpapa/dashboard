@@ -81,19 +81,39 @@ function displayNameOf(member: WorkspaceMember) {
   );
 }
 
-function canAccessMembersPage(role?: string | null) {
-  return role === "master" || role === "director";
+function canAccessMembersPage(role?: string | null, email?: string | null) {
+  if (role === "director") {
+    return true;
+  }
+
+  if (role === "master") {
+    return isOnlyMasterEmail(email);
+  }
+
+  return false;
+}
+
+function canUseTrueMasterPower(role?: string | null, email?: string | null) {
+  return role === "master" && isOnlyMasterEmail(email);
+}
+
+function isProtectedOnlyMasterMember(
+  member?: Pick<WorkspaceMember, "role" | "email"> | null
+) {
+  if (!member) return false;
+  return member.role === "master" && isOnlyMasterEmail(member.email);
 }
 
 function canEditTarget(
   meRole?: string | null,
+  meEmail?: string | null,
   targetRole?: string | null,
   isSelf?: boolean
 ) {
   if (!meRole) return false;
   if (isSelf) return false;
 
-  if (meRole === "master") {
+  if (canUseTrueMasterPower(meRole, meEmail)) {
     return true;
   }
 
@@ -107,16 +127,22 @@ function canEditTarget(
 
 function allowedRoleOptionsForTarget(
   meRole?: string | null,
+  meEmail?: string | null,
   targetRole?: string | null,
   isSelf?: boolean,
   targetEmail?: string | null
 ) {
-  if (!canEditTarget(meRole, targetRole, isSelf)) return [];
+  if (!canEditTarget(meRole, meEmail, targetRole, isSelf)) return [];
 
-  if (meRole === "master") {
-    if (isOnlyMasterEmail(targetEmail)) {
-      return ["master", ...NON_MASTER_ROLE_OPTIONS];
+  if (canUseTrueMasterPower(meRole, meEmail)) {
+    if (targetRole === "master" && isOnlyMasterEmail(targetEmail)) {
+      return ["master"];
     }
+
+    if (isOnlyMasterEmail(targetEmail)) {
+      return ["master"];
+    }
+
     return [...NON_MASTER_ROLE_OPTIONS];
   }
 
@@ -313,7 +339,11 @@ export default function ReportBuilderMembersClient() {
             return;
           }
 
-          setError(second.json?.error || first.json?.error || "멤버 목록을 불러오지 못했습니다.");
+          setError(
+            second.json?.error ||
+              first.json?.error ||
+              "멤버 목록을 불러오지 못했습니다."
+          );
           setMembers([]);
           setMe(null);
           return;
@@ -338,7 +368,9 @@ export default function ReportBuilderMembersClient() {
 
       if (resolvedWorkspaceId && resolvedWorkspaceId !== workspaceIdFromQuery) {
         router.replace(
-          `/report-builder/members?workspace_id=${encodeURIComponent(resolvedWorkspaceId)}`
+          `/report-builder/members?workspace_id=${encodeURIComponent(
+            resolvedWorkspaceId
+          )}`
         );
       }
     } catch (e: any) {
@@ -355,9 +387,13 @@ export default function ReportBuilderMembersClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceIdFromQuery]);
 
-  const canAccess = useMemo(() => canAccessMembersPage(me?.role), [me?.role]);
+  const canAccess = useMemo(
+    () => canAccessMembersPage(me?.role, me?.email),
+    [me?.role, me?.email]
+  );
+
   const isTrueMasterViewer = useMemo(
-    () => me?.role === "master" && isOnlyMasterEmail(me?.email),
+    () => canUseTrueMasterPower(me?.role, me?.email),
     [me?.role, me?.email]
   );
 
@@ -374,13 +410,24 @@ export default function ReportBuilderMembersClient() {
     setError("");
 
     try {
+      const roleOptions = allowedRoleOptionsForTarget(
+        me?.role,
+        me?.email,
+        member.role,
+        me?.user_id === member.user_id,
+        member.email
+      );
+      const nextRole = roleOptions.some((role) => role === draft.role)
+        ? draft.role
+        : member.role;
+
       const res = await authFetch("/api/workspace-members", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           workspace_id: member.workspace_id,
           member_user_id: member.user_id,
-          role: draft.role,
+          role: nextRole,
           division: draft.division,
           department: draft.department,
           team: draft.team,
@@ -399,7 +446,7 @@ export default function ReportBuilderMembersClient() {
           memberKeyOf(m) === memberKey
             ? {
                 ...m,
-                role: (draft.role as WorkspaceMember["role"]) || m.role,
+                role: (nextRole as WorkspaceMember["role"]) || m.role,
                 division: draft.division,
                 department: draft.department,
                 team: draft.team,
@@ -422,7 +469,9 @@ export default function ReportBuilderMembersClient() {
     if (!member.workspace_id || !member.user_id) return;
 
     const confirmed = window.confirm(
-      `정말 "${displayNameOf(member)}" 멤버를 현재 workspace에서 제거하시겠습니까?\n\n계정 자체는 삭제되지 않습니다.`
+      `정말 "${displayNameOf(
+        member
+      )}" 멤버를 현재 workspace에서 제거하시겠습니까?\n\n계정 자체는 삭제되지 않습니다.`
     );
     if (!confirmed) return;
 
@@ -446,9 +495,7 @@ export default function ReportBuilderMembersClient() {
         return;
       }
 
-      setMembers((prev) =>
-        prev.filter((m) => memberKeyOf(m) !== memberKey)
-      );
+      setMembers((prev) => prev.filter((m) => memberKeyOf(m) !== memberKey));
 
       setDrafts((prev) => {
         const next = { ...prev };
@@ -741,9 +788,7 @@ export default function ReportBuilderMembersClient() {
                   }}
                 >
                   <colgroup>
-                    {isTrueMasterViewer ? (
-                      <col style={{ width: 260 }} />
-                    ) : null}
+                    {isTrueMasterViewer ? <col style={{ width: 260 }} /> : null}
                     <col style={{ width: 140 }} />
                     <col style={{ width: 260 }} />
                     <col style={{ width: 280 }} />
@@ -772,9 +817,16 @@ export default function ReportBuilderMembersClient() {
                     {sortedMembers.map((member) => {
                       const memberKey = memberKeyOf(member);
                       const isSelf = me?.user_id === member.user_id;
-                      const editable = canEditTarget(me?.role, member.role, isSelf);
+                      const protectedOnlyMaster = isProtectedOnlyMasterMember(member);
+                      const editable = canEditTarget(
+                        me?.role,
+                        me?.email,
+                        member.role,
+                        isSelf
+                      );
                       const roleOptions = allowedRoleOptionsForTarget(
                         me?.role,
+                        me?.email,
                         member.role,
                         isSelf,
                         member.email
@@ -789,7 +841,7 @@ export default function ReportBuilderMembersClient() {
                       const removable =
                         editable &&
                         !isSelf &&
-                        !isOnlyMasterEmail(member.email) &&
+                        !protectedOnlyMaster &&
                         savingKey !== memberKey;
 
                       return (
@@ -816,7 +868,10 @@ export default function ReportBuilderMembersClient() {
                           ) : null}
 
                           <td style={tdStyle}>
-                            <div style={singleLineCellStyle} title={displayNameOf(member)}>
+                            <div
+                              style={singleLineCellStyle}
+                              title={displayNameOf(member)}
+                            >
                               {displayNameOf(member)}
                             </div>
                           </td>
@@ -896,7 +951,11 @@ export default function ReportBuilderMembersClient() {
                             <div style={{ display: "flex", gap: 8 }}>
                               <button
                                 type="button"
-                                disabled={!editable || savingKey === memberKey || removingKey === memberKey}
+                                disabled={
+                                  !editable ||
+                                  savingKey === memberKey ||
+                                  removingKey === memberKey
+                                }
                                 onClick={() => saveMember(member)}
                                 style={{
                                   height: 38,
@@ -905,16 +964,22 @@ export default function ReportBuilderMembersClient() {
                                   borderRadius: 10,
                                   border: "1px solid #f59e0b",
                                   background:
-                                    !editable || savingKey === memberKey || removingKey === memberKey
+                                    !editable ||
+                                    savingKey === memberKey ||
+                                    removingKey === memberKey
                                       ? "#f3f4f6"
                                       : "#f59e0b",
                                   color:
-                                    !editable || savingKey === memberKey || removingKey === memberKey
+                                    !editable ||
+                                    savingKey === memberKey ||
+                                    removingKey === memberKey
                                       ? "#9ca3af"
                                       : "#fff",
                                   fontWeight: 800,
                                   cursor:
-                                    !editable || savingKey === memberKey || removingKey === memberKey
+                                    !editable ||
+                                    savingKey === memberKey ||
+                                    removingKey === memberKey
                                       ? "default"
                                       : "pointer",
                                   whiteSpace: "nowrap",
@@ -929,40 +994,40 @@ export default function ReportBuilderMembersClient() {
                                       : "권한 없음"}
                               </button>
 
-                              <button
-                                type="button"
-                                disabled={!removable || removingKey === memberKey}
-                                onClick={() => removeMember(member)}
-                                style={{
-                                  height: 38,
-                                  minWidth: 76,
-                                  padding: "0 14px",
-                                  borderRadius: 10,
-                                  border: "1px solid #ef4444",
-                                  background:
-                                    !removable || removingKey === memberKey
-                                      ? "#f3f4f6"
-                                      : "#ef4444",
-                                  color:
-                                    !removable || removingKey === memberKey
-                                      ? "#9ca3af"
-                                      : "#fff",
-                                  fontWeight: 800,
-                                  cursor:
-                                    !removable || removingKey === memberKey
-                                      ? "default"
-                                      : "pointer",
-                                  whiteSpace: "nowrap",
-                                }}
-                              >
-                                {removingKey === memberKey
-                                  ? "제거 중..."
-                                  : isSelf
-                                    ? "본인"
-                                    : isOnlyMasterEmail(member.email)
+                              {!isSelf ? (
+                                <button
+                                  type="button"
+                                  disabled={!removable || removingKey === memberKey}
+                                  onClick={() => removeMember(member)}
+                                  style={{
+                                    height: 38,
+                                    minWidth: 76,
+                                    padding: "0 14px",
+                                    borderRadius: 10,
+                                    border: "1px solid #ef4444",
+                                    background:
+                                      !removable || removingKey === memberKey
+                                        ? "#f3f4f6"
+                                        : "#ef4444",
+                                    color:
+                                      !removable || removingKey === memberKey
+                                        ? "#9ca3af"
+                                        : "#fff",
+                                    fontWeight: 800,
+                                    cursor:
+                                      !removable || removingKey === memberKey
+                                        ? "default"
+                                        : "pointer",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  {removingKey === memberKey
+                                    ? "제거 중..."
+                                    : protectedOnlyMaster
                                       ? "제거 불가"
                                       : "제거"}
-                              </button>
+                                </button>
+                              ) : null}
                             </div>
                           </td>
                         </tr>

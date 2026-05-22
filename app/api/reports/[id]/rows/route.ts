@@ -88,7 +88,6 @@ function flattenRow(rec: any) {
     ingestion_id: rec?.ingestion_id ?? null,
     created_at: rec?.created_at ?? null,
 
-    // ✅ DB canonical date 우선
     date: canonicalDate,
     report_date: asStr(parsed?.report_date) || canonicalDate,
     day: asStr(parsed?.day) || canonicalDate,
@@ -238,21 +237,33 @@ export async function GET(req: Request, ctx: Ctx) {
     const userId = auth.userId;
 
     const { id } = await ctx.params;
+    const reportId = asStr(id);
+
+    if (!reportId) {
+      return jsonError(400, "REPORT_ID_REQUIRED");
+    }
+
     const admin = getSupabaseAdmin();
 
     const { data: report, error: rErr } = await admin
       .from("reports")
       .select("id, workspace_id, current_ingestion_id")
-      .eq("id", id)
+      .eq("id", reportId)
       .maybeSingle();
 
     if (rErr) return jsonError(500, rErr.message);
     if (!report) return jsonError(404, "REPORT_NOT_FOUND");
 
+    const workspaceId = asStr((report as any)?.workspace_id);
+
+    if (!workspaceId) {
+      return jsonError(500, "REPORT_WORKSPACE_MISSING");
+    }
+
     const { data: wm, error: wmErr } = await admin
       .from("workspace_members")
       .select("role")
-      .eq("workspace_id", report.workspace_id)
+      .eq("workspace_id", workspaceId)
       .eq("user_id", userId)
       .maybeSingle();
 
@@ -261,7 +272,10 @@ export async function GET(req: Request, ctx: Ctx) {
 
     const currentIngestionId = asStr((report as any).current_ingestion_id);
 
-    const { bestIngestionId, ranked } = await findBestIngestionIdByRows(admin, id);
+    const { bestIngestionId, ranked } = await findBestIngestionIdByRows(
+      admin,
+      reportId
+    );
 
     const ingestionIdUsed = bestIngestionId || currentIngestionId || "";
     const fallbackUsed =
@@ -280,7 +294,7 @@ export async function GET(req: Request, ctx: Ctx) {
       });
     }
 
-    const rawRows = await fetchRowsByIngestion(admin, id, ingestionIdUsed);
+    const rawRows = await fetchRowsByIngestion(admin, reportId, ingestionIdUsed);
 
     if (!rawRows.length) {
       return NextResponse.json({
@@ -303,7 +317,7 @@ export async function GET(req: Request, ctx: Ctx) {
     const uniqueMonths = Array.from(new Set(dates.map((d) => d.slice(0, 7))));
 
     console.log("[rows:route]", {
-      reportId: id,
+      reportId,
       currentIngestionId,
       ingestionIdUsed,
       fallbackUsed,

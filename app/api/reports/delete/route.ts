@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 
 const VERIFY_CHUNK_SIZE = 100;
 const DELETE_CHUNK_SIZE = 10;
+const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
 
 type FailedItem = {
   id: string;
@@ -24,31 +25,99 @@ function asString(v: any) {
   return String(v).trim();
 }
 
+function normalizeEmail(v: any) {
+  return asString(v).toLowerCase();
+}
+
 function getBearerToken(req: Request) {
-  const auth = req.headers.get("authorization") || req.headers.get("Authorization") || "";
+  const auth =
+    req.headers.get("authorization") ||
+    req.headers.get("Authorization") ||
+    "";
+
   if (!auth) return "";
+
   const [type, token] = auth.split(" ");
+
   if (String(type).toLowerCase() !== "bearer") return "";
+
   return asString(token);
 }
 
 async function resolveUser(req: Request) {
-  // 1) Bearer 우선
   const bearer = getBearerToken(req);
+
   if (bearer) {
     const { data, error } = await supabaseAdmin.auth.getUser(bearer);
+
     if (!error && data?.user) {
-      return { user: data.user, error: null };
+      return {
+        user: data.user,
+        error: null,
+      };
     }
   }
 
-  // 2) 쿠키 fallback
   const { user, error } = await sbAuth();
-  return { user, error };
+
+  return {
+    user,
+    error,
+  };
+}
+
+async function getProfileEmailByUserId(userId: string) {
+  const id = asString(userId);
+
+  if (!id) return "";
+
+  const { data, error } = await supabaseAdmin
+    .from("profiles")
+    .select("email")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`PROFILE_EMAIL_FETCH_FAILED:${error.message}`);
+  }
+
+  return normalizeEmail(data?.email);
+}
+
+async function canDeleteReports(userId: string, workspaceId: string) {
+  const { data: member, error } = await supabaseAdmin
+    .from("workspace_members")
+    .select("role")
+    .eq("workspace_id", workspaceId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(
+      `REPORT_DELETE_PERMISSION_CHECK_FAILED:${error.message}`
+    );
+  }
+
+  if (!member) return false;
+
+  const role = asString(member.role).toLowerCase();
+
+  if (role === "director") {
+    return true;
+  }
+
+  if (role !== "master") {
+    return false;
+  }
+
+  const email = await getProfileEmailByUserId(userId);
+
+  return email === ONLY_MASTER_EMAIL;
 }
 
 function isMissingTableError(message: string) {
   const msg = String(message || "").toLowerCase();
+
   return (
     msg.includes("does not exist") ||
     msg.includes("could not find the table") ||
@@ -62,8 +131,9 @@ function uniqueStrings(values: any[]) {
 
   for (const value of values) {
     const s = asString(value);
-    if (!s) continue;
-    if (seen.has(s)) continue;
+
+    if (!s || seen.has(s)) continue;
+
     seen.add(s);
     out.push(s);
   }
@@ -73,22 +143,33 @@ function uniqueStrings(values: any[]) {
 
 function chunkArray<T>(arr: T[], size: number): T[][] {
   if (!Array.isArray(arr) || arr.length === 0) return [];
+
   if (size <= 0) return [arr.slice()];
 
   const chunks: T[][] = [];
+
   for (let i = 0; i < arr.length; i += size) {
     chunks.push(arr.slice(i, i + size));
   }
+
   return chunks;
 }
 
-async function fetchDeletableIds(workspaceId: string, requestedIds: string[]) {
+/**
+ * workspace isolation 검증 포함
+ * - body.workspace_id만 믿지 않는다
+ * - 실제 reports.workspace_id 일치 검증
+ */
+async function fetchDeletableIds(
+  workspaceId: string,
+  requestedIds: string[]
+) {
   const verified = new Set<string>();
 
   for (const idsChunk of chunkArray(requestedIds, VERIFY_CHUNK_SIZE)) {
     const { data, error } = await supabaseAdmin
       .from("reports")
-      .select("id")
+      .select("id, workspace_id")
       .eq("workspace_id", workspaceId)
       .in("id", idsChunk);
 
@@ -97,17 +178,30 @@ async function fetchDeletableIds(workspaceId: string, requestedIds: string[]) {
     }
 
     for (const row of data ?? []) {
-      const id = asString((row as any)?.id);
-      if (id) verified.add(id);
+      const rowId = asString((row as any)?.id);
+      const rowWorkspaceId = asString(
+        (row as any)?.workspace_id
+      );
+
+      if (!rowId) continue;
+      if (rowWorkspaceId !== workspaceId) continue;
+
+      verified.add(rowId);
     }
   }
 
-  // 입력 순서 유지
   return requestedIds.filter((id) => verified.has(id));
 }
 
-async function deleteOptionalTableByReportId(tableName: string, reportId: string, step: string) {
-  const { error } = await supabaseAdmin.from(tableName).delete().eq("report_id", reportId);
+async function deleteOptionalTableByReportId(
+  tableName: string,
+  reportId: string,
+  step: string
+) {
+  const { error } = await supabaseAdmin
+    .from(tableName)
+    .delete()
+    .eq("report_id", reportId);
 
   if (error && !isMissingTableError(error.message || "")) {
     return {
@@ -122,8 +216,15 @@ async function deleteOptionalTableByReportId(tableName: string, reportId: string
   };
 }
 
-async function deleteRequiredTableByReportId(tableName: string, reportId: string, step: string) {
-  const { error } = await supabaseAdmin.from(tableName).delete().eq("report_id", reportId);
+async function deleteRequiredTableByReportId(
+  tableName: string,
+  reportId: string,
+  step: string
+) {
+  const { error } = await supabaseAdmin
+    .from(tableName)
+    .delete()
+    .eq("report_id", reportId);
 
   if (error) {
     return {
@@ -138,16 +239,32 @@ async function deleteRequiredTableByReportId(tableName: string, reportId: string
   };
 }
 
-async function deleteSingleReport(workspaceId: string, reportId: string) {
+async function deleteSingleReport(
+  workspaceId: string,
+  reportId: string
+) {
   const steps = [
-    () => deleteRequiredTableByReportId("report_rows", reportId, "delete_report_rows"),
-    () => deleteRequiredTableByReportId("report_creatives", reportId, "delete_report_creatives"),
+    () =>
+      deleteRequiredTableByReportId(
+        "report_rows",
+        reportId,
+        "delete_report_rows"
+      ),
+
+    () =>
+      deleteRequiredTableByReportId(
+        "report_creatives",
+        reportId,
+        "delete_report_creatives"
+      ),
+
     () =>
       deleteOptionalTableByReportId(
         "report_csv_uploads",
         reportId,
         "delete_report_csv_uploads"
       ),
+
     () =>
       deleteOptionalTableByReportId(
         "report_image_uploads",
@@ -158,6 +275,7 @@ async function deleteSingleReport(workspaceId: string, reportId: string) {
 
   for (const run of steps) {
     const result = await run();
+
     if (!result.ok) {
       return {
         ok: false as const,
@@ -177,7 +295,9 @@ async function deleteSingleReport(workspaceId: string, reportId: string) {
     return {
       ok: false as const,
       step: "delete_reports",
-      error: reportDeleteError.message || "delete_reports_FAILED",
+      error:
+        reportDeleteError.message ||
+        "delete_reports_FAILED",
     };
   }
 
@@ -188,14 +308,21 @@ async function deleteSingleReport(workspaceId: string, reportId: string) {
 
 export async function POST(req: Request) {
   try {
-    const { user, error: authErr } = await resolveUser(req);
+    const { user, error: authErr } =
+      await resolveUser(req);
+
     if (authErr || !user) {
       return jsonError(401, "UNAUTHORIZED");
     }
 
     const body = await req.json().catch(() => ({}));
+
     const workspace_id = asString(body?.workspace_id);
-    const report_ids_raw = Array.isArray(body?.report_ids) ? body.report_ids : [];
+
+    const report_ids_raw = Array.isArray(body?.report_ids)
+      ? body.report_ids
+      : [];
+
     const report_ids = uniqueStrings(report_ids_raw);
 
     if (!workspace_id) {
@@ -206,36 +333,40 @@ export async function POST(req: Request) {
       return jsonError(400, "REPORT_IDS_REQUIRED");
     }
 
-    // 사용자가 해당 workspace 멤버인지 확인
-    const { data: member, error: memberErr } = await supabaseAdmin
-      .from("workspace_members")
-      .select("workspace_id, user_id, role")
-      .eq("workspace_id", workspace_id)
-      .eq("user_id", user.id)
-      .maybeSingle();
+    const canDelete = await canDeleteReports(
+      user.id,
+      workspace_id
+    );
 
-    if (memberErr) {
-      return jsonError(500, memberErr.message);
+    if (!canDelete) {
+      return jsonError(
+        403,
+        "FORBIDDEN_DELETE_PERMISSION"
+      );
     }
 
-    if (!member) {
-      return jsonError(403, "FORBIDDEN");
-    }
-
-    // 실제로 해당 workspace 소속 report만 삭제 대상
-    const deletableIds = await fetchDeletableIds(workspace_id, report_ids);
+    const deletableIds = await fetchDeletableIds(
+      workspace_id,
+      report_ids
+    );
 
     if (deletableIds.length === 0) {
       return jsonError(404, "NO_REPORTS_FOUND");
     }
 
     const deletedIds: string[] = [];
+
     const failed: FailedItem[] = [];
 
-    // timeout 방지를 위해 chunk 단위 + report별 순차 삭제
-    for (const idsChunk of chunkArray(deletableIds, DELETE_CHUNK_SIZE)) {
+    for (const idsChunk of chunkArray(
+      deletableIds,
+      DELETE_CHUNK_SIZE
+    )) {
       for (const reportId of idsChunk) {
-        const result = await deleteSingleReport(workspace_id, reportId);
+        const result = await deleteSingleReport(
+          workspace_id,
+          reportId
+        );
 
         if (result.ok) {
           deletedIds.push(reportId);
@@ -250,24 +381,72 @@ export async function POST(req: Request) {
     }
 
     const failedIds = failed.map((x) => x.id);
-    const notFoundIds = report_ids.filter((id) => !deletableIds.includes(id));
+
+    const notFoundIds = report_ids.filter(
+      (id) => !deletableIds.includes(id)
+    );
 
     return NextResponse.json({
       ok: true,
+
       deleted_ids: deletedIds,
       deleted_count: deletedIds.length,
+
       failed_ids: failedIds,
       failed_count: failedIds.length,
+
       failed,
+
       requested_count: report_ids.length,
       matched_count: deletableIds.length,
+
       not_found_ids: notFoundIds,
+
       message:
         failedIds.length > 0
           ? `일부 삭제만 완료되었습니다. 성공 ${deletedIds.length}건 / 실패 ${failedIds.length}건`
           : `리포트 ${deletedIds.length}개 삭제 완료`,
     });
   } catch (e: any) {
-    return jsonError(500, e?.message || "DELETE_REPORTS_FAILED");
+    const msg = e?.message ?? "";
+
+    if (
+      String(msg).startsWith(
+        "PROFILE_EMAIL_FETCH_FAILED:"
+      )
+    ) {
+      return jsonError(
+        500,
+        "PROFILE_EMAIL_FETCH_FAILED",
+        {
+          detail: String(msg).replace(
+            "PROFILE_EMAIL_FETCH_FAILED:",
+            ""
+          ),
+        }
+      );
+    }
+
+    if (
+      String(msg).startsWith(
+        "REPORT_DELETE_PERMISSION_CHECK_FAILED:"
+      )
+    ) {
+      return jsonError(
+        500,
+        "REPORT_DELETE_PERMISSION_CHECK_FAILED",
+        {
+          detail: String(msg).replace(
+            "REPORT_DELETE_PERMISSION_CHECK_FAILED:",
+            ""
+          ),
+        }
+      );
+    }
+
+    return jsonError(
+      500,
+      e?.message || "DELETE_REPORTS_FAILED"
+    );
   }
 }

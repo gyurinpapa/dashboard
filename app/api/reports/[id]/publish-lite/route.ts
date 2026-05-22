@@ -7,6 +7,8 @@ export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ id: string }> };
 
+const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
+
 function jsonError(status: number, message: string, extra?: any) {
   return NextResponse.json({ ok: false, error: message, ...extra }, { status });
 }
@@ -27,10 +29,33 @@ function asString(v: any) {
   return s;
 }
 
+function normalizeEmail(v: any) {
+  return String(v ?? "").trim().toLowerCase();
+}
+
+function isOnlyMasterEmail(email: any) {
+  return normalizeEmail(email) === ONLY_MASTER_EMAIL;
+}
+
+function getRole(member: any) {
+  return String(member?.role ?? "").trim().toLowerCase();
+}
+
+function canPublishReport(member: any, userEmail: any) {
+  const role = getRole(member);
+
+  if (role === "master") return isOnlyMasterEmail(userEmail);
+  if (role === "director") return true;
+  if (role === "admin") return true;
+  if (role === "staff") return true;
+
+  return false;
+}
+
 /**
  * Bearer 우선 + 쿠키(session) fallback
  */
-async function getUserId(req: Request) {
+async function getUser(req: Request) {
   const sb = getSupabaseAdmin();
 
   const authz =
@@ -40,9 +65,9 @@ async function getUserId(req: Request) {
 
   if (bearer) {
     const { data, error } = await sb.auth.getUser(bearer);
-    const userId = data?.user?.id ?? null;
+    const user = data?.user ?? null;
 
-    if (error || !userId) {
+    if (error || !user?.id) {
       return {
         ok: false as const,
         status: 401,
@@ -50,7 +75,7 @@ async function getUserId(req: Request) {
       };
     }
 
-    return { ok: true as const, userId };
+    return { ok: true as const, user };
   }
 
   const auth = await sbAuth();
@@ -65,16 +90,18 @@ async function getUserId(req: Request) {
     };
   }
 
-  return { ok: true as const, userId: user.id };
+  return { ok: true as const, user };
 }
 
 export async function POST(req: Request, ctx: Ctx) {
-  const auth = await getUserId(req);
+  const auth = await getUser(req);
   if (!auth.ok) {
     return jsonError(auth.status, "UNAUTHORIZED", { detail: auth.message });
   }
 
-  const userId = auth.userId;
+  const user = auth.user;
+  const userId = user.id;
+  const userEmail = user.email;
 
   const { id } = await ctx.params;
   const reportId = asString(id);
@@ -101,19 +128,30 @@ export async function POST(req: Request, ctx: Ctx) {
   if (repErr) return jsonError(500, repErr.message || "DB error");
   if (!report) return jsonError(404, "REPORT_NOT_FOUND");
 
+  const workspaceId = asString((report as any).workspace_id);
+  if (!workspaceId) {
+    return jsonError(500, "REPORT_WORKSPACE_MISSING");
+  }
+
   const { data: wm, error: wmErr } = await sb
     .from("workspace_members")
     .select("role")
-    .eq("workspace_id", (report as any).workspace_id)
+    .eq("workspace_id", workspaceId)
     .eq("user_id", userId)
     .maybeSingle();
 
   if (wmErr) {
     return jsonError(500, wmErr.message || "WORKSPACE_MEMBER_CHECK_FAILED");
   }
+
   if (!wm) return jsonError(403, "FORBIDDEN");
 
+  if (!canPublishReport(wm, userEmail)) {
+    return jsonError(403, "FORBIDDEN_PUBLISH_PERMISSION");
+  }
+
   const currentIngestionId = asString((report as any).current_ingestion_id);
+
   if (!currentIngestionId) {
     return jsonError(400, "PUBLISH_BLOCKED_NO_CURRENT_SESSION", {
       hint: "CSV 업로드 + ingestion/run 성공 후에만 발행 가능합니다 (current_ingestion_id 없음).",

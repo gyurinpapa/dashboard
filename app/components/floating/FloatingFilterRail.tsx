@@ -194,7 +194,7 @@ function GroupSection({
 
       {open ? (
         <div className="border-t border-[var(--nature-border)] bg-gradient-to-b from-[var(--nature-cream)]/55 to-[var(--nature-surface)] px-3 pb-3 pt-3">
-          <div className="flex max-h-[280px] flex-col gap-2 overflow-y-auto pr-1">
+          <div className="flex flex-col gap-2 pr-1">
             {options.map((option) => {
               const active = selectedValue === option.value;
               const disabled = Boolean(readOnly);

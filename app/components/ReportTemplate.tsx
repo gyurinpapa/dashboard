@@ -3351,11 +3351,11 @@ export default function ReportTemplate({
   ]);
 
     return (
-    <main className="min-h-screen w-full min-w-0 max-w-full overflow-hidden bg-[var(--nature-page)] text-slate-900">
+    <main className="min-h-screen w-full min-w-0 max-w-full bg-[var(--nature-page)] text-slate-900">
       <HeaderSurface {...headerBarProps} />
 
       <div className="px-4 pb-10 pt-2 sm:px-6 lg:px-8 lg:pt-3">
-       <div className="mx-auto w-full min-w-0 max-w-full overflow-hidden rounded-[32px] border border-[var(--nature-border)] bg-[var(--nature-shell)]/70 p-3 shadow-sm">
+       <div className="mx-auto w-full min-w-0 max-w-full rounded-[32px] border border-[var(--nature-border)] bg-[var(--nature-shell)]/70 p-3 shadow-sm">
           {isLoading ? (
             <div className="mb-6 overflow-hidden rounded-2xl border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] shadow-sm">
                 <div className="flex items-center gap-3 px-5 py-4">
@@ -3367,8 +3367,8 @@ export default function ReportTemplate({
             </div>
           ) : null}
 
-          <div className="relative flex min-w-0 max-w-full items-start justify-center gap-4 overflow-hidden xl:gap-5">
-            <div className="hidden xl:block xl:sticky xl:top-24 xl:self-start">
+          <div className="relative flex min-w-0 max-w-full items-start justify-center gap-4 xl:gap-5">
+            <div className="hidden xl:sticky xl:top-6 xl:block xl:self-start">
               <MemoFloatingFilterRail
                 selectedMonth={selectedMonth}
                 setSelectedMonth={setSelectedMonth}
@@ -3504,7 +3504,7 @@ export default function ReportTemplate({
               </div>
             </div>
 
-            <div className="hidden xl:block xl:sticky xl:top-24 xl:self-start">
+            <div className="hidden xl:sticky xl:top-6 xl:block xl:self-start">
               <MemoFloatingTabRail
                 tab={tab}
                 setTab={setTab}

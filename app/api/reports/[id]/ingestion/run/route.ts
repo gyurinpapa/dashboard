@@ -9,6 +9,8 @@ export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ id: string }> };
 
+const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
+
 function jsonError(status: number, message: string, extra?: any) {
   return NextResponse.json({ ok: false, error: message, ...extra }, { status });
 }
@@ -21,6 +23,10 @@ function asString(v: any) {
 function asNullableString(v: any) {
   const s = asString(v);
   return s ? s : null;
+}
+
+function normalizeEmail(v: any) {
+  return asString(v).toLowerCase();
 }
 
 function toNumber(v: any) {
@@ -351,12 +357,6 @@ function toArray(v: any) {
   return [];
 }
 
-/**
- * 최신 CSV 선택 우선순위
- * 1) meta.csv_uploads[0]
- * 2) meta.upload.csv[0]
- * 둘 다 지원해서 업로드 구조가 달라도 ingestion이 안전하게 동작하도록 한다.
- */
 function pickLatestCsvEntryFromMeta(meta: any) {
   const safeMeta = meta && typeof meta === "object" ? meta : {};
   const csvUploads = toArray((safeMeta as any)?.csv_uploads);
@@ -410,11 +410,66 @@ async function getUserId(req: Request) {
   return { ok: true as const, userId: auth.user.id };
 }
 
+async function getProfileEmailByUserId(
+  sb: ReturnType<typeof getSupabaseAdmin>,
+  userId: string
+) {
+  const id = asString(userId);
+  if (!id) return "";
+
+  const { data, error } = await sb
+    .from("profiles")
+    .select("email")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`PROFILE_EMAIL_FETCH_FAILED:${error.message}`);
+  }
+
+  return normalizeEmail(data?.email);
+}
+
+async function canRunIngestion(params: {
+  sb: ReturnType<typeof getSupabaseAdmin>;
+  userId: string;
+  workspaceId: string;
+}) {
+  const { sb, userId, workspaceId } = params;
+
+  const uid = asString(userId);
+  const wid = asString(workspaceId);
+
+  if (!uid || !wid) {
+    return false;
+  }
+
+  const { data: member, error } = await sb
+    .from("workspace_members")
+    .select("role")
+    .eq("workspace_id", wid)
+    .eq("user_id", uid)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`INGESTION_PERMISSION_CHECK_FAILED:${error.message}`);
+  }
+
+  const role = asString((member as any)?.role);
+
+  if (role === "staff" || role === "admin" || role === "director") {
+    return true;
+  }
+
+  if (role !== "master") {
+    return false;
+  }
+
+  const email = await getProfileEmailByUserId(sb, uid);
+  return email === ONLY_MASTER_EMAIL;
+}
+
 function getSafeBatchSize(totalRows: number, fileSizeBytes = 0) {
-  /**
-   * 3만 행 내외 CSV에서 500~800 row batch는 Supabase 왕복 횟수가 많아진다.
-   * 행 단위 결과/집계/필터 로직은 그대로 두고 insert 묶음 크기만 보수적으로 키운다.
-   */
   if (totalRows > 0) {
     if (totalRows >= 600000) return 6000;
     if (totalRows >= 400000) return 5200;
@@ -436,10 +491,6 @@ function getSafeBatchSize(totalRows: number, fileSizeBytes = 0) {
 }
 
 function getMetaUpdateEveryBatches(totalRows: number, fileSizeBytes = 0) {
-  /**
-   * progress meta 저장은 UI 확인용이다.
-   * report_rows insert 결과에는 영향이 없으므로 작은 파일에서도 매 batch 저장을 피한다.
-   */
   if (totalRows > 0) {
     if (totalRows >= 300000) return 5;
     if (totalRows >= 100000) return 4;
@@ -854,6 +905,21 @@ export async function POST(req: Request, ctx: Ctx) {
 
     const workspace_id = asNullableString(report.workspace_id);
     const advertiser_id = asNullableString(report.advertiser_id);
+
+    if (!workspace_id) {
+      return jsonError(400, "Report workspace_id missing");
+    }
+
+    const canRun = await canRunIngestion({
+      sb,
+      userId: user.userId,
+      workspaceId: workspace_id,
+    });
+
+    if (!canRun) {
+      return jsonError(403, "FORBIDDEN_INGESTION_PERMISSION");
+    }
+
     const baseMeta =
       report?.meta && typeof report.meta === "object" ? report.meta : {};
     reportMetaForError = baseMeta;
@@ -1282,19 +1348,6 @@ export async function POST(req: Request, ctx: Ctx) {
       return jsonError(400, "CSV seems empty");
     }
 
-    console.log("[ingestion:parse:done]", {
-      reportId,
-      totalLines,
-      batchSize,
-      updateEveryBatches,
-      took_ms: Date.now() - startedParseAt,
-      header_count: headerRaw.length,
-      keywordRowCount,
-      creativeRowCount,
-      mixedRowCount,
-      unknownRowCount,
-    });
-
     if (!validRowCount) {
       reportMetaForError = await updateReportIngestionMeta(
         sb,
@@ -1325,22 +1378,6 @@ export async function POST(req: Request, ctx: Ctx) {
     }
 
     await drainAllInserts(true);
-
-    console.log("[ingestion:insert:done]", {
-      reportId,
-      ingestionId,
-      insertedCount,
-      validRowCount,
-      parsedLines,
-      totalLines,
-      committedBatchCount,
-      batchSize,
-      keywordRowCount,
-      creativeRowCount,
-      mixedRowCount,
-      unknownRowCount,
-      took_ms: Date.now() - startedInsertAt,
-    });
 
     reportMetaForError = await updateReportIngestionMeta(
       sb,

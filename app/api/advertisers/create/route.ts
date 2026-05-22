@@ -6,9 +6,15 @@ import { sbAuth } from "@/src/lib/supabase/auth-server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
+
 function asString(v: any) {
   if (v == null) return "";
   return String(v).trim();
+}
+
+function normalizeEmail(v: any) {
+  return asString(v).toLowerCase();
 }
 
 function jsonError(status: number, message: string, extra?: any) {
@@ -20,6 +26,20 @@ function getBearerToken(req: Request) {
     req.headers.get("authorization") || req.headers.get("Authorization") || "";
   const m = authz.match(/^Bearer\s+(.+)$/i);
   return m?.[1]?.trim() || null;
+}
+
+function canCreateAdvertiser(role: any, email: any) {
+  const normalizedRole = asString(role).toLowerCase();
+
+  if (normalizedRole === "master") {
+    return normalizeEmail(email) === ONLY_MASTER_EMAIL;
+  }
+
+  return (
+    normalizedRole === "director" ||
+    normalizedRole === "admin" ||
+    normalizedRole === "staff"
+  );
 }
 
 async function getActor(req: Request) {
@@ -57,13 +77,11 @@ export async function POST(req: Request) {
     const workspace_id = asString(body.workspace_id);
     const name = asString(body.name);
 
-    // ✅ 현재 호출 구조를 깨지 않기 위해 workspace_id는 계속 필수
     if (!workspace_id) return jsonError(400, "workspace_id required");
     if (!name) return jsonError(400, "name required");
 
     const admin = getSupabaseAdmin();
 
-    // ✅ 멤버십 체크: 요청한 workspace의 실제 멤버만 생성 가능
     const { data: mem, error: memErr } = await admin
       .from("workspace_members")
       .select("workspace_id, user_id, role")
@@ -80,13 +98,20 @@ export async function POST(req: Request) {
       return jsonError(403, "FORBIDDEN");
     }
 
-    // ✅ 중복 이름 체크 (같은 workspace 안에서만)
-    // - 현재 구조를 깨지 않기 위해 ilike 유지
-    // - 단, 공백 정리된 name 기준으로 검사
+    if (!canCreateAdvertiser(mem.role, user.email)) {
+      return jsonError(403, "FORBIDDEN_CREATE_ADVERTISER_PERMISSION");
+    }
+
+    const resolvedWorkspaceId = asString(mem.workspace_id);
+
+    if (!resolvedWorkspaceId || resolvedWorkspaceId !== workspace_id) {
+      return jsonError(403, "FORBIDDEN_WORKSPACE_MISMATCH");
+    }
+
     const { data: dup, error: dupErr } = await admin
       .from("advertisers")
       .select("id, name")
-      .eq("workspace_id", workspace_id)
+      .eq("workspace_id", resolvedWorkspaceId)
       .ilike("name", name)
       .limit(1);
 
@@ -100,13 +125,10 @@ export async function POST(req: Request) {
       });
     }
 
-    // ✅ 광고주 생성
-    // - 생성 workspace는 요청값이 아니라
-    //   "멤버십이 확인된 workspace_id"로 확정
     const { data: created, error: insErr } = await admin
       .from("advertisers")
       .insert({
-        workspace_id: mem.workspace_id,
+        workspace_id: resolvedWorkspaceId,
         name,
         created_by: user.id,
       })
