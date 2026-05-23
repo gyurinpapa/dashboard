@@ -109,6 +109,16 @@ type ReportDetail = {
   updated_at?: string | null;
 };
 
+type MonthGoalDraft = {
+  revenue: string;
+  cost: string;
+  roas: string;
+  conversions: string;
+  clicks: string;
+  ctr: string;
+  cvr: string;
+};
+
 type CsvUploadMetaItem = {
   id: string;
   name: string;
@@ -132,6 +142,56 @@ type IngestionUiInfo = {
   startedAt: string;
   finishedAt: string;
 };
+
+function buildEmptyMonthGoal(): MonthGoalDraft {
+  return {
+    revenue: "",
+    cost: "",
+    roas: "",
+    conversions: "",
+    clicks: "",
+    ctr: "",
+    cvr: "",
+  };
+}
+
+function normalizeGoalInputValue(v: any) {
+  if (v == null) return "";
+  return String(v).trim();
+}
+
+function extractMonthGoalFromReport(
+  detail: ReportDetail | null | undefined
+): MonthGoalDraft {
+  const meta =
+    detail?.meta && typeof detail.meta === "object" ? detail.meta : {};
+  const monthGoal =
+    meta?.month_goal && typeof meta.month_goal === "object"
+      ? meta.month_goal
+      : {};
+
+  return {
+    revenue: normalizeGoalInputValue(monthGoal?.revenue),
+    cost: normalizeGoalInputValue(monthGoal?.cost),
+    roas: normalizeGoalInputValue(monthGoal?.roas),
+    conversions: normalizeGoalInputValue(monthGoal?.conversions),
+    clicks: normalizeGoalInputValue(monthGoal?.clicks),
+    ctr: normalizeGoalInputValue(monthGoal?.ctr),
+    cvr: normalizeGoalInputValue(monthGoal?.cvr),
+  };
+}
+
+function monthGoalToStableKey(v: MonthGoalDraft) {
+  return JSON.stringify({
+    revenue: normalizeGoalInputValue(v.revenue),
+    cost: normalizeGoalInputValue(v.cost),
+    roas: normalizeGoalInputValue(v.roas),
+    conversions: normalizeGoalInputValue(v.conversions),
+    clicks: normalizeGoalInputValue(v.clicks),
+    ctr: normalizeGoalInputValue(v.ctr),
+    cvr: normalizeGoalInputValue(v.cvr),
+  });
+}
 
 async function fetchReportDetail(reportId: string): Promise<ReportDetail> {
   const res = await authFetch(`/api/reports/${reportId}`);
@@ -159,6 +219,36 @@ async function patchReportPeriodDraft(
   if (!res.ok || !json?.ok) {
     throw new Error(
       json?.error || `Failed to save report period (${res.status})`
+    );
+  }
+
+  return (json.report ?? {}) as ReportDetail;
+}
+
+async function patchReportMonthGoal(
+  reportId: string,
+  next: MonthGoalDraft
+): Promise<ReportDetail> {
+  const res = await authFetch(`/api/reports/${reportId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      month_goal: {
+        revenue: normalizeGoalInputValue(next.revenue),
+        cost: normalizeGoalInputValue(next.cost),
+        roas: normalizeGoalInputValue(next.roas),
+        conversions: normalizeGoalInputValue(next.conversions),
+        clicks: normalizeGoalInputValue(next.clicks),
+        ctr: normalizeGoalInputValue(next.ctr),
+        cvr: normalizeGoalInputValue(next.cvr),
+      },
+    }),
+  });
+
+  const json = await safeJson(res);
+  if (!res.ok || !json?.ok) {
+    throw new Error(
+      json?.error || `Failed to save month goal (${res.status})`
     );
   }
 
@@ -782,6 +872,13 @@ export default function ReportDetailPage() {
   const [loadingRows, setLoadingRows] = useState(true);
   const [msg, setMsg] = useState<string>("");
 
+  const [monthGoal, setMonthGoal] = useState<MonthGoalDraft>(() =>
+    buildEmptyMonthGoal()
+  );
+  const [savingMonthGoal, setSavingMonthGoal] = useState(false);
+  const [monthGoalSavedText, setMonthGoalSavedText] = useState<string>("");
+  const lastLoadedMonthGoalKeyRef = useRef<string>("");
+
   const [creativesMap, setCreativesMap] = useState<Record<string, string>>({});
   const [headerInfo, setHeaderInfo] = useState<ReportHeaderInfo>({
     advertiserName: "",
@@ -874,6 +971,11 @@ export default function ReportDetailPage() {
     return "대기";
   }, [ingestionStatus]);
 
+  const monthGoalDirty = useMemo(() => {
+    const currentKey = monthGoalToStableKey(monthGoal);
+    return !!lastLoadedMonthGoalKeyRef.current && currentKey !== lastLoadedMonthGoalKeyRef.current;
+  }, [monthGoal]);
+
   useEffect(() => {
     const initial = buildInitialReportPeriod({
       report,
@@ -888,6 +990,17 @@ export default function ReportDetailPage() {
     didInitReportPeriodFromSourceRef.current = true;
     lastSavedReportPeriodKeyRef.current = reportPeriodToStableKey(initial);
   }, [report, reportId, rowsRange]);
+
+  useEffect(() => {
+    const nextGoal = extractMonthGoalFromReport(report);
+    const nextKey = monthGoalToStableKey(nextGoal);
+
+    if (nextKey === lastLoadedMonthGoalKeyRef.current) return;
+
+    setMonthGoal(nextGoal);
+    lastLoadedMonthGoalKeyRef.current = nextKey;
+    setMonthGoalSavedText("");
+  }, [report]);
 
   useEffect(() => {
     if (!reportId || typeof window === "undefined") return;
@@ -987,6 +1100,22 @@ export default function ReportDetailPage() {
     headerInfo.reportTypeName,
     headerFallbackFromRows.reportTypeName,
   ]);
+
+  const reportTypeLower =
+  `${headerInfo.reportTypeKey} ${effectivePreviewReportTypeName}`.toLowerCase();
+
+  const isTraffic =
+    reportTypeLower.includes("traffic") ||
+    reportTypeLower.includes("트래픽");
+
+  const isCommerce =
+    reportTypeLower.includes("commerce") ||
+    reportTypeLower.includes("커머스");
+
+  const isDb =
+    reportTypeLower.includes("db") ||
+    reportTypeLower.includes("acquisition") ||
+    reportTypeLower.includes("전환");
 
   const previewPeriodLabel = useMemo(() => {
     return getPeriodLabel(reportPeriod);
@@ -1217,6 +1346,9 @@ export default function ReportDetailPage() {
     setMsg("");
 
     setReport(null);
+    setMonthGoal(buildEmptyMonthGoal());
+    setMonthGoalSavedText("");
+    lastLoadedMonthGoalKeyRef.current = "";
     setCreativeUploadLog([]);
     setLastUploadedCreativeCount(0);
     setRows([]);
@@ -1295,6 +1427,43 @@ export default function ReportDetailPage() {
       : pathname;
     router.replace(nextUrl, { scroll: false });
   }, [pathname, router, searchParams]);
+
+  const handleChangeMonthGoal = useCallback(
+    (key: keyof MonthGoalDraft, value: string) => {
+      setMonthGoal((prev) => ({
+        ...prev,
+        [key]: value,
+      }));
+      setMonthGoalSavedText("");
+    },
+    []
+  );
+
+  const handleSaveMonthGoal = useCallback(async () => {
+    if (!reportId) return;
+
+    setSavingMonthGoal(true);
+    setMonthGoalSavedText("");
+    setMsg("");
+
+    try {
+      const updated = await patchReportMonthGoal(reportId, monthGoal);
+      setReport((prev) => ({ ...(prev ?? {}), ...(updated ?? {}) }));
+
+      const savedGoal = extractMonthGoalFromReport(updated);
+      const savedKey = monthGoalToStableKey(savedGoal);
+
+      setMonthGoal(savedGoal);
+      lastLoadedMonthGoalKeyRef.current = savedKey;
+      setMonthGoalSavedText("저장 완료");
+      setMsg("월 목표값이 저장되었습니다. 발행 시 공유 리포트에서도 이 목표값을 사용할 수 있습니다.");
+    } catch (e: any) {
+      setMonthGoalSavedText("");
+      setMsg(e?.message || "월 목표값 저장 실패");
+    } finally {
+      setSavingMonthGoal(false);
+    }
+  }, [monthGoal, reportId]);
 
   const handleUploadCsv = useCallback(async () => {
     if (!reportId) return;
@@ -1412,7 +1581,7 @@ export default function ReportDetailPage() {
     } finally {
       setCsvUploading(false);
     }
-  }, [csvFile, pollIngestionStatus, report, reportId]);
+  }, [csvFile, pollIngestionStatus, refreshRows, report, reportId]);
 
   const handleUploadCreatives = useCallback(async () => {
     if (!reportId) return;
@@ -1480,7 +1649,7 @@ export default function ReportDetailPage() {
     } finally {
       setPublishing(false);
     }
-  }, [refreshRows, reportId, sessionIngested]);
+  }, [hasPublishableRows, isPublishReady, refreshRows, reportId]);
 
   const handleOpenExportBuilder = useCallback(() => {
     if (!reportId) return;
@@ -1710,6 +1879,240 @@ export default function ReportDetailPage() {
           {msg}
         </div>
       ) : null}
+
+      <section className="mb-5 rounded-2xl border bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="text-base font-semibold text-gray-900">
+              월 목표값 사전 입력
+            </div>
+            <div className="mt-1 text-sm text-gray-500">
+              저장된 값은 reports.meta.month_goal에 보관되며, 발행 후 공유 리포트에서도 사라지지 않도록 사용합니다.
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {monthGoalSavedText ? (
+              <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-medium text-green-700">
+                {monthGoalSavedText}
+              </span>
+            ) : monthGoalDirty ? (
+              <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
+                저장 필요
+              </span>
+            ) : (
+              <span className="rounded-full bg-gray-50 px-3 py-1 text-xs font-medium text-gray-500">
+                저장됨
+              </span>
+            )}
+
+            <button
+              type="button"
+              className={`rounded-lg px-4 py-2 text-sm font-medium text-white ${
+                savingMonthGoal
+                  ? "cursor-not-allowed bg-gray-400"
+                  : "bg-black hover:opacity-90"
+              }`}
+              onClick={handleSaveMonthGoal}
+              disabled={savingMonthGoal}
+            >
+              {savingMonthGoal ? "저장 중..." : "목표값 저장"}
+            </button>
+          </div>
+        </div>
+
+        <div
+          className={`mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 ${
+            isCommerce
+              ? "xl:grid-cols-4"
+              : isTraffic
+                ? "xl:grid-cols-3"
+                : "xl:grid-cols-4"
+          }`}
+        >
+          {isCommerce ? (
+            <>
+              <label className="block">
+                <span className="text-xs font-medium text-gray-600">
+                  매출 목표
+                </span>
+                <input
+                  type="text"
+                  value={monthGoal.revenue}
+                  onChange={(e) =>
+                    handleChangeMonthGoal("revenue", e.target.value)
+                  }
+                  placeholder="예: 30000000"
+                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-black"
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-xs font-medium text-gray-600">
+                  비용 목표
+                </span>
+                <input
+                  type="text"
+                  value={monthGoal.cost}
+                  onChange={(e) =>
+                    handleChangeMonthGoal("cost", e.target.value)
+                  }
+                  placeholder="예: 5000000"
+                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-black"
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-xs font-medium text-gray-600">
+                  ROAS 목표
+                </span>
+                <input
+                  type="text"
+                  value={monthGoal.roas}
+                  onChange={(e) =>
+                    handleChangeMonthGoal("roas", e.target.value)
+                  }
+                  placeholder="예: 600"
+                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-black"
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-xs font-medium text-gray-600">
+                  전환 목표
+                </span>
+                <input
+                  type="text"
+                  value={monthGoal.conversions}
+                  onChange={(e) =>
+                    handleChangeMonthGoal("conversions", e.target.value)
+                  }
+                  placeholder="예: 120"
+                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-black"
+                />
+              </label>
+            </>
+          ) : isTraffic ? (
+            <>
+              <label className="block">
+                <span className="text-xs font-medium text-gray-600">
+                  클릭 목표
+                </span>
+                <input
+                  type="text"
+                  value={monthGoal.clicks}
+                  onChange={(e) =>
+                    handleChangeMonthGoal("clicks", e.target.value)
+                  }
+                  placeholder="예: 10000"
+                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-black"
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-xs font-medium text-gray-600">
+                  CTR 목표
+                </span>
+                <input
+                  type="text"
+                  value={monthGoal.ctr}
+                  onChange={(e) =>
+                    handleChangeMonthGoal("ctr", e.target.value)
+                  }
+                  placeholder="예: 1.5"
+                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-black"
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-xs font-medium text-gray-600">
+                  비용 목표
+                </span>
+                <input
+                  type="text"
+                  value={monthGoal.cost}
+                  onChange={(e) =>
+                    handleChangeMonthGoal("cost", e.target.value)
+                  }
+                  placeholder="예: 5000000"
+                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-black"
+                />
+              </label>
+            </>
+          ) : (
+            <>
+              <label className="block">
+                <span className="text-xs font-medium text-gray-600">
+                  전환 목표
+                </span>
+                <input
+                  type="text"
+                  value={monthGoal.conversions}
+                  onChange={(e) =>
+                    handleChangeMonthGoal("conversions", e.target.value)
+                  }
+                  placeholder="예: 120"
+                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-black"
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-xs font-medium text-gray-600">
+                  CVR 목표
+                </span>
+                <input
+                  type="text"
+                  value={monthGoal.cvr}
+                  onChange={(e) =>
+                    handleChangeMonthGoal("cvr", e.target.value)
+                  }
+                  placeholder="예: 2.0"
+                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-black"
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-xs font-medium text-gray-600">
+                  비용 목표
+                </span>
+                <input
+                  type="text"
+                  value={monthGoal.cost}
+                  onChange={(e) =>
+                    handleChangeMonthGoal("cost", e.target.value)
+                  }
+                  placeholder="예: 5000000"
+                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-black"
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-xs font-medium text-gray-600">
+                  CPA 목표
+                </span>
+                <input
+                  type="text"
+                  value={(Number(monthGoal.cost || 0) > 0 &&
+                  Number(monthGoal.conversions || 0) > 0
+                    ? Math.round(
+                        Number(monthGoal.cost) /
+                          Number(monthGoal.conversions)
+                      )
+                    : ""
+                  ).toString()}
+                  readOnly
+                  placeholder="자동 계산"
+                  className="mt-1 w-full rounded-lg border bg-gray-50 px-3 py-2 text-sm text-gray-600 outline-none"
+                />
+              </label>
+            </>
+          )}
+        </div>
+
+        <div className="mt-3 text-xs text-gray-500">
+          숫자 형식은 그대로 저장합니다. 표시/계산 방식은 기존 리포트 로직을 변경하지 않습니다.
+        </div>
+      </section>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <section className="rounded-2xl border bg-white p-5 shadow-sm">

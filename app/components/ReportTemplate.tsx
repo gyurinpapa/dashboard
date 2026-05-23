@@ -137,6 +137,66 @@ const DEFAULT_GOAL: GoalState = {
   revenue: 0,
 };
 
+type MonthGoalProp =
+  | {
+      impressions?: string | number | null;
+      clicks?: string | number | null;
+      cost?: string | number | null;
+      conversions?: string | number | null;
+      revenue?: string | number | null;
+      roas?: string | number | null;
+      ctr?: string | number | null;
+      cvr?: string | number | null;
+    }
+  | null
+  | undefined;
+
+function hasMonthGoalValue(v: any) {
+  if (v == null) return false;
+  const s = String(v).trim();
+  return s.length > 0 && s.toLowerCase() !== "null" && s.toLowerCase() !== "undefined";
+}
+
+function parseMonthGoalNumber(v: any) {
+  if (!hasMonthGoalValue(v)) return 0;
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+
+  const n = Number(
+    String(v)
+      .replace(/[%₩,\s]/g, "")
+      .trim(),
+  );
+
+  return Number.isFinite(n) ? n : 0;
+}
+
+function normalizeMonthGoalProp(input: MonthGoalProp): GoalState | null {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return null;
+  }
+
+  const hasAnyGoal = [
+    (input as any).impressions,
+    (input as any).clicks,
+    (input as any).cost,
+    (input as any).conversions,
+    (input as any).revenue,
+    (input as any).roas,
+    (input as any).ctr,
+    (input as any).cvr,
+  ].some(hasMonthGoalValue);
+
+  if (!hasAnyGoal) return null;
+
+  return {
+    impressions: parseMonthGoalNumber((input as any).impressions),
+    clicks: parseMonthGoalNumber((input as any).clicks),
+    cost: parseMonthGoalNumber((input as any).cost),
+    conversions: parseMonthGoalNumber((input as any).conversions),
+    revenue: parseMonthGoalNumber((input as any).revenue),
+  };
+}
+
 const EMPTY_ROWS: any[] = [];
 const EMPTY_STRING = "";
 const EMPTY_SET = new Set<string>();
@@ -161,6 +221,7 @@ type Props = {
   reportTypeKey?: string | null;
   reportPeriod: ReportPeriod;
   onChangeReportPeriod: (next: ReportPeriod) => void;
+  monthGoal?: MonthGoalProp;
   readOnlyHeader?: boolean;
   hidePeriodEditor?: boolean;
   hideTabPeriodText?: boolean;
@@ -2463,6 +2524,7 @@ export default function ReportTemplate({
   reportTypeKey,
   reportPeriod,
   onChangeReportPeriod,
+  monthGoal: incomingMonthGoal,
   readOnlyHeader = false,
   hidePeriodEditor = false,
   hideTabPeriodText = false,
@@ -2485,9 +2547,23 @@ export default function ReportTemplate({
   const deferredSelectedSource = useDeferredValue(selectedSource);
   const deferredSelectedProduct = useDeferredValue(selectedProduct);
 
-  const [monthGoal, setMonthGoal] = useLocalStorageState<GoalState>(
+  const [storedMonthGoal, setStoredMonthGoal] = useLocalStorageState<GoalState>(
     MONTH_GOAL_KEY,
     DEFAULT_GOAL,
+  );
+
+  const monthGoalFromProp = useMemo(() => {
+    return normalizeMonthGoalProp(incomingMonthGoal);
+  }, [incomingMonthGoal]);
+
+  const monthGoal = monthGoalFromProp ?? storedMonthGoal;
+
+  const setMonthGoal = useCallback(
+    (next: any) => {
+      if (monthGoalFromProp) return;
+      setStoredMonthGoal(next);
+    },
+    [monthGoalFromProp, setStoredMonthGoal],
   );
 
   const [manualHypothesisDrafts, setManualHypothesisDrafts] = useState<

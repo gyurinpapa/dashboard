@@ -56,6 +56,10 @@ function canPublishReport(member: any, userEmail: any) {
   return false;
 }
 
+function safeMeta(v: any) {
+  return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+}
+
 /**
  * Bearer 우선 + 쿠키(session) fallback
  */
@@ -189,6 +193,7 @@ export async function POST(req: Request, ctx: Ctx) {
 
   const draftPeriodStart = asString((report as any).draft_period_start) || null;
   const draftPeriodEnd = asString((report as any).draft_period_end) || null;
+  const existingMeta = safeMeta((report as any).meta);
 
   const { error: upErr } = await sb
     .from("reports")
@@ -197,6 +202,9 @@ export async function POST(req: Request, ctx: Ctx) {
       status: "ready",
       published_at: now,
       updated_at: now,
+
+      // 발행 시 기존 meta.month_goal 포함 reports.meta 전체 보존
+      meta: existingMeta,
 
       published_ingestion_id: currentIngestionId,
       published_creatives_batch_id: currentCreativesBatchId,
@@ -217,6 +225,7 @@ export async function POST(req: Request, ctx: Ctx) {
     {
       ok: true,
       share_token: token,
+      sharePath: `/share/${token}`,
       status: "ready",
       published_ingestion_id: currentIngestionId,
       published_creatives_batch_id: currentCreativesBatchId,

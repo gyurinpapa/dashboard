@@ -34,7 +34,10 @@ function isOnlyMasterEmail(email: any) {
 }
 
 function isTrueMaster(member: any, userEmail: any) {
-  return getRoleFromWorkspaceMember(member) === "master" && isOnlyMasterEmail(userEmail);
+  return (
+    getRoleFromWorkspaceMember(member) === "master" &&
+    isOnlyMasterEmail(userEmail)
+  );
 }
 
 function canPatchReport(member: any, userEmail: any) {
@@ -46,6 +49,25 @@ function canPatchReport(member: any, userEmail: any) {
   if (role === "staff") return true;
 
   return false;
+}
+
+function isPlainObject(v: any) {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+function normalizeMonthGoal(v: any) {
+  if (!isPlainObject(v)) return null;
+
+  return {
+    revenue: v.revenue ?? "",
+    cost: v.cost ?? "",
+    roas: v.roas ?? "",
+    conversions: v.conversions ?? "",
+    clicks: v.clicks ?? "",
+    ctr: v.ctr ?? "",
+    cvr: v.cvr ?? "",
+    updated_at: new Date().toISOString(),
+  };
 }
 
 async function getUserFromSbAuth() {
@@ -203,20 +225,13 @@ export async function GET(_req: Request, ctx: Ctx) {
           "report_type_id",
           "title",
           "status",
-
-          // legacy
           "period_start",
           "period_end",
-
-          // draft
           "draft_period_start",
           "draft_period_end",
-
-          // published
           "published_period_start",
           "published_period_end",
           "published_at",
-
           "meta",
           "created_at",
           "updated_at",
@@ -270,7 +285,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
 
     const { data: report, error: rErr } = await supabaseAdmin
       .from("reports")
-      .select("id, workspace_id, advertiser_id, report_type_id, created_by")
+      .select("id, workspace_id, advertiser_id, report_type_id, created_by, meta")
       .eq("id", id)
       .maybeSingle();
 
@@ -295,7 +310,10 @@ export async function PATCH(req: Request, ctx: Ctx) {
     }
 
     if (!canPatchReport(wm, user.email)) {
-      return jsonError(403, "Forbidden: you do not have permission to update this report");
+      return jsonError(
+        403,
+        "Forbidden: you do not have permission to update this report"
+      );
     }
 
     const body = await req.json().catch(() => ({}));
@@ -311,14 +329,37 @@ export async function PATCH(req: Request, ctx: Ctx) {
       Object.prototype.hasOwnProperty.call(body, "draft_period_end");
 
     const draft_period_start = hasPeriodStart
-      ? (body.draft_period_start ?? body.period_start ?? null)
+      ? body.draft_period_start ?? body.period_start ?? null
       : undefined;
 
     const draft_period_end = hasPeriodEnd
-      ? (body.draft_period_end ?? body.period_end ?? null)
+      ? body.draft_period_end ?? body.period_end ?? null
       : undefined;
 
-    const meta = body.meta !== undefined ? body.meta : undefined;
+    const existingMeta = isPlainObject(report?.meta) ? report.meta : {};
+
+    const incomingMeta = isPlainObject(body.meta) ? body.meta : undefined;
+
+    const hasMonthGoal =
+      Object.prototype.hasOwnProperty.call(body, "month_goal") ||
+      (incomingMeta
+        ? Object.prototype.hasOwnProperty.call(incomingMeta, "month_goal")
+        : false);
+
+    const incomingMonthGoal = hasMonthGoal
+      ? normalizeMonthGoal(body.month_goal ?? incomingMeta?.month_goal)
+      : undefined;
+
+    const meta =
+      incomingMeta !== undefined || incomingMonthGoal !== undefined
+        ? {
+            ...existingMeta,
+            ...(incomingMeta ?? {}),
+            ...(incomingMonthGoal !== undefined
+              ? { month_goal: incomingMonthGoal }
+              : {}),
+          }
+        : undefined;
 
     const patch: any = {};
 
@@ -352,17 +393,13 @@ export async function PATCH(req: Request, ctx: Ctx) {
           "report_type_id",
           "title",
           "status",
-
           "period_start",
           "period_end",
-
           "draft_period_start",
           "draft_period_end",
-
           "published_period_start",
           "published_period_end",
           "published_at",
-
           "meta",
           "updated_at",
         ].join(", ")

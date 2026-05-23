@@ -20,17 +20,14 @@ type ReportRow = {
   meta: any;
   share_token?: string | null;
 
-  // legacy
   period_start?: string | null;
   period_end?: string | null;
 
-  // draft
   draft_period_start?: string | null;
   draft_period_end?: string | null;
   draft_period_preset?: string | null;
   draft_period_label?: string | null;
 
-  // published
   published_period_start?: string | null;
   published_period_end?: string | null;
   published_period_preset?: string | null;
@@ -42,6 +39,16 @@ type ReportRow = {
   report_type_name?: string | null;
   report_type_key?: string | null;
   updated_at?: string | null;
+};
+
+type MonthGoalDraft = {
+  revenue?: string | number | null;
+  cost?: string | number | null;
+  roas?: string | number | null;
+  conversions?: string | number | null;
+  clicks?: string | number | null;
+  ctr?: string | number | null;
+  cvr?: string | number | null;
 };
 
 async function safeReadJson(res: Response) {
@@ -96,6 +103,26 @@ function pickReportTypeKey(report: ReportRow | null) {
   );
 }
 
+function pickMonthGoal(report: ReportRow | null): MonthGoalDraft | null {
+  const meta = report?.meta && typeof report.meta === "object" ? report.meta : {};
+  const monthGoal =
+    meta?.month_goal && typeof meta.month_goal === "object"
+      ? meta.month_goal
+      : null;
+
+  if (!monthGoal) return null;
+
+  return {
+    revenue: asStr(monthGoal.revenue),
+    cost: asStr(monthGoal.cost),
+    roas: asStr(monthGoal.roas),
+    conversions: asStr(monthGoal.conversions),
+    clicks: asStr(monthGoal.clicks),
+    ctr: asStr(monthGoal.ctr),
+    cvr: asStr(monthGoal.cvr),
+  };
+}
+
 const MemoReportTemplate = memo(ReportTemplate);
 
 export default function ShareReportPage() {
@@ -122,6 +149,7 @@ export default function ShareReportPage() {
   const advertiserName = useMemo(() => pickAdvertiserName(report), [report]);
   const reportTypeName = useMemo(() => pickReportTypeName(report), [report]);
   const reportTypeKey = useMemo(() => pickReportTypeKey(report), [report]);
+  const monthGoal = useMemo(() => pickMonthGoal(report), [report]);
 
   const shareReportPeriod = useMemo<ReportPeriod>(() => {
     const publishedStart = asStr(report?.published_period_start);
@@ -325,6 +353,7 @@ export default function ShareReportPage() {
       reportTypeName={reportTypeName}
       reportTypeKey={reportTypeKey}
       reportPeriod={shareReportPeriod}
+      monthGoal={monthGoal}
       onChangeReportPeriod={() => {}}
       hidePeriodEditor={true}
       hideTabPeriodText={true}

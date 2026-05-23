@@ -1,3 +1,4 @@
+// app/api/reports/[id]/publish-lite/route.ts
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/src/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
@@ -14,9 +15,12 @@ function jsonError(status: number, message: string, extra?: any) {
 }
 
 function randToken(len = 32) {
-  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  const chars =
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   let s = "";
-  for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  for (let i = 0; i < len; i++) {
+    s += chars[Math.floor(Math.random() * chars.length)];
+  }
   return s;
 }
 
@@ -50,6 +54,10 @@ function canPublishReport(member: any, userEmail: any) {
   if (role === "staff") return true;
 
   return false;
+}
+
+function safeMeta(v: any) {
+  return v && typeof v === "object" && !Array.isArray(v) ? v : {};
 }
 
 /**
@@ -116,6 +124,7 @@ export async function POST(req: Request, ctx: Ctx) {
         "id",
         "workspace_id",
         "share_token",
+        "meta",
         "current_ingestion_id",
         "current_creatives_batch_id",
         "draft_period_start",
@@ -183,6 +192,7 @@ export async function POST(req: Request, ctx: Ctx) {
 
   const draftPeriodStart = asString((report as any).draft_period_start) || null;
   const draftPeriodEnd = asString((report as any).draft_period_end) || null;
+  const existingMeta = safeMeta((report as any).meta);
 
   const { error: upErr } = await sb
     .from("reports")
@@ -190,6 +200,9 @@ export async function POST(req: Request, ctx: Ctx) {
       share_token: token,
       status: "ready",
       updated_at: now,
+
+      // 발행 시 기존 meta.month_goal 포함 reports.meta 전체 보존
+      meta: existingMeta,
 
       published_ingestion_id: currentIngestionId,
       published_creatives_batch_id: currentCreativesBatchId,
