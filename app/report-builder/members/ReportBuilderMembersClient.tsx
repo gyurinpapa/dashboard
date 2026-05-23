@@ -55,6 +55,23 @@ type ApiDeleteResponse = {
   error?: string;
 };
 
+type ApiInviteCreateResponse = {
+  ok: boolean;
+  invite?: {
+    id: string;
+    workspace_id: string;
+    email: string;
+    role: string;
+    token: string;
+    status: string;
+    expires_at?: string | null;
+    created_at?: string | null;
+  };
+  invitePath?: string;
+  error?: string;
+  detail?: string;
+};
+
 const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
 
 const NON_MASTER_ROLE_OPTIONS = ["director", "admin", "staff", "client"] as const;
@@ -253,7 +270,11 @@ export default function ReportBuilderMembersClient() {
   >({});
 
   const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState<"admin" | "staff" | "client">("staff");
+  const [inviteRole, setInviteRole] = useState<
+    "director" | "admin" | "staff" | "client"
+  >("staff");
+  const [inviteCreating, setInviteCreating] = useState(false);
+  const [createdInvitePath, setCreatedInvitePath] = useState("");
 
   function applyMembersResponse(json: ApiGetResponse, fallbackWorkspaceId?: string) {
     const nextWorkspaceId =
@@ -511,6 +532,75 @@ export default function ReportBuilderMembersClient() {
     }
   }
 
+  async function createInvite() {
+    const email = inviteEmail.trim().toLowerCase();
+
+    if (!workspaceId) {
+      alert("workspace_id를 확인할 수 없습니다.");
+      return;
+    }
+
+    if (!email || !email.includes("@")) {
+      alert("초대할 이메일을 정확히 입력하세요.");
+      return;
+    }
+
+    if (inviteRole === "director" && !canUseTrueMasterPower(me?.role, me?.email)) {
+      alert("director 초대는 true master만 가능합니다.");
+      return;
+    }
+
+    setInviteCreating(true);
+    setCreatedInvitePath("");
+    setError("");
+
+    try {
+      const res = await authFetch("/api/workspace-invites/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workspace_id: workspaceId,
+          email,
+          role: inviteRole,
+        }),
+      });
+
+      const json = (await res.json().catch(() => null)) as
+        | ApiInviteCreateResponse
+        | null;
+
+      if (!res.ok || !json?.ok) {
+        alert(json?.detail || json?.error || "초대를 생성하지 못했습니다.");
+        return;
+      }
+
+      const path = json.invitePath || "";
+      setCreatedInvitePath(path);
+      setInviteEmail("");
+
+      alert("초대 링크가 생성되었습니다. 링크를 복사해서 전달하세요.");
+    } catch (e: any) {
+      alert(e?.message || "초대 생성 중 오류가 발생했습니다.");
+    } finally {
+      setInviteCreating(false);
+    }
+  }
+
+async function copyInviteLink() {
+  if (!createdInvitePath) return;
+
+  const origin =
+    typeof window !== "undefined" ? window.location.origin : "";
+  const url = `${origin}${createdInvitePath}`;
+
+  try {
+    await navigator.clipboard.writeText(url);
+    alert("초대 링크를 복사했습니다.");
+  } catch {
+    window.prompt("아래 초대 링크를 복사하세요.", url);
+  }
+}
+
   function updateDraft(
     member: WorkspaceMember,
     key: "role" | "division" | "department" | "team",
@@ -693,7 +783,7 @@ export default function ReportBuilderMembersClient() {
                 멤버 초대 (최소 UI 초안)
               </div>
               <div style={{ marginTop: 6, fontSize: 13, color: "#6b7280" }}>
-                지금은 초대 메일 발송 로직 없이, 추후 연결용 최소 UI만 넣었습니다.
+                초대 링크를 생성합니다. 메일 자동 발송은 다음 단계에서 연결하고, 지금은 링크를 복사해 전달합니다.
               </div>
 
               <div
@@ -707,7 +797,7 @@ export default function ReportBuilderMembersClient() {
                 <input
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
-                  placeholder="초대할 이메일 (추후 연결 예정)"
+                  placeholder="초대할 이메일"
                   style={{
                     height: 42,
                     borderRadius: 10,
@@ -716,10 +806,13 @@ export default function ReportBuilderMembersClient() {
                     outline: "none",
                   }}
                 />
+
                 <select
                   value={inviteRole}
                   onChange={(e) =>
-                    setInviteRole(e.target.value as "admin" | "staff" | "client")
+                    setInviteRole(
+                      e.target.value as "director" | "admin" | "staff" | "client"
+                    )
                   }
                   style={{
                     height: 42,
@@ -730,6 +823,9 @@ export default function ReportBuilderMembersClient() {
                     background: "#fff",
                   }}
                 >
+                  {isTrueMasterViewer ? (
+                    <option value="director">director</option>
+                  ) : null}
                   <option value="admin">admin</option>
                   <option value="staff">staff</option>
                   <option value="client">client</option>
@@ -737,14 +833,58 @@ export default function ReportBuilderMembersClient() {
 
                 <button
                   type="button"
-                  onClick={() => {
-                    alert(
-                      "현재는 초대 UI 초안만 반영했습니다. 실제 초대 발송/가입 연결은 다음 단계에서 붙이면 됩니다."
-                    );
-                  }}
+                  onClick={createInvite}
+                  disabled={inviteCreating}
                   style={{
                     height: 42,
                     padding: "0 14px",
+                    borderRadius: 10,
+                    border: "1px solid #d1d5db",
+                    background: inviteCreating ? "#f3f4f6" : "#fff",
+                    color: inviteCreating ? "#9ca3af" : "#111827",
+                    fontWeight: 700,
+                    cursor: inviteCreating ? "default" : "pointer",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {inviteCreating ? "생성 중..." : "초대 링크 생성"}
+                </button>
+              </div>
+              
+              {createdInvitePath ? (
+              <div
+                style={{
+                  marginTop: 12,
+                  display: "flex",
+                  gap: 8,
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  padding: 12,
+                  borderRadius: 12,
+                  background: "#f9fafb",
+                  border: "1px solid #e5e7eb",
+                }}
+              >
+                <div
+                  style={{
+                    flex: 1,
+                    minWidth: 260,
+                    fontSize: 13,
+                    color: "#374151",
+                    wordBreak: "break-all",
+                  }}
+                >
+                  {typeof window !== "undefined"
+                    ? `${window.location.origin}${createdInvitePath}`
+                    : createdInvitePath}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={copyInviteLink}
+                  style={{
+                    height: 36,
+                    padding: "0 12px",
                     borderRadius: 10,
                     border: "1px solid #d1d5db",
                     background: "#fff",
@@ -753,9 +893,10 @@ export default function ReportBuilderMembersClient() {
                     whiteSpace: "nowrap",
                   }}
                 >
-                  초대 초안
+                  링크 복사
                 </button>
               </div>
+            ) : null}
             </div>
 
             <div

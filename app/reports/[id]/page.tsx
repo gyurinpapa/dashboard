@@ -160,6 +160,60 @@ function normalizeGoalInputValue(v: any) {
   return String(v).trim();
 }
 
+function toGoalNumber(value: any) {
+  if (value == null) return 0;
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  const cleaned = String(value)
+    .replace(/[₩,%\s]/g, "")
+    .replace(/,/g, "")
+    .trim();
+
+  if (!cleaned) return 0;
+
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function toRoasMultiplier(value: any) {
+  if (value == null) return 0;
+
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return 0;
+    return value > 10 ? value / 100 : value;
+  }
+
+  const raw = String(value).trim();
+  if (!raw) return 0;
+
+  const hasPercent = raw.includes("%");
+  const n = toGoalNumber(raw);
+
+  if (!Number.isFinite(n) || n <= 0) return 0;
+
+  if (hasPercent) return n / 100;
+  return n > 10 ? n / 100 : n;
+}
+
+function formatGoalNumber(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return "";
+  return String(Math.round(value));
+}
+
+function buildCommerceComputedRevenue(monthGoal: MonthGoalDraft) {
+  const cost = toGoalNumber(monthGoal.cost);
+  const roasMultiplier = toRoasMultiplier(monthGoal.roas);
+
+  if (cost <= 0 || roasMultiplier <= 0) {
+    return normalizeGoalInputValue(monthGoal.revenue);
+  }
+
+  return formatGoalNumber(cost * roasMultiplier);
+}
+
 function extractMonthGoalFromReport(
   detail: ReportDetail | null | undefined
 ): MonthGoalDraft {
@@ -1117,6 +1171,15 @@ export default function ReportDetailPage() {
     reportTypeLower.includes("acquisition") ||
     reportTypeLower.includes("전환");
 
+  const resolvedMonthGoalForSave = useMemo<MonthGoalDraft>(() => {
+    if (!isCommerce) return monthGoal;
+
+    return {
+      ...monthGoal,
+      revenue: buildCommerceComputedRevenue(monthGoal),
+    };
+  }, [isCommerce, monthGoal]);
+
   const previewPeriodLabel = useMemo(() => {
     return getPeriodLabel(reportPeriod);
   }, [reportPeriod]);
@@ -1447,7 +1510,7 @@ export default function ReportDetailPage() {
     setMsg("");
 
     try {
-      const updated = await patchReportMonthGoal(reportId, monthGoal);
+      const updated = await patchReportMonthGoal(reportId, resolvedMonthGoalForSave);
       setReport((prev) => ({ ...(prev ?? {}), ...(updated ?? {}) }));
 
       const savedGoal = extractMonthGoalFromReport(updated);
@@ -1463,7 +1526,7 @@ export default function ReportDetailPage() {
     } finally {
       setSavingMonthGoal(false);
     }
-  }, [monthGoal, reportId]);
+  }, [reportId, resolvedMonthGoalForSave]);
 
   const handleUploadCsv = useCallback(async () => {
     if (!reportId) return;
@@ -1938,12 +2001,10 @@ export default function ReportDetailPage() {
                 </span>
                 <input
                   type="text"
-                  value={monthGoal.revenue}
-                  onChange={(e) =>
-                    handleChangeMonthGoal("revenue", e.target.value)
-                  }
-                  placeholder="예: 30000000"
-                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-black"
+                  value={buildCommerceComputedRevenue(monthGoal)}
+                  readOnly
+                  placeholder="비용 × ROAS 자동 계산"
+                  className="mt-1 w-full rounded-lg border bg-gray-50 px-3 py-2 text-sm text-gray-600 outline-none"
                 />
               </label>
 

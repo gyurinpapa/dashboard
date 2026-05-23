@@ -25,6 +25,81 @@ function toSafeNumber(value: any) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function toGoalNumber(value: any) {
+  if (value == null) return 0;
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  const cleaned = String(value)
+    .replace(/[₩,%\s]/g, "")
+    .replace(/,/g, "")
+    .trim();
+
+  if (!cleaned) return 0;
+
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function toRate01(value: any) {
+  if (value == null) return 0;
+
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return 0;
+    return value > 1 ? value / 100 : value;
+  }
+
+  const raw = String(value).trim();
+  if (!raw) return 0;
+
+  const hasPercent = raw.includes("%");
+  const cleaned = raw
+    .replace(/[₩,%\s]/g, "")
+    .replace(/,/g, "")
+    .trim();
+
+  if (!cleaned) return 0;
+
+  const n = Number(cleaned);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+
+  if (hasPercent) return n / 100;
+  return n > 1 ? n / 100 : n;
+}
+
+function toRoasMultiplier(value: any) {
+  if (value == null) return 0;
+
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return 0;
+    return value > 10 ? value / 100 : value;
+  }
+
+  const raw = String(value).trim();
+  if (!raw) return 0;
+
+  const hasPercent = raw.includes("%");
+  const cleaned = raw
+    .replace(/[₩,%\s]/g, "")
+    .replace(/,/g, "")
+    .trim();
+
+  if (!cleaned) return 0;
+
+  const n = Number(cleaned);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+
+  if (hasPercent) return n / 100;
+  return n > 10 ? n / 100 : n;
+}
+
+function roundGoal(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return Math.round(value);
+}
+
 function clamp01(value: number) {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.min(1, value));
@@ -185,24 +260,12 @@ export default function SummaryGoal({
 
   useEffect(() => setMounted(true), []);
 
-  const goalImpr = mounted ? toSafeNumber(monthGoal?.impressions ?? monthGoal?.impr) : 0;
-  const goalClicks = mounted ? toSafeNumber(monthGoal?.clicks ?? monthGoal?.click) : 0;
-  const goalCost = mounted ? toSafeNumber(monthGoal?.cost) : 0;
-  const goalConv = mounted
-    ? toSafeNumber(monthGoal?.conversions ?? monthGoal?.conv)
-    : 0;
-  const goalRev = mounted
-    ? toSafeNumber(monthGoal?.revenue ?? monthGoal?.sales)
-    : 0;
-
-  const goalCTR = goalImpr > 0 ? goalClicks / goalImpr : 0;
-  const goalCPC = goalClicks > 0 ? goalCost / goalClicks : 0;
-  const goalCVR = goalClicks > 0 ? goalConv / goalClicks : 0;
-  const goalCPA = goalConv > 0 ? goalCost / goalConv : 0;
-  const goalROAS = goalCost > 0 ? goalRev / goalCost : 0;
-
-  const actualImpr = toSafeNumber(currentMonthActual?.impressions ?? currentMonthActual?.impr);
-  const actualClicks = toSafeNumber(currentMonthActual?.clicks ?? currentMonthActual?.click);
+  const actualImpr = toSafeNumber(
+    currentMonthActual?.impressions ?? currentMonthActual?.impr
+  );
+  const actualClicks = toSafeNumber(
+    currentMonthActual?.clicks ?? currentMonthActual?.click
+  );
   const actualCost = toSafeNumber(currentMonthActual?.cost);
   const actualConv = toSafeNumber(
     currentMonthActual?.conversions ?? currentMonthActual?.conv
@@ -216,19 +279,133 @@ export default function SummaryGoal({
   const actualCpa = toSafeNumber(currentMonthActual?.cpa);
   const actualRoas = toSafeNumber(currentMonthActual?.roas);
 
-  const goalComputedImpr = toSafeNumber(
-    currentMonthGoalComputed?.impressions ?? currentMonthGoalComputed?.impr
-  );
-  const goalComputedClicks = toSafeNumber(
-    currentMonthGoalComputed?.clicks ?? currentMonthGoalComputed?.click
-  );
+  const rawGoalImpr = mounted
+    ? toGoalNumber(monthGoal?.impressions ?? monthGoal?.impr)
+    : 0;
+  const rawGoalClicks = mounted
+    ? toGoalNumber(monthGoal?.clicks ?? monthGoal?.click)
+    : 0;
+  const rawGoalCost = mounted ? toGoalNumber(monthGoal?.cost) : 0;
+  const rawGoalConv = mounted
+    ? toGoalNumber(monthGoal?.conversions ?? monthGoal?.conv)
+    : 0;
+  const rawGoalRev = mounted
+    ? toGoalNumber(monthGoal?.revenue ?? monthGoal?.sales)
+    : 0;
+
+  const savedGoalCvrRate = mounted ? toRate01(monthGoal?.cvr) : 0;
+  const savedGoalRoasMultiplier = mounted ? toRoasMultiplier(monthGoal?.roas) : 0;
+
+  const isCommerceGoal = !mode.isTraffic && !mode.isDbAcquisition;
+
+  const goalCtrRateFromActual =
+    actualCtr > 0 ? actualCtr : mounted ? toRate01(monthGoal?.ctr) : 0;
+
+  const goalCvrRateFromActual =
+    actualCvr > 0 ? actualCvr : savedGoalCvrRate;
+
+  const computedTrafficImpr =
+    mode.isTraffic && rawGoalClicks > 0 && goalCtrRateFromActual > 0
+      ? roundGoal(rawGoalClicks / goalCtrRateFromActual)
+      : 0;
+
+  const computedDbClicks =
+    mode.isDbAcquisition && rawGoalConv > 0 && savedGoalCvrRate > 0
+      ? roundGoal(rawGoalConv / savedGoalCvrRate)
+      : 0;
+
+  const computedDbImpr =
+    mode.isDbAcquisition && computedDbClicks > 0 && goalCtrRateFromActual > 0
+      ? roundGoal(computedDbClicks / goalCtrRateFromActual)
+      : 0;
+
+  const computedCommerceRevenue =
+    isCommerceGoal && rawGoalCost > 0 && savedGoalRoasMultiplier > 0
+      ? roundGoal(rawGoalCost * savedGoalRoasMultiplier)
+      : 0;
+
+  const computedCommerceClicks =
+    isCommerceGoal && rawGoalConv > 0 && goalCvrRateFromActual > 0
+      ? roundGoal(rawGoalConv / goalCvrRateFromActual)
+      : 0;
+
+  const computedCommerceImpr =
+    isCommerceGoal && computedCommerceClicks > 0 && goalCtrRateFromActual > 0
+      ? roundGoal(computedCommerceClicks / goalCtrRateFromActual)
+      : 0;
+
+  const goalImpr = mode.isTraffic
+    ? computedTrafficImpr || rawGoalImpr
+    : mode.isDbAcquisition
+      ? computedDbImpr || rawGoalImpr
+      : isCommerceGoal
+        ? computedCommerceImpr || rawGoalImpr
+        : rawGoalImpr;
+
+  const goalClicks = mode.isDbAcquisition
+    ? computedDbClicks || rawGoalClicks
+    : isCommerceGoal
+      ? computedCommerceClicks || rawGoalClicks
+      : rawGoalClicks;
+
+  const goalCost = rawGoalCost;
+  const goalConv = rawGoalConv;
+
+  const goalRev = isCommerceGoal
+    ? computedCommerceRevenue || rawGoalRev
+    : rawGoalRev;
+
+  const goalCTR =
+    (mode.isTraffic || mode.isDbAcquisition || isCommerceGoal) &&
+    goalCtrRateFromActual > 0
+      ? goalCtrRateFromActual
+      : goalImpr > 0
+        ? goalClicks / goalImpr
+        : 0;
+
+  const goalCPC = goalClicks > 0 ? goalCost / goalClicks : 0;
+
+  const goalCVR =
+    mode.isDbAcquisition && savedGoalCvrRate > 0
+      ? savedGoalCvrRate
+      : isCommerceGoal && goalCvrRateFromActual > 0
+        ? goalCvrRateFromActual
+        : goalClicks > 0
+          ? goalConv / goalClicks
+          : 0;
+
+  const goalCPA = goalConv > 0 ? goalCost / goalConv : 0;
+
+  const goalROAS =
+    isCommerceGoal && savedGoalRoasMultiplier > 0
+      ? savedGoalRoasMultiplier
+      : goalCost > 0
+        ? goalRev / goalCost
+        : 0;
+
+  const goalComputedImpr =
+    (mode.isTraffic || mode.isDbAcquisition || isCommerceGoal) && goalImpr > 0
+      ? goalImpr
+      : toSafeNumber(
+          currentMonthGoalComputed?.impressions ?? currentMonthGoalComputed?.impr
+        );
+
+  const goalComputedClicks =
+    (mode.isDbAcquisition || isCommerceGoal) && goalClicks > 0
+      ? goalClicks
+      : toSafeNumber(
+          currentMonthGoalComputed?.clicks ?? currentMonthGoalComputed?.click
+        );
   const goalComputedCost = toSafeNumber(currentMonthGoalComputed?.cost);
   const goalComputedConv = toSafeNumber(
     currentMonthGoalComputed?.conversions ?? currentMonthGoalComputed?.conv
   );
-  const goalComputedRevenue = toSafeNumber(
-    currentMonthGoalComputed?.revenue ?? currentMonthGoalComputed?.sales
-  );
+  const goalComputedRevenue =
+    isCommerceGoal && goalRev > 0
+      ? goalRev
+      : toSafeNumber(
+          currentMonthGoalComputed?.revenue ?? currentMonthGoalComputed?.sales
+        );
 
   const pct2 = (v: any) => {
     const n = Number(v);
@@ -253,6 +430,9 @@ export default function SummaryGoal({
 
   const inputClass =
     "h-9 w-full rounded-xl border border-slate-200 bg-white px-2.5 text-right text-[13px] font-semibold text-slate-900 outline-none transition-all duration-200 placeholder:text-slate-400 focus:border-slate-400 focus:bg-white focus:shadow-[0_0_0_3px_rgba(148,163,184,0.10)]";
+
+  const readonlyTargetClass =
+    "inline-flex h-9 w-full items-center justify-end rounded-xl border border-slate-200 bg-slate-50 px-2.5 text-[13px] font-semibold text-slate-700";
 
   const {
     mainProgressRate,
@@ -535,29 +715,45 @@ export default function SummaryGoal({
                 <td className={firstTdClass}>목표</td>
 
                 <td className={tdClass}>
-                  <input
-                    className={inputClass}
-                    value={formatNumber(monthGoal?.impressions ?? monthGoal?.impr ?? 0)}
-                    onChange={(e) =>
-                      setMonthGoal((p: any) => ({
-                        ...p,
-                        impressions: parseNumberInput(e.target.value),
-                      }))
-                    }
-                  />
+                  {mode.isTraffic || mode.isDbAcquisition || isCommerceGoal ? (
+                    <span className={readonlyTargetClass}>
+                      {formatNumber(goalImpr)}
+                    </span>
+                  ) : (
+                    <input
+                      className={inputClass}
+                      value={formatNumber(
+                        monthGoal?.impressions ?? monthGoal?.impr ?? 0
+                      )}
+                      onChange={(e) =>
+                        setMonthGoal((p: any) => ({
+                          ...p,
+                          impressions: parseNumberInput(e.target.value),
+                        }))
+                      }
+                    />
+                  )}
                 </td>
 
                 <td className={tdClass}>
-                  <input
-                    className={inputClass}
-                    value={formatNumber(monthGoal?.clicks ?? monthGoal?.click ?? 0)}
-                    onChange={(e) =>
-                      setMonthGoal((p: any) => ({
-                        ...p,
-                        clicks: parseNumberInput(e.target.value),
-                      }))
-                    }
-                  />
+                  {mode.isDbAcquisition || isCommerceGoal ? (
+                    <span className={readonlyTargetClass}>
+                      {formatNumber(goalClicks)}
+                    </span>
+                  ) : (
+                    <input
+                      className={inputClass}
+                      value={formatNumber(
+                        monthGoal?.clicks ?? monthGoal?.click ?? 0
+                      )}
+                      onChange={(e) =>
+                        setMonthGoal((p: any) => ({
+                          ...p,
+                          clicks: parseNumberInput(e.target.value),
+                        }))
+                      }
+                    />
+                  )}
                 </td>
 
                 <td className={`${tdClass} font-semibold text-violet-600`}>
@@ -590,7 +786,9 @@ export default function SummaryGoal({
                   <td className={tdClass}>
                     <input
                       className={inputClass}
-                      value={formatNumber(monthGoal?.conversions ?? monthGoal?.conv ?? 0)}
+                      value={formatNumber(
+                        monthGoal?.conversions ?? monthGoal?.conv ?? 0
+                      )}
                       onChange={(e) =>
                         setMonthGoal((p: any) => ({
                           ...p,
@@ -619,16 +817,9 @@ export default function SummaryGoal({
                       <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[12px] text-slate-400">
                         ₩
                       </span>
-                      <input
-                        className={`${inputClass} pl-6`}
-                        value={formatNumber(monthGoal?.revenue ?? monthGoal?.sales ?? 0)}
-                        onChange={(e) =>
-                          setMonthGoal((p: any) => ({
-                            ...p,
-                            revenue: parseNumberInput(e.target.value),
-                          }))
-                        }
-                      />
+                      <span className={`${readonlyTargetClass} pl-6`}>
+                        {formatNumber(goalRev)}
+                      </span>
                     </div>
                   </td>
                 )}

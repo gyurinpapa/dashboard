@@ -137,6 +137,14 @@ const DEFAULT_GOAL: GoalState = {
   revenue: 0,
 };
 
+type MonthGoalState = GoalState & {
+  roas?: number;
+  ctr?: number;
+  cvr?: number;
+  cpc?: number;
+  cpa?: number;
+};
+
 type MonthGoalProp =
   | {
       impressions?: string | number | null;
@@ -147,6 +155,8 @@ type MonthGoalProp =
       roas?: string | number | null;
       ctr?: string | number | null;
       cvr?: string | number | null;
+      cpc?: string | number | null;
+      cpa?: string | number | null;
     }
   | null
   | undefined;
@@ -170,7 +180,7 @@ function parseMonthGoalNumber(v: any) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function normalizeMonthGoalProp(input: MonthGoalProp): GoalState | null {
+function normalizeMonthGoalProp(input: MonthGoalProp): MonthGoalState | null {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return null;
   }
@@ -184,6 +194,8 @@ function normalizeMonthGoalProp(input: MonthGoalProp): GoalState | null {
     (input as any).roas,
     (input as any).ctr,
     (input as any).cvr,
+    (input as any).cpc,
+    (input as any).cpa,
   ].some(hasMonthGoalValue);
 
   if (!hasAnyGoal) return null;
@@ -194,6 +206,13 @@ function normalizeMonthGoalProp(input: MonthGoalProp): GoalState | null {
     cost: parseMonthGoalNumber((input as any).cost),
     conversions: parseMonthGoalNumber((input as any).conversions),
     revenue: parseMonthGoalNumber((input as any).revenue),
+
+    // DB/Traffic/Commerce 목표 계산용 보조 목표값 보존
+    roas: parseMonthGoalNumber((input as any).roas),
+    ctr: parseMonthGoalNumber((input as any).ctr),
+    cvr: parseMonthGoalNumber((input as any).cvr),
+    cpc: parseMonthGoalNumber((input as any).cpc),
+    cpa: parseMonthGoalNumber((input as any).cpa),
   };
 }
 
