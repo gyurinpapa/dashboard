@@ -9,6 +9,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
+const ALL_WORKSPACES = "__all__";
 
 function jsonError(status: number, message: string, extra?: Record<string, any>) {
   return NextResponse.json(
@@ -131,6 +132,32 @@ async function isTrueMasterUser(userId: string) {
   return await hasMasterMembership(userId);
 }
 
+async function getWorkspaceNamesByIds(workspaceIds: string[]) {
+  const ids = Array.from(
+    new Set(workspaceIds.map(asString).filter(Boolean))
+  );
+
+  const map = new Map<string, string>();
+
+  if (!ids.length) return map;
+
+  const { data, error } = await supabaseAdmin
+    .from("workspaces")
+    .select("id, name")
+    .in("id", ids);
+
+  if (error || !data) return map;
+
+  for (const row of data as any[]) {
+    const id = asString(row?.id);
+    if (!id) continue;
+
+    map.set(id, asString(row?.name));
+  }
+
+  return map;
+}
+
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
@@ -153,13 +180,112 @@ export async function GET(req: Request) {
     const userId = auth.userId;
     const actorIsPlatformOwner = await isPlatformOwner(userId);
     const actorIsTrueMaster = await isTrueMasterUser(userId);
-    const actorCanBypassWorkspaceMembership =
-      actorIsPlatformOwner && actorIsTrueMaster;
 
-    // ✅ workspace membership 확인
-    // - platform_owner 단독으로는 통과 불가
-    // - platform_owner + true master만 membership 없이 통과
-    // - 그 외 사용자는 요청한 workspace가 실제로 이 사용자의 접근 가능한 workspace인지 검증
+    /**
+     * ✅ true master 전용 전체 리포트 조회
+     * - platform_owner 단독으로는 전체 조회 불가
+     * - true master는 전체 workspace reports 조회 가능
+     * - 기존 단일 workspace 조회 구조는 그대로 유지
+     */
+    if (workspace_id === ALL_WORKSPACES) {
+      if (!actorIsTrueMaster) {
+        return jsonError(403, "ALL_WORKSPACES_ACCESS_DENIED");
+      }
+
+      const from = offset;
+      const to = offset + limit - 1;
+
+      const { data, error } = await supabaseAdmin
+        .from("reports")
+        .select(
+          "id,title,status,created_at,workspace_id,advertiser_id,share_token"
+        )
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(from, to);
+
+      if (error) {
+        return jsonError(500, error.message);
+      }
+
+      const rows = Array.isArray(data) ? data : [];
+
+      const workspaceIds = Array.from(
+        new Set(rows.map((r: any) => asString(r?.workspace_id)).filter(Boolean))
+      );
+
+      const workspaceNameById = await getWorkspaceNamesByIds(workspaceIds);
+
+      const advertiserIds = Array.from(
+        new Set(rows.map((r: any) => asString(r?.advertiser_id)).filter(Boolean))
+      );
+
+      let advertiserNameById = new Map<string, string>();
+
+      if (advertiserIds.length > 0) {
+        const { data: advs, error: advErr } = await supabaseAdmin
+          .from("advertisers")
+          .select("id,name,workspace_id")
+          .in("id", advertiserIds);
+
+        if (advErr) {
+          return jsonError(500, advErr.message);
+        }
+
+        advertiserNameById = new Map(
+          ((advs ?? []) as any[]).map((a) => [
+            asString(a?.id),
+            asString(a?.name),
+          ])
+        );
+      }
+
+      const reports = rows.map((r: any) => {
+        const workspaceId = asString(r?.workspace_id);
+        const advertiser_id = asNullableString(r?.advertiser_id);
+        const advertiser_name = advertiser_id
+          ? advertiserNameById.get(advertiser_id) ?? null
+          : null;
+
+        return {
+          id: r?.id ?? null,
+          title: r?.title ?? "",
+          status: r?.status ?? "",
+          created_at: r?.created_at ?? null,
+          workspace_id: workspaceId,
+          workspace_name: workspaceNameById.get(workspaceId) ?? null,
+          advertiser_id,
+          advertiser_name,
+          share_token: asNullableString(r?.share_token),
+        };
+      });
+
+      const has_more = rows.length >= limit;
+      const next_offset = offset + rows.length;
+
+      return NextResponse.json({
+        ok: true,
+        workspace_id: ALL_WORKSPACES,
+        is_all_workspaces: true,
+        is_true_master: true,
+        platform_role: actorIsPlatformOwner ? "platform_owner" : null,
+        count: reports.length,
+        limit,
+        offset,
+        has_more,
+        next_offset,
+        reports,
+      });
+    }
+
+    const actorCanBypassWorkspaceMembership = actorIsTrueMaster;
+
+    /**
+     * ✅ workspace membership 확인
+     * - true master는 전체 workspace를 볼 수 있으므로 단일 workspace membership도 bypass 가능
+     * - platform_owner 단독으로는 통과 불가
+     * - 그 외 사용자는 요청한 workspace가 실제로 이 사용자의 접근 가능한 workspace인지 검증
+     */
     if (!actorCanBypassWorkspaceMembership) {
       const { data: wm, error: wmErr } = await supabaseAdmin
         .from("workspace_members")
@@ -241,6 +367,7 @@ export async function GET(req: Request) {
         status: r?.status ?? "",
         created_at: r?.created_at ?? null,
         workspace_id: asString(r?.workspace_id) || workspace_id,
+        workspace_name: null,
         advertiser_id,
         advertiser_name,
         share_token: asNullableString(r?.share_token),
@@ -253,6 +380,9 @@ export async function GET(req: Request) {
     return NextResponse.json({
       ok: true,
       workspace_id,
+      is_all_workspaces: false,
+      is_true_master: actorIsTrueMaster,
+      platform_role: actorIsPlatformOwner ? "platform_owner" : null,
       count: reports.length,
       limit,
       offset,

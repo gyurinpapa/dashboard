@@ -22,6 +22,9 @@ type ReportRow = {
   advertiser_name?: string | null;
   share_token?: string | null;
 
+  workspace_id?: string | null;
+  workspace_name?: string | null;
+
   period_start?: string | null;
   period_end?: string | null;
   period_preset?: string | null;
@@ -42,6 +45,8 @@ type ReportRow = {
 type AdvertiserRow = {
   id: string;
   name: string;
+  workspace_id?: string | null;
+  workspace_name?: string | null;
 };
 
 type ReportFilterKey = "all" | "published" | "draft";
@@ -80,6 +85,7 @@ function norm(s: any) {
 }
 
 const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
+const ALL_WORKSPACES = "__all__";
 
 function isOnlyMasterEmail(email?: string | null) {
   return norm(email) === ONLY_MASTER_EMAIL;
@@ -150,6 +156,12 @@ function isArchivedReport(r: ReportRow) {
   return norm(r.status) === "archived";
 }
 
+function formatAdvertiserLabel(a: AdvertiserRow) {
+  const name = a.name || "(광고주)";
+  if (a.workspace_name) return `${name} · ${a.workspace_name}`;
+  return name;
+}
+
 function fmtDate(iso?: string | null) {
   if (!iso) return "";
   const d = new Date(iso);
@@ -189,6 +201,7 @@ export default function ReportBuilderPage() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [workspaceName, setWorkspaceName] = useState<string | null>(null);
   const [workspaceMemberships, setWorkspaceMemberships] = useState<WorkspaceMemberRow[]>([]);
+  const [canViewAllWorkspaces, setCanViewAllWorkspaces] = useState(false);
 
   const [memberRole, setMemberRole] = useState<MemberRole>(null);
   const [memberDivision, setMemberDivision] = useState<string | null>(null);
@@ -240,11 +253,14 @@ export default function ReportBuilderPage() {
   const loadingReportsRef = useRef(false);
   const loadingMoreRef = useRef(false);
 
-  const canCreateReport = hasMinRole(memberRole, "staff");
-  const canManageAdvertisers = hasMinRole(memberRole, "staff");
+  const isAllWorkspaceMode = workspaceId === ALL_WORKSPACES;
+
+  const canCreateReport = hasMinRole(memberRole, "staff") && !isAllWorkspaceMode;
+  const canManageAdvertisers = hasMinRole(memberRole, "staff") && !isAllWorkspaceMode;
   const canDeleteReports = canDeleteReportsByRole(memberRole, userEmail);
   const canManageMembers = canManageMembersPage(memberRole, userEmail);
-  const canDeleteAdvertisers = canUseTrueMasterPower(memberRole, userEmail);
+  const canDeleteAdvertisers =
+    canUseTrueMasterPower(memberRole, userEmail) && !isAllWorkspaceMode;
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -286,6 +302,10 @@ export default function ReportBuilderPage() {
       title: String(r.title ?? ""),
       status: String(r.status ?? ""),
       created_at: r.created_at ? String(r.created_at) : undefined,
+
+      workspace_id: r.workspace_id ? String(r.workspace_id) : null,
+      workspace_name: r.workspace_name ? String(r.workspace_name) : null,
+
       advertiser_id: r.advertiser_id ? String(r.advertiser_id) : null,
       advertiser_name: r.advertiser_name ? String(r.advertiser_name) : null,
       share_token: r.share_token ? String(r.share_token) : null,
@@ -529,6 +549,9 @@ export default function ReportBuilderPage() {
         return;
       }
 
+      const canViewAll = Boolean((json as any)?.can_view_all_workspaces);
+      setCanViewAllWorkspaces(canViewAll);
+
       const rows =
         (((json as any)?.workspaces ?? []) as any[]).map((row: any) => ({
           workspace_id: String(row.workspace_id ?? ""),
@@ -555,7 +578,21 @@ export default function ReportBuilderPage() {
 
       const current = pickCurrentMembership(validRows, workspaceIdFromQuery);
 
+      const shouldUseAllWorkspace =
+        canViewAll && workspaceIdFromQuery === ALL_WORKSPACES;
+
       setWorkspaceMemberships(validRows);
+
+      if (shouldUseAllWorkspace) {
+        setWorkspaceId(ALL_WORKSPACES);
+        setWorkspaceName("전체 workspace");
+        setMemberRole("master");
+        setMemberDivision(null);
+        setMemberDepartment(null);
+        setMemberTeam(null);
+        return;
+      }
+
       setWorkspaceId(current?.workspace_id ?? null);
       setWorkspaceName(current?.workspace_name ?? null);
       setMemberRole(current?.role ?? null);
@@ -620,10 +657,12 @@ export default function ReportBuilderPage() {
       }
 
       const rows =
-        (((json as any)?.advertisers ?? []) as any[]).map((x: any) => ({
-          id: String(x.id),
-          name: String(x.name ?? ""),
-        })) || [];
+      (((json as any)?.advertisers ?? []) as any[]).map((x: any) => ({
+        id: String(x.id),
+        name: String(x.name ?? ""),
+        workspace_id: x.workspace_id ? String(x.workspace_id) : null,
+        workspace_name: x.workspace_name ? String(x.workspace_name) : null,
+      })) || [];
 
       setAdvertisers(rows);
 
@@ -860,6 +899,11 @@ export default function ReportBuilderPage() {
   }
 
   async function createReport(type: ReportType) {
+    if (isAllWorkspaceMode) {
+      setLocalMsg("전체 workspace 보기에서는 리포트를 생성할 수 없습니다. 특정 workspace를 선택해 주세요.");
+      return;
+    }
+    
     if (!canCreateReport) {
       setLocalMsg("리포트 생성 권한이 없습니다.");
       return;
@@ -912,28 +956,46 @@ export default function ReportBuilderPage() {
   }
 
   async function deleteSelectedReports() {
-    if (!canDeleteReports) {
-      setLocalMsg("리포트 삭제 권한이 없습니다.");
+  if (!canDeleteReports) {
+    setLocalMsg("리포트 삭제 권한이 없습니다.");
+    return;
+  }
+
+  if (!workspaceId || !selectedReportIds.length || deletingReports) return;
+
+  const targetReportIds = [...selectedReportIds];
+
+  const ok = window.confirm(
+    `선택한 리포트 ${targetReportIds.length}개를 삭제하시겠습니까?\n\n이 삭제는 실제 삭제(hard delete)이며 report_rows / report_creatives / report_csv_uploads / report_image_uploads / reports 데이터가 함께 제거될 수 있습니다.`
+  );
+  if (!ok) return;
+
+  setDeletingReports(true);
+  setLocalMsg(`리포트 ${targetReportIds.length}개 삭제를 시작합니다...`);
+
+  const deletedIds: string[] = [];
+  const failedItems: Array<{
+    id: string;
+    step?: string;
+    error?: string;
+  }> = [];
+  const notFoundIds: string[] = [];
+
+  try {
+    const token = await getAccessToken();
+
+    if (!token) {
+      setLocalMsg("로그인 세션이 없습니다.");
+      setDeletingReports(false);
       return;
     }
 
-    if (!workspaceId || !selectedReportIds.length || deletingReports) return;
+    for (let i = 0; i < targetReportIds.length; i += 1) {
+      const reportId = targetReportIds[i];
 
-    const ok = window.confirm(
-      `선택한 리포트 ${selectedReportIds.length}개를 삭제하시겠습니까?\n\n이 삭제는 실제 삭제(hard delete)이며 report_rows / report_creatives / report_csv_uploads / report_image_uploads / reports 데이터가 함께 제거될 수 있습니다.`
-    );
-    if (!ok) return;
-
-    setDeletingReports(true);
-    setLocalMsg("");
-
-    try {
-      const token = await getAccessToken();
-      if (!token) {
-        setLocalMsg("로그인 세션이 없습니다.");
-        setDeletingReports(false);
-        return;
-      }
+      setLocalMsg(
+        `리포트 삭제 중... ${i + 1}/${targetReportIds.length}`
+      );
 
       const res = await fetch("/api/reports/delete", {
         method: "POST",
@@ -944,7 +1006,7 @@ export default function ReportBuilderPage() {
         },
         body: JSON.stringify({
           workspace_id: workspaceId,
-          report_ids: selectedReportIds,
+          report_ids: [reportId],
         }),
       });
 
@@ -952,23 +1014,101 @@ export default function ReportBuilderPage() {
 
       if (!res.ok || !(json as any)?.ok) {
         console.warn("[reports/delete] failed", res.status, json);
-        setLocalMsg((json as any)?.error || "리포트 삭제 실패");
-        setDeletingReports(false);
-        return;
+
+        failedItems.push({
+          id: reportId,
+          step: (json as any)?.step,
+          error:
+            (json as any)?.detail ||
+            (json as any)?.message ||
+            (json as any)?.error ||
+            "리포트 삭제 실패",
+        });
+
+        continue;
       }
 
-      const deletedCount = Number((json as any)?.deleted_count ?? 0);
+      const nextDeletedIds = Array.isArray((json as any)?.deleted_ids)
+        ? ((json as any).deleted_ids as any[]).map((id) => String(id))
+        : [];
 
-      setSelectedReportIds([]);
-      await fetchReports();
+      const nextFailed = Array.isArray((json as any)?.failed)
+        ? ((json as any).failed as any[])
+        : [];
 
-      setLocalMsg(`리포트 ${deletedCount}개 삭제 완료`);
-    } catch (e: any) {
-      setLocalMsg(e?.message || "리포트 삭제 실패");
-    } finally {
-      setDeletingReports(false);
+      const nextNotFoundIds = Array.isArray((json as any)?.not_found_ids)
+        ? ((json as any).not_found_ids as any[]).map((id) => String(id))
+        : [];
+
+      if (nextDeletedIds.length > 0) {
+        deletedIds.push(...nextDeletedIds);
+
+        const deletedSet = new Set(nextDeletedIds);
+
+        setReports((prev) =>
+          prev.filter((report) => !deletedSet.has(report.id))
+        );
+
+        setSelectedReportIds((prev) =>
+          prev.filter((id) => !deletedSet.has(id))
+        );
+      }
+
+      if (nextFailed.length > 0) {
+        for (const item of nextFailed) {
+          failedItems.push({
+            id: String(item?.id ?? reportId),
+            step: item?.step ? String(item.step) : undefined,
+            error: item?.error ? String(item.error) : "리포트 삭제 실패",
+          });
+        }
+      }
+
+      if (nextNotFoundIds.length > 0) {
+        notFoundIds.push(...nextNotFoundIds);
+      }
+
+      if (
+        nextDeletedIds.length === 0 &&
+        nextFailed.length === 0 &&
+        nextNotFoundIds.length === 0
+      ) {
+        failedItems.push({
+          id: reportId,
+          error: "삭제 결과가 반환되지 않았습니다.",
+        });
+      }
     }
+
+    const deletedSet = new Set(deletedIds);
+
+    setSelectedReportIds((prev) =>
+      prev.filter((id) => !deletedSet.has(id))
+    );
+
+    await fetchReports();
+
+    if (failedItems.length > 0 || notFoundIds.length > 0) {
+      console.warn("[reports/delete] batch partial result", {
+        deletedIds,
+        failedItems,
+        notFoundIds,
+      });
+
+      setLocalMsg(
+        `리포트 삭제 일부 완료: 성공 ${deletedIds.length}개 / 실패 ${failedItems.length}개 / 찾을 수 없음 ${notFoundIds.length}개`
+      );
+      return;
+    }
+
+    setSelectedReportIds([]);
+    setLocalMsg(`리포트 ${deletedIds.length}개 삭제 완료`);
+  } catch (e: any) {
+    setLocalMsg(e?.message || "리포트 삭제 실패");
+  } finally {
+    setDeletingReports(false);
   }
+}
 
   function toggleAdvertiserSelection(advertiserId: string) {
     if (!canDeleteAdvertisers) return;
@@ -1017,13 +1157,16 @@ export default function ReportBuilderPage() {
 
   const advNameById = useMemo(() => {
     const m = new Map<string, string>();
-    for (const a of advertisers) m.set(a.id, a.name);
+    for (const a of advertisers) {
+      m.set(a.id, formatAdvertiserLabel(a));
+    }
     return m;
   }, [advertisers]);
 
   const selectedAdvertiserName = useMemo(() => {
     if (!selectedAdvertiserId) return "";
-    return advertisers.find((a) => a.id === selectedAdvertiserId)?.name ?? "";
+    const advertiser = advertisers.find((a) => a.id === selectedAdvertiserId);
+    return advertiser ? formatAdvertiserLabel(advertiser) : "";
   }, [advertisers, selectedAdvertiserId]);
 
   const memberInfoText = useMemo(() => {
@@ -1063,11 +1206,13 @@ export default function ReportBuilderPage() {
 
       const matchesSelectedAdvertiser = selectedAdvertiserId
         ? String(r.advertiser_id ?? "") === selectedAdvertiserId
+        : isAllWorkspaceMode
+        ? true
         : !r.advertiser_id;
 
       return matchesSearch && matchesStatus && matchesSelectedAdvertiser;
     });
-  }, [reports, search, advNameById, reportFilter, selectedAdvertiserId]);
+  }, [reports, search, advNameById, reportFilter, selectedAdvertiserId, isAllWorkspaceMode]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, ReportRow[]>();
@@ -1530,6 +1675,10 @@ export default function ReportBuilderPage() {
                     className="neoField"
                     style={{ fontSize: 15 }}
                   >
+                    {canViewAllWorkspaces ? (
+                      <option value={ALL_WORKSPACES}>전체 workspace (master)</option>
+                    ) : null}
+
                     {workspaceMemberships.map((wm) => (
                       <option key={wm.workspace_id} value={wm.workspace_id}>
                         {wm.workspace_name || wm.workspace_id}
@@ -1611,7 +1760,7 @@ export default function ReportBuilderPage() {
                   <option value="">광고주 미지정으로 생성</option>
                   {advertisers.map((a) => (
                     <option key={a.id} value={a.id}>
-                      {a.name}
+                      {formatAdvertiserLabel(a)}
                     </option>
                   ))}
                 </select>

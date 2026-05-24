@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 
 const VERIFY_CHUNK_SIZE = 100;
 const DELETE_CHUNK_SIZE = 10;
+const REPORT_ROWS_DELETE_BATCH_SIZE = 10000;
 const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
 
 type FailedItem = {
@@ -17,7 +18,10 @@ type FailedItem = {
 };
 
 function jsonError(status: number, message: string, extra?: Record<string, any>) {
-  return NextResponse.json({ ok: false, error: message, ...(extra ?? {}) }, { status });
+  return NextResponse.json(
+    { ok: false, error: message, ...(extra ?? {}) },
+    { status }
+  );
 }
 
 function asString(v: any) {
@@ -239,25 +243,112 @@ async function deleteRequiredTableByReportId(
   };
 }
 
+/**
+ * 대용량 report_rows 삭제 전용 batch delete
+ *
+ * 기존 방식:
+ * - delete from report_rows where report_id = reportId
+ * - 12만 건 이상일 때 statement timeout 발생
+ *
+ * 변경 방식:
+ * - report_id 기준으로 id만 batch 조회
+ * - 조회된 id 묶음만 .in("id", ids)로 삭제
+ * - 각 batch가 짧게 끝나도록 쪼개서 timeout 가능성을 낮춘다
+ *
+ * 전제:
+ * - public.report_rows(report_id) 인덱스 권장
+ */
+async function deleteReportRowsByReportIdInBatches(reportId: string) {
+  let deletedCount = 0;
+
+  for (let guard = 0; guard < 1000; guard += 1) {
+    const { data, error } = await supabaseAdmin.rpc(
+      "delete_report_rows_batch",
+      {
+        p_report_id: reportId,
+        p_limit: REPORT_ROWS_DELETE_BATCH_SIZE,
+      }
+    );
+
+    if (error) {
+      if (isMissingTableError(error.message || "")) {
+        return {
+          ok: true as const,
+          deleted_count: deletedCount,
+        };
+      }
+
+      return {
+        ok: false as const,
+        step: "delete_report_rows_rpc_batch",
+        error: error.message || "delete_report_rows_rpc_batch_FAILED",
+        deleted_count: deletedCount,
+      };
+    }
+
+    const deletedThisBatch = Number(data ?? 0);
+
+    if (!Number.isFinite(deletedThisBatch) || deletedThisBatch < 0) {
+      return {
+        ok: false as const,
+        step: "delete_report_rows_rpc_batch",
+        error: "delete_report_rows_batch returned invalid count",
+        deleted_count: deletedCount,
+      };
+    }
+
+    deletedCount += deletedThisBatch;
+
+    if (deletedThisBatch === 0) {
+      return {
+        ok: true as const,
+        deleted_count: deletedCount,
+      };
+    }
+
+    if (deletedThisBatch < REPORT_ROWS_DELETE_BATCH_SIZE) {
+      return {
+        ok: true as const,
+        deleted_count: deletedCount,
+      };
+    }
+  }
+
+  return {
+    ok: false as const,
+    step: "delete_report_rows_rpc_batch_guard",
+    error: "report_rows rpc batch delete exceeded guard limit",
+    deleted_count: deletedCount,
+  };
+}
+
 async function deleteSingleReport(
   workspaceId: string,
   reportId: string
 ) {
+  const reportRowsDeleteResult =
+    await deleteReportRowsByReportIdInBatches(reportId);
+
+  if (!reportRowsDeleteResult.ok) {
+    return {
+      ok: false as const,
+      step: reportRowsDeleteResult.step,
+      error: reportRowsDeleteResult.error,
+    };
+  }
+
+  /**
+   * reports를 직접 참조하는 FK 확인 결과:
+   * - insights.report_id → reports.id ON DELETE CASCADE
+   * - report_creatives.report_id → reports.id ON DELETE CASCADE
+   *
+   * 따라서 report_creatives는 먼저 수동 삭제하지 않는다.
+   * reports 삭제 시 DB cascade에 맡기는 것이 더 안전하다.
+   *
+   * upload 기록은 FK cascade가 없을 수 있으므로 기존처럼 선삭제하되,
+   * 테이블이 없는 경우에는 optional로 통과시킨다.
+   */
   const steps = [
-    () =>
-      deleteRequiredTableByReportId(
-        "report_rows",
-        reportId,
-        "delete_report_rows"
-      ),
-
-    () =>
-      deleteRequiredTableByReportId(
-        "report_creatives",
-        reportId,
-        "delete_report_creatives"
-      ),
-
     () =>
       deleteOptionalTableByReportId(
         "report_csv_uploads",

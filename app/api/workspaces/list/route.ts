@@ -220,15 +220,11 @@ export async function GET(req: Request) {
     const actorIsTrueMaster =
       await isTrueMasterUser(userId);
 
-    const actorCanUsePlatformOwnerPower =
-      actorIsPlatformOwner &&
-      actorIsTrueMaster;
-
     /**
-     * 1) platform_owner + true master만
-     * 전체 workspace 조회 가능
+     * true master는 전체 workspace 조회 가능.
+     * platform_owner 단독으로는 전체 권한을 주지 않는다.
      */
-    if (actorCanUsePlatformOwnerPower) {
+    if (actorIsTrueMaster) {
       const {
         data: workspaces,
         error,
@@ -265,20 +261,24 @@ export async function GET(req: Request) {
           department: null,
           team: null,
 
-          platform_role:
-            "platform_owner" as const,
+          platform_role: actorIsPlatformOwner
+            ? ("platform_owner" as const)
+            : null,
         }));
 
       return NextResponse.json({
         ok: true,
-        platform_role: "platform_owner",
+        platform_role: actorIsPlatformOwner
+          ? "platform_owner"
+          : null,
+        is_true_master: true,
+        can_view_all_workspaces: true,
         workspaces: rows,
       });
     }
 
     /**
-     * 2) 일반 사용자는
-     * 본인 membership 기반만 반환
+     * 일반 사용자는 본인 membership 기반만 반환.
      */
     const {
       data: memberships,
@@ -364,6 +364,8 @@ export async function GET(req: Request) {
     return NextResponse.json({
       ok: true,
       platform_role: null,
+      is_true_master: false,
+      can_view_all_workspaces: false,
       workspaces: rows,
     });
   } catch (e: any) {
