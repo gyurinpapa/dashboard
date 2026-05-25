@@ -1,0 +1,384 @@
+"use client";
+
+import {
+  memo,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useParams } from "next/navigation";
+import ReportTemplate from "@/app/components/ReportTemplate";
+import type { ReportPeriod } from "@/src/lib/report/period";
+import { getRowsDateRange } from "@/src/lib/report/period";
+
+type ReportRow = {
+  id: string;
+  title: string;
+  status: "draft" | "ready" | "archived";
+  meta: any;
+  share_token?: string | null;
+
+  period_start?: string | null;
+  period_end?: string | null;
+
+  draft_period_start?: string | null;
+  draft_period_end?: string | null;
+  draft_period_preset?: string | null;
+  draft_period_label?: string | null;
+
+  published_period_start?: string | null;
+  published_period_end?: string | null;
+  published_period_preset?: string | null;
+  published_period_label?: string | null;
+  published_at?: string | null;
+
+  advertiser_id?: string | null;
+  advertiser_name?: string | null;
+  report_type_name?: string | null;
+  report_type_key?: string | null;
+  updated_at?: string | null;
+};
+
+type MonthGoalDraft = {
+  revenue?: string | number | null;
+  cost?: string | number | null;
+  roas?: string | number | null;
+  conversions?: string | number | null;
+  clicks?: string | number | null;
+  ctr?: string | number | null;
+  cvr?: string | number | null;
+};
+
+async function safeReadJson(res: Response) {
+  const text = await res.text().catch(() => "");
+  if (!text) return { __nonjson: true, status: res.status, text: "" };
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { __nonjson: true, status: res.status, text };
+  }
+}
+
+function asStr(v: any) {
+  if (v == null) return "";
+  const s = String(v).trim();
+  if (!s) return "";
+  if (s.toLowerCase() === "null") return "";
+  if (s.toLowerCase() === "undefined") return "";
+  return s;
+}
+
+function pickAdvertiserName(report: ReportRow | null) {
+  if (!report) return "";
+  return (
+    asStr((report as any)?.advertiser_name) ||
+    asStr(report?.meta?.advertiser_name) ||
+    asStr(report?.meta?.advertiserName) ||
+    ""
+  );
+}
+
+function pickReportTypeName(report: ReportRow | null) {
+  if (!report) return "";
+  return (
+    asStr((report as any)?.report_type_name) ||
+    asStr((report as any)?.report_type_key) ||
+    asStr(report?.meta?.report_type_name) ||
+    asStr(report?.meta?.reportTypeName) ||
+    asStr(report?.meta?.report_type_key) ||
+    asStr(report?.meta?.reportTypeKey) ||
+    ""
+  );
+}
+
+function pickReportTypeKey(report: ReportRow | null) {
+  if (!report) return "";
+  return (
+    asStr((report as any)?.report_type_key) ||
+    asStr(report?.meta?.report_type_key) ||
+    asStr(report?.meta?.reportTypeKey) ||
+    ""
+  );
+}
+
+function pickMonthGoal(report: ReportRow | null): MonthGoalDraft | null {
+  const meta = report?.meta && typeof report.meta === "object" ? report.meta : {};
+  const monthGoal =
+    meta?.month_goal && typeof meta.month_goal === "object"
+      ? meta.month_goal
+      : null;
+
+  if (!monthGoal) return null;
+
+  return {
+    revenue: asStr(monthGoal.revenue),
+    cost: asStr(monthGoal.cost),
+    roas: asStr(monthGoal.roas),
+    conversions: asStr(monthGoal.conversions),
+    clicks: asStr(monthGoal.clicks),
+    ctr: asStr(monthGoal.ctr),
+    cvr: asStr(monthGoal.cvr),
+  };
+}
+
+const MemoReportTemplate = memo(ReportTemplate);
+
+export default function ClientSlugReportPage() {
+  const params = useParams<{ slug: string }>();
+  const slug = useMemo(() => String(params?.slug ?? "").trim(), [params]);
+
+  const [loading, setLoading] = useState(true);
+  const [report, setReport] = useState<ReportRow | null>(null);
+  const [rows, setRows] = useState<any[]>([]);
+  const [creativesMap, setCreativesMap] = useState<Record<string, string>>({});
+  const [error, setError] = useState("");
+
+  const [fallbackRowsRange, setFallbackRowsRange] = useState<{
+    startDate: string;
+    endDate: string;
+  } | null>(null);
+
+  const deferredRows = useDeferredValue(rows);
+  const deferredCreativesMap = useDeferredValue(creativesMap);
+
+  const creativesCommitTimerRef = useRef<number | null>(null);
+  const rowsRangeTimerRef = useRef<number | null>(null);
+
+  const advertiserName = useMemo(() => pickAdvertiserName(report), [report]);
+  const reportTypeName = useMemo(() => pickReportTypeName(report), [report]);
+  const reportTypeKey = useMemo(() => pickReportTypeKey(report), [report]);
+  const monthGoal = useMemo(() => pickMonthGoal(report), [report]);
+
+  const shareReportPeriod = useMemo<ReportPeriod>(() => {
+    const publishedStart = asStr(report?.published_period_start);
+    const publishedEnd = asStr(report?.published_period_end);
+
+    if (publishedStart && publishedEnd) {
+      return {
+        preset: "custom",
+        startDate: publishedStart,
+        endDate: publishedEnd,
+      };
+    }
+
+    const legacyStart = asStr(report?.period_start);
+    const legacyEnd = asStr(report?.period_end);
+
+    if (legacyStart && legacyEnd) {
+      return {
+        preset: "custom",
+        startDate: legacyStart,
+        endDate: legacyEnd,
+      };
+    }
+
+    if (fallbackRowsRange?.startDate && fallbackRowsRange?.endDate) {
+      return {
+        preset: "custom",
+        startDate: fallbackRowsRange.startDate,
+        endDate: fallbackRowsRange.endDate,
+      };
+    }
+
+    return {
+      preset: "custom",
+      startDate: "",
+      endDate: "",
+    };
+  }, [
+    report?.published_period_start,
+    report?.published_period_end,
+    report?.period_start,
+    report?.period_end,
+    fallbackRowsRange?.startDate,
+    fallbackRowsRange?.endDate,
+  ]);
+
+  useEffect(() => {
+    const publishedStart = asStr(report?.published_period_start);
+    const publishedEnd = asStr(report?.published_period_end);
+    const legacyStart = asStr(report?.period_start);
+    const legacyEnd = asStr(report?.period_end);
+
+    const hasReportPeriod =
+      (publishedStart && publishedEnd) || (legacyStart && legacyEnd);
+
+    if (rowsRangeTimerRef.current !== null) {
+      window.clearTimeout(rowsRangeTimerRef.current);
+      rowsRangeTimerRef.current = null;
+    }
+
+    if (hasReportPeriod) {
+      setFallbackRowsRange((prev) => (prev === null ? prev : null));
+      return;
+    }
+
+    if (!rows.length) {
+      setFallbackRowsRange((prev) => (prev === null ? prev : null));
+      return;
+    }
+
+    rowsRangeTimerRef.current = window.setTimeout(() => {
+      const range = getRowsDateRange(rows as any[]);
+      const nextRange =
+        range?.startDate && range?.endDate
+          ? {
+              startDate: range.startDate,
+              endDate: range.endDate,
+            }
+          : null;
+
+      setFallbackRowsRange((prev) => {
+        const prevStart = prev?.startDate ?? "";
+        const prevEnd = prev?.endDate ?? "";
+        const nextStart = nextRange?.startDate ?? "";
+        const nextEnd = nextRange?.endDate ?? "";
+
+        if (prevStart === nextStart && prevEnd === nextEnd) {
+          return prev;
+        }
+
+        return nextRange;
+      });
+    }, 0);
+
+    return () => {
+      if (rowsRangeTimerRef.current !== null) {
+        window.clearTimeout(rowsRangeTimerRef.current);
+        rowsRangeTimerRef.current = null;
+      }
+    };
+  }, [
+    report?.published_period_start,
+    report?.published_period_end,
+    report?.period_start,
+    report?.period_end,
+    rows,
+  ]);
+
+  useEffect(() => {
+    if (!slug) {
+      setError("광고주 URL이 없습니다.");
+      setLoading(false);
+      return;
+    }
+
+    let alive = true;
+
+    if (creativesCommitTimerRef.current !== null) {
+      window.clearTimeout(creativesCommitTimerRef.current);
+      creativesCommitTimerRef.current = null;
+    }
+    if (rowsRangeTimerRef.current !== null) {
+      window.clearTimeout(rowsRangeTimerRef.current);
+      rowsRangeTimerRef.current = null;
+    }
+
+    setLoading(true);
+    setError("");
+    setReport(null);
+    setRows([]);
+    setCreativesMap({});
+    setFallbackRowsRange(null);
+
+    (async () => {
+      try {
+        const clientRes = await fetch(`/api/client/${encodeURIComponent(slug)}`, {
+          cache: "no-store",
+        });
+
+        const clientJson = await safeReadJson(clientRes);
+
+        if (!alive) return;
+
+        if (!clientRes.ok || !clientJson?.ok) {
+          setError(asStr(clientJson?.detail) || asStr(clientJson?.error) || "광고주 리포트 조회 실패");
+          setLoading(false);
+          return;
+        }
+
+        const shareToken = asStr(clientJson?.report?.share_token);
+
+        if (!shareToken) {
+          setError("발행된 공유 리포트가 없습니다.");
+          setLoading(false);
+          return;
+        }
+
+        const shareRes = await fetch(`/api/share/${encodeURIComponent(shareToken)}`, {
+          cache: "no-store",
+        });
+
+        const shareJson = await safeReadJson(shareRes);
+
+        if (!alive) return;
+
+        if (!shareRes.ok || !shareJson?.ok) {
+          setError(asStr(shareJson?.error) || "공유 리포트 조회 실패");
+          setLoading(false);
+          return;
+        }
+
+        const nextReport = (shareJson.report ?? null) as ReportRow | null;
+        const nextRows = Array.isArray(shareJson.rows) ? shareJson.rows : [];
+        const nextCreativesMap =
+          shareJson.creativesMap && typeof shareJson.creativesMap === "object"
+            ? shareJson.creativesMap
+            : {};
+
+        setReport(nextReport);
+        setRows(nextRows);
+        setLoading(false);
+
+        creativesCommitTimerRef.current = window.setTimeout(() => {
+          if (!alive) return;
+          setCreativesMap(nextCreativesMap);
+        }, 0);
+      } catch (e: any) {
+        if (!alive) return;
+        setError(asStr(e?.message) || "Unknown error");
+        setLoading(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+
+      if (creativesCommitTimerRef.current !== null) {
+        window.clearTimeout(creativesCommitTimerRef.current);
+        creativesCommitTimerRef.current = null;
+      }
+
+      if (rowsRangeTimerRef.current !== null) {
+        window.clearTimeout(rowsRangeTimerRef.current);
+        rowsRangeTimerRef.current = null;
+      }
+    };
+  }, [slug]);
+
+  if (loading) {
+    return <main className="p-6">Loading...</main>;
+  }
+
+  if (error) {
+    return <main className="p-6">{error}</main>;
+  }
+
+  return (
+    <MemoReportTemplate
+      rows={deferredRows}
+      isLoading={false}
+      creativesMap={deferredCreativesMap}
+      advertiserName={advertiserName}
+      reportTypeName={reportTypeName}
+      reportTypeKey={reportTypeKey}
+      reportPeriod={shareReportPeriod}
+      monthGoal={monthGoal}
+      onChangeReportPeriod={() => {}}
+      hidePeriodEditor={true}
+      hideTabPeriodText={true}
+    />
+  );
+}

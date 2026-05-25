@@ -82,6 +82,8 @@ type ReportDetail = {
   status?: string | null;
   meta?: any;
   workspace_id?: string | null;
+  advertiser_id?: string | null;
+  advertiser_public_slug?: string | null;
 
   advertiser_name?: string | null;
   advertiserName?: string | null;
@@ -571,6 +573,48 @@ function fullUrl(path: string) {
   return `${window.location.origin}${path}`;
 }
 
+function normalizePublicSlug(v: any) {
+  const s = asStr(v).toLowerCase();
+  if (!s) return "";
+  if (!/^[a-z0-9][a-z0-9-]{1,58}[a-z0-9]$/.test(s)) return "";
+  return s;
+}
+
+function buildClientSharePathFromSlug(slug: string) {
+  const safeSlug = normalizePublicSlug(slug);
+  if (!safeSlug) return "";
+  return `/client/${safeSlug}`;
+}
+
+function pickAdvertiserIdFromReport(report: ReportDetail | null | undefined) {
+  const meta = report?.meta && typeof report.meta === "object" ? report.meta : {};
+
+  return (
+    asStr((report as any)?.advertiser_id) ||
+    asStr(meta?.advertiser_id) ||
+    asStr(meta?.advertiserId) ||
+    ""
+  );
+}
+
+async function fetchAdvertiserPublicSlug(advertiserId: string) {
+  const id = asStr(advertiserId);
+  if (!id) return "";
+
+  const { data, error } = await supabase
+    .from("advertisers")
+    .select("public_slug")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    console.warn("[advertiser public_slug fetch failed]", error);
+    return "";
+  }
+
+  return normalizePublicSlug((data as any)?.public_slug);
+}
+
 function uniqCount(values: string[]) {
   const s = new Set<string>();
   for (const v of values) if (v) s.add(v);
@@ -942,6 +986,7 @@ export default function ReportDetailPage() {
 
   const [publishing, setPublishing] = useState(false);
   const [sharePath, setSharePath] = useState<string>("");
+  const [advertiserPublicSlug, setAdvertiserPublicSlug] = useState<string>("");
 
   const csvInputRef = useRef<HTMLInputElement | null>(null);
   const [csvFile, setCsvFile] = useState<File | null>(null);
@@ -1054,6 +1099,34 @@ export default function ReportDetailPage() {
     setMonthGoal(nextGoal);
     lastLoadedMonthGoalKeyRef.current = nextKey;
     setMonthGoalSavedText("");
+  }, [report]);
+
+  useEffect(() => {
+    let alive = true;
+
+    const advertiserId = pickAdvertiserIdFromReport(report);
+
+    if (!advertiserId) {
+      setAdvertiserPublicSlug("");
+      return;
+    }
+
+    const fromReport = normalizePublicSlug((report as any)?.advertiser_public_slug);
+    if (fromReport) {
+      setAdvertiserPublicSlug(fromReport);
+      return;
+    }
+
+    setAdvertiserPublicSlug("");
+
+    void fetchAdvertiserPublicSlug(advertiserId).then((slug) => {
+      if (!alive) return;
+      setAdvertiserPublicSlug(slug);
+    });
+
+    return () => {
+      alive = false;
+    };
   }, [report]);
 
   useEffect(() => {
@@ -1183,6 +1256,16 @@ export default function ReportDetailPage() {
   const previewPeriodLabel = useMemo(() => {
     return getPeriodLabel(reportPeriod);
   }, [reportPeriod]);
+
+  const displaySharePath = useMemo(() => {
+    const clientPath = buildClientSharePathFromSlug(advertiserPublicSlug);
+
+    if (clientPath && (sharePath || report?.status === "ready")) {
+      return clientPath;
+    }
+
+    return sharePath;
+  }, [advertiserPublicSlug, report?.status, sharePath]);
 
   const hasPublishableRows =
     Math.max(ingestionInfo.inserted, ingestionInfo.validRows) > 0;
@@ -1407,6 +1490,7 @@ export default function ReportDetailPage() {
 
     setSharePath("");
     setMsg("");
+    setAdvertiserPublicSlug("");
 
     setReport(null);
     setMonthGoal(buildEmptyMonthGoal());
@@ -1921,19 +2005,25 @@ export default function ReportDetailPage() {
         <div className="rounded-xl border p-3">
           <div className="text-xs text-gray-500">공유 URL</div>
           <div className="mt-1 text-sm">
-            {sharePath ? (
+            {displaySharePath ? (
               <a
-                href={fullUrl(sharePath)}
+                href={fullUrl(displaySharePath)}
                 target="_blank"
                 rel="noreferrer"
                 className="break-all text-blue-600 underline"
               >
-                {fullUrl(sharePath)}
+                {fullUrl(displaySharePath)}
               </a>
             ) : (
               "-"
             )}
           </div>
+
+          {advertiserPublicSlug ? (
+            <div className="mt-2 text-[11px] text-gray-500">
+              광고주 고정 URL 사용 중
+            </div>
+          ) : null}
         </div>
       </div>
 
