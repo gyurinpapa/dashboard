@@ -115,6 +115,82 @@ function creativePreviewKey(item: CreativeAgg | null | undefined) {
   return `${String(item.creative ?? "")}__${String(item.imagePath ?? "")}`;
 }
 
+function normalizeCreativeMatchKey(v: any, options?: { stripExtension?: boolean }) {
+  let s = String(v ?? "").trim();
+
+  if (!s) return "";
+
+  s = s.replace(/\\/g, "/");
+  s = s.split("?")[0].split("#")[0];
+  s = s.split("/").pop() || s;
+  s = s.replace(/\u00A0/g, " ").replace(/\s+/g, " ").trim();
+
+  if (options?.stripExtension) {
+    s = s.replace(/\.[a-z0-9]{1,10}$/i, "");
+  }
+
+  try {
+    return s.normalize("NFC").toLowerCase();
+  } catch {
+    return s.toLowerCase();
+  }
+}
+
+function isUsableCreativeImageUrl(v: any) {
+  const s = String(v ?? "").trim();
+
+  if (!s) return false;
+
+  const lower = s.toLowerCase();
+
+  return (
+    lower.startsWith("http://") ||
+    lower.startsWith("https://") ||
+    lower.startsWith("blob:") ||
+    lower.startsWith("data:image/")
+  );
+}
+
+function pickCreativeImageUrl(...values: any[]) {
+  for (const v of values) {
+    const s = String(v ?? "").trim();
+
+    if (isUsableCreativeImageUrl(s)) {
+      return s;
+    }
+  }
+
+  return "";
+}
+
+function getCreativeNameCandidate(row: any) {
+  return (
+    row?.creative ??
+    row?.creative_name ??
+    row?.creativeName ??
+    row?.ad_name ??
+    row?.adName ??
+    row?.name ??
+    ""
+  );
+}
+
+function getCreativeImageUrlCandidate(row: any) {
+  return pickCreativeImageUrl(
+    row?.imagePath,
+    row?.image_path,
+    row?.imageUrl,
+    row?.image_url,
+    row?.creativeImagePath,
+    row?.creative_image_path,
+    row?.creativeImageUrl,
+    row?.creative_image_url,
+    row?.thumbnailUrl,
+    row?.thumbnail_url,
+    row?.thumbnail
+  );
+}
+
 function computePreviewPosition(anchorEl: HTMLElement | null) {
   if (!anchorEl || typeof window === "undefined") {
     return {
@@ -444,17 +520,17 @@ const CreativePreviewOverlay = memo(function CreativePreviewOverlay({
 
         <div className="flex items-center justify-between px-4 py-3 text-[11px] text-[#7A8794]">
           <span className="truncate">
-            {hoveredCreative.imagePath ? "이미지 미리보기" : "Fallback preview"}
+            {hasPreviewImage ? "이미지 미리보기" : "Fallback preview"}
           </span>
           <span
             className={[
               "rounded-full px-2 py-0.5 font-semibold",
-              hoveredCreative.imagePath
+              hasPreviewImage
                 ? "bg-[#B7D7E3]/22 text-[#5F87A3]"
                 : "bg-[#F3E4D2]/35 text-[#7A8794]",
             ].join(" ")}
           >
-            {hoveredCreative.imagePath ? "IMAGE" : "EMPTY"}
+            {hasPreviewImage ? "IMAGE" : "EMPTY"}
           </span>
         </div>
       </div>
@@ -465,6 +541,30 @@ const CreativePreviewOverlay = memo(function CreativePreviewOverlay({
 export default function CreativeSection({ reportType, rows }: Props) {
   const reportMode = resolveReportMode(reportType);
   const tableMeta = getCreativeTableMeta(reportMode);
+
+  const imagePathByCreativeKey = useMemo(() => {
+    const map = new Map<string, string>();
+
+    for (const row of rows ?? []) {
+      const imageUrl = getCreativeImageUrlCandidate(row);
+      if (!imageUrl) continue;
+
+      const creativeName = getCreativeNameCandidate(row);
+
+      const keys = [
+        normalizeCreativeMatchKey(creativeName),
+        normalizeCreativeMatchKey(creativeName, { stripExtension: true }),
+      ].filter(Boolean);
+
+      for (const key of keys) {
+        if (!map.has(key)) {
+          map.set(key, imageUrl);
+        }
+      }
+    }
+
+    return map;
+  }, [rows]);
 
   const creativeAgg: CreativeAgg[] = useMemo(() => {
     const rawAgg = groupByCreative(rows ?? []);
@@ -488,9 +588,19 @@ export default function CreativeSection({ reportType, rows }: Props) {
       );
       const roas = normalizeRoas01(r.roas ?? (cost > 0 ? revenue / cost : 0));
 
+      const creative = String(r.creative ?? "");
+      const directImageUrl = getCreativeImageUrlCandidate(r);
+      const imagePath =
+        directImageUrl ||
+        imagePathByCreativeKey.get(normalizeCreativeMatchKey(creative)) ||
+        imagePathByCreativeKey.get(
+          normalizeCreativeMatchKey(creative, { stripExtension: true })
+        ) ||
+        "";
+
       return {
-        creative: String(r.creative ?? ""),
-        imagePath: r.imagePath ? String(r.imagePath) : "",
+        creative,
+        imagePath,
         impressions,
         clicks,
         ctr,
@@ -503,7 +613,7 @@ export default function CreativeSection({ reportType, rows }: Props) {
         roas,
       };
     });
-  }, [rows]);
+  }, [rows, imagePathByCreativeKey]);
 
   const topImpressions = useMemo(
     () =>

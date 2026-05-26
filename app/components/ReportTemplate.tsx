@@ -3582,7 +3582,7 @@ export default function ReportTemplate({
                     <div className="rounded-2xl">
                       <CreativeSection
                         {...({ reportType } as any)}
-                        rows={creativeOnlyRows}
+                        rows={summaryFilteredRowsWithCreatives as any[]}
                       />
                     </div>
                   )}
@@ -3591,7 +3591,7 @@ export default function ReportTemplate({
                     <div className="rounded-2xl">
                       <CreativeDetailSection
                         {...({ reportType } as any)}
-                        rows={creativeOnlyRows as any[]}
+                        rows={summaryFilteredRowsWithCreatives as any[]}
                       />
                     </div>
                   )}
