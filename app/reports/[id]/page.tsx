@@ -339,12 +339,26 @@ async function runIngestion(reportId: string) {
   const res = await authFetch(`/api/reports/${reportId}/ingestion/run`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ mode: "replace" }),
+
+    /**
+     * ✅ 대용량 CSV 안정화
+     * - 기존 replace는 API 요청 안에서 CSV 파싱/insert까지 실행했다.
+     * - queue는 ingestion_jobs에 작업만 등록하고 즉시 응답한다.
+     * - 실제 파싱/insert는 다음 단계 worker가 처리한다.
+     */
+    body: JSON.stringify({ mode: "queue" }),
   });
+
   const json = await safeJson(res);
+
   if (!res.ok || !json?.ok) {
-    throw new Error(json?.error || `Ingestion failed (${res.status})`);
+    throw new Error(
+      json?.detail ||
+        json?.error ||
+        `Ingestion queue failed (${res.status})`
+    );
   }
+
   return json;
 }
 
@@ -677,13 +691,33 @@ function extractIngestionInfo(
       : "idle";
 
   const progress = Math.max(0, Math.min(100, asNum(ingestion?.progress)));
-  const totalLines = asNum(ingestion?.total_lines);
-  const parsedLines = asNum(ingestion?.parsed_lines);
-  const inserted = asNum(ingestion?.inserted);
-  const validRows = asNum(ingestion?.valid_rows);
+  const totalLines = Math.max(
+    asNum(ingestion?.total_lines),
+    asNum(ingestion?.totalRows),
+    asNum(ingestion?.total_rows)
+  );
+
+  const parsedLines = Math.max(
+    asNum(ingestion?.parsed_lines),
+    asNum(ingestion?.parsedLines),
+    asNum(ingestion?.parsed_rows)
+  );
+
+  const inserted = Math.max(
+    asNum(ingestion?.inserted),
+    asNum(ingestion?.insertedRows),
+    asNum(ingestion?.inserted_rows)
+  );
+  const validRows = Math.max(
+    asNum(ingestion?.valid_rows),
+    asNum(ingestion?.validRows)
+  );  
   const batchSize = asNum(ingestion?.batch_size);
   const committedBatches = asNum(ingestion?.committed_batches);
-  const error = asStr(ingestion?.error);
+  const error =
+    asStr(ingestion?.error) ||
+    asStr(ingestion?.error_detail) ||
+    asStr(ingestion?.errorDetail);
   const startedAt = asStr(ingestion?.started_at);
   const finishedAt = asStr(ingestion?.finished_at);
 
@@ -1010,6 +1044,7 @@ export default function ReportDetailPage() {
   });
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollingBusyRef = useRef(false);
+  const pollingCountRef = useRef(0);
   const postDoneRefreshTimerRef = useRef<number | null>(null);
 
   const creativesInputRef = useRef<HTMLInputElement | null>(null);
@@ -1062,13 +1097,51 @@ export default function ReportDetailPage() {
   }, [displayRows]);
 
   const ingestionStatusLabel = useMemo(() => {
-    if (ingestionStatus === "idle") return "대기";
-    if (ingestionStatus === "queued") return "업로드 완료 / 시작 대기";
-    if (ingestionStatus === "processing") return "파싱 중";
-    if (ingestionStatus === "done") return "완료";
-    if (ingestionStatus === "failed") return "실패";
-    return "대기";
+    if (ingestionStatus === "idle") return "CSV 업로드 대기";
+    if (ingestionStatus === "queued") return "서버 처리 대기중";
+    if (ingestionStatus === "processing") return "서버에서 CSV 처리중";
+    if (ingestionStatus === "done") return "처리 완료";
+    if (ingestionStatus === "failed") return "처리 실패";
+    return "CSV 업로드 대기";
   }, [ingestionStatus]);
+  
+
+  const ingestionStatusDescription = useMemo(() => {
+    if (ingestionStatus === "idle") {
+      return "CSV 파일을 선택한 뒤 업로드하면 서버 처리 대기열에 등록됩니다.";
+    }
+
+    if (ingestionStatus === "queued") {
+      return "CSV 업로드는 완료되었습니다. WORKER 터미널이 켜져 있으면 곧 서버 처리가 시작됩니다.";
+    }
+
+    if (ingestionStatus === "processing") {
+      return "서버에서 CSV를 처리 중입니다. 화면을 닫아도 작업은 계속되며, 완료되면 자동으로 반영됩니다.";
+    }
+
+    if (ingestionStatus === "done") {
+      return "처리 완료. rows가 반영되었고 발행 가능한 상태입니다.";
+    }
+
+    if (ingestionStatus === "failed") {
+      return ingestionInfo.error
+        ? `처리 중 오류가 발생했습니다: ${ingestionInfo.error}`
+        : "처리 중 오류가 발생했습니다. 오류 내용을 확인한 뒤 다시 업로드하거나 재시도하세요.";
+    }
+
+    return "CSV 파일을 선택한 뒤 업로드하면 서버 처리 대기열에 등록됩니다.";
+  }, [ingestionInfo.error, ingestionStatus]);
+
+  const csvUploadButtonText = useMemo(() => {
+    if (csvUploading) return "CSV 업로드 중...";
+    if (ingestionStatus === "queued") return "서버 처리 대기중";
+    if (ingestionStatus === "processing") {
+      return `서버 처리중... ${formatInt(ingestionInfo.progress)}%`;
+    }
+    if (ingestionStatus === "done") return "CSV 다시 업로드";
+    if (ingestionStatus === "failed") return "CSV 다시 시도";
+    return "CSV 업로드";
+  }, [csvUploading, ingestionInfo.progress, ingestionStatus]);
 
   const monthGoalDirty = useMemo(() => {
     const currentKey = monthGoalToStableKey(monthGoal);
@@ -1386,6 +1459,64 @@ export default function ReportDetailPage() {
     }
   }, [reportId]);
 
+    const refreshReportShell = useCallback(async () => {
+    if (!reportId) return;
+
+    setLoadingRows(false);
+    setMsg("");
+
+    let nextMsg = "";
+
+    const [detailResult, creativesResult] = await Promise.allSettled([
+      fetchReportDetail(reportId),
+      fetchCreativesMap(reportId),
+    ]);
+
+    if (detailResult.status === "fulfilled") {
+      const detail = detailResult.value;
+      setReport(detail);
+
+      const info = extractIngestionInfo(detail);
+      setIngestionInfo(info);
+      setIngestionStatus(info.status);
+
+      setHeaderInfo(normalizeHeaderInfoFromReport(detail));
+    } else {
+      console.error("[refreshReportShell] report detail failed", detailResult.reason);
+      nextMsg += `report 조회 실패: ${
+        (detailResult.reason as any)?.message || "unknown"
+      }\n`;
+
+      setHeaderInfo({
+        advertiserName: "",
+        reportTypeName: "",
+        reportTypeKey: "",
+      });
+    }
+
+    if (creativesResult.status === "fulfilled") {
+      const nextCreativesMap = { ...(creativesResult.value ?? {}) };
+      setCreativesMap(nextCreativesMap);
+
+      console.log("[refreshReportShell] creativesMap ok", {
+        keyCount: Object.keys(nextCreativesMap).length,
+      });
+    } else {
+      console.error(
+        "[refreshReportShell] creativesMap failed",
+        creativesResult.reason
+      );
+      setCreativesMap({});
+      nextMsg += `creativesMap 조회 실패: ${
+        (creativesResult.reason as any)?.message || "unknown"
+      }\n`;
+    }
+
+    if (nextMsg.trim()) {
+      setMsg(nextMsg.trim());
+    }
+  }, [reportId]);
+
   const pollIngestionStatus = useCallback(
     async (targetReportId: string) => {
       if (!targetReportId) return;
@@ -1395,12 +1526,37 @@ export default function ReportDetailPage() {
         pollingRef.current = null;
       }
 
+      pollingCountRef.current = 0;
+
       if (postDoneRefreshTimerRef.current !== null) {
         window.clearTimeout(postDoneRefreshTimerRef.current);
         postDoneRefreshTimerRef.current = null;
       }
 
       pollingRef.current = setInterval(async () => {
+        pollingCountRef.current += 1;
+
+        if (pollingCountRef.current > 60) {
+          if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+          }
+
+          pollingBusyRef.current = false;
+
+          setMsg(
+            "서버 처리 상태 확인 시간이 길어지고 있습니다. WORKER 터미널이 켜져 있는지 확인한 뒤 새로고침해 주세요."
+          );
+
+          setIngestionInfo((prev) => ({
+            ...prev,
+            error:
+              "서버 처리 상태 확인 시간이 길어지고 있습니다. 로컬 개발 환경이라면 WORKER 터미널에서 npm run worker:ingestion이 실행 중인지 확인하세요.",
+          }));
+
+          return;
+        }
+
         if (pollingBusyRef.current) return;
         pollingBusyRef.current = true;
 
@@ -1434,25 +1590,21 @@ export default function ReportDetailPage() {
             );
 
             postDoneRefreshTimerRef.current = window.setTimeout(() => {
-              void refreshRows().then((refreshed) => {
-                if (hasInsertedRows) {
-                  setIngestionStatus("done");
-                  setSessionIngested(true);
-                } else {
-                  setSessionIngested(false);
-                  setMsg(
-                    "파싱 상태는 완료로 응답됐지만 inserted/valid rows가 0입니다. CSV 파싱 결과가 실제로 저장되지 않아 아직 발행할 수 없습니다."
-                  );
-                }
-
+              if (hasInsertedRows) {
+                setIngestionStatus("done");
+                setSessionIngested(true);
                 setMsg(
-                  `파싱 완료${
-                    info.inserted > 0
-                      ? ` (inserted: ${formatInt(info.inserted)})`
-                      : ""
-                  } → 발행 가능 상태로 전환되었습니다.`
+                  `처리 완료${
+                    info.inserted > 0 ? ` (inserted: ${formatInt(info.inserted)})` : ""
+                  } → 서버에 rows가 저장되었고 발행 가능 상태입니다.`
                 );
-              });
+                return;
+              }
+
+              setSessionIngested(false);
+              setMsg(
+                "처리 상태는 완료로 응답됐지만 inserted/valid rows가 0입니다. CSV 파싱 결과가 실제로 저장되지 않아 아직 발행할 수 없습니다."
+              );
             }, 180);
           }
 
@@ -1474,9 +1626,9 @@ export default function ReportDetailPage() {
         } finally {
           pollingBusyRef.current = false;
         }
-      }, 700);
+      }, 5000);
     },
-    [refreshRows]
+    []
   );
 
   useEffect(() => {
@@ -1522,6 +1674,7 @@ export default function ReportDetailPage() {
       postDoneRefreshTimerRef.current = null;
     }
     pollingBusyRef.current = false;
+    pollingCountRef.current = 0;
 
     setIngestionStatus("idle");
     setIngestionInfo({
@@ -1540,11 +1693,11 @@ export default function ReportDetailPage() {
 
     setReportPeriod(resolvePresetPeriod());
 
-    void refreshRows();
+    void refreshReportShell();
 
     const d = new Date(sessionStartedAtRef.current);
     setSessionStartedText(d.toLocaleString());
-  }, [reportId, refreshRows]);
+    }, [reportId, refreshReportShell]);
 
   useEffect(() => {
     return () => {
@@ -1557,6 +1710,7 @@ export default function ReportDetailPage() {
         postDoneRefreshTimerRef.current = null;
       }
       pollingBusyRef.current = false;
+      pollingCountRef.current = 0;
     };
   }, []);
 
@@ -1648,12 +1802,12 @@ export default function ReportDetailPage() {
         up?.item?.name || (up?.item as any)?.file_name || csvFile.name || "";
       if (uploadedName) setLastUploadedCsvName(String(uploadedName));
 
-      setMsg("CSV 업로드 완료 → 파싱 시작 중...");
-      setIngestionStatus("processing");
+      setMsg("CSV 업로드 완료 → 서버 처리 대기열 등록 중...");
+      setIngestionStatus("queued");
       setIngestionInfo((prev) => ({
         ...prev,
-        status: "processing",
-        progress: 3,
+        status: "queued",
+        progress: 0,
         parsedLines: 0,
         totalLines: 0,
         inserted: 0,
@@ -1663,6 +1817,52 @@ export default function ReportDetailPage() {
 
       runIngestion(reportId)
         .then(async (result) => {
+          /**
+           * ✅ queue 모드 정상 응답
+           * - 여기서는 아직 rows가 insert되지 않는 것이 정상이다.
+           * - 따라서 inserted/validRows가 0이어도 실패 처리하면 안 된다.
+           * - worker가 처리하면서 reports.meta.ingestion 상태를 queued → processing → done/failed로 갱신한다.
+           */
+          if (result?.queued || result?.status === "queued") {
+            const jobId = asStr(result?.job_id || result?.ingestion_id);
+
+            setSessionIngested(false);
+            setIngestionStatus("queued");
+            setIngestionInfo((prev) => ({
+              ...prev,
+              status: "queued",
+              progress: 0,
+              parsedLines: 0,
+              totalLines: 0,
+              inserted: 0,
+              validRows: 0,
+              batchSize: 0,
+              committedBatches: 0,
+              error: "",
+            }));
+
+            setMsg(
+              jobId
+                ? `CSV 업로드 완료 → 서버 처리 대기열에 등록되었습니다. job: ${jobId}`
+                : "CSV 업로드 완료 → 서버 처리 대기열에 등록되었습니다."
+            );
+
+            /**
+             * ✅ queue 등록 직후에는 rows를 다시 가져오지 않는다.
+             * - 아직 worker가 처리하기 전이라 rows가 바뀌지 않았다.
+             * - 3만~10만 행 rows fetch를 불필요하게 실행하면 화면이 무거워진다.
+             * - done 감지 후에도 rows 전체 fetch는 자동 실행하지 않는다.
+             * - 발행 가능 여부는 reports.meta.ingestion의 inserted/validRows 기준으로 판단한다.
+             */
+            pollIngestionStatus(reportId);
+            return;
+          }
+
+          /**
+           * ✅ 기존 replace 응답 fallback
+           * - 혹시 기존 replace 경로를 사용할 때를 위해 남겨둔다.
+           * - 기존 로직/구조 보호용.
+           */
           const inserted = asNum(result?.inserted);
           const validRows = asNum(result?.validRows ?? result?.valid_rows);
           const parsedLines = asNum(result?.parsedLines ?? result?.parsed_lines);
@@ -1755,7 +1955,8 @@ export default function ReportDetailPage() {
       setCreativeFiles([]);
       if (creativesInputRef.current) creativesInputRef.current.value = "";
 
-      await refreshRows();
+      const nextCreativesMap = await fetchCreativesMap(reportId);
+      setCreativesMap({ ...(nextCreativesMap ?? {}) });
 
       setMsg(`소재 업로드 완료: ${filesCount}개`);
     } catch (e: any) {
@@ -1763,40 +1964,54 @@ export default function ReportDetailPage() {
     } finally {
       setUploadingCreatives(false);
     }
-  }, [creativeFiles, refreshRows, reportId]);
+  }, [creativeFiles, reportId]);
 
   const handlePublish = useCallback(async () => {
-    if (!reportId) return;
+  if (!reportId) return;
 
-    if (!isPublishReady || !hasPublishableRows) {
+  if (!isPublishReady || !hasPublishableRows) {
+    setMsg(
+      "CSV 업로드 + 파싱이 완료되어 rows 데이터가 준비되어야 발행할 수 있습니다."
+    );
+    return;
+  }
+
+  setPublishing(true);
+  setMsg("");
+  try {
+    const out = await publishReportWithFallback(reportId);
+
+    if (out.sharePath) setSharePath(out.sharePath);
+
+    setReport((prev) => {
+      if (!prev) return prev;
+
+      return {
+        ...prev,
+        status: out.status || "ready",
+      };
+    });
+
+    if (out.used === "publish-lite") {
       setMsg(
-        "CSV 업로드 + 파싱이 완료되어 rows 데이터가 준비되어야 발행할 수 있습니다."
+        "발행 완료(안전모드: publish-lite). 아래 URL로 실제 보고서를 볼 수 있습니다."
       );
-      return;
+    } else {
+      setMsg("발행 완료. 아래 URL로 실제 보고서를 볼 수 있습니다.");
     }
 
-    setPublishing(true);
-    setMsg("");
-    try {
-      const out = await publishReportWithFallback(reportId);
-
-      if (out.sharePath) setSharePath(out.sharePath);
-
-      if (out.used === "publish-lite") {
-        setMsg(
-          "발행 완료(안전모드: publish-lite). 아래 URL로 실제 보고서를 볼 수 있습니다."
-        );
-      } else {
-        setMsg("발행 완료. 아래 URL로 실제 보고서를 볼 수 있습니다.");
-      }
-
-      await refreshRows();
-    } catch (e: any) {
-      setMsg(e?.message || "발행 실패");
-    } finally {
-      setPublishing(false);
-    }
-  }, [hasPublishableRows, isPublishReady, refreshRows, reportId]);
+    /**
+     * 대용량 CSV 안정화:
+     * 발행 직후 rows 전체를 다시 조회하지 않는다.
+     * 10만 행 이상에서는 /rows 전체 fetch가 statement timeout을 유발할 수 있다.
+     * 발행 가능 여부는 ingestionInfo.inserted / validRows와 publish 응답으로 판단한다.
+     */
+  } catch (e: any) {
+    setMsg(e?.message || "발행 실패");
+  } finally {
+    setPublishing(false);
+  }
+}, [hasPublishableRows, isPublishReady, reportId]);
 
   const handleOpenExportBuilder = useCallback(() => {
     if (!reportId) return;
@@ -1975,6 +2190,11 @@ export default function ReportDetailPage() {
         <div className="rounded-xl border p-3">
           <div className="text-xs text-gray-500">CSV 파싱 상태</div>
           <div className="mt-1 text-sm font-medium">{ingestionStatusLabel}</div>
+
+          <div className="mt-1 text-xs leading-5 text-gray-500">
+            {ingestionStatusDescription}
+          </div>
+
           <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-gray-100">
             <div
               className={`h-full rounded-full transition-all ${
@@ -2000,6 +2220,18 @@ export default function ReportDetailPage() {
             <span className="text-gray-300">·</span> inserted{" "}
             {formatInt(ingestionInfo.inserted)}
           </div>
+
+          {ingestionInfo.error ? (
+            <div
+              className={`mt-3 rounded-lg border px-3 py-2 text-xs leading-5 ${
+                ingestionStatus === "failed"
+                  ? "border-red-100 bg-red-50 text-red-700"
+                  : "border-amber-100 bg-amber-50 text-amber-800"
+              }`}
+            >
+              {ingestionInfo.error}
+            </div>
+          ) : null}
         </div>
 
         <div className="rounded-xl border p-3">
@@ -2319,13 +2551,7 @@ export default function ReportDetailPage() {
                 ingestionStatus === "processing"
               }
             >
-              {csvUploading
-                ? "업로드 중..."
-                : ingestionStatus === "queued"
-                  ? "파싱 시작 중..."
-                  : ingestionStatus === "processing"
-                    ? `파싱 중... ${formatInt(ingestionInfo.progress)}%`
-                    : "CSV 업로드"}
+              {csvUploadButtonText}
             </button>
 
             <div className="rounded-xl border bg-gray-50 p-3">
@@ -2336,6 +2562,10 @@ export default function ReportDetailPage() {
                 <span className="text-gray-500">
                   {formatInt(ingestionInfo.progress)}%
                 </span>
+              </div>
+
+              <div className="mt-1 text-xs leading-5 text-gray-500">
+                {ingestionStatusDescription}
               </div>
 
               <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-gray-200">
@@ -2396,14 +2626,20 @@ export default function ReportDetailPage() {
               </div>
 
               {ingestionInfo.error ? (
-                <div className="mt-2 text-xs text-red-600">
+                <div
+                  className={`mt-3 rounded-lg border px-3 py-2 text-xs leading-5 ${
+                    ingestionStatus === "failed"
+                      ? "border-red-100 bg-red-50 text-red-700"
+                      : "border-amber-100 bg-amber-50 text-amber-800"
+                  }`}
+                >
                   {ingestionInfo.error}
                 </div>
               ) : null}
             </div>
 
             <div className="text-xs text-gray-500">
-              업로드 완료 후 파싱 상태와 진행률은 자동으로 갱신됩니다.
+              업로드 완료 후 WORKER가 켜져 있으면 서버 처리 상태와 진행률이 자동으로 갱신됩니다.
             </div>
           </div>
         </section>

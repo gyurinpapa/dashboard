@@ -272,16 +272,33 @@ export async function GET(req: Request, ctx: Ctx) {
 
     const currentIngestionId = asStr((report as any).current_ingestion_id);
 
-    const { bestIngestionId, ranked } = await findBestIngestionIdByRows(
-      admin,
-      reportId
-    );
+    let ingestionIdUsed = currentIngestionId;
+    let fallbackUsed = false;
+    let ranked: any[] = [];
+    let rawRows: any[] = [];
 
-    const ingestionIdUsed = bestIngestionId || currentIngestionId || "";
-    const fallbackUsed =
-      !!ingestionIdUsed &&
-      !!currentIngestionId &&
-      ingestionIdUsed !== currentIngestionId;
+    if (ingestionIdUsed) {
+      rawRows = await fetchRowsByIngestion(admin, reportId, ingestionIdUsed);
+    }
+
+    /**
+     * ✅ 대용량 rows 조회 최적화
+     * - 정상 케이스에서는 reports.current_ingestion_id 기준으로 바로 rows를 조회한다.
+     * - current_ingestion_id rows가 존재하면 전체 report_rows를 다시 훑지 않는다.
+     * - current_ingestion_id가 비어 있거나 rows가 없을 때만 legacy/fallback 탐색을 수행한다.
+     */
+    if (!rawRows.length) {
+      const fallback = await findBestIngestionIdByRows(admin, reportId);
+
+      ranked = fallback.ranked;
+      const bestIngestionId = fallback.bestIngestionId;
+
+      if (bestIngestionId && bestIngestionId !== currentIngestionId) {
+        ingestionIdUsed = bestIngestionId;
+        fallbackUsed = !!currentIngestionId;
+        rawRows = await fetchRowsByIngestion(admin, reportId, ingestionIdUsed);
+      }
+    }
 
     if (!ingestionIdUsed) {
       return NextResponse.json({
@@ -293,8 +310,6 @@ export async function GET(req: Request, ctx: Ctx) {
         ingestion_ranked: [],
       });
     }
-
-    const rawRows = await fetchRowsByIngestion(admin, reportId, ingestionIdUsed);
 
     if (!rawRows.length) {
       return NextResponse.json({

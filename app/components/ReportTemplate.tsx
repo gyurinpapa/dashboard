@@ -1875,6 +1875,52 @@ function hasCreativeSignal(row: any) {
   );
 }
 
+function normalizeAdChannelValue(row: any) {
+  return firstNonEmpty(
+    row?.channel,
+    row?.ad_channel,
+    row?.media,
+    row?.media_type,
+    row?.campaign_channel,
+  )
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isSearchAdRow(row: any) {
+  const channel = normalizeAdChannelValue(row);
+
+  return (
+    channel === "search ad" ||
+    channel === "search" ||
+    channel.includes("search ad") ||
+    channel.includes("검색")
+  );
+}
+
+function isDisplayAdRow(row: any) {
+  const channel = normalizeAdChannelValue(row);
+
+  return (
+    channel === "display ad" ||
+    channel === "display" ||
+    channel.includes("display ad") ||
+    channel.includes("디스플레이")
+  );
+}
+
+function shouldIncludeCreativeRowInRepresentativeRows(row: any) {
+  if (isSearchAdRow(row)) return false;
+  if (isDisplayAdRow(row)) return true;
+
+  /**
+   * channel 값이 애매한 creative-only row는 전체 성과에서 누락되면 더 위험하다.
+   * keyword 신호가 없고 creative 신호만 있는 경우는 display/meta 계열일 가능성이 높으므로 포함한다.
+   */
+  return !hasKeywordSignal(row);
+}
+
 function resolveLegacyRowLevel(row: any): ReportRowLevel {
   const keywordSignal = hasKeywordSignal(row);
   const creativeSignal = hasCreativeSignal(row);
@@ -1914,11 +1960,31 @@ function pickRepresentativeRows(input: {
   mixedRows: any[];
   unknownRows: any[];
 }) {
-  if (input.keywordRows.length > 0) return input.keywordRows;
-  if (input.creativeRows.length > 0) return input.creativeRows;
-  if (input.mixedRows.length > 0) return input.mixedRows;
-  if (input.unknownRows.length > 0) return input.unknownRows;
-  return EMPTY_ROWS;
+  const representativeRows = [
+    /**
+     * search ad는 keyword rows를 전체 성과 기준으로 사용한다.
+     * 네이버처럼 keyword/creative가 별도 rows로 들어오는 경우,
+     * creative rows까지 전체 성과에 포함하면 중복 집계될 수 있다.
+     */
+    ...input.keywordRows,
+
+    /**
+     * creative rows는 display ad 또는 keyword 신호가 없는 creative-only rows만
+     * 전체 성과 기준에 포함한다.
+     * search ad creative rows는 소재 탭에서는 사용하지만 전체 성과에서는 제외한다.
+     */
+    ...input.creativeRows.filter((row) =>
+      shouldIncludeCreativeRowInRepresentativeRows(row),
+    ),
+
+    /**
+     * mixed/unknown은 기존처럼 전체 성과 기준에 포함한다.
+     */
+    ...input.mixedRows,
+    ...input.unknownRows,
+  ];
+
+  return representativeRows.length > 0 ? representativeRows : EMPTY_ROWS;
 }
 
 function buildRowLevelBuckets(rows: any[]): ReportRowLevelBuckets {

@@ -470,24 +470,22 @@ async function canRunIngestion(params: {
 }
 
 function getSafeBatchSize(totalRows: number, fileSizeBytes = 0) {
-  if (totalRows > 0) {
-    if (totalRows >= 600000) return 6000;
-    if (totalRows >= 400000) return 5200;
-    if (totalRows >= 300000) return 4500;
-    if (totalRows >= 200000) return 4000;
-    if (totalRows >= 120000) return 3600;
-    if (totalRows >= 80000) return 3200;
-    if (totalRows >= 50000) return 3000;
-    if (totalRows >= 10000) return 3000;
-    return 1500;
-  }
+  /**
+   * ✅ 대용량 CSV 안정성 우선
+   * - 기존처럼 3,000~6,000행을 한 번에 insert하면 row JSON이 넓은 CSV에서
+   *   PostgREST payload/timeout/DB 부하로 첫 batch부터 실패할 수 있음.
+   * - 10만~30만 행은 batch 횟수보다 "batch 실패 방지"가 먼저.
+   */
+  if (fileSizeBytes >= 120 * 1024 * 1024) return 1000;
+  if (fileSizeBytes >= 60 * 1024 * 1024) return 1200;
+  if (fileSizeBytes >= 20 * 1024 * 1024) return 1200;
+  if (fileSizeBytes >= 5 * 1024 * 1024) return 1500;
 
-  if (fileSizeBytes >= 300 * 1024 * 1024) return 6000;
-  if (fileSizeBytes >= 150 * 1024 * 1024) return 5200;
-  if (fileSizeBytes >= 80 * 1024 * 1024) return 4500;
-  if (fileSizeBytes >= 20 * 1024 * 1024) return 3600;
-  if (fileSizeBytes >= 5 * 1024 * 1024) return 3000;
-  return 1500;
+  if (totalRows >= 100000) return 1200;
+  if (totalRows >= 50000) return 1500;
+  if (totalRows >= 10000) return 1500;
+
+  return 1200;
 }
 
 function getMetaUpdateEveryBatches(totalRows: number, fileSizeBytes = 0) {
@@ -526,6 +524,10 @@ function calcProgress(done: number, total: number) {
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function nowIso() {
+  return new Date().toISOString();
 }
 
 function buildHeaderIndexMap(headerRaw: string[], headers: string[]) {
@@ -657,7 +659,11 @@ async function insertBatchWithRetry(
     }
   }
 
-  throw new Error(lastError?.message || "Insert failed");
+  throw new Error(
+    `REPORT_ROWS_INSERT_FAILED: ${
+      lastError?.message || "Insert failed"
+    }`
+  );
 }
 
 async function updateReportIngestionMeta(
@@ -688,6 +694,133 @@ async function updateReportIngestionMeta(
   }
 
   return nextMeta;
+}
+
+async function queueIngestionJob(params: {
+  sb: ReturnType<typeof getSupabaseAdmin>;
+  reportId: string;
+  workspaceId: string;
+  advertiserId: string | null;
+  userId: string;
+  baseMeta: any;
+  latestCsv: any;
+  mode: string;
+}) {
+  const {
+    sb,
+    reportId,
+    workspaceId,
+    advertiserId,
+    userId,
+    baseMeta,
+    latestCsv,
+    mode,
+  } = params;
+
+  const csvBucket = asString(latestCsv?.bucket) || "report_uploads";
+  const csvPath = asString(latestCsv?.path);
+  const csvName = asString(latestCsv?.name);
+
+  if (!csvPath) {
+    throw new Error("QUEUE_CSV_PATH_MISSING");
+  }
+
+  const { data: job, error: jobErr } = await sb
+    .from("ingestion_jobs")
+    .insert({
+      report_id: reportId,
+      workspace_id: workspaceId,
+      advertiser_id: advertiserId,
+      csv_bucket: csvBucket,
+      csv_path: csvPath,
+      csv_name: csvName || null,
+      status: "pending",
+      progress: 0,
+      total_rows: 0,
+      parsed_rows: 0,
+      valid_rows: 0,
+      inserted_rows: 0,
+      keyword_rows: 0,
+      creative_rows: 0,
+      mixed_rows: 0,
+      unknown_rows: 0,
+      batch_size: 0,
+      committed_batches: 0,
+      error: null,
+      error_detail: null,
+      mode,
+      created_by: userId,
+    })
+    .select(
+      "id, report_id, workspace_id, advertiser_id, csv_bucket, csv_path, csv_name, status, progress, mode, created_at"
+    )
+    .single();
+
+  if (jobErr || !job) {
+    throw new Error(
+      `INGESTION_JOB_CREATE_FAILED:${jobErr?.message || "unknown"}`
+    );
+  }
+
+  const jobId = asString((job as any).id);
+  const queuedAt = nowIso();
+
+  const nextMeta = await updateReportIngestionMeta(
+    sb,
+    reportId,
+    baseMeta,
+    {
+      status: "queued",
+      progress: 0,
+      queued_at: queuedAt,
+      started_at: null,
+      finished_at: null,
+      error: null,
+
+      inserted: 0,
+      valid_rows: 0,
+      keyword_rows: 0,
+      creative_rows: 0,
+      mixed_rows: 0,
+      unknown_rows: 0,
+
+      representative_summary_level: null,
+      parsed_lines: 0,
+      total_lines: 0,
+
+      min_date: null,
+      max_date: null,
+
+      ingestion_id: jobId,
+      job_id: jobId,
+      mode,
+
+      batch_size: 0,
+      committed_batches: 0,
+      in_flight_inserts: 0,
+      max_parallel_inserts: 0,
+
+      last_csv: {
+        bucket: csvBucket,
+        path: csvPath,
+        name: csvName,
+      },
+    },
+    {
+      current_ingestion_id: jobId,
+    }
+  );
+
+  return {
+    job,
+    jobId,
+    nextMeta,
+    csv: {
+      bucket: csvBucket,
+      path: csvPath,
+      name: csvName,
+    },
+  };
 }
 
 async function streamCsvBlobRows(
@@ -934,6 +1067,58 @@ export async function POST(req: Request, ctx: Ctx) {
       });
     }
 
+    if (mode === "queue") {
+      try {
+        const queued = await queueIngestionJob({
+          sb,
+          reportId,
+          workspaceId: workspace_id,
+          advertiserId: advertiser_id,
+          userId: user.userId,
+          baseMeta,
+          latestCsv,
+          mode,
+        });
+
+        return NextResponse.json({
+          ok: true,
+          queued: true,
+          status: "queued",
+          job_id: queued.jobId,
+          ingestion_id: queued.jobId,
+          reportId,
+          csv: queued.csv,
+          job: {
+            id: queued.jobId,
+            report_id: asString((queued.job as any).report_id),
+            workspace_id: asString((queued.job as any).workspace_id),
+            advertiser_id: asNullableString((queued.job as any).advertiser_id),
+            status: asString((queued.job as any).status),
+            progress: Number((queued.job as any).progress ?? 0),
+            mode: asString((queued.job as any).mode),
+            created_at: asString((queued.job as any).created_at),
+          },
+          ingestion: (queued.nextMeta as any)?.ingestion ?? null,
+        });
+      } catch (queueError: any) {
+        const msg = String(queueError?.message ?? queueError);
+
+        if (msg.startsWith("INGESTION_JOB_CREATE_FAILED:")) {
+          return jsonError(500, "INGESTION_JOB_CREATE_FAILED", {
+            detail: msg.replace("INGESTION_JOB_CREATE_FAILED:", ""),
+          });
+        }
+
+        if (msg === "QUEUE_CSV_PATH_MISSING") {
+          return jsonError(400, "QUEUE_CSV_PATH_MISSING");
+        }
+
+        return jsonError(500, "INGESTION_QUEUE_FAILED", {
+          detail: msg,
+        });
+      }
+    }
+
     const { data: blobData, error: dlErr } = await sb.storage
       .from(bucket)
       .download(path);
@@ -1001,7 +1186,7 @@ export async function POST(req: Request, ctx: Ctx) {
 
     const batchSize = getSafeBatchSize(0, blobSize);
     const updateEveryBatches = getMetaUpdateEveryBatches(0, blobSize);
-    const MAX_PARALLEL_INSERTS = 4;
+    const MAX_PARALLEL_INSERTS = 2;
 
     reportMetaForError = await updateReportIngestionMeta(
       sb,
@@ -1146,7 +1331,15 @@ export async function POST(req: Request, ctx: Ctx) {
 
       const task: Promise<InsertCompletion> = insertBatchWithRetry(sb!, rows, 2)
         .then(() => ({ ok: true, size: rows.length }) as InsertCompletion)
-        .catch((error) => ({ ok: false, error }) as InsertCompletion);
+        .catch(
+          (error) =>
+            ({
+              ok: false,
+              error: new Error(
+                `${error?.message || String(error)} | batch_rows=${rows.length} | batch_size=${batchSize}`
+              ),
+            }) as InsertCompletion
+        );
 
       inFlight.push(task);
 
@@ -1332,6 +1525,13 @@ export async function POST(req: Request, ctx: Ctx) {
         if (pendingBatch.length >= batchSize) {
           const batchToInsert = pendingBatch;
           pendingBatch = [];
+
+          // ✅ 첫 insert 전에 현재 parsing 상태를 한 번 저장
+          // 첫 batch insert가 실패해도 UI에 parsed/valid count가 0으로 남지 않게 함
+          if (committedBatchCount === 0 && inFlight.length === 0) {
+            await flushProgressMeta(true);
+          }
+
           await enqueueBatchInsert(batchToInsert);
         }
       },
@@ -1374,6 +1574,11 @@ export async function POST(req: Request, ctx: Ctx) {
     if (pendingBatch.length > 0) {
       const batchToInsert = pendingBatch;
       pendingBatch = [];
+
+      if (committedBatchCount === 0 && inFlight.length === 0) {
+        await flushProgressMeta(true);
+      }
+
       await enqueueBatchInsert(batchToInsert);
     }
 
