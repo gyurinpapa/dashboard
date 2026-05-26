@@ -11,6 +11,7 @@ type Ctx = { params: Promise<{ id: string }> };
 
 const BUCKET = "report_uploads";
 const MAX_BYTES = 20 * 1024 * 1024; // 20MB per file
+const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
 
 function jsonError(status: number, message: string, extra?: any) {
   return NextResponse.json({ ok: false, error: message, ...(extra ?? {}) }, { status });
@@ -19,6 +20,10 @@ function jsonError(status: number, message: string, extra?: any) {
 function asString(v: any) {
   if (v == null) return "";
   return String(v).trim();
+}
+
+function normalizeEmail(v: any) {
+  return asString(v).toLowerCase();
 }
 
 function nowIso() {
@@ -129,6 +134,69 @@ async function getUserId(req: Request) {
   return { ok: true as const, userId: user.id as string };
 }
 
+async function getProfileEmailByUserId(userId: string) {
+  const id = asString(userId);
+  if (!id) return "";
+
+  const supabase = getSupabaseAdmin();
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("email")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`PROFILE_EMAIL_FETCH_FAILED:${error.message}`);
+  }
+
+  return normalizeEmail((data as any)?.email);
+}
+
+async function getWorkspaceRole(userId: string, workspaceId: string) {
+  const id = asString(userId);
+  const wid = asString(workspaceId);
+
+  if (!id || !wid) return "";
+
+  const supabase = getSupabaseAdmin();
+
+  const { data, error } = await supabase
+    .from("workspace_members")
+    .select("role")
+    .eq("workspace_id", wid)
+    .eq("user_id", id)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`WORKSPACE_ROLE_CHECK_FAILED:${error.message}`);
+  }
+
+  return asString((data as any)?.role).toLowerCase();
+}
+
+async function isTrueMasterUser(userId: string, workspaceId: string) {
+  const id = asString(userId);
+  const wid = asString(workspaceId);
+
+  if (!id || !wid) return false;
+
+  const email = await getProfileEmailByUserId(id);
+
+  if (email !== ONLY_MASTER_EMAIL) {
+    return false;
+  }
+
+  const role = await getWorkspaceRole(id, wid);
+
+  return role === "master";
+}
+
+function canUploadCreatives(role: string, isTrueMaster: boolean) {
+  if (isTrueMaster) return true;
+  return role === "director" || role === "admin" || role === "staff";
+}
+
 export async function POST(req: Request, ctx: Ctx) {
   const t0 = Date.now();
 
@@ -145,7 +213,7 @@ export async function POST(req: Request, ctx: Ctx) {
 
     const supabase = getSupabaseAdmin();
 
-    // 3) report 조회 (created_by 포함: 멤버십 없어도 생성자는 허용)
+    // 3) report 조회
     const { data: report, error: repErr } = await supabase
       .from("reports")
       .select("id, workspace_id, advertiser_id, created_by")
@@ -161,18 +229,19 @@ export async function POST(req: Request, ctx: Ctx) {
 
     if (!workspaceId) return jsonError(500, "REPORT_WORKSPACE_ID_MISSING");
 
-    // 4) 권한 체크: 생성자 or workspace_members
-    const createdBy = asString((report as any).created_by);
-    if (createdBy !== userId) {
-      const { data: wm, error: wmErr } = await supabase
-        .from("workspace_members")
-        .select("role")
-        .eq("workspace_id", workspaceId)
-        .eq("user_id", userId)
-        .maybeSingle();
+    // 4) 권한 체크: staff/admin/director/true master만 허용
+    // - created_by 단독 허용 제거
+    // - client 차단
+    // - 일반 master 문자열 단독 신뢰 금지
+    // - platform_owner 단독 우회 없음
+    const role = await getWorkspaceRole(userId, workspaceId);
+    const isTrueMaster = await isTrueMasterUser(userId, workspaceId);
 
-      if (wmErr) return jsonError(500, "WORKSPACE_MEMBER_CHECK_FAILED", { detail: wmErr.message });
-      if (!wm) return jsonError(403, "FORBIDDEN");
+    if (!canUploadCreatives(role, isTrueMaster)) {
+      return jsonError(403, "FORBIDDEN_CREATIVE_UPLOAD_PERMISSION", {
+        role: role || null,
+        message: "소재 업로드 권한이 없습니다.",
+      });
     }
 
     // 5) form-data (파싱 실패를 명확하게)
@@ -329,6 +398,20 @@ export async function POST(req: Request, ctx: Ctx) {
       ms: Date.now() - t0,
     });
   } catch (e: any) {
-    return jsonError(500, "SERVER_ERROR", { detail: String(e?.message ?? e) });
+    const msg = String(e?.message ?? e);
+
+    if (msg.startsWith("PROFILE_EMAIL_FETCH_FAILED:")) {
+      return jsonError(500, "PROFILE_EMAIL_FETCH_FAILED", {
+        detail: msg.replace("PROFILE_EMAIL_FETCH_FAILED:", ""),
+      });
+    }
+
+    if (msg.startsWith("WORKSPACE_ROLE_CHECK_FAILED:")) {
+      return jsonError(500, "WORKSPACE_ROLE_CHECK_FAILED", {
+        detail: msg.replace("WORKSPACE_ROLE_CHECK_FAILED:", ""),
+      });
+    }
+
+    return jsonError(500, "SERVER_ERROR", { detail: msg });
   }
 }

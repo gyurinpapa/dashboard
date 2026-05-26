@@ -8,6 +8,9 @@ export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ id: string }> };
 
+const BUCKET = "report_uploads";
+const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
+
 function jsonError(status: number, message: string, extra?: any) {
   return NextResponse.json({ ok: false, error: message, ...extra }, { status });
 }
@@ -23,6 +26,10 @@ function asInt(v: any, def = 3600) {
 function asStr(v: any) {
   if (v == null) return "";
   return String(v).trim();
+}
+
+function normalizeEmail(v: any) {
+  return asStr(v).toLowerCase();
 }
 
 function normalizeFilenameKey(v: any): string {
@@ -101,6 +108,80 @@ async function getUserId(req: Request) {
   };
 }
 
+async function getProfileEmailByUserId(userId: string) {
+  const id = asStr(userId);
+  if (!id) return "";
+
+  const admin = getSupabaseAdmin();
+
+  const { data, error } = await admin
+    .from("profiles")
+    .select("email")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`PROFILE_EMAIL_FETCH_FAILED:${error.message}`);
+  }
+
+  return normalizeEmail((data as any)?.email);
+}
+
+async function hasMasterMembership(userId: string) {
+  const id = asStr(userId);
+  if (!id) return false;
+
+  const admin = getSupabaseAdmin();
+
+  const { data, error } = await admin
+    .from("workspace_members")
+    .select("workspace_id")
+    .eq("user_id", id)
+    .eq("role", "master")
+    .limit(1);
+
+  if (error) {
+    throw new Error(`MASTER_MEMBERSHIP_CHECK_FAILED:${error.message}`);
+  }
+
+  return Array.isArray(data) && data.length > 0;
+}
+
+async function isTrueMasterUser(userId: string) {
+  const id = asStr(userId);
+  if (!id) return false;
+
+  const email = await getProfileEmailByUserId(id);
+
+  if (email !== ONLY_MASTER_EMAIL) {
+    return false;
+  }
+
+  return await hasMasterMembership(id);
+}
+
+async function getWorkspaceMembership(userId: string, workspaceId: string) {
+  const id = asStr(userId);
+  const wid = asStr(workspaceId);
+
+  if (!id || !wid) return null;
+
+  const admin = getSupabaseAdmin();
+
+  const { data, error } = await admin
+    .from("workspace_members")
+    .select("role")
+    .eq("workspace_id", wid)
+    .eq("user_id", id)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`WORKSPACE_MEMBER_CHECK_FAILED:${error.message}`);
+  }
+
+  return data ?? null;
+}
+
 export async function GET(req: Request, ctx: Ctx) {
   try {
     const { id } = await ctx.params;
@@ -155,19 +236,17 @@ export async function GET(req: Request, ctx: Ctx) {
     }
 
     // 2️⃣ workspace membership 체크
-    const { data: wm, error: wmErr } = await admin
-      .from("workspace_members")
-      .select("role")
-      .eq("workspace_id", workspaceId)
-      .eq("user_id", userId)
-      .maybeSingle();
+    // - 일반 사용자는 해당 workspace member여야 함
+    // - true master는 전체 workspace 조회 허용
+    // - platform_owner 단독 우회 없음
+    const actorIsTrueMaster = await isTrueMasterUser(userId);
 
-    if (wmErr) {
-      return jsonError(500, wmErr.message);
-    }
+    if (!actorIsTrueMaster) {
+      const wm = await getWorkspaceMembership(userId, workspaceId);
 
-    if (!wm) {
-      return jsonError(403, "FORBIDDEN");
+      if (!wm) {
+        return jsonError(403, "FORBIDDEN");
+      }
     }
 
     // 3️⃣ report_creatives 조회
@@ -182,8 +261,6 @@ export async function GET(req: Request, ctx: Ctx) {
     if (cErr) {
       return jsonError(500, cErr.message);
     }
-
-    const BUCKET = "report_uploads";
 
     const baseEntries: Array<{
       key: string;
@@ -260,6 +337,26 @@ export async function GET(req: Request, ctx: Ctx) {
       },
     });
   } catch (e: any) {
+    const msg = String(e?.message ?? e);
+
+    if (msg.startsWith("PROFILE_EMAIL_FETCH_FAILED:")) {
+      return jsonError(500, "PROFILE_EMAIL_FETCH_FAILED", {
+        detail: msg.replace("PROFILE_EMAIL_FETCH_FAILED:", ""),
+      });
+    }
+
+    if (msg.startsWith("MASTER_MEMBERSHIP_CHECK_FAILED:")) {
+      return jsonError(500, "MASTER_MEMBERSHIP_CHECK_FAILED", {
+        detail: msg.replace("MASTER_MEMBERSHIP_CHECK_FAILED:", ""),
+      });
+    }
+
+    if (msg.startsWith("WORKSPACE_MEMBER_CHECK_FAILED:")) {
+      return jsonError(500, "WORKSPACE_MEMBER_CHECK_FAILED", {
+        detail: msg.replace("WORKSPACE_MEMBER_CHECK_FAILED:", ""),
+      });
+    }
+
     return jsonError(500, e?.message || String(e));
   }
 }

@@ -324,7 +324,7 @@ async function fetchCreativesMap(
   reportId: string
 ): Promise<Record<string, string>> {
   const res = await authFetch(
-    `/api/reports/${reportId}/assets/creatives/map?expiresIn=3600`
+    `/api/reports/${reportId}/assets/creatives/map?expiresIn=3600&mode=expanded`
   );
   const json = await safeJson(res);
   if (!res.ok || !json?.ok) {
