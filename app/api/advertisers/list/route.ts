@@ -171,7 +171,7 @@ export async function GET(req: Request) {
 
       const { data, error } = await supabaseAdmin
         .from("advertisers")
-        .select("id, name, workspace_id, created_at")
+        .select("id, name, workspace_id, created_at, public_slug")
         .order("name", { ascending: true });
 
       if (error) {
@@ -199,6 +199,7 @@ export async function GET(req: Request) {
           name: asString(row?.name),
           workspace_id: workspaceId,
           workspace_name: workspaceName,
+          public_slug: row?.public_slug ? asString(row.public_slug) : null,
           created_at: row?.created_at ? String(row.created_at) : null,
         };
       });
@@ -234,7 +235,7 @@ export async function GET(req: Request) {
 
     const { data, error } = await supabaseAdmin
       .from("advertisers")
-      .select("id, name, workspace_id, created_at")
+      .select("id, name, workspace_id, created_at, public_slug")
       .eq("workspace_id", workspace_id)
       .order("name", { ascending: true });
 
@@ -251,6 +252,7 @@ export async function GET(req: Request) {
         name: asString(row?.name),
         workspace_id: asString(row?.workspace_id),
         workspace_name: null,
+        public_slug: row?.public_slug ? asString(row.public_slug) : null,
         created_at: row?.created_at ? String(row.created_at) : null,
       }));
 

@@ -47,6 +47,7 @@ type AdvertiserRow = {
   name: string;
   workspace_id?: string | null;
   workspace_name?: string | null;
+  public_slug?: string | null;
 };
 
 type ReportFilterKey = "all" | "published" | "draft";
@@ -86,6 +87,7 @@ function norm(s: any) {
 
 const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
 const ALL_WORKSPACES = "__all__";
+const PUBLIC_CLIENT_URL_PREFIX = "https://www.etrylue.com/client/";
 
 function isOnlyMasterEmail(email?: string | null) {
   return norm(email) === ONLY_MASTER_EMAIL;
@@ -118,6 +120,17 @@ function canDeleteReportsByRole(
   email?: string | null
 ) {
   if (role === "director") {
+    return true;
+  }
+
+  return canUseTrueMasterPower(role, email);
+}
+
+function canUpdatePublicSlugByRole(
+  role: MemberRole,
+  email?: string | null
+) {
+  if (role === "director" || role === "admin") {
     return true;
   }
 
@@ -229,6 +242,8 @@ export default function ReportBuilderPage() {
   const [selectedAdvertiserId, setSelectedAdvertiserId] = useState<string>("");
   const [newAdvertiserName, setNewAdvertiserName] = useState("");
   const [creatingAdvertiser, setCreatingAdvertiser] = useState(false);
+  const [publicSlugInput, setPublicSlugInput] = useState("");
+  const [savingPublicSlug, setSavingPublicSlug] = useState(false);
   const [localMsg, setLocalMsg] = useState("");
 
   const [selectedAdvertiserIds, setSelectedAdvertiserIds] = useState<string[]>([]);
@@ -261,6 +276,8 @@ export default function ReportBuilderPage() {
   const canManageMembers = canManageMembersPage(memberRole, userEmail);
   const canDeleteAdvertisers =
     canUseTrueMasterPower(memberRole, userEmail) && !isAllWorkspaceMode;
+  const canUpdatePublicSlug =
+    canUpdatePublicSlugByRole(memberRole, userEmail) && !isAllWorkspaceMode;
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -662,6 +679,7 @@ export default function ReportBuilderPage() {
         name: String(x.name ?? ""),
         workspace_id: x.workspace_id ? String(x.workspace_id) : null,
         workspace_name: x.workspace_name ? String(x.workspace_name) : null,
+        public_slug: x.public_slug ? String(x.public_slug) : null,
       })) || [];
 
       setAdvertisers(rows);
@@ -681,6 +699,14 @@ export default function ReportBuilderPage() {
       });
     })();
   }, [workspaceId]);
+
+  useEffect(() => {
+    const selectedAdvertiser = advertisers.find(
+      (a) => a.id === selectedAdvertiserId
+    );
+
+    setPublicSlugInput(selectedAdvertiser?.public_slug ?? "");
+  }, [advertisers, selectedAdvertiserId]);
 
   useEffect(() => {
     setSelectedAdvertiserIds((prev) => {
@@ -754,6 +780,8 @@ export default function ReportBuilderPage() {
     setReportFilter("all");
     setSelectedAdvertiserId("");
     setNewAdvertiserName("");
+    setPublicSlugInput("");
+    setSavingPublicSlug(false);
     setOpenMap({ __none__: true });
     setLocalMsg("");
     setSelectedReportIds([]);
@@ -795,7 +823,7 @@ export default function ReportBuilderPage() {
           name,
           created_by: userId,
         })
-        .select("id,name")
+        .select("id,name,workspace_id,public_slug")
         .single();
 
       if (error) {
@@ -808,6 +836,13 @@ export default function ReportBuilderPage() {
       const created: AdvertiserRow = {
         id: String((data as any)?.id),
         name: String((data as any)?.name ?? name),
+        workspace_id: (data as any)?.workspace_id
+          ? String((data as any).workspace_id)
+          : workspaceId,
+        workspace_name: null,
+        public_slug: (data as any)?.public_slug
+          ? String((data as any).public_slug)
+          : null,
       };
 
       setAdvertisers((prev) => {
@@ -895,6 +930,100 @@ export default function ReportBuilderPage() {
       setLocalMsg(e?.message || "광고주 삭제 실패");
     } finally {
       setDeletingAdvertisers(false);
+    }
+  }
+
+  async function savePublicSlug() {
+    if (!selectedAdvertiserId) {
+      setLocalMsg("공개 URL을 설정할 광고주를 먼저 선택하세요.");
+      return;
+    }
+
+    if (!canUpdatePublicSlug) {
+      setLocalMsg("공개 URL 수정 권한이 없습니다.");
+      return;
+    }
+
+    if (isAllWorkspaceMode) {
+      setLocalMsg("전체 workspace 보기에서는 공개 URL을 수정할 수 없습니다.");
+      return;
+    }
+
+    if (savingPublicSlug) return;
+
+    const nextSlug = publicSlugInput.trim().toLowerCase();
+
+    if (nextSlug && !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(nextSlug)) {
+      setLocalMsg("공개 URL은 소문자 영어, 숫자, 하이픈만 사용할 수 있고 시작과 끝은 영문 또는 숫자여야 합니다.");
+      return;
+    }
+
+    setSavingPublicSlug(true);
+    setLocalMsg("");
+
+    try {
+      const token = await getAccessToken();
+      if (!token) {
+        setLocalMsg("로그인 세션이 없습니다.");
+        setSavingPublicSlug(false);
+        return;
+      }
+
+      const res = await fetch(
+        `/api/advertisers/${encodeURIComponent(selectedAdvertiserId)}/public-slug`,
+        {
+          method: "PATCH",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            public_slug: nextSlug,
+          }),
+        }
+      );
+
+      const json = await safeReadJson(res);
+
+      if (!res.ok || !(json as any)?.ok) {
+        console.warn("[advertisers/public-slug] failed", res.status, json);
+        setLocalMsg(
+          (json as any)?.message ||
+            (json as any)?.error ||
+            "공개 URL 저장 실패"
+        );
+        setSavingPublicSlug(false);
+        return;
+      }
+
+      const updated = (json as any)?.advertiser ?? {};
+      const updatedSlug = updated?.public_slug
+        ? String(updated.public_slug)
+        : null;
+
+      setAdvertisers((prev) =>
+        prev.map((a) => {
+          if (a.id !== selectedAdvertiserId) return a;
+
+          return {
+            ...a,
+            public_slug: updatedSlug,
+          };
+        })
+      );
+
+      setPublicSlugInput(updatedSlug ?? "");
+
+      if (updatedSlug) {
+        setLocalMsg(`공개 URL 저장 완료: ${PUBLIC_CLIENT_URL_PREFIX}${updatedSlug}`);
+      } else {
+        setLocalMsg("공개 URL 제거 완료");
+      }
+    } catch (e: any) {
+      setLocalMsg(e?.message || "공개 URL 저장 실패");
+    } finally {
+      setSavingPublicSlug(false);
     }
   }
 
@@ -1147,6 +1276,8 @@ export default function ReportBuilderPage() {
     if (nextWorkspaceId === workspaceId) return;
 
     setSelectedAdvertiserId("");
+    setPublicSlugInput("");
+    setSavingPublicSlug(false);
     setSelectedAdvertiserIds([]);
     setSelectedReportIds([]);
     setSearch("");
@@ -1163,11 +1294,20 @@ export default function ReportBuilderPage() {
     return m;
   }, [advertisers]);
 
-  const selectedAdvertiserName = useMemo(() => {
-    if (!selectedAdvertiserId) return "";
-    const advertiser = advertisers.find((a) => a.id === selectedAdvertiserId);
-    return advertiser ? formatAdvertiserLabel(advertiser) : "";
+  const selectedAdvertiser = useMemo(() => {
+    if (!selectedAdvertiserId) return null;
+    return advertisers.find((a) => a.id === selectedAdvertiserId) ?? null;
   }, [advertisers, selectedAdvertiserId]);
+
+  const selectedAdvertiserName = useMemo(() => {
+    return selectedAdvertiser ? formatAdvertiserLabel(selectedAdvertiser) : "";
+  }, [selectedAdvertiser]);
+
+  const selectedAdvertiserPublicSlug = selectedAdvertiser?.public_slug ?? "";
+
+  const selectedAdvertiserPublicUrl = selectedAdvertiserPublicSlug
+    ? `${PUBLIC_CLIENT_URL_PREFIX}${selectedAdvertiserPublicSlug}`
+    : "";
 
   const memberInfoText = useMemo(() => {
     if (!userId || !memberRole) return "";
@@ -1767,6 +1907,120 @@ export default function ReportBuilderPage() {
 
                 <div style={{ marginTop: 10, fontSize: 12, opacity: 0.65 }}>
                   현재 선택: {selectedAdvertiserName || "광고주 미지정"}
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 14,
+                    border: "1px solid #e5e7eb",
+                    borderRadius: 14,
+                    background: "#f9fafb",
+                    padding: 12,
+                  }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 900, color: "#111827" }}>
+                    공개 URL
+                  </div>
+
+                  <div style={{ marginTop: 6, fontSize: 12, color: "#6b7280", lineHeight: 1.5 }}>
+                    고객에게 공유할 광고주별 고정 URL입니다. 발행된 최신 리포트가 이 주소로 연결됩니다.
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 10,
+                      display: "flex",
+                      gap: 8,
+                      alignItems: "center",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 13,
+                        color: "#4b5563",
+                        background: "white",
+                        border: "1px solid #e5e7eb",
+                        borderRadius: 10,
+                        padding: "10px 10px",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {PUBLIC_CLIENT_URL_PREFIX}
+                    </span>
+
+                    <input
+                      value={publicSlugInput}
+                      onChange={(e) => setPublicSlugInput(norm(e.target.value))}
+                      placeholder="예: gna"
+                      disabled={
+                        !selectedAdvertiserId ||
+                        !canUpdatePublicSlug ||
+                        savingPublicSlug ||
+                        isAllWorkspaceMode
+                      }
+                      style={{
+                        flex: 1,
+                        minWidth: 120,
+                        padding: 11,
+                        borderRadius: 10,
+                        border: "1px solid #ddd",
+                        background:
+                          !selectedAdvertiserId || !canUpdatePublicSlug || isAllWorkspaceMode
+                            ? "#f3f4f6"
+                            : "white",
+                        fontSize: 14,
+                      }}
+                    />
+
+                    <button
+                      className="subBtn"
+                      onClick={savePublicSlug}
+                      disabled={
+                        !selectedAdvertiserId ||
+                        !canUpdatePublicSlug ||
+                        savingPublicSlug ||
+                        isAllWorkspaceMode
+                      }
+                      title={
+                        !selectedAdvertiserId
+                          ? "광고주를 먼저 선택하세요"
+                          : !canUpdatePublicSlug
+                          ? "master/director/admin만 수정할 수 있습니다"
+                          : isAllWorkspaceMode
+                          ? "전체 workspace 보기에서는 수정할 수 없습니다"
+                          : "공개 URL 저장"
+                      }
+                    >
+                      {savingPublicSlug ? "저장 중..." : "저장"}
+                    </button>
+                  </div>
+
+                  <div style={{ marginTop: 8, fontSize: 12, color: "#4b5563", lineHeight: 1.5 }}>
+                    {selectedAdvertiserId ? (
+                      selectedAdvertiserPublicUrl ? (
+                        <>
+                          현재 공개 URL: {" "}
+                          <a
+                            href={selectedAdvertiserPublicUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ color: "#2563eb", fontWeight: 800 }}
+                          >
+                            {selectedAdvertiserPublicUrl}
+                          </a>
+                        </>
+                      ) : (
+                        "아직 공개 URL이 없습니다."
+                      )
+                    ) : (
+                      "광고주를 선택하면 공개 URL을 설정할 수 있습니다."
+                    )}
+                  </div>
+
+                  <div style={{ marginTop: 4, fontSize: 11, color: "#9ca3af", lineHeight: 1.5 }}>
+                    소문자 영어, 숫자, 하이픈만 사용할 수 있습니다. 입력값을 비우고 저장하면 공개 URL이 제거됩니다.
+                  </div>
                 </div>
 
                 {canDeleteAdvertisers ? (
