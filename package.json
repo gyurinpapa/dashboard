@@ -18,7 +18,8 @@
     "papaparse": "^5.5.3",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "recharts": "^3.7.0"
+    "recharts": "^3.7.0",
+    "tsx": "^4.22.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
