@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "worker:ingestion": "INGESTION_WORKER_LOOP=1 node --import tsx scripts/ingestion-worker.ts",
+    "worker:ingestion:local": "INGESTION_WORKER_LOOP=1 node --env-file=.env.local --import tsx scripts/ingestion-worker.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.8.0",
