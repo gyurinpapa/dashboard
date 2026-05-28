@@ -123,6 +123,75 @@ function pickMonthGoal(report: ReportRow | null): MonthGoalDraft | null {
   };
 }
 
+function pickBrandSearchContracts(report: ReportRow | null) {
+  const meta = report?.meta && typeof report.meta === "object" ? report.meta : {};
+  const source =
+    meta?.brand_search_contracts && typeof meta.brand_search_contracts === "object"
+      ? meta.brand_search_contracts
+      : null;
+
+  if (!source || Array.isArray(source)) return null;
+
+  const out: Record<string, { pc?: string | number | null; mobile?: string | number | null }> = {};
+
+  for (const [month, value] of Object.entries(source)) {
+    const monthKey = asStr(month);
+    if (!/^\d{4}-\d{2}$/.test(monthKey)) continue;
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+
+    out[monthKey] = {
+      pc: asStr((value as any)?.pc),
+      mobile: asStr((value as any)?.mobile),
+    };
+  }
+
+  return Object.keys(out).length ? out : null;
+}
+
+function LoadingShell({
+  title,
+  description,
+  report,
+}: {
+  title: string;
+  description: string;
+  report?: ReportRow | null;
+}) {
+  const advertiserName = pickAdvertiserName(report ?? null);
+  const reportTypeName = pickReportTypeName(report ?? null);
+
+  return (
+    <main className="min-h-screen bg-[#F7F8FA] p-6 text-slate-900">
+      <section className="mx-auto flex min-h-[60vh] max-w-3xl items-center justify-center">
+        <div className="w-full rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+          <div className="mb-4 inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+            대용량 리포트 준비 중
+          </div>
+
+          <h1 className="text-2xl font-bold text-slate-950">{title}</h1>
+          <p className="mt-3 text-sm leading-6 text-slate-600">{description}</p>
+
+          {report ? (
+            <div className="mt-6 rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-700">
+              <div className="font-semibold text-slate-900">
+                {report.title || "공개 리포트"}
+              </div>
+              <div className="mt-2 space-y-1 text-xs text-slate-500">
+                {advertiserName ? <p>광고주: {advertiserName}</p> : null}
+                {reportTypeName ? <p>리포트 유형: {reportTypeName}</p> : null}
+                <p>
+                  10만 행 이상 대용량 데이터는 브라우저에서 분석 화면을 준비하는 데
+                  시간이 걸릴 수 있습니다.
+                </p>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </section>
+    </main>
+  );
+}
+
 const MemoReportTemplate = memo(ReportTemplate);
 
 export default function ClientSlugReportPage() {
@@ -130,6 +199,7 @@ export default function ClientSlugReportPage() {
   const slug = useMemo(() => String(params?.slug ?? "").trim(), [params]);
 
   const [loading, setLoading] = useState(true);
+  const [rowsLoading, setRowsLoading] = useState(false);
   const [report, setReport] = useState<ReportRow | null>(null);
   const [rows, setRows] = useState<any[]>([]);
   const [creativesMap, setCreativesMap] = useState<Record<string, string>>({});
@@ -150,6 +220,7 @@ export default function ClientSlugReportPage() {
   const reportTypeName = useMemo(() => pickReportTypeName(report), [report]);
   const reportTypeKey = useMemo(() => pickReportTypeKey(report), [report]);
   const monthGoal = useMemo(() => pickMonthGoal(report), [report]);
+  const brandSearchContracts = useMemo(() => pickBrandSearchContracts(report), [report]);
 
   const shareReportPeriod = useMemo<ReportPeriod>(() => {
     const publishedStart = asStr(report?.published_period_start);
@@ -195,6 +266,8 @@ export default function ClientSlugReportPage() {
     fallbackRowsRange?.startDate,
     fallbackRowsRange?.endDate,
   ]);
+
+  const hasRenderableRows = deferredRows.length > 0;
 
   useEffect(() => {
     const publishedStart = asStr(report?.published_period_start);
@@ -262,6 +335,7 @@ export default function ClientSlugReportPage() {
     if (!slug) {
       setError("광고주 URL이 없습니다.");
       setLoading(false);
+      setRowsLoading(false);
       return;
     }
 
@@ -277,6 +351,7 @@ export default function ClientSlugReportPage() {
     }
 
     setLoading(true);
+    setRowsLoading(false);
     setError("");
     setReport(null);
     setRows([]);
@@ -296,6 +371,7 @@ export default function ClientSlugReportPage() {
         if (!clientRes.ok || !clientJson?.ok) {
           setError(asStr(clientJson?.detail) || asStr(clientJson?.error) || "광고주 리포트 조회 실패");
           setLoading(false);
+          setRowsLoading(false);
           return;
         }
 
@@ -304,33 +380,71 @@ export default function ClientSlugReportPage() {
         if (!shareToken) {
           setError("발행된 공유 리포트가 없습니다.");
           setLoading(false);
+          setRowsLoading(false);
           return;
         }
 
-        const shareRes = await fetch(`/api/share/${encodeURIComponent(shareToken)}`, {
-          cache: "no-store",
-        });
+        const lightShareRes = await fetch(
+          `/api/share/${encodeURIComponent(shareToken)}?includeRows=0`,
+          {
+            cache: "no-store",
+          }
+        );
 
-        const shareJson = await safeReadJson(shareRes);
+        const lightShareJson = await safeReadJson(lightShareRes);
 
         if (!alive) return;
 
-        if (!shareRes.ok || !shareJson?.ok) {
-          setError(asStr(shareJson?.error) || "공유 리포트 조회 실패");
+        if (!lightShareRes.ok || !lightShareJson?.ok) {
+          setError(asStr(lightShareJson?.error) || "공유 리포트 조회 실패");
           setLoading(false);
+          setRowsLoading(false);
           return;
         }
 
-        const nextReport = (shareJson.report ?? null) as ReportRow | null;
-        const nextRows = Array.isArray(shareJson.rows) ? shareJson.rows : [];
-        const nextCreativesMap =
-          shareJson.creativesMap && typeof shareJson.creativesMap === "object"
-            ? shareJson.creativesMap
+        const lightReport = (lightShareJson.report ?? null) as ReportRow | null;
+        const lightCreativesMap =
+          lightShareJson.creativesMap && typeof lightShareJson.creativesMap === "object"
+            ? lightShareJson.creativesMap
             : {};
+
+        setReport(lightReport);
+        setRows([]);
+        setLoading(false);
+        setRowsLoading(true);
+
+        creativesCommitTimerRef.current = window.setTimeout(() => {
+          if (!alive) return;
+          setCreativesMap(lightCreativesMap);
+        }, 0);
+
+        const fullShareRes = await fetch(
+          `/api/share/${encodeURIComponent(shareToken)}?includeRows=1`,
+          {
+            cache: "no-store",
+          }
+        );
+
+        const fullShareJson = await safeReadJson(fullShareRes);
+
+        if (!alive) return;
+
+        if (!fullShareRes.ok || !fullShareJson?.ok) {
+          setError(asStr(fullShareJson?.error) || "공유 리포트 데이터 조회 실패");
+          setRowsLoading(false);
+          return;
+        }
+
+        const nextReport = (fullShareJson.report ?? lightReport ?? null) as ReportRow | null;
+        const nextRows = Array.isArray(fullShareJson.rows) ? fullShareJson.rows : [];
+        const nextCreativesMap =
+          fullShareJson.creativesMap && typeof fullShareJson.creativesMap === "object"
+            ? fullShareJson.creativesMap
+            : lightCreativesMap;
 
         setReport(nextReport);
         setRows(nextRows);
-        setLoading(false);
+        setRowsLoading(false);
 
         creativesCommitTimerRef.current = window.setTimeout(() => {
           if (!alive) return;
@@ -340,6 +454,7 @@ export default function ClientSlugReportPage() {
         if (!alive) return;
         setError(asStr(e?.message) || "Unknown error");
         setLoading(false);
+        setRowsLoading(false);
       }
     })();
 
@@ -359,11 +474,37 @@ export default function ClientSlugReportPage() {
   }, [slug]);
 
   if (loading) {
-    return <main className="p-6">Loading...</main>;
+    return (
+      <LoadingShell
+        title="공개 리포트를 찾는 중입니다"
+        description="광고주 고정 URL에서 최신 발행 리포트를 확인하고 있습니다."
+        report={null}
+      />
+    );
   }
 
   if (error) {
     return <main className="p-6">{error}</main>;
+  }
+
+  if (rowsLoading) {
+    return (
+      <LoadingShell
+        title="리포트 분석 데이터를 준비하고 있습니다"
+        description="리포트 기본 정보는 확인되었습니다. 대용량 CSV rows를 불러와 분석 화면을 준비하는 중입니다."
+        report={report}
+      />
+    );
+  }
+
+  if (!hasRenderableRows) {
+    return (
+      <LoadingShell
+        title="리포트 rows 데이터가 아직 없습니다"
+        description="발행 리포트는 확인되었지만 분석 화면에 전달할 rows 데이터가 비어 있습니다. CSV 처리 완료 여부와 published ingestion 상태를 확인해 주세요."
+        report={report}
+      />
+    );
   }
 
   return (
@@ -376,6 +517,7 @@ export default function ClientSlugReportPage() {
       reportTypeKey={reportTypeKey}
       reportPeriod={shareReportPeriod}
       monthGoal={monthGoal}
+      brandSearchContracts={brandSearchContracts}
       onChangeReportPeriod={() => {}}
       hidePeriodEditor={true}
       hideTabPeriodText={true}

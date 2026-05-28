@@ -26,7 +26,7 @@ import {
   summarize,
 } from "./aggregate";
 
-import { monthKeyOfDate, parseDateLoose } from "./date";
+import { monthKeyOfDate, parseDateLoose, startOfWeekMonday, toYMDLocal } from "./date";
 
 type Args = {
   rows: Row[];
@@ -70,10 +70,42 @@ type Args = {
    * - structure / keywordDetail / creative / creativeDetail 에서만 필요
    */
   needHydratedFilteredRows?: boolean;
+
+  /**
+   * [수정 포인트]
+   * 보조 aggregate 호출(keyword/creative/summaryGoal)에서는 Header 옵션 계산을 건너뛰기 위한 플래그
+   * - 기본값 true로 기존 호출 결과 유지
+   * - false면 month/week/device/channel/source/product 옵션과 enabled set 계산을 생략
+   */
+  needOptions?: boolean;
+
+  /**
+   * [수정 포인트]
+   * filteredRows 자체가 필요 없는 보조 aggregate 호출(summaryGoal 등)에서
+   * month/week/device/channel/source/product 최종 필터 순회를 생략하기 위한 플래그
+   * - 기본값 true로 기존 호출 결과 유지
+   * - totals/bySource/byCampaign/byWeek/byMonth 등 filteredRows 기반 계산이 켜져 있으면 내부에서 자동으로 필요 처리됨
+   */
+  needFilteredRows?: boolean;
+
+  /**
+   * [수정 포인트]
+   * periodText 계산이 실제 필요한 대표 aggregate 호출에서만 실행되도록 제어
+   * - 기본값 true로 기존 동작 유지
+   * - false면 대용량 rows 전체 날짜 순회를 피함
+   */
+  needPeriodText?: boolean;
 };
 
 const EMPTY_LIST: any[] = [];
 const EMPTY_SUMMARY = summarize([] as any);
+const EMPTY_OPTIONS_RESULT = {
+  monthOptions: EMPTY_LIST as any[],
+  deviceOptions: EMPTY_LIST as any[],
+  channelOptions: EMPTY_LIST as any[],
+  sourceOptions: EMPTY_LIST as any[],
+};
+const EMPTY_SET_RESULT = new Set<string>();
 
 function asStr(v: any) {
   if (v == null) return "";
@@ -103,6 +135,67 @@ function applyProductFilter(rows: any[], selectedProduct: string | "all" = "all"
   return (rows ?? []).filter(
     (r) => normalizeProductValue(r) === String(selectedProduct)
   );
+}
+
+function filterRowsFinalFast(args: {
+  rows: any[];
+  selectedMonth: MonthKey;
+  selectedWeek: WeekKey;
+  selectedDevice: DeviceKey;
+  selectedChannel: ChannelKey;
+  selectedSource: string | "all";
+  selectedProduct: string | "all";
+}) {
+  const {
+    rows,
+    selectedMonth,
+    selectedWeek,
+    selectedDevice,
+    selectedChannel,
+    selectedSource,
+    selectedProduct,
+  } = args;
+
+  return (rows ?? []).filter((r: any) => {
+    const d = parseDateLoose(
+      r?.date ??
+        r?.report_date ??
+        r?.day ??
+        r?.ymd ??
+        r?.dt ??
+        r?.segment_date ??
+        r?.stat_date
+    );
+
+    if (!d) return false;
+
+    if (selectedMonth !== "all" && monthKeyOfDate(d) !== selectedMonth) {
+      return false;
+    }
+
+    if (selectedWeek !== "all") {
+      const wk = toYMDLocal(startOfWeekMonday(d));
+      if (wk !== selectedWeek) return false;
+    }
+
+    if (selectedDevice !== "all") {
+      if (asStr(r?.device ?? r?.device_type) !== selectedDevice) return false;
+    }
+
+    if (selectedChannel !== "all") {
+      if (asStr(r?.channel) !== String(selectedChannel)) return false;
+    }
+
+    if (selectedSource !== "all") {
+      if (asStr(r?.source) !== String(selectedSource)) return false;
+    }
+
+    if (selectedProduct !== "all") {
+      if (normalizeProductValue(r) !== String(selectedProduct)) return false;
+    }
+
+    return true;
+  });
 }
 
 function buildProductOptions(rows: any[]) {
@@ -298,6 +391,9 @@ export function useReportAggregates({
   needByWeek = true,
   needByMonth = true,
   needHydratedFilteredRows = true,
+  needOptions = true,
+  needFilteredRows = true,
+  needPeriodText = true,
 }: Args) {
   const normalizedRows = useMemo(() => {
     const list = (rows ?? []) as any[];
@@ -321,16 +417,38 @@ export function useReportAggregates({
     }
   }, []);
 
-  // ===== 전체 기준 옵션 중 month/device만 사용 =====
-  const { monthOptions, deviceOptions } = useMemo(
-    () => buildOptions(normalizedRows as any),
-    [normalizedRows]
-  );
+  /**
+   * [수정 포인트]
+   * filteredRows가 실제로 필요한 호출에서만 최종 필터 순회를 수행한다.
+   * - summaryGoal처럼 currentMonthActual만 필요한 호출은 전체 rows 필터링을 생략
+   * - totals/bySource/byCampaign/byWeek/byMonth 등 filteredRows 기반 계산이 필요하면 자동으로 켜짐
+   */
+  const shouldBuildFilteredRows =
+    needFilteredRows ||
+    needTotals ||
+    needBySource ||
+    needByCampaign ||
+    needByGroup ||
+    needByWeek ||
+    needByMonth;
 
-  const weekOptions = useMemo(
-    () => buildWeekOptions(normalizedRows as any, selectedMonth),
-    [normalizedRows, selectedMonth]
-  );
+  /**
+   * [수정 포인트]
+   * Header 옵션이나 byMonth 계산이 필요한 경우에만 baseFilteredRows를 만든다.
+   * - keyword/creative 보조 aggregate는 최종 필터를 단일 pass로 처리해 base + final 중복 순회를 줄임
+   */
+  const shouldBuildBaseFilteredRows = needOptions || needByMonth;
+
+  // ===== 전체 기준 옵션 중 month/device만 사용 =====
+  const { monthOptions, deviceOptions } = useMemo(() => {
+    if (!needOptions) return EMPTY_OPTIONS_RESULT;
+    return buildOptions(normalizedRows as any);
+  }, [needOptions, normalizedRows]);
+
+  const weekOptions = useMemo(() => {
+    if (!needOptions) return EMPTY_LIST;
+    return buildWeekOptions(normalizedRows as any, selectedMonth);
+  }, [needOptions, normalizedRows, selectedMonth]);
 
   const selectedWeekMonthKey = useMemo(
     () => (selectedWeek === "all" ? "" : String(selectedWeek).slice(0, 7)),
@@ -338,6 +456,8 @@ export function useReportAggregates({
   );
 
   const enabledWeekKeySet = useMemo(() => {
+    if (!needOptions) return EMPTY_SET_RESULT;
+
     const set = new Set<string>();
 
     weekOptions.forEach((w: any) => {
@@ -358,9 +478,11 @@ export function useReportAggregates({
     });
 
     return set;
-  }, [weekOptions, selectedMonth, selectedWeek, selectedWeekMonthKey]);
+  }, [needOptions, weekOptions, selectedMonth, selectedWeek, selectedWeekMonthKey]);
 
   const enabledMonthKeySet = useMemo(() => {
+    if (!needOptions) return EMPTY_SET_RESULT;
+
     const set = new Set<string>();
 
     if (selectedMonth !== "all") {
@@ -375,84 +497,127 @@ export function useReportAggregates({
 
     monthOptions.forEach((m: any) => set.add(m));
     return set;
-  }, [monthOptions, selectedMonth, selectedWeek, selectedWeekMonthKey]);
+  }, [needOptions, monthOptions, selectedMonth, selectedWeek, selectedWeekMonthKey]);
 
   useEffect(() => {
+    if (!needOptions) return;
     if (!onInvalidWeek) return;
     if (selectedWeek === "all") return;
     const exists = weekOptions.some((w: any) => w.weekKey === selectedWeek);
     if (!exists) onInvalidWeek();
-  }, [onInvalidWeek, selectedMonth, weekOptions, selectedWeek]);
+  }, [needOptions, onInvalidWeek, selectedMonth, weekOptions, selectedWeek]);
 
   // ============================================================
   // 공통 base filtered rows
   // month / week / device 만 적용
   // channel / source / product 는 이후 baseFilteredRows 기준으로 재구성
   // ============================================================
-  const baseFilteredRows = useMemo(
-    () =>
-      filterRows({
-        rows: normalizedRows as any,
-        selectedMonth,
-        selectedWeek,
-        selectedDevice,
-        selectedChannel: "all",
-        selectedSource: "all",
-      }) as any[],
-    [normalizedRows, selectedMonth, selectedWeek, selectedDevice]
-  );
+  const baseFilteredRows = useMemo(() => {
+    if (!shouldBuildBaseFilteredRows) return EMPTY_LIST;
+
+    return filterRows({
+      rows: normalizedRows as any,
+      selectedMonth,
+      selectedWeek,
+      selectedDevice,
+      selectedChannel: "all",
+      selectedSource: "all",
+    }) as any[];
+  }, [
+    shouldBuildBaseFilteredRows,
+    normalizedRows,
+    selectedMonth,
+    selectedWeek,
+    selectedDevice,
+  ]);
 
   // ============================================================
   // 채널 옵션용 base rows
   // source / product 만 적용
   // channel 은 아직 적용하지 않음
   // ============================================================
-  const channelBaseRows = useMemo(
-    () =>
-      applyProductFilter(
-        (baseFilteredRows as any[]).filter((r) => {
-          if (selectedSource === "all") return true;
-          return asStr(r?.source) === String(selectedSource);
-        }),
-        selectedProduct
-      ),
-    [baseFilteredRows, selectedSource, selectedProduct]
-  );
+  const channelBaseRows = useMemo(() => {
+    if (!needOptions) return EMPTY_LIST;
 
-  const { channelOptions } = useMemo(
-    () => buildOptions(channelBaseRows as any),
-    [channelBaseRows]
-  );
+    return applyProductFilter(
+      (baseFilteredRows as any[]).filter((r) => {
+        if (selectedSource === "all") return true;
+        return asStr(r?.source) === String(selectedSource);
+      }),
+      selectedProduct
+    );
+  }, [needOptions, baseFilteredRows, selectedSource, selectedProduct]);
+
+  const { channelOptions } = useMemo(() => {
+    if (!needOptions) return EMPTY_OPTIONS_RESULT;
+    return buildOptions(channelBaseRows as any);
+  }, [needOptions, channelBaseRows]);
 
   // ============================================================
   // 소스 옵션용 base rows
   // channel / product 만 적용
   // source 는 아직 적용하지 않음
   // ============================================================
-  const sourceBaseRows = useMemo(
-    () =>
-      applyProductFilter(
-        (baseFilteredRows as any[]).filter((r) => {
-          if (selectedChannel === "all") return true;
-          return asStr(r?.channel) === String(selectedChannel);
-        }),
-        selectedProduct
-      ),
-    [baseFilteredRows, selectedChannel, selectedProduct]
-  );
+  const sourceBaseRows = useMemo(() => {
+    if (!needOptions) return EMPTY_LIST;
 
-  const { sourceOptions } = useMemo(
-    () => buildOptions(sourceBaseRows as any),
-    [sourceBaseRows]
-  );
+    return applyProductFilter(
+      (baseFilteredRows as any[]).filter((r) => {
+        if (selectedChannel === "all") return true;
+        return asStr(r?.channel) === String(selectedChannel);
+      }),
+      selectedProduct
+    );
+  }, [needOptions, baseFilteredRows, selectedChannel, selectedProduct]);
+
+  const { sourceOptions } = useMemo(() => {
+    if (!needOptions) return EMPTY_OPTIONS_RESULT;
+    return buildOptions(sourceBaseRows as any);
+  }, [needOptions, sourceBaseRows]);
 
   // ============================================================
   // 상품 옵션용 base rows
   // channel / source 까지만 적용
   // product 는 아직 적용하지 않음
   // ============================================================
-  const productBaseRows = useMemo(
-    () =>
+  const productBaseRows = useMemo(() => {
+    if (!needOptions && !needByMonth) return EMPTY_LIST;
+
+    return (baseFilteredRows as any[]).filter((r) => {
+      const channelOk =
+        selectedChannel === "all" ||
+        asStr(r?.channel) === String(selectedChannel);
+      if (!channelOk) return false;
+
+      const sourceOk =
+        selectedSource === "all" ||
+        asStr(r?.source) === String(selectedSource);
+      return sourceOk;
+    });
+  }, [needOptions, needByMonth, baseFilteredRows, selectedChannel, selectedSource]);
+
+  const productOptions = useMemo(() => {
+    if (!needOptions) return EMPTY_LIST;
+    return buildProductOptions(productBaseRows as any[]);
+  }, [needOptions, productBaseRows]);
+
+  // ===== 최종 filtered rows (channel + source + product 모두 적용) =====
+  const filteredRowsRaw = useMemo(() => {
+    if (!shouldBuildFilteredRows) return EMPTY_LIST;
+
+    if (!shouldBuildBaseFilteredRows) {
+      return filterRowsFinalFast({
+        rows: normalizedRows as any[],
+        selectedMonth,
+        selectedWeek,
+        selectedDevice,
+        selectedChannel,
+        selectedSource,
+        selectedProduct,
+      });
+    }
+
+    return applyProductFilter(
       (baseFilteredRows as any[]).filter((r) => {
         const channelOk =
           selectedChannel === "all" ||
@@ -464,33 +629,20 @@ export function useReportAggregates({
           asStr(r?.source) === String(selectedSource);
         return sourceOk;
       }),
-    [baseFilteredRows, selectedChannel, selectedSource]
-  );
-
-  const productOptions = useMemo(
-    () => buildProductOptions(productBaseRows as any[]),
-    [productBaseRows]
-  );
-
-  // ===== 최종 filtered rows (channel + source + product 모두 적용) =====
-  const filteredRowsRaw = useMemo(
-    () =>
-      applyProductFilter(
-        (baseFilteredRows as any[]).filter((r) => {
-          const channelOk =
-            selectedChannel === "all" ||
-            asStr(r?.channel) === String(selectedChannel);
-          if (!channelOk) return false;
-
-          const sourceOk =
-            selectedSource === "all" ||
-            asStr(r?.source) === String(selectedSource);
-          return sourceOk;
-        }),
-        selectedProduct
-      ),
-    [baseFilteredRows, selectedChannel, selectedSource, selectedProduct]
-  );
+      selectedProduct
+    );
+  }, [
+    shouldBuildFilteredRows,
+    shouldBuildBaseFilteredRows,
+    normalizedRows,
+    baseFilteredRows,
+    selectedMonth,
+    selectedWeek,
+    selectedDevice,
+    selectedChannel,
+    selectedSource,
+    selectedProduct,
+  ]);
 
   /**
    * [수정 포인트]
@@ -499,9 +651,10 @@ export function useReportAggregates({
    * - 대용량 환경에서 map + signature lookup 비용을 크게 줄임
    */
   const filteredRows = useMemo(() => {
+    if (!shouldBuildFilteredRows) return EMPTY_LIST;
     if (!needHydratedFilteredRows) return filteredRowsRaw as any[];
     return hydrateFilteredRows(filteredRowsRaw as any[], rows as any[]);
-  }, [needHydratedFilteredRows, filteredRowsRaw, rows]);
+  }, [shouldBuildFilteredRows, needHydratedFilteredRows, filteredRowsRaw, rows]);
 
   // ===== DEBUG =====
   useEffect(() => {
@@ -708,21 +861,21 @@ export function useReportAggregates({
   }, [debugUA, filteredRows, selectedChannel, selectedSource, selectedProduct]);
 
   // ===== period text =====
-  const period = useMemo(
-    () =>
-      periodText({
-        rows: normalizedRows as any,
-        selectedMonth,
-        selectedWeek,
-      }),
-    [normalizedRows, selectedMonth, selectedWeek]
-  );
+  const period = useMemo(() => {
+    if (!needPeriodText) return "";
+
+    return periodText({
+      rows: normalizedRows as any,
+      selectedMonth,
+      selectedWeek,
+    });
+  }, [needPeriodText, normalizedRows, selectedMonth, selectedWeek]);
 
   // ===== 당월(데이터 최신 월) =====
-  const currentMonthKey = useMemo(
-    () => getCurrentMonthKeyByData(normalizedRows as any),
-    [normalizedRows]
-  );
+  const currentMonthKey = useMemo(() => {
+    if (!needCurrentMonthActual) return "all" as MonthKey;
+    return getCurrentMonthKeyByData(normalizedRows as any);
+  }, [needCurrentMonthActual, normalizedRows]);
 
   /**
    * [수정 포인트]

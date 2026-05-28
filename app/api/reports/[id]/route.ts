@@ -70,6 +70,54 @@ function normalizeMonthGoal(v: any) {
   };
 }
 
+function normalizeContractAmount(v: any) {
+  if (v == null) return "";
+
+  const s = String(v)
+    .replace(/[₩,\s]/g, "")
+    .trim();
+
+  if (!s) return "";
+
+  const n = Number(s);
+  if (!Number.isFinite(n) || n < 0) return "";
+
+  return String(Math.round(n));
+}
+
+function normalizeBrandSearchContracts(v: any) {
+  if (!isPlainObject(v)) return null;
+
+  const out: Record<
+    string,
+    {
+      pc: string;
+      mobile: string;
+      updated_at: string;
+    }
+  > = {};
+
+  const now = new Date().toISOString();
+
+  for (const [monthKeyRaw, value] of Object.entries(v)) {
+    const monthKey = String(monthKeyRaw ?? "").trim();
+
+    if (!/^\d{4}-\d{2}$/.test(monthKey)) continue;
+    if (!isPlainObject(value)) continue;
+
+    const pc = normalizeContractAmount((value as any).pc);
+    const mobile = normalizeContractAmount((value as any).mobile);
+
+    out[monthKey] = {
+      pc,
+      mobile,
+      updated_at: now,
+    };
+  }
+
+  return out;
+}
+
 async function getUserFromSbAuth() {
   const auth = await sbAuth();
   const user = (auth as any)?.user ?? null;
@@ -350,13 +398,33 @@ export async function PATCH(req: Request, ctx: Ctx) {
       ? normalizeMonthGoal(body.month_goal ?? incomingMeta?.month_goal)
       : undefined;
 
+    const hasBrandSearchContracts =
+      Object.prototype.hasOwnProperty.call(body, "brand_search_contracts") ||
+      (incomingMeta
+        ? Object.prototype.hasOwnProperty.call(
+            incomingMeta,
+            "brand_search_contracts"
+          )
+        : false);
+
+    const incomingBrandSearchContracts = hasBrandSearchContracts
+      ? normalizeBrandSearchContracts(
+          body.brand_search_contracts ?? incomingMeta?.brand_search_contracts
+        )
+      : undefined;
+
     const meta =
-      incomingMeta !== undefined || incomingMonthGoal !== undefined
+      incomingMeta !== undefined ||
+      incomingMonthGoal !== undefined ||
+      incomingBrandSearchContracts !== undefined
         ? {
             ...existingMeta,
             ...(incomingMeta ?? {}),
             ...(incomingMonthGoal !== undefined
               ? { month_goal: incomingMonthGoal }
+              : {}),
+            ...(incomingBrandSearchContracts !== undefined
+              ? { brand_search_contracts: incomingBrandSearchContracts }
               : {}),
           }
         : undefined;

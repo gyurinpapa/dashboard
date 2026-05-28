@@ -65,6 +65,16 @@ function asStr(v: any) {
   return String(v).trim();
 }
 
+function boolParam(v: string | null) {
+  const s = asStr(v).toLowerCase();
+  return s === "1" || s === "true" || s === "yes" || s === "y";
+}
+
+function isFalseParam(v: string | null) {
+  const s = asStr(v).toLowerCase();
+  return s === "0" || s === "false" || s === "no" || s === "n";
+}
+
 function flattenRow(rec: any) {
   const parsed = tryParseJson(rec?.row) || {};
 
@@ -159,6 +169,21 @@ async function fetchRowsByIngestion(
   return all;
 }
 
+async function countRowsByIngestion(
+  admin: ReturnType<typeof getSupabaseAdmin>,
+  reportId: string,
+  ingestionId: string
+) {
+  const { count, error } = await admin
+    .from("report_rows")
+    .select("id", { count: "exact", head: true })
+    .eq("report_id", reportId)
+    .eq("ingestion_id", ingestionId);
+
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}
+
 async function findBestIngestionIdByRows(
   admin: ReturnType<typeof getSupabaseAdmin>,
   reportId: string
@@ -243,6 +268,15 @@ export async function GET(req: Request, ctx: Ctx) {
       return jsonError(400, "REPORT_ID_REQUIRED");
     }
 
+    const url = new URL(req.url);
+    const metaOnly =
+      boolParam(url.searchParams.get("metaOnly")) ||
+      isFalseParam(url.searchParams.get("includeRows"));
+    const debug =
+      boolParam(url.searchParams.get("debug")) ||
+      (process.env.NODE_ENV !== "production" &&
+        !isFalseParam(url.searchParams.get("debug")));
+
     const admin = getSupabaseAdmin();
 
     const { data: report, error: rErr } = await admin
@@ -276,9 +310,19 @@ export async function GET(req: Request, ctx: Ctx) {
     let fallbackUsed = false;
     let ranked: any[] = [];
     let rawRows: any[] = [];
+    let rowsCount = 0;
 
-    if (ingestionIdUsed) {
+    /**
+     * ✅ metaOnly/includeRows=0 경량 응답
+     * - 기본 /rows 동작은 그대로 전체 rows 반환을 유지한다.
+     * - metaOnly=1 또는 includeRows=0일 때만 rows 본문을 생략한다.
+     * - 현재 ingestion 기준 count만 확인하므로 10만 rows 전체 JSON 구성/flatten을 피할 수 있다.
+     */
+    if (metaOnly && ingestionIdUsed) {
+      rowsCount = await countRowsByIngestion(admin, reportId, ingestionIdUsed);
+    } else if (ingestionIdUsed) {
       rawRows = await fetchRowsByIngestion(admin, reportId, ingestionIdUsed);
+      rowsCount = rawRows.length;
     }
 
     /**
@@ -286,8 +330,9 @@ export async function GET(req: Request, ctx: Ctx) {
      * - 정상 케이스에서는 reports.current_ingestion_id 기준으로 바로 rows를 조회한다.
      * - current_ingestion_id rows가 존재하면 전체 report_rows를 다시 훑지 않는다.
      * - current_ingestion_id가 비어 있거나 rows가 없을 때만 legacy/fallback 탐색을 수행한다.
+     * - metaOnly=1/includeRows=0에서도 count가 0이면 legacy/fallback 탐색을 수행한다.
      */
-    if (!rawRows.length) {
+    if (!rowsCount) {
       const fallback = await findBestIngestionIdByRows(admin, reportId);
 
       ranked = fallback.ranked;
@@ -296,7 +341,13 @@ export async function GET(req: Request, ctx: Ctx) {
       if (bestIngestionId && bestIngestionId !== currentIngestionId) {
         ingestionIdUsed = bestIngestionId;
         fallbackUsed = !!currentIngestionId;
-        rawRows = await fetchRowsByIngestion(admin, reportId, ingestionIdUsed);
+
+        if (metaOnly) {
+          rowsCount = await countRowsByIngestion(admin, reportId, ingestionIdUsed);
+        } else {
+          rawRows = await fetchRowsByIngestion(admin, reportId, ingestionIdUsed);
+          rowsCount = rawRows.length;
+        }
       }
     }
 
@@ -307,42 +358,70 @@ export async function GET(req: Request, ctx: Ctx) {
         ingestion_id_used: null,
         fallback_used: false,
         rows_count: 0,
-        ingestion_ranked: [],
+        ingestion_ranked: debug ? [] : [],
+        meta_only: metaOnly,
       });
     }
 
-    if (!rawRows.length) {
+    if (!rowsCount) {
       return NextResponse.json({
         ok: true,
         rows: [],
         ingestion_id_used: ingestionIdUsed || null,
         fallback_used: fallbackUsed,
         rows_count: 0,
-        ingestion_ranked: ranked,
+        ingestion_ranked: debug ? ranked : [],
+        meta_only: metaOnly,
+      });
+    }
+
+    if (metaOnly) {
+      if (debug) {
+        console.log("[rows:route:meta]", {
+          reportId,
+          currentIngestionId,
+          ingestionIdUsed,
+          fallbackUsed,
+          ranked: ranked.slice(0, 10),
+          rowsCount,
+          metaOnly,
+        });
+      }
+
+      return NextResponse.json({
+        ok: true,
+        rows: [],
+        ingestion_id_used: ingestionIdUsed || null,
+        fallback_used: fallbackUsed,
+        rows_count: rowsCount,
+        ingestion_ranked: debug ? ranked : [],
+        meta_only: true,
       });
     }
 
     const rows = rawRows.map(flattenRow);
 
-    const dates = rows
-      .map((r: any) => r?.date ?? r?.report_date ?? r?.day ?? "")
-      .filter(Boolean)
-      .map((v: any) => String(v));
+    if (debug) {
+      const dates = rows
+        .map((r: any) => r?.date ?? r?.report_date ?? r?.day ?? "")
+        .filter(Boolean)
+        .map((v: any) => String(v));
 
-    const uniqueMonths = Array.from(new Set(dates.map((d) => d.slice(0, 7))));
+      const uniqueMonths = Array.from(new Set(dates.map((d) => d.slice(0, 7))));
 
-    console.log("[rows:route]", {
-      reportId,
-      currentIngestionId,
-      ingestionIdUsed,
-      fallbackUsed,
-      ranked: ranked.slice(0, 10),
-      rawRowsLen: rawRows.length,
-      rowsLen: rows.length,
-      firstDate: dates[0] ?? null,
-      lastDate: dates[dates.length - 1] ?? null,
-      uniqueMonths,
-    });
+      console.log("[rows:route]", {
+        reportId,
+        currentIngestionId,
+        ingestionIdUsed,
+        fallbackUsed,
+        ranked: ranked.slice(0, 10),
+        rawRowsLen: rawRows.length,
+        rowsLen: rows.length,
+        firstDate: dates[0] ?? null,
+        lastDate: dates[dates.length - 1] ?? null,
+        uniqueMonths,
+      });
+    }
 
     return NextResponse.json({
       ok: true,
@@ -350,7 +429,8 @@ export async function GET(req: Request, ctx: Ctx) {
       ingestion_id_used: ingestionIdUsed || null,
       fallback_used: fallbackUsed,
       rows_count: rows.length,
-      ingestion_ranked: ranked,
+      ingestion_ranked: debug ? ranked : [],
+      meta_only: false,
     });
   } catch (e: any) {
     return jsonError(500, e?.message || String(e));

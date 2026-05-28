@@ -49,7 +49,7 @@ import FloatingFilterRail from "./floating/FloatingFilterRail";
 import FloatingTabRail from "./floating/FloatingTabRail";
 
 const SummarySection = dynamic(
-  () => import("@/app/components/sections/SummarySection"),
+  () => import("@/app/components/sections/SummarySection").then((mod) => mod.default),
   {
     ssr: false,
     loading: () => <div className="rounded-2xl" />,
@@ -57,7 +57,7 @@ const SummarySection = dynamic(
 );
 
 const Summary2Section = dynamic(
-  () => import("@/app/components/sections/Summary2Section"),
+  () => import("@/app/components/sections/Summary2Section").then((mod) => mod.default),
   {
     ssr: false,
     loading: () => <div className="rounded-2xl" />,
@@ -65,7 +65,7 @@ const Summary2Section = dynamic(
 );
 
 const StructureSection = dynamic(
-  () => import("@/app/components/sections/StructureSection"),
+  () => import("@/app/components/sections/StructureSection").then((mod) => mod.default),
   {
     ssr: false,
     loading: () => <div className="rounded-2xl" />,
@@ -73,7 +73,7 @@ const StructureSection = dynamic(
 );
 
 const KeywordSection = dynamic(
-  () => import("@/app/components/sections/KeywordSection"),
+  () => import("@/app/components/sections/KeywordSection").then((mod) => mod.default),
   {
     ssr: false,
     loading: () => <div className="rounded-2xl" />,
@@ -81,7 +81,7 @@ const KeywordSection = dynamic(
 );
 
 const KeywordDetailSection = dynamic(
-  () => import("@/app/components/sections/KeywordDetailSection"),
+  () => import("@/app/components/sections/KeywordDetailSection").then((mod) => mod.default),
   {
     ssr: false,
     loading: () => <div className="rounded-2xl" />,
@@ -89,7 +89,7 @@ const KeywordDetailSection = dynamic(
 );
 
 const CreativeSection = dynamic(
-  () => import("@/app/components/sections/CreativeSection"),
+  () => import("@/app/components/sections/CreativeSection").then((mod) => mod.default),
   {
     ssr: false,
     loading: () => <div className="rounded-2xl" />,
@@ -97,7 +97,7 @@ const CreativeSection = dynamic(
 );
 
 const CreativeDetailSection = dynamic(
-  () => import("@/app/components/sections/CreativeDetailSection"),
+  () => import("@/app/components/sections/CreativeDetailSection").then((mod) => mod.default),
   {
     ssr: false,
     loading: () => <div className="rounded-2xl" />,
@@ -105,7 +105,7 @@ const CreativeDetailSection = dynamic(
 );
 
 const MonthGoalSection = dynamic(
-  () => import("@/app/components/sections/MonthGoalSection"),
+  () => import("@/app/components/sections/MonthGoalSection").then((mod) => mod.default),
   {
     ssr: false,
     loading: () => <div className="rounded-2xl" />,
@@ -160,6 +160,35 @@ type MonthGoalProp =
     }
   | null
   | undefined;
+
+type BrandSearchContractsProp =
+  | Record<
+      string,
+      {
+        pc?: string | number | null;
+        mobile?: string | number | null;
+      }
+    >
+  | null
+  | undefined;
+
+type NormalizedBrandSearchContracts = Record<
+  string,
+  {
+    pc: number;
+    mobile: number;
+  }
+>;
+
+type BrandSearchDebugBucket = {
+  key: string;
+  month: string;
+  device: string;
+  matchedRows: number;
+  appliedRows: number;
+  contractAmount: number;
+  allocatedCost: number;
+};
 
 function hasMonthGoalValue(v: any) {
   if (v == null) return false;
@@ -216,20 +245,52 @@ function normalizeMonthGoalProp(input: MonthGoalProp): MonthGoalState | null {
   };
 }
 
+function parseBrandSearchContractAmount(v: any) {
+  if (v == null) return 0;
+  if (typeof v === "number") return Number.isFinite(v) && v > 0 ? v : 0;
+
+  const cleaned = String(v)
+    .replace(/[₩,%\s]/g, "")
+    .replace(/,/g, "")
+    .trim();
+
+  if (!cleaned) return 0;
+
+  const n = Number(cleaned);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function normalizeBrandSearchContractsProp(
+  input: BrandSearchContractsProp,
+): NormalizedBrandSearchContracts {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return {};
+  }
+
+  const out: NormalizedBrandSearchContracts = {};
+
+  for (const [monthKeyRaw, value] of Object.entries(input)) {
+    const monthKey = String(monthKeyRaw ?? "").trim();
+    if (!/^\d{4}-\d{2}$/.test(monthKey)) continue;
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+
+    const pc = parseBrandSearchContractAmount((value as any).pc);
+    const mobile = parseBrandSearchContractAmount((value as any).mobile);
+
+    if (pc <= 0 && mobile <= 0) continue;
+
+    out[monthKey] = {
+      pc,
+      mobile,
+    };
+  }
+
+  return out;
+}
+
 const EMPTY_ROWS: any[] = [];
 const EMPTY_STRING = "";
 const EMPTY_SET = new Set<string>();
-
-const AGGREGATE_FLAGS = {
-  needCurrentMonthActual: true,
-  needTotals: true,
-  needBySource: true,
-  needByCampaign: true,
-  needByGroup: false,
-  needByWeek: true,
-  needByMonth: true,
-  needHydratedFilteredRows: true,
-} as const;
 
 type Props = {
   rows: any[];
@@ -241,6 +302,7 @@ type Props = {
   reportPeriod: ReportPeriod;
   onChangeReportPeriod: (next: ReportPeriod) => void;
   monthGoal?: MonthGoalProp;
+  brandSearchContracts?: BrandSearchContractsProp;
   readOnlyHeader?: boolean;
   hidePeriodEditor?: boolean;
   hideTabPeriodText?: boolean;
@@ -274,6 +336,17 @@ type ReportRowLevelBuckets = {
   unknownRows: any[];
   representativeRows: any[];
   representativeLevel: ReportRowLevel;
+};
+
+type RowLevelBucketBuildOptions = {
+  /**
+   * 대용량 rows 최적화:
+   * 현재 탭에서 실제로 필요한 bucket 배열만 반환해 메모리 보유량을 줄인다.
+   * representativeRows 계산은 기존과 동일하게 유지한다.
+   */
+  needKeywordRows?: boolean;
+  needCreativeRows?: boolean;
+  needUnknownRows?: boolean;
 };
 
 function isHypothesisTab(tab: TabKey): tab is HypothesisTabKey {
@@ -1826,6 +1899,317 @@ function normalizeIncomingRow(rec: any) {
   return base;
 }
 
+function normalizeBrandSearchText(v: any) {
+  return String(v ?? "")
+    .toLowerCase()
+    .replace(/[\s_\-\/\.]+/g, "")
+    .trim();
+}
+
+function getBrandSearchMonthKey(row: any) {
+  const ymd = pickDateStrLoose(row);
+  return ymd ? ymd.slice(0, 7) : "";
+}
+
+function getBrandSearchDeviceBucket(row: any): "pc" | "mobile" | "" {
+  const raw = firstNonEmpty(
+    row?.device,
+    row?.device_type,
+    row?.deviceType,
+    row?.platform_device,
+    row?.platformDevice,
+    row?.device_name,
+    row?.deviceName,
+    row?.placement,
+    row?.placement_name,
+    row?.campaign_name,
+    row?.campaignName,
+    row?.campaign,
+    row?.group_name,
+    row?.groupName,
+    row?.adgroup_name,
+    row?.ad_group,
+    row?.product,
+    row?.product_name,
+    row?.productName,
+    row?.media_product,
+    row?.mediaProduct,
+    row?.["디바이스"],
+    row?.["기기"],
+    row?.["매체"],
+    row?.["광고상품"],
+    row?.["상품"],
+    row?.["캠페인"],
+    row?.["캠페인명"],
+    row?.["광고그룹"],
+    row?.["광고그룹명"],
+    row?.["노출위치"],
+  );
+
+  const compact = normalizeBrandSearchText(raw);
+  if (!compact) return "";
+
+  if (
+    compact.includes("mobile") ||
+    compact.includes("mo") ||
+    compact === "m" ||
+    compact.includes("모바일") ||
+    compact.includes("스마트폰") ||
+    compact.includes("휴대폰")
+  ) {
+    return "mobile";
+  }
+
+  if (
+    compact.includes("pc") ||
+    compact.includes("desktop") ||
+    compact.includes("desk") ||
+    compact.includes("데스크탑") ||
+    compact.includes("데스크톱") ||
+    compact.includes("피씨") ||
+    compact.includes("컴퓨터")
+  ) {
+    return "pc";
+  }
+
+  return "";
+}
+
+function isNaverBrandSearchRow(row: any) {
+  const values = [
+    row?.source,
+    row?.site_source,
+    row?.publisher,
+    row?.inventory_source,
+    row?.platform,
+    row?.media_source,
+    row?.ad_platform,
+    row?.channel,
+    row?.ad_channel,
+    row?.media,
+    row?.media_type,
+    row?.media_product,
+    row?.mediaProduct,
+    row?.campaign_name,
+    row?.campaignName,
+    row?.campaign,
+    row?.group_name,
+    row?.groupName,
+    row?.adgroup_name,
+    row?.ad_group,
+    row?.group,
+    row?.product,
+    row?.product_name,
+    row?.productName,
+    row?.report_type_name,
+    row?.reportTypeName,
+    row?.["매체"],
+    row?.["매체명"],
+    row?.["광고상품"],
+    row?.["광고 상품"],
+    row?.["상품"],
+    row?.["상품명"],
+    row?.["광고유형"],
+    row?.["광고 유형"],
+    row?.["캠페인"],
+    row?.["캠페인명"],
+    row?.["광고그룹"],
+    row?.["광고그룹명"],
+    row?.["채널"],
+    row?.["소스"],
+    row?.["플랫폼"],
+  ];
+
+  const compact = values.map(normalizeBrandSearchText).filter(Boolean).join("|");
+
+  if (!compact) return false;
+
+  const hasBrandSearchSignal =
+    compact.includes("브랜드검색") ||
+    compact.includes("brandsearch") ||
+    compact.includes("brandad") ||
+    compact.includes("brandkeyword");
+
+  if (!hasBrandSearchSignal) return false;
+
+  const hasKoreanBrandSearchSignal = compact.includes("브랜드검색");
+  const hasNaverSignal =
+    compact.includes("naver") ||
+    compact.includes("nvr") ||
+    compact.includes("네이버");
+
+  return hasKoreanBrandSearchSignal || hasNaverSignal;
+}
+
+function buildBrandSearchCostDebugSummary(
+  rows: any[],
+  contracts: NormalizedBrandSearchContracts,
+) {
+  const buckets = new Map<string, BrandSearchDebugBucket>();
+  const samples: any[] = [];
+
+  let matchedRows = 0;
+  let appliedRows = 0;
+  let skippedNoMonth = 0;
+  let skippedNoContractMonth = 0;
+  let skippedNoDevice = 0;
+  let skippedNoAmount = 0;
+
+  for (const row of rows ?? []) {
+    if (!isNaverBrandSearchRow(row)) continue;
+
+    matchedRows += 1;
+
+    const monthKey = getBrandSearchMonthKey(row);
+    const deviceBucket = getBrandSearchDeviceBucket(row);
+    const contractAmount =
+      monthKey && (deviceBucket === "pc" || deviceBucket === "mobile")
+        ? contracts?.[monthKey]?.[deviceBucket] ?? 0
+        : 0;
+
+    if (!monthKey) skippedNoMonth += 1;
+    if (monthKey && !contracts?.[monthKey]) skippedNoContractMonth += 1;
+    if (deviceBucket !== "pc" && deviceBucket !== "mobile") skippedNoDevice += 1;
+    if (monthKey && contracts?.[monthKey] && (deviceBucket === "pc" || deviceBucket === "mobile") && contractAmount <= 0) {
+      skippedNoAmount += 1;
+    }
+
+    if (monthKey && (deviceBucket === "pc" || deviceBucket === "mobile")) {
+      const key = `${monthKey}:${deviceBucket}`;
+      const prev = buckets.get(key) ?? {
+        key,
+        month: monthKey,
+        device: deviceBucket,
+        matchedRows: 0,
+        appliedRows: 0,
+        contractAmount,
+        allocatedCost: 0,
+      };
+
+      prev.matchedRows += 1;
+      prev.contractAmount = contractAmount;
+
+      if ((row as any)?.brand_search_contract_cost_applied) {
+        prev.appliedRows += 1;
+        appliedRows += 1;
+      }
+
+      prev.allocatedCost =
+        prev.appliedRows > 0 && prev.contractAmount > 0
+          ? prev.contractAmount / prev.appliedRows
+          : 0;
+
+      buckets.set(key, prev);
+    }
+
+    if (samples.length < 20) {
+      samples.push({
+        month: monthKey,
+        device: deviceBucket,
+        applied: !!(row as any)?.brand_search_contract_cost_applied,
+        cost: row?.cost ?? row?.spend ?? row?.ad_cost ?? null,
+        originalCost: row?.brand_search_original_cost ?? null,
+        source: row?.source ?? row?.media_source ?? row?.platform ?? row?.["매체"] ?? null,
+        channel: row?.channel ?? row?.ad_channel ?? row?.media ?? row?.["광고상품"] ?? null,
+        campaign: row?.campaign_name ?? row?.campaignName ?? row?.campaign ?? row?.["캠페인명"] ?? null,
+        group: row?.group_name ?? row?.groupName ?? row?.adgroup_name ?? row?.["광고그룹명"] ?? null,
+        deviceRaw: row?.device ?? row?.device_type ?? row?.["기기"] ?? row?.["디바이스"] ?? null,
+      });
+    }
+  }
+
+  const byMonthDevice = Array.from(buckets.values()).sort((a, b) =>
+    a.key.localeCompare(b.key),
+  );
+
+  return {
+    totalRows: rows?.length ?? 0,
+    contractMonths: Object.keys(contracts ?? {}).sort(),
+    matchedRows,
+    appliedRows,
+    skippedNoMonth,
+    skippedNoContractMonth,
+    skippedNoDevice,
+    skippedNoAmount,
+    byMonthDevice,
+    samples,
+  };
+}
+
+function applyBrandSearchContractCostsToRows(
+  rows: any[],
+  contracts: NormalizedBrandSearchContracts,
+) {
+  if (!rows?.length) return EMPTY_ROWS;
+
+  const monthKeys = Object.keys(contracts ?? {});
+  if (!monthKeys.length) return rows;
+
+  const counts = new Map<string, number>();
+
+  for (const row of rows) {
+    if (!isNaverBrandSearchRow(row)) continue;
+
+    const monthKey = getBrandSearchMonthKey(row);
+    if (!monthKey || !contracts[monthKey]) continue;
+
+    const deviceBucket = getBrandSearchDeviceBucket(row);
+    if (deviceBucket !== "pc" && deviceBucket !== "mobile") continue;
+
+    const contractAmount = contracts[monthKey]?.[deviceBucket] ?? 0;
+    if (!Number.isFinite(contractAmount) || contractAmount <= 0) continue;
+
+    const key = `${monthKey}:${deviceBucket}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  if (counts.size === 0) return rows;
+
+  let changed = false;
+
+  const nextRows = rows.map((row) => {
+    if (!isNaverBrandSearchRow(row)) return row;
+
+    const monthKey = getBrandSearchMonthKey(row);
+    if (!monthKey || !contracts[monthKey]) return row;
+
+    const deviceBucket = getBrandSearchDeviceBucket(row);
+    if (deviceBucket !== "pc" && deviceBucket !== "mobile") return row;
+
+    const contractAmount = contracts[monthKey]?.[deviceBucket] ?? 0;
+    if (!Number.isFinite(contractAmount) || contractAmount <= 0) return row;
+
+    const key = `${monthKey}:${deviceBucket}`;
+    const rowCount = counts.get(key) ?? 0;
+    if (rowCount <= 0) return row;
+
+    const allocatedCost = contractAmount / rowCount;
+    if (!Number.isFinite(allocatedCost) || allocatedCost <= 0) return row;
+
+    changed = true;
+
+    return {
+      ...row,
+      cost: allocatedCost,
+      spend: allocatedCost,
+      ad_cost: allocatedCost,
+      brand_search_contract_cost_applied: true,
+      brand_search_contract_month: monthKey,
+      brand_search_contract_device: deviceBucket,
+      brand_search_contract_amount: contractAmount,
+      brand_search_contract_row_count: rowCount,
+      brand_search_original_cost:
+        row?.brand_search_original_cost ??
+        row?.cost ??
+        row?.spend ??
+        row?.ad_cost ??
+        null,
+    };
+  });
+
+  return changed ? nextRows : rows;
+}
+
 function getNormalizedRowLevelValue(row: any): ReportRowLevel {
   const raw = firstNonEmpty(
     row?.row_level,
@@ -1987,8 +2371,16 @@ function pickRepresentativeRows(input: {
   return representativeRows.length > 0 ? representativeRows : EMPTY_ROWS;
 }
 
-function buildRowLevelBuckets(rows: any[]): ReportRowLevelBuckets {
+function buildRowLevelBuckets(
+  rows: any[],
+  options: RowLevelBucketBuildOptions = {},
+): ReportRowLevelBuckets {
   if (!rows?.length) return createEmptyRowLevelBuckets();
+
+  const needKeywordRows = options.needKeywordRows ?? true;
+  const needCreativeRows = options.needCreativeRows ?? true;
+  const needMixedRows = needKeywordRows || needCreativeRows;
+  const needUnknownRows = options.needUnknownRows ?? true;
 
   const keywordRows: any[] = [];
   const creativeRows: any[] = [];
@@ -2041,10 +2433,10 @@ function buildRowLevelBuckets(rows: any[]): ReportRowLevelBuckets {
     });
 
     return {
-      keywordRows,
-      creativeRows,
-      mixedRows,
-      unknownRows,
+      keywordRows: needKeywordRows ? keywordRows : EMPTY_ROWS,
+      creativeRows: needCreativeRows ? creativeRows : EMPTY_ROWS,
+      mixedRows: needMixedRows ? mixedRows : EMPTY_ROWS,
+      unknownRows: needUnknownRows ? unknownRows : EMPTY_ROWS,
       representativeRows,
       representativeLevel,
     };
@@ -2095,10 +2487,10 @@ function buildRowLevelBuckets(rows: any[]): ReportRowLevelBuckets {
   });
 
   return {
-    keywordRows: legacyKeywordRows,
-    creativeRows: legacyCreativeRows,
-    mixedRows: legacyMixedRows,
-    unknownRows: legacyUnknownRows,
+    keywordRows: needKeywordRows ? legacyKeywordRows : EMPTY_ROWS,
+    creativeRows: needCreativeRows ? legacyCreativeRows : EMPTY_ROWS,
+    mixedRows: needMixedRows ? legacyMixedRows : EMPTY_ROWS,
+    unknownRows: needUnknownRows ? legacyUnknownRows : EMPTY_ROWS,
     representativeRows,
     representativeLevel,
   };
@@ -2610,6 +3002,7 @@ export default function ReportTemplate({
   reportPeriod,
   onChangeReportPeriod,
   monthGoal: incomingMonthGoal,
+  brandSearchContracts: incomingBrandSearchContracts,
   readOnlyHeader = false,
   hidePeriodEditor = false,
   hideTabPeriodText = false,
@@ -2641,6 +3034,10 @@ export default function ReportTemplate({
     return normalizeMonthGoalProp(incomingMonthGoal);
   }, [incomingMonthGoal]);
 
+  const brandSearchContractsFromProp = useMemo(() => {
+    return normalizeBrandSearchContractsProp(incomingBrandSearchContracts);
+  }, [incomingBrandSearchContracts]);
+
   const monthGoal = monthGoalFromProp ?? storedMonthGoal;
 
   const setMonthGoal = useCallback(
@@ -2658,23 +3055,58 @@ export default function ReportTemplate({
   const stableReportPeriod = useStableShallowValue(reportPeriod);
   const stableCreativesMapInput = useStableShallowValue(creativesMap ?? {});
   const stableMonthGoal = useStableShallowValue(monthGoal);
+  const stableBrandSearchContracts = useStableShallowValue(
+    brandSearchContractsFromProp,
+  );
 
   const normalizedRows = useMemo(() => {
     if (!rows?.length) return EMPTY_ROWS;
     return rows.map(normalizeIncomingRow);
   }, [rows]);
 
-  const reportPeriodRows = useMemo(() => {
+  const brandSearchCostAppliedRows = useMemo(() => {
     if (!normalizedRows.length) return EMPTY_ROWS;
-    return filterRowsByReportPeriod(normalizedRows as any[], stableReportPeriod);
-  }, [normalizedRows, stableReportPeriod]);
+    return applyBrandSearchContractCostsToRows(
+      normalizedRows,
+      stableBrandSearchContracts,
+    );
+  }, [normalizedRows, stableBrandSearchContracts]);
+
+  const reportPeriodRows = useMemo(() => {
+    if (!brandSearchCostAppliedRows.length) return EMPTY_ROWS;
+    return filterRowsByReportPeriod(
+      brandSearchCostAppliedRows as any[],
+      stableReportPeriod,
+    );
+  }, [brandSearchCostAppliedRows, stableReportPeriod]);
+
+  const shouldRetainKeywordRowsForActiveTab =
+    deferredTab === "keyword" || deferredTab === "keywordDetail";
+
+  const shouldRetainCreativeRowsForActiveTab =
+    deferredTab === "creative" || deferredTab === "creativeDetail";
 
   const rowLevelBuckets = useMemo(() => {
     if (!reportPeriodRows.length) {
       return buildRowLevelBuckets(EMPTY_ROWS);
     }
-    return buildRowLevelBuckets(reportPeriodRows as any[]);
-  }, [reportPeriodRows]);
+
+    /**
+     * ✅ 대용량 rows 메모리 최적화
+     * - representativeRows는 Summary/Structure/Decision 기준값에 필요하므로 항상 유지한다.
+     * - keywordRows/creativeRows/mixedRows/unknownRows는 현재 탭에서 필요할 때만 반환한다.
+     * - row_level 판별 규칙과 representativeRows 구성 순서는 기존과 동일하게 유지한다.
+     */
+    return buildRowLevelBuckets(reportPeriodRows as any[], {
+      needKeywordRows: shouldRetainKeywordRowsForActiveTab,
+      needCreativeRows: shouldRetainCreativeRowsForActiveTab,
+      needUnknownRows: false,
+    });
+  }, [
+    reportPeriodRows,
+    shouldRetainKeywordRowsForActiveTab,
+    shouldRetainCreativeRowsForActiveTab,
+  ]);
 
   const representativeReportRows = useMemo(() => {
     return rowLevelBuckets.representativeRows;
@@ -2720,10 +3152,33 @@ export default function ReportTemplate({
     try {
       const sp = new URLSearchParams(window.location.search);
       if (sp.get("debugRows") !== "1") return;
-      (window as any).__ROWS__ = normalizedRows;
+      (window as any).__ROWS__ = brandSearchCostAppliedRows;
+      (window as any).__RAW_ROWS__ = normalizedRows;
       (window as any).__CREATIVES_MAP__ = stableCreativesMapInput;
     } catch {}
-  }, [normalizedRows, stableCreativesMapInput]);
+  }, [brandSearchCostAppliedRows, normalizedRows, stableCreativesMapInput]);
+
+  useEffect(() => {
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.get("debugBrandSearch") !== "1") return;
+
+      const summary = buildBrandSearchCostDebugSummary(
+        brandSearchCostAppliedRows,
+        stableBrandSearchContracts,
+      );
+
+      (window as any).__BRAND_SEARCH_COST_DEBUG__ = summary;
+
+      console.log("[brand-search-cost] summary", summary);
+      if (summary.byMonthDevice.length) {
+        console.table(summary.byMonthDevice);
+      }
+      if (summary.samples.length) {
+        console.table(summary.samples);
+      }
+    } catch {}
+  }, [brandSearchCostAppliedRows, stableBrandSearchContracts]);
 
   useEffect(() => {
     if (readOnlyHeader) return;
@@ -2739,6 +3194,25 @@ export default function ReportTemplate({
     deferredTab === "keywordDetail" ||
     deferredTab === "creative" ||
     deferredTab === "creativeDetail";
+
+  /**
+   * ✅ 대용량 rows 렌더링 최적화
+   * - useReportAggregates는 내부에서 filteredRows, options, totals, bySource,
+   *   byCampaign, byWeek, byMonth 등을 계산할 수 있다.
+   * - 기존에는 모든 aggregate 호출에서 대부분의 계산이 항상 켜져 있었다.
+   * - 여기서는 탭별로 실제 화면/Decision에 필요한 계산만 켠다.
+   * - rows/필터/집계 결과 자체는 바꾸지 않고, 비활성 탭의 불필요한 계산만 건너뛴다.
+   */
+  const isSummaryTab = deferredTab === "summary";
+  const isSummary2Tab = deferredTab === "summary2";
+  const isStructureTab = deferredTab === "structure";
+  const isKeywordTab = deferredTab === "keyword";
+  const isKeywordDetailTab = deferredTab === "keywordDetail";
+  const isCreativeTab = deferredTab === "creative";
+  const isCreativeDetailTab = deferredTab === "creativeDetail";
+  const isDecisionTab = deferredTab === "decision";
+  const isHypothesisOperationTab = isHypothesisTab(deferredTab);
+  const isDecisionLikeTab = isDecisionTab || isHypothesisOperationTab;
 
   const originalRowById = useMemo(() => {
     if (!needCreativeRows || !normalizedRows.length) return null;
@@ -2771,7 +3245,22 @@ export default function ReportTemplate({
       selectedProduct: deferredSelectedProduct,
       monthGoal: stableMonthGoal,
       onInvalidWeek: handleInvalidWeek,
-      ...AGGREGATE_FLAGS,
+
+      /**
+       * ✅ 메인 representative aggregate는 Header 옵션/filteredRows는 항상 유지하되,
+       * 무거운 표/차트 집계는 현재 탭에서 필요한 것만 계산한다.
+       */
+      needCurrentMonthActual: isSummaryTab || isKeywordTab,
+      needTotals: isSummaryTab,
+      needBySource: isSummaryTab || isStructureTab,
+      needByCampaign: isStructureTab || isDecisionLikeTab,
+      needByGroup: false,
+      needByWeek: isSummaryTab || isDecisionLikeTab,
+      needByMonth: isSummaryTab || isDecisionLikeTab,
+      needHydratedFilteredRows: isStructureTab,
+      needOptions: true,
+      needFilteredRows: true,
+      needPeriodText: true,
     };
   }, [
     representativeReportRows,
@@ -2783,6 +3272,10 @@ export default function ReportTemplate({
     deferredSelectedProduct,
     stableMonthGoal,
     handleInvalidWeek,
+    isSummaryTab,
+    isKeywordTab,
+    isStructureTab,
+    isDecisionLikeTab,
   ]);
 
   const stableReportAggregatesParams =
@@ -2829,7 +3322,23 @@ export default function ReportTemplate({
       selectedProduct: deferredSelectedProduct,
       monthGoal: stableMonthGoal,
       onInvalidWeek: noopInvalidWeek,
-      ...AGGREGATE_FLAGS,
+
+      /**
+       * ✅ keyword 전용 aggregate는 filteredRows만 필요하다.
+       * - KeywordSection의 keywordAgg는 아래 groupByKeyword(keywordOnlyRows)에서 계산한다.
+       * - KeywordDetail은 rows만 필요하므로 hydrate만 detail 탭에서 켠다.
+       */
+      needCurrentMonthActual: false,
+      needTotals: false,
+      needBySource: false,
+      needByCampaign: false,
+      needByGroup: false,
+      needByWeek: false,
+      needByMonth: false,
+      needHydratedFilteredRows: isKeywordDetailTab,
+      needOptions: false,
+      needFilteredRows: true,
+      needPeriodText: false,
     };
   }, [
     keywordRowsForActiveTab,
@@ -2841,6 +3350,7 @@ export default function ReportTemplate({
     deferredSelectedProduct,
     stableMonthGoal,
     noopInvalidWeek,
+    isKeywordDetailTab,
   ]);
 
   const stableKeywordAggregatesParams =
@@ -2869,7 +3379,23 @@ export default function ReportTemplate({
       selectedProduct: deferredSelectedProduct,
       monthGoal: stableMonthGoal,
       onInvalidWeek: noopInvalidWeek,
-      ...AGGREGATE_FLAGS,
+
+      /**
+       * ✅ creative 전용 aggregate도 filteredRows만 필요하다.
+       * - CreativeSection / CreativeDetailSection은 rows를 받아 내부에서 표시한다.
+       * - 소재 이미지 보강을 위해 creative 탭에서만 hydrate를 켠다.
+       */
+      needCurrentMonthActual: false,
+      needTotals: false,
+      needBySource: false,
+      needByCampaign: false,
+      needByGroup: false,
+      needByWeek: false,
+      needByMonth: false,
+      needHydratedFilteredRows: isCreativeTab || isCreativeDetailTab,
+      needOptions: false,
+      needFilteredRows: true,
+      needPeriodText: false,
     };
   }, [
     creativeRowsForActiveTab,
@@ -2881,6 +3407,8 @@ export default function ReportTemplate({
     deferredSelectedProduct,
     stableMonthGoal,
     noopInvalidWeek,
+    isCreativeTab,
+    isCreativeDetailTab,
   ]);
 
   const stableCreativeAggregatesParams =
@@ -2902,7 +3430,23 @@ export default function ReportTemplate({
       selectedProduct: "all",
       monthGoal: stableMonthGoal,
       onInvalidWeek: noopInvalidWeek,
-      ...AGGREGATE_FLAGS,
+
+      /**
+       * ✅ 월 목표/Decision 기준값 산출용 aggregate
+       * - 전체 기간/필터 무시 기준의 currentMonthActual/currentMonthGoalComputed만 필요하다.
+       * - bySource/byCampaign/byWeek/byMonth/totals/hydrate는 여기서 계산하지 않는다.
+       */
+      needCurrentMonthActual: true,
+      needTotals: false,
+      needBySource: false,
+      needByCampaign: false,
+      needByGroup: false,
+      needByWeek: false,
+      needByMonth: false,
+      needHydratedFilteredRows: false,
+      needOptions: false,
+      needFilteredRows: false,
+      needPeriodText: false,
     };
   }, [representativeReportRows, stableMonthGoal, noopInvalidWeek]);
 

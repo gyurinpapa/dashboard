@@ -121,6 +121,14 @@ type MonthGoalDraft = {
   cvr: string;
 };
 
+type BrandSearchContractMonth = {
+  month: string;
+  pc: string;
+  mobile: string;
+};
+
+type BrandSearchContractsDraft = BrandSearchContractMonth[];
+
 type CsvUploadMetaItem = {
   id: string;
   name: string;
@@ -145,6 +153,13 @@ type IngestionUiInfo = {
   finishedAt: string;
 };
 
+type RowsMetaResult = {
+  rowsCount: number;
+  ingestionIdUsed: string;
+  fallbackUsed: boolean;
+  metaOnly: boolean;
+};
+
 function buildEmptyMonthGoal(): MonthGoalDraft {
   return {
     revenue: "",
@@ -155,6 +170,131 @@ function buildEmptyMonthGoal(): MonthGoalDraft {
     ctr: "",
     cvr: "",
   };
+}
+
+function monthKeyFromDate(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function dateFromLooseMonthBase(base?: string | null) {
+  const raw = String(base ?? "").trim();
+  if (raw) {
+    const normalized = raw.length === 7 ? `${raw}-01` : raw;
+    const d = new Date(`${normalized.slice(0, 10)}T00:00:00`);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+
+  return new Date();
+}
+
+function buildRecentBrandSearchMonthKeys(base?: string | null) {
+  const baseDate = dateFromLooseMonthBase(base);
+  const baseYear = baseDate.getFullYear();
+  const baseMonth = baseDate.getMonth();
+
+  return [2, 1, 0].map((offset) => {
+    return monthKeyFromDate(new Date(baseYear, baseMonth - offset, 1));
+  });
+}
+
+function buildEmptyBrandSearchContracts(
+  monthKeys: string[] = buildRecentBrandSearchMonthKeys(),
+): BrandSearchContractsDraft {
+  return monthKeys.map((month) => ({
+    month,
+    pc: "",
+    mobile: "",
+  }));
+}
+
+function normalizeContractInputValue(v: any) {
+  if (v == null) return "";
+  return String(v).trim();
+}
+
+function normalizeBrandSearchContractAmount(v: any) {
+  const raw = normalizeContractInputValue(v);
+  if (!raw) return "";
+
+  const cleaned = raw.replace(/[₩,%\s]/g, "").replace(/,/g, "").trim();
+  if (!cleaned) return "";
+
+  const n = Number(cleaned);
+  if (!Number.isFinite(n) || n < 0) return raw;
+
+  return String(Math.round(n));
+}
+
+function brandSearchContractsToStableKey(v: BrandSearchContractsDraft) {
+  return JSON.stringify(
+    (v ?? []).map((item) => ({
+      month: normalizeContractInputValue(item.month),
+      pc: normalizeContractInputValue(item.pc),
+      mobile: normalizeContractInputValue(item.mobile),
+    })),
+  );
+}
+
+function brandSearchContractsToPayload(v: BrandSearchContractsDraft) {
+  const out: Record<string, { pc: string; mobile: string }> = {};
+
+  for (const item of v ?? []) {
+    const month = normalizeContractInputValue(item.month);
+    if (!month) continue;
+
+    out[month] = {
+      pc: normalizeBrandSearchContractAmount(item.pc),
+      mobile: normalizeBrandSearchContractAmount(item.mobile),
+    };
+  }
+
+  return out;
+}
+
+function extractBrandSearchContractsFromReport(
+  detail: ReportDetail | null | undefined,
+  monthKeys: string[],
+): BrandSearchContractsDraft {
+  const meta =
+    detail?.meta && typeof detail.meta === "object" ? detail.meta : {};
+
+  const source =
+    meta?.brand_search_contracts && typeof meta.brand_search_contracts === "object"
+      ? meta.brand_search_contracts
+      : {};
+
+  const byMonth = new Map<string, { pc: string; mobile: string }>();
+
+  if (Array.isArray(source)) {
+    for (const item of source) {
+      const month = normalizeContractInputValue(item?.month);
+      if (!month) continue;
+
+      byMonth.set(month, {
+        pc: normalizeContractInputValue(item?.pc),
+        mobile: normalizeContractInputValue(item?.mobile),
+      });
+    }
+  } else {
+    for (const [month, value] of Object.entries(source)) {
+      if (!value || typeof value !== "object") continue;
+
+      byMonth.set(normalizeContractInputValue(month), {
+        pc: normalizeContractInputValue((value as any)?.pc),
+        mobile: normalizeContractInputValue((value as any)?.mobile),
+      });
+    }
+  }
+
+  return monthKeys.map((month) => {
+    const saved = byMonth.get(month);
+
+    return {
+      month,
+      pc: normalizeContractInputValue(saved?.pc),
+      mobile: normalizeContractInputValue(saved?.mobile),
+    };
+  });
 }
 
 function normalizeGoalInputValue(v: any) {
@@ -217,7 +357,7 @@ function buildCommerceComputedRevenue(monthGoal: MonthGoalDraft) {
 }
 
 function extractMonthGoalFromReport(
-  detail: ReportDetail | null | undefined
+  detail: ReportDetail | null | undefined,
 ): MonthGoalDraft {
   const meta =
     detail?.meta && typeof detail.meta === "object" ? detail.meta : {};
@@ -260,7 +400,7 @@ async function fetchReportDetail(reportId: string): Promise<ReportDetail> {
 
 async function patchReportPeriodDraft(
   reportId: string,
-  next: ReportPeriod
+  next: ReportPeriod,
 ): Promise<ReportDetail> {
   const res = await authFetch(`/api/reports/${reportId}`, {
     method: "PATCH",
@@ -274,7 +414,7 @@ async function patchReportPeriodDraft(
   const json = await safeJson(res);
   if (!res.ok || !json?.ok) {
     throw new Error(
-      json?.error || `Failed to save report period (${res.status})`
+      json?.error || `Failed to save report period (${res.status})`,
     );
   }
 
@@ -283,7 +423,7 @@ async function patchReportPeriodDraft(
 
 async function patchReportMonthGoal(
   reportId: string,
-  next: MonthGoalDraft
+  next: MonthGoalDraft,
 ): Promise<ReportDetail> {
   const res = await authFetch(`/api/reports/${reportId}`, {
     method: "PATCH",
@@ -303,8 +443,29 @@ async function patchReportMonthGoal(
 
   const json = await safeJson(res);
   if (!res.ok || !json?.ok) {
+    throw new Error(json?.error || `Failed to save month goal (${res.status})`);
+  }
+
+  return (json.report ?? {}) as ReportDetail;
+}
+
+async function patchReportBrandSearchContracts(
+  reportId: string,
+  next: BrandSearchContractsDraft,
+): Promise<ReportDetail> {
+  const res = await authFetch(`/api/reports/${reportId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      brand_search_contracts: brandSearchContractsToPayload(next),
+    }),
+  });
+
+  const json = await safeJson(res);
+  if (!res.ok || !json?.ok) {
     throw new Error(
-      json?.error || `Failed to save month goal (${res.status})`
+      json?.error ||
+        `Failed to save brand search contracts (${res.status})`,
     );
   }
 
@@ -320,16 +481,36 @@ async function fetchRows(reportId: string): Promise<any[]> {
   return json.rows ?? [];
 }
 
+async function fetchRowsMeta(reportId: string): Promise<RowsMetaResult> {
+  const res = await authFetch(
+    `/api/reports/${reportId}/rows?metaOnly=1&debug=0`,
+  );
+  const json = await safeJson(res);
+
+  if (!res.ok || !json?.ok) {
+    throw new Error(
+      json?.error || `Failed to fetch rows meta (${res.status})`,
+    );
+  }
+
+  return {
+    rowsCount: asNum(json?.rows_count),
+    ingestionIdUsed: asStr(json?.ingestion_id_used),
+    fallbackUsed: !!json?.fallback_used,
+    metaOnly: !!json?.meta_only,
+  };
+}
+
 async function fetchCreativesMap(
-  reportId: string
+  reportId: string,
 ): Promise<Record<string, string>> {
   const res = await authFetch(
-    `/api/reports/${reportId}/assets/creatives/map?expiresIn=3600&mode=expanded`
+    `/api/reports/${reportId}/assets/creatives/map?expiresIn=3600&mode=expanded`,
   );
   const json = await safeJson(res);
   if (!res.ok || !json?.ok) {
     throw new Error(
-      json?.error || `Failed to fetch creativesMap (${res.status})`
+      json?.error || `Failed to fetch creativesMap (${res.status})`,
     );
   }
   return json.creativesMap ?? {};
@@ -353,9 +534,7 @@ async function runIngestion(reportId: string) {
 
   if (!res.ok || !json?.ok) {
     throw new Error(
-      json?.detail ||
-        json?.error ||
-        `Ingestion queue failed (${res.status})`
+      json?.detail || json?.error || `Ingestion queue failed (${res.status})`,
     );
   }
 
@@ -367,9 +546,17 @@ function nowIso() {
 }
 
 function cleanUploadFileName(name: string) {
-  let base = String(name || "").split("/").pop() || name || "upload.csv";
+  let base =
+    String(name || "")
+      .split("/")
+      .pop() ||
+    name ||
+    "upload.csv";
   base = base.replace(/[\\]/g, "_");
-  base = base.replace(/\u00A0/g, " ").replace(/\s+/g, " ").trim();
+  base = base
+    .replace(/\u00A0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 
   try {
     base = base.normalize("NFC");
@@ -414,7 +601,7 @@ async function uploadCsvDirectToStorage(params: {
 
 async function finalizeCsvUploadMeta(
   reportId: string,
-  item: CsvUploadMetaItem
+  item: CsvUploadMetaItem,
 ) {
   const res = await authFetch(`/api/uploads/csv`, {
     method: "POST",
@@ -429,7 +616,7 @@ async function finalizeCsvUploadMeta(
   const json = await safeJson(res);
   if (!res.ok || !json?.ok) {
     throw new Error(
-      json?.detail || json?.error || `CSV finalize failed (${res.status})`
+      json?.detail || json?.error || `CSV finalize failed (${res.status})`,
     );
   }
 
@@ -488,7 +675,7 @@ async function uploadCreatives(reportId: string, files: File[]) {
       {
         method: "POST",
         body: fd,
-      }
+      },
     );
 
     const json = (await safeJson(res)) as any;
@@ -553,7 +740,7 @@ async function publishReportWithFallback(reportId: string) {
   }
 
   const msg1 = String(
-    json1?.error || json1?.message || `Publish failed (${res1.status})`
+    json1?.error || json1?.message || `Publish failed (${res1.status})`,
   );
 
   if (looksLikePublishedAtIssue(msg1)) {
@@ -573,7 +760,7 @@ async function publishReportWithFallback(reportId: string) {
     }
 
     const msg2 = String(
-      json2?.error || json2?.message || `Publish-lite failed (${res2.status})`
+      json2?.error || json2?.message || `Publish-lite failed (${res2.status})`,
     );
     throw new Error(msg2);
   }
@@ -601,7 +788,8 @@ function buildClientSharePathFromSlug(slug: string) {
 }
 
 function pickAdvertiserIdFromReport(report: ReportDetail | null | undefined) {
-  const meta = report?.meta && typeof report.meta === "object" ? report.meta : {};
+  const meta =
+    report?.meta && typeof report.meta === "object" ? report.meta : {};
 
   return (
     asStr((report as any)?.advertiser_id) ||
@@ -677,7 +865,7 @@ function normalizeReportId(v: any) {
 }
 
 function extractIngestionInfo(
-  detail: ReportDetail | null | undefined
+  detail: ReportDetail | null | undefined,
 ): IngestionUiInfo {
   const ingestion = detail?.meta?.ingestion ?? {};
 
@@ -694,24 +882,24 @@ function extractIngestionInfo(
   const totalLines = Math.max(
     asNum(ingestion?.total_lines),
     asNum(ingestion?.totalRows),
-    asNum(ingestion?.total_rows)
+    asNum(ingestion?.total_rows),
   );
 
   const parsedLines = Math.max(
     asNum(ingestion?.parsed_lines),
     asNum(ingestion?.parsedLines),
-    asNum(ingestion?.parsed_rows)
+    asNum(ingestion?.parsed_rows),
   );
 
   const inserted = Math.max(
     asNum(ingestion?.inserted),
     asNum(ingestion?.insertedRows),
-    asNum(ingestion?.inserted_rows)
+    asNum(ingestion?.inserted_rows),
   );
   const validRows = Math.max(
     asNum(ingestion?.valid_rows),
-    asNum(ingestion?.validRows)
-  );  
+    asNum(ingestion?.validRows),
+  );
   const batchSize = asNum(ingestion?.batch_size);
   const committedBatches = asNum(ingestion?.committed_batches);
   const error =
@@ -737,7 +925,7 @@ function extractIngestionInfo(
 }
 
 function normalizeHeaderInfoFromReport(
-  report: ReportDetail | null | undefined
+  report: ReportDetail | null | undefined,
 ): ReportHeaderInfo {
   const meta =
     report?.meta && typeof report.meta === "object" ? report.meta : {};
@@ -873,7 +1061,7 @@ function buildInitialReportPeriod(args: {
 
   if (typeof window !== "undefined" && reportId) {
     const stored = parseStoredReportPeriod(
-      window.localStorage.getItem(getReportPeriodStorageKey(reportId))
+      window.localStorage.getItem(getReportPeriodStorageKey(reportId)),
     );
     if (stored) return stored;
   }
@@ -1001,15 +1189,31 @@ export default function ReportDetailPage() {
 
   const [report, setReport] = useState<ReportDetail | null>(null);
   const [rows, setRows] = useState<any[]>([]);
+  const rowsLoadedRef = useRef(false);
+  const latestRowsRef = useRef<any[]>([]);
+  const rowsFetchPromiseRef = useRef<Promise<{ rowsCount: number }> | null>(
+    null,
+  );
+  const rowsMetaFetchPromiseRef = useRef<Promise<RowsMetaResult> | null>(null);
+  const [rowsMetaCount, setRowsMetaCount] = useState(0);
+  const [rowsMetaLoaded, setRowsMetaLoaded] = useState(false);
   const [loadingRows, setLoadingRows] = useState(true);
   const [msg, setMsg] = useState<string>("");
 
   const [monthGoal, setMonthGoal] = useState<MonthGoalDraft>(() =>
-    buildEmptyMonthGoal()
+    buildEmptyMonthGoal(),
   );
   const [savingMonthGoal, setSavingMonthGoal] = useState(false);
   const [monthGoalSavedText, setMonthGoalSavedText] = useState<string>("");
   const lastLoadedMonthGoalKeyRef = useRef<string>("");
+
+  const [brandSearchContracts, setBrandSearchContracts] =
+    useState<BrandSearchContractsDraft>(() => buildEmptyBrandSearchContracts());
+  const [savingBrandSearchContracts, setSavingBrandSearchContracts] =
+    useState(false);
+  const [brandSearchContractsSavedText, setBrandSearchContractsSavedText] =
+    useState<string>("");
+  const lastLoadedBrandSearchContractsKeyRef = useRef<string>("");
 
   const [creativesMap, setCreativesMap] = useState<Record<string, string>>({});
   const [headerInfo, setHeaderInfo] = useState<ReportHeaderInfo>({
@@ -1062,12 +1266,12 @@ export default function ReportDetailPage() {
 
   const didInitReportPeriodFromSourceRef = useRef(false);
   const saveDraftPeriodTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null
+    null,
   );
   const lastSavedReportPeriodKeyRef = useRef<string>("");
 
   const [reportPeriod, setReportPeriod] = useState<ReportPeriod>(() =>
-    resolvePresetPeriod()
+    resolvePresetPeriod(),
   );
 
   const displayRows = rows;
@@ -1096,6 +1300,21 @@ export default function ReportDetailPage() {
     return getRowsDateRange(displayRows as any[]);
   }, [displayRows]);
 
+  const brandSearchMonthKeys = useMemo(() => {
+    return buildRecentBrandSearchMonthKeys(
+      reportPeriod.endDate ||
+        report?.draft_period_end ||
+        report?.published_period_end ||
+        report?.period_end ||
+        "",
+    );
+  }, [
+    report?.draft_period_end,
+    report?.period_end,
+    report?.published_period_end,
+    reportPeriod.endDate,
+  ]);
+
   const ingestionStatusLabel = useMemo(() => {
     if (ingestionStatus === "idle") return "CSV 업로드 대기";
     if (ingestionStatus === "queued") return "서버 처리 대기중";
@@ -1104,7 +1323,6 @@ export default function ReportDetailPage() {
     if (ingestionStatus === "failed") return "처리 실패";
     return "CSV 업로드 대기";
   }, [ingestionStatus]);
-  
 
   const ingestionStatusDescription = useMemo(() => {
     if (ingestionStatus === "idle") {
@@ -1145,8 +1363,23 @@ export default function ReportDetailPage() {
 
   const monthGoalDirty = useMemo(() => {
     const currentKey = monthGoalToStableKey(monthGoal);
-    return !!lastLoadedMonthGoalKeyRef.current && currentKey !== lastLoadedMonthGoalKeyRef.current;
+    return (
+      !!lastLoadedMonthGoalKeyRef.current &&
+      currentKey !== lastLoadedMonthGoalKeyRef.current
+    );
   }, [monthGoal]);
+
+  const brandSearchContractsDirty = useMemo(() => {
+    const currentKey = brandSearchContractsToStableKey(brandSearchContracts);
+    return (
+      !!lastLoadedBrandSearchContractsKeyRef.current &&
+      currentKey !== lastLoadedBrandSearchContractsKeyRef.current
+    );
+  }, [brandSearchContracts]);
+
+  const brandSearchContractsForReportTemplate = useMemo(() => {
+    return brandSearchContractsToPayload(brandSearchContracts);
+  }, [brandSearchContracts]);
 
   useEffect(() => {
     const initial = buildInitialReportPeriod({
@@ -1175,6 +1408,20 @@ export default function ReportDetailPage() {
   }, [report]);
 
   useEffect(() => {
+    const nextContracts = extractBrandSearchContractsFromReport(
+      report,
+      brandSearchMonthKeys,
+    );
+    const nextKey = brandSearchContractsToStableKey(nextContracts);
+
+    if (nextKey === lastLoadedBrandSearchContractsKeyRef.current) return;
+
+    setBrandSearchContracts(nextContracts);
+    lastLoadedBrandSearchContractsKeyRef.current = nextKey;
+    setBrandSearchContractsSavedText("");
+  }, [brandSearchMonthKeys, report]);
+
+  useEffect(() => {
     let alive = true;
 
     const advertiserId = pickAdvertiserIdFromReport(report);
@@ -1184,7 +1431,9 @@ export default function ReportDetailPage() {
       return;
     }
 
-    const fromReport = normalizePublicSlug((report as any)?.advertiser_public_slug);
+    const fromReport = normalizePublicSlug(
+      (report as any)?.advertiser_public_slug,
+    );
     if (fromReport) {
       setAdvertiserPublicSlug(fromReport);
       return;
@@ -1302,15 +1551,13 @@ export default function ReportDetailPage() {
   ]);
 
   const reportTypeLower =
-  `${headerInfo.reportTypeKey} ${effectivePreviewReportTypeName}`.toLowerCase();
+    `${headerInfo.reportTypeKey} ${effectivePreviewReportTypeName}`.toLowerCase();
 
   const isTraffic =
-    reportTypeLower.includes("traffic") ||
-    reportTypeLower.includes("트래픽");
+    reportTypeLower.includes("traffic") || reportTypeLower.includes("트래픽");
 
   const isCommerce =
-    reportTypeLower.includes("commerce") ||
-    reportTypeLower.includes("커머스");
+    reportTypeLower.includes("commerce") || reportTypeLower.includes("커머스");
 
   const isDb =
     reportTypeLower.includes("db") ||
@@ -1357,109 +1604,130 @@ export default function ReportDetailPage() {
   const refreshRows = useCallback(async (): Promise<{ rowsCount: number }> => {
     if (!reportId) return { rowsCount: 0 };
 
-    setLoadingRows(true);
-    setMsg("");
-
-    let nextMsg = "";
-    let fetchedRowsCount = 0;
-
-    try {
-      try {
-        const rws = await fetchRows(reportId);
-        const nextRows = Array.isArray(rws) ? [...rws] : [];
-        fetchedRowsCount = nextRows.length;
-        setRows(nextRows);
-
-        console.log("[refreshRows] rows ok", {
-          rowsLen: nextRows.length,
-          sampleRow: nextRows[0] ?? null,
-          firstDate:
-            nextRows[0]?.date ??
-            nextRows[0]?.report_date ??
-            nextRows[0]?.day ??
-            null,
-          lastDate:
-            nextRows[nextRows.length - 1]?.date ??
-            nextRows[nextRows.length - 1]?.report_date ??
-            nextRows[nextRows.length - 1]?.day ??
-            null,
-          monthKeys: Array.from(
-            new Set(
-              nextRows
-                .map((r) => {
-                  const raw = r?.date ?? r?.report_date ?? r?.day;
-                  if (!raw) return "";
-                  return String(raw).slice(0, 7);
-                })
-                .filter(Boolean)
-            )
-          ),
-        });
-      } catch (e: any) {
-        console.error("[refreshRows] rows failed", e);
-        setRows([]);
-        fetchedRowsCount = 0;
-        nextMsg += `rows 조회 실패: ${e?.message || "unknown"}\n`;
-      }
-
-      setLoadingRows(false);
-
-      const [detailResult, creativesResult] = await Promise.allSettled([
-        fetchReportDetail(reportId),
-        fetchCreativesMap(reportId),
-      ]);
-
-      if (detailResult.status === "fulfilled") {
-        const detail = detailResult.value;
-        setReport(detail);
-
-        const info = extractIngestionInfo(detail);
-        setIngestionInfo(info);
-        setIngestionStatus(info.status);
-
-        setHeaderInfo(normalizeHeaderInfoFromReport(detail));
-      } else {
-        console.error("[refreshRows] report detail failed", detailResult.reason);
-        nextMsg += `report 조회 실패: ${
-          (detailResult.reason as any)?.message || "unknown"
-        }\n`;
-
-        setHeaderInfo({
-          advertiserName: "",
-          reportTypeName: "",
-          reportTypeKey: "",
-        });
-      }
-
-      if (creativesResult.status === "fulfilled") {
-        const nextCreativesMap = { ...(creativesResult.value ?? {}) };
-        setCreativesMap(nextCreativesMap);
-
-        console.log("[refreshRows] creativesMap ok", {
-          keyCount: Object.keys(nextCreativesMap).length,
-        });
-      } else {
-        console.error(
-          "[refreshRows] creativesMap failed",
-          creativesResult.reason
-        );
-        setCreativesMap({});
-        nextMsg += `creativesMap 조회 실패: ${
-          (creativesResult.reason as any)?.message || "unknown"
-        }\n`;
-      }
-
-      if (nextMsg.trim()) {
-        setMsg(nextMsg.trim());
-      }
-
-      return { rowsCount: fetchedRowsCount };
-    } finally {
-      setLoadingRows(false);
+    if (rowsFetchPromiseRef.current) {
+      return rowsFetchPromiseRef.current;
     }
+
+    const task = (async (): Promise<{ rowsCount: number }> => {
+      setLoadingRows(true);
+      setMsg("");
+
+      let nextMsg = "";
+      let fetchedRowsCount = 0;
+
+      try {
+        try {
+          const rws = await fetchRows(reportId);
+          const nextRows = Array.isArray(rws) ? [...rws] : [];
+          fetchedRowsCount = nextRows.length;
+          latestRowsRef.current = nextRows;
+          rowsLoadedRef.current = true;
+          setRowsMetaCount(nextRows.length);
+          setRowsMetaLoaded(true);
+          setRows(nextRows);
+
+          console.log("[refreshRows] rows ok", {
+            rowsLen: nextRows.length,
+            sampleRow: nextRows[0] ?? null,
+            firstDate:
+              nextRows[0]?.date ??
+              nextRows[0]?.report_date ??
+              nextRows[0]?.day ??
+              null,
+            lastDate:
+              nextRows[nextRows.length - 1]?.date ??
+              nextRows[nextRows.length - 1]?.report_date ??
+              nextRows[nextRows.length - 1]?.day ??
+              null,
+            monthKeys: Array.from(
+              new Set(
+                nextRows
+                  .map((r) => {
+                    const raw = r?.date ?? r?.report_date ?? r?.day;
+                    if (!raw) return "";
+                    return String(raw).slice(0, 7);
+                  })
+                  .filter(Boolean),
+              ),
+            ),
+          });
+        } catch (e: any) {
+          console.error("[refreshRows] rows failed", e);
+          latestRowsRef.current = [];
+          rowsLoadedRef.current = false;
+          setRowsMetaCount(0);
+          setRowsMetaLoaded(false);
+          setRows([]);
+          fetchedRowsCount = 0;
+          nextMsg += `rows 조회 실패: ${e?.message || "unknown"}\n`;
+        }
+
+        setLoadingRows(false);
+
+        const [detailResult, creativesResult] = await Promise.allSettled([
+          fetchReportDetail(reportId),
+          fetchCreativesMap(reportId),
+        ]);
+
+        if (detailResult.status === "fulfilled") {
+          const detail = detailResult.value;
+          setReport(detail);
+
+          const info = extractIngestionInfo(detail);
+          setIngestionInfo(info);
+          setIngestionStatus(info.status);
+
+          setHeaderInfo(normalizeHeaderInfoFromReport(detail));
+        } else {
+          console.error(
+            "[refreshRows] report detail failed",
+            detailResult.reason,
+          );
+          nextMsg += `report 조회 실패: ${
+            (detailResult.reason as any)?.message || "unknown"
+          }\n`;
+
+          setHeaderInfo({
+            advertiserName: "",
+            reportTypeName: "",
+            reportTypeKey: "",
+          });
+        }
+
+        if (creativesResult.status === "fulfilled") {
+          const nextCreativesMap = { ...(creativesResult.value ?? {}) };
+          setCreativesMap(nextCreativesMap);
+
+          console.log("[refreshRows] creativesMap ok", {
+            keyCount: Object.keys(nextCreativesMap).length,
+          });
+        } else {
+          console.error(
+            "[refreshRows] creativesMap failed",
+            creativesResult.reason,
+          );
+          setCreativesMap({});
+          nextMsg += `creativesMap 조회 실패: ${
+            (creativesResult.reason as any)?.message || "unknown"
+          }\n`;
+        }
+
+        if (nextMsg.trim()) {
+          setMsg(nextMsg.trim());
+        }
+
+        return { rowsCount: fetchedRowsCount };
+      } finally {
+        setLoadingRows(false);
+        rowsFetchPromiseRef.current = null;
+      }
+    })();
+
+    rowsFetchPromiseRef.current = task;
+    return task;
   }, [reportId]);
 
-    const refreshReportShell = useCallback(async () => {
+  const refreshReportShell = useCallback(async () => {
     if (!reportId) return;
 
     setLoadingRows(false);
@@ -1467,9 +1735,10 @@ export default function ReportDetailPage() {
 
     let nextMsg = "";
 
-    const [detailResult, creativesResult] = await Promise.allSettled([
+    const [detailResult, creativesResult, rowsMetaResult] = await Promise.allSettled([
       fetchReportDetail(reportId),
       fetchCreativesMap(reportId),
+      fetchRowsMeta(reportId),
     ]);
 
     if (detailResult.status === "fulfilled") {
@@ -1482,7 +1751,10 @@ export default function ReportDetailPage() {
 
       setHeaderInfo(normalizeHeaderInfoFromReport(detail));
     } else {
-      console.error("[refreshReportShell] report detail failed", detailResult.reason);
+      console.error(
+        "[refreshReportShell] report detail failed",
+        detailResult.reason,
+      );
       nextMsg += `report 조회 실패: ${
         (detailResult.reason as any)?.message || "unknown"
       }\n`;
@@ -1504,7 +1776,7 @@ export default function ReportDetailPage() {
     } else {
       console.error(
         "[refreshReportShell] creativesMap failed",
-        creativesResult.reason
+        creativesResult.reason,
       );
       setCreativesMap({});
       nextMsg += `creativesMap 조회 실패: ${
@@ -1512,124 +1784,136 @@ export default function ReportDetailPage() {
       }\n`;
     }
 
+    if (rowsMetaResult.status === "fulfilled") {
+      const meta = rowsMetaResult.value;
+      setRowsMetaCount(meta.rowsCount);
+      setRowsMetaLoaded(true);
+    } else {
+      console.error("[refreshReportShell] rows meta failed", rowsMetaResult.reason);
+      setRowsMetaCount(0);
+      setRowsMetaLoaded(false);
+    }
+
     if (nextMsg.trim()) {
       setMsg(nextMsg.trim());
     }
   }, [reportId]);
 
-  const pollIngestionStatus = useCallback(
-    async (targetReportId: string) => {
-      if (!targetReportId) return;
+  const pollIngestionStatus = useCallback(async (targetReportId: string) => {
+    if (!targetReportId) return;
 
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current);
-        pollingRef.current = null;
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+
+    pollingCountRef.current = 0;
+
+    if (postDoneRefreshTimerRef.current !== null) {
+      window.clearTimeout(postDoneRefreshTimerRef.current);
+      postDoneRefreshTimerRef.current = null;
+    }
+
+    pollingRef.current = setInterval(async () => {
+      pollingCountRef.current += 1;
+
+      if (pollingCountRef.current > 60) {
+        if (pollingRef.current) {
+          clearInterval(pollingRef.current);
+          pollingRef.current = null;
+        }
+
+        pollingBusyRef.current = false;
+
+        setMsg(
+          "서버 처리 상태 확인 시간이 길어지고 있습니다. WORKER 터미널이 켜져 있는지 확인한 뒤 새로고침해 주세요.",
+        );
+
+        setIngestionInfo((prev) => ({
+          ...prev,
+          error:
+            "서버 처리 상태 확인 시간이 길어지고 있습니다. 로컬 개발 환경이라면 WORKER 터미널에서 npm run worker:ingestion이 실행 중인지 확인하세요.",
+        }));
+
+        return;
       }
 
-      pollingCountRef.current = 0;
+      if (pollingBusyRef.current) return;
+      pollingBusyRef.current = true;
 
-      if (postDoneRefreshTimerRef.current !== null) {
-        window.clearTimeout(postDoneRefreshTimerRef.current);
-        postDoneRefreshTimerRef.current = null;
-      }
+      try {
+        const detail = await fetchReportDetail(targetReportId);
+        const info = extractIngestionInfo(detail);
 
-      pollingRef.current = setInterval(async () => {
-        pollingCountRef.current += 1;
+        setReport(detail);
+        setIngestionInfo(info);
+        setIngestionStatus(info.status);
 
-        if (pollingCountRef.current > 60) {
+        if (info.status === "done") {
           if (pollingRef.current) {
             clearInterval(pollingRef.current);
             pollingRef.current = null;
           }
 
-          pollingBusyRef.current = false;
+          const savedRowsCount = Math.max(info.inserted, info.validRows);
+          const hasInsertedRows = savedRowsCount > 0;
+
+          if (hasInsertedRows) {
+            setRowsMetaCount(savedRowsCount);
+            setRowsMetaLoaded(true);
+          }
+
+          setSessionIngested(hasInsertedRows);
 
           setMsg(
-            "서버 처리 상태 확인 시간이 길어지고 있습니다. WORKER 터미널이 켜져 있는지 확인한 뒤 새로고침해 주세요."
+            `파싱 완료${
+              info.inserted > 0
+                ? ` (inserted: ${formatInt(info.inserted)})`
+                : ""
+            }${hasInsertedRows ? " → 발행 가능 상태로 전환되었습니다." : ""}`,
           );
 
-          setIngestionInfo((prev) => ({
-            ...prev,
-            error:
-              "서버 처리 상태 확인 시간이 길어지고 있습니다. 로컬 개발 환경이라면 WORKER 터미널에서 npm run worker:ingestion이 실행 중인지 확인하세요.",
-          }));
-
-          return;
-        }
-
-        if (pollingBusyRef.current) return;
-        pollingBusyRef.current = true;
-
-        try {
-          const detail = await fetchReportDetail(targetReportId);
-          const info = extractIngestionInfo(detail);
-
-          setReport(detail);
-          setIngestionInfo(info);
-          setIngestionStatus(info.status);
-
-          if (info.status === "done") {
-            if (pollingRef.current) {
-              clearInterval(pollingRef.current);
-              pollingRef.current = null;
-            }
-
-            const hasInsertedRows =
-              Math.max(info.inserted, info.validRows) > 0;
-
-            setSessionIngested(hasInsertedRows);
-
-            setMsg(
-              `파싱 완료${
-                info.inserted > 0 ? ` (inserted: ${formatInt(info.inserted)})` : ""
-              }${
-                hasInsertedRows
-                  ? " → 발행 가능 상태로 전환되었습니다."
-                  : ""
-              }`
-            );
-
-            postDoneRefreshTimerRef.current = window.setTimeout(() => {
-              if (hasInsertedRows) {
-                setIngestionStatus("done");
-                setSessionIngested(true);
-                setMsg(
-                  `처리 완료${
-                    info.inserted > 0 ? ` (inserted: ${formatInt(info.inserted)})` : ""
-                  } → 서버에 rows가 저장되었고 발행 가능 상태입니다.`
-                );
-                return;
-              }
-
-              setSessionIngested(false);
+          postDoneRefreshTimerRef.current = window.setTimeout(() => {
+            if (hasInsertedRows) {
+              setIngestionStatus("done");
+              setSessionIngested(true);
               setMsg(
-                "처리 상태는 완료로 응답됐지만 inserted/valid rows가 0입니다. CSV 파싱 결과가 실제로 저장되지 않아 아직 발행할 수 없습니다."
+                `처리 완료${
+                  info.inserted > 0
+                    ? ` (inserted: ${formatInt(info.inserted)})`
+                    : ""
+                } → 서버에 rows가 저장되었고 발행 가능 상태입니다.`,
               );
-            }, 180);
-          }
-
-          if (info.status === "failed") {
-            if (pollingRef.current) {
-              clearInterval(pollingRef.current);
-              pollingRef.current = null;
+              return;
             }
 
-            if (postDoneRefreshTimerRef.current !== null) {
-              window.clearTimeout(postDoneRefreshTimerRef.current);
-              postDoneRefreshTimerRef.current = null;
-            }
-
-            setMsg(info.error || "CSV 파싱 실패");
-          }
-        } catch (e) {
-          console.error("[polling ingestion]", e);
-        } finally {
-          pollingBusyRef.current = false;
+            setSessionIngested(false);
+            setMsg(
+              "처리 상태는 완료로 응답됐지만 inserted/valid rows가 0입니다. CSV 파싱 결과가 실제로 저장되지 않아 아직 발행할 수 없습니다.",
+            );
+          }, 180);
         }
-      }, 5000);
-    },
-    []
-  );
+
+        if (info.status === "failed") {
+          if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+          }
+
+          if (postDoneRefreshTimerRef.current !== null) {
+            window.clearTimeout(postDoneRefreshTimerRef.current);
+            postDoneRefreshTimerRef.current = null;
+          }
+
+          setMsg(info.error || "CSV 파싱 실패");
+        }
+      } catch (e) {
+        console.error("[polling ingestion]", e);
+      } finally {
+        pollingBusyRef.current = false;
+      }
+    }, 5000);
+  }, []);
 
   useEffect(() => {
     if (!reportId) return;
@@ -1648,8 +1932,17 @@ export default function ReportDetailPage() {
     setMonthGoal(buildEmptyMonthGoal());
     setMonthGoalSavedText("");
     lastLoadedMonthGoalKeyRef.current = "";
+    setBrandSearchContracts(buildEmptyBrandSearchContracts());
+    setBrandSearchContractsSavedText("");
+    lastLoadedBrandSearchContractsKeyRef.current = "";
     setCreativeUploadLog([]);
     setLastUploadedCreativeCount(0);
+    latestRowsRef.current = [];
+    rowsLoadedRef.current = false;
+    rowsFetchPromiseRef.current = null;
+    rowsMetaFetchPromiseRef.current = null;
+    setRowsMetaCount(0);
+    setRowsMetaLoaded(false);
     setRows([]);
     setCreativesMap({});
     setHeaderInfo({
@@ -1697,7 +1990,7 @@ export default function ReportDetailPage() {
 
     const d = new Date(sessionStartedAtRef.current);
     setSessionStartedText(d.toLocaleString());
-    }, [reportId, refreshReportShell]);
+  }, [reportId, refreshReportShell]);
 
   useEffect(() => {
     return () => {
@@ -1737,7 +2030,7 @@ export default function ReportDetailPage() {
       }));
       setMonthGoalSavedText("");
     },
-    []
+    [],
   );
 
   const handleSaveMonthGoal = useCallback(async () => {
@@ -1748,7 +2041,10 @@ export default function ReportDetailPage() {
     setMsg("");
 
     try {
-      const updated = await patchReportMonthGoal(reportId, resolvedMonthGoalForSave);
+      const updated = await patchReportMonthGoal(
+        reportId,
+        resolvedMonthGoalForSave,
+      );
       setReport((prev) => ({ ...(prev ?? {}), ...(updated ?? {}) }));
 
       const savedGoal = extractMonthGoalFromReport(updated);
@@ -1757,7 +2053,9 @@ export default function ReportDetailPage() {
       setMonthGoal(savedGoal);
       lastLoadedMonthGoalKeyRef.current = savedKey;
       setMonthGoalSavedText("저장 완료");
-      setMsg("월 목표값이 저장되었습니다. 발행 시 공유 리포트에서도 이 목표값을 사용할 수 있습니다.");
+      setMsg(
+        "월 목표값이 저장되었습니다. 발행 시 공유 리포트에서도 이 목표값을 사용할 수 있습니다.",
+      );
     } catch (e: any) {
       setMonthGoalSavedText("");
       setMsg(e?.message || "월 목표값 저장 실패");
@@ -1765,6 +2063,64 @@ export default function ReportDetailPage() {
       setSavingMonthGoal(false);
     }
   }, [reportId, resolvedMonthGoalForSave]);
+
+  const handleChangeBrandSearchContract = useCallback(
+    (month: string, key: "pc" | "mobile", value: string) => {
+      setBrandSearchContracts((prev) =>
+        (prev ?? []).map((item) =>
+          item.month === month
+            ? {
+                ...item,
+                [key]: value,
+              }
+            : item,
+        ),
+      );
+      setBrandSearchContractsSavedText("");
+    },
+    [],
+  );
+
+  const handleSaveBrandSearchContracts = useCallback(async () => {
+    if (!reportId) return;
+
+    setSavingBrandSearchContracts(true);
+    setBrandSearchContractsSavedText("");
+    setMsg("");
+
+    try {
+      const normalizedContracts = brandSearchContracts.map((item) => ({
+        month: item.month,
+        pc: normalizeBrandSearchContractAmount(item.pc),
+        mobile: normalizeBrandSearchContractAmount(item.mobile),
+      }));
+
+      const updated = await patchReportBrandSearchContracts(
+        reportId,
+        normalizedContracts,
+      );
+
+      setReport((prev) => ({ ...(prev ?? {}), ...(updated ?? {}) }));
+
+      const savedContracts = extractBrandSearchContractsFromReport(
+        updated,
+        brandSearchMonthKeys,
+      );
+      const savedKey = brandSearchContractsToStableKey(savedContracts);
+
+      setBrandSearchContracts(savedContracts);
+      lastLoadedBrandSearchContractsKeyRef.current = savedKey;
+      setBrandSearchContractsSavedText("저장 완료");
+      setMsg(
+        "브랜드검색 계약 금액이 저장되었습니다. 다음 단계에서 리포트 rows 비용 자동 배분에 사용합니다.",
+      );
+    } catch (e: any) {
+      setBrandSearchContractsSavedText("");
+      setMsg(e?.message || "브랜드검색 계약 금액 저장 실패");
+    } finally {
+      setSavingBrandSearchContracts(false);
+    }
+  }, [brandSearchContracts, brandSearchMonthKeys, reportId]);
 
   const handleUploadCsv = useCallback(async () => {
     if (!reportId) return;
@@ -1776,6 +2132,13 @@ export default function ReportDetailPage() {
 
     setCsvUploading(true);
     setMsg("");
+    latestRowsRef.current = [];
+    rowsLoadedRef.current = false;
+    rowsFetchPromiseRef.current = null;
+    rowsMetaFetchPromiseRef.current = null;
+    setRowsMetaCount(0);
+    setRowsMetaLoaded(false);
+    setRows([]);
 
     try {
       let currentReport = report;
@@ -1788,7 +2151,7 @@ export default function ReportDetailPage() {
       const workspaceId = asStr(currentReport?.workspace_id);
       if (!workspaceId) {
         throw new Error(
-          "workspace_id를 확인할 수 없습니다. report detail 응답을 확인하세요."
+          "workspace_id를 확인할 수 없습니다. report detail 응답을 확인하세요.",
         );
       }
 
@@ -1844,7 +2207,7 @@ export default function ReportDetailPage() {
             setMsg(
               jobId
                 ? `CSV 업로드 완료 → 서버 처리 대기열에 등록되었습니다. job: ${jobId}`
-                : "CSV 업로드 완료 → 서버 처리 대기열에 등록되었습니다."
+                : "CSV 업로드 완료 → 서버 처리 대기열에 등록되었습니다.",
             );
 
             /**
@@ -1865,7 +2228,9 @@ export default function ReportDetailPage() {
            */
           const inserted = asNum(result?.inserted);
           const validRows = asNum(result?.validRows ?? result?.valid_rows);
-          const parsedLines = asNum(result?.parsedLines ?? result?.parsed_lines);
+          const parsedLines = asNum(
+            result?.parsedLines ?? result?.parsed_lines,
+          );
           const totalLines = asNum(result?.totalLines ?? result?.total_lines);
 
           const refreshed = await refreshRows();
@@ -1889,8 +2254,8 @@ export default function ReportDetailPage() {
 
             setMsg(
               `파싱 완료 (inserted: ${formatInt(
-                finalInserted
-              )}) → 발행 가능 상태로 전환되었습니다.`
+                finalInserted,
+              )}) → 발행 가능 상태로 전환되었습니다.`,
             );
             return;
           }
@@ -1900,7 +2265,7 @@ export default function ReportDetailPage() {
           setMsg(
             `파싱은 종료됐지만 inserted/valid rows가 0입니다. 실제 저장된 rows: ${
               refreshed?.rowsCount ?? 0
-            }개입니다. 아직 발행할 수 없습니다.`
+            }개입니다. 아직 발행할 수 없습니다.`,
           );
         })
         .catch((e) => {
@@ -1967,51 +2332,51 @@ export default function ReportDetailPage() {
   }, [creativeFiles, reportId]);
 
   const handlePublish = useCallback(async () => {
-  if (!reportId) return;
+    if (!reportId) return;
 
-  if (!isPublishReady || !hasPublishableRows) {
-    setMsg(
-      "CSV 업로드 + 파싱이 완료되어 rows 데이터가 준비되어야 발행할 수 있습니다."
-    );
-    return;
-  }
-
-  setPublishing(true);
-  setMsg("");
-  try {
-    const out = await publishReportWithFallback(reportId);
-
-    if (out.sharePath) setSharePath(out.sharePath);
-
-    setReport((prev) => {
-      if (!prev) return prev;
-
-      return {
-        ...prev,
-        status: out.status || "ready",
-      };
-    });
-
-    if (out.used === "publish-lite") {
+    if (!isPublishReady || !hasPublishableRows) {
       setMsg(
-        "발행 완료(안전모드: publish-lite). 아래 URL로 실제 보고서를 볼 수 있습니다."
+        "CSV 업로드 + 파싱이 완료되어 rows 데이터가 준비되어야 발행할 수 있습니다.",
       );
-    } else {
-      setMsg("발행 완료. 아래 URL로 실제 보고서를 볼 수 있습니다.");
+      return;
     }
 
-    /**
-     * 대용량 CSV 안정화:
-     * 발행 직후 rows 전체를 다시 조회하지 않는다.
-     * 10만 행 이상에서는 /rows 전체 fetch가 statement timeout을 유발할 수 있다.
-     * 발행 가능 여부는 ingestionInfo.inserted / validRows와 publish 응답으로 판단한다.
-     */
-  } catch (e: any) {
-    setMsg(e?.message || "발행 실패");
-  } finally {
-    setPublishing(false);
-  }
-}, [hasPublishableRows, isPublishReady, reportId]);
+    setPublishing(true);
+    setMsg("");
+    try {
+      const out = await publishReportWithFallback(reportId);
+
+      if (out.sharePath) setSharePath(out.sharePath);
+
+      setReport((prev) => {
+        if (!prev) return prev;
+
+        return {
+          ...prev,
+          status: out.status || "ready",
+        };
+      });
+
+      if (out.used === "publish-lite") {
+        setMsg(
+          "발행 완료(안전모드: publish-lite). 아래 URL로 실제 보고서를 볼 수 있습니다.",
+        );
+      } else {
+        setMsg("발행 완료. 아래 URL로 실제 보고서를 볼 수 있습니다.");
+      }
+
+      /**
+       * 대용량 CSV 안정화:
+       * 발행 직후 rows 전체를 다시 조회하지 않는다.
+       * 10만 행 이상에서는 /rows 전체 fetch가 statement timeout을 유발할 수 있다.
+       * 발행 가능 여부는 ingestionInfo.inserted / validRows와 publish 응답으로 판단한다.
+       */
+    } catch (e: any) {
+      setMsg(e?.message || "발행 실패");
+    } finally {
+      setPublishing(false);
+    }
+  }, [hasPublishableRows, isPublishReady, reportId]);
 
   const handleOpenExportBuilder = useCallback(() => {
     if (!reportId) return;
@@ -2022,7 +2387,7 @@ export default function ReportDetailPage() {
 
     if (!canOpenExportBuilder) {
       setMsg(
-        "이번 세션에서 CSV 업로드 + 파싱을 완료한 뒤 Export Builder를 열 수 있습니다."
+        "이번 세션에서 CSV 업로드 + 파싱을 완료한 뒤 Export Builder를 열 수 있습니다.",
       );
       return;
     }
@@ -2049,9 +2414,86 @@ export default function ReportDetailPage() {
     router,
   ]);
 
+  const refreshRowsMeta = useCallback(async (): Promise<RowsMetaResult> => {
+    if (!reportId) {
+      return {
+        rowsCount: 0,
+        ingestionIdUsed: "",
+        fallbackUsed: false,
+        metaOnly: true,
+      };
+    }
+
+    const currentRows = latestRowsRef.current;
+    if (rowsLoadedRef.current && currentRows.length > 0) {
+      return {
+        rowsCount: currentRows.length,
+        ingestionIdUsed: "",
+        fallbackUsed: false,
+        metaOnly: false,
+      };
+    }
+
+    if (rowsMetaFetchPromiseRef.current) {
+      return rowsMetaFetchPromiseRef.current;
+    }
+
+    const task = fetchRowsMeta(reportId)
+      .then((meta) => {
+        setRowsMetaCount(meta.rowsCount);
+        setRowsMetaLoaded(true);
+        return meta;
+      })
+      .catch((e) => {
+        console.error("[refreshRowsMeta] failed", e);
+        setRowsMetaCount(0);
+        setRowsMetaLoaded(false);
+        throw e;
+      })
+      .finally(() => {
+        rowsMetaFetchPromiseRef.current = null;
+      });
+
+    rowsMetaFetchPromiseRef.current = task;
+    return task;
+  }, [reportId]);
+
+  const ensureRowsLoadedForHeavyAction = useCallback(
+    async (label: string): Promise<{ rowsCount: number }> => {
+      const currentRows = latestRowsRef.current;
+
+      if (rowsLoadedRef.current && currentRows.length > 0) {
+        return { rowsCount: currentRows.length };
+      }
+
+      const meta = await refreshRowsMeta();
+      if (meta.rowsCount <= 0) {
+        return { rowsCount: 0 };
+      }
+
+      setMsg(
+        `${label} 준비를 위해 rows 데이터 ${formatInt(
+          meta.rowsCount,
+        )}개를 1회 불러오는 중입니다.`,
+      );
+
+      return refreshRows();
+    },
+    [refreshRows, refreshRowsMeta],
+  );
+
   const handleDownloadPdf = useCallback(async () => {
     try {
       setPdfLoading(true);
+
+      const loaded = await ensureRowsLoadedForHeavyAction("PDF 다운로드");
+      if (!loaded.rowsCount) {
+        setMsg(
+          "PDF로 내보낼 rows 데이터가 없습니다. CSV 파싱 완료 상태를 확인하세요.",
+        );
+        return;
+      }
+
       setExportRenderActive(true);
       await waitForExportRender();
 
@@ -2091,11 +2533,24 @@ export default function ReportDetailPage() {
       setExportRenderActive(false);
       setPdfLoading(false);
     }
-  }, [advertiserNameForDownload, reportTitleForDownload]);
+  }, [
+    advertiserNameForDownload,
+    ensureRowsLoadedForHeavyAction,
+    reportTitleForDownload,
+  ]);
 
   const handleDownloadPng = useCallback(async () => {
     try {
       setPngLoading(true);
+
+      const loaded = await ensureRowsLoadedForHeavyAction("PNG 다운로드");
+      if (!loaded.rowsCount) {
+        setMsg(
+          "PNG로 내보낼 rows 데이터가 없습니다. CSV 파싱 완료 상태를 확인하세요.",
+        );
+        return;
+      }
+
       setExportRenderActive(true);
       await waitForExportRender();
 
@@ -2134,11 +2589,25 @@ export default function ReportDetailPage() {
       setExportRenderActive(false);
       setPngLoading(false);
     }
-  }, [advertiserNameForDownload, reportTitleForDownload]);
+  }, [
+    advertiserNameForDownload,
+    ensureRowsLoadedForHeavyAction,
+    reportTitleForDownload,
+  ]);
 
   const handleDownloadCsv = useCallback(async () => {
     try {
       setCsvLoading(true);
+
+      const loaded = await ensureRowsLoadedForHeavyAction("CSV 다운로드");
+      const rowsForDownload = latestRowsRef.current;
+
+      if (!loaded.rowsCount || rowsForDownload.length === 0) {
+        setMsg(
+          "다운로드할 rows 데이터가 없습니다. CSV 파싱 완료 상태를 확인하세요.",
+        );
+        return;
+      }
 
       const fileName = buildReportFileName({
         advertiserName: advertiserNameForDownload,
@@ -2147,13 +2616,13 @@ export default function ReportDetailPage() {
       });
 
       await downloadCsvFile({
-        rows: displayRows,
+        rows: rowsForDownload,
         fileName,
       });
 
       console.log("[download:csv:done]", {
         fileName,
-        rows: displayRows.length,
+        rows: rowsForDownload.length,
       });
 
       setMsg(`CSV 다운로드 완료: ${fileName}`);
@@ -2163,7 +2632,11 @@ export default function ReportDetailPage() {
     } finally {
       setCsvLoading(false);
     }
-  }, [advertiserNameForDownload, displayRows, reportTitleForDownload]);
+  }, [
+    advertiserNameForDownload,
+    ensureRowsLoadedForHeavyAction,
+    reportTitleForDownload,
+  ]);
 
   return (
     <div className="mx-auto max-w-[1600px] px-6 py-6">
@@ -2179,7 +2652,9 @@ export default function ReportDetailPage() {
       <div className="mb-5 grid gap-3 rounded-2xl border bg-white p-4 shadow-sm lg:grid-cols-4">
         <div className="rounded-xl border p-3">
           <div className="text-xs text-gray-500">Report ID</div>
-          <div className="mt-1 break-all font-mono text-sm">{reportId || "-"}</div>
+          <div className="mt-1 break-all font-mono text-sm">
+            {reportId || "-"}
+          </div>
         </div>
 
         <div className="rounded-xl border p-3">
@@ -2207,7 +2682,7 @@ export default function ReportDetailPage() {
               style={{
                 width: `${Math.max(
                   ingestionStatus === "queued" ? 5 : 0,
-                  ingestionInfo.progress
+                  ingestionInfo.progress,
                 )}%`,
               }}
             />
@@ -2218,7 +2693,9 @@ export default function ReportDetailPage() {
             {formatInt(ingestionInfo.parsedLines)} /{" "}
             {formatInt(ingestionInfo.totalLines)}{" "}
             <span className="text-gray-300">·</span> inserted{" "}
-            {formatInt(ingestionInfo.inserted)}
+            {formatInt(ingestionInfo.inserted)}{" "}
+            <span className="text-gray-300">·</span> 저장 rows{" "}
+            {rowsMetaLoaded ? formatInt(rowsMetaCount) : "-"}
           </div>
 
           {ingestionInfo.error ? (
@@ -2272,7 +2749,8 @@ export default function ReportDetailPage() {
               월 목표값 사전 입력
             </div>
             <div className="mt-1 text-sm text-gray-500">
-              저장된 값은 reports.meta.month_goal에 보관되며, 발행 후 공유 리포트에서도 사라지지 않도록 사용합니다.
+              저장된 값은 reports.meta.month_goal에 보관되며, 발행 후 공유
+              리포트에서도 사라지지 않도록 사용합니다.
             </div>
           </div>
 
@@ -2399,9 +2877,7 @@ export default function ReportDetailPage() {
                 <input
                   type="text"
                   value={monthGoal.ctr}
-                  onChange={(e) =>
-                    handleChangeMonthGoal("ctr", e.target.value)
-                  }
+                  onChange={(e) => handleChangeMonthGoal("ctr", e.target.value)}
                   placeholder="예: 1.5"
                   className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-black"
                 />
@@ -2446,9 +2922,7 @@ export default function ReportDetailPage() {
                 <input
                   type="text"
                   value={monthGoal.cvr}
-                  onChange={(e) =>
-                    handleChangeMonthGoal("cvr", e.target.value)
-                  }
+                  onChange={(e) => handleChangeMonthGoal("cvr", e.target.value)}
                   placeholder="예: 2.0"
                   className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-black"
                 />
@@ -2478,8 +2952,7 @@ export default function ReportDetailPage() {
                   value={(Number(monthGoal.cost || 0) > 0 &&
                   Number(monthGoal.conversions || 0) > 0
                     ? Math.round(
-                        Number(monthGoal.cost) /
-                          Number(monthGoal.conversions)
+                        Number(monthGoal.cost) / Number(monthGoal.conversions),
                       )
                     : ""
                   ).toString()}
@@ -2493,7 +2966,115 @@ export default function ReportDetailPage() {
         </div>
 
         <div className="mt-3 text-xs text-gray-500">
-          숫자 형식은 그대로 저장합니다. 표시/계산 방식은 기존 리포트 로직을 변경하지 않습니다.
+          숫자 형식은 그대로 저장합니다. 표시/계산 방식은 기존 리포트 로직을
+          변경하지 않습니다.
+        </div>
+      </section>
+
+      <section className="mb-5 rounded-2xl border bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="text-base font-semibold text-gray-900">
+              브랜드검색 계약 금액
+            </div>
+            <div className="mt-1 text-sm text-gray-500">
+              네이버 브랜드검색처럼 월 단위로 구매한 광고비를 PC/모바일별로
+              입력합니다. 저장된 값은 reports.meta.brand_search_contracts에
+              보관하고, 리포트 화면에서 월·기기별 일별 rows에 자동 배분하는 데
+              사용합니다.
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {brandSearchContractsSavedText ? (
+              <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-medium text-green-700">
+                {brandSearchContractsSavedText}
+              </span>
+            ) : brandSearchContractsDirty ? (
+              <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
+                저장 필요
+              </span>
+            ) : (
+              <span className="rounded-full bg-gray-50 px-3 py-1 text-xs font-medium text-gray-500">
+                저장됨
+              </span>
+            )}
+
+            <button
+              type="button"
+              className={`rounded-lg px-4 py-2 text-sm font-medium text-white ${
+                savingBrandSearchContracts
+                  ? "cursor-not-allowed bg-gray-400"
+                  : "bg-black hover:opacity-90"
+              }`}
+              onClick={handleSaveBrandSearchContracts}
+              disabled={savingBrandSearchContracts}
+            >
+              {savingBrandSearchContracts ? "저장 중..." : "계약금액 저장"}
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+          {brandSearchContracts.map((item) => (
+            <div
+              key={item.month}
+              className="rounded-2xl border border-gray-100 bg-gray-50 p-4"
+            >
+              <div className="text-sm font-semibold text-gray-900">
+                {item.month}
+              </div>
+              <div className="mt-1 text-xs text-gray-500">
+                해당 월의 브랜드검색 계약 금액
+              </div>
+
+              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                <label className="block">
+                  <span className="text-xs font-medium text-gray-600">
+                    PC 계약금액
+                  </span>
+                  <input
+                    type="text"
+                    value={item.pc}
+                    onChange={(e) =>
+                      handleChangeBrandSearchContract(
+                        item.month,
+                        "pc",
+                        e.target.value,
+                      )
+                    }
+                    placeholder="예: 3000000"
+                    className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-black"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="text-xs font-medium text-gray-600">
+                    모바일 계약금액
+                  </span>
+                  <input
+                    type="text"
+                    value={item.mobile}
+                    onChange={(e) =>
+                      handleChangeBrandSearchContract(
+                        item.month,
+                        "mobile",
+                        e.target.value,
+                      )
+                    }
+                    placeholder="예: 5000000"
+                    className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-black"
+                  />
+                </label>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-3 text-xs leading-5 text-gray-500">
+          이번 단계에서는 계약 금액 입력/저장 UI만 추가합니다. 다음 단계에서
+          ReportTemplate에 전달한 뒤 입력 월의 PC/모바일 브랜드검색 rows 수를
+          기준으로 일별 비용을 자동 배분합니다.
         </div>
       </section>
 
@@ -2580,7 +3161,7 @@ export default function ReportDetailPage() {
                   style={{
                     width: `${Math.max(
                       ingestionStatus === "queued" ? 5 : 0,
-                      ingestionInfo.progress
+                      ingestionInfo.progress,
                     )}%`,
                   }}
                 />
@@ -2639,7 +3220,8 @@ export default function ReportDetailPage() {
             </div>
 
             <div className="text-xs text-gray-500">
-              업로드 완료 후 WORKER가 켜져 있으면 서버 처리 상태와 진행률이 자동으로 갱신됩니다.
+              업로드 완료 후 WORKER가 켜져 있으면 서버 처리 상태와 진행률이
+              자동으로 갱신됩니다.
             </div>
           </div>
         </section>
@@ -2719,14 +3301,14 @@ export default function ReportDetailPage() {
 
             {!sessionCreativesUploaded ? (
               <div className="mt-2 text-xs text-gray-600">
-                현재는 서버에 저장된 기존 매칭 결과를 표시 중입니다. 이번 세션에서
-                새 이미지를 업로드하면 즉시 갱신됩니다.
+                현재는 서버에 저장된 기존 매칭 결과를 표시 중입니다. 이번
+                세션에서 새 이미지를 업로드하면 즉시 갱신됩니다.
               </div>
             ) : null}
 
             <div className="mt-2 text-xs text-gray-500">
-              ※ 키 후보 수는 매칭 성공률을 올리기 위한 확장 키가 포함되어 커질 수
-              있습니다. 실제 이미지 파일 수 감은 고유 URL이 더 정확합니다.
+              ※ 키 후보 수는 매칭 성공률을 올리기 위한 확장 키가 포함되어 커질
+              수 있습니다. 실제 이미지 파일 수 감은 고유 URL이 더 정확합니다.
             </div>
           </div>
 
@@ -2772,8 +3354,7 @@ export default function ReportDetailPage() {
       <div className="mt-3 text-xs text-gray-500">
         서버 rows(실제): {rows.length}개{" "}
         <span className="text-gray-400">·</span> 현재 표시 rows:{" "}
-        {displayRows.length}개{" "}
-        <span className="text-gray-400">·</span> 광고주:{" "}
+        {displayRows.length}개 <span className="text-gray-400">·</span> 광고주:{" "}
         {effectivePreviewAdvertiserName || "-"}{" "}
         <span className="text-gray-400">·</span> 유형:{" "}
         {effectivePreviewReportTypeName || "-"}{" "}
@@ -2796,6 +3377,8 @@ export default function ReportDetailPage() {
               reportTypeKey={headerInfo.reportTypeKey}
               reportPeriod={reportPeriod}
               onChangeReportPeriod={setReportPeriod}
+              monthGoal={resolvedMonthGoalForSave}
+              brandSearchContracts={brandSearchContractsForReportTemplate}
               hidePeriodEditor={true}
               hideTabPeriodText={true}
             />

@@ -26,6 +26,11 @@ function asBool(v: any) {
   return s === "1" || s === "true" || s === "yes" || s === "on";
 }
 
+function asFalseLike(v: any) {
+  const s = String(v ?? "").trim().toLowerCase();
+  return s === "0" || s === "false" || s === "no" || s === "off";
+}
+
 function asIsoOrNull(v: any): string | null {
   if (!v) return null;
   const s = String(v).trim();
@@ -438,6 +443,7 @@ export async function GET(req: Request, ctx: Ctx) {
   const expiresIn = asInt(url.searchParams.get("expiresIn"), 3600);
   const attachImagePath = url.searchParams.get("attachImagePath") === "1";
   const strict = asBool(url.searchParams.get("strict"));
+  const includeRows = !asFalseLike(url.searchParams.get("includeRows"));
 
   const sb = getSupabaseAdmin();
 
@@ -541,17 +547,22 @@ export async function GET(req: Request, ctx: Ctx) {
   }
 
   let rawRows: any[] = [];
-  try {
-    rawRows = await fetchAllReportRows(sb, reportId, publishedIngestionId);
-  } catch (e: any) {
-    return jsonError(500, e?.message || "Failed to fetch rows");
+
+  if (includeRows) {
+    try {
+      rawRows = await fetchAllReportRows(sb, reportId, publishedIngestionId);
+    } catch (e: any) {
+      return jsonError(500, e?.message || "Failed to fetch rows");
+    }
   }
 
-  let rows = (rawRows ?? [])
-    .map((r: any) => extractRowObject(r))
-    .filter((r: any) => r && typeof r === "object");
+  let rows = includeRows
+    ? (rawRows ?? [])
+        .map((r: any) => extractRowObject(r))
+        .filter((r: any) => r && typeof r === "object")
+    : [];
 
-  const mm = minMaxDate(rows);
+  const mm = includeRows ? minMaxDate(rows) : { min_date: null, max_date: null };
 
   let creativeQuery = sb
     .from("report_creatives")
@@ -623,7 +634,7 @@ export async function GET(req: Request, ctx: Ctx) {
 
   const creativesMapNormalized = normalizeCreativesMap(creativesUrlMap);
 
-  if (attachImagePath && Object.keys(creativesMapNormalized).length > 0) {
+  if (includeRows && attachImagePath && Object.keys(creativesMapNormalized).length > 0) {
     rows = rows.map((r: any) => {
       const candidates = makeRowCreativeCandidates(r);
 
@@ -671,17 +682,18 @@ export async function GET(req: Request, ctx: Ctx) {
     });
   }
 
-  const debugRowSample = debugOn
-    ? (rows.slice(0, 10) as any[]).map((r) => ({
-        creative: r?.creative,
-        creative_file: r?.creative_file,
-        imagepath: r?.imagepath,
-        imagePath: r?.imagePath,
-        imagepath_raw: r?.imagepath_raw,
-        __matchedKey: r?.__matchedKey ?? null,
-        keys: Object.keys(r || {}).slice(0, 40),
-      }))
-    : undefined;
+  const debugRowSample =
+    debugOn && includeRows
+      ? (rows.slice(0, 10) as any[]).map((r) => ({
+          creative: r?.creative,
+          creative_file: r?.creative_file,
+          imagepath: r?.imagepath,
+          imagePath: r?.imagePath,
+          imagepath_raw: r?.imagepath_raw,
+          __matchedKey: r?.__matchedKey ?? null,
+          keys: Object.keys(r || {}).slice(0, 40),
+        }))
+      : undefined;
 
   return NextResponse.json(
     {
@@ -691,6 +703,7 @@ export async function GET(req: Request, ctx: Ctx) {
       creativesMap: creativesUrlMap,
       creativesMapNormalized,
       debug: {
+        includeRows,
         rows_cnt: rows.length,
         creatives_raw_cnt: (creatives ?? []).length,
         creatives_cnt: Object.keys(creativesUrlMap).length,

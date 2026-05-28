@@ -33,8 +33,8 @@ export function diffPct(current: number, prev: number) {
 // =========================================================
 // 표시 규칙 통일용 공용 helper
 // - summarize() 기준 비율은 ratio(0~1)
-// - 다만 legacy 값(예: 2.5%를 2.5로, 250%를 250으로 들고 있는 경우)도
-//   화면에서 안전하게 흡수할 수 있게 유지
+// - CTR/CVR은 legacy percent 값을 안전하게 흡수
+// - ROAS는 summarize() 기준 ratio(revenue / cost)를 기준값으로 사용
 // =========================================================
 export function toSafeNumber(v: any) {
   if (v == null) return 0;
@@ -53,19 +53,36 @@ export function normalizeRate01(v: any) {
 }
 
 // ROAS용
-// summarize() 기준 ratio(예: 2.15)는 그대로,
-// legacy percent(예: 215)는 2.15로 보정
+// summarize() 기준 roas는 revenue / cost ratio다.
+// 예:
+// 3.716  -> 371.6%
+// 10.02  -> 1,002.0%
+// 15.37  -> 1,537.0%
+//
+// 중요:
+// 기존 n > 10 ? n / 100 : n 로직은 1,000% 이상 ROAS를
+// 10.0%처럼 잘못 줄여 표시하는 문제가 있었다.
+// 따라서 표시용 ROAS는 기본적으로 ratio를 그대로 사용한다.
 export function normalizeRoas01(v: any) {
   const n = toSafeNumber(v);
-  return n > 10 ? n / 100 : n;
+  return Number.isFinite(n) ? n : 0;
+}
+
+function formatPercentNumber(value: number, digits: number) {
+  if (!Number.isFinite(value)) return "-";
+
+  return `${new Intl.NumberFormat("ko-KR", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(value)}%`;
 }
 
 export function formatPercentFromRate(v: any, digits = 2) {
-  return `${(normalizeRate01(v) * 100).toFixed(digits)}%`;
+  return formatPercentNumber(normalizeRate01(v) * 100, digits);
 }
 
 export function formatPercentFromRoas(v: any, digits = 1) {
-  return `${(normalizeRoas01(v) * 100).toFixed(digits)}%`;
+  return formatPercentNumber(normalizeRoas01(v) * 100, digits);
 }
 
 // =========================================================
@@ -101,8 +118,19 @@ export function formatCurrencyAxisCompact(v: any) {
 
 export function formatPercentAxisFromRoas(v: any) {
   const percent = normalizeRoas01(v) * 100;
-  if (Math.abs(percent) >= 1000) return `${percent.toFixed(0)}%`;
-  return `${percent.toFixed(1)}%`;
+
+  if (!Number.isFinite(percent)) return "-";
+
+  if (Math.abs(percent) >= 1000) {
+    return `${new Intl.NumberFormat("ko-KR", {
+      maximumFractionDigits: 0,
+    }).format(percent)}%`;
+  }
+
+  return `${new Intl.NumberFormat("ko-KR", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(percent)}%`;
 }
 
 // =========================================================
