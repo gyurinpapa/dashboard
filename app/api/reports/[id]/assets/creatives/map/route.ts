@@ -9,17 +9,18 @@ export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
 
 const BUCKET = "report_uploads";
+const CREATIVE_SIGNED_URL_EXPIRES_IN = 60 * 60 * 24 * 7;
 const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
 
 function jsonError(status: number, message: string, extra?: any) {
   return NextResponse.json({ ok: false, error: message, ...extra }, { status });
 }
 
-function asInt(v: any, def = 3600) {
+function asInt(v: any, def = CREATIVE_SIGNED_URL_EXPIRES_IN) {
   const n = Number(v);
   if (!Number.isFinite(n)) return def;
   if (n < 60) return 60;
-  if (n > 60 * 60 * 24) return 60 * 60 * 24;
+  if (n > CREATIVE_SIGNED_URL_EXPIRES_IN) return CREATIVE_SIGNED_URL_EXPIRES_IN;
   return Math.floor(n);
 }
 
@@ -196,7 +197,7 @@ export async function GET(req: Request, ctx: Ctx) {
 
     const expiresIn = asInt(
       url.searchParams.get("expiresIn"),
-      3600
+      CREATIVE_SIGNED_URL_EXPIRES_IN
     );
 
     const mode = (

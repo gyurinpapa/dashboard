@@ -43,3 +43,6 @@ next-env.d.ts
 _archive/
 _backup/
 *.bak
+# Local uploaded report assets
+public/creatives/
+public/data/

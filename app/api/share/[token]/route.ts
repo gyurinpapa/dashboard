@@ -5,6 +5,8 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const CREATIVE_SIGNED_URL_EXPIRES_IN = 60 * 60 * 24 * 7;
+
 type Ctx = { params: Promise<{ token: string }> };
 
 function jsonError(status: number, message: string, extra?: any) {
@@ -440,7 +442,10 @@ export async function GET(req: Request, ctx: Ctx) {
 
   const url = new URL(req.url);
   const debugOn = url.searchParams.get("debug") === "1";
-  const expiresIn = asInt(url.searchParams.get("expiresIn"), 3600);
+  const expiresIn = asInt(
+    url.searchParams.get("expiresIn"),
+    CREATIVE_SIGNED_URL_EXPIRES_IN
+  );
   const attachImagePath = url.searchParams.get("attachImagePath") === "1";
   const strict = asBool(url.searchParams.get("strict"));
   const includeRows = !asFalseLike(url.searchParams.get("includeRows"));
