@@ -17,6 +17,19 @@ type FailedItem = {
   error: string;
 };
 
+type DeletableReportRow = {
+  id: string;
+  workspace_id: string;
+  created_by: string | null;
+};
+
+type DeletePermission = {
+  allowed: boolean;
+  role: string;
+  scope: "true_master" | "workspace" | "own_created" | "none";
+  isTrueMaster: boolean;
+};
+
 function jsonError(status: number, message: string, extra?: Record<string, any>) {
   return NextResponse.json(
     { ok: false, error: message, ...(extra ?? {}) },
@@ -88,35 +101,83 @@ async function getProfileEmailByUserId(userId: string) {
   return normalizeEmail(data?.email);
 }
 
-async function canDeleteReports(userId: string, workspaceId: string) {
-  const { data: member, error } = await supabaseAdmin
+async function getWorkspaceRole(userId: string, workspaceId: string) {
+  const id = asString(userId);
+  const wid = asString(workspaceId);
+
+  if (!id || !wid) return "";
+
+  const { data, error } = await supabaseAdmin
     .from("workspace_members")
     .select("role")
-    .eq("workspace_id", workspaceId)
-    .eq("user_id", userId)
+    .eq("workspace_id", wid)
+    .eq("user_id", id)
     .maybeSingle();
 
   if (error) {
-    throw new Error(
-      `REPORT_DELETE_PERMISSION_CHECK_FAILED:${error.message}`
-    );
+    throw new Error(`REPORT_DELETE_PERMISSION_CHECK_FAILED:${error.message}`);
   }
 
-  if (!member) return false;
+  return asString((data as any)?.role).toLowerCase();
+}
 
-  const role = asString(member.role).toLowerCase();
+async function isTrueMasterUser(userId: string, workspaceId: string) {
+  const id = asString(userId);
+  const wid = asString(workspaceId);
 
-  if (role === "director") {
-    return true;
-  }
+  if (!id || !wid) return false;
 
-  if (role !== "master") {
+  const email = await getProfileEmailByUserId(id);
+
+  if (email !== ONLY_MASTER_EMAIL) {
     return false;
   }
 
-  const email = await getProfileEmailByUserId(userId);
+  const role = await getWorkspaceRole(id, wid);
 
-  return email === ONLY_MASTER_EMAIL;
+  return role === "master";
+}
+
+async function resolveDeletePermission(
+  userId: string,
+  workspaceId: string
+): Promise<DeletePermission> {
+  const role = await getWorkspaceRole(userId, workspaceId);
+  const isTrueMaster = await isTrueMasterUser(userId, workspaceId);
+
+  if (isTrueMaster) {
+    return {
+      allowed: true,
+      role: "master",
+      scope: "true_master",
+      isTrueMaster: true,
+    };
+  }
+
+  if (role === "director" || role === "admin") {
+    return {
+      allowed: true,
+      role,
+      scope: "workspace",
+      isTrueMaster: false,
+    };
+  }
+
+  if (role === "staff") {
+    return {
+      allowed: true,
+      role,
+      scope: "own_created",
+      isTrueMaster: false,
+    };
+  }
+
+  return {
+    allowed: false,
+    role,
+    scope: "none",
+    isTrueMaster: false,
+  };
 }
 
 function isMissingTableError(message: string) {
@@ -160,20 +221,25 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
 }
 
 /**
- * workspace isolation 검증 포함
- * - body.workspace_id만 믿지 않는다
- * - 실제 reports.workspace_id 일치 검증
+ * workspace isolation + role scope 검증 포함
+ * - body.workspace_id만 믿지 않는다.
+ * - 실제 reports.workspace_id 일치 검증.
+ * - staff는 reports.created_by가 본인인 리포트만 삭제 가능.
  */
-async function fetchDeletableIds(
-  workspaceId: string,
-  requestedIds: string[]
-) {
-  const verified = new Set<string>();
+async function fetchDeletableReports(params: {
+  workspaceId: string;
+  requestedIds: string[];
+  actorUserId: string;
+  permission: DeletePermission;
+}) {
+  const { workspaceId, requestedIds, actorUserId, permission } = params;
+
+  const verified = new Map<string, DeletableReportRow>();
 
   for (const idsChunk of chunkArray(requestedIds, VERIFY_CHUNK_SIZE)) {
     const { data, error } = await supabaseAdmin
       .from("reports")
-      .select("id, workspace_id")
+      .select("id, workspace_id, created_by")
       .eq("workspace_id", workspaceId)
       .in("id", idsChunk);
 
@@ -183,18 +249,35 @@ async function fetchDeletableIds(
 
     for (const row of data ?? []) {
       const rowId = asString((row as any)?.id);
-      const rowWorkspaceId = asString(
-        (row as any)?.workspace_id
-      );
+      const rowWorkspaceId = asString((row as any)?.workspace_id);
+      const rowCreatedBy = asString((row as any)?.created_by) || null;
 
       if (!rowId) continue;
       if (rowWorkspaceId !== workspaceId) continue;
 
-      verified.add(rowId);
+      if (permission.scope === "own_created" && rowCreatedBy !== actorUserId) {
+        continue;
+      }
+
+      if (
+        permission.scope !== "true_master" &&
+        permission.scope !== "workspace" &&
+        permission.scope !== "own_created"
+      ) {
+        continue;
+      }
+
+      verified.set(rowId, {
+        id: rowId,
+        workspace_id: rowWorkspaceId,
+        created_by: rowCreatedBy,
+      });
     }
   }
 
-  return requestedIds.filter((id) => verified.has(id));
+  return requestedIds
+    .map((id) => verified.get(id))
+    .filter(Boolean) as DeletableReportRow[];
 }
 
 async function deleteOptionalTableByReportId(
@@ -251,12 +334,12 @@ async function deleteRequiredTableByReportId(
  * - 12만 건 이상일 때 statement timeout 발생
  *
  * 변경 방식:
- * - report_id 기준으로 id만 batch 조회
- * - 조회된 id 묶음만 .in("id", ids)로 삭제
+ * - DB RPC delete_report_rows_batch를 사용해 report_rows를 짧은 batch로 삭제
  * - 각 batch가 짧게 끝나도록 쪼개서 timeout 가능성을 낮춘다
  *
  * 전제:
  * - public.report_rows(report_id) 인덱스 권장
+ * - public.delete_report_rows_batch(p_report_id, p_limit) RPC 존재 권장
  */
 async function deleteReportRowsByReportIdInBatches(reportId: string) {
   let deletedCount = 0;
@@ -322,10 +405,7 @@ async function deleteReportRowsByReportIdInBatches(reportId: string) {
   };
 }
 
-async function deleteSingleReport(
-  workspaceId: string,
-  reportId: string
-) {
+async function deleteSingleReport(workspaceId: string, reportId: string) {
   const reportRowsDeleteResult =
     await deleteReportRowsByReportIdInBatches(reportId);
 
@@ -386,9 +466,7 @@ async function deleteSingleReport(
     return {
       ok: false as const,
       step: "delete_reports",
-      error:
-        reportDeleteError.message ||
-        "delete_reports_FAILED",
+      error: reportDeleteError.message || "delete_reports_FAILED",
     };
   }
 
@@ -399,8 +477,7 @@ async function deleteSingleReport(
 
 export async function POST(req: Request) {
   try {
-    const { user, error: authErr } =
-      await resolveUser(req);
+    const { user, error: authErr } = await resolveUser(req);
 
     if (authErr || !user) {
       return jsonError(401, "UNAUTHORIZED");
@@ -424,40 +501,37 @@ export async function POST(req: Request) {
       return jsonError(400, "REPORT_IDS_REQUIRED");
     }
 
-    const canDelete = await canDeleteReports(
-      user.id,
-      workspace_id
-    );
+    const permission = await resolveDeletePermission(user.id, workspace_id);
 
-    if (!canDelete) {
-      return jsonError(
-        403,
-        "FORBIDDEN_DELETE_PERMISSION"
-      );
+    if (!permission.allowed) {
+      return jsonError(403, "FORBIDDEN_DELETE_PERMISSION", {
+        role: permission.role || null,
+        access_scope: permission.scope,
+      });
     }
 
-    const deletableIds = await fetchDeletableIds(
-      workspace_id,
-      report_ids
-    );
+    const deletableReports = await fetchDeletableReports({
+      workspaceId: workspace_id,
+      requestedIds: report_ids,
+      actorUserId: asString(user.id),
+      permission,
+    });
+
+    const deletableIds = deletableReports.map((report) => report.id);
 
     if (deletableIds.length === 0) {
-      return jsonError(404, "NO_REPORTS_FOUND");
+      return jsonError(404, "NO_REPORTS_FOUND_OR_NOT_ALLOWED", {
+        role: permission.role || null,
+        access_scope: permission.scope,
+      });
     }
 
     const deletedIds: string[] = [];
-
     const failed: FailedItem[] = [];
 
-    for (const idsChunk of chunkArray(
-      deletableIds,
-      DELETE_CHUNK_SIZE
-    )) {
+    for (const idsChunk of chunkArray(deletableIds, DELETE_CHUNK_SIZE)) {
       for (const reportId of idsChunk) {
-        const result = await deleteSingleReport(
-          workspace_id,
-          reportId
-        );
+        const result = await deleteSingleReport(workspace_id, reportId);
 
         if (result.ok) {
           deletedIds.push(reportId);
@@ -471,73 +545,48 @@ export async function POST(req: Request) {
       }
     }
 
-    const failedIds = failed.map((x) => x.id);
+    const deletedSet = new Set(deletedIds);
+    const failedSet = new Set(failed.map((item) => item.id));
+    const matchedSet = new Set(deletableIds);
 
-    const notFoundIds = report_ids.filter(
-      (id) => !deletableIds.includes(id)
-    );
+    const notFoundIds = report_ids.filter((id) => {
+      if (matchedSet.has(id)) return false;
+      if (deletedSet.has(id)) return false;
+      if (failedSet.has(id)) return false;
+      return true;
+    });
 
     return NextResponse.json({
-      ok: true,
-
-      deleted_ids: deletedIds,
-      deleted_count: deletedIds.length,
-
-      failed_ids: failedIds,
-      failed_count: failedIds.length,
-
-      failed,
-
+      ok: failed.length === 0,
+      workspace_id,
       requested_count: report_ids.length,
-      matched_count: deletableIds.length,
-
+      deletable_count: deletableIds.length,
+      deleted_count: deletedIds.length,
+      failed_count: failed.length,
+      not_found_count: notFoundIds.length,
+      deleted_ids: deletedIds,
+      failed,
       not_found_ids: notFoundIds,
-
-      message:
-        failedIds.length > 0
-          ? `일부 삭제만 완료되었습니다. 성공 ${deletedIds.length}건 / 실패 ${failedIds.length}건`
-          : `리포트 ${deletedIds.length}개 삭제 완료`,
+      role: permission.role || null,
+      access_scope: permission.scope,
     });
   } catch (e: any) {
-    const msg = e?.message ?? "";
+    const msg = String(e?.message ?? "");
 
-    if (
-      String(msg).startsWith(
-        "PROFILE_EMAIL_FETCH_FAILED:"
-      )
-    ) {
-      return jsonError(
-        500,
-        "PROFILE_EMAIL_FETCH_FAILED",
-        {
-          detail: String(msg).replace(
-            "PROFILE_EMAIL_FETCH_FAILED:",
-            ""
-          ),
-        }
-      );
+    if (msg.startsWith("PROFILE_EMAIL_FETCH_FAILED:")) {
+      return jsonError(500, "PROFILE_EMAIL_FETCH_FAILED", {
+        detail: msg.replace("PROFILE_EMAIL_FETCH_FAILED:", ""),
+      });
     }
 
-    if (
-      String(msg).startsWith(
-        "REPORT_DELETE_PERMISSION_CHECK_FAILED:"
-      )
-    ) {
-      return jsonError(
-        500,
-        "REPORT_DELETE_PERMISSION_CHECK_FAILED",
-        {
-          detail: String(msg).replace(
-            "REPORT_DELETE_PERMISSION_CHECK_FAILED:",
-            ""
-          ),
-        }
-      );
+    if (msg.startsWith("REPORT_DELETE_PERMISSION_CHECK_FAILED:")) {
+      return jsonError(500, "REPORT_DELETE_PERMISSION_CHECK_FAILED", {
+        detail: msg.replace("REPORT_DELETE_PERMISSION_CHECK_FAILED:", ""),
+      });
     }
 
-    return jsonError(
-      500,
-      e?.message || "DELETE_REPORTS_FAILED"
-    );
+    return jsonError(500, "INTERNAL_ERROR", {
+      detail: e?.message || String(e),
+    });
   }
 }

@@ -11,6 +11,7 @@ import {
   useRef,
   useState,
   type ComponentProps,
+  type SetStateAction,
 } from "react";
 
 import type {
@@ -306,6 +307,11 @@ type Props = {
   readOnlyHeader?: boolean;
   hidePeriodEditor?: boolean;
   hideTabPeriodText?: boolean;
+  /**
+   * PPT/PDF export 전용: 특정 탭을 강제로 렌더링한다.
+   * 기존 화면의 탭 state/setTab 동작은 건드리지 않는다.
+   */
+  forcedTab?: TabKey;
 };
 
 type ReportFilterKey = FilterKey;
@@ -3006,8 +3012,16 @@ export default function ReportTemplate({
   readOnlyHeader = false,
   hidePeriodEditor = false,
   hideTabPeriodText = false,
+  forcedTab,
 }: Props) {
-  const [tab, setTab] = useState<TabKey>("summary");
+  const [internalTab, setInternalTab] = useState<TabKey>("summary");
+
+  const tab = forcedTab ?? internalTab;
+
+  const setTab = useCallback((next: SetStateAction<TabKey>) => {
+    if (forcedTab) return;
+    setInternalTab(next);
+  }, [forcedTab]);
 
   const [filterKey, setFilterKey] = useState<ReportFilterKey>(null);
   const [selectedMonth, setSelectedMonth] = useState<MonthKey>("all");

@@ -1,3 +1,4 @@
+// app/api/advertisers/[id]/route.ts
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
@@ -10,7 +11,10 @@ type Ctx = { params: Promise<{ id: string }> };
 const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
 
 function jsonError(status: number, message: string, extra?: any) {
-  return NextResponse.json({ ok: false, error: message, ...(extra ?? {}) }, { status });
+  return NextResponse.json(
+    { ok: false, error: message, ...(extra ?? {}) },
+    { status },
+  );
 }
 
 function asString(v: any) {
@@ -95,8 +99,47 @@ async function isTrueMasterUser(userId: string, workspaceId: string) {
   return role === "master";
 }
 
-function canUpdateAdvertiser(role: string) {
-  return role === "director" || role === "admin" || role === "staff";
+function canManageWorkspaceAdvertiser(role: string) {
+  return role === "director" || role === "admin";
+}
+
+function canManageOwnAdvertiser(role: string) {
+  return role === "staff";
+}
+
+function canAccessAdvertiser(args: {
+  role: string;
+  isTrueMaster: boolean;
+  actorUserId: string;
+  advertiserCreatedBy: string;
+}) {
+  const { role, isTrueMaster, actorUserId, advertiserCreatedBy } = args;
+
+  if (isTrueMaster) return true;
+
+  if (canManageWorkspaceAdvertiser(role)) {
+    return true;
+  }
+
+  if (canManageOwnAdvertiser(role)) {
+    return advertiserCreatedBy === actorUserId;
+  }
+
+  return false;
+}
+
+async function fetchAdvertiserById(advertiserId: string) {
+  const { data, error } = await supabaseAdmin
+    .from("advertisers")
+    .select("id, name, workspace_id, created_by, created_at, public_slug")
+    .eq("id", advertiserId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`ADVERTISER_FETCH_FAILED:${error.message}`);
+  }
+
+  return data ?? null;
 }
 
 export async function PATCH(req: Request, ctx: Ctx) {
@@ -120,21 +163,13 @@ export async function PATCH(req: Request, ctx: Ctx) {
       return jsonError(400, "NAME_REQUIRED");
     }
 
-    const { data: adv, error: advErr } = await supabaseAdmin
-      .from("advertisers")
-      .select("id, workspace_id")
-      .eq("id", advertiserId)
-      .maybeSingle();
-
-    if (advErr) {
-      return jsonError(500, "ADVERTISER_FETCH_FAILED", { detail: advErr.message });
-    }
+    const adv = await fetchAdvertiserById(advertiserId);
 
     if (!adv) {
       return jsonError(404, "NOT_FOUND");
     }
 
-    const workspaceId = asString(adv.workspace_id);
+    const workspaceId = asString((adv as any).workspace_id);
 
     if (!workspaceId) {
       return jsonError(500, "ADVERTISER_WORKSPACE_MISSING");
@@ -142,9 +177,20 @@ export async function PATCH(req: Request, ctx: Ctx) {
 
     const role = await getWorkspaceRole(user.id, workspaceId);
     const isTrueMaster = await isTrueMasterUser(user.id, workspaceId);
+    const advertiserCreatedBy = asString((adv as any)?.created_by);
 
-    if (!isTrueMaster && !canUpdateAdvertiser(role)) {
-      return jsonError(403, "FORBIDDEN_UPDATE_PERMISSION");
+    if (
+      !canAccessAdvertiser({
+        role,
+        isTrueMaster,
+        actorUserId: asString(user.id),
+        advertiserCreatedBy,
+      })
+    ) {
+      return jsonError(403, "FORBIDDEN_UPDATE_PERMISSION", {
+        role: role || null,
+        access_scope: role === "staff" ? "own_created" : "workspace",
+      });
     }
 
     const { data: dup, error: dupErr } = await supabaseAdmin
@@ -170,11 +216,15 @@ export async function PATCH(req: Request, ctx: Ctx) {
       .update({ name })
       .eq("id", advertiserId)
       .eq("workspace_id", workspaceId)
-      .select("*")
+      .select("id, name, workspace_id, created_by, created_at, public_slug")
       .maybeSingle();
 
     if (upErr) {
       return jsonError(500, "UPDATE_FAILED", { detail: upErr.message });
+    }
+
+    if (!updated) {
+      return jsonError(404, "NOT_FOUND");
     }
 
     return NextResponse.json({
@@ -182,17 +232,23 @@ export async function PATCH(req: Request, ctx: Ctx) {
       advertiser: updated,
     });
   } catch (e: any) {
-    const msg = e?.message ?? "";
+    const msg = String(e?.message ?? "");
 
-    if (String(msg).startsWith("PROFILE_EMAIL_FETCH_FAILED:")) {
+    if (msg.startsWith("PROFILE_EMAIL_FETCH_FAILED:")) {
       return jsonError(500, "PROFILE_EMAIL_FETCH_FAILED", {
-        detail: String(msg).replace("PROFILE_EMAIL_FETCH_FAILED:", ""),
+        detail: msg.replace("PROFILE_EMAIL_FETCH_FAILED:", ""),
       });
     }
 
-    if (String(msg).startsWith("WORKSPACE_ROLE_CHECK_FAILED:")) {
+    if (msg.startsWith("WORKSPACE_ROLE_CHECK_FAILED:")) {
       return jsonError(500, "WORKSPACE_ROLE_CHECK_FAILED", {
-        detail: String(msg).replace("WORKSPACE_ROLE_CHECK_FAILED:", ""),
+        detail: msg.replace("WORKSPACE_ROLE_CHECK_FAILED:", ""),
+      });
+    }
+
+    if (msg.startsWith("ADVERTISER_FETCH_FAILED:")) {
+      return jsonError(500, "ADVERTISER_FETCH_FAILED", {
+        detail: msg.replace("ADVERTISER_FETCH_FAILED:", ""),
       });
     }
 
@@ -214,32 +270,40 @@ export async function DELETE(req: Request, ctx: Ctx) {
       return jsonError(401, "UNAUTHORIZED");
     }
 
-    const { data: adv, error: advErr } = await supabaseAdmin
-      .from("advertisers")
-      .select("id, workspace_id")
-      .eq("id", advertiserId)
-      .maybeSingle();
-
-    if (advErr) {
-      return jsonError(500, "ADVERTISER_FETCH_FAILED", { detail: advErr.message });
-    }
+    const adv = await fetchAdvertiserById(advertiserId);
 
     if (!adv) {
       return jsonError(404, "NOT_FOUND");
     }
 
-    const workspaceId = asString(adv.workspace_id);
+    const workspaceId = asString((adv as any).workspace_id);
 
     if (!workspaceId) {
       return jsonError(500, "ADVERTISER_WORKSPACE_MISSING");
     }
 
-    const canDelete = await isTrueMasterUser(user.id, workspaceId);
+    const role = await getWorkspaceRole(user.id, workspaceId);
+    const isTrueMaster = await isTrueMasterUser(user.id, workspaceId);
+    const advertiserCreatedBy = asString((adv as any)?.created_by);
 
-    if (!canDelete) {
-      return jsonError(403, "FORBIDDEN_TRUE_MASTER_ONLY");
+    if (
+      !canAccessAdvertiser({
+        role,
+        isTrueMaster,
+        actorUserId: asString(user.id),
+        advertiserCreatedBy,
+      })
+    ) {
+      return jsonError(403, "FORBIDDEN_DELETE_PERMISSION", {
+        role: role || null,
+        access_scope: role === "staff" ? "own_created" : "workspace",
+      });
     }
 
+    /**
+     * 연결된 리포트가 있으면 삭제 차단 유지.
+     * - 광고주 삭제 시 report orphan을 만들지 않기 위한 기존 안전장치.
+     */
     const { count, error: cntErr } = await supabaseAdmin
       .from("reports")
       .select("*", { count: "exact", head: true })
@@ -267,19 +331,36 @@ export async function DELETE(req: Request, ctx: Ctx) {
       return jsonError(500, "DELETE_FAILED", { detail: delErr.message });
     }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({
+      ok: true,
+      deleted_id: advertiserId,
+      workspace_id: workspaceId,
+      access_scope: isTrueMaster
+        ? "true_master"
+        : canManageWorkspaceAdvertiser(role)
+          ? "workspace"
+          : canManageOwnAdvertiser(role)
+            ? "own_created"
+            : "none",
+    });
   } catch (e: any) {
-    const msg = e?.message ?? "";
+    const msg = String(e?.message ?? "");
 
-    if (String(msg).startsWith("PROFILE_EMAIL_FETCH_FAILED:")) {
+    if (msg.startsWith("PROFILE_EMAIL_FETCH_FAILED:")) {
       return jsonError(500, "PROFILE_EMAIL_FETCH_FAILED", {
-        detail: String(msg).replace("PROFILE_EMAIL_FETCH_FAILED:", ""),
+        detail: msg.replace("PROFILE_EMAIL_FETCH_FAILED:", ""),
       });
     }
 
-    if (String(msg).startsWith("WORKSPACE_ROLE_CHECK_FAILED:")) {
+    if (msg.startsWith("WORKSPACE_ROLE_CHECK_FAILED:")) {
       return jsonError(500, "WORKSPACE_ROLE_CHECK_FAILED", {
-        detail: String(msg).replace("WORKSPACE_ROLE_CHECK_FAILED:", ""),
+        detail: msg.replace("WORKSPACE_ROLE_CHECK_FAILED:", ""),
+      });
+    }
+
+    if (msg.startsWith("ADVERTISER_FETCH_FAILED:")) {
+      return jsonError(500, "ADVERTISER_FETCH_FAILED", {
+        detail: msg.replace("ADVERTISER_FETCH_FAILED:", ""),
       });
     }
 

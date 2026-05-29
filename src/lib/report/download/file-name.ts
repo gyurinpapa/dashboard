@@ -2,7 +2,7 @@ export type BuildReportFileNameParams = {
   advertiserName?: string | null;
   reportTitle?: string | null;
   date?: Date;
-  ext: "pdf" | "png" | "csv";
+  ext: "csv" | "pdf" | "png" | "pptx";
 };
 
 export function sanitizeFileNamePart(input?: string | null) {

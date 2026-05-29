@@ -11,7 +11,10 @@ const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
 const ALL_WORKSPACES = "__all__";
 
 function jsonError(status: number, message: string, extra?: Record<string, any>) {
-  return NextResponse.json({ ok: false, error: message, ...(extra ?? {}) }, { status });
+  return NextResponse.json(
+    { ok: false, error: message, ...(extra ?? {}) },
+    { status },
+  );
 }
 
 function asString(v: any) {
@@ -58,7 +61,7 @@ async function getMembershipForWorkspace(userId: string, workspaceId: string) {
 
   const { data, error } = await supabaseAdmin
     .from("workspace_members")
-    .select("workspace_id, user_id, role")
+    .select("workspace_id, user_id, role, division, department, team")
     .eq("user_id", id)
     .eq("workspace_id", wid)
     .maybeSingle();
@@ -111,10 +114,29 @@ async function isTrueMasterUser(userId: string) {
   return await hasMasterMembership(userId);
 }
 
-async function getWorkspaceNamesByIds(workspaceIds: string[]) {
-  const ids = Array.from(
-    new Set(workspaceIds.map(asString).filter(Boolean))
+function normalizeRole(v: any) {
+  return asString(v).toLowerCase();
+}
+
+function canListWorkspaceAdvertisers(role: string) {
+  return (
+    role === "master" ||
+    role === "director" ||
+    role === "admin" ||
+    role === "staff"
   );
+}
+
+function canSeeAllAdvertisersInWorkspace(role: string) {
+  return role === "master" || role === "director" || role === "admin";
+}
+
+function canSeeOwnAdvertisersOnly(role: string) {
+  return role === "staff";
+}
+
+async function getWorkspaceNamesByIds(workspaceIds: string[]) {
+  const ids = Array.from(new Set(workspaceIds.map(asString).filter(Boolean)));
 
   const map = new Map<string, string>();
 
@@ -135,6 +157,18 @@ async function getWorkspaceNamesByIds(workspaceIds: string[]) {
   }
 
   return map;
+}
+
+function normalizeAdvertiserRow(row: any, workspaceName?: string | null) {
+  return {
+    id: asString(row?.id),
+    name: asString(row?.name),
+    workspace_id: asString(row?.workspace_id),
+    workspace_name: workspaceName ?? null,
+    public_slug: row?.public_slug ? asString(row.public_slug) : null,
+    created_by: row?.created_by ? asString(row.created_by) : null,
+    created_at: row?.created_at ? String(row.created_at) : null,
+  };
 }
 
 export async function GET(req: Request) {
@@ -162,7 +196,8 @@ export async function GET(req: Request) {
 
     /**
      * true master 전용 전체 광고주 조회.
-     * platform_owner 단독으로는 전체 조회 불가.
+     * - platform_owner 단독으로는 전체 조회 불가.
+     * - 전체 master는 모든 workspace의 광고주를 볼 수 있다.
      */
     if (workspace_id === ALL_WORKSPACES) {
       if (!actorIsTrueMaster) {
@@ -171,7 +206,7 @@ export async function GET(req: Request) {
 
       const { data, error } = await supabaseAdmin
         .from("advertisers")
-        .select("id, name, workspace_id, created_at, public_slug")
+        .select("id, name, workspace_id, created_by, created_at, public_slug")
         .order("name", { ascending: true });
 
       if (error) {
@@ -180,9 +215,7 @@ export async function GET(req: Request) {
         });
       }
 
-      const rows = (data ?? []).filter((row: any) =>
-        asString(row?.id)
-      );
+      const rows = (data ?? []).filter((row: any) => asString(row?.id));
 
       const workspaceIds = rows
         .map((row: any) => asString(row?.workspace_id))
@@ -194,14 +227,7 @@ export async function GET(req: Request) {
         const workspaceId = asString(row?.workspace_id);
         const workspaceName = workspaceNameById.get(workspaceId) ?? null;
 
-        return {
-          id: asString(row?.id),
-          name: asString(row?.name),
-          workspace_id: workspaceId,
-          workspace_name: workspaceName,
-          public_slug: row?.public_slug ? asString(row.public_slug) : null,
-          created_at: row?.created_at ? String(row.created_at) : null,
-        };
+        return normalizeAdvertiserRow(row, workspaceName);
       });
 
       return NextResponse.json({
@@ -210,16 +236,25 @@ export async function GET(req: Request) {
         is_all_workspaces: true,
         is_true_master: true,
         platform_role: actorIsPlatformOwner ? "platform_owner" : null,
+        access_scope: "all_workspaces",
         advertisers,
       });
     }
 
-    const actorCanBypassWorkspaceMembership = actorIsTrueMaster;
+    /**
+     * 단일 workspace 조회.
+     * - true master는 membership 없이도 조회 가능.
+     * - 일반 사용자는 반드시 해당 workspace member여야 한다.
+     * - director/admin: 해당 workspace 전체 광고주 조회 가능.
+     * - staff: 본인이 created_by인 광고주만 조회 가능.
+     * - client: report-builder 광고주 선택 목록 조회 차단.
+     */
+    let actorRole = "";
 
-    if (!actorCanBypassWorkspaceMembership) {
+    if (!actorIsTrueMaster) {
       const membershipResult = await getMembershipForWorkspace(
         actorUserId,
-        workspace_id
+        workspace_id,
       );
 
       if (membershipResult.error) {
@@ -231,13 +266,29 @@ export async function GET(req: Request) {
       if (!membershipResult.data) {
         return jsonError(403, "WORKSPACE_ACCESS_DENIED");
       }
+
+      actorRole = normalizeRole(membershipResult.data?.role);
+
+      if (!canListWorkspaceAdvertisers(actorRole)) {
+        return jsonError(403, "ADVERTISER_LIST_ACCESS_DENIED", {
+          role: actorRole || null,
+        });
+      }
+    } else {
+      actorRole = "master";
     }
 
-    const { data, error } = await supabaseAdmin
+    let query = supabaseAdmin
       .from("advertisers")
-      .select("id, name, workspace_id, created_at, public_slug")
+      .select("id, name, workspace_id, created_by, created_at, public_slug")
       .eq("workspace_id", workspace_id)
       .order("name", { ascending: true });
+
+    if (!actorIsTrueMaster && canSeeOwnAdvertisersOnly(actorRole)) {
+      query = query.eq("created_by", actorUserId);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       return jsonError(500, "FAILED_TO_FETCH_ADVERTISERS", {
@@ -247,14 +298,16 @@ export async function GET(req: Request) {
 
     const advertisers = (data ?? [])
       .filter((row: any) => asString(row?.workspace_id) === workspace_id)
-      .map((row: any) => ({
-        id: asString(row?.id),
-        name: asString(row?.name),
-        workspace_id: asString(row?.workspace_id),
-        workspace_name: null,
-        public_slug: row?.public_slug ? asString(row.public_slug) : null,
-        created_at: row?.created_at ? String(row.created_at) : null,
-      }));
+      .filter((row: any) => {
+        if (actorIsTrueMaster) return true;
+        if (canSeeAllAdvertisersInWorkspace(actorRole)) return true;
+        if (canSeeOwnAdvertisersOnly(actorRole)) {
+          return asString(row?.created_by) === actorUserId;
+        }
+
+        return false;
+      })
+      .map((row: any) => normalizeAdvertiserRow(row, null));
 
     return NextResponse.json({
       ok: true,
@@ -262,23 +315,33 @@ export async function GET(req: Request) {
       is_all_workspaces: false,
       is_true_master: actorIsTrueMaster,
       platform_role: actorIsPlatformOwner ? "platform_owner" : null,
+      role: actorRole || null,
+      access_scope: actorIsTrueMaster
+        ? "true_master_workspace"
+        : canSeeAllAdvertisersInWorkspace(actorRole)
+          ? "workspace"
+          : canSeeOwnAdvertisersOnly(actorRole)
+            ? "own_created"
+            : "none",
       advertisers,
     });
   } catch (e: any) {
-    const msg = e?.message ?? "";
+    const msg = String(e?.message ?? "");
 
-    if (String(msg).startsWith("FAILED_TO_FETCH_PROFILE_EMAIL:")) {
+    if (msg.startsWith("FAILED_TO_FETCH_PROFILE_EMAIL:")) {
       return jsonError(500, "FAILED_TO_FETCH_PROFILE_EMAIL", {
-        detail: String(msg).replace("FAILED_TO_FETCH_PROFILE_EMAIL:", ""),
+        detail: msg.replace("FAILED_TO_FETCH_PROFILE_EMAIL:", ""),
       });
     }
 
-    if (String(msg).startsWith("FAILED_TO_FETCH_MASTER_MEMBERSHIP:")) {
+    if (msg.startsWith("FAILED_TO_FETCH_MASTER_MEMBERSHIP:")) {
       return jsonError(500, "FAILED_TO_FETCH_MASTER_MEMBERSHIP", {
-        detail: String(msg).replace("FAILED_TO_FETCH_MASTER_MEMBERSHIP:", ""),
+        detail: msg.replace("FAILED_TO_FETCH_MASTER_MEMBERSHIP:", ""),
       });
     }
 
-    return jsonError(500, "INTERNAL_SERVER_ERROR", { detail: e?.message });
+    return jsonError(500, "INTERNAL_ERROR", {
+      detail: e?.message ?? String(e),
+    });
   }
 }

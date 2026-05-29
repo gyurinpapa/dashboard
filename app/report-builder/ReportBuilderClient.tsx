@@ -17,6 +17,7 @@ type ReportRow = {
   status: "draft" | "ready" | "archived";
 
   created_at?: string | null;
+  created_by?: string | null;
 
   advertiser_id?: string | null;
   advertiser_name?: string | null;
@@ -48,6 +49,7 @@ type AdvertiserRow = {
   workspace_id?: string | null;
   workspace_name?: string | null;
   public_slug?: string | null;
+  created_by?: string | null;
 };
 
 type ReportFilterKey = "all" | "published" | "draft";
@@ -119,7 +121,18 @@ function canDeleteReportsByRole(
   role: MemberRole,
   email?: string | null
 ) {
-  if (role === "director") {
+  if (role === "director" || role === "admin" || role === "staff") {
+    return true;
+  }
+
+  return canUseTrueMasterPower(role, email);
+}
+
+function canDeleteAdvertisersByRole(
+  role: MemberRole,
+  email?: string | null
+) {
+  if (role === "director" || role === "admin" || role === "staff") {
     return true;
   }
 
@@ -275,7 +288,7 @@ export default function ReportBuilderPage() {
   const canDeleteReports = canDeleteReportsByRole(memberRole, userEmail);
   const canManageMembers = canManageMembersPage(memberRole, userEmail);
   const canDeleteAdvertisers =
-    canUseTrueMasterPower(memberRole, userEmail) && !isAllWorkspaceMode;
+    canDeleteAdvertisersByRole(memberRole, userEmail) && !isAllWorkspaceMode;
   const canUpdatePublicSlug =
     canUpdatePublicSlugByRole(memberRole, userEmail) && !isAllWorkspaceMode;
 
@@ -319,6 +332,7 @@ export default function ReportBuilderPage() {
       title: String(r.title ?? ""),
       status: String(r.status ?? ""),
       created_at: r.created_at ? String(r.created_at) : undefined,
+      created_by: r.created_by ? String(r.created_by) : null,
 
       workspace_id: r.workspace_id ? String(r.workspace_id) : null,
       workspace_name: r.workspace_name ? String(r.workspace_name) : null,
@@ -680,6 +694,7 @@ export default function ReportBuilderPage() {
         workspace_id: x.workspace_id ? String(x.workspace_id) : null,
         workspace_name: x.workspace_name ? String(x.workspace_name) : null,
         public_slug: x.public_slug ? String(x.public_slug) : null,
+        created_by: x.created_by ? String(x.created_by) : null,
       })) || [];
 
       setAdvertisers(rows);
@@ -823,7 +838,7 @@ export default function ReportBuilderPage() {
           name,
           created_by: userId,
         })
-        .select("id,name,workspace_id,public_slug")
+        .select("id,name,workspace_id,public_slug,created_by")
         .single();
 
       if (error) {
@@ -843,6 +858,9 @@ export default function ReportBuilderPage() {
         public_slug: (data as any)?.public_slug
           ? String((data as any).public_slug)
           : null,
+        created_by: (data as any)?.created_by
+          ? String((data as any).created_by)
+          : userId,
       };
 
       setAdvertisers((prev) => {
@@ -1085,159 +1103,196 @@ export default function ReportBuilderPage() {
   }
 
   async function deleteSelectedReports() {
-  if (!canDeleteReports) {
-    setLocalMsg("리포트 삭제 권한이 없습니다.");
-    return;
-  }
-
-  if (!workspaceId || !selectedReportIds.length || deletingReports) return;
-
-  const targetReportIds = [...selectedReportIds];
-
-  const ok = window.confirm(
-    `선택한 리포트 ${targetReportIds.length}개를 삭제하시겠습니까?\n\n이 삭제는 실제 삭제(hard delete)이며 report_rows / report_creatives / report_csv_uploads / report_image_uploads / reports 데이터가 함께 제거될 수 있습니다.`
-  );
-  if (!ok) return;
-
-  setDeletingReports(true);
-  setLocalMsg(`리포트 ${targetReportIds.length}개 삭제를 시작합니다...`);
-
-  const deletedIds: string[] = [];
-  const failedItems: Array<{
-    id: string;
-    step?: string;
-    error?: string;
-  }> = [];
-  const notFoundIds: string[] = [];
-
-  try {
-    const token = await getAccessToken();
-
-    if (!token) {
-      setLocalMsg("로그인 세션이 없습니다.");
-      setDeletingReports(false);
+    if (!canDeleteReports) {
+      setLocalMsg("리포트 삭제 권한이 없습니다.");
       return;
     }
 
-    for (let i = 0; i < targetReportIds.length; i += 1) {
-      const reportId = targetReportIds[i];
+    if (!workspaceId || !selectedReportIds.length || deletingReports) return;
 
-      setLocalMsg(
-        `리포트 삭제 중... ${i + 1}/${targetReportIds.length}`
+    const targetReportIds = [...selectedReportIds];
+
+    const ok = window.confirm(
+      `선택한 리포트 ${targetReportIds.length}개를 삭제하시겠습니까?\n\n이 삭제는 실제 삭제(hard delete)이며 report_rows / report_creatives / report_csv_uploads / report_image_uploads / reports 데이터가 함께 제거될 수 있습니다.`
+    );
+    if (!ok) return;
+
+    setDeletingReports(true);
+    setLocalMsg(`리포트 ${targetReportIds.length}개 삭제를 시작합니다...`);
+
+    const deletedIds: string[] = [];
+    const failedItems: Array<{
+      id: string;
+      step?: string;
+      error?: string;
+    }> = [];
+    const notFoundIds: string[] = [];
+
+    try {
+      const token = await getAccessToken();
+
+      if (!token) {
+        setLocalMsg("로그인 세션이 없습니다.");
+        setDeletingReports(false);
+        return;
+      }
+
+      const selectedReports = targetReportIds
+        .map((id) => reports.find((report) => report.id === id))
+        .filter(Boolean) as ReportRow[];
+
+      const missingSelectedIds = targetReportIds.filter(
+        (id) => !selectedReports.some((report) => report.id === id)
       );
 
-      const res = await fetch("/api/reports/delete", {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          workspace_id: workspaceId,
-          report_ids: [reportId],
-        }),
-      });
-
-      const json = await safeReadJson(res);
-
-      if (!res.ok || !(json as any)?.ok) {
-        console.warn("[reports/delete] failed", res.status, json);
-
-        failedItems.push({
-          id: reportId,
-          step: (json as any)?.step,
-          error:
-            (json as any)?.detail ||
-            (json as any)?.message ||
-            (json as any)?.error ||
-            "리포트 삭제 실패",
-        });
-
-        continue;
+      if (missingSelectedIds.length > 0) {
+        notFoundIds.push(...missingSelectedIds);
       }
 
-      const nextDeletedIds = Array.isArray((json as any)?.deleted_ids)
-        ? ((json as any).deleted_ids as any[]).map((id) => String(id))
-        : [];
+      const reportsByWorkspace = new Map<string, string[]>();
 
-      const nextFailed = Array.isArray((json as any)?.failed)
-        ? ((json as any).failed as any[])
-        : [];
+      for (const report of selectedReports) {
+        const reportWorkspaceId = String(report.workspace_id ?? "").trim();
 
-      const nextNotFoundIds = Array.isArray((json as any)?.not_found_ids)
-        ? ((json as any).not_found_ids as any[]).map((id) => String(id))
-        : [];
-
-      if (nextDeletedIds.length > 0) {
-        deletedIds.push(...nextDeletedIds);
-
-        const deletedSet = new Set(nextDeletedIds);
-
-        setReports((prev) =>
-          prev.filter((report) => !deletedSet.has(report.id))
-        );
-
-        setSelectedReportIds((prev) =>
-          prev.filter((id) => !deletedSet.has(id))
-        );
-      }
-
-      if (nextFailed.length > 0) {
-        for (const item of nextFailed) {
+        if (!reportWorkspaceId) {
           failedItems.push({
-            id: String(item?.id ?? reportId),
-            step: item?.step ? String(item.step) : undefined,
-            error: item?.error ? String(item.error) : "리포트 삭제 실패",
+            id: report.id,
+            error: "리포트의 workspace_id를 확인할 수 없습니다.",
           });
+          continue;
+        }
+
+        const list = reportsByWorkspace.get(reportWorkspaceId) ?? [];
+        list.push(report.id);
+        reportsByWorkspace.set(reportWorkspaceId, list);
+      }
+
+      let processedCount = 0;
+      const totalProcessCount = Array.from(reportsByWorkspace.values()).reduce(
+        (sum, ids) => sum + ids.length,
+        0
+      );
+
+      for (const [targetWorkspaceId, ids] of reportsByWorkspace.entries()) {
+        for (const reportId of ids) {
+          processedCount += 1;
+          setLocalMsg(
+            `리포트 삭제 중... ${processedCount}/${totalProcessCount}`
+          );
+
+          const res = await fetch("/api/reports/delete", {
+            method: "POST",
+            credentials: "include",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              workspace_id: targetWorkspaceId,
+              report_ids: [reportId],
+            }),
+          });
+
+          const json = await safeReadJson(res);
+
+          if (!res.ok || !(json as any)?.ok) {
+            console.warn("[reports/delete] failed", res.status, json);
+
+            failedItems.push({
+              id: reportId,
+              step: (json as any)?.step,
+              error:
+                (json as any)?.detail ||
+                (json as any)?.message ||
+                (json as any)?.error ||
+                "리포트 삭제 실패",
+            });
+
+            continue;
+          }
+
+          const nextDeletedIds = Array.isArray((json as any)?.deleted_ids)
+            ? ((json as any).deleted_ids as any[]).map((id) => String(id))
+            : [];
+
+          const nextFailed = Array.isArray((json as any)?.failed)
+            ? ((json as any).failed as any[])
+            : [];
+
+          const nextNotFoundIds = Array.isArray((json as any)?.not_found_ids)
+            ? ((json as any).not_found_ids as any[]).map((id) => String(id))
+            : [];
+
+          if (nextDeletedIds.length > 0) {
+            deletedIds.push(...nextDeletedIds);
+
+            const deletedSet = new Set(nextDeletedIds);
+
+            setReports((prev) =>
+              prev.filter((report) => !deletedSet.has(report.id))
+            );
+
+            setSelectedReportIds((prev) =>
+              prev.filter((id) => !deletedSet.has(id))
+            );
+          }
+
+          if (nextFailed.length > 0) {
+            for (const item of nextFailed) {
+              failedItems.push({
+                id: String(item?.id ?? reportId),
+                step: item?.step ? String(item.step) : undefined,
+                error: item?.error ? String(item.error) : "리포트 삭제 실패",
+              });
+            }
+          }
+
+          if (nextNotFoundIds.length > 0) {
+            notFoundIds.push(...nextNotFoundIds);
+          }
+
+          if (
+            nextDeletedIds.length === 0 &&
+            nextFailed.length === 0 &&
+            nextNotFoundIds.length === 0
+          ) {
+            failedItems.push({
+              id: reportId,
+              error: "삭제 결과가 반환되지 않았습니다.",
+            });
+          }
         }
       }
 
-      if (nextNotFoundIds.length > 0) {
-        notFoundIds.push(...nextNotFoundIds);
-      }
+      const deletedSet = new Set(deletedIds);
 
-      if (
-        nextDeletedIds.length === 0 &&
-        nextFailed.length === 0 &&
-        nextNotFoundIds.length === 0
-      ) {
-        failedItems.push({
-          id: reportId,
-          error: "삭제 결과가 반환되지 않았습니다.",
-        });
-      }
-    }
-
-    const deletedSet = new Set(deletedIds);
-
-    setSelectedReportIds((prev) =>
-      prev.filter((id) => !deletedSet.has(id))
-    );
-
-    await fetchReports();
-
-    if (failedItems.length > 0 || notFoundIds.length > 0) {
-      console.warn("[reports/delete] batch partial result", {
-        deletedIds,
-        failedItems,
-        notFoundIds,
-      });
-
-      setLocalMsg(
-        `리포트 삭제 일부 완료: 성공 ${deletedIds.length}개 / 실패 ${failedItems.length}개 / 찾을 수 없음 ${notFoundIds.length}개`
+      setSelectedReportIds((prev) =>
+        prev.filter((id) => !deletedSet.has(id))
       );
-      return;
-    }
 
-    setSelectedReportIds([]);
-    setLocalMsg(`리포트 ${deletedIds.length}개 삭제 완료`);
-  } catch (e: any) {
-    setLocalMsg(e?.message || "리포트 삭제 실패");
-  } finally {
-    setDeletingReports(false);
+      await fetchReports();
+
+      if (failedItems.length > 0 || notFoundIds.length > 0) {
+        console.warn("[reports/delete] batch partial result", {
+          deletedIds,
+          failedItems,
+          notFoundIds,
+        });
+
+        setLocalMsg(
+          `리포트 삭제 일부 완료: 성공 ${deletedIds.length}개 / 실패 ${failedItems.length}개 / 찾을 수 없음 ${notFoundIds.length}개`
+        );
+        return;
+      }
+
+      setSelectedReportIds([]);
+      setLocalMsg(`리포트 ${deletedIds.length}개 삭제 완료`);
+    } catch (e: any) {
+      setLocalMsg(e?.message || "리포트 삭제 실패");
+    } finally {
+      setDeletingReports(false);
+    }
   }
-}
 
   function toggleAdvertiserSelection(advertiserId: string) {
     if (!canDeleteAdvertisers) return;
@@ -1525,6 +1580,20 @@ export default function ReportBuilderPage() {
     return virtualRows.slice(virtualStartIndex, virtualEndIndex);
   }, [virtualRows, virtualStartIndex, virtualEndIndex]);
 
+  /**
+   * 전체 workspace(master) 화면에서는 실제 row 높이와 고정 row height가 조금만 달라도
+   * absolute 기반 virtual list가 스크롤 보정/떨림을 만들 수 있다.
+   * 전체 목록 정리/삭제 작업은 안정성이 우선이므로, 전체 workspace 모드에서는
+   * 가상 스크롤을 끄고 현재 로딩된 rows를 그대로 렌더링한다.
+   */
+  const shouldUseVirtualReports = useMemo(() => {
+    return !isAllWorkspaceMode && virtualRows.length > 80;
+  }, [isAllWorkspaceMode, virtualRows.length]);
+
+  const renderedReportRows = useMemo(() => {
+    return shouldUseVirtualReports ? visibleVirtualRows : virtualRows;
+  }, [shouldUseVirtualReports, visibleVirtualRows, virtualRows]);
+
   const handleListScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     setListScrollTop(e.currentTarget.scrollTop);
   }, []);
@@ -1554,6 +1623,7 @@ export default function ReportBuilderPage() {
     const el = listScrollRef.current;
     if (!el) return;
     if (!workspaceId) return;
+    if (!shouldUseVirtualReports) return;
     if (loadingReportsRef.current || loadingMoreRef.current) return;
     if (!hasMoreRef.current) return;
     if (totalVirtualHeight <= 0) return;
@@ -1571,10 +1641,12 @@ export default function ReportBuilderPage() {
     totalVirtualHeight,
     loadMoreReports,
     LOAD_MORE_THRESHOLD,
+    shouldUseVirtualReports,
   ]);
 
   useEffect(() => {
     if (!workspaceId) return;
+    if (!shouldUseVirtualReports) return;
     if (loadingReportsRef.current || loadingMoreRef.current) return;
     if (!hasMoreRef.current) return;
     if (totalVirtualHeight <= 0) return;
@@ -1585,7 +1657,13 @@ export default function ReportBuilderPage() {
     if (needsMoreToFillViewport) {
       loadMoreReports();
     }
-  }, [workspaceId, totalVirtualHeight, listViewportHeight, loadMoreReports]);
+  }, [
+    workspaceId,
+    totalVirtualHeight,
+    listViewportHeight,
+    loadMoreReports,
+    shouldUseVirtualReports,
+  ]);
 
   useEffect(() => {
     setListScrollTop(0);
@@ -2365,34 +2443,49 @@ export default function ReportBuilderPage() {
               onScroll={handleListScroll}
               style={{
                 marginTop: 12,
-                height: LIST_VIEWPORT_HEIGHT,
+                height: shouldUseVirtualReports ? LIST_VIEWPORT_HEIGHT : "auto",
+                maxHeight: shouldUseVirtualReports ? LIST_VIEWPORT_HEIGHT : 760,
                 overflowY: "auto",
                 borderRadius: 14,
               }}
             >
               <div
                 style={{
-                  position: "relative",
-                  height: totalVirtualHeight,
+                  position: shouldUseVirtualReports ? "relative" : "static",
+                  height: shouldUseVirtualReports ? totalVirtualHeight : "auto",
                 }}
               >
-                {visibleVirtualRows.map((item, visibleIdx) => {
-                  const absoluteIndex = virtualStartIndex + visibleIdx;
-                  const top = virtualOffsets[absoluteIndex] ?? 0;
+                {renderedReportRows.map((item, visibleIdx) => {
+                  const absoluteIndex = shouldUseVirtualReports
+                    ? virtualStartIndex + visibleIdx
+                    : visibleIdx;
+                  const top = shouldUseVirtualReports
+                    ? virtualOffsets[absoluteIndex] ?? 0
+                    : undefined;
                   const rowHeight = getVirtualRowHeight(item);
+
+                  const wrapperStyle = shouldUseVirtualReports
+                    ? {
+                        position: "absolute" as const,
+                        top,
+                        left: 0,
+                        right: 0,
+                        height: rowHeight,
+                        boxSizing: "border-box" as const,
+                      }
+                    : {
+                        position: "relative" as const,
+                        marginBottom: item.kind === "folder" ? 10 : 0,
+                        boxSizing: "border-box" as const,
+                      };
 
                   if (item.kind === "folder") {
                     return (
                       <div
                         key={item.key}
                         style={{
-                          position: "absolute",
-                          top,
-                          left: 0,
-                          right: 0,
-                          height: rowHeight,
-                          paddingBottom: 10,
-                          boxSizing: "border-box",
+                          ...wrapperStyle,
+                          paddingBottom: shouldUseVirtualReports ? 10 : 0,
                         }}
                       >
                         <div className="folderBox">
@@ -2445,17 +2538,7 @@ export default function ReportBuilderPage() {
                   const checked = selectedReportIds.includes(r.id);
 
                   return (
-                    <div
-                      key={item.key}
-                      style={{
-                        position: "absolute",
-                        top,
-                        left: 0,
-                        right: 0,
-                        height: rowHeight,
-                        boxSizing: "border-box",
-                      }}
-                    >
+                    <div key={item.key} style={wrapperStyle}>
                       <div className="folderBox" style={{ borderTop: "none" }}>
                         <div
                           className="reportRow"
@@ -2518,11 +2601,26 @@ export default function ReportBuilderPage() {
             >
               {loadingMore
                 ? "추가 리포트를 불러오는 중..."
-                : hasMore
+                : hasMore && shouldUseVirtualReports
                 ? "아래로 스크롤하면 다음 리포트를 자동으로 불러옵니다."
+                : hasMore
+                ? "다음 페이지가 더 있습니다. 아래 버튼으로 추가 리포트를 불러오세요."
                 : reports.length > 0
                 ? "모든 리포트를 불러왔습니다."
                 : null}
+
+              {hasMore && !shouldUseVirtualReports ? (
+                <div style={{ marginTop: 10 }}>
+                  <button
+                    type="button"
+                    className="subBtn"
+                    onClick={loadMoreReports}
+                    disabled={loadingMore}
+                  >
+                    {loadingMore ? "불러오는 중..." : "리포트 더 불러오기"}
+                  </button>
+                </div>
+              ) : null}
             </div>
           </section>
         ) : null}

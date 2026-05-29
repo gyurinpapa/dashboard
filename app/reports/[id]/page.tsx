@@ -72,6 +72,41 @@ async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
   });
 }
 
+function pickDownloadFileNameFromContentDisposition(
+  contentDisposition: string | null,
+) {
+  const header = String(contentDisposition ?? "").trim();
+  if (!header) return "";
+
+  const utf8Match = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1].trim());
+    } catch {
+      return utf8Match[1].trim();
+    }
+  }
+
+  const basicMatch = header.match(/filename="?([^";]+)"?/i);
+  if (basicMatch?.[1]) {
+    return basicMatch[1].trim();
+  }
+
+  return "";
+}
+
+function downloadBlobFile(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 /* =========================================================
  * API helpers
  * ========================================================= */
@@ -1102,9 +1137,11 @@ const DownloadPanel = memo(function DownloadPanel({
   onDownloadPdf,
   onDownloadPng,
   onDownloadCsv,
+  onDownloadPpt,
   pdfLoading,
   pngLoading,
   csvLoading,
+  pptLoading,
   canPublish,
   publishing,
   onPublish,
@@ -1114,9 +1151,11 @@ const DownloadPanel = memo(function DownloadPanel({
   onDownloadPdf: () => Promise<void>;
   onDownloadPng: () => Promise<void>;
   onDownloadCsv: () => Promise<void>;
+  onDownloadPpt: () => Promise<void>;
   pdfLoading: boolean;
   pngLoading: boolean;
   csvLoading: boolean;
+  pptLoading: boolean;
   canPublish: boolean;
   publishing: boolean;
   onPublish: () => Promise<void>;
@@ -1140,9 +1179,11 @@ const DownloadPanel = memo(function DownloadPanel({
             onDownloadPdf={onDownloadPdf}
             onDownloadPng={onDownloadPng}
             onDownloadCsv={onDownloadCsv}
+            onDownloadPpt={onDownloadPpt}
             pdfLoading={pdfLoading}
             pngLoading={pngLoading}
             csvLoading={csvLoading}
+            pptLoading={pptLoading}
           />
 
           {canOpenExportBuilder ? (
@@ -1263,6 +1304,7 @@ export default function ReportDetailPage() {
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pngLoading, setPngLoading] = useState(false);
   const [csvLoading, setCsvLoading] = useState(false);
+  const [pptLoading, setPptLoading] = useState(false);
 
   const didInitReportPeriodFromSourceRef = useRef(false);
   const saveDraftPeriodTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -2638,6 +2680,58 @@ export default function ReportDetailPage() {
     reportTitleForDownload,
   ]);
 
+
+  const handleDownloadPpt = useCallback(async () => {
+    if (!reportId) return;
+
+    try {
+      setPptLoading(true);
+      setMsg("AI PPT 보고서를 생성하는 중입니다. 대용량 리포트는 시간이 조금 걸릴 수 있습니다.");
+
+      const res = await authFetch(`/api/reports/${reportId}/ppt`, {
+        method: "GET",
+      });
+
+      if (!res.ok) {
+        const json = await safeJson(res);
+        throw new Error(
+          json?.message ||
+            json?.detail ||
+            json?.error ||
+            `PPT 생성 실패 (${res.status})`,
+        );
+      }
+
+      const blob = await res.blob();
+      const fallbackFileName = buildReportFileName({
+        advertiserName: advertiserNameForDownload,
+        reportTitle: reportTitleForDownload,
+        ext: "pptx",
+      });
+
+      const fileName =
+        pickDownloadFileNameFromContentDisposition(
+          res.headers.get("Content-Disposition"),
+        ) || fallbackFileName;
+
+      downloadBlobFile(blob, fileName);
+
+      console.log("[download:ppt:server:done]", {
+        fileName,
+        size: blob.size,
+        rowsCount: res.headers.get("X-Report-Rows-Count"),
+        slidesCount: res.headers.get("X-PPT-Slides-Count"),
+      });
+
+      setMsg(`PPT 다운로드 완료: ${fileName}`);
+    } catch (e: any) {
+      console.error("[download:ppt:server:error]", e);
+      setMsg(e?.message || "PPT 다운로드 중 오류가 발생했습니다.");
+    } finally {
+      setPptLoading(false);
+    }
+  }, [advertiserNameForDownload, reportId, reportTitleForDownload]);
+
   return (
     <div className="mx-auto max-w-[1600px] px-6 py-6">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -3340,9 +3434,11 @@ export default function ReportDetailPage() {
           onDownloadPdf={handleDownloadPdf}
           onDownloadPng={handleDownloadPng}
           onDownloadCsv={handleDownloadCsv}
+          onDownloadPpt={handleDownloadPpt}
           pdfLoading={pdfLoading}
           pngLoading={pngLoading}
           csvLoading={csvLoading}
+          pptLoading={pptLoading}
           canPublish={canPublish}
           publishing={publishing}
           onPublish={handlePublish}
@@ -3379,12 +3475,14 @@ export default function ReportDetailPage() {
               onChangeReportPeriod={setReportPeriod}
               monthGoal={resolvedMonthGoalForSave}
               brandSearchContracts={brandSearchContractsForReportTemplate}
+              readOnlyHeader={true}
               hidePeriodEditor={true}
               hideTabPeriodText={true}
             />
           </div>
         </div>
       ) : null}
+
     </div>
   );
 }
