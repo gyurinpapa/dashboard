@@ -143,7 +143,7 @@ function canUpdatePublicSlugByRole(
   role: MemberRole,
   email?: string | null
 ) {
-  if (role === "director" || role === "admin") {
+  if (role === "director" || role === "admin" || role === "staff") {
     return true;
   }
 
@@ -2064,7 +2064,7 @@ export default function ReportBuilderPage() {
                         !selectedAdvertiserId
                           ? "광고주를 먼저 선택하세요"
                           : !canUpdatePublicSlug
-                          ? "master/director/admin만 수정할 수 있습니다"
+                          ? "master/director/admin/staff만 수정할 수 있습니다"
                           : isAllWorkspaceMode
                           ? "전체 workspace 보기에서는 수정할 수 없습니다"
                           : "공개 URL 저장"

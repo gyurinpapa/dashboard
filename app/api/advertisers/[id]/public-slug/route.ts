@@ -132,7 +132,8 @@ function validatePublicSlug(slug: string) {
 
 function canUpdatePublicSlug(role: string, isTrueMaster: boolean) {
   if (isTrueMaster) return true;
-  return role === "director" || role === "admin";
+
+  return role === "director" || role === "admin" || role === "staff";
 }
 
 export async function PATCH(req: Request, ctx: Ctx) {

@@ -193,6 +193,7 @@ async function fetchReportDetail(reportId: string) {
         "published_period_start",
         "published_period_end",
         "published_at",
+        "current_ingestion_id",
         "meta",
         "created_by",
         "created_at",
@@ -243,19 +244,6 @@ async function fetchReportTypeInfo(reportTypeId: string) {
   return data ?? null;
 }
 
-async function countReportRows(reportId: string) {
-  const { count, error } = await supabaseAdmin
-    .from("report_rows")
-    .select("*", { count: "exact", head: true })
-    .eq("report_id", reportId);
-
-  if (error) {
-    throw new Error(`REPORT_ROWS_COUNT_FAILED:${error.message}`);
-  }
-
-  return count ?? 0;
-}
-
 function normalizeReportRowRecord(rec: any) {
   const rowRaw = (rec as any)?.row ?? (rec as any)?.data ?? (rec as any)?.payload;
 
@@ -263,10 +251,33 @@ function normalizeReportRowRecord(rec: any) {
     return {
       ...rowRaw,
       id: (rec as any)?.id ?? rowRaw.id ?? null,
+      __row_id: (rec as any)?.id ?? rowRaw.__row_id ?? rowRaw.id ?? null,
       report_id: (rec as any)?.report_id ?? rowRaw.report_id ?? null,
+      ingestion_id: (rec as any)?.ingestion_id ?? rowRaw.ingestion_id ?? null,
       row_level: (rec as any)?.row_level ?? rowRaw.row_level ?? null,
       data_level: (rec as any)?.data_level ?? rowRaw.data_level ?? null,
       created_at: (rec as any)?.created_at ?? rowRaw.created_at ?? null,
+      date:
+        asString((rec as any)?.date) ||
+        asString(rowRaw.date) ||
+        asString(rowRaw.report_date) ||
+        asString(rowRaw.day) ||
+        asString(rowRaw.ymd) ||
+        asString(rowRaw.dt) ||
+        asString(rowRaw.segment_date) ||
+        asString(rowRaw.stat_date) ||
+        "",
+      channel: (rec as any)?.channel ?? rowRaw.channel ?? null,
+      device:
+        (rec as any)?.device ??
+        rowRaw.device ??
+        rowRaw.device_type ??
+        null,
+      source:
+        (rec as any)?.source ??
+        rowRaw.source ??
+        rowRaw.site_source ??
+        null,
     };
   }
 
@@ -277,10 +288,34 @@ function normalizeReportRowRecord(rec: any) {
         return {
           ...parsed,
           id: (rec as any)?.id ?? parsed.id ?? null,
+          __row_id: (rec as any)?.id ?? parsed.__row_id ?? parsed.id ?? null,
           report_id: (rec as any)?.report_id ?? parsed.report_id ?? null,
+          ingestion_id:
+            (rec as any)?.ingestion_id ?? parsed.ingestion_id ?? null,
           row_level: (rec as any)?.row_level ?? parsed.row_level ?? null,
           data_level: (rec as any)?.data_level ?? parsed.data_level ?? null,
           created_at: (rec as any)?.created_at ?? parsed.created_at ?? null,
+          date:
+            asString((rec as any)?.date) ||
+            asString(parsed.date) ||
+            asString(parsed.report_date) ||
+            asString(parsed.day) ||
+            asString(parsed.ymd) ||
+            asString(parsed.dt) ||
+            asString(parsed.segment_date) ||
+            asString(parsed.stat_date) ||
+            "",
+          channel: (rec as any)?.channel ?? parsed.channel ?? null,
+          device:
+            (rec as any)?.device ??
+            parsed.device ??
+            parsed.device_type ??
+            null,
+          source:
+            (rec as any)?.source ??
+            parsed.source ??
+            parsed.site_source ??
+            null,
         };
       }
     } catch {
@@ -291,17 +326,39 @@ function normalizeReportRowRecord(rec: any) {
   return { ...(rec ?? {}) };
 }
 
-async function fetchAllReportRows(reportId: string) {
+async function fetchReportRowsByIngestion(args: {
+  reportId: string;
+  ingestionId: string;
+}) {
+  const { reportId, ingestionId } = args;
   const rows: any[] = [];
 
-  for (let from = 0; from < MAX_REPORT_ROWS_FOR_PPT; from += REPORT_ROWS_PAGE_SIZE) {
+  for (
+    let from = 0;
+    from <= MAX_REPORT_ROWS_FOR_PPT;
+    from += REPORT_ROWS_PAGE_SIZE
+  ) {
     const to = from + REPORT_ROWS_PAGE_SIZE - 1;
 
     const { data, error } = await supabaseAdmin
       .from("report_rows")
-      .select("*")
+      .select(
+            [
+                "id",
+                "report_id",
+                "ingestion_id",
+                "row_index",
+                "row",
+                "created_at",
+                "date",
+                "channel",
+                "device",
+                "source",
+            ].join(", "),
+        )
       .eq("report_id", reportId)
-      .order("id", { ascending: true })
+    .eq("ingestion_id", ingestionId)
+      .order("row_index", { ascending: true })
       .range(from, to);
 
     if (error) {
@@ -314,12 +371,198 @@ async function fetchAllReportRows(reportId: string) {
       rows.push(normalizeReportRowRecord(item));
     }
 
+    if (rows.length > MAX_REPORT_ROWS_FOR_PPT) {
+      throw new Error(
+        `REPORT_ROWS_TOO_LARGE_FOR_PPT:${rows.length}:${MAX_REPORT_ROWS_FOR_PPT}`,
+      );
+    }
+
     if (chunk.length < REPORT_ROWS_PAGE_SIZE) {
       break;
     }
   }
 
   return rows;
+}
+
+async function fetchReportRowsLegacy(args: {
+  reportId: string;
+}) {
+  const { reportId } = args;
+  const rows: any[] = [];
+
+  for (
+    let from = 0;
+    from <= MAX_REPORT_ROWS_FOR_PPT;
+    from += REPORT_ROWS_PAGE_SIZE
+  ) {
+    const to = from + REPORT_ROWS_PAGE_SIZE - 1;
+
+    const { data, error } = await supabaseAdmin
+      .from("report_rows")
+      .select(
+        [
+            "id",
+            "report_id",
+            "ingestion_id",
+            "row_index",
+            "row",
+            "created_at",
+            "date",
+            "channel",
+            "device",
+            "source",
+        ].join(", "),
+        )
+      .eq("report_id", reportId)
+      .order("row_index", { ascending: true })
+      .range(from, to);
+
+    if (error) {
+      throw new Error(`REPORT_ROWS_FETCH_FAILED:${error.message}`);
+    }
+
+    const chunk = Array.isArray(data) ? data : [];
+
+    for (const item of chunk) {
+      rows.push(normalizeReportRowRecord(item));
+    }
+
+    if (rows.length > MAX_REPORT_ROWS_FOR_PPT) {
+      throw new Error(
+        `REPORT_ROWS_TOO_LARGE_FOR_PPT:${rows.length}:${MAX_REPORT_ROWS_FOR_PPT}`,
+      );
+    }
+
+    if (chunk.length < REPORT_ROWS_PAGE_SIZE) {
+      break;
+    }
+  }
+
+  return rows;
+}
+
+async function findBestIngestionIdByRows(reportId: string) {
+  const stats = new Map<
+    string,
+    {
+      count: number;
+      latestCreatedAt: string;
+    }
+  >();
+
+  for (
+    let from = 0;
+    from <= MAX_REPORT_ROWS_FOR_PPT;
+    from += REPORT_ROWS_PAGE_SIZE
+  ) {
+    const to = from + REPORT_ROWS_PAGE_SIZE - 1;
+
+    const { data, error } = await supabaseAdmin
+      .from("report_rows")
+      .select("ingestion_id, created_at")
+      .eq("report_id", reportId)
+      .order("created_at", { ascending: false })
+      .range(from, to);
+
+    if (error) {
+      throw new Error(`REPORT_ROWS_INGESTION_LOOKUP_FAILED:${error.message}`);
+    }
+
+    const chunk = Array.isArray(data) ? data : [];
+
+    for (const row of chunk) {
+      const ingestionId = asString((row as any)?.ingestion_id);
+      if (!ingestionId) continue;
+
+      const createdAt = asString((row as any)?.created_at);
+      const prev = stats.get(ingestionId);
+
+      if (!prev) {
+        stats.set(ingestionId, {
+          count: 1,
+          latestCreatedAt: createdAt,
+        });
+      } else {
+        prev.count += 1;
+        if (
+          createdAt &&
+          (!prev.latestCreatedAt || createdAt > prev.latestCreatedAt)
+        ) {
+          prev.latestCreatedAt = createdAt;
+        }
+      }
+    }
+
+    if (chunk.length < REPORT_ROWS_PAGE_SIZE) {
+      break;
+    }
+  }
+
+  const ranked = Array.from(stats.entries())
+    .map(([ingestionId, s]) => ({
+      ingestionId,
+      count: s.count,
+      latestCreatedAt: s.latestCreatedAt,
+    }))
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return String(b.latestCreatedAt).localeCompare(String(a.latestCreatedAt));
+    });
+
+  return {
+    bestIngestionId: ranked[0]?.ingestionId ?? "",
+    ranked,
+  };
+}
+
+async function fetchRowsForPpt(args: {
+  reportId: string;
+  currentIngestionId: string;
+}) {
+  const { reportId, currentIngestionId } = args;
+
+  if (currentIngestionId) {
+    const rows = await fetchReportRowsByIngestion({
+      reportId,
+      ingestionId: currentIngestionId,
+    });
+
+    if (rows.length > 0) {
+      return {
+        rows,
+        ingestionIdUsed: currentIngestionId,
+        fallbackUsed: false,
+      };
+    }
+  }
+
+  const fallback = await findBestIngestionIdByRows(reportId);
+
+  if (fallback.bestIngestionId) {
+    const rows = await fetchReportRowsByIngestion({
+      reportId,
+      ingestionId: fallback.bestIngestionId,
+    });
+
+    if (rows.length > 0) {
+      return {
+        rows,
+        ingestionIdUsed: fallback.bestIngestionId,
+        fallbackUsed: !!currentIngestionId,
+      };
+    }
+  }
+
+  const legacyRows = await fetchReportRowsLegacy({
+    reportId,
+  });
+
+  return {
+    rows: legacyRows,
+    ingestionIdUsed: currentIngestionId || fallback.bestIngestionId || "",
+    fallbackUsed: !!currentIngestionId || !!fallback.bestIngestionId,
+  };
 }
 
 async function assertReportAccess(args: {
@@ -483,32 +726,23 @@ export async function GET(req: Request, ctx: Ctx) {
       });
     }
 
-    const rowsCount = await countReportRows(reportId);
-
-    if (rowsCount <= 0) {
-      return jsonError(409, "REPORT_ROWS_EMPTY", {
-        message: "PPT를 생성하려면 report_rows 데이터가 필요합니다.",
-      });
-    }
-
-    if (rowsCount > MAX_REPORT_ROWS_FOR_PPT) {
-      return jsonError(413, "REPORT_ROWS_TOO_LARGE_FOR_PPT", {
-        rows_count: rowsCount,
-        max_rows: MAX_REPORT_ROWS_FOR_PPT,
-        message:
-          "현재 PPT 생성은 최대 150,000 rows까지 지원합니다. 이후 aggregate snapshot 구조로 확장할 수 있습니다.",
-      });
-    }
-
-    const [advertiser, reportType, rows] = await Promise.all([
+    const [advertiser, reportType] = await Promise.all([
       fetchAdvertiserInfo(asString((report as any)?.advertiser_id)),
       fetchReportTypeInfo(asString((report as any)?.report_type_id)),
-      fetchAllReportRows(reportId),
     ]);
+
+    const rowsResult = await fetchRowsForPpt({
+      reportId,
+      currentIngestionId: asString((report as any)?.current_ingestion_id),
+    });
+
+    const rows = rowsResult.rows;
 
     if (!rows.length) {
       return jsonError(409, "REPORT_ROWS_EMPTY", {
         message: "PPT를 생성할 rows를 찾지 못했습니다.",
+        ingestion_id_used: rowsResult.ingestionIdUsed || null,
+        fallback_used: rowsResult.fallbackUsed,
       });
     }
 
@@ -545,20 +779,16 @@ export async function GET(req: Request, ctx: Ctx) {
       deck,
     });
 
-    const buffer = await writePptxBufferFromReportDeck({
-      deck,
-      insights,
-      fileName: buildDownloadFileName({
-        advertiserName,
-        reportTypeName,
-        reportId,
-      }),
-    });
-
     const fileName = buildDownloadFileName({
       advertiserName,
       reportTypeName,
       reportId,
+    });
+
+    const buffer = await writePptxBufferFromReportDeck({
+      deck,
+      insights,
+      fileName,
     });
 
     return new NextResponse(buffer as any, {
@@ -572,6 +802,8 @@ export async function GET(req: Request, ctx: Ctx) {
         "Cache-Control": "no-store",
         "X-Report-Id": reportId,
         "X-Report-Rows-Count": String(rows.length),
+        "X-Report-Ingestion-Id": rowsResult.ingestionIdUsed || "",
+        "X-Report-Ingestion-Fallback": rowsResult.fallbackUsed ? "1" : "0",
         "X-PPT-Slides-Count": String(deck.slides.length + 2),
         "X-PPT-Mode": "data-driven",
       },
@@ -615,15 +847,25 @@ export async function GET(req: Request, ctx: Ctx) {
       });
     }
 
-    if (msg.startsWith("REPORT_ROWS_COUNT_FAILED:")) {
-      return jsonError(500, "REPORT_ROWS_COUNT_FAILED", {
-        detail: msg.replace("REPORT_ROWS_COUNT_FAILED:", ""),
-      });
-    }
-
     if (msg.startsWith("REPORT_ROWS_FETCH_FAILED:")) {
       return jsonError(500, "REPORT_ROWS_FETCH_FAILED", {
         detail: msg.replace("REPORT_ROWS_FETCH_FAILED:", ""),
+      });
+    }
+
+    if (msg.startsWith("REPORT_ROWS_INGESTION_LOOKUP_FAILED:")) {
+      return jsonError(500, "REPORT_ROWS_INGESTION_LOOKUP_FAILED", {
+        detail: msg.replace("REPORT_ROWS_INGESTION_LOOKUP_FAILED:", ""),
+      });
+    }
+
+    if (msg.startsWith("REPORT_ROWS_TOO_LARGE_FOR_PPT:")) {
+      const parts = msg.split(":");
+      return jsonError(413, "REPORT_ROWS_TOO_LARGE_FOR_PPT", {
+        rows_count: Number(parts[1] || 0),
+        max_rows: Number(parts[2] || MAX_REPORT_ROWS_FOR_PPT),
+        message:
+          "현재 PPT 생성은 최대 150,000 rows까지 지원합니다. 이후 aggregate snapshot 구조로 확장할 수 있습니다.",
       });
     }
 
