@@ -55,19 +55,50 @@ function normKey(k: string, idx: number) {
 }
 
 function toYMD(v: string) {
-  const s = String(v ?? "").trim();
-  if (!s) return "";
+  const raw = String(v ?? "")
+    .replace(/\uFEFF/g, "")
+    .trim();
 
-  const a = s.replace(/[.\s]/g, "-").replace(/\//g, "-");
-  const m1 = a.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if (m1) {
-    const mm = String(m1[2]).padStart(2, "0");
-    const dd = String(m1[3]).padStart(2, "0");
-    return `${m1[1]}-${mm}-${dd}`;
+  if (!raw) return "";
+
+  const compact = raw.replace(/\s+/g, "");
+
+  const isoDate = compact.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (isoDate) {
+    const mm = String(isoDate[2]).padStart(2, "0");
+    const dd = String(isoDate[3]).padStart(2, "0");
+    return `${isoDate[1]}-${mm}-${dd}`;
   }
 
-  const m2 = s.match(/^(\d{4})(\d{2})(\d{2})$/);
-  if (m2) return `${m2[1]}-${m2[2]}-${m2[3]}`;
+  const separatedDate = compact.match(
+    /^(\d{4})[.\/-](\d{1,2})[.\/-](\d{1,2})\.?$/
+  );
+  if (separatedDate) {
+    const mm = String(separatedDate[2]).padStart(2, "0");
+    const dd = String(separatedDate[3]).padStart(2, "0");
+    return `${separatedDate[1]}-${mm}-${dd}`;
+  }
+
+  const koreanDate = raw.match(
+    /^(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일\.?$/
+  );
+  if (koreanDate) {
+    const mm = String(koreanDate[2]).padStart(2, "0");
+    const dd = String(koreanDate[3]).padStart(2, "0");
+    return `${koreanDate[1]}-${mm}-${dd}`;
+  }
+
+  const compactDate = compact.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (compactDate) return `${compactDate[1]}-${compactDate[2]}-${compactDate[3]}`;
+
+  const dateTimePrefix = compact.match(
+    /^(\d{4})[.\/-](\d{1,2})[.\/-](\d{1,2})[T_\s].*$/
+  );
+  if (dateTimePrefix) {
+    const mm = String(dateTimePrefix[2]).padStart(2, "0");
+    const dd = String(dateTimePrefix[3]).padStart(2, "0");
+    return `${dateTimePrefix[1]}-${mm}-${dd}`;
+  }
 
   return "";
 }
@@ -1390,9 +1421,12 @@ export async function POST(req: Request, ctx: Ctx) {
         }
 
         obj.date = ymd;
-        obj.report_date = obj.report_date || ymd;
-        obj.day = obj.day || ymd;
-        obj.ymd = obj.ymd || ymd;
+        obj.report_date = ymd;
+        obj.day = ymd;
+        obj.ymd = ymd;
+        obj.dt = ymd;
+        obj.segment_date = ymd;
+        obj.stat_date = ymd;
 
         const numericKeys = [
           "impressions",
