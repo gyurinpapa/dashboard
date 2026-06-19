@@ -89,25 +89,31 @@ function cleanText(v?: string | null) {
   return s;
 }
 
-function tabClass(active: boolean) {
+function tabClass(active: boolean, decision = false) {
   return [
-    "inline-flex h-11 items-center justify-center rounded-full border px-4 text-sm font-semibold tracking-tight transition-all duration-200",
+    "relative inline-flex h-9 shrink-0 items-center justify-center whitespace-nowrap rounded-t-[8px] border px-3.5 text-[13px] font-semibold tracking-tight",
+    "transition-[background-color,border-color,color,box-shadow] duration-150",
+    "focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--nature-blue)]/20",
     active
-      ? "border-[var(--nature-blue)] bg-[var(--nature-blue)] text-white shadow-[0_12px_28px_rgba(127,166,196,0.28)] ring-2 ring-white/30"
-      : "border-[var(--nature-border)] bg-[var(--nature-surface)]/90 text-slate-700 shadow-sm hover:border-[var(--nature-blue-light)] hover:bg-[var(--nature-cream)]/70 hover:text-slate-950 hover:-translate-y-[1px]",
+      ? decision
+        ? "z-10 border-[var(--nature-warm-gray)] bg-[var(--nature-cream)]/92 text-slate-900 shadow-[inset_0_-2px_0_var(--nature-warm-gray)]"
+        : "z-10 border-[var(--nature-blue)] bg-[var(--nature-blue-light)]/72 text-slate-950 shadow-[inset_0_-2px_0_var(--nature-blue)]"
+      : decision
+        ? "border-[var(--nature-border)]/70 bg-[var(--nature-cream)]/38 text-slate-600 hover:border-[var(--nature-warm-gray)] hover:bg-[var(--nature-cream)]/68 hover:text-slate-900"
+        : "border-[var(--nature-border-blue)]/65 bg-[var(--nature-blue-light)]/18 text-slate-600 hover:border-[var(--nature-blue)]/70 hover:bg-[var(--nature-blue-light)]/42 hover:text-slate-900",
   ].join(" ");
 }
 
 function optionBtnClass(active: boolean, dim = false, disabled = false) {
   return [
-    "px-3 py-1.5 rounded-lg border text-sm font-semibold transition-all duration-200",
+    "rounded-lg border px-3 py-1.5 text-sm font-semibold transition-all duration-200",
     !disabled ? "hover:-translate-y-[1px] hover:shadow-md" : "",
     active
-      ? "bg-[var(--nature-blue)] text-white border-[var(--nature-blue)] shadow-sm"
-      : "bg-[var(--nature-surface)] text-slate-700 border-[var(--nature-border)] hover:bg-[var(--nature-cream)]/70",
+      ? "border-[var(--nature-blue)] bg-[var(--nature-blue)] text-white shadow-sm"
+      : "border-[var(--nature-border)] bg-[var(--nature-surface)] text-slate-700 hover:bg-[var(--nature-cream)]/70",
     dim ? "opacity-40" : "",
     disabled
-      ? "opacity-40 cursor-not-allowed bg-[var(--nature-shell)] text-slate-400 border-[var(--nature-border)] hover:bg-[var(--nature-shell)] hover:translate-y-0 hover:shadow-none"
+      ? "cursor-not-allowed border-[var(--nature-border)] bg-[var(--nature-shell)] text-slate-400 opacity-40 hover:translate-y-0 hover:bg-[var(--nature-shell)] hover:shadow-none"
       : "",
   ].join(" ");
 }
@@ -159,11 +165,13 @@ const HeaderIntro = memo(function HeaderIntro({
   reportTypeName,
   reportTypeKey,
   fullPeriod,
+  period,
 }: {
   advertiserName?: string | null;
   reportTypeName?: string | null;
   reportTypeKey?: string | null;
   fullPeriod: string;
+  period: string;
 }) {
   const cleanTypeKey = useMemo(() => cleanText(reportTypeKey), [reportTypeKey]);
   const cleanTypeName = useMemo(() => cleanText(reportTypeName), [reportTypeName]);
@@ -208,8 +216,15 @@ const HeaderIntro = memo(function HeaderIntro({
 
   const headerTitle = useMemo(() => {
     const adv = cleanText(advertiserName);
-    if (adv) return `${adv} 광고 리포트`;
-    if (cleanTypeName) return cleanTypeName;
+
+    if (adv) {
+      return adv + " 광고 리포트";
+    }
+
+    if (cleanTypeName) {
+      return cleanTypeName;
+    }
+
     return "온라인광고";
   }, [advertiserName, cleanTypeName]);
 
@@ -219,31 +234,46 @@ const HeaderIntro = memo(function HeaderIntro({
   }, [cleanTypeName]);
 
   return (
-    <div className="relative mb-6 overflow-hidden rounded-3xl border border-[var(--nature-border-blue)] bg-[var(--nature-surface)]/85 px-6 py-6 shadow-[0_18px_48px_rgba(127,166,196,0.18)] backdrop-blur-xl">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(183,215,227,0.42),transparent_30%),radial-gradient(circle_at_bottom_left,rgba(243,228,210,0.72),transparent_36%)]" />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/70" />
-
-      <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-        <div className="min-w-0">
-          <div className="mb-2 inline-flex items-center rounded-full border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/45 px-3 py-1 text-[11px] font-semibold tracking-[0.12em] text-slate-700 shadow-sm backdrop-blur-sm">
+    <div className="bg-transparent px-4 py-3 sm:px-5">
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="inline-flex shrink-0 items-center rounded-md border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/45 px-2 py-1 text-[10px] font-semibold tracking-[0.11em] text-slate-700">
             {badgeText}
           </div>
 
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
-            {headerTitle}
-          </h1>
+          <div className="min-w-0">
+            <h1 className="truncate text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">
+              {headerTitle}
+            </h1>
+          </div>
+        </div>
 
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-600">
+        <div className="flex min-w-0 flex-col items-start gap-0.5 text-xs text-slate-500 sm:items-end sm:text-right">
+          <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-0.5">
             <span className="font-medium text-slate-700">{headerSubTitle}</span>
+
             {fullPeriod ? (
               <>
-                <span className="hidden text-slate-300 sm:inline">•</span>
-                <span>
-                  데이터 전체 기간{" "}
-                  <span className="font-semibold text-slate-900">{fullPeriod}</span>
+                <span className="text-slate-300">•</span>
+                <span className="whitespace-nowrap">
+                  전체 기간{" "}
+                  <span className="font-semibold text-slate-800">
+                    {fullPeriod}
+                  </span>
                 </span>
               </>
             ) : null}
+          </div>
+
+          <div className="whitespace-nowrap">
+            조회 기간{" "}
+            <span className="font-semibold text-slate-800">
+              {period || "-"}
+            </span>
+          </div>
+
+          <div className="inline-flex h-6 items-center rounded-md border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/45 px-2 text-[10px] font-semibold text-slate-700">
+            +VAT
           </div>
         </div>
       </div>
@@ -267,27 +297,26 @@ const ReadOnlyHeaderBar = memo(function ReadOnlyHeaderBar({
   reportPeriod: ReportPeriod;
 }) {
   return (
-    <div className="grid gap-4">
+    <div className="overflow-visible bg-transparent">
       <HeaderIntro
         advertiserName={advertiserName}
         reportTypeName={reportTypeName}
         reportTypeKey={reportTypeKey}
         fullPeriod={fullPeriod}
+        period={period}
       />
 
-      <div className="rounded-[24px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)]/85 px-4 py-4 shadow-[0_14px_34px_rgba(127,166,196,0.16)] backdrop-blur-xl">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <div className="text-sm font-semibold text-slate-800">기준 기간</div>
-            <div className="mt-1 text-sm text-slate-600">
-              {reportPeriod.startDate || "-"} ~ {reportPeriod.endDate || "-"}
-            </div>
-          </div>
+      <div className="flex flex-col gap-2 border-t border-[var(--nature-border)] px-4 py-2.5 text-xs text-slate-600 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <div className="min-w-0">
+          <span className="font-semibold text-slate-800">기준 기간</span>{" "}
+          <span>
+            {reportPeriod.startDate || "-"} ~ {reportPeriod.endDate || "-"}
+          </span>
+        </div>
 
-          <div className="min-w-0 sm:text-right">
-            <div className="text-sm font-semibold text-slate-800">조회 기간</div>
-            <div className="mt-1 text-sm text-slate-600">{period || "-"}</div>
-          </div>
+        <div className="min-w-0 sm:text-right">
+          <span className="font-semibold text-slate-800">조회 기간</span>{" "}
+          <span>{period || "-"}</span>
         </div>
       </div>
     </div>
@@ -298,10 +327,12 @@ const TabButtons = memo(function TabButtons({
   tab,
   setTab,
   items,
+  decision = false,
 }: {
   tab: TabKey;
   setTab: (t: TabKey) => void;
   items: ReadonlyArray<{ key: TabKey; label: string }>;
+  decision?: boolean;
 }) {
   const handleTabClick = useCallback(
     (nextTab: TabKey) => {
@@ -312,17 +343,65 @@ const TabButtons = memo(function TabButtons({
   );
 
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex shrink-0 items-end gap-1.5">
       {items.map((item) => (
         <button
           key={item.key}
           type="button"
           onClick={() => handleTabClick(item.key)}
-          className={tabClass(tab === item.key)}
+          className={tabClass(tab === item.key, decision)}
         >
           {item.label}
         </button>
       ))}
+    </div>
+  );
+});
+
+const UnifiedTabBar = memo(function UnifiedTabBar({
+  tab,
+  setTab,
+  filterToolbar,
+}: {
+  tab: TabKey;
+  setTab: (t: TabKey) => void;
+  filterToolbar: React.ReactNode;
+}) {
+  return (
+    <div className="overflow-x-auto overscroll-x-contain bg-transparent [scrollbar-width:thin]">
+      <div className="flex min-w-max justify-center px-2 pt-1.5 sm:px-3">
+        <div className="flex items-end gap-1.5">
+          <TabButtons
+            tab={tab}
+            setTab={setTab}
+            items={PRIMARY_TABS_TOP}
+          />
+
+        <TabButtons
+          tab={tab}
+          setTab={setTab}
+          items={PRIMARY_TABS_BOTTOM}
+        />
+
+        <TabButtons
+          tab={tab}
+          setTab={setTab}
+          items={DECISION_TABS_TOP}
+          decision
+        />
+
+        <TabButtons
+          tab={tab}
+          setTab={setTab}
+          items={DECISION_TABS_BOTTOM}
+          decision
+        />
+
+          <div className="mb-1 ml-1 flex h-9 shrink-0 items-center bg-transparent">
+            {filterToolbar}
+          </div>
+        </div>
+      </div>
     </div>
   );
 });
@@ -349,16 +428,19 @@ const FilterToolbar = memo(function FilterToolbar({
   hasProductOptions: boolean;
 }) {
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex shrink-0 items-center gap-1.5">
       <FilterBtn active={filterKey === "month"} onClick={onToggleMonth}>
         월
       </FilterBtn>
+
       <FilterBtn active={filterKey === "week"} onClick={onToggleWeek}>
         주차
       </FilterBtn>
+
       <FilterBtn active={filterKey === "device"} onClick={onToggleDevice}>
         기기
       </FilterBtn>
+
       <FilterBtn active={filterKey === "channel"} onClick={onToggleChannel}>
         채널
       </FilterBtn>
@@ -386,8 +468,9 @@ const OptionPopover = memo(function OptionPopover({
   children: React.ReactNode;
 }) {
   return (
-    <div className="absolute left-0 top-full z-50 mt-3 w-[520px] max-w-[calc(100vw-2rem)] rounded-2xl border border-[var(--nature-border)] bg-[var(--nature-surface)]/95 p-4 shadow-[0_24px_50px_rgba(127,166,196,0.20)] backdrop-blur-md">
-      <div className="mb-3 text-sm font-semibold text-slate-800">{title}</div>
+    <div className="absolute left-0 top-full z-50 mt-2 w-[520px] max-w-[calc(100vw-2rem)] rounded-xl border border-[var(--nature-border)] bg-[var(--nature-surface)]/98 p-3 shadow-[0_18px_40px_rgba(127,166,196,0.18)] backdrop-blur-md">
+      <div className="mb-2 text-xs font-semibold text-slate-800">{title}</div>
+
       <div className="flex max-h-[220px] flex-wrap gap-2 overflow-auto">
         {children}
       </div>
@@ -449,12 +532,35 @@ function EditorHeaderBar(props: Props) {
     [filterKey, setFilterKey],
   );
 
-  const handleToggleMonth = useCallback(() => toggleFilter("month"), [toggleFilter]);
-  const handleToggleWeek = useCallback(() => toggleFilter("week"), [toggleFilter]);
-  const handleToggleDevice = useCallback(() => toggleFilter("device"), [toggleFilter]);
-  const handleToggleChannel = useCallback(() => toggleFilter("channel"), [toggleFilter]);
-  const handleToggleSource = useCallback(() => toggleFilter("source"), [toggleFilter]);
-  const handleToggleProduct = useCallback(() => toggleFilter("product"), [toggleFilter]);
+  const handleToggleMonth = useCallback(
+    () => toggleFilter("month"),
+    [toggleFilter],
+  );
+
+  const handleToggleWeek = useCallback(
+    () => toggleFilter("week"),
+    [toggleFilter],
+  );
+
+  const handleToggleDevice = useCallback(
+    () => toggleFilter("device"),
+    [toggleFilter],
+  );
+
+  const handleToggleChannel = useCallback(
+    () => toggleFilter("channel"),
+    [toggleFilter],
+  );
+
+  const handleToggleSource = useCallback(
+    () => toggleFilter("source"),
+    [toggleFilter],
+  );
+
+  const handleToggleProduct = useCallback(
+    () => toggleFilter("product"),
+    [toggleFilter],
+  );
 
   useEffect(() => {
     if (!filterKey) return;
@@ -546,7 +652,13 @@ function EditorHeaderBar(props: Props) {
         </button>
       );
     });
-  }, [monthOptions, enabledMonthKeySet, selectedMonth, setSelectedMonth, closeFilter]);
+  }, [
+    monthOptions,
+    enabledMonthKeySet,
+    selectedMonth,
+    setSelectedMonth,
+    closeFilter,
+  ]);
 
   const handleSelectWeekAll = useCallback(() => {
     setSelectedWeek("all");
@@ -573,7 +685,13 @@ function EditorHeaderBar(props: Props) {
         </button>
       );
     });
-  }, [weekOptions, enabledWeekKeySet, selectedWeek, setSelectedWeek, closeFilter]);
+  }, [
+    weekOptions,
+    enabledWeekKeySet,
+    selectedWeek,
+    setSelectedWeek,
+    closeFilter,
+  ]);
 
   const handleSelectDeviceAll = useCallback(() => {
     setSelectedDevice("all");
@@ -636,7 +754,13 @@ function EditorHeaderBar(props: Props) {
         </button>
       );
     });
-  }, [channelOptions, disableDisplayChannel, selectedChannel, setSelectedChannel, closeFilter]);
+  }, [
+    channelOptions,
+    disableDisplayChannel,
+    selectedChannel,
+    setSelectedChannel,
+    closeFilter,
+  ]);
 
   const handleSelectSourceAll = useCallback(() => {
     setSelectedSource("all");
@@ -689,239 +813,167 @@ function EditorHeaderBar(props: Props) {
   }, [productOptions, selectedProduct, setSelectedProduct, closeFilter]);
 
   return (
-    <div className="grid gap-4">
+    <div
+      ref={filterRootRef}
+      className="relative overflow-visible bg-transparent"
+    >
+      <UnifiedTabBar
+        tab={tab}
+        setTab={setTab}
+        filterToolbar={
+          <FilterToolbar
+            filterKey={filterKey}
+            onToggleMonth={handleToggleMonth}
+            onToggleWeek={handleToggleWeek}
+            onToggleDevice={handleToggleDevice}
+            onToggleChannel={handleToggleChannel}
+            onToggleSource={handleToggleSource}
+            onToggleProduct={handleToggleProduct}
+            hasSourceOptions={hasSourceOptions}
+            hasProductOptions={hasProductOptions}
+          />
+        }
+      />
+
       <HeaderIntro
         advertiserName={advertiserName}
         reportTypeName={reportTypeName}
         reportTypeKey={reportTypeKey}
         fullPeriod={fullPeriod}
+        period={period}
       />
 
-      <div className="grid gap-3 xl:grid-cols-[minmax(360px,0.9fr)_minmax(420px,1.05fr)_minmax(360px,0.95fr)] xl:items-stretch">
-        <div
-          ref={filterRootRef}
-          className="relative min-w-0 rounded-[24px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)]/82 px-4 py-4 shadow-[0_16px_38px_rgba(127,166,196,0.16)] backdrop-blur-xl"
-        >
-          <div className="pointer-events-none absolute inset-0 rounded-[24px] bg-[radial-gradient(circle_at_top_right,rgba(183,215,227,0.22),transparent_32%)]" />
-
-          <div className="relative grid gap-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-slate-800">1단 필터</div>
-                <div className="mt-1 text-xs text-slate-500">
-                  월, 주차, 기기, 채널, 소스, 상품
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <div className="rounded-full border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/40 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm backdrop-blur-sm">
-                  +VAT
-                </div>
-              </div>
-            </div>
-
-            {!hidePeriodEditor ? (
-              <div className="grid gap-3">
-                <div className="text-sm font-semibold text-slate-800">
-                  보고서 기간
-                </div>
-
-                <div className="min-w-0">
-                  <div className="flex flex-col gap-3">
-                    <div className="shrink-0">
-                      <select
-                        value={reportPeriod.preset}
-                        onChange={(e) =>
-                          handlePresetChange(e.target.value as ReportPeriodPreset)
-                        }
-                        className="h-11 w-full rounded-xl border border-[var(--nature-border)] bg-[var(--nature-surface)]/95 px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-[var(--nature-blue)] focus:bg-white"
-                      >
-                        {REPORT_PERIOD_PRESETS.map((preset) => (
-                          <option key={preset} value={preset}>
-                            {periodPresetLabel(preset)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <input
-                          type="date"
-                          value={reportPeriod.startDate}
-                          onChange={(e) => handleStartDateChange(e.target.value)}
-                          className="h-11 min-w-[150px] flex-1 rounded-xl border border-[var(--nature-border)] bg-[var(--nature-surface)]/95 px-3 text-sm text-slate-700 outline-none transition focus:border-[var(--nature-blue)] focus:bg-white"
-                        />
-                        <span className="shrink-0 text-sm font-medium text-slate-500">
-                          ~
-                        </span>
-                        <input
-                          type="date"
-                          value={reportPeriod.endDate}
-                          onChange={(e) => handleEndDateChange(e.target.value)}
-                          className="h-11 min-w-[150px] flex-1 rounded-xl border border-[var(--nature-border)] bg-[var(--nature-surface)]/95 px-3 text-sm text-slate-700 outline-none transition focus:border-[var(--nature-blue)] focus:bg-white"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            <FilterToolbar
-              filterKey={filterKey}
-              onToggleMonth={handleToggleMonth}
-              onToggleWeek={handleToggleWeek}
-              onToggleDevice={handleToggleDevice}
-              onToggleChannel={handleToggleChannel}
-              onToggleSource={handleToggleSource}
-              onToggleProduct={handleToggleProduct}
-              hasSourceOptions={hasSourceOptions}
-              hasProductOptions={hasProductOptions}
-            />
-
-            <div className="border-t border-[var(--nature-border)] pt-3 text-sm text-slate-600">
-              {period ? (
-                <>
-                  조회 기간{" "}
-                  <span className="font-semibold text-slate-900">{period}</span>
-                </>
-              ) : (
-                <span className="text-slate-500">조회 기간 정보 없음</span>
-              )}
-            </div>
-          </div>
-
-          {filterKey === "month" && (
-            <OptionPopover title="월 선택">
-              <button
-                type="button"
-                onClick={handleSelectMonthAll}
-                className={optionBtnClass(selectedMonth === "all")}
-              >
-                전체
-              </button>
-              {monthOptionNodes}
-            </OptionPopover>
-          )}
-
-          {filterKey === "week" && (
-            <OptionPopover title="주차 선택">
-              <button
-                type="button"
-                onClick={handleSelectWeekAll}
-                className={optionBtnClass(selectedWeek === "all")}
-              >
-                전체
-              </button>
-              {weekOptionNodes}
-            </OptionPopover>
-          )}
-
-          {filterKey === "device" && (
-            <OptionPopover title="기기 선택">
-              <button
-                type="button"
-                onClick={handleSelectDeviceAll}
-                className={optionBtnClass(selectedDevice === "all")}
-              >
-                전체
-              </button>
-              {deviceOptionNodes}
-            </OptionPopover>
-          )}
-
-          {filterKey === "channel" && (
-            <OptionPopover title="채널 선택">
-              <button
-                type="button"
-                onClick={handleSelectChannelAll}
-                className={optionBtnClass(selectedChannel === "all")}
-              >
-                전체
-              </button>
-              {channelOptionNodes}
-            </OptionPopover>
-          )}
-
-          {hasSourceOptions && filterKey === "source" && (
-            <OptionPopover title="소스 선택">
-              <button
-                type="button"
-                onClick={handleSelectSourceAll}
-                className={optionBtnClass(selectedSource === "all")}
-              >
-                전체
-              </button>
-              {sourceOptionNodes}
-            </OptionPopover>
-          )}
-
-          {hasProductOptions && filterKey === "product" && (
-            <OptionPopover title="상품 선택">
-              <button
-                type="button"
-                onClick={handleSelectProductAll}
-                className={optionBtnClass(selectedProduct === "all")}
-              >
-                전체
-              </button>
-              {productOptionNodes}
-            </OptionPopover>
-          )}
-        </div>
-
-        <div className="min-w-0 rounded-[24px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)]/82 px-4 py-4 shadow-[0_16px_38px_rgba(127,166,196,0.16)] backdrop-blur-xl">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-slate-800">
-                2단 일반 리포트 탭
-              </div>
-              <div className="mt-1 text-xs text-slate-500">
-                요약, 구조, 키워드, 소재
-              </div>
-            </div>
-
-            {!hideTabPeriodText ? (
-              <div className="rounded-full border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/40 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm backdrop-blur-sm">
-                기준 기간
-              </div>
-            ) : null}
-          </div>
-
-          <div className="grid gap-3">
-            <TabButtons tab={tab} setTab={setTab} items={PRIMARY_TABS_TOP} />
-            <TabButtons tab={tab} setTab={setTab} items={PRIMARY_TABS_BOTTOM} />
-          </div>
-
-          {!hideTabPeriodText ? (
-            <div className="mt-3 border-t border-[var(--nature-border)] pt-3 text-xs text-slate-600">
-              기준 기간{" "}
-              <span className="font-semibold text-slate-900">
-                {reportPeriod.startDate || "-"} ~ {reportPeriod.endDate || "-"}
+      {!hidePeriodEditor ? (
+        <div className="bg-transparent">
+          <div className="overflow-x-auto overscroll-x-contain [scrollbar-width:thin]">
+            <div className="flex min-w-max items-center gap-1.5 px-3 py-2 sm:px-4">
+              <span className="whitespace-nowrap text-[11px] font-semibold text-slate-500">
+                기간
               </span>
-            </div>
-          ) : null}
-        </div>
 
-        <div className="min-w-0 rounded-[24px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)]/82 px-4 py-4 shadow-[0_16px_38px_rgba(127,166,196,0.16)] backdrop-blur-xl">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-slate-800">
-                3단 Decision Engine
-              </div>
-              <div className="mt-1 text-xs text-slate-500">
-                Decision, 가설 1~5
-              </div>
+              <select
+                value={reportPeriod.preset}
+                onChange={(e) =>
+                  handlePresetChange(e.target.value as ReportPeriodPreset)
+                }
+                className="h-8 w-[108px] shrink-0 rounded-md border border-[var(--nature-border)] bg-[var(--nature-surface)] px-2 text-xs font-semibold text-slate-700 outline-none transition focus:border-[var(--nature-blue)] focus:bg-white"
+              >
+                {REPORT_PERIOD_PRESETS.map((preset) => (
+                  <option key={preset} value={preset}>
+                    {periodPresetLabel(preset)}
+                  </option>
+                ))}
+              </select>
+
+              <input
+                type="date"
+                value={reportPeriod.startDate}
+                onChange={(e) => handleStartDateChange(e.target.value)}
+                className="h-8 w-[138px] shrink-0 rounded-md border border-[var(--nature-border)] bg-[var(--nature-surface)] px-2 text-xs text-slate-700 outline-none transition focus:border-[var(--nature-blue)] focus:bg-white"
+              />
+
+              <span className="shrink-0 text-xs font-medium text-slate-400">
+                ~
+              </span>
+
+              <input
+                type="date"
+                value={reportPeriod.endDate}
+                onChange={(e) => handleEndDateChange(e.target.value)}
+                className="h-8 w-[138px] shrink-0 rounded-md border border-[var(--nature-border)] bg-[var(--nature-surface)] px-2 text-xs text-slate-700 outline-none transition focus:border-[var(--nature-blue)] focus:bg-white"
+              />
+
+              {!hideTabPeriodText ? (
+                <div className="ml-2 shrink-0 whitespace-nowrap text-[11px] text-slate-500">
+                  기준 기간{" "}
+                  <span className="font-semibold text-slate-800">
+                    {reportPeriod.startDate || "-"} ~{" "}
+                    {reportPeriod.endDate || "-"}
+                  </span>
+                </div>
+              ) : null}
             </div>
           </div>
+        </div>
+      ) : null}
 
-          <div className="grid gap-3">
-          <TabButtons tab={tab} setTab={setTab} items={DECISION_TABS_TOP} />
-          <TabButtons tab={tab} setTab={setTab} items={DECISION_TABS_BOTTOM} />
-        </div>
-        </div>
-      </div>
+      {filterKey === "month" && (
+        <OptionPopover title="월 선택">
+          <button
+            type="button"
+            onClick={handleSelectMonthAll}
+            className={optionBtnClass(selectedMonth === "all")}
+          >
+            전체
+          </button>
+          {monthOptionNodes}
+        </OptionPopover>
+      )}
+
+      {filterKey === "week" && (
+        <OptionPopover title="주차 선택">
+          <button
+            type="button"
+            onClick={handleSelectWeekAll}
+            className={optionBtnClass(selectedWeek === "all")}
+          >
+            전체
+          </button>
+          {weekOptionNodes}
+        </OptionPopover>
+      )}
+
+      {filterKey === "device" && (
+        <OptionPopover title="기기 선택">
+          <button
+            type="button"
+            onClick={handleSelectDeviceAll}
+            className={optionBtnClass(selectedDevice === "all")}
+          >
+            전체
+          </button>
+          {deviceOptionNodes}
+        </OptionPopover>
+      )}
+
+      {filterKey === "channel" && (
+        <OptionPopover title="채널 선택">
+          <button
+            type="button"
+            onClick={handleSelectChannelAll}
+            className={optionBtnClass(selectedChannel === "all")}
+          >
+            전체
+          </button>
+          {channelOptionNodes}
+        </OptionPopover>
+      )}
+
+      {hasSourceOptions && filterKey === "source" && (
+        <OptionPopover title="소스 선택">
+          <button
+            type="button"
+            onClick={handleSelectSourceAll}
+            className={optionBtnClass(selectedSource === "all")}
+          >
+            전체
+          </button>
+          {sourceOptionNodes}
+        </OptionPopover>
+      )}
+
+      {hasProductOptions && filterKey === "product" && (
+        <OptionPopover title="상품 선택">
+          <button
+            type="button"
+            onClick={handleSelectProductAll}
+            className={optionBtnClass(selectedProduct === "all")}
+          >
+            전체
+          </button>
+          {productOptionNodes}
+        </OptionPopover>
+      )}
     </div>
   );
 }
@@ -930,12 +982,12 @@ export default function HeaderBar(props: Props) {
   const { readOnlyHeader = false } = props;
 
   return (
-    <header className="sticky top-0 z-50 border-b border-[var(--nature-border)] bg-[linear-gradient(135deg,#f7f3ec_0%,#f3e4d2_38%,#dbeef4_72%,#b7d7e3_100%)] shadow-[0_18px_50px_rgba(127,166,196,0.18)] backdrop-blur-xl">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.42),transparent_24%),radial-gradient(circle_at_bottom_left,rgba(127,166,196,0.16),transparent_30%)]" />
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-b from-transparent to-white/20" />
+    <header className="relative z-50 bg-transparent">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-full bg-[linear-gradient(135deg,rgba(248,244,237,0.94)_0%,rgba(244,233,218,0.90)_38%,rgba(222,239,244,0.88)_72%,rgba(190,220,232,0.88)_100%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.58),transparent_30%),radial-gradient(circle_at_bottom_left,rgba(255,250,242,0.55),transparent_38%)]" />
 
-      <div className="relative px-4 pb-4 pt-6 sm:px-6 lg:px-8">
-        <div className="mx-auto w-full max-w-[1440px]">
+      <div className="relative px-4 pb-2 pt-3 sm:px-6 lg:px-8">
+        <div className="mx-auto w-full max-w-[1680px]">
           {readOnlyHeader ? (
             <ReadOnlyHeaderBar
               advertiserName={props.advertiserName}
@@ -950,6 +1002,8 @@ export default function HeaderBar(props: Props) {
           )}
         </div>
       </div>
+
+      <div className="pointer-events-none absolute inset-x-8 bottom-0 h-6 translate-y-[42%] rounded-full bg-[linear-gradient(180deg,rgba(127,166,196,0.20)_0%,rgba(183,215,227,0.11)_45%,rgba(255,255,255,0)_100%)] blur-[7px]" />
     </header>
   );
 }

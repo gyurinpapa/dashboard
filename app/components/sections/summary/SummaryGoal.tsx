@@ -156,26 +156,11 @@ function parseLooseDate(value: any): Date | null {
   return null;
 }
 
-function toYmd(date: Date | null) {
-  if (!date) return "";
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
 function getMonthLastDate(monthKey: string): Date | null {
   if (!monthKey || !/^\d{4}-\d{2}$/.test(monthKey)) return null;
   const [yy, mm] = monthKey.split("-").map(Number);
   if (!yy || !mm) return null;
   return new Date(yy, mm, 0);
-}
-
-function getMonthKeyFromDate(date: Date | null) {
-  if (!date) return "";
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  return `${y}-${m}`;
 }
 
 type GoalMode = {
@@ -187,8 +172,6 @@ type GoalMode = {
   showRevenue: boolean;
   showRoas: boolean;
   titleText: string;
-  subtitleText: string;
-  metricText: string;
   focusLabel: string;
 };
 
@@ -207,8 +190,6 @@ function getGoalMode(reportType?: ReportType): GoalMode {
       showRevenue: false,
       showRoas: false,
       titleText: "이번 달 유입 목표를 향해 달리는 중",
-      subtitleText: "트래픽 목표 진행 상황을 확인합니다.",
-      metricText: "Impr · Click · CTR · CPC · Cost",
       focusLabel: "Focus Month",
     };
   }
@@ -223,8 +204,6 @@ function getGoalMode(reportType?: ReportType): GoalMode {
       showRevenue: false,
       showRoas: false,
       titleText: "이번 달 DB 확보 목표를 향해 달리는 중",
-      subtitleText: "DB획득 목표와 현재 전환 효율을 함께 점검합니다.",
-      metricText: "Impr · Click · CTR · CPC · Cost · Conv · CVR · CPA",
       focusLabel: "Focus Month",
     };
   }
@@ -238,9 +217,6 @@ function getGoalMode(reportType?: ReportType): GoalMode {
     showRevenue: true,
     showRoas: true,
     titleText: "이번 달 목표를 향해 달리는 중",
-    subtitleText: "커머스 목표와 매출 효율을 함께 점검합니다.",
-    metricText:
-      "Impr · Click · CTR · CPC · Cost · Conv · CVR · CPA · Revenue · ROAS",
     focusLabel: "Focus Month",
   };
 }
@@ -434,14 +410,7 @@ export default function SummaryGoal({
   const readonlyTargetClass =
     "inline-flex h-9 w-full items-center justify-end rounded-xl border border-slate-200 bg-slate-50 px-2.5 text-[13px] font-semibold text-slate-700";
 
-  const {
-    mainProgressRate,
-    progressPercent,
-    progressLastDateLabel,
-    progressMonthEndLabel,
-    progressBaseMonthKey,
-    isCalendarProgressApplied,
-  } = useMemo(() => {
+  const { mainProgressRate, progressPercent } = useMemo(() => {
     const fallback = clamp01(
       Number(progressRate(actualCost, goalComputedCost) ?? 0)
     );
@@ -449,8 +418,11 @@ export default function SummaryGoal({
     const parsedLastDataDate = parseLooseDate(lastDataDate);
 
     if (parsedLastDataDate) {
-      const baseMonthKey = getMonthKeyFromDate(parsedLastDataDate);
-      const monthEndDate = getMonthLastDate(baseMonthKey);
+      const parsedMonthKey =
+        String(parsedLastDataDate.getFullYear()) +
+        "-" +
+        String(parsedLastDataDate.getMonth() + 1).padStart(2, "0");
+      const monthEndDate = getMonthLastDate(parsedMonthKey);
 
       if (monthEndDate) {
         const monthTotalDays = monthEndDate.getDate();
@@ -461,25 +433,13 @@ export default function SummaryGoal({
         return {
           mainProgressRate: calendarRate,
           progressPercent: Math.round(calendarRate * 1000) / 10,
-          progressLastDateLabel: toYmd(parsedLastDataDate),
-          progressMonthEndLabel: toYmd(monthEndDate),
-          progressBaseMonthKey: baseMonthKey,
-          isCalendarProgressApplied: true,
         };
       }
     }
 
-    const fallbackMonthEndDate = getMonthLastDate(currentMonthKey);
-
     return {
       mainProgressRate: fallback,
       progressPercent: Math.round(fallback * 1000) / 10,
-      progressLastDateLabel: "",
-      progressMonthEndLabel: fallbackMonthEndDate
-        ? toYmd(fallbackMonthEndDate)
-        : "",
-      progressBaseMonthKey: currentMonthKey || "",
-      isCalendarProgressApplied: false,
     };
   }, [actualCost, goalComputedCost, currentMonthKey, lastDataDate]);
 
@@ -494,13 +454,9 @@ export default function SummaryGoal({
       ? "열심히 달리는 중"
       : "출발 후 페이스 업";
 
-  const progressGuideText = isCalendarProgressApplied
-    ? `${progressLastDateLabel} / ${progressMonthEndLabel} 기준`
-    : "최신 데이터 기준";
-
   return (
     <section>
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="inline-flex items-center rounded-full border border-slate-200/80 bg-white px-3 py-1 text-[11px] font-semibold tracking-[0.08em] text-slate-500 shadow-sm">
             🎯 MONTH GOAL
@@ -526,32 +482,16 @@ export default function SummaryGoal({
       </div>
 
       <div className="overflow-hidden rounded-[24px] border border-slate-200/90 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.06)]">
-        <div className="border-b border-slate-200/80 bg-gradient-to-b from-slate-50 via-white to-white px-5 py-4">
+        <div className="border-b border-slate-200/80 bg-gradient-to-b from-slate-50 via-white to-white px-5 py-3">
           <div className="mx-auto max-w-[720px]">
-            <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="mb-2 flex items-center justify-between gap-3">
               <div>
                 <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
                   Monthly Progress Run
                 </div>
-                <div className="mt-1 text-sm font-semibold text-slate-900">
+                <div className="mt-0.5 text-sm font-semibold text-slate-900">
                   {mode.titleText}
                 </div>
-                <div className="mt-1 text-[11px] font-medium text-slate-400">
-                  {progressGuideText}
-                </div>
-                <div className="mt-1 text-[11px] font-medium text-slate-400">
-                  {mode.subtitleText}
-                </div>
-                {progressBaseMonthKey ? (
-                  <div className="mt-1 text-[11px] font-medium text-slate-400">
-                    진행 기준 월: {progressBaseMonthKey}
-                  </div>
-                ) : null}
-                {!isCalendarProgressApplied && lastDataDate ? (
-                  <div className="mt-1 text-[11px] font-medium text-amber-600">
-                    전달받은 lastDataDate: {String(lastDataDate)}
-                  </div>
-                ) : null}
               </div>
 
               <div className="rounded-full border border-slate-200/80 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm">
@@ -559,25 +499,21 @@ export default function SummaryGoal({
               </div>
             </div>
 
-            <div className="mb-3 text-[11px] font-medium text-slate-400">
-              핵심 지표: {mode.metricText}
-            </div>
-
-            <div className="rounded-[22px] border border-slate-200/80 bg-gradient-to-r from-sky-50 via-white to-amber-50 px-4 py-4">
-              <div className="relative h-[96px] overflow-hidden rounded-[18px] border border-slate-200/70 bg-white/80 px-4">
-                <div className="pointer-events-none absolute inset-x-4 top-[18px] flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+            <div className="rounded-[20px] border border-slate-200/80 bg-gradient-to-r from-sky-50 via-white to-amber-50 px-3 py-3">
+              <div className="relative h-[82px] overflow-hidden rounded-[16px] border border-slate-200/70 bg-white/80 px-4">
+                <div className="pointer-events-none absolute inset-x-4 top-[6px] flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">
                   <span>Start</span>
                   <span>Finish</span>
                 </div>
 
-                <div className="absolute inset-x-4 top-[42px] h-[10px] rounded-full bg-slate-100 shadow-inner">
+                <div className="absolute inset-x-4 top-[34px] h-[10px] rounded-full bg-slate-100 shadow-inner">
                   <div
                     className="h-full rounded-full bg-gradient-to-r from-sky-400 via-indigo-400 to-emerald-400 transition-all duration-700 ease-out"
                     style={{ width: `${progressPercentSafe}%` }}
                   />
                 </div>
 
-                <div className="pointer-events-none absolute inset-x-4 top-[45px] flex items-center justify-between px-[6px]">
+                <div className="pointer-events-none absolute inset-x-4 top-[37px] flex items-center justify-between px-[6px]">
                   {Array.from({ length: 9 }).map((_, i) => (
                     <span
                       key={i}
@@ -586,7 +522,7 @@ export default function SummaryGoal({
                   ))}
                 </div>
 
-                <div className="absolute left-4 top-[27px] z-[1] flex flex-col items-start gap-1">
+                <div className="absolute left-4 top-[21px] z-[1] flex flex-col items-start gap-1">
                   <span className="text-[16px] leading-none drop-shadow-[0_2px_3px_rgba(15,23,42,0.16)]">
                     🚩
                   </span>
@@ -596,7 +532,7 @@ export default function SummaryGoal({
                 </div>
 
                 <div
-                  className="absolute top-[10px] z-10 transition-all duration-700 ease-out"
+                  className="absolute top-[4px] z-10 transition-all duration-700 ease-out"
                   style={{ left: runnerLeft }}
                 >
                   <div className="relative flex flex-col items-center">
@@ -631,7 +567,7 @@ export default function SummaryGoal({
                   </div>
                 </div>
 
-                <div className="absolute right-4 top-[12px] z-10 flex flex-col items-center">
+                <div className="absolute right-4 top-[6px] z-10 flex flex-col items-center">
                   <span
                     className={[
                       "inline-block text-[30px] leading-none drop-shadow-[0_6px_10px_rgba(15,23,42,0.18)] transition-all duration-500",
@@ -643,7 +579,7 @@ export default function SummaryGoal({
                   <span className="mt-1 h-[8px] w-[18px] rounded-full bg-slate-900/10 blur-[2px]" />
                 </div>
 
-                <div className="absolute bottom-2 left-4 right-4 flex items-center justify-between text-[10px] font-medium text-slate-400">
+                <div className="absolute bottom-1.5 left-4 right-4 flex items-center justify-between text-[10px] font-medium text-slate-400">
                   <span>월 초</span>
                   <span>중간 점검</span>
                   <span>말일</span>

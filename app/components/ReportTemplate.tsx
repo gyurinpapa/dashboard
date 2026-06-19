@@ -46,8 +46,6 @@ import {
 } from "@/src/lib/decision/priority";
 
 import HeaderBar from "@/app/components/sections/HeaderBar";
-import FloatingFilterRail from "./floating/FloatingFilterRail";
-import FloatingTabRail from "./floating/FloatingTabRail";
 
 const SummarySection = dynamic(
   () => import("@/app/components/sections/SummarySection").then((mod) => mod.default),
@@ -125,8 +123,6 @@ const DecisionPanel = dynamic(
 );
 
 const MemoHeaderBar = memo(HeaderBar);
-const MemoFloatingFilterRail = memo(FloatingFilterRail);
-const MemoFloatingTabRail = memo(FloatingTabRail);
 
 const MONTH_GOAL_KEY = "nature_report_month_goal_v1";
 
@@ -2992,8 +2988,11 @@ function getReportTypeDisplayName(
 
 const HeaderSurface = memo(function HeaderSurface(props: HeaderBarProps) {
   return (
-    <div className="border-b border-[var(--nature-border)] bg-[var(--nature-surface)]">
+    <div className="sticky top-0 z-[200] isolate w-full self-start">
+      <div className="absolute inset-0 -z-10 bg-[linear-gradient(135deg,rgba(248,244,237,0.985)_0%,rgba(244,233,218,0.975)_38%,rgba(222,239,244,0.965)_72%,rgba(190,220,232,0.965)_100%)] shadow-[0_10px_30px_rgba(90,117,136,0.10)] backdrop-blur-xl" />
       <MemoHeaderBar {...props} />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-[linear-gradient(90deg,transparent_0%,rgba(127,166,196,0.50)_18%,rgba(127,166,196,0.50)_82%,transparent_100%)]" />
+      <div className="pointer-events-none absolute inset-x-0 top-full h-8 bg-[linear-gradient(180deg,rgba(90,117,136,0.15)_0%,rgba(127,166,196,0.07)_34%,rgba(255,255,255,0)_100%)]" />
     </div>
   );
 });
@@ -4070,11 +4069,15 @@ export default function ReportTemplate({
   ]);
 
     return (
-    <main className="min-h-screen w-full min-w-0 max-w-full bg-[var(--nature-page)] text-slate-900">
+    <main className="min-h-screen w-full min-w-0 max-w-full overflow-x-clip bg-[radial-gradient(circle_at_top_right,rgba(183,215,227,0.28),transparent_28%),linear-gradient(180deg,var(--nature-page)_0%,rgba(250,247,241,0.96)_100%)] text-slate-900">
       <HeaderSurface {...headerBarProps} />
 
-      <div className="px-4 pb-10 pt-2 sm:px-6 lg:px-8 lg:pt-3">
-       <div className="mx-auto w-full min-w-0 max-w-full rounded-[32px] border border-[var(--nature-border)] bg-[var(--nature-shell)]/70 p-3 shadow-sm">
+      <div className="relative -mt-1 px-4 pb-12 pt-0 sm:px-6 lg:px-8">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-[linear-gradient(180deg,rgba(183,215,227,0.13)_0%,rgba(243,228,210,0.08)_48%,transparent_100%)]" />
+
+        <div className="relative mx-auto w-full min-w-0 max-w-[1680px] overflow-visible rounded-b-[36px] rounded-t-[26px] bg-[linear-gradient(145deg,rgba(255,253,249,0.94)_0%,rgba(249,246,240,0.92)_58%,rgba(239,247,249,0.90)_100%)] p-3.5 shadow-[0_28px_70px_rgba(90,117,136,0.14),0_4px_14px_rgba(90,117,136,0.07)] sm:p-4">
+          <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.96)_18%,rgba(255,255,255,0.96)_82%,transparent_100%)]" />
+
           {isLoading ? (
             <div className="mb-6 overflow-hidden rounded-2xl border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] shadow-sm">
                 <div className="flex items-center gap-3 px-5 py-4">
@@ -4086,39 +4089,13 @@ export default function ReportTemplate({
             </div>
           ) : null}
 
-          <div className="relative flex min-w-0 max-w-full items-start justify-center gap-4 xl:gap-5">
-            <div className="hidden xl:sticky xl:top-6 xl:block xl:self-start">
-              <MemoFloatingFilterRail
-                selectedMonth={selectedMonth}
-                setSelectedMonth={setSelectedMonth}
-                monthOptions={stableMonthOptions}
-                selectedWeek={selectedWeek}
-                setSelectedWeek={setSelectedWeek}
-                weekOptions={stableWeekOptions}
-                selectedDevice={selectedDevice}
-                setSelectedDevice={setSelectedDevice}
-                deviceOptions={stableDeviceOptions}
-                selectedChannel={selectedChannel}
-                setSelectedChannel={setSelectedChannel}
-                channelOptions={stableChannelOptions}
-                selectedSource={selectedSource}
-                setSelectedSource={setSelectedSource}
-                sourceOptions={stableSourceOptions}
-                selectedProduct={selectedProduct}
-                setSelectedProduct={setSelectedProduct}
-                productOptions={stableProductOptions}
-                enabledMonthKeySet={stableEnabledMonthKeySet}
-                enabledWeekKeySet={stableEnabledWeekKeySet}
-                readOnly={readOnlyHeader}
-              />
-            </div>
-
-            <div className="min-w-0 flex-1">
+          <div className="relative min-w-0 max-w-full">
+            <div className="min-w-0 w-full">
               <div className="mx-auto w-full min-w-0 max-w-full">
-                <div className="space-y-8">
+                <div className="space-y-8 pt-0">
                   {deferredTab === "summary" && (
                     <>
-                      <div className="rounded-2xl">
+                      <div className="relative overflow-hidden rounded-[32px] bg-[linear-gradient(145deg,rgba(255,253,249,0.97)_0%,rgba(255,250,242,0.94)_56%,rgba(241,248,250,0.94)_100%)] shadow-[0_18px_46px_rgba(90,117,136,0.10)] [&>section]:rounded-[32px] [&>section]:border-0 [&>section]:bg-transparent [&>section]:shadow-none">
                         <MonthGoalSection {...(monthGoalSectionProps as any)} />
                       </div>
 
@@ -4221,14 +4198,6 @@ export default function ReportTemplate({
                   )}
                 </div>
               </div>
-            </div>
-
-            <div className="hidden xl:sticky xl:top-6 xl:block xl:self-start">
-              <MemoFloatingTabRail
-                tab={tab}
-                setTab={setTab}
-                readOnly={readOnlyHeader}
-              />
             </div>
           </div>
         </div>
