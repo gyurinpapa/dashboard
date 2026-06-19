@@ -20,9 +20,12 @@ import {
 
 type ReportType = "commerce" | "traffic" | "db_acquisition";
 
+type Summary2SlideIndex = 0 | 1 | 2;
+
 type Props = {
   reportType?: ReportType;
   rows: any[];
+  activeSlide?: Summary2SlideIndex;
 };
 
 type HeatmapMetricKey =
@@ -1046,7 +1049,11 @@ const HeatmapCell = memo(function HeatmapCell({
   );
 });
 
-export default function Summary2Section({ reportType, rows }: Props) {
+export default function Summary2Section({
+  reportType,
+  rows,
+  activeSlide,
+}: Props) {
   const mode: ReportType =
     reportType === "traffic"
       ? "traffic"
@@ -1920,10 +1927,19 @@ export default function Summary2Section({ reportType, rows }: Props) {
     ? "노출부터 클릭, 전환까지의 흐름을 기준일 단위로 확인합니다."
     : "현재 필터가 적용된 데이터 기준으로 요약합니다.";
 
+  const showAllSlides = activeSlide == null;
+  const showHeatmapSlide = showAllSlides || activeSlide === 0;
+  const showFlowSlide = showAllSlides || activeSlide === 1;
+  const showChannelSlide = showAllSlides || activeSlide === 2;
+
   return (
     <section className="mt-2">
       <div className="space-y-10 pt-4">
-        <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+        <div
+          className={showHeatmapSlide ? "block" : "hidden"}
+          aria-hidden={!showHeatmapSlide}
+        >
+          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
           <div className="border-b border-gray-200 px-6 py-5">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div>
@@ -2111,7 +2127,12 @@ export default function Summary2Section({ reportType, rows }: Props) {
             </div>
           </div>
         </div>
+        </div>
 
+        <div
+          className={showFlowSlide ? "block" : "hidden"}
+          aria-hidden={!showFlowSlide}
+        >
         {!isTraffic ? (
           <div className="grid gap-6 xl:grid-cols-[440px_minmax(0,1fr)]">
             <FunnelCard
@@ -2280,7 +2301,12 @@ export default function Summary2Section({ reportType, rows }: Props) {
             </div>
           </div>
         ) : null}
+        </div>
 
+        <div
+          className={showChannelSlide ? "block" : "hidden"}
+          aria-hidden={!showChannelSlide}
+        >
         {!isTraffic ? (
           isDbAcquisition ? (
             <div className="grid gap-6 xl:grid-cols-3">
@@ -2372,6 +2398,7 @@ export default function Summary2Section({ reportType, rows }: Props) {
             </div>
           )
         ) : null}
+        </div>
       </div>
     </section>
   );

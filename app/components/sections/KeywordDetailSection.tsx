@@ -1057,7 +1057,10 @@ const SummarySectionBlock = memo(function SummarySectionBlock({
   byWeekChart,
   bySource,
   byDay,
-}: SummarySectionBlockProps) {
+  activeSlide,
+}: SummarySectionBlockProps & {
+  activeSlide?: KeywordDetailSlideIndex;
+}) {
   return (
     <div className="keyword-detail-week-table-fix min-w-0">
       <div className="min-w-0">
@@ -1069,6 +1072,7 @@ const SummarySectionBlock = memo(function SummarySectionBlock({
           byWeekChart={byWeekChart as any}
           bySource={bySource as any}
           byDay={byDay as any}
+          activeSlide={activeSlide}
         />
       </div>
     </div>
@@ -1079,13 +1083,20 @@ const SummarySectionBlock = memo(function SummarySectionBlock({
  * Component
  * ========================= */
 
+type KeywordDetailSlideIndex = 0 | 1 | 2;
+
 type Props = {
   reportType?: ReportMode;
   rows: Row[];
+  /**
+   * 일반 웹의 키워드(상세) 슬라이드 전환용.
+   * 전달하지 않으면 기존 전체 콘텐츠를 연속 렌더해 export 경로를 보존한다.
+   */
+  activeSlide?: KeywordDetailSlideIndex;
 };
 
 export default function KeywordDetailSection(props: Props) {
-  const { reportType, rows } = props;
+  const { reportType, rows, activeSlide } = props;
   const reportMode = resolveReportMode(reportType);
 
   const { keywords, keywordLookup, metricsMap } = useMemo(
@@ -1165,26 +1176,38 @@ export default function KeywordDetailSection(props: Props) {
     [reportMode, selectedKeyword, rows, filteredRows, byWeekOnly, bySource, byDevice, avgRank]
   );
 
+  const showAllSlides = activeSlide == null;
+  const showOverviewSlide = showAllSlides || activeSlide === 0;
+
   return (
     <section className="w-full min-w-0">
       <div className="mt-4 grid grid-cols-1 items-start gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
-        <KeywordListPanel
-          keywords={filteredKeywordList}
-          selectedKeyword={selectedKeyword}
-          keywordQuery={keywordQuery}
-          onChangeKeywordQuery={handleChangeKeywordQuery}
-          onSelectKeyword={handleSelectKeyword}
-        />
-
-        <div className="min-w-0 space-y-6">
-          <InsightPanel
-            reportMode={reportMode}
-            title={insight.title}
+        <div className={showOverviewSlide ? "min-w-0" : "hidden"}>
+          <KeywordListPanel
+            keywords={filteredKeywordList}
             selectedKeyword={selectedKeyword}
-            avgRank={avgRank}
-            bullets={insight.bullets}
-            actions={insight.actions}
+            keywordQuery={keywordQuery}
+            onChangeKeywordQuery={handleChangeKeywordQuery}
+            onSelectKeyword={handleSelectKeyword}
           />
+        </div>
+
+        <div
+          className={[
+            "min-w-0 space-y-6",
+            showOverviewSlide ? "" : "lg:col-span-2",
+          ].join(" ")}
+        >
+          <div className={showOverviewSlide ? "min-w-0" : "hidden"}>
+            <InsightPanel
+              reportMode={reportMode}
+              title={insight.title}
+              selectedKeyword={selectedKeyword}
+              avgRank={avgRank}
+              bullets={insight.bullets}
+              actions={insight.actions}
+            />
+          </div>
 
           <SummarySectionBlock
             reportType={reportMode}
@@ -1194,6 +1217,7 @@ export default function KeywordDetailSection(props: Props) {
             byWeekChart={byWeekChart}
             bySource={bySource}
             byDay={byDay}
+            activeSlide={activeSlide}
           />
         </div>
       </div>

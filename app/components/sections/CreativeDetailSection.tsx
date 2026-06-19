@@ -788,9 +788,16 @@ function buildCreativeDetailInsight(args: {
 /** =========================
  * Component
  * ========================= */
+type CreativeDetailSlideIndex = 0 | 1 | 2;
+
 type Props = {
   reportType?: ReportMode;
   rows: Row[];
+  /**
+   * 일반 웹의 소재(상세) 슬라이드 전환용.
+   * 전달하지 않으면 기존 전체 콘텐츠를 연속 렌더해 export 경로를 보존한다.
+   */
+  activeSlide?: CreativeDetailSlideIndex;
 };
 
 type CreativePerf = {
@@ -1092,7 +1099,11 @@ function buildBadgeMap(perfList: CreativePerf[], reportMode: ReportMode) {
   return map;
 }
 
-export default function CreativeDetailSection({ reportType, rows }: Props) {
+export default function CreativeDetailSection({
+  reportType,
+  rows,
+  activeSlide,
+}: Props) {
   const reportMode = resolveReportMode(reportType);
 
   const {
@@ -1260,10 +1271,23 @@ export default function CreativeDetailSection({ reportType, rows }: Props) {
         byWeekChart={byWeekChart}
         bySource={bySource}
         byDay={byDay}
+        activeSlide={activeSlide}
       />
     ),
-    [reportMode, totals, byMonth, byWeekOnly, byWeekChart, bySource, byDay]
+    [
+      reportMode,
+      totals,
+      byMonth,
+      byWeekOnly,
+      byWeekChart,
+      bySource,
+      byDay,
+      activeSlide,
+    ]
   );
+
+  const showAllSlides = activeSlide == null;
+  const showOverviewSlide = showAllSlides || activeSlide === 0;
 
   const actionTitle =
     reportMode === "traffic"
@@ -1275,7 +1299,12 @@ export default function CreativeDetailSection({ reportType, rows }: Props) {
   return (
     <section className="w-full min-w-0">
       <div className="mt-4 grid grid-cols-1 items-start gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
-        <aside className="min-w-0 rounded-[28px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.96))] p-4 shadow-[0_10px_30px_rgba(15,23,42,0.06)] lg:sticky lg:top-24 lg:max-h-[calc(100vh-6rem)] lg:overflow-hidden">
+        <aside
+          className={[
+            "min-w-0 rounded-[28px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.96))] p-4 shadow-[0_10px_30px_rgba(15,23,42,0.06)] self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-hidden",
+            showOverviewSlide ? "" : "hidden",
+          ].join(" ")}
+        >
           <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -1378,8 +1407,14 @@ export default function CreativeDetailSection({ reportType, rows }: Props) {
           </div>
         </aside>
 
-        <div className="min-w-0 space-y-6">
-          <section className="min-w-0 rounded-2xl border border-gray-200 bg-white p-6">
+        <div
+          className={[
+            "min-w-0 space-y-6",
+            showOverviewSlide ? "" : "lg:col-span-2",
+          ].join(" ")}
+        >
+          <div className={showOverviewSlide ? "min-w-0" : "hidden"}>
+            <section className="min-w-0 rounded-2xl border border-gray-200 bg-white p-6">
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
               <div className="min-w-0">
                 <div className="flex items-start justify-between gap-4">
@@ -1456,7 +1491,8 @@ export default function CreativeDetailSection({ reportType, rows }: Props) {
                 </div>
               </div>
             </div>
-          </section>
+            </section>
+          </div>
 
           <div className="creative-detail-week-table-fix min-w-0">
             <div className="min-w-0">{summarySectionNode}</div>

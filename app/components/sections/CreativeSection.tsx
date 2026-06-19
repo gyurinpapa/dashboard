@@ -29,9 +29,16 @@ import { groupByCreative } from "../../../src/lib/report/creative";
 
 type ReportMode = "commerce" | "traffic" | "db_acquisition";
 
+type CreativeSlideIndex = 0 | 1;
+
 type Props = {
   reportType?: ReportMode;
   rows: any[];
+  /**
+   * 일반 웹 소재 탭 슬라이드 전환용.
+   * 전달하지 않으면 기존 전체 콘텐츠를 연속 렌더해 export 경로를 보존한다.
+   */
+  activeSlide?: CreativeSlideIndex;
 };
 
 const short = (s: any, n = 7) => {
@@ -108,6 +115,113 @@ function getCreativeTableMeta(reportMode: ReportMode) {
     showRoas: isCommerce,
     colSpan: isTraffic ? 6 : isDbAcquisition ? 9 : 11,
   };
+}
+
+function buildCreativeSummaryInsight(
+  reportMode: ReportMode,
+  creativeAgg: CreativeAgg[],
+) {
+  if (!creativeAgg.length) return "";
+
+  const total = creativeAgg.reduce(
+    (acc, row) => {
+      acc.impressions += toSafeNumber(row.impressions);
+      acc.clicks += toSafeNumber(row.clicks);
+      acc.cost += toSafeNumber(row.cost);
+      acc.conversions += toSafeNumber(row.conversions);
+      acc.revenue += toSafeNumber(row.revenue);
+      return acc;
+    },
+    {
+      impressions: 0,
+      clicks: 0,
+      cost: 0,
+      conversions: 0,
+      revenue: 0,
+    },
+  );
+
+  const byClicks = [...creativeAgg].sort(
+    (a, b) => toSafeNumber(b.clicks) - toSafeNumber(a.clicks),
+  );
+  const byCost = [...creativeAgg].sort(
+    (a, b) => toSafeNumber(b.cost) - toSafeNumber(a.cost),
+  );
+  const byConversions = [...creativeAgg].sort(
+    (a, b) => toSafeNumber(b.conversions) - toSafeNumber(a.conversions),
+  );
+  const byRoas = [...creativeAgg]
+    .filter((row) => toSafeNumber(row.cost) > 0)
+    .sort((a, b) => toSafeNumber(b.roas) - toSafeNumber(a.roas));
+  const byCpa = [...creativeAgg]
+    .filter((row) => toSafeNumber(row.conversions) > 0)
+    .sort((a, b) => toSafeNumber(a.cpa) - toSafeNumber(b.cpa));
+  const byCtr = [...creativeAgg]
+    .filter((row) => toSafeNumber(row.impressions) > 0)
+    .sort((a, b) => toSafeNumber(b.ctr) - toSafeNumber(a.ctr));
+
+  const topClick = byClicks[0] ?? null;
+  const topCost = byCost[0] ?? null;
+  const topConversion = byConversions[0] ?? null;
+  const topRoas = byRoas[0] ?? null;
+  const topCpa = byCpa[0] ?? null;
+  const topCtr = byCtr[0] ?? null;
+
+  const costShare =
+    topCost && total.cost > 0
+      ? toSafeNumber(topCost.cost) / total.cost
+      : 0;
+  const clickShare =
+    topClick && total.clicks > 0
+      ? toSafeNumber(topClick.clicks) / total.clicks
+      : 0;
+  const conversionShare =
+    topConversion && total.conversions > 0
+      ? toSafeNumber(topConversion.conversions) / total.conversions
+      : 0;
+
+  if (reportMode === "traffic") {
+    return [
+      topClick
+        ? `클릭 기여 1위 소재는 “${topClick.creative || "(empty)"}”이며 전체 클릭의 ${formatPercentFromRate(clickShare, 1)}를 차지했습니다.`
+        : "클릭 기여를 판단할 소재 데이터가 없습니다.",
+      topCtr
+        ? `CTR 우수 소재는 “${topCtr.creative || "(empty)"}”로 ${formatPercentFromRate(topCtr.ctr, 2)}를 기록했습니다. 노출량과 함께 확인해 확장 여부를 판단해야 합니다.`
+        : "CTR 비교가 가능한 소재 데이터가 없습니다.",
+      topCost
+        ? `비용 집행 1위 소재는 “${topCost.creative || "(empty)"}”이며 전체 비용의 ${formatPercentFromRate(costShare, 1)}가 집중됐습니다.`
+        : "비용 집중도를 판단할 소재 데이터가 없습니다.",
+      "운영 우선순위는 클릭 기여가 높은 소재의 메시지·포맷을 확장하되, 비용 집중 소재의 CTR과 CPC를 함께 점검하는 것입니다.",
+    ].join("\n");
+  }
+
+  if (reportMode === "db_acquisition") {
+    return [
+      topConversion
+        ? `전환 기여 1위 소재는 “${topConversion.creative || "(empty)"}”이며 전체 전환의 ${formatPercentFromRate(conversionShare, 1)}를 만들었습니다.`
+        : "전환 기여를 판단할 소재 데이터가 없습니다.",
+      topCpa
+        ? `CPA 우수 소재는 “${topCpa.creative || "(empty)"}”로 ${KRW(topCpa.cpa)}를 기록했습니다. 전환량이 충분한지 함께 확인해야 합니다.`
+        : "CPA 비교가 가능한 전환 소재가 없습니다.",
+      topCtr
+        ? `클릭 반응이 가장 높은 소재는 “${topCtr.creative || "(empty)"}”이며 CTR은 ${formatPercentFromRate(topCtr.ctr, 2)}입니다.`
+        : "CTR 비교가 가능한 소재 데이터가 없습니다.",
+      "운영 우선순위는 전환 기여와 CPA가 함께 우수한 소재를 확대하고, 클릭은 높지만 전환이 약한 소재의 메시지·랜딩 정합성을 점검하는 것입니다.",
+    ].join("\n");
+  }
+
+  return [
+    topConversion
+      ? `전환 기여 1위 소재는 “${topConversion.creative || "(empty)"}”이며 전체 전환의 ${formatPercentFromRate(conversionShare, 1)}를 만들었습니다.`
+      : "전환 기여를 판단할 소재 데이터가 없습니다.",
+    topRoas
+      ? `ROAS 우수 소재는 “${topRoas.creative || "(empty)"}”로 ${formatPercentFromRoas(topRoas.roas, 1)}를 기록했습니다. 비용 규모와 함께 확장 가능성을 판단해야 합니다.`
+      : "ROAS 비교가 가능한 소재 데이터가 없습니다.",
+    topCost
+      ? `비용 집행 1위 소재는 “${topCost.creative || "(empty)"}”이며 전체 비용의 ${formatPercentFromRate(costShare, 1)}가 집중됐습니다.`
+      : "비용 집중도를 판단할 소재 데이터가 없습니다.",
+    "운영 우선순위는 ROAS와 전환 기여가 함께 높은 소재를 확장하고, 비용 비중이 크지만 매출 효율이 낮은 소재를 우선 교체하는 것입니다.",
+  ].join("\n");
 }
 
 function creativePreviewKey(item: CreativeAgg | null | undefined) {
@@ -538,7 +652,11 @@ const CreativePreviewOverlay = memo(function CreativePreviewOverlay({
   );
 });
 
-export default function CreativeSection({ reportType, rows }: Props) {
+export default function CreativeSection({
+  reportType,
+  rows,
+  activeSlide,
+}: Props) {
   const reportMode = resolveReportMode(reportType);
   const tableMeta = getCreativeTableMeta(reportMode);
 
@@ -851,6 +969,29 @@ export default function CreativeSection({ reportType, rows }: Props) {
       };
     });
   }, []);
+
+  const creativeInsight = useMemo(
+    () => buildCreativeSummaryInsight(reportMode, creativeAgg),
+    [reportMode, creativeAgg],
+  );
+
+  const creativeInsightDescription =
+    reportMode === "traffic"
+      ? "현재 소재 성과를 바탕으로 유입 중심의 중요한 흐름과 운영 포인트를 정리했습니다."
+      : reportMode === "db_acquisition"
+        ? "현재 소재 성과를 바탕으로 DB 확보와 전환 효율 중심의 중요한 흐름을 정리했습니다."
+        : "현재 소재 성과를 바탕으로 전환과 매출 효율 중심의 중요한 흐름을 정리했습니다.";
+
+  const showAllSlides = activeSlide == null;
+  const showRankingSlide = showAllSlides || activeSlide === 0;
+  const showTableSlide = showAllSlides || activeSlide === 1;
+
+  useEffect(() => {
+    if (showTableSlide) return;
+    clearPreviewTimers();
+    setHoveredCreative(null);
+    setPreviewAnchorEl(null);
+  }, [showTableSlide, clearPreviewTimers]);
 
   const rankingCharts = useMemo(() => {
     if (reportMode === "traffic") {
@@ -1355,9 +1496,35 @@ export default function CreativeSection({ reportType, rows }: Props) {
 
   return (
     <section className="mt-2 space-y-6">
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">{rankingCharts}</div>
+      {showRankingSlide ? (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            {rankingCharts}
+          </div>
 
-      <section>
+          <section>
+            <div className="rounded-2xl border border-[#CFC2B1]/55 bg-white p-5 shadow-[0_8px_22px_rgba(127,166,196,0.10)] sm:p-6">
+              <SectionHeader
+                badge="AI Insight"
+                title="소재 요약 인사이트"
+                description={creativeInsightDescription}
+              />
+
+              {creativeInsight ? (
+                <div className="whitespace-pre-wrap text-sm leading-7 text-[#334155]">
+                  {creativeInsight}
+                </div>
+              ) : (
+                <div className="text-sm text-[#7A8794]">
+                  소재 데이터가 없어 인사이트를 생성할 수 없습니다.
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      <section className={showTableSlide ? "" : "hidden"}>
         <div className="rounded-2xl border border-[#CFC2B1]/55 bg-white p-5 shadow-[0_8px_22px_rgba(127,166,196,0.10)] sm:p-6">
           <SectionHeader
             badge="Creative Table"
@@ -1479,15 +1646,17 @@ export default function CreativeSection({ reportType, rows }: Props) {
         </div>
       </section>
 
-      <CreativePreviewOverlay
-        hoveredCreative={hoveredCreative}
-        previewPos={previewPos}
-        previewKey={previewKey}
-        hasPreviewImage={hasPreviewImage}
-        keepPreviewOpen={keepPreviewOpen}
-        closePreview={closePreview}
-        onImageError={handlePreviewImageError}
-      />
+      {showTableSlide ? (
+        <CreativePreviewOverlay
+          hoveredCreative={hoveredCreative}
+          previewPos={previewPos}
+          previewKey={previewKey}
+          hasPreviewImage={hasPreviewImage}
+          keepPreviewOpen={keepPreviewOpen}
+          closePreview={closePreview}
+          onImageError={handlePreviewImageError}
+        />
+      ) : null}
     </section>
   );
 }

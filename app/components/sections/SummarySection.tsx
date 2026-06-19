@@ -44,6 +44,12 @@ type Props = {
   monthGoal?: any;
   setMonthGoal?: (next: any) => void;
   monthGoalInsight?: string;
+
+  /**
+   * 웹 요약 탭 슬라이드 전용 표시 인덱스.
+   * undefined이면 기존 전체 요약 구조를 그대로 렌더링한다.
+   */
+  activeSlide?: 0 | 1 | 2;
 };
 
 const TH_CLASS =
@@ -1819,6 +1825,7 @@ function SummarySectionComponent(props: Props) {
     currentMonthGoalComputed,
     monthGoal,
     monthGoalInsight,
+    activeSlide,
   } = props;
 
   const mode = useMemo(() => getMetricMode(reportType), [reportType]);
@@ -1916,105 +1923,134 @@ function SummarySectionComponent(props: Props) {
     };
   }, [weeks, days, sources]);
 
+  const showAllSections = activeSlide == null;
+  const showGoalSlide = showAllSections || activeSlide === 0;
+  const showTrendSlide = showAllSections || activeSlide === 1;
+  const showSourceSlide = showAllSections || activeSlide === 2;
+
   return (
-    <div className="mt-6 space-y-12 lg:space-y-14">
-      <div>
-        <SectionIntro
-          badge="📊 KPI"
-          title={copy.kpiTitle}
-          description={copy.kpiDescription}
-          compact
-        />
-
-        <div className="rounded-[26px] border border-[var(--nature-border-blue)] bg-[linear-gradient(180deg,var(--nature-surface),rgba(243,228,210,0.48))] p-2.5 shadow-[0_8px_22px_rgba(127,166,196,0.10)] sm:p-3">
-          <SummaryKPI reportType={reportType} totals={stableTotals} />
-          <GoalProgressPanel model={goalProgressModel} />
-        </div>
-      </div>
-
-      <div>
-        <SectionIntro
-          badge="📋 SUMMARY TABLE"
-          title={copy.monthTitle}
-          description={copy.monthDescription}
-          compact
-        />
-        <SummaryTable reportType={reportType} byMonth={stableMonths} />
-      </div>
-
-      <section className="space-y-12 lg:space-y-14">
+    <div
+      className={[
+        activeSlide == null ? "mt-6 space-y-12 lg:space-y-14" : "space-y-0",
+      ].join(" ")}
+    >
+      {showGoalSlide ? (
         <div>
           <SectionIntro
-            badge="📅 WEEKLY"
-            title={copy.weeklyTitle}
-            description={copy.weeklyDescription}
+            badge="📊 KPI"
+            title={copy.kpiTitle}
+            description={copy.kpiDescription}
             compact
           />
 
-          <WeeklyPerformanceTable
-            mode={mode}
-            rows={derived.weeklyDisplayRows}
-            prevRow={derived.prevWeekSorted}
-            lastRow={derived.lastWeekSorted}
-            maxImpr={derived.maxImpr}
-            maxClicks={derived.maxClicks}
-            maxCost={derived.maxCost}
-            maxConv={derived.maxConv}
-            maxRev={derived.maxRev}
-          />
-        </div>
-
-        <div>
-          <SectionIntro
-            badge="📈 CHART"
-            title={copy.chartTitle}
-            description={copy.chartDescription}
-            compact
-          />
-
-          <div className={CHART_SURFACE_CLASS}>
-            <SummaryChart reportType={reportType} data={stableWeekChartData} />
+          <div className="rounded-[26px] border border-[var(--nature-border-blue)] bg-[linear-gradient(180deg,var(--nature-surface),rgba(243,228,210,0.48))] p-2.5 shadow-[0_8px_22px_rgba(127,166,196,0.10)] sm:p-3">
+            <SummaryKPI reportType={reportType} totals={stableTotals} />
+            <GoalProgressPanel model={goalProgressModel} />
           </div>
         </div>
+      ) : null}
 
-        <div>
-          <SectionIntro
-            badge="🧭 SOURCE"
-            title={copy.sourceTitle}
-            description={copy.sourceDescription}
-            compact
-          />
+      {showTrendSlide ? (
+        <section
+          className={
+            activeSlide == null
+              ? "space-y-12 lg:space-y-14"
+              : "space-y-8 lg:space-y-10"
+          }
+        >
+          <div>
+            <SectionIntro
+              badge="📋 SUMMARY TABLE"
+              title={copy.monthTitle}
+              description={copy.monthDescription}
+              compact
+            />
+            <SummaryTable reportType={reportType} byMonth={stableMonths} />
+          </div>
 
-          <SourcePerformanceTable
-            mode={mode}
-            rows={derived.sourceDisplayRows}
-            maxImpr={derived.srcMaxImpr}
-            maxClicks={derived.srcMaxClicks}
-            maxCost={derived.srcMaxCost}
-            maxConv={derived.srcMaxConv}
-            maxRev={derived.srcMaxRev}
-          />
-        </div>
+          <div>
+            <SectionIntro
+              badge="📅 WEEKLY"
+              title={copy.weeklyTitle}
+              description={copy.weeklyDescription}
+              compact
+            />
 
-        <div>
-          <SectionIntro
-            badge="🗓️ DAILY"
-            title={copy.dailyTitle}
-            description={copy.dailyDescription}
-            compact
-          />
+            <WeeklyPerformanceTable
+              mode={mode}
+              rows={derived.weeklyDisplayRows}
+              prevRow={derived.prevWeekSorted}
+              lastRow={derived.lastWeekSorted}
+              maxImpr={derived.maxImpr}
+              maxClicks={derived.maxClicks}
+              maxCost={derived.maxCost}
+              maxConv={derived.maxConv}
+              maxRev={derived.maxRev}
+            />
+          </div>
 
-          <DailyPerformanceTable
-            mode={mode}
-            rows={derived.dailyDisplayRows}
-            maxImpr={derived.dayMaxImpr}
-            maxClicks={derived.dayMaxClicks}
-            maxCost={derived.dayMaxCost}
-            maxConv={derived.dayMaxConv}
-            maxRev={derived.dayMaxRev}
-          />
-        </div>
-      </section>
+          <div>
+            <SectionIntro
+              badge="📈 CHART"
+              title={copy.chartTitle}
+              description={copy.chartDescription}
+              compact
+            />
+
+            <div className={CHART_SURFACE_CLASS}>
+              <SummaryChart reportType={reportType} data={stableWeekChartData} />
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {showSourceSlide ? (
+        <section
+          className={
+            activeSlide == null
+              ? "space-y-12 lg:space-y-14"
+              : "space-y-8 lg:space-y-10"
+          }
+        >
+          <div>
+            <SectionIntro
+              badge="🧭 SOURCE"
+              title={copy.sourceTitle}
+              description={copy.sourceDescription}
+              compact
+            />
+
+            <SourcePerformanceTable
+              mode={mode}
+              rows={derived.sourceDisplayRows}
+              maxImpr={derived.srcMaxImpr}
+              maxClicks={derived.srcMaxClicks}
+              maxCost={derived.srcMaxCost}
+              maxConv={derived.srcMaxConv}
+              maxRev={derived.srcMaxRev}
+            />
+          </div>
+
+          <div>
+            <SectionIntro
+              badge="🗓️ DAILY"
+              title={copy.dailyTitle}
+              description={copy.dailyDescription}
+              compact
+            />
+
+            <DailyPerformanceTable
+              mode={mode}
+              rows={derived.dailyDisplayRows}
+              maxImpr={derived.dayMaxImpr}
+              maxClicks={derived.dayMaxClicks}
+              maxCost={derived.dayMaxCost}
+              maxConv={derived.dayMaxConv}
+              maxRev={derived.dayMaxRev}
+            />
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }
@@ -2032,7 +2068,8 @@ function areSummarySectionPropsEqual(prev: Props, next: Props) {
     prev.currentMonthActual === next.currentMonthActual &&
     prev.currentMonthGoalComputed === next.currentMonthGoalComputed &&
     prev.monthGoal === next.monthGoal &&
-    prev.monthGoalInsight === next.monthGoalInsight
+    prev.monthGoalInsight === next.monthGoalInsight &&
+    prev.activeSlide === next.activeSlide
   );
 }
 

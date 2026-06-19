@@ -234,45 +234,42 @@ const HeaderIntro = memo(function HeaderIntro({
   }, [cleanTypeName]);
 
   return (
-    <div className="bg-transparent px-4 py-3 sm:px-5">
-      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="inline-flex shrink-0 items-center rounded-md border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/45 px-2 py-1 text-[10px] font-semibold tracking-[0.11em] text-slate-700">
-            {badgeText}
-          </div>
+    <div className="bg-transparent px-4 py-2.5 sm:px-5 sm:py-3">
+      <div className="relative grid min-w-0 grid-cols-1 items-center gap-2 lg:grid-cols-[minmax(220px,1fr)_minmax(360px,760px)_minmax(260px,1fr)]">
+        <div className="hidden lg:block" />
 
-          <div className="min-w-0">
-            <h1 className="truncate text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">
+        <div className="relative min-w-0 text-center">
+          <div className="pointer-events-none absolute left-1/2 top-1/2 h-12 w-[82%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(127,166,196,0.20)_0%,rgba(183,215,227,0.09)_42%,rgba(255,255,255,0)_74%)] blur-xl" />
+
+          <div className="relative">
+            <div className="mb-1.5 flex justify-center">
+              <div className="inline-flex shrink-0 items-center rounded-full border border-[var(--nature-border-blue)] bg-white/76 px-3 py-1 text-[10px] font-extrabold tracking-[0.16em] text-slate-700 shadow-[0_6px_16px_rgba(90,117,136,0.09)] backdrop-blur">
+                {badgeText}
+              </div>
+            </div>
+
+            <h1 className="mx-auto max-w-full truncate text-[23px] font-black tracking-[-0.045em] text-slate-950 drop-shadow-[0_2px_0_rgba(255,255,255,0.82)] sm:text-[28px] lg:text-[31px]">
               {headerTitle}
             </h1>
+
+            <div className="mx-auto mt-1.5 h-[3px] w-20 rounded-full bg-[linear-gradient(90deg,rgba(127,166,196,0)_0%,rgba(127,166,196,0.95)_24%,rgba(95,135,163,1)_50%,rgba(127,166,196,0.95)_76%,rgba(127,166,196,0)_100%)] shadow-[0_3px_10px_rgba(95,135,163,0.34)] sm:w-28" />
           </div>
         </div>
 
-        <div className="flex min-w-0 flex-col items-start gap-0.5 text-xs text-slate-500 sm:items-end sm:text-right">
-          <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-0.5">
-            <span className="font-medium text-slate-700">{headerSubTitle}</span>
-
-            {fullPeriod ? (
-              <>
-                <span className="text-slate-300">•</span>
-                <span className="whitespace-nowrap">
-                  전체 기간{" "}
-                  <span className="font-semibold text-slate-800">
-                    {fullPeriod}
-                  </span>
-                </span>
-              </>
-            ) : null}
-          </div>
+        <div className="flex min-w-0 flex-col items-center gap-0.5 text-xs text-slate-500 lg:items-end lg:text-right">
+          {fullPeriod ? (
+            <div className="whitespace-nowrap">
+              전체 기간{" "}
+              <span className="font-bold text-slate-800">{fullPeriod}</span>
+            </div>
+          ) : null}
 
           <div className="whitespace-nowrap">
             조회 기간{" "}
-            <span className="font-semibold text-slate-800">
-              {period || "-"}
-            </span>
+            <span className="font-bold text-slate-800">{period || "-"}</span>
           </div>
 
-          <div className="inline-flex h-6 items-center rounded-md border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/45 px-2 text-[10px] font-semibold text-slate-700">
+          <div className="mt-0.5 inline-flex h-6 items-center rounded-full border border-[var(--nature-border-blue)] bg-white/72 px-2.5 text-[10px] font-extrabold text-slate-700 shadow-[0_4px_12px_rgba(90,117,136,0.09)] backdrop-blur">
             +VAT
           </div>
         </div>

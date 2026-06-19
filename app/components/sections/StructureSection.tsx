@@ -14,6 +14,11 @@ type Props = {
   rows: any; // ✅ 전역필터가 반영된 raw rows
   monthGoal: any;
   allRowsLoading?: boolean; // ✅ CSV 로딩 여부(원천 rows 기준)
+  /**
+   * 일반 웹 슬라이드 전용.
+   * 미지정 시 기존처럼 모든 구조 블록을 연속 렌더링한다.
+   */
+  activeSlide?: 0 | 1 | 2;
 };
 
 // ===== 숫자/비율 안전 유틸 =====
@@ -1058,6 +1063,7 @@ export default function StructureSection({
   rows,
   monthGoal,
   allRowsLoading,
+  activeSlide,
 }: Props) {
   const reportMode = resolveReportMode(reportType);
   const copy = getStructureCopy(reportMode);
@@ -1067,35 +1073,49 @@ export default function StructureSection({
   const campaignRows = Array.isArray(byCampaign) ? byCampaign : [];
 
   const insightLoading = (allRowsLoading ?? false) && sourceRows.length === 0;
+  const showAllSlides = activeSlide == null;
 
   return (
-    <div className="mt-6 space-y-8">
-      <div>
-        <SectionIntro
-          badge="🧭 SOURCE"
-          title="소스별 구조 성과"
-          description={copy.sourceDescription}
-          compact
-        />
+    <div className="mt-0">
+      <div
+        className={showAllSlides || activeSlide === 0 ? "space-y-8" : "hidden"}
+        aria-hidden={!showAllSlides && activeSlide !== 0}
+      >
+        <div>
+          <SectionIntro
+            badge="🧭 SOURCE"
+            title="소스별 구조 성과"
+            description={copy.sourceDescription}
+            compact
+          />
 
-        <SourceTable
-          reportMode={reportMode}
-          sourceRows={sourceRows}
-          allRowsLoading={allRowsLoading}
-        />
+          <SourceTable
+            reportMode={reportMode}
+            sourceRows={sourceRows}
+            allRowsLoading={allRowsLoading}
+          />
+        </div>
+
+        <div>
+          <InsightPanel
+            reportMode={reportMode}
+            sourceRows={sourceRows}
+            monthGoal={monthGoal}
+            insightLoading={insightLoading}
+            description={copy.insightDescription}
+          />
+        </div>
       </div>
 
-      <div>
-        <InsightPanel
-          reportMode={reportMode}
-          sourceRows={sourceRows}
-          monthGoal={monthGoal}
-          insightLoading={insightLoading}
-          description={copy.insightDescription}
-        />
-      </div>
-
-      <div>
+      <div
+        className={[
+          showAllSlides ? "mt-8" : "",
+          showAllSlides || activeSlide === 1 ? "block" : "hidden",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        aria-hidden={!showAllSlides && activeSlide !== 1}
+      >
         <SectionIntro
           badge="📣 CAMPAIGN"
           title="캠페인별 성과"
@@ -1106,11 +1126,21 @@ export default function StructureSection({
         <CampaignTable reportMode={reportMode} campaignRows={campaignRows} />
       </div>
 
-      <GroupSection
-        reportMode={reportMode}
-        scopedRows={scopedRows}
-        description={copy.groupDescription}
-      />
+      <div
+        className={[
+          showAllSlides ? "mt-8" : "",
+          showAllSlides || activeSlide === 2 ? "block" : "hidden",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        aria-hidden={!showAllSlides && activeSlide !== 2}
+      >
+        <GroupSection
+          reportMode={reportMode}
+          scopedRows={scopedRows}
+          description={copy.groupDescription}
+        />
+      </div>
     </div>
   );
 }

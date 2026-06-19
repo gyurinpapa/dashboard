@@ -311,6 +311,7 @@ type Props = {
 };
 
 type ReportFilterKey = FilterKey;
+type SummarySlideIndex = 0 | 1 | 2;
 type HeaderBarProps = ComponentProps<typeof HeaderBar>;
 
 type HypothesisTabKey =
@@ -3014,6 +3015,15 @@ export default function ReportTemplate({
   forcedTab,
 }: Props) {
   const [internalTab, setInternalTab] = useState<TabKey>("summary");
+  const [summarySlide, setSummarySlide] = useState<SummarySlideIndex>(0);
+  const [summary2Slide, setSummary2Slide] = useState<SummarySlideIndex>(0);
+  const [structureSlide, setStructureSlide] = useState<SummarySlideIndex>(0);
+  const [keywordSlide, setKeywordSlide] = useState<SummarySlideIndex>(0);
+  const [keywordDetailSlide, setKeywordDetailSlide] =
+    useState<SummarySlideIndex>(0);
+  const [creativeSlide, setCreativeSlide] = useState<SummarySlideIndex>(0);
+  const [creativeDetailSlide, setCreativeDetailSlide] =
+    useState<SummarySlideIndex>(0);
 
   const tab = forcedTab ?? internalTab;
 
@@ -3021,6 +3031,78 @@ export default function ReportTemplate({
     if (forcedTab) return;
     setInternalTab(next);
   }, [forcedTab]);
+
+  const goToPreviousSummarySlide = useCallback(() => {
+    setSummarySlide((current) =>
+      Math.max(0, current - 1) as SummarySlideIndex,
+    );
+  }, []);
+
+  const goToNextSummarySlide = useCallback(() => {
+    setSummarySlide((current) =>
+      Math.min(2, current + 1) as SummarySlideIndex,
+    );
+  }, []);
+
+  const goToPreviousStructureSlide = useCallback(() => {
+    setStructureSlide((current) =>
+      Math.max(0, current - 1) as SummarySlideIndex,
+    );
+  }, []);
+
+  const goToNextStructureSlide = useCallback(() => {
+    setStructureSlide((current) =>
+      Math.min(2, current + 1) as SummarySlideIndex,
+    );
+  }, []);
+
+  const goToPreviousKeywordSlide = useCallback(() => {
+    setKeywordSlide((current) =>
+      Math.max(0, current - 1) as SummarySlideIndex,
+    );
+  }, []);
+
+  const goToNextKeywordSlide = useCallback(() => {
+    setKeywordSlide((current) =>
+      Math.min(1, current + 1) as SummarySlideIndex,
+    );
+  }, []);
+
+  const goToPreviousKeywordDetailSlide = useCallback(() => {
+    setKeywordDetailSlide((current) =>
+      Math.max(0, current - 1) as SummarySlideIndex,
+    );
+  }, []);
+
+  const goToNextKeywordDetailSlide = useCallback(() => {
+    setKeywordDetailSlide((current) =>
+      Math.min(2, current + 1) as SummarySlideIndex,
+    );
+  }, []);
+
+  const goToPreviousCreativeSlide = useCallback(() => {
+    setCreativeSlide((current) =>
+      Math.max(0, current - 1) as SummarySlideIndex,
+    );
+  }, []);
+
+  const goToNextCreativeSlide = useCallback(() => {
+    setCreativeSlide((current) =>
+      Math.min(1, current + 1) as SummarySlideIndex,
+    );
+  }, []);
+
+  const goToPreviousCreativeDetailSlide = useCallback(() => {
+    setCreativeDetailSlide((current) =>
+      Math.max(0, current - 1) as SummarySlideIndex,
+    );
+  }, []);
+
+  const goToNextCreativeDetailSlide = useCallback(() => {
+    setCreativeDetailSlide((current) =>
+      Math.min(2, current + 1) as SummarySlideIndex,
+    );
+  }, []);
 
   const [filterKey, setFilterKey] = useState<ReportFilterKey>(null);
   const [selectedMonth, setSelectedMonth] = useState<MonthKey>("all");
@@ -3160,6 +3242,27 @@ export default function ReportTemplate({
   }, [effectiveReportTypeKey, reportTypeName, headerFallback.reportTypeName]);
 
   const reportType = effectiveReportTypeKey;
+
+  const summary2SlideCount = reportType === "traffic" ? 1 : 3;
+  const summary2LastSlide = (summary2SlideCount - 1) as SummarySlideIndex;
+
+  const goToPreviousSummary2Slide = useCallback(() => {
+    setSummary2Slide((current) =>
+      Math.max(0, current - 1) as SummarySlideIndex,
+    );
+  }, []);
+
+  const goToNextSummary2Slide = useCallback(() => {
+    setSummary2Slide((current) =>
+      Math.min(summary2LastSlide, current + 1) as SummarySlideIndex,
+    );
+  }, [summary2LastSlide]);
+
+  useEffect(() => {
+    setSummary2Slide((current) =>
+      Math.min(summary2LastSlide, current) as SummarySlideIndex,
+    );
+  }, [summary2LastSlide]);
 
   useEffect(() => {
     try {
@@ -4094,15 +4197,93 @@ export default function ReportTemplate({
               <div className="mx-auto w-full min-w-0 max-w-full">
                 <div className="space-y-8 pt-0">
                   {deferredTab === "summary" && (
-                    <>
-                      <div className="relative overflow-hidden rounded-[32px] bg-[linear-gradient(145deg,rgba(255,253,249,0.97)_0%,rgba(255,250,242,0.94)_56%,rgba(241,248,250,0.94)_100%)] shadow-[0_18px_46px_rgba(90,117,136,0.10)] [&>section]:rounded-[32px] [&>section]:border-0 [&>section]:bg-transparent [&>section]:shadow-none">
-                        <MonthGoalSection {...(monthGoalSectionProps as any)} />
-                      </div>
+                    forcedTab === "summary" ? (
+                      <>
+                        <div className="relative overflow-hidden rounded-[32px] bg-[linear-gradient(145deg,rgba(255,253,249,0.97)_0%,rgba(255,250,242,0.94)_56%,rgba(241,248,250,0.94)_100%)] shadow-[0_18px_46px_rgba(90,117,136,0.10)] [&>section]:rounded-[32px] [&>section]:border-0 [&>section]:bg-transparent [&>section]:shadow-none">
+                          <MonthGoalSection {...(monthGoalSectionProps as any)} />
+                        </div>
 
-                      <div className="rounded-2xl">
-                        <SummarySection {...(summarySectionProps as any)} />
-                      </div>
-                    </>
+                        <div className="rounded-2xl">
+                          <SummarySection {...(summarySectionProps as any)} />
+                        </div>
+                      </>
+                    ) : (
+                      <section aria-label="요약 슬라이드" className="space-y-4">
+                        <div className="flex flex-col items-center justify-between gap-3 rounded-[22px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)]/88 px-4 py-3 shadow-[0_8px_22px_rgba(127,166,196,0.10)] sm:flex-row">
+                          <button
+                            type="button"
+                            onClick={goToPreviousSummarySlide}
+                            disabled={summarySlide === 0}
+                            className="inline-flex h-9 min-w-[104px] items-center justify-center rounded-full border border-[var(--nature-border-blue)] bg-white px-4 text-xs font-semibold text-slate-700 transition hover:bg-[var(--nature-blue-light)]/25 disabled:cursor-not-allowed disabled:opacity-35"
+                          >
+                            ‹ 이전
+                          </button>
+
+                          <div className="flex flex-col items-center gap-2">
+                            <div className="text-xs font-semibold tracking-[0.08em] text-slate-600">
+                              슬라이드 {summarySlide + 1} / 3
+                            </div>
+
+                            <div className="flex items-center gap-2" aria-label="요약 슬라이드 선택">
+                              {([0, 1, 2] as const).map((slideIndex) => (
+                                <button
+                                  key={slideIndex}
+                                  type="button"
+                                  onClick={() => setSummarySlide(slideIndex)}
+                                  aria-label={`슬라이드 ${slideIndex + 1}로 이동`}
+                                  aria-current={
+                                    summarySlide === slideIndex ? "page" : undefined
+                                  }
+                                  className={[
+                                    "h-2.5 rounded-full transition-all",
+                                    summarySlide === slideIndex
+                                      ? "w-8 bg-[var(--nature-blue)]"
+                                      : "w-2.5 bg-slate-300 hover:bg-[var(--nature-blue-light)]",
+                                  ].join(" ")}
+                                />
+                              ))}
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={goToNextSummarySlide}
+                            disabled={summarySlide === 2}
+                            className="inline-flex h-9 min-w-[104px] items-center justify-center rounded-full border border-[var(--nature-border-blue)] bg-white px-4 text-xs font-semibold text-slate-700 transition hover:bg-[var(--nature-blue-light)]/25 disabled:cursor-not-allowed disabled:opacity-35"
+                          >
+                            다음 ›
+                          </button>
+                        </div>
+                        <div className="relative mx-auto w-full overflow-hidden rounded-[32px] border border-[var(--nature-border-blue)] bg-[linear-gradient(145deg,rgba(255,253,249,0.98)_0%,rgba(255,250,242,0.96)_56%,rgba(241,248,250,0.96)_100%)] shadow-[0_22px_54px_rgba(90,117,136,0.14)]">
+                          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.98)_18%,rgba(255,255,255,0.98)_82%,transparent_100%)]" />
+
+                          <div className="relative min-h-[680px] p-4 sm:p-5 lg:min-h-[760px] lg:p-6 xl:p-7">
+                            <div
+                              className={
+                                summarySlide === 0
+                                  ? "block"
+                                  : "hidden"
+                              }
+                              aria-hidden={summarySlide !== 0}
+                            >
+                              <div className="relative overflow-hidden rounded-[28px] bg-transparent [&>section]:mb-0 [&>section]:mt-0 [&>section]:rounded-[28px] [&>section]:border-0 [&>section]:bg-transparent [&>section]:shadow-none">
+                                <MonthGoalSection
+                                  {...(monthGoalSectionProps as any)}
+                                />
+                              </div>
+                            </div>
+
+                            <div className={summarySlide === 0 ? "mt-6" : "mt-0"}>
+                              <SummarySection
+                                {...(summarySectionProps as any)}
+                                activeSlide={summarySlide}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                      </section>
+                    )
                   )}
 
                   {deferredTab === "decision" && (
@@ -4140,61 +4321,483 @@ export default function ReportTemplate({
                   )}
 
                   {deferredTab === "summary2" && (
-                    <div className="rounded-2xl">
-                      <Summary2Section
-                        {...({ reportType } as any)}
-                        rows={summaryFilteredRows as any[]}
-                      />
-                    </div>
+                    forcedTab === "summary2" ? (
+                      <div className="rounded-2xl">
+                        <Summary2Section
+                          {...({ reportType } as any)}
+                          rows={summaryFilteredRows as any[]}
+                        />
+                      </div>
+                    ) : (
+                      <section aria-label="요약2 슬라이드" className="space-y-4">
+                        <div className="flex flex-col items-center justify-between gap-3 rounded-[22px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)]/88 px-4 py-3 shadow-[0_8px_22px_rgba(127,166,196,0.10)] sm:flex-row">
+                          <button
+                            type="button"
+                            onClick={goToPreviousSummary2Slide}
+                            disabled={summary2Slide === 0}
+                            className="inline-flex h-9 min-w-[104px] items-center justify-center rounded-full border border-[var(--nature-border-blue)] bg-white px-4 text-xs font-semibold text-slate-700 transition hover:bg-[var(--nature-blue-light)]/25 disabled:cursor-not-allowed disabled:opacity-35"
+                          >
+                            ‹ 이전
+                          </button>
+
+                          <div className="flex flex-col items-center gap-2">
+                            <div className="text-xs font-semibold tracking-[0.08em] text-slate-600">
+                              슬라이드 {summary2Slide + 1} / {summary2SlideCount}
+                            </div>
+
+                            <div className="flex items-center gap-2" aria-label="요약2 슬라이드 선택">
+                              {Array.from({ length: summary2SlideCount }, (_, index) => index as SummarySlideIndex).map((slideIndex) => (
+                                <button
+                                  key={slideIndex}
+                                  type="button"
+                                  onClick={() => setSummary2Slide(slideIndex)}
+                                  aria-label={`슬라이드 ${slideIndex + 1}로 이동`}
+                                  aria-current={
+                                    summary2Slide === slideIndex ? "page" : undefined
+                                  }
+                                  className={[
+                                    "h-2.5 rounded-full transition-all",
+                                    summary2Slide === slideIndex
+                                      ? "w-8 bg-[var(--nature-blue)]"
+                                      : "w-2.5 bg-slate-300 hover:bg-[var(--nature-blue-light)]",
+                                  ].join(" ")}
+                                />
+                              ))}
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={goToNextSummary2Slide}
+                            disabled={summary2Slide === summary2LastSlide}
+                            className="inline-flex h-9 min-w-[104px] items-center justify-center rounded-full border border-[var(--nature-border-blue)] bg-white px-4 text-xs font-semibold text-slate-700 transition hover:bg-[var(--nature-blue-light)]/25 disabled:cursor-not-allowed disabled:opacity-35"
+                          >
+                            다음 ›
+                          </button>
+                        </div>
+
+                        <div className="relative mx-auto w-full overflow-hidden rounded-[32px] border border-[var(--nature-border-blue)] bg-[linear-gradient(145deg,rgba(255,253,249,0.98)_0%,rgba(255,250,242,0.96)_56%,rgba(241,248,250,0.96)_100%)] shadow-[0_22px_54px_rgba(90,117,136,0.14)]">
+                          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.98)_18%,rgba(255,255,255,0.98)_82%,transparent_100%)]" />
+
+                          <div className="relative min-h-[680px] p-4 sm:p-5 lg:min-h-[760px] lg:p-6 xl:p-7">
+                            <Summary2Section
+                              {...({ reportType } as any)}
+                              rows={summaryFilteredRows as any[]}
+                              activeSlide={summary2Slide}
+                            />
+                          </div>
+                        </div>
+                      </section>
+                    )
                   )}
 
                   {deferredTab === "structure" && (
-                    <div className="rounded-2xl">
-                      <StructureSection
-                        {...({ reportType } as any)}
-                        bySource={bySource}
-                        byCampaign={byCampaign}
-                        rows={summaryFilteredRowsWithCreatives}
-                        monthGoal={stableMonthGoal}
-                      />
-                    </div>
+                    forcedTab === "structure" ? (
+                      <div className="rounded-2xl">
+                        <StructureSection
+                          {...({ reportType } as any)}
+                          bySource={bySource}
+                          byCampaign={byCampaign}
+                          rows={summaryFilteredRowsWithCreatives}
+                          monthGoal={stableMonthGoal}
+                        />
+                      </div>
+                    ) : (
+                      <section aria-label="구조 슬라이드" className="space-y-4">
+                        <div className="flex flex-col items-center justify-between gap-3 rounded-[22px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)]/88 px-4 py-3 shadow-[0_8px_22px_rgba(127,166,196,0.10)] sm:flex-row">
+                          <button
+                            type="button"
+                            onClick={goToPreviousStructureSlide}
+                            disabled={structureSlide === 0}
+                            className="inline-flex h-9 min-w-[104px] items-center justify-center rounded-full border border-[var(--nature-border-blue)] bg-white px-4 text-xs font-semibold text-slate-700 transition hover:bg-[var(--nature-blue-light)]/25 disabled:cursor-not-allowed disabled:opacity-35"
+                          >
+                            ‹ 이전
+                          </button>
+
+                          <div className="flex flex-col items-center gap-2">
+                            <div className="text-xs font-semibold tracking-[0.08em] text-slate-600">
+                              슬라이드 {structureSlide + 1} / 3
+                            </div>
+
+                            <div
+                              className="flex items-center gap-2"
+                              aria-label="구조 슬라이드 선택"
+                            >
+                              {([0, 1] as SummarySlideIndex[]).map(
+                                (slideIndex) => (
+                                  <button
+                                    key={slideIndex}
+                                    type="button"
+                                    onClick={() => setStructureSlide(slideIndex)}
+                                    aria-label={`슬라이드 ${slideIndex + 1}로 이동`}
+                                    aria-current={
+                                      structureSlide === slideIndex
+                                        ? "page"
+                                        : undefined
+                                    }
+                                    className={[
+                                      "h-2.5 rounded-full transition-all",
+                                      structureSlide === slideIndex
+                                        ? "w-8 bg-[var(--nature-blue)]"
+                                        : "w-2.5 bg-slate-300 hover:bg-[var(--nature-blue-light)]",
+                                    ].join(" ")}
+                                  />
+                                ),
+                              )}
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={goToNextStructureSlide}
+                            disabled={structureSlide === 2}
+                            className="inline-flex h-9 min-w-[104px] items-center justify-center rounded-full border border-[var(--nature-border-blue)] bg-white px-4 text-xs font-semibold text-slate-700 transition hover:bg-[var(--nature-blue-light)]/25 disabled:cursor-not-allowed disabled:opacity-35"
+                          >
+                            다음 ›
+                          </button>
+                        </div>
+
+                        <div className="relative mx-auto w-full overflow-hidden rounded-[32px] border border-[var(--nature-border-blue)] bg-[linear-gradient(145deg,rgba(255,253,249,0.98)_0%,rgba(255,250,242,0.96)_56%,rgba(241,248,250,0.96)_100%)] shadow-[0_22px_54px_rgba(90,117,136,0.14)]">
+                          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.98)_18%,rgba(255,255,255,0.98)_82%,transparent_100%)]" />
+
+                          <div className="relative min-h-[680px] p-4 sm:p-5 lg:min-h-[760px] lg:p-6 xl:p-7">
+                            <StructureSection
+                              {...({ reportType } as any)}
+                              bySource={bySource}
+                              byCampaign={byCampaign}
+                              rows={summaryFilteredRowsWithCreatives}
+                              monthGoal={stableMonthGoal}
+                              activeSlide={structureSlide}
+                            />
+                          </div>
+                        </div>
+                      </section>
+                    )
                   )}
 
                   {deferredTab === "keyword" && (
-                    <div className="rounded-2xl">
-                      <KeywordSection
-                        {...({ reportType } as any)}
-                        keywordAgg={keywordAgg}
-                        keywordInsight={keywordInsight}
-                      />
-                    </div>
+                    forcedTab === "keyword" ? (
+                      <div className="rounded-2xl">
+                        <KeywordSection
+                          {...({ reportType } as any)}
+                          keywordAgg={keywordAgg}
+                          keywordInsight={keywordInsight}
+                        />
+                      </div>
+                    ) : (
+                      <section aria-label="키워드 슬라이드" className="space-y-4">
+                        <div className="flex flex-col items-center justify-between gap-3 rounded-[22px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)]/88 px-4 py-3 shadow-[0_8px_22px_rgba(127,166,196,0.10)] sm:flex-row">
+                          <button
+                            type="button"
+                            onClick={goToPreviousKeywordSlide}
+                            disabled={keywordSlide === 0}
+                            className="inline-flex h-9 min-w-[104px] items-center justify-center rounded-full border border-[var(--nature-border-blue)] bg-white px-4 text-xs font-semibold text-slate-700 transition hover:bg-[var(--nature-blue-light)]/25 disabled:cursor-not-allowed disabled:opacity-35"
+                          >
+                            ‹ 이전
+                          </button>
+
+                          <div className="flex flex-col items-center gap-2">
+                            <div className="text-xs font-semibold tracking-[0.08em] text-slate-600">
+                              슬라이드 {keywordSlide + 1} / 2
+                            </div>
+
+                            <div
+                              className="flex items-center gap-2"
+                              aria-label="키워드 슬라이드 선택"
+                            >
+                              {([0, 1] as SummarySlideIndex[]).map(
+                                (slideIndex) => (
+                                  <button
+                                    key={slideIndex}
+                                    type="button"
+                                    onClick={() => setKeywordSlide(slideIndex)}
+                                    aria-label={`슬라이드 ${slideIndex + 1}로 이동`}
+                                    aria-current={
+                                      keywordSlide === slideIndex
+                                        ? "page"
+                                        : undefined
+                                    }
+                                    className={[
+                                      "h-2.5 rounded-full transition-all",
+                                      keywordSlide === slideIndex
+                                        ? "w-8 bg-[var(--nature-blue)]"
+                                        : "w-2.5 bg-slate-300 hover:bg-[var(--nature-blue-light)]",
+                                    ].join(" ")}
+                                  />
+                                ),
+                              )}
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={goToNextKeywordSlide}
+                            disabled={keywordSlide === 1}
+                            className="inline-flex h-9 min-w-[104px] items-center justify-center rounded-full border border-[var(--nature-border-blue)] bg-white px-4 text-xs font-semibold text-slate-700 transition hover:bg-[var(--nature-blue-light)]/25 disabled:cursor-not-allowed disabled:opacity-35"
+                          >
+                            다음 ›
+                          </button>
+                        </div>
+
+                        <div className="relative mx-auto w-full overflow-hidden rounded-[32px] border border-[var(--nature-border-blue)] bg-[linear-gradient(145deg,rgba(255,253,249,0.98)_0%,rgba(255,250,242,0.96)_56%,rgba(241,248,250,0.96)_100%)] shadow-[0_22px_54px_rgba(90,117,136,0.14)]">
+                          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.98)_18%,rgba(255,255,255,0.98)_82%,transparent_100%)]" />
+
+                          <div className="relative min-h-[680px] p-4 sm:p-5 lg:min-h-[760px] lg:p-6 xl:p-7">
+                            <KeywordSection
+                              {...({ reportType } as any)}
+                              keywordAgg={keywordAgg}
+                              keywordInsight={keywordInsight}
+                              activeSlide={keywordSlide}
+                            />
+                          </div>
+                        </div>
+                      </section>
+                    )
                   )}
 
-                  {deferredTab === "keywordDetail" && (
-                    <div className="rounded-2xl">
-                      <KeywordDetailSection
-                        {...({ reportType } as any)}
-                        rows={keywordOnlyRows as any[]}
-                      />
-                    </div>
+                  {deferredTab === "keywordDetail" &&
+                    (forcedTab === "keywordDetail" ? (
+                      <div className="rounded-2xl">
+                        <KeywordDetailSection
+                          {...({ reportType } as any)}
+                          rows={keywordOnlyRows as any[]}
+                        />
+                      </div>
+                    ) : (
+                      <section className="space-y-4">
+                        <div className="flex items-center justify-between gap-4 rounded-[22px] border border-[var(--nature-border-blue)] bg-white/88 px-4 py-3 shadow-[0_10px_26px_rgba(90,117,136,0.08)] backdrop-blur sm:px-5">
+                          <button
+                            type="button"
+                            onClick={goToPreviousKeywordDetailSlide}
+                            disabled={keywordDetailSlide === 0}
+                            className="inline-flex h-9 min-w-[104px] items-center justify-center rounded-full border border-[var(--nature-border-blue)] bg-white px-4 text-xs font-semibold text-slate-700 transition hover:bg-[var(--nature-blue-light)]/25 disabled:cursor-not-allowed disabled:opacity-35"
+                          >
+                            ‹ 이전
+                          </button>
+
+                          <div className="flex flex-col items-center gap-2">
+                            <div className="text-xs font-semibold tracking-[0.08em] text-slate-600">
+                              슬라이드 {keywordDetailSlide + 1} / 3
+                            </div>
+
+                            <div
+                              className="flex items-center gap-2"
+                              aria-label="키워드 상세 슬라이드 선택"
+                            >
+                              {([0, 1, 2] as SummarySlideIndex[]).map(
+                                (slideIndex) => (
+                                  <button
+                                    key={slideIndex}
+                                    type="button"
+                                    onClick={() =>
+                                      setKeywordDetailSlide(slideIndex)
+                                    }
+                                    aria-label={`슬라이드 ${
+                                      slideIndex + 1
+                                    }로 이동`}
+                                    aria-current={
+                                      keywordDetailSlide === slideIndex
+                                        ? "page"
+                                        : undefined
+                                    }
+                                    className={[
+                                      "h-2.5 rounded-full transition-all",
+                                      keywordDetailSlide === slideIndex
+                                        ? "w-8 bg-[var(--nature-blue)]"
+                                        : "w-2.5 bg-slate-300 hover:bg-[var(--nature-blue-light)]",
+                                    ].join(" ")}
+                                  />
+                                ),
+                              )}
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={goToNextKeywordDetailSlide}
+                            disabled={keywordDetailSlide === 2}
+                            className="inline-flex h-9 min-w-[104px] items-center justify-center rounded-full border border-[var(--nature-border-blue)] bg-white px-4 text-xs font-semibold text-slate-700 transition hover:bg-[var(--nature-blue-light)]/25 disabled:cursor-not-allowed disabled:opacity-35"
+                          >
+                            다음 ›
+                          </button>
+                        </div>
+
+                        <div className="relative mx-auto w-full overflow-hidden rounded-[32px] border border-[var(--nature-border-blue)] bg-[linear-gradient(145deg,rgba(255,253,249,0.98)_0%,rgba(255,250,242,0.96)_56%,rgba(241,248,250,0.96)_100%)] shadow-[0_22px_54px_rgba(90,117,136,0.14)]">
+                          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.98)_18%,rgba(255,255,255,0.98)_82%,transparent_100%)]" />
+
+                          <div className="relative min-h-[680px] p-4 sm:p-5 lg:min-h-[760px] lg:p-6 xl:p-7">
+                            <KeywordDetailSection
+                              {...({ reportType } as any)}
+                              rows={keywordOnlyRows as any[]}
+                              activeSlide={keywordDetailSlide}
+                            />
+                          </div>
+                        </div>
+                      </section>
+                    )
                   )}
 
-                  {deferredTab === "creative" && (
-                    <div className="rounded-2xl">
-                      <CreativeSection
-                        {...({ reportType } as any)}
-                        rows={summaryFilteredRowsWithCreatives as any[]}
-                      />
-                    </div>
+                  {deferredTab === "creative" &&
+                    (forcedTab === "creative" ? (
+                      <div className="rounded-2xl">
+                        <CreativeSection
+                          {...({ reportType } as any)}
+                          rows={summaryFilteredRowsWithCreatives as any[]}
+                        />
+                      </div>
+                    ) : (
+                      <section aria-label="소재 슬라이드" className="space-y-4">
+                        <div className="flex flex-col items-center justify-between gap-3 rounded-[22px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)]/88 px-4 py-3 shadow-[0_8px_22px_rgba(127,166,196,0.10)] sm:flex-row">
+                          <button
+                            type="button"
+                            onClick={goToPreviousCreativeSlide}
+                            disabled={creativeSlide === 0}
+                            className="inline-flex h-9 min-w-[104px] items-center justify-center rounded-full border border-[var(--nature-border-blue)] bg-white px-4 text-xs font-semibold text-slate-700 transition hover:bg-[var(--nature-blue-light)]/25 disabled:cursor-not-allowed disabled:opacity-35"
+                          >
+                            ‹ 이전
+                          </button>
+
+                          <div className="flex flex-col items-center gap-2">
+                            <div className="text-xs font-semibold tracking-[0.08em] text-slate-600">
+                              슬라이드 {creativeSlide + 1} / 2
+                            </div>
+
+                            <div
+                              className="flex items-center gap-2"
+                              aria-label="소재 슬라이드 선택"
+                            >
+                              {([0, 1] as SummarySlideIndex[]).map(
+                                (slideIndex) => (
+                                  <button
+                                    key={slideIndex}
+                                    type="button"
+                                    onClick={() => setCreativeSlide(slideIndex)}
+                                    aria-label={`슬라이드 ${slideIndex + 1}로 이동`}
+                                    aria-current={
+                                      creativeSlide === slideIndex
+                                        ? "page"
+                                        : undefined
+                                    }
+                                    className={[
+                                      "h-2.5 rounded-full transition-all",
+                                      creativeSlide === slideIndex
+                                        ? "w-8 bg-[var(--nature-blue)]"
+                                        : "w-2.5 bg-slate-300 hover:bg-[var(--nature-blue-light)]",
+                                    ].join(" ")}
+                                  />
+                                ),
+                              )}
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={goToNextCreativeSlide}
+                            disabled={creativeSlide === 1}
+                            className="inline-flex h-9 min-w-[104px] items-center justify-center rounded-full border border-[var(--nature-border-blue)] bg-white px-4 text-xs font-semibold text-slate-700 transition hover:bg-[var(--nature-blue-light)]/25 disabled:cursor-not-allowed disabled:opacity-35"
+                          >
+                            다음 ›
+                          </button>
+                        </div>
+
+                        <div className="relative mx-auto w-full overflow-hidden rounded-[32px] border border-[var(--nature-border-blue)] bg-[linear-gradient(145deg,rgba(255,253,249,0.98)_0%,rgba(255,250,242,0.96)_56%,rgba(241,248,250,0.96)_100%)] shadow-[0_22px_54px_rgba(90,117,136,0.14)]">
+                          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.98)_18%,rgba(255,255,255,0.98)_82%,transparent_100%)]" />
+
+                          <div className="relative min-h-[680px] p-4 sm:p-5 lg:min-h-[760px] lg:p-6 xl:p-7">
+                            <CreativeSection
+                              {...({ reportType } as any)}
+                              rows={summaryFilteredRowsWithCreatives as any[]}
+                              activeSlide={creativeSlide as 0 | 1}
+                            />
+                          </div>
+                        </div>
+                      </section>
+                    )
                   )}
 
-                  {deferredTab === "creativeDetail" && (
-                    <div className="rounded-2xl">
-                      <CreativeDetailSection
-                        {...({ reportType } as any)}
-                        rows={summaryFilteredRowsWithCreatives as any[]}
-                      />
-                    </div>
+                  {deferredTab === "creativeDetail" &&
+                    (forcedTab === "creativeDetail" ? (
+                      <div className="rounded-2xl">
+                        <CreativeDetailSection
+                          {...({ reportType } as any)}
+                          rows={summaryFilteredRowsWithCreatives as any[]}
+                        />
+                      </div>
+                    ) : (
+                      <section
+                        aria-label="소재 상세 슬라이드"
+                        className="space-y-4"
+                      >
+                        <div className="flex flex-col items-center justify-between gap-3 rounded-[22px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)]/88 px-4 py-3 shadow-[0_8px_22px_rgba(127,166,196,0.10)] sm:flex-row">
+                          <button
+                            type="button"
+                            onClick={goToPreviousCreativeDetailSlide}
+                            disabled={creativeDetailSlide === 0}
+                            className="inline-flex h-9 min-w-[104px] items-center justify-center rounded-full border border-[var(--nature-border-blue)] bg-white px-4 text-xs font-semibold text-slate-700 transition hover:bg-[var(--nature-blue-light)]/25 disabled:cursor-not-allowed disabled:opacity-35"
+                          >
+                            ‹ 이전
+                          </button>
+
+                          <div className="flex flex-col items-center gap-2">
+                            <div className="text-xs font-semibold tracking-[0.08em] text-slate-600">
+                              슬라이드 {creativeDetailSlide + 1} / 3
+                            </div>
+
+                            <div
+                              className="flex items-center gap-2"
+                              aria-label="소재 상세 슬라이드 선택"
+                            >
+                              {([0, 1, 2] as SummarySlideIndex[]).map(
+                                (slideIndex) => (
+                                  <button
+                                    key={slideIndex}
+                                    type="button"
+                                    onClick={() =>
+                                      setCreativeDetailSlide(slideIndex)
+                                    }
+                                    aria-label={`슬라이드 ${
+                                      slideIndex + 1
+                                    }로 이동`}
+                                    aria-current={
+                                      creativeDetailSlide === slideIndex
+                                        ? "page"
+                                        : undefined
+                                    }
+                                    className={[
+                                      "h-2.5 rounded-full transition-all",
+                                      creativeDetailSlide === slideIndex
+                                        ? "w-8 bg-[var(--nature-blue)]"
+                                        : "w-2.5 bg-slate-300 hover:bg-[var(--nature-blue-light)]",
+                                    ].join(" ")}
+                                  />
+                                ),
+                              )}
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={goToNextCreativeDetailSlide}
+                            disabled={creativeDetailSlide === 2}
+                            className="inline-flex h-9 min-w-[104px] items-center justify-center rounded-full border border-[var(--nature-border-blue)] bg-white px-4 text-xs font-semibold text-slate-700 transition hover:bg-[var(--nature-blue-light)]/25 disabled:cursor-not-allowed disabled:opacity-35"
+                          >
+                            다음 ›
+                          </button>
+                        </div>
+
+                        <div className="relative mx-auto w-full overflow-hidden rounded-[32px] border border-[var(--nature-border-blue)] bg-[linear-gradient(145deg,rgba(255,253,249,0.98)_0%,rgba(255,250,242,0.96)_56%,rgba(241,248,250,0.96)_100%)] shadow-[0_22px_54px_rgba(90,117,136,0.14)]">
+                          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.98)_18%,rgba(255,255,255,0.98)_82%,transparent_100%)]" />
+
+                          <div className="relative min-h-[680px] p-4 sm:p-5 lg:min-h-[760px] lg:p-6 xl:p-7">
+                            <CreativeDetailSection
+                              {...({ reportType } as any)}
+                              rows={summaryFilteredRowsWithCreatives as any[]}
+                              activeSlide={creativeDetailSlide}
+                            />
+                          </div>
+                        </div>
+                      </section>
+                    )
                   )}
                 </div>
               </div>

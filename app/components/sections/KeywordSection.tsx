@@ -40,6 +40,11 @@ type Props = {
   reportType?: ReportMode;
   keywordAgg: any[];
   keywordInsight: string;
+  /**
+   * 일반 웹 슬라이드 표시용입니다.
+   * undefined이면 export/기존 호출과 동일하게 전체 블록을 렌더합니다.
+   */
+  activeSlide?: 0 | 1;
 };
 
 function resolveReportMode(reportType?: ReportMode): ReportMode {
@@ -722,6 +727,7 @@ export default function KeywordSection({
   reportType,
   keywordAgg,
   keywordInsight,
+  activeSlide,
 }: Props) {
   const reportMode = resolveReportMode(reportType);
   const tableMeta = getKeywordTableMeta(reportMode);
@@ -995,8 +1001,13 @@ export default function KeywordSection({
     [rememberScroll]
   );
 
+  const showAllSlides = activeSlide == null;
+  const showOverviewSlide = showAllSlides || activeSlide === 0;
+  const showTableSlide = showAllSlides || activeSlide === 1;
+
   return (
     <section className="mt-2 space-y-6">
+      {showOverviewSlide ? (
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {reportMode === "traffic" ? (
           <>
@@ -1114,8 +1125,9 @@ export default function KeywordSection({
           </>
         )}
       </div>
+      ) : null}
 
-      <section>
+      <section className={showOverviewSlide ? "block" : "hidden"} aria-hidden={!showOverviewSlide}>
         <div className="rounded-2xl border border-[#CFC2B1]/55 bg-white p-5 shadow-[0_8px_22px_rgba(127,166,196,0.10)] sm:p-6">
           <SectionHeader
             badge="AI Insight"
@@ -1134,7 +1146,7 @@ export default function KeywordSection({
         </div>
       </section>
 
-      <section>
+      <section className={showTableSlide ? "block" : "hidden"} aria-hidden={!showTableSlide}>
         <div className="rounded-2xl border border-[#CFC2B1]/55 bg-white p-5 shadow-[0_8px_22px_rgba(127,166,196,0.10)] sm:p-6">
           <SectionHeader
             badge="Keyword Table"
