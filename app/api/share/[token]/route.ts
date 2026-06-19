@@ -51,6 +51,52 @@ function asStr(v: any) {
   return s;
 }
 
+function buildPublicStorageUrl(
+  sb: any,
+  bucketValue: any,
+  pathValue: any
+) {
+  const bucket = asStr(bucketValue);
+  const path = asStr(pathValue);
+
+  if (!bucket || !path) {
+    return null;
+  }
+
+  const { data } = sb.storage
+    .from(bucket)
+    .getPublicUrl(path);
+
+  return asStr(data?.publicUrl) || null;
+}
+
+async function fetchWorkspaceLogoUrl(
+  sb: any,
+  workspaceId: string
+) {
+  const id = asStr(workspaceId);
+
+  if (!id) {
+    return null;
+  }
+
+  const { data, error } = await sb
+    .from("workspaces")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error || !data) {
+    return null;
+  }
+
+  return buildPublicStorageUrl(
+    sb,
+    (data as any)?.logo_storage_bucket,
+    (data as any)?.logo_storage_path
+  );
+}
+
 /** ===== row extractor ===== */
 function tryParseJson(v: any) {
   if (!v) return null;
@@ -506,12 +552,18 @@ export async function GET(req: Request, ctx: Ctx) {
     asStr((report as any)?.published_creatives_batch_id) || null;
 
   const names = await fetchReportNames(sb, report);
+  const workspaceLogoUrl =
+    await fetchWorkspaceLogoUrl(
+      sb,
+      workspaceId
+    );
 
   const reportForResponse = {
     ...(report as any),
     advertiser_name: names.advertiser_name || null,
     report_type_name: names.report_type_name || null,
     report_type_key: names.report_type_key || null,
+    workspace_logo_url: workspaceLogoUrl,
   };
 
   if (strict) {

@@ -71,6 +71,7 @@ type Props = {
   advertiserName?: string | null;
   reportTypeName?: string | null;
   reportTypeKey?: string | null;
+  workspaceLogoUrl?: string | null;
 
   reportPeriod: ReportPeriod;
   onChangeReportPeriod: (next: ReportPeriod) => void;
@@ -164,12 +165,14 @@ const HeaderIntro = memo(function HeaderIntro({
   advertiserName,
   reportTypeName,
   reportTypeKey,
+  workspaceLogoUrl,
   fullPeriod,
   period,
 }: {
   advertiserName?: string | null;
   reportTypeName?: string | null;
   reportTypeKey?: string | null;
+  workspaceLogoUrl?: string | null;
   fullPeriod: string;
   period: string;
 }) {
@@ -236,7 +239,21 @@ const HeaderIntro = memo(function HeaderIntro({
   return (
     <div className="bg-transparent px-4 py-2.5 sm:px-5 sm:py-3">
       <div className="relative grid min-w-0 grid-cols-1 items-center gap-2 lg:grid-cols-[minmax(220px,1fr)_minmax(360px,760px)_minmax(260px,1fr)]">
-        <div className="hidden lg:block" />
+        {workspaceLogoUrl ? (
+          <div className="flex min-w-0 justify-center lg:justify-start">
+            <div className="flex h-12 w-full max-w-[150px] items-center justify-center overflow-hidden sm:h-14 lg:justify-start">
+              <img
+                src={workspaceLogoUrl}
+                alt="리포트 작성 기업 로고"
+                className="block h-full w-full object-contain object-center lg:object-left"
+                loading="eager"
+                decoding="async"
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="hidden lg:block" />
+        )}
 
         <div className="relative min-w-0 text-center">
           <div className="pointer-events-none absolute left-1/2 top-1/2 h-12 w-[82%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(127,166,196,0.20)_0%,rgba(183,215,227,0.09)_42%,rgba(255,255,255,0)_74%)] blur-xl" />
@@ -282,6 +299,7 @@ const ReadOnlyHeaderBar = memo(function ReadOnlyHeaderBar({
   advertiserName,
   reportTypeName,
   reportTypeKey,
+  workspaceLogoUrl,
   fullPeriod,
   period,
   reportPeriod,
@@ -289,6 +307,7 @@ const ReadOnlyHeaderBar = memo(function ReadOnlyHeaderBar({
   advertiserName?: string | null;
   reportTypeName?: string | null;
   reportTypeKey?: string | null;
+  workspaceLogoUrl?: string | null;
   fullPeriod: string;
   period: string;
   reportPeriod: ReportPeriod;
@@ -299,6 +318,7 @@ const ReadOnlyHeaderBar = memo(function ReadOnlyHeaderBar({
         advertiserName={advertiserName}
         reportTypeName={reportTypeName}
         reportTypeKey={reportTypeKey}
+        workspaceLogoUrl={workspaceLogoUrl}
         fullPeriod={fullPeriod}
         period={period}
       />
@@ -506,6 +526,7 @@ function EditorHeaderBar(props: Props) {
     advertiserName,
     reportTypeName,
     reportTypeKey,
+    workspaceLogoUrl,
     reportPeriod,
     onChangeReportPeriod,
     hidePeriodEditor = false,
@@ -836,6 +857,7 @@ function EditorHeaderBar(props: Props) {
         advertiserName={advertiserName}
         reportTypeName={reportTypeName}
         reportTypeKey={reportTypeKey}
+        workspaceLogoUrl={workspaceLogoUrl}
         fullPeriod={fullPeriod}
         period={period}
       />
@@ -990,6 +1012,7 @@ export default function HeaderBar(props: Props) {
               advertiserName={props.advertiserName}
               reportTypeName={props.reportTypeName}
               reportTypeKey={props.reportTypeKey}
+              workspaceLogoUrl={props.workspaceLogoUrl}
               fullPeriod={props.fullPeriod}
               period={props.period}
               reportPeriod={props.reportPeriod}

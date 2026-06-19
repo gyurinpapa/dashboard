@@ -38,6 +38,7 @@ type ReportRow = {
   advertiser_name?: string | null;
   report_type_name?: string | null;
   report_type_key?: string | null;
+  workspace_logo_url?: string | null;
   updated_at?: string | null;
 };
 
@@ -219,6 +220,10 @@ export default function ShareReportPage() {
   const advertiserName = useMemo(() => pickAdvertiserName(report), [report]);
   const reportTypeName = useMemo(() => pickReportTypeName(report), [report]);
   const reportTypeKey = useMemo(() => pickReportTypeKey(report), [report]);
+  const workspaceLogoUrl = useMemo(
+    () => asStr(report?.workspace_logo_url),
+    [report?.workspace_logo_url],
+  );
   const monthGoal = useMemo(() => pickMonthGoal(report), [report]);
   const brandSearchContracts = useMemo(() => pickBrandSearchContracts(report), [report]);
   const hasRenderableRows = deferredRows.length > 0;
@@ -484,6 +489,7 @@ export default function ShareReportPage() {
       advertiserName={advertiserName}
       reportTypeName={reportTypeName}
       reportTypeKey={reportTypeKey}
+      workspaceLogoUrl={workspaceLogoUrl}
       reportPeriod={shareReportPeriod}
       monthGoal={monthGoal}
       brandSearchContracts={brandSearchContracts}

@@ -296,6 +296,7 @@ type Props = {
   advertiserName?: string | null;
   reportTypeName?: string | null;
   reportTypeKey?: string | null;
+  workspaceLogoUrl?: string | null;
   reportPeriod: ReportPeriod;
   onChangeReportPeriod: (next: ReportPeriod) => void;
   monthGoal?: MonthGoalProp;
@@ -3005,6 +3006,7 @@ export default function ReportTemplate({
   advertiserName,
   reportTypeName,
   reportTypeKey,
+  workspaceLogoUrl,
   reportPeriod,
   onChangeReportPeriod,
   monthGoal: incomingMonthGoal,
@@ -4136,6 +4138,7 @@ export default function ReportTemplate({
       advertiserName: effectiveAdvertiserName,
       reportTypeName: effectiveReportTypeName,
       reportTypeKey: effectiveReportTypeKey,
+      workspaceLogoUrl: workspaceLogoUrl || null,
       reportPeriod: stableReportPeriod,
       onChangeReportPeriod,
       readOnlyHeader,
@@ -4164,6 +4167,7 @@ export default function ReportTemplate({
     effectiveAdvertiserName,
     effectiveReportTypeName,
     effectiveReportTypeKey,
+    workspaceLogoUrl,
     stableReportPeriod,
     onChangeReportPeriod,
     readOnlyHeader,

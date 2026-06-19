@@ -433,6 +433,32 @@ async function fetchReportDetail(reportId: string): Promise<ReportDetail> {
   return (json.report ?? {}) as ReportDetail;
 }
 
+
+async function fetchWorkspaceLogoUrl(workspaceId: string): Promise<string> {
+  const id = String(workspaceId ?? "").trim();
+  if (!id) return "";
+
+  const res = await authFetch("/api/workspaces/list");
+  const json = await safeJson(res);
+
+  if (!res.ok || !json?.ok) {
+    return "";
+  }
+
+  const workspaces = Array.isArray(json?.workspaces)
+    ? json.workspaces
+    : [];
+
+  const matched = workspaces.find(
+    (item: any) =>
+      String(item?.workspace_id ?? "").trim() === id,
+  );
+
+  return String(
+    matched?.workspace_logo_url ?? "",
+  ).trim();
+}
+
 async function patchReportPeriodDraft(
   reportId: string,
   next: ReportPeriod,
@@ -1229,6 +1255,7 @@ export default function ReportDetailPage() {
     useState(false);
 
   const [report, setReport] = useState<ReportDetail | null>(null);
+  const [workspaceLogoUrl, setWorkspaceLogoUrl] = useState<string>("");
   const [rows, setRows] = useState<any[]>([]);
   const rowsLoadedRef = useRef(false);
   const latestRowsRef = useRef<any[]>([]);
@@ -1240,6 +1267,35 @@ export default function ReportDetailPage() {
   const [rowsMetaLoaded, setRowsMetaLoaded] = useState(false);
   const [loadingRows, setLoadingRows] = useState(true);
   const [msg, setMsg] = useState<string>("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const workspaceId = String(
+      report?.workspace_id ?? "",
+    ).trim();
+
+    if (!workspaceId) {
+      setWorkspaceLogoUrl("");
+      return;
+    }
+
+    fetchWorkspaceLogoUrl(workspaceId)
+      .then((url) => {
+        if (!cancelled) {
+          setWorkspaceLogoUrl(url);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setWorkspaceLogoUrl("");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [report?.workspace_id]);
 
   const [monthGoal, setMonthGoal] = useState<MonthGoalDraft>(() =>
     buildEmptyMonthGoal(),
@@ -3471,6 +3527,7 @@ export default function ReportDetailPage() {
               advertiserName={effectivePreviewAdvertiserName}
               reportTypeName={effectivePreviewReportTypeName}
               reportTypeKey={headerInfo.reportTypeKey}
+              workspaceLogoUrl={workspaceLogoUrl}
               reportPeriod={reportPeriod}
               onChangeReportPeriod={setReportPeriod}
               monthGoal={resolvedMonthGoalForSave}

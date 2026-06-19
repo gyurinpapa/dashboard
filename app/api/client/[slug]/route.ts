@@ -28,6 +28,52 @@ function isValidSlug(slug: string) {
   return /^[a-z0-9][a-z0-9-]{1,58}[a-z0-9]$/.test(slug);
 }
 
+function buildPublicStorageUrl(
+  sb: any,
+  bucketValue: any,
+  pathValue: any
+) {
+  const bucket = asString(bucketValue);
+  const path = asString(pathValue);
+
+  if (!bucket || !path) {
+    return null;
+  }
+
+  const { data } = sb.storage
+    .from(bucket)
+    .getPublicUrl(path);
+
+  return asString(data?.publicUrl) || null;
+}
+
+async function fetchWorkspaceLogoUrl(
+  sb: any,
+  workspaceId: string
+) {
+  const id = asString(workspaceId);
+
+  if (!id) {
+    return null;
+  }
+
+  const { data, error } = await sb
+    .from("workspaces")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error || !data) {
+    return null;
+  }
+
+  return buildPublicStorageUrl(
+    sb,
+    (data as any)?.logo_storage_bucket,
+    (data as any)?.logo_storage_path
+  );
+}
+
 export async function GET(_req: Request, ctx: Ctx) {
   try {
     const { slug: slugRaw } = await ctx.params;
@@ -58,7 +104,7 @@ export async function GET(_req: Request, ctx: Ctx) {
     }
 
     const advertiserId = asString((advertiser as any).id);
-    const workspaceId = asString((advertiser as any).workspace_id);
+    const advertiserWorkspaceId = asString((advertiser as any).workspace_id);
 
     if (!advertiserId) {
       return jsonError(500, "ADVERTISER_ID_MISSING");
@@ -96,13 +142,24 @@ export async function GET(_req: Request, ctx: Ctx) {
       });
     }
 
+    const reportWorkspaceId =
+      asString((report as any).workspace_id) ||
+      advertiserWorkspaceId;
+
+    const workspaceLogoUrl =
+      await fetchWorkspaceLogoUrl(
+        sb,
+        reportWorkspaceId
+      );
+
     return NextResponse.json({
       ok: true,
       slug,
+      workspace_logo_url: workspaceLogoUrl,
       advertiser: {
         id: advertiserId,
         name: asString((advertiser as any).name),
-        workspace_id: workspaceId,
+        workspace_id: advertiserWorkspaceId,
         public_slug: slug,
       },
       report: {
@@ -111,7 +168,8 @@ export async function GET(_req: Request, ctx: Ctx) {
         status: asString((report as any).status),
         share_token: asString((report as any).share_token),
         advertiser_id: asString((report as any).advertiser_id),
-        workspace_id: asString((report as any).workspace_id),
+        workspace_id: reportWorkspaceId,
+        workspace_logo_url: workspaceLogoUrl,
         published_at: (report as any).published_at ?? null,
         created_at: (report as any).created_at ?? null,
       },

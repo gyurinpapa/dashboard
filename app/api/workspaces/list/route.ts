@@ -15,6 +15,12 @@ type MemberRole =
   | "client"
   | null;
 
+type WorkspaceLogoFields = {
+  logo_storage_bucket?: string | null;
+  logo_storage_path?: string | null;
+  logo_updated_at?: string | null;
+};
+
 const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
 
 function jsonError(
@@ -64,6 +70,47 @@ function getBearerToken(req: Request) {
   return m?.[1]?.trim() ?? null;
 }
 
+function buildWorkspaceLogoUrl(
+  bucketValue: any,
+  pathValue: any
+) {
+  const bucket = asString(bucketValue);
+  const path = asString(pathValue);
+
+  if (!bucket || !path) {
+    return null;
+  }
+
+  const { data } = supabaseAdmin.storage
+    .from(bucket)
+    .getPublicUrl(path);
+
+  return asString(data?.publicUrl) || null;
+}
+
+function toWorkspaceLogoPayload(
+  row: WorkspaceLogoFields
+) {
+  const logoStorageBucket =
+    asString(row?.logo_storage_bucket) || null;
+
+  const logoStoragePath =
+    asString(row?.logo_storage_path) || null;
+
+  const logoUpdatedAt =
+    asString(row?.logo_updated_at) || null;
+
+  return {
+    workspace_logo_url: buildWorkspaceLogoUrl(
+      logoStorageBucket,
+      logoStoragePath
+    ),
+    logo_storage_bucket: logoStorageBucket,
+    logo_storage_path: logoStoragePath,
+    logo_updated_at: logoUpdatedAt,
+  };
+}
+
 async function getActor(req: Request) {
   const bearer = getBearerToken(req);
 
@@ -94,7 +141,7 @@ async function getActor(req: Request) {
   };
 }
 
-async function getWorkspaceNamesByIds(
+async function getWorkspaceInfoByIds(
   workspaceIds: string[]
 ) {
   const ids = Array.from(
@@ -105,7 +152,15 @@ async function getWorkspaceNamesByIds(
     )
   );
 
-  const workspaceMap = new Map<string, string>();
+  const workspaceMap = new Map<
+    string,
+    {
+      name: string;
+      logo_storage_bucket: string | null;
+      logo_storage_path: string | null;
+      logo_updated_at: string | null;
+    }
+  >();
 
   if (!ids.length) {
     return workspaceMap;
@@ -113,7 +168,15 @@ async function getWorkspaceNamesByIds(
 
   const { data, error } = await supabaseAdmin
     .from("workspaces")
-    .select("id, name")
+    .select(
+      [
+        "id",
+        "name",
+        "logo_storage_bucket",
+        "logo_storage_path",
+        "logo_updated_at",
+      ].join(", ")
+    )
     .in("id", ids);
 
   if (error || !data) {
@@ -125,10 +188,15 @@ async function getWorkspaceNamesByIds(
 
     if (!id) continue;
 
-    workspaceMap.set(
-      id,
-      asString(row?.name)
-    );
+    workspaceMap.set(id, {
+      name: asString(row?.name),
+      logo_storage_bucket:
+        asString(row?.logo_storage_bucket) || null,
+      logo_storage_path:
+        asString(row?.logo_storage_path) || null,
+      logo_updated_at:
+        asString(row?.logo_updated_at) || null,
+    });
   }
 
   return workspaceMap;
@@ -230,7 +298,16 @@ export async function GET(req: Request) {
         error,
       } = await supabaseAdmin
         .from("workspaces")
-        .select("id, name, created_at")
+        .select(
+          [
+            "id",
+            "name",
+            "created_at",
+            "logo_storage_bucket",
+            "logo_storage_path",
+            "logo_updated_at",
+          ].join(", ")
+        )
         .order("name", {
           ascending: true,
         });
@@ -264,6 +341,8 @@ export async function GET(req: Request) {
           platform_role: actorIsPlatformOwner
             ? ("platform_owner" as const)
             : null,
+
+          ...toWorkspaceLogoPayload(w),
         }));
 
       return NextResponse.json({
@@ -322,8 +401,8 @@ export async function GET(req: Request) {
         )
         .filter(Boolean);
 
-    const workspaceNameById =
-      await getWorkspaceNamesByIds(
+    const workspaceInfoById =
+      await getWorkspaceInfoByIds(
         workspaceIds
       );
 
@@ -336,13 +415,14 @@ export async function GET(req: Request) {
         const workspaceId =
           asString(m?.workspace_id);
 
+        const workspaceInfo =
+          workspaceInfoById.get(workspaceId);
+
         return {
           workspace_id: workspaceId,
 
           workspace_name:
-            workspaceNameById.get(
-              workspaceId
-            ) ?? null,
+            workspaceInfo?.name || null,
 
           role: normalizeRole(
             m?.role
@@ -358,6 +438,15 @@ export async function GET(req: Request) {
             m?.team ?? null,
 
           platform_role: null,
+
+          ...toWorkspaceLogoPayload({
+            logo_storage_bucket:
+              workspaceInfo?.logo_storage_bucket ?? null,
+            logo_storage_path:
+              workspaceInfo?.logo_storage_path ?? null,
+            logo_updated_at:
+              workspaceInfo?.logo_updated_at ?? null,
+          }),
         };
       });
 
