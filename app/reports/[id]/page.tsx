@@ -1693,7 +1693,15 @@ export default function ReportDetailPage() {
 
   const canPublish = !publishing && isPublishReady;
 
-  const canOpenExportBuilder = ENABLE_EXPORT_BUILDER_ENTRY && canPublish;
+  const hasAvailableRows =
+    rowsMetaLoaded &&
+    rowsMetaCount > 0;
+
+  const canOpenExportBuilder =
+    ENABLE_EXPORT_BUILDER_ENTRY &&
+    hasAvailableRows &&
+    ingestionStatus !== "queued" &&
+    ingestionStatus !== "processing";
 
   const reportTitleForDownload = effectivePreviewReportTypeName || "report";
   const advertiserNameForDownload =
@@ -2039,8 +2047,10 @@ export default function ReportDetailPage() {
     rowsLoadedRef.current = false;
     rowsFetchPromiseRef.current = null;
     rowsMetaFetchPromiseRef.current = null;
+
     setRowsMetaCount(0);
     setRowsMetaLoaded(false);
+
     setRows([]);
     setCreativesMap({});
     setHeaderInfo({
@@ -3504,7 +3514,8 @@ export default function ReportDetailPage() {
       </div>
 
       <div className="mt-3 text-xs text-gray-500">
-        서버 rows(실제): {rows.length}개{" "}
+        서버 rows(실제):{" "}
+        {rowsMetaLoaded ? formatInt(rowsMetaCount) : "-"}개{" "}
         <span className="text-gray-400">·</span> 현재 표시 rows:{" "}
         {displayRows.length}개 <span className="text-gray-400">·</span> 광고주:{" "}
         {effectivePreviewAdvertiserName || "-"}{" "}
