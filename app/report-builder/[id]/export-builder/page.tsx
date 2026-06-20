@@ -4,12 +4,9 @@ import { notFound, redirect } from "next/navigation";
 import ExportBuilderClient from "@/app/components/export-builder/ExportBuilderClient";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
-import { buildExportPayloadsFromRows } from "@/src/lib/export-builder/buildExportPayloadsFromRows";
-import type { ExportPeriod } from "@/src/lib/export-builder/period";
+import type { ExportPeriodPreset } from "@/src/lib/export-builder/period";
 import {
   buildExportPeriodLabel,
-  createInitialExportPeriod,
-  filterRowsByExportPeriod,
   normalizeExportPeriod,
 } from "@/src/lib/export-builder/period";
 
@@ -26,198 +23,141 @@ type PageProps = {
     periodLabel?: string;
     periodStart?: string;
     periodEnd?: string;
-    periodPreset?:
-      | "this_month"
-      | "last_month"
-      | "last_7_days"
-      | "last_30_days"
-      | "custom";
-    preset?: "starter-default" | "starter-summary-focused" | "starter-executive";
+    periodPreset?: ExportPeriodPreset;
+    preset?:
+      | "starter-default"
+      | "starter-summary-focused"
+      | "starter-executive";
   }>;
 };
 
+type ReportRecord = {
+  id: string;
+  workspace_id: string | null;
+  advertiser_id: string | null;
+  report_type_id: string | null;
+  title: string | null;
+  status: string | null;
+  current_ingestion_id: string | null;
+  draft_period_start: string | null;
+  draft_period_end: string | null;
+  published_period_start: string | null;
+  published_period_end: string | null;
+  period_start: string | null;
+  period_end: string | null;
+  meta: any;
+};
+
 function asString(value: unknown) {
-  if (typeof value !== "string") return "";
-  return value.trim();
+  if (value == null) return "";
+
+  const text = String(value).trim();
+
+  if (!text) return "";
+  if (text.toLowerCase() === "null") return "";
+  if (text.toLowerCase() === "undefined") return "";
+
+  return text;
 }
 
-function tryParseJson(v: any) {
-  if (!v) return null;
-  if (typeof v === "object") return v;
-  if (typeof v === "string") {
-    try {
-      const parsed = JSON.parse(v);
-      return parsed && typeof parsed === "object" ? parsed : null;
-    } catch {
-      return null;
-    }
+function getMetaObject(value: unknown): Record<string, any> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
   }
-  return null;
+
+  return value as Record<string, any>;
 }
 
-function flattenRow(rec: any) {
-  const parsed = tryParseJson(rec?.row) || {};
+function normalizePeriodPreset(value: unknown): ExportPeriodPreset {
+  if (
+    value === "this_month" ||
+    value === "last_month" ||
+    value === "last_7_days" ||
+    value === "last_14_days" ||
+    value === "last_30_days" ||
+    value === "custom"
+  ) {
+    return value;
+  }
 
-  const out: any = {
-    ...parsed,
+  return "custom";
+}
 
-    id: rec?.id ?? parsed?.id ?? null,
-    __row_id: rec?.id ?? parsed?.__row_id ?? parsed?.id ?? null,
-    report_id: rec?.report_id ?? null,
-    ingestion_id: rec?.ingestion_id ?? null,
-    created_at: rec?.created_at ?? null,
+function buildRedirectToReportDetail(reportId: string, message: string) {
+  const qs = new URLSearchParams();
+  qs.set("eb_notice", message);
 
-    row: parsed,
+  return `/reports/${reportId}?${qs.toString()}`;
+}
+
+function pickInitialDateRange(args: {
+  report: ReportRecord;
+  periodStart?: string;
+  periodEnd?: string;
+}) {
+  const searchStart = asString(args.periodStart);
+  const searchEnd = asString(args.periodEnd);
+
+  if (searchStart || searchEnd) {
+    return {
+      dateFrom: searchStart || undefined,
+      dateTo: searchEnd || undefined,
+    };
+  }
+
+  const report = args.report;
+
+  const dateFrom =
+    asString(report.draft_period_start) ||
+    asString(report.published_period_start) ||
+    asString(report.period_start);
+
+  const dateTo =
+    asString(report.draft_period_end) ||
+    asString(report.published_period_end) ||
+    asString(report.period_end);
+
+  return {
+    dateFrom: dateFrom || undefined,
+    dateTo: dateTo || undefined,
   };
-
-  if (out.imagepath == null && out.imagePath != null) out.imagepath = out.imagePath;
-  if (out.imagePath == null && out.imagepath != null) out.imagePath = out.imagepath;
-
-  if (out.creative_file == null && out.creativeFile != null) {
-    out.creative_file = out.creativeFile;
-  }
-  if (out.creativeFile == null && out.creative_file != null) {
-    out.creativeFile = out.creative_file;
-  }
-
-  if (out.campaign_name == null && out.campaign != null) out.campaign_name = out.campaign;
-  if (out.group_name == null && out.group != null) out.group_name = out.group;
-
-  if (out.impressions == null && out.impr != null) out.impressions = out.impr;
-  if (out.clicks == null && out.click != null) out.clicks = out.click;
-  if (out.clicks == null && out.clk != null) out.clicks = out.clk;
-  if (out.cost == null && out.spend != null) out.cost = out.spend;
-  if (out.conversions == null && out.conv != null) out.conversions = out.conv;
-  if (out.conversions == null && out.cv != null) out.conversions = out.cv;
-  if (out.revenue == null && out.sales != null) out.revenue = out.sales;
-  if (out.revenue == null && out.gmv != null) out.revenue = out.gmv;
-
-  return out;
 }
 
-async function fetchRowsByIngestion(
-  admin: ReturnType<typeof getSupabaseAdmin>,
-  reportId: string,
-  ingestionId: string
-) {
-  const pageSize = 1000;
-  let from = 0;
-  const all: any[] = [];
+async function hasReportRows(args: {
+  admin: ReturnType<typeof getSupabaseAdmin>;
+  reportId: string;
+  currentIngestionId: string;
+}) {
+  const { admin, reportId, currentIngestionId } = args;
 
-  while (true) {
-    const to = from + pageSize - 1;
-
+  if (currentIngestionId) {
     const { data, error } = await admin
       .from("report_rows")
-      .select("id, report_id, ingestion_id, row, created_at")
+      .select("id")
       .eq("report_id", reportId)
-      .eq("ingestion_id", ingestionId)
-      .order("created_at", { ascending: true })
-      .range(from, to);
+      .eq("ingestion_id", currentIngestionId)
+      .limit(1);
 
     if (error) {
       throw new Error(error.message);
     }
 
-    if (!data || data.length === 0) {
-      break;
+    if (Array.isArray(data) && data.length > 0) {
+      return true;
     }
-
-    all.push(...data);
-
-    if (data.length < pageSize) {
-      break;
-    }
-
-    from += pageSize;
   }
 
-  return all;
-}
-
-async function findLatestIngestionId(
-  admin: ReturnType<typeof getSupabaseAdmin>,
-  reportId: string
-) {
   const { data, error } = await admin
     .from("report_rows")
-    .select("ingestion_id, created_at")
+    .select("id")
     .eq("report_id", reportId)
-    .order("created_at", { ascending: false })
     .limit(1);
 
   if (error) {
     throw new Error(error.message);
   }
 
-  const latest = Array.isArray(data) && data.length > 0 ? data[0] : null;
-  return asString((latest as any)?.ingestion_id);
-}
-
-function buildRedirectToReportDetail(reportId: string, message: string) {
-  const qs = new URLSearchParams();
-  qs.set("eb_notice", message);
-  return `/reports/${reportId}?${qs.toString()}`;
-}
-
-function buildPeriodLabelFromInputs(args: {
-  periodLabel?: string;
-  periodStart?: string;
-  periodEnd?: string;
-}) {
-  const periodLabel = asString(args.periodLabel);
-  if (periodLabel) return periodLabel;
-
-  const periodStart = asString(args.periodStart);
-  const periodEnd = asString(args.periodEnd);
-
-  if (periodStart && periodEnd) return `${periodStart} ~ ${periodEnd}`;
-  if (periodStart) return periodStart;
-  if (periodEnd) return periodEnd;
-
-  return "기간 미정";
-}
-
-function normalizePeriodPreset(
-  value: unknown
-):
-  | "this_month"
-  | "last_month"
-  | "last_7_days"
-  | "last_30_days"
-  | "custom" {
-  return value === "this_month" ||
-    value === "last_month" ||
-    value === "last_7_days" ||
-    value === "last_30_days" ||
-    value === "custom"
-    ? value
-    : "custom";
-}
-
-function createInitialExportPeriodFromSearch(args: {
-  rows: any[];
-  periodStart?: string;
-  periodEnd?: string;
-  periodPreset?: "this_month" | "last_month" | "last_7_days" | "last_30_days" | "custom";
-  periodLabel?: string;
-}): ExportPeriod {
-  const periodStart = asString(args.periodStart);
-  const periodEnd = asString(args.periodEnd);
-  const preset = normalizePeriodPreset(args.periodPreset);
-
-  if (periodStart || periodEnd) {
-    return normalizeExportPeriod({
-      preset,
-      start: periodStart || null,
-      end: periodEnd || null,
-      label:
-        asString(args.periodLabel) ||
-        buildExportPeriodLabel(periodStart || null, periodEnd || null),
-    });
-  }
-
-  return createInitialExportPeriod(args.rows ?? []);
+  return Array.isArray(data) && data.length > 0;
 }
 
 export default async function ReportExportBuilderPage({
@@ -230,237 +170,177 @@ export default async function ReportExportBuilderPage({
   const reportId = asString(id);
 
   if (!reportId) {
-    console.log("[export-builder] invalid report id", { rawId: id });
     notFound();
   }
 
-  const advertiserName = asString(sp?.advertiserName) || "광고주";
-  const reportTypeName = asString(sp?.reportTypeName) || "리포트";
-
-  const periodStart = asString(sp?.periodStart);
-  const periodEnd = asString(sp?.periodEnd);
-  const periodPreset = normalizePeriodPreset(sp?.periodPreset);
-
-  const periodLabel = buildPeriodLabelFromInputs({
-    periodLabel: sp?.periodLabel,
-    periodStart,
-    periodEnd,
-  });
-
-  const preset =
-    sp?.preset === "starter-summary-focused" ||
-    sp?.preset === "starter-executive" ||
-    sp?.preset === "starter-default"
-      ? sp.preset
-      : "starter-default";
-
   const auth = await sbAuth();
 
-  console.log("[export-builder auth]", {
-    reportId,
-    hasUser: !!auth.user,
-    userId: auth.user?.id ?? null,
-    error: auth.error ?? null,
-  });
-
   if (auth.error || !auth.user?.id) {
-    console.log("[export-builder redirect] auth failed -> /report-builder", {
-      reportId,
-      error: auth.error ?? null,
-    });
     redirect("/report-builder");
   }
 
   const userId = auth.user.id;
   const admin = getSupabaseAdmin();
 
-  const { data: report, error: reportError } = await admin
+  const { data: rawReport, error: reportError } = await admin
     .from("reports")
-    .select("id, workspace_id, current_ingestion_id")
+    .select(
+      [
+        "id",
+        "workspace_id",
+        "advertiser_id",
+        "report_type_id",
+        "title",
+        "status",
+        "current_ingestion_id",
+        "draft_period_start",
+        "draft_period_end",
+        "published_period_start",
+        "published_period_end",
+        "period_start",
+        "period_end",
+        "meta",
+      ].join(", "),
+    )
     .eq("id", reportId)
     .maybeSingle();
-
-  console.log("[export-builder report]", {
-    reportId,
-    reportExists: !!report,
-    workspaceId: report?.workspace_id ?? null,
-    currentIngestionId: (report as any)?.current_ingestion_id ?? null,
-    reportError: reportError ?? null,
-  });
 
   if (reportError) {
     throw new Error(reportError.message);
   }
 
-  if (!report) {
-    console.log("[export-builder notFound] report not found", { reportId });
+  if (!rawReport) {
     notFound();
   }
 
-  const { data: wm, error: wmError } = await admin
-    .from("workspace_members")
-    .select("role")
-    .eq("workspace_id", report.workspace_id)
-    .eq("user_id", userId)
-    .maybeSingle();
+  const report = rawReport as unknown as ReportRecord;
+  const workspaceId = asString(report.workspace_id);
 
-  console.log("[export-builder membership]", {
-    reportId,
-    userId,
-    reportWorkspaceId: report.workspace_id ?? null,
-    hasMembership: !!wm,
-    role: wm?.role ?? null,
-    membershipError: wmError ?? null,
-  });
-
-  if (wmError) {
-    throw new Error(wmError.message);
-  }
-
-  if (!wm) {
-    console.log("[export-builder redirect] membership missing -> /report-builder", {
-      reportId,
-      userId,
-      reportWorkspaceId: report.workspace_id ?? null,
-    });
-    redirect("/report-builder");
-  }
-
-  const currentIngestionId = asString((report as any).current_ingestion_id);
-
-  let rawRows: any[] = [];
-  let ingestionIdUsed = currentIngestionId;
-  let fallbackUsed = false;
-
-  if (currentIngestionId) {
-    rawRows = await fetchRowsByIngestion(admin, reportId, currentIngestionId);
-
-    console.log("[export-builder rows] current ingestion fetch", {
-      reportId,
-      currentIngestionId,
-      rawRowsLen: rawRows.length,
-    });
-  }
-
-  if (!rawRows.length) {
-    const latestIngestionId = await findLatestIngestionId(admin, reportId);
-
-    console.log("[export-builder rows] latest ingestion lookup", {
-      reportId,
-      latestIngestionId: latestIngestionId || null,
-    });
-
-    if (latestIngestionId) {
-      const latestRows = await fetchRowsByIngestion(admin, reportId, latestIngestionId);
-
-      console.log("[export-builder rows] latest ingestion fetch", {
+  if (!workspaceId) {
+    redirect(
+      buildRedirectToReportDetail(
         reportId,
-        latestIngestionId,
-        latestRowsLen: latestRows.length,
-      });
-
-      if (latestRows.length) {
-        rawRows = latestRows;
-        ingestionIdUsed = latestIngestionId;
-        fallbackUsed = latestIngestionId !== currentIngestionId;
-      }
-    }
-  }
-
-  if (!rawRows.length) {
-    const notice =
-      "Export Builder를 열 수 없습니다. 먼저 보고서 상세 페이지에서 CSV 업로드 + 파싱을 완료해 실제 rows를 생성해 주세요.";
-
-    console.log("[export-builder redirect] no rows found -> /reports/[id]", {
-      reportId,
-      currentIngestionId: currentIngestionId || null,
-      ingestionIdUsed: ingestionIdUsed || null,
-      fallbackUsed,
-      notice,
-    });
-
-    redirect(buildRedirectToReportDetail(reportId, notice));
-  }
-
-  const rows = rawRows.map(flattenRow);
-
-  /**
-   * export-builder 초기 진입 시점의 초기 export 기간
-   * - searchParams 기간이 있으면 그것을 우선 사용
-   * - 없으면 실제 rows date range 기준으로 custom 초기화
-   */
-  const initialExportPeriod = createInitialExportPeriodFromSearch({
-    rows,
-    periodStart,
-    periodEnd,
-    periodPreset,
-    periodLabel,
-  });
-
-  /**
-   * 초기 렌더용 rows
-   * - client 내부와 동일하게 export-builder period 유틸 기준으로 맞춤
-   * - 이후 실제 편집 중 재계산 기준 원본은 ExportBuilderClient의 allRows + exportPeriod
-   */
-  const rowsForInitialExport = filterRowsByExportPeriod(
-    rows ?? [],
-    initialExportPeriod
-  );
-
-  if ((periodStart || periodEnd) && !rowsForInitialExport.length) {
-    console.log(
-      "[export-builder period filter] rows became empty after initial period filter",
-      {
-        reportId,
-        rawRowsLen: rows.length,
-        rowsForInitialExportLen: rowsForInitialExport.length,
-        periodStart: periodStart || null,
-        periodEnd: periodEnd || null,
-        periodPreset,
-      }
+        "PPT Export Builder를 열 수 없습니다. 보고서의 workspace 정보를 확인해 주세요.",
+      ),
     );
   }
 
-  const initialSectionPayloads = buildExportPayloadsFromRows(
-    rowsForInitialExport ?? []
-  );
+  const { data: membership, error: membershipError } = await admin
+    .from("workspace_members")
+    .select("role")
+    .eq("workspace_id", workspaceId)
+    .eq("user_id", userId)
+    .maybeSingle();
 
-  const reportTitle = `${advertiserName} 광고 성과 리포트`;
-  const generatedAtLabel = ingestionIdUsed ? `ingestion ${ingestionIdUsed}` : undefined;
+  if (membershipError) {
+    throw new Error(membershipError.message);
+  }
 
-  console.log("[export-builder payloads]", {
+  if (!membership) {
+    redirect("/report-builder");
+  }
+
+  const currentIngestionId = asString(report.current_ingestion_id);
+
+  const rowsExist = await hasReportRows({
+    admin,
     reportId,
-    rawRowsLen: rows.length,
-    rowsForInitialExportLen: rowsForInitialExport.length,
-    ingestionIdUsed: ingestionIdUsed || null,
-    fallbackUsed,
-    payloadKeys: Object.keys(initialSectionPayloads ?? {}),
-    periodStart: initialExportPeriod.start || null,
-    periodEnd: initialExportPeriod.end || null,
-    periodPreset: initialExportPeriod.preset,
-    periodLabel: initialExportPeriod.label || null,
+    currentIngestionId,
+  });
+
+  if (!rowsExist) {
+    redirect(
+      buildRedirectToReportDetail(
+        reportId,
+        "PPT Export Builder를 열 수 없습니다. 먼저 CSV 업로드와 파싱을 완료해 실제 rows를 생성해 주세요.",
+      ),
+    );
+  }
+
+  const advertiserId = asString(report.advertiser_id);
+  const reportTypeId = asString(report.report_type_id);
+
+  const [advertiserResult, reportTypeResult] = await Promise.all([
+    advertiserId
+      ? admin
+          .from("advertisers")
+          .select("id, name")
+          .eq("id", advertiserId)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    reportTypeId
+      ? admin
+          .from("report_types")
+          .select("id, key, name")
+          .eq("id", reportTypeId)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ]);
+
+  if (advertiserResult.error) {
+    throw new Error(advertiserResult.error.message);
+  }
+
+  if (reportTypeResult.error) {
+    throw new Error(reportTypeResult.error.message);
+  }
+
+  const meta = getMetaObject(report.meta);
+
+  const advertiserName =
+    asString(advertiserResult.data?.name) ||
+    asString(sp?.advertiserName) ||
+    asString(meta.advertiser_name) ||
+    asString(meta.advertiserName) ||
+    "광고주";
+
+  const reportTypeName =
+    asString(reportTypeResult.data?.name) ||
+    asString(sp?.reportTypeName) ||
+    asString(meta.report_type_name) ||
+    asString(meta.reportTypeName) ||
+    "리포트";
+
+  const reportTypeKey =
+    asString(reportTypeResult.data?.key) ||
+    asString(meta.report_type_key) ||
+    asString(meta.reportTypeKey) ||
+    asString(meta.report_type);
+
+  const initialDateRange = pickInitialDateRange({
+    report,
+    periodStart: sp?.periodStart,
+    periodEnd: sp?.periodEnd,
+  });
+
+  const initialPeriod = normalizeExportPeriod({
+    preset: normalizePeriodPreset(sp?.periodPreset),
+    start: initialDateRange.dateFrom ?? null,
+    end: initialDateRange.dateTo ?? null,
+    label:
+      asString(sp?.periodLabel) ||
+      buildExportPeriodLabel(
+        initialDateRange.dateFrom ?? null,
+        initialDateRange.dateTo ?? null,
+      ),
   });
 
   return (
     <ExportBuilderClient
-      initialInput={{
-        reportId,
+      reportId={reportId}
+      initialMeta={{
         advertiserName,
         reportTypeName,
-        periodLabel: initialExportPeriod.label || periodLabel,
-        preset,
+        reportTypeKey,
+        reportTitle: asString(report.title) || reportTypeName,
+        periodLabel:
+          initialPeriod.label ||
+          buildExportPeriodLabel(
+            initialDateRange.dateFrom ?? null,
+            initialDateRange.dateTo ?? null,
+          ),
       }}
-      meta={{
-        advertiserName,
-        reportTitle,
-        reportTypeName,
-        periodLabel: initialExportPeriod.label || periodLabel,
-        preset,
-        generatedAtLabel,
-      }}
-      sectionPayloads={initialSectionPayloads}
-      allRows={rows}
-      initialExportPeriod={initialExportPeriod}
+      initialPeriod={initialPeriod}
     />
   );
 }
