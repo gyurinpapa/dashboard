@@ -9,4 +9,4 @@
  * - export-builder 라우트 자체는 유지
  * - 기존 share / reports / publish / report preview 로직에는 영향 없음
  */
-export const ENABLE_EXPORT_BUILDER_ENTRY = false;
+export const ENABLE_EXPORT_BUILDER_ENTRY = true;
