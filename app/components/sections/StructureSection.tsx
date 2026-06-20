@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useMemo, useState } from "react";
+import { memo, useMemo, useRef, useState } from "react";
 import { KRW } from "../../../src/lib/report/format";
 import { groupByGroup } from "../../../src/lib/report/aggregate";
 import DataBarCell from "../ui/DataBarCell";
@@ -308,7 +308,7 @@ function generateSourceInsights(
 
     const s5 = `비용 비중이 큰 "${maxCostSource.source}"는 전체 유입 효율에 미치는 영향이 크므로, CTR·CPC를 우선 점검하는 것이 가장 빠른 개선 경로입니다.`;
 
-    return [s1, s2, s3, s4, s5];
+    return [`${s1} ${s2} ${s3}`, s4, s5];
   }
 
   if (reportMode === "db_acquisition") {
@@ -356,7 +356,7 @@ function generateSourceInsights(
 
     const s5 = `비용 비중이 큰 "${maxCostSource.source}"는 전체 리드 확보 효율에 미치는 영향이 크므로, 이 소스의 CPA·CVR을 우선 점검하는 것이 가장 빠른 개선 경로입니다.`;
 
-    return [s1, s2, s3, s4, s5];
+    return [`${s1} ${s2} ${s3}`, s4, s5];
   }
 
   const { top: topRoas, bottom: bottomRoas } = pickTopBottom(
@@ -406,7 +406,7 @@ function generateSourceInsights(
       ? `다음 단계는 ROAS 상위 소스를 확장하되, 하위 소스는 구조 개선으로 효율을 안정화하는 것입니다.`
       : `목표 달성을 위해 ROAS 상위 소스로 예산을 재배분하고, 하위 소스는 구조 개선 또는 축소로 효율을 회복해야 합니다.`;
 
-  return [s1, s2, s3, s4, s5];
+  return [`${s1} ${s2} ${s3}`, s4, s5];
 }
 
 function highlightInsightText(text: string) {
@@ -468,14 +468,34 @@ function highlightInsightText(text: string) {
   return segments;
 }
 
-// ✅ 수정: max 계산 반복을 줄이기 위한 공용 helper
+// 대형 집계 배열에서도 중간 배열을 만들지 않고 한 번의 순회로 최대값을 계산한다.
 function getMetricMaxes(rows: any[]) {
+  let maxImpr = 0;
+  let maxClicks = 0;
+  let maxCost = 0;
+  let maxConv = 0;
+  let maxRev = 0;
+
+  for (const row of rows) {
+    const impr = toNum(row?.impressions ?? row?.impr);
+    const clicks = toNum(row?.clicks);
+    const cost = toNum(row?.cost);
+    const conv = toNum(row?.conversions ?? row?.conv);
+    const revenue = toNum(row?.revenue);
+
+    if (impr > maxImpr) maxImpr = impr;
+    if (clicks > maxClicks) maxClicks = clicks;
+    if (cost > maxCost) maxCost = cost;
+    if (conv > maxConv) maxConv = conv;
+    if (revenue > maxRev) maxRev = revenue;
+  }
+
   return {
-    maxImpr: Math.max(0, ...rows.map((r: any) => toNum(r.impressions ?? r.impr))),
-    maxClicks: Math.max(0, ...rows.map((r: any) => toNum(r.clicks))),
-    maxCost: Math.max(0, ...rows.map((r: any) => toNum(r.cost))),
-    maxConv: Math.max(0, ...rows.map((r: any) => toNum(r.conversions ?? r.conv))),
-    maxRev: Math.max(0, ...rows.map((r: any) => toNum(r.revenue))),
+    maxImpr,
+    maxClicks,
+    maxCost,
+    maxConv,
+    maxRev,
   };
 }
 
@@ -672,16 +692,6 @@ const InsightPanel = memo(function InsightPanel({
                   </div>
 
                   <div className="min-w-0 flex-1 pt-0.5">
-                    <div className="mb-1 flex items-center gap-2">
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#9B8F81]">
-                        Insight
-                      </span>
-                      <span className="h-1 w-1 rounded-full bg-[#CFC2B1]" />
-                      <span className="text-[11px] font-medium text-[#9B8F81]">
-                        구조 분석
-                      </span>
-                    </div>
-
                     <p className="whitespace-pre-wrap text-[15px] leading-7 text-[#5F554B]">
                       {highlightInsightText(s).map((part, idx) => (
                         <span
@@ -1075,72 +1085,106 @@ export default function StructureSection({
   const insightLoading = (allRowsLoading ?? false) && sourceRows.length === 0;
   const showAllSlides = activeSlide == null;
 
+  /**
+   * 일반 웹에서는 현재 슬라이드만 최초 mount하고,
+   * 한 번 방문한 슬라이드는 이후 hidden 상태로 유지한다.
+   * export(activeSlide 미지정)에서는 기존처럼 세 슬라이드를 모두 mount한다.
+   */
+  const visitedSlidesRef = useRef({
+    source: showAllSlides || activeSlide === 0,
+    campaign: showAllSlides || activeSlide === 1,
+    group: showAllSlides || activeSlide === 2,
+  });
+
+  if (showAllSlides || activeSlide === 0) {
+    visitedSlidesRef.current.source = true;
+  }
+  if (showAllSlides || activeSlide === 1) {
+    visitedSlidesRef.current.campaign = true;
+  }
+  if (showAllSlides || activeSlide === 2) {
+    visitedSlidesRef.current.group = true;
+  }
+
+  const shouldRenderSourceSlide =
+    showAllSlides || visitedSlidesRef.current.source;
+  const shouldRenderCampaignSlide =
+    showAllSlides || visitedSlidesRef.current.campaign;
+  const shouldRenderGroupSlide =
+    showAllSlides || visitedSlidesRef.current.group;
+
   return (
     <div className="mt-0">
-      <div
-        className={showAllSlides || activeSlide === 0 ? "space-y-8" : "hidden"}
-        aria-hidden={!showAllSlides && activeSlide !== 0}
-      >
-        <div>
+      {shouldRenderSourceSlide ? (
+        <div
+          className={showAllSlides || activeSlide === 0 ? "space-y-8" : "hidden"}
+          aria-hidden={!showAllSlides && activeSlide !== 0}
+        >
+          <div>
+            <SectionIntro
+              badge="🧭 SOURCE"
+              title="소스별 구조 성과"
+              description={copy.sourceDescription}
+              compact
+            />
+
+            <SourceTable
+              reportMode={reportMode}
+              sourceRows={sourceRows}
+              allRowsLoading={allRowsLoading}
+            />
+          </div>
+
+          <div>
+            <InsightPanel
+              reportMode={reportMode}
+              sourceRows={sourceRows}
+              monthGoal={monthGoal}
+              insightLoading={insightLoading}
+              description={copy.insightDescription}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      {shouldRenderCampaignSlide ? (
+        <div
+          className={[
+            showAllSlides ? "mt-8" : "",
+            showAllSlides || activeSlide === 1 ? "block" : "hidden",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          aria-hidden={!showAllSlides && activeSlide !== 1}
+        >
           <SectionIntro
-            badge="🧭 SOURCE"
-            title="소스별 구조 성과"
-            description={copy.sourceDescription}
+            badge="📣 CAMPAIGN"
+            title="캠페인별 성과"
+            description={copy.campaignDescription}
             compact
           />
 
-          <SourceTable
+          <CampaignTable reportMode={reportMode} campaignRows={campaignRows} />
+        </div>
+      ) : null}
+
+      {shouldRenderGroupSlide ? (
+        <div
+          className={[
+            showAllSlides ? "mt-8" : "",
+            showAllSlides || activeSlide === 2 ? "block" : "hidden",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          aria-hidden={!showAllSlides && activeSlide !== 2}
+        >
+          <GroupSection
             reportMode={reportMode}
-            sourceRows={sourceRows}
-            allRowsLoading={allRowsLoading}
+            scopedRows={scopedRows}
+            description={copy.groupDescription}
           />
         </div>
-
-        <div>
-          <InsightPanel
-            reportMode={reportMode}
-            sourceRows={sourceRows}
-            monthGoal={monthGoal}
-            insightLoading={insightLoading}
-            description={copy.insightDescription}
-          />
-        </div>
-      </div>
-
-      <div
-        className={[
-          showAllSlides ? "mt-8" : "",
-          showAllSlides || activeSlide === 1 ? "block" : "hidden",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        aria-hidden={!showAllSlides && activeSlide !== 1}
-      >
-        <SectionIntro
-          badge="📣 CAMPAIGN"
-          title="캠페인별 성과"
-          description={copy.campaignDescription}
-          compact
-        />
-
-        <CampaignTable reportMode={reportMode} campaignRows={campaignRows} />
-      </div>
-
-      <div
-        className={[
-          showAllSlides ? "mt-8" : "",
-          showAllSlides || activeSlide === 2 ? "block" : "hidden",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        aria-hidden={!showAllSlides && activeSlide !== 2}
-      >
-        <GroupSection
-          reportMode={reportMode}
-          scopedRows={scopedRows}
-          description={copy.groupDescription}
-        />
-      </div>
+      ) : null}
     </div>
   );
 }

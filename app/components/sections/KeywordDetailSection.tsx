@@ -213,66 +213,51 @@ function buildKeywordIndex(rows: Row[]) {
 }
 
 /**
- * ✅ 변경 지점:
- * 키워드 선택 때마다 무거운 집계 재계산이 몰리지 않도록
- * 키워드별 집계 결과를 최초 rows 기준으로 한 번 사전 계산
+ * 선택된 키워드에 대해서만 상세 집계를 생성한다.
+ * rows 변경 시 캐시는 새로 만들어지고, 이미 방문한 키워드는 캐시 결과를 재사용한다.
  */
-function buildKeywordMetricsIndex(rows: Row[]) {
-  const { keywords, keywordBuckets, keywordLookup } = buildKeywordIndex(rows);
+type KeywordMetrics = {
+  filteredRows: Row[];
+  avgRank: number | null;
+  totals: any;
+  bySource: any[];
+  byDevice: any[];
+  byWeekOnly: any[];
+  byWeekChart: any[];
+  byDay: any[];
+  byMonth: any[];
+};
 
-  const metricsMap = new Map<
-    string,
-    {
-      filteredRows: Row[];
-      avgRank: number | null;
-      totals: any;
-      bySource: any[];
-      byDevice: any[];
-      byWeekOnly: any[];
-      byWeekChart: any[];
-      byDay: any[];
-      byMonth: any[];
-    }
-  >();
+function buildKeywordMetrics(filteredRows: Row[]): KeywordMetrics {
+  const avgRank = calcAvgRankWeighted(filteredRows);
+  const totals = summarize(filteredRows);
+  const bySource = groupBySource(filteredRows);
+  const byDevice = groupByDevice(filteredRows);
+  const byWeekOnly = groupByWeekRecent5(filteredRows);
 
-  for (const keyword of keywords) {
-    const filteredRows = keywordBuckets.get(keyword) ?? [];
-    const avgRank = calcAvgRankWeighted(filteredRows);
-    const totals = summarize(filteredRows);
-    const bySource = groupBySource(filteredRows);
-    const byDevice = groupByDevice(filteredRows);
-    const byWeekOnly = groupByWeekRecent5(filteredRows);
+  const byWeekChart = [...byWeekOnly].sort((a, b) =>
+    String(a.weekKey ?? "").localeCompare(String(b.weekKey ?? ""))
+  );
 
-    const byWeekChart = [...byWeekOnly].sort((a, b) =>
-      String(a.weekKey ?? "").localeCompare(String(b.weekKey ?? ""))
-    );
+  const byDay = groupByDayFromRows(filteredRows);
 
-    const byDay = groupByDayFromRows(filteredRows);
-
-    const byMonth = groupByMonthRecent3({
-      rows: filteredRows,
-      selectedMonth: "all",
-      selectedDevice: "all",
-      selectedChannel: "all",
-    });
-
-    metricsMap.set(keyword, {
-      filteredRows,
-      avgRank,
-      totals,
-      bySource,
-      byDevice,
-      byWeekOnly,
-      byWeekChart,
-      byDay,
-      byMonth,
-    });
-  }
+  const byMonth = groupByMonthRecent3({
+    rows: filteredRows,
+    selectedMonth: "all",
+    selectedDevice: "all",
+    selectedChannel: "all",
+  });
 
   return {
-    keywords,
-    keywordLookup,
-    metricsMap,
+    filteredRows,
+    avgRank,
+    totals,
+    bySource,
+    byDevice,
+    byWeekOnly,
+    byWeekChart,
+    byDay,
+    byMonth,
   };
 }
 
@@ -282,8 +267,8 @@ function buildKeywordMetricsIndex(rows: Row[]) {
 function buildKeywordDetailInsight(args: {
   reportMode: ReportMode;
   keyword: string | null;
-  allRowsScope: Row[];
-  keywordRows: Row[];
+  allSummary: any;
+  keywordSummary: any;
   byWeekOnly: any[];
   bySource: any[];
   byDevice: any[];
@@ -292,8 +277,8 @@ function buildKeywordDetailInsight(args: {
   const {
     reportMode,
     keyword,
-    allRowsScope,
-    keywordRows,
+    allSummary,
+    keywordSummary,
     byWeekOnly,
     bySource,
     byDevice,
@@ -310,8 +295,8 @@ function buildKeywordDetailInsight(args: {
     };
   }
 
-  const all = summarize(allRowsScope);
-  const me = summarize(keywordRows);
+  const all = allSummary;
+  const me = keywordSummary;
 
   const shareCost = all.cost ? me.cost / all.cost : 0;
   const shareRev = all.revenue ? me.revenue / all.revenue : 0;
@@ -319,9 +304,7 @@ function buildKeywordDetailInsight(args: {
   const shareClicks = all.clicks ? me.clicks / all.clicks : 0;
   const shareImpr = all.impressions ? me.impressions / all.impressions : 0;
 
-  const weeks = [...(byWeekOnly || [])].sort((a, b) =>
-    String(a.weekKey ?? "").localeCompare(String(b.weekKey ?? ""))
-  );
+  const weeks = byWeekOnly || [];
   const wLast = weeks.length ? weeks[weeks.length - 1] : null;
   const wPrev = weeks.length >= 2 ? weeks[weeks.length - 2] : null;
 
@@ -1099,10 +1082,21 @@ export default function KeywordDetailSection(props: Props) {
   const { reportType, rows, activeSlide } = props;
   const reportMode = resolveReportMode(reportType);
 
-  const { keywords, keywordLookup, metricsMap } = useMemo(
-    () => buildKeywordMetricsIndex(rows),
+  const { keywords, keywordBuckets, keywordLookup } = useMemo(
+    () => buildKeywordIndex(rows),
     [rows]
   );
+
+  /**
+   * rows가 바뀌면 새 캐시가 생성된다.
+   * 선택한 키워드만 최초 계산하고 이후 재선택 시 같은 집계 결과를 재사용한다.
+   */
+  const keywordMetricsCache = useMemo(
+    () => new Map<string, KeywordMetrics>(),
+    [rows]
+  );
+
+  const allRowsSummary = useMemo(() => summarize(rows), [rows]);
 
   const [selectedKeyword, setSelectedKeyword] = useState<string | null>(keywords[0] ?? null);
   const [keywordQuery, setKeywordQuery] = useState<string>("");
@@ -1137,43 +1131,58 @@ export default function KeywordDetailSection(props: Props) {
 
   const selectedMetrics = useMemo(() => {
     if (!selectedKeyword) return null;
-    return metricsMap.get(selectedKeyword) ?? null;
-  }, [selectedKeyword, metricsMap]);
 
-  const filteredRows = selectedMetrics?.filteredRows ?? rows;
-  const avgRank = selectedMetrics?.avgRank ?? null;
-  const totals = selectedMetrics?.totals ?? summarize(filteredRows);
-  const bySource = selectedMetrics?.bySource ?? groupBySource(filteredRows);
-  const byDevice = selectedMetrics?.byDevice ?? groupByDevice(filteredRows);
-  const byWeekOnly = selectedMetrics?.byWeekOnly ?? groupByWeekRecent5(filteredRows);
-  const byWeekChart =
-    selectedMetrics?.byWeekChart ??
-    [...byWeekOnly].sort((a, b) =>
-      String(a.weekKey ?? "").localeCompare(String(b.weekKey ?? ""))
-    );
-  const byDay = selectedMetrics?.byDay ?? groupByDayFromRows(filteredRows);
-  const byMonth =
-    selectedMetrics?.byMonth ??
-    groupByMonthRecent3({
-      rows: filteredRows,
-      selectedMonth: "all",
-      selectedDevice: "all",
-      selectedChannel: "all",
-    });
+    const cached = keywordMetricsCache.get(selectedKeyword);
+    if (cached) return cached;
+
+    const filteredRows = keywordBuckets.get(selectedKeyword) ?? [];
+    const next = buildKeywordMetrics(filteredRows);
+    keywordMetricsCache.set(selectedKeyword, next);
+    return next;
+  }, [
+    selectedKeyword,
+    keywordBuckets,
+    keywordMetricsCache,
+  ]);
+
+  const emptyMetrics = useMemo<KeywordMetrics>(
+    () => buildKeywordMetrics([]),
+    []
+  );
+
+  const resolvedMetrics = selectedMetrics ?? emptyMetrics;
+  const filteredRows = resolvedMetrics.filteredRows;
+  const avgRank = resolvedMetrics.avgRank;
+  const totals = resolvedMetrics.totals;
+  const bySource = resolvedMetrics.bySource;
+  const byDevice = resolvedMetrics.byDevice;
+  const byWeekOnly = resolvedMetrics.byWeekOnly;
+  const byWeekChart = resolvedMetrics.byWeekChart;
+  const byDay = resolvedMetrics.byDay;
+  const byMonth = resolvedMetrics.byMonth;
 
   const insight = useMemo(
     () =>
       buildKeywordDetailInsight({
         reportMode,
         keyword: selectedKeyword,
-        allRowsScope: rows,
-        keywordRows: filteredRows,
+        allSummary: allRowsSummary,
+        keywordSummary: totals,
         byWeekOnly,
         bySource,
         byDevice,
         avgRank,
       }),
-    [reportMode, selectedKeyword, rows, filteredRows, byWeekOnly, bySource, byDevice, avgRank]
+    [
+      reportMode,
+      selectedKeyword,
+      allRowsSummary,
+      totals,
+      byWeekOnly,
+      bySource,
+      byDevice,
+      avgRank,
+    ]
   );
 
   const showAllSlides = activeSlide == null;

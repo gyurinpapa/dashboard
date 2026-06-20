@@ -61,6 +61,8 @@ type CreativeAgg = {
   roas: number;
 };
 
+const EMPTY_CREATIVE_AGG: CreativeAgg[] = [];
+
 type SortDir = "asc" | "desc";
 type SortKey =
   | "creative"
@@ -660,6 +662,36 @@ export default function CreativeSection({
   const reportMode = resolveReportMode(reportType);
   const tableMeta = getCreativeTableMeta(reportMode);
 
+  const showAllSlides = activeSlide == null;
+  const isRankingSlideActive = showAllSlides || activeSlide === 0;
+  const isTableSlideActive = showAllSlides || activeSlide === 1;
+
+  /**
+   * 일반 웹에서는 현재 슬라이드만 최초 계산·mount하고,
+   * 한 번 방문한 슬라이드는 이후 hidden 상태로 유지한다.
+   * export(activeSlide 미지정)에서는 기존처럼 두 슬라이드를 모두 계산·렌더링한다.
+   */
+  const visitedSlidesRef = useRef({
+    ranking: isRankingSlideActive,
+    table: isTableSlideActive,
+  });
+
+  if (isRankingSlideActive) {
+    visitedSlidesRef.current.ranking = true;
+  }
+  if (isTableSlideActive) {
+    visitedSlidesRef.current.table = true;
+  }
+
+  const shouldBuildRankingData =
+    showAllSlides || visitedSlidesRef.current.ranking;
+  const shouldBuildTableData =
+    showAllSlides || visitedSlidesRef.current.table;
+  const shouldRenderRankingSlide =
+    showAllSlides || visitedSlidesRef.current.ranking;
+  const shouldRenderTableSlide =
+    showAllSlides || visitedSlidesRef.current.table;
+
   const imagePathByCreativeKey = useMemo(() => {
     const map = new Map<string, string>();
 
@@ -733,60 +765,72 @@ export default function CreativeSection({
     });
   }, [rows, imagePathByCreativeKey]);
 
-  const topImpressions = useMemo(
-    () =>
-      [...creativeAgg]
-        .sort((a, b) => b.impressions - a.impressions)
-        .slice(0, 20)
-        .reverse(),
-    [creativeAgg]
-  );
+  const topImpressions = useMemo(() => {
+    if (!shouldBuildRankingData || reportMode !== "traffic") {
+      return EMPTY_CREATIVE_AGG;
+    }
 
-  const topClicks = useMemo(
-    () =>
-      [...creativeAgg]
-        .sort((a, b) => b.clicks - a.clicks)
-        .slice(0, 20)
-        .reverse(),
-    [creativeAgg]
-  );
+    return [...creativeAgg]
+      .sort((a, b) => b.impressions - a.impressions)
+      .slice(0, 20)
+      .reverse();
+  }, [creativeAgg, reportMode, shouldBuildRankingData]);
 
-  const topCost = useMemo(
-    () =>
-      [...creativeAgg]
-        .sort((a, b) => b.cost - a.cost)
-        .slice(0, 20)
-        .reverse(),
-    [creativeAgg]
-  );
+  const topClicks = useMemo(() => {
+    if (!shouldBuildRankingData) {
+      return EMPTY_CREATIVE_AGG;
+    }
 
-  const topConv = useMemo(
-    () =>
-      [...creativeAgg]
-        .sort((a, b) => b.conversions - a.conversions)
-        .slice(0, 20)
-        .reverse(),
-    [creativeAgg]
-  );
+    return [...creativeAgg]
+      .sort((a, b) => b.clicks - a.clicks)
+      .slice(0, 20)
+      .reverse();
+  }, [creativeAgg, shouldBuildRankingData]);
 
-  const topRoas = useMemo(
-    () =>
-      [...creativeAgg]
-        .sort((a, b) => b.roas - a.roas)
-        .slice(0, 20)
-        .reverse(),
-    [creativeAgg]
-  );
+  const topCost = useMemo(() => {
+    if (!shouldBuildRankingData || reportMode !== "traffic") {
+      return EMPTY_CREATIVE_AGG;
+    }
 
-  const topCpa = useMemo(
-    () =>
-      [...creativeAgg]
-        .filter((a) => toSafeNumber(a.conversions) > 0)
-        .sort((a, b) => a.cpa - b.cpa)
-        .slice(0, 20)
-        .reverse(),
-    [creativeAgg]
-  );
+    return [...creativeAgg]
+      .sort((a, b) => b.cost - a.cost)
+      .slice(0, 20)
+      .reverse();
+  }, [creativeAgg, reportMode, shouldBuildRankingData]);
+
+  const topConv = useMemo(() => {
+    if (!shouldBuildRankingData || reportMode === "traffic") {
+      return EMPTY_CREATIVE_AGG;
+    }
+
+    return [...creativeAgg]
+      .sort((a, b) => b.conversions - a.conversions)
+      .slice(0, 20)
+      .reverse();
+  }, [creativeAgg, reportMode, shouldBuildRankingData]);
+
+  const topRoas = useMemo(() => {
+    if (!shouldBuildRankingData || reportMode !== "commerce") {
+      return EMPTY_CREATIVE_AGG;
+    }
+
+    return [...creativeAgg]
+      .sort((a, b) => b.roas - a.roas)
+      .slice(0, 20)
+      .reverse();
+  }, [creativeAgg, reportMode, shouldBuildRankingData]);
+
+  const topCpa = useMemo(() => {
+    if (!shouldBuildRankingData || reportMode !== "db_acquisition") {
+      return EMPTY_CREATIVE_AGG;
+    }
+
+    return [...creativeAgg]
+      .filter((a) => toSafeNumber(a.conversions) > 0)
+      .sort((a, b) => a.cpa - b.cpa)
+      .slice(0, 20)
+      .reverse();
+  }, [creativeAgg, reportMode, shouldBuildRankingData]);
 
   const [sortKey, setSortKey] = useState<SortKey>("clicks");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -860,6 +904,10 @@ export default function CreativeSection({
   }, []);
 
   const tableRows = useMemo(() => {
+    if (!shouldBuildTableData) {
+      return EMPTY_CREATIVE_AGG;
+    }
+
     const sorted = [...creativeAgg].sort((a, b) => {
       const dir = sortDir === "asc" ? 1 : -1;
 
@@ -872,32 +920,45 @@ export default function CreativeSection({
     });
 
     return sorted.slice(0, 50);
-  }, [creativeAgg, sortKey, sortDir]);
+  }, [creativeAgg, sortKey, sortDir, shouldBuildTableData]);
 
-  const maxImpr = useMemo(
-    () => Math.max(0, ...tableRows.map((r) => toSafeNumber(r.impressions))),
-    [tableRows]
-  );
+  const tableMaxes = useMemo(() => {
+    let maxImpr = 0;
+    let maxClicks = 0;
+    let maxCost = 0;
+    let maxConv = 0;
+    let maxRev = 0;
 
-  const maxClicks = useMemo(
-    () => Math.max(0, ...tableRows.map((r) => toSafeNumber(r.clicks))),
-    [tableRows]
-  );
+    for (const row of tableRows) {
+      const impressions = toSafeNumber(row.impressions);
+      const clicks = toSafeNumber(row.clicks);
+      const cost = toSafeNumber(row.cost);
+      const conversions = toSafeNumber(row.conversions);
+      const revenue = toSafeNumber(row.revenue);
 
-  const maxCost = useMemo(
-    () => Math.max(0, ...tableRows.map((r) => toSafeNumber(r.cost))),
-    [tableRows]
-  );
+      if (impressions > maxImpr) maxImpr = impressions;
+      if (clicks > maxClicks) maxClicks = clicks;
+      if (cost > maxCost) maxCost = cost;
+      if (conversions > maxConv) maxConv = conversions;
+      if (revenue > maxRev) maxRev = revenue;
+    }
 
-  const maxConv = useMemo(
-    () => Math.max(0, ...tableRows.map((r) => toSafeNumber(r.conversions))),
-    [tableRows]
-  );
+    return {
+      maxImpr,
+      maxClicks,
+      maxCost,
+      maxConv,
+      maxRev,
+    };
+  }, [tableRows]);
 
-  const maxRev = useMemo(
-    () => Math.max(0, ...tableRows.map((r) => toSafeNumber(r.revenue))),
-    [tableRows]
-  );
+  const {
+    maxImpr,
+    maxClicks,
+    maxCost,
+    maxConv,
+    maxRev,
+  } = tableMaxes;
 
   useEffect(() => {
     if (!selectedCreative) return;
@@ -970,10 +1031,10 @@ export default function CreativeSection({
     });
   }, []);
 
-  const creativeInsight = useMemo(
-    () => buildCreativeSummaryInsight(reportMode, creativeAgg),
-    [reportMode, creativeAgg],
-  );
+  const creativeInsight = useMemo(() => {
+    if (!shouldBuildRankingData) return "";
+    return buildCreativeSummaryInsight(reportMode, creativeAgg);
+  }, [reportMode, creativeAgg, shouldBuildRankingData]);
 
   const creativeInsightDescription =
     reportMode === "traffic"
@@ -982,18 +1043,16 @@ export default function CreativeSection({
         ? "현재 소재 성과를 바탕으로 DB 확보와 전환 효율 중심의 중요한 흐름을 정리했습니다."
         : "현재 소재 성과를 바탕으로 전환과 매출 효율 중심의 중요한 흐름을 정리했습니다.";
 
-  const showAllSlides = activeSlide == null;
-  const showRankingSlide = showAllSlides || activeSlide === 0;
-  const showTableSlide = showAllSlides || activeSlide === 1;
-
   useEffect(() => {
-    if (showTableSlide) return;
+    if (isTableSlideActive) return;
     clearPreviewTimers();
     setHoveredCreative(null);
     setPreviewAnchorEl(null);
-  }, [showTableSlide, clearPreviewTimers]);
+  }, [isTableSlideActive, clearPreviewTimers]);
 
   const rankingCharts = useMemo(() => {
+    if (!shouldBuildRankingData) return null;
+
     if (reportMode === "traffic") {
       return (
         <>
@@ -1003,7 +1062,12 @@ export default function CreativeSection({
             description="노출 기여도가 높은 소재를 빠르게 비교할 수 있도록 정리했습니다."
           >
             <div style={{ width: "100%", height: 340 }}>
-              <ResponsiveContainer>
+              <ResponsiveContainer
+                width="100%"
+                height="100%"
+                minWidth={0}
+                debounce={80}
+              >
                 <BarChart
                   data={topImpressions}
                   layout="vertical"
@@ -1028,6 +1092,8 @@ export default function CreativeSection({
                   />
                   <Bar
                     dataKey="impressions"
+                    fill="#B7D7E3"
+                    isAnimationActive={false}
                     onClick={(_: any, idx: number) => {
                       const item = topImpressions?.[idx];
                       if (item) setSelectedCreative(item);
@@ -1051,7 +1117,12 @@ export default function CreativeSection({
             description="실제 유입 반응이 많이 발생한 소재를 중심으로 확인할 수 있습니다."
           >
             <div style={{ width: "100%", height: 340 }}>
-              <ResponsiveContainer>
+              <ResponsiveContainer
+                width="100%"
+                height="100%"
+                minWidth={0}
+                debounce={80}
+              >
                 <BarChart
                   data={topClicks}
                   layout="vertical"
@@ -1076,6 +1147,8 @@ export default function CreativeSection({
                   />
                   <Bar
                     dataKey="clicks"
+                    fill="#7FA6C4"
+                    isAnimationActive={false}
                     onClick={(_: any, idx: number) => {
                       const item = topClicks?.[idx];
                       if (item) setSelectedCreative(item);
@@ -1099,7 +1172,12 @@ export default function CreativeSection({
             description="예산이 많이 집행된 소재를 기준으로 운영 집중도를 살펴봅니다."
           >
             <div style={{ width: "100%", height: 340 }}>
-              <ResponsiveContainer>
+              <ResponsiveContainer
+                width="100%"
+                height="100%"
+                minWidth={0}
+                debounce={80}
+              >
                 <BarChart
                   data={topCost}
                   layout="vertical"
@@ -1124,6 +1202,8 @@ export default function CreativeSection({
                   />
                   <Bar
                     dataKey="cost"
+                    fill="#CFC2B1"
+                    isAnimationActive={false}
                     onClick={(_: any, idx: number) => {
                       const item = topCost?.[idx];
                       if (item) setSelectedCreative(item);
@@ -1153,7 +1233,12 @@ export default function CreativeSection({
             description="유입을 가장 많이 만든 소재를 우선순위 기준으로 정리했습니다."
           >
             <div style={{ width: "100%", height: 340 }}>
-              <ResponsiveContainer>
+              <ResponsiveContainer
+                width="100%"
+                height="100%"
+                minWidth={0}
+                debounce={80}
+              >
                 <BarChart
                   data={topClicks}
                   layout="vertical"
@@ -1178,6 +1263,8 @@ export default function CreativeSection({
                   />
                   <Bar
                     dataKey="clicks"
+                    fill="#7FA6C4"
+                    isAnimationActive={false}
                     onClick={(_: any, idx: number) => {
                       const item = topClicks?.[idx];
                       if (item) setSelectedCreative(item);
@@ -1201,7 +1288,12 @@ export default function CreativeSection({
             description="리드/전환 기여도가 높은 소재를 중심으로 효율 우선순위를 파악합니다."
           >
             <div style={{ width: "100%", height: 340 }}>
-              <ResponsiveContainer>
+              <ResponsiveContainer
+                width="100%"
+                height="100%"
+                minWidth={0}
+                debounce={80}
+              >
                 <BarChart
                   data={topConv}
                   layout="vertical"
@@ -1226,6 +1318,8 @@ export default function CreativeSection({
                   />
                   <Bar
                     dataKey="conversions"
+                    fill="#8FB9B0"
+                    isAnimationActive={false}
                     onClick={(_: any, idx: number) => {
                       const item = topConv?.[idx];
                       if (item) setSelectedCreative(item);
@@ -1249,7 +1343,12 @@ export default function CreativeSection({
             description="전환이 발생한 소재만 기준으로 CPA가 낮은 순서대로 정리했습니다."
           >
             <div style={{ width: "100%", height: 340 }}>
-              <ResponsiveContainer>
+              <ResponsiveContainer
+                width="100%"
+                height="100%"
+                minWidth={0}
+                debounce={80}
+              >
                 <BarChart
                   data={topCpa}
                   layout="vertical"
@@ -1274,6 +1373,8 @@ export default function CreativeSection({
                   />
                   <Bar
                     dataKey="cpa"
+                    fill="#D8B77C"
+                    isAnimationActive={false}
                     onClick={(_: any, idx: number) => {
                       const item = topCpa?.[idx];
                       if (item) setSelectedCreative(item);
@@ -1302,7 +1403,12 @@ export default function CreativeSection({
           description="유입을 가장 많이 만든 소재를 우선순위 기준으로 정리했습니다."
         >
           <div style={{ width: "100%", height: 340 }}>
-            <ResponsiveContainer>
+            <ResponsiveContainer
+                width="100%"
+                height="100%"
+                minWidth={0}
+                debounce={80}
+              >
               <BarChart
                 data={topClicks}
                 layout="vertical"
@@ -1327,6 +1433,8 @@ export default function CreativeSection({
                 />
                 <Bar
                   dataKey="clicks"
+                  fill="#7FA6C4"
+                    isAnimationActive={false}
                   onClick={(_: any, idx: number) => {
                     const item = topClicks?.[idx];
                     if (item) setSelectedCreative(item);
@@ -1350,7 +1458,12 @@ export default function CreativeSection({
           description="전환 기여도가 높은 소재를 중심으로 효율 우선순위를 파악합니다."
         >
           <div style={{ width: "100%", height: 340 }}>
-            <ResponsiveContainer>
+            <ResponsiveContainer
+                width="100%"
+                height="100%"
+                minWidth={0}
+                debounce={80}
+              >
               <BarChart
                 data={topConv}
                 layout="vertical"
@@ -1375,6 +1488,8 @@ export default function CreativeSection({
                 />
                 <Bar
                   dataKey="conversions"
+                  fill="#8FB9B0"
+                    isAnimationActive={false}
                   onClick={(_: any, idx: number) => {
                     const item = topConv?.[idx];
                     if (item) setSelectedCreative(item);
@@ -1398,7 +1513,12 @@ export default function CreativeSection({
           description="매출 효율이 좋은 소재를 빠르게 식별할 수 있도록 정리했습니다."
         >
           <div style={{ width: "100%", height: 340 }}>
-            <ResponsiveContainer>
+            <ResponsiveContainer
+                width="100%"
+                height="100%"
+                minWidth={0}
+                debounce={80}
+              >
               <BarChart
                 data={topRoas}
                 layout="vertical"
@@ -1423,6 +1543,8 @@ export default function CreativeSection({
                 />
                 <Bar
                   dataKey="roas"
+                  fill="#9B9AC7"
+                    isAnimationActive={false}
                   onClick={(_: any, idx: number) => {
                     const item = topRoas?.[idx];
                     if (item) setSelectedCreative(item);
@@ -1449,6 +1571,7 @@ export default function CreativeSection({
     topConv,
     topRoas,
     topCpa,
+    shouldBuildRankingData,
   ]);
 
   const tableBody = useMemo(() => {
@@ -1496,8 +1619,11 @@ export default function CreativeSection({
 
   return (
     <section className="mt-2 space-y-6">
-      {showRankingSlide ? (
-        <div className="space-y-4">
+      {shouldRenderRankingSlide ? (
+        <div
+          className={isRankingSlideActive ? "space-y-4" : "hidden"}
+          aria-hidden={!isRankingSlideActive}
+        >
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             {rankingCharts}
           </div>
@@ -1524,7 +1650,11 @@ export default function CreativeSection({
         </div>
       ) : null}
 
-      <section className={showTableSlide ? "" : "hidden"}>
+      {shouldRenderTableSlide ? (
+        <section
+          className={isTableSlideActive ? "" : "hidden"}
+          aria-hidden={!isTableSlideActive}
+        >
         <div className="rounded-2xl border border-[#CFC2B1]/55 bg-white p-5 shadow-[0_8px_22px_rgba(127,166,196,0.10)] sm:p-6">
           <SectionHeader
             badge="Creative Table"
@@ -1645,8 +1775,9 @@ export default function CreativeSection({
           </div>
         </div>
       </section>
+      ) : null}
 
-      {showTableSlide ? (
+      {isTableSlideActive ? (
         <CreativePreviewOverlay
           hoveredCreative={hoveredCreative}
           previewPos={previewPos}

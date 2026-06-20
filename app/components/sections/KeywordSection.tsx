@@ -387,6 +387,17 @@ type Row = {
   group?: string | null;
 };
 
+const EMPTY_KEYWORD_ROWS: Row[] = [];
+
+const KEYWORD_BAR_COLOR: Partial<Record<keyof Row, string>> = {
+  impressions: "#B7D7E3",
+  clicks: "#7FA6C4",
+  cost: "#CFC2B1",
+  conversions: "#8FB9B0",
+  cpa: "#D8B77C",
+  roas: "#9B9AC7",
+};
+
 type SortDir = "asc" | "desc";
 type SortKey =
   | "keyword"
@@ -487,7 +498,12 @@ const KeywordRankingChart = memo(function KeywordRankingChart({
   return (
     <ChartCard badge={badge} title={title} description={description}>
       <div style={{ width: "100%", height: 340 }}>
-        <ResponsiveContainer>
+        <ResponsiveContainer
+          width="100%"
+          height="100%"
+          minWidth={0}
+          debounce={80}
+        >
           <BarChart
             data={data}
             layout="vertical"
@@ -509,7 +525,11 @@ const KeywordRankingChart = memo(function KeywordRankingChart({
               wrapperStyle={{ fontSize: 11 }}
               formatter={(v: any) => tooltipFormatter(v)}
             />
-            <Bar dataKey={String(dataKey)}>
+            <Bar
+              dataKey={String(dataKey)}
+              fill={KEYWORD_BAR_COLOR[dataKey] ?? "#7FA6C4"}
+              isAnimationActive={false}
+            >
               <LabelList
                 dataKey={String(dataKey)}
                 position="right"
@@ -733,6 +753,26 @@ export default function KeywordSection({
   const tableMeta = getKeywordTableMeta(reportMode);
   const copy = getKeywordCopy(reportMode);
 
+  const showAllSlides = activeSlide == null;
+  const showOverviewSlide = showAllSlides || activeSlide === 0;
+  const showTableSlide = showAllSlides || activeSlide === 1;
+
+  /**
+   * 일반 웹에서는 현재 슬라이드에 필요한 계산만 최초 실행하고,
+   * 한 번 방문한 슬라이드의 계산 결과는 컴포넌트가 유지되는 동안 재사용한다.
+   * export(activeSlide === undefined)에서는 두 슬라이드 데이터를 모두 계산한다.
+   */
+  const visitedSlidesRef = useRef({
+    overview: showOverviewSlide,
+    table: showTableSlide,
+  });
+
+  if (showOverviewSlide) visitedSlidesRef.current.overview = true;
+  if (showTableSlide) visitedSlidesRef.current.table = true;
+
+  const shouldBuildOverviewData = visitedSlidesRef.current.overview;
+  const shouldBuildTableData = visitedSlidesRef.current.table;
+
   const rows: Row[] = useMemo(() => {
     return (Array.isArray(keywordAgg) ? keywordAgg : []).map((r: any) => {
       const keyword = String(r.keyword ?? r.label ?? r.name ?? "");
@@ -777,8 +817,9 @@ export default function KeywordSection({
   }, [keywordAgg]);
 
   const chartRows: Row[] = useMemo(() => {
+    if (!shouldBuildOverviewData) return EMPTY_KEYWORD_ROWS;
     return mergeKeywordRows(rows);
-  }, [rows]);
+  }, [rows, shouldBuildOverviewData]);
 
   const {
     topImpressions,
@@ -795,21 +836,56 @@ export default function KeywordSection({
     topRoas: Row[];
     topCpa: Row[];
   } = useMemo(() => {
+    const emptyResult = {
+      topImpressions: EMPTY_KEYWORD_ROWS,
+      topClicks: EMPTY_KEYWORD_ROWS,
+      topCost: EMPTY_KEYWORD_ROWS,
+      topConv: EMPTY_KEYWORD_ROWS,
+      topRoas: EMPTY_KEYWORD_ROWS,
+      topCpa: EMPTY_KEYWORD_ROWS,
+    };
+
+    if (!shouldBuildOverviewData || chartRows.length === 0) {
+      return emptyResult;
+    }
+
     const top20 = (arr: Row[], sorter: (a: Row, b: Row) => number) =>
       [...arr].sort(sorter).slice(0, 20).reverse();
 
+    if (reportMode === "traffic") {
+      return {
+        ...emptyResult,
+        topImpressions: top20(
+          chartRows,
+          (a, b) => b.impressions - a.impressions
+        ),
+        topClicks: top20(chartRows, (a, b) => b.clicks - a.clicks),
+        topCost: top20(chartRows, (a, b) => b.cost - a.cost),
+      };
+    }
+
+    if (reportMode === "db_acquisition") {
+      return {
+        ...emptyResult,
+        topClicks: top20(chartRows, (a, b) => b.clicks - a.clicks),
+        topConv: top20(
+          chartRows,
+          (a, b) => b.conversions - a.conversions
+        ),
+        topCpa: top20(
+          chartRows.filter((r) => toSafeNumber(r.conversions) > 0),
+          (a, b) => a.cpa - b.cpa
+        ),
+      };
+    }
+
     return {
-      topImpressions: top20(chartRows, (a, b) => b.impressions - a.impressions),
+      ...emptyResult,
       topClicks: top20(chartRows, (a, b) => b.clicks - a.clicks),
-      topCost: top20(chartRows, (a, b) => b.cost - a.cost),
       topConv: top20(chartRows, (a, b) => b.conversions - a.conversions),
       topRoas: top20(chartRows, (a, b) => b.roas - a.roas),
-      topCpa: top20(
-        chartRows.filter((r) => toSafeNumber(r.conversions) > 0),
-        (a, b) => a.cpa - b.cpa
-      ),
     };
-  }, [chartRows]);
+  }, [chartRows, reportMode, shouldBuildOverviewData]);
 
   const [sortKey, setSortKey] = useState<SortKey>("clicks");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -829,16 +905,19 @@ export default function KeywordSection({
   }, []);
 
   const campaignOptions = useMemo(() => {
+    if (!shouldBuildTableData) return [];
+
     const set = new Set<string>();
     rows.forEach((r) => {
       const c = (r.campaign ?? "").toString().trim();
       if (c) set.add(c);
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b, "ko"));
-  }, [rows]);
+  }, [rows, shouldBuildTableData]);
 
   const groupOptions = useMemo(() => {
-    if (!campaignFilter) return [];
+    if (!shouldBuildTableData || !campaignFilter) return [];
+
     const set = new Set<string>();
     rows
       .filter((r) => (r.campaign ?? "") === campaignFilter)
@@ -847,24 +926,31 @@ export default function KeywordSection({
         if (g) set.add(g);
       });
     return Array.from(set).sort((a, b) => a.localeCompare(b, "ko"));
-  }, [rows, campaignFilter]);
+  }, [rows, campaignFilter, shouldBuildTableData]);
 
   const filteredRawRows = useMemo(() => {
+    if (!shouldBuildTableData) return EMPTY_KEYWORD_ROWS;
+
+    if (!campaignFilter && !groupFilter) return rows;
+
     return rows.filter((r) => {
       if (campaignFilter && (r.campaign ?? "") !== campaignFilter) return false;
       if (groupFilter && (r.group ?? "") !== groupFilter) return false;
       return true;
     });
-  }, [rows, campaignFilter, groupFilter]);
+  }, [rows, campaignFilter, groupFilter, shouldBuildTableData]);
 
   const tableSourceRows = useMemo(() => {
+    if (!shouldBuildTableData) return EMPTY_KEYWORD_ROWS;
     if (viewMode === "merged") {
       return mergeKeywordRows(filteredRawRows);
     }
     return filteredRawRows;
-  }, [viewMode, filteredRawRows]);
+  }, [viewMode, filteredRawRows, shouldBuildTableData]);
 
   const tableRows = useMemo(() => {
+    if (!shouldBuildTableData) return EMPTY_KEYWORD_ROWS;
+
     const sorted = [...tableSourceRows].sort((a, b) => {
       const dir = sortDir === "asc" ? 1 : -1;
 
@@ -879,7 +965,7 @@ export default function KeywordSection({
     });
 
     return sorted.slice(0, 50);
-  }, [tableSourceRows, sortKey, sortDir]);
+  }, [tableSourceRows, sortKey, sortDir, shouldBuildTableData]);
 
   const {
     kwMaxImpr,
@@ -894,12 +980,14 @@ export default function KeywordSection({
     let maxConv = 0;
     let maxRev = 0;
 
-    for (const r of tableRows) {
-      maxImpr = Math.max(maxImpr, toSafeNumber(r.impressions));
-      maxClicks = Math.max(maxClicks, toSafeNumber(r.clicks));
-      maxCost = Math.max(maxCost, toSafeNumber(r.cost));
-      maxConv = Math.max(maxConv, toSafeNumber(r.conversions));
-      maxRev = Math.max(maxRev, toSafeNumber(r.revenue));
+    if (shouldBuildTableData) {
+      for (const r of tableRows) {
+        maxImpr = Math.max(maxImpr, toSafeNumber(r.impressions));
+        maxClicks = Math.max(maxClicks, toSafeNumber(r.clicks));
+        maxCost = Math.max(maxCost, toSafeNumber(r.cost));
+        maxConv = Math.max(maxConv, toSafeNumber(r.conversions));
+        maxRev = Math.max(maxRev, toSafeNumber(r.revenue));
+      }
     }
 
     return {
@@ -909,9 +997,11 @@ export default function KeywordSection({
       kwMaxConv: maxConv,
       kwMaxRev: maxRev,
     };
-  }, [tableRows]);
+  }, [tableRows, shouldBuildTableData]);
 
   const tableRowModels = useMemo<TableRowModel[]>(() => {
+    if (!shouldBuildTableData) return [];
+
     return tableRows.map((r, idx) => ({
       key: `${viewMode}-${campaignFilter ?? "all"}-${groupFilter ?? "all"}-${r.keyword}-${idx}`,
       keyword: r.keyword || "(empty)",
@@ -931,7 +1021,13 @@ export default function KeywordSection({
       revenueLabel: KRW(r.revenue),
       roasLabel: formatPercentFromRoas(r.roas, 1),
     }));
-  }, [tableRows, viewMode, campaignFilter, groupFilter]);
+  }, [
+    tableRows,
+    viewMode,
+    campaignFilter,
+    groupFilter,
+    shouldBuildTableData,
+  ]);
 
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
   const pendingRestoreScrollTop = useRef<number | null>(null);
@@ -1000,10 +1096,6 @@ export default function KeywordSection({
     },
     [rememberScroll]
   );
-
-  const showAllSlides = activeSlide == null;
-  const showOverviewSlide = showAllSlides || activeSlide === 0;
-  const showTableSlide = showAllSlides || activeSlide === 1;
 
   return (
     <section className="mt-2 space-y-6">

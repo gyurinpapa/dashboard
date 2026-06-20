@@ -45,13 +45,14 @@ type SummaryChartInsight = {
 };
 
 type Props = {
-  title: string;
-  subtitle: string;
+  title?: string;
+  subtitle?: string;
   data: SummaryChartViewPoint[];
   density?: SummaryChartViewDensity;
   insight?: Partial<SummaryChartInsight>;
   className?: string;
   reportType?: ReportType;
+  hideHeader?: boolean;
 };
 
 type DensityClasses = {
@@ -122,10 +123,6 @@ const TOKENS = {
   },
 };
 
-const MOTION = {
-  barDuration: 700,
-  lineDuration: 950,
-};
 
 const EMPTY_INSIGHT: SummaryChartInsight = {
   currentLabel: "-",
@@ -590,13 +587,12 @@ const HoverAwareDot = memo(function HoverAwareDot({
 });
 
 function SummaryChartView({
-  title,
-  subtitle,
   data,
   density = "report",
   insight,
   className,
   reportType = "commerce",
+  hideHeader = false,
 }: Props) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const activeIndexRef = useRef<number | null>(null);
@@ -751,29 +747,20 @@ function SummaryChartView({
 
   return (
     <div className={rootClassName}>
-      <div className={densityClasses.headerWrap}>
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-slate-200/80 to-transparent" />
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="inline-flex items-center rounded-full border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/35 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 shadow-sm">
-              Chart View
-            </div>
-            <div className={densityClasses.title}>{title}</div>
-            <div className={densityClasses.subtitle}>{subtitle}</div>
-          </div>
-
-          <div className="hidden shrink-0 rounded-2xl border border-[var(--nature-border-blue)] bg-[var(--nature-surface)]/85 px-3 py-2 text-right shadow-sm sm:block">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">
-              Metric
-            </div>
-            <div className="mt-1 text-[12px] font-semibold text-slate-700">
-              {mode.metricSummaryText}
-            </div>
-          </div>
+      {!hideHeader ? (
+        <div className={densityClasses.headerWrap}>
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-slate-200/80 to-transparent" />
         </div>
-      </div>
+      ) : null}
 
-      <div className={densityClasses.topStripWrap}>
+      <div
+        className={[
+          densityClasses.topStripWrap,
+          hideHeader ? "!pt-3 sm:!pt-3" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
         <div className={densityClasses.topStrip}>
           <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-wrap items-center gap-2">
@@ -827,8 +814,9 @@ function SummaryChartView({
           <ResponsiveContainer
             width="100%"
             height="100%"
+            minWidth={0}
             minHeight={densityClasses.chartMinHeight}
-            debounce={40}
+            debounce={80}
           >
             <ComposedChart
               data={safeData}
@@ -893,7 +881,7 @@ function SummaryChartView({
               <Tooltip
                 cursor={TOOLTIP_CURSOR}
                 content={renderTooltip}
-                animationDuration={180}
+                animationDuration={0}
               />
 
               <Bar
@@ -903,10 +891,7 @@ function SummaryChartView({
                 fill={TOKENS.metric.cost}
                 radius={[10, 10, 0, 0]}
                 maxBarSize={densityClasses.maxBarSize}
-                isAnimationActive
-                animationBegin={0}
-                animationDuration={MOTION.barDuration}
-                animationEasing="ease-out"
+                isAnimationActive={false}
               >
                 {costCells}
               </Bar>
@@ -919,10 +904,7 @@ function SummaryChartView({
                   fill={TOKENS.metric.revenue}
                   radius={[10, 10, 0, 0]}
                   maxBarSize={densityClasses.maxBarSize}
-                  isAnimationActive
-                  animationBegin={80}
-                  animationDuration={MOTION.barDuration}
-                  animationEasing="ease-out"
+                  isAnimationActive={false}
                 >
                   {revenueCells}
                 </Bar>
@@ -938,10 +920,7 @@ function SummaryChartView({
                   connectNulls
                   dot={renderRevenueDot}
                   activeDot={revenueActiveDot}
-                  isAnimationActive
-                  animationBegin={80}
-                  animationDuration={MOTION.lineDuration}
-                  animationEasing="ease-out"
+                  isAnimationActive={false}
                 />
               )}
 
@@ -956,10 +935,7 @@ function SummaryChartView({
                 connectNulls
                 dot={renderRoasDot}
                 activeDot={roasActiveDot}
-                isAnimationActive
-                animationBegin={160}
-                animationDuration={MOTION.lineDuration}
-                animationEasing="ease-out"
+                isAnimationActive={false}
               />
             </ComposedChart>
           </ResponsiveContainer>

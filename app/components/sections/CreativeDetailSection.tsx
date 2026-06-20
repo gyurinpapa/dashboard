@@ -243,8 +243,9 @@ const BadgePill = memo(function BadgePill({ k }: { k: BadgeKey }) {
 function buildCreativeDetailInsight(args: {
   reportMode: ReportMode;
   creative: string | null;
-  allRowsScope: Row[];
-  creativeRows: Row[];
+  allSummary: any;
+  selectedSummary: any;
+  creativePerfList: CreativePerf[];
   byWeekOnly: any[];
   bySource: any[];
   byDevice: any[];
@@ -252,8 +253,9 @@ function buildCreativeDetailInsight(args: {
   const {
     reportMode,
     creative,
-    allRowsScope,
-    creativeRows,
+    allSummary,
+    selectedSummary,
+    creativePerfList,
     byWeekOnly,
     bySource,
     byDevice,
@@ -269,84 +271,31 @@ function buildCreativeDetailInsight(args: {
     };
   }
 
-  const all = safeCall(
-    () => summarize(allRowsScope as any),
-    {
-      impressions: 0,
-      clicks: 0,
-      cost: 0,
-      conversions: 0,
-      revenue: 0,
-      ctr: 0,
-      cpc: 0,
-      cvr: 0,
-      cpa: 0,
-      roas: 0,
-    } as any
-  );
+  const all = allSummary ?? {
+    impressions: 0,
+    clicks: 0,
+    cost: 0,
+    conversions: 0,
+    revenue: 0,
+    ctr: 0,
+    cpc: 0,
+    cvr: 0,
+    cpa: 0,
+    roas: 0,
+  };
 
-  const me = safeCall(
-    () => summarize(creativeRows as any),
-    {
-      impressions: 0,
-      clicks: 0,
-      cost: 0,
-      conversions: 0,
-      revenue: 0,
-      ctr: 0,
-      cpc: 0,
-      cvr: 0,
-      cpa: 0,
-      roas: 0,
-    } as any
-  );
-
-  const creativePerfList = safeCall(() => {
-    const map = new Map<string, Row[]>();
-
-    for (const row of allRowsScope ?? []) {
-      const key = getCreativeKey(row);
-      if (!key) continue;
-
-      const bucket = map.get(key) ?? [];
-      bucket.push(row);
-      map.set(key, bucket);
-    }
-
-    return Array.from(map.entries()).map(([name, bucket]) => {
-      const s = safeCall(
-        () => summarize(bucket as any),
-        {
-          impressions: 0,
-          clicks: 0,
-          cost: 0,
-          conversions: 0,
-          revenue: 0,
-          ctr: 0,
-          cpc: 0,
-          cvr: 0,
-          cpa: 0,
-          roas: 0,
-        } as any
-      );
-
-      return {
-        creative: name,
-        impressions: toSafeNumber((s as any)?.impressions ?? (s as any)?.impr),
-        clicks: toSafeNumber((s as any)?.clicks),
-        cost: toSafeNumber((s as any)?.cost),
-        conversions: toSafeNumber(
-          (s as any)?.conversions ?? (s as any)?.conv
-        ),
-        revenue: toSafeNumber((s as any)?.revenue),
-        ctr: toSafeNumber((s as any)?.ctr),
-        cpc: toSafeNumber((s as any)?.cpc),
-        cvr: toSafeNumber((s as any)?.cvr),
-        cpa: toSafeNumber((s as any)?.cpa),
-        roas: toSafeNumber((s as any)?.roas),
-      };
-    });
-  }, [] as any[]);
+  const me = selectedSummary ?? {
+    impressions: 0,
+    clicks: 0,
+    cost: 0,
+    conversions: 0,
+    revenue: 0,
+    ctr: 0,
+    cpc: 0,
+    cvr: 0,
+    cpa: 0,
+    roas: 0,
+  };
 
   const selectedPerf =
     creativePerfList.find((item) => item.creative === creative) ?? {
@@ -820,6 +769,7 @@ type CreativeIndexData = {
   creativeRowsMap: Map<string, Row[]>;
   previewMetaByCreative: Map<string, CreativePreviewMeta>;
   perfList: CreativePerf[];
+  insightPerfList: CreativePerf[];
   creatives: string[];
 };
 
@@ -1034,10 +984,51 @@ function buildCreativeIndex(rows: Row[]): CreativeIndexData {
     };
   });
 
+  /**
+   * 선택 소재가 바뀔 때마다 전체 rows를 다시 그룹화·요약하지 않도록
+   * 기존 summarize 기준의 비교용 성과 목록을 rows 변경 시 한 번만 만든다.
+   */
+  const insightPerfList: CreativePerf[] = Array.from(
+    creativeRowsMap.entries(),
+  ).map(([creative, bucket]) => {
+    const summary = safeCall(
+      () => summarize(bucket as any),
+      {
+        impressions: 0,
+        clicks: 0,
+        cost: 0,
+        conversions: 0,
+        revenue: 0,
+        ctr: 0,
+        cpc: 0,
+        cvr: 0,
+        cpa: 0,
+        roas: 0,
+      } as any,
+    );
+
+    return {
+      creative,
+      impressions: toSafeNumber(
+        (summary as any)?.impressions ?? (summary as any)?.impr,
+      ),
+      clicks: toSafeNumber((summary as any)?.clicks),
+      cost: toSafeNumber((summary as any)?.cost),
+      conversions: toSafeNumber(
+        (summary as any)?.conversions ?? (summary as any)?.conv,
+      ),
+      revenue: toSafeNumber((summary as any)?.revenue),
+      ctr: toSafeNumber((summary as any)?.ctr),
+      roas: toSafeNumber((summary as any)?.roas),
+      cpa: toSafeNumber((summary as any)?.cpa),
+    };
+  });
+
   return {
     creativeRowsMap,
     previewMetaByCreative,
     perfList,
+    insightPerfList,
     creatives,
   };
 }
@@ -1110,6 +1101,7 @@ export default function CreativeDetailSection({
     creativeRowsMap,
     previewMetaByCreative,
     perfList,
+    insightPerfList,
     creatives,
   } = useMemo(() => buildCreativeIndex(rows), [rows]);
 
@@ -1181,6 +1173,26 @@ export default function CreativeDetailSection({
     return out;
   }, [creatives, previewMetaByCreative, selectedCreative]);
 
+  const allRowsSummary = useMemo(
+    () =>
+      safeCall(
+        () => summarize(rows as any),
+        {
+          impressions: 0,
+          clicks: 0,
+          cost: 0,
+          conversions: 0,
+          revenue: 0,
+          ctr: 0,
+          cpc: 0,
+          cvr: 0,
+          cpa: 0,
+          roas: 0,
+        } as any,
+      ),
+    [rows],
+  );
+
   const totals = useMemo(
     () =>
       safeCall(
@@ -1244,8 +1256,9 @@ export default function CreativeDetailSection({
       buildCreativeDetailInsight({
         reportMode,
         creative: selectedCreative,
-        allRowsScope: rows,
-        creativeRows: filteredRows,
+        allSummary: allRowsSummary,
+        selectedSummary: totals,
+        creativePerfList: insightPerfList,
         byWeekOnly,
         bySource,
         byDevice,
@@ -1253,8 +1266,9 @@ export default function CreativeDetailSection({
     [
       reportMode,
       selectedCreative,
-      rows,
-      filteredRows,
+      allRowsSummary,
+      totals,
+      insightPerfList,
       byWeekOnly,
       bySource,
       byDevice,
