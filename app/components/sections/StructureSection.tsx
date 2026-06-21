@@ -4,6 +4,7 @@ import { memo, useMemo, useRef, useState } from "react";
 import { KRW } from "../../../src/lib/report/format";
 import { groupByGroup } from "../../../src/lib/report/aggregate";
 import DataBarCell from "../ui/DataBarCell";
+import SourceBrand from "../ui/SourceBrand";
 
 type ReportMode = "commerce" | "traffic" | "db_acquisition";
 
@@ -561,7 +562,9 @@ const SourceTable = memo(function SourceTable({
                   key={r.source ?? idx}
                   className="border-t border-[#CFC2B1]/60 even:bg-[#F3E4D2]/20 hover:bg-[#B7D7E3]/24 transition-colors"
                 >
-                  <td className={FIRST_TD_CLASS}>{r.source}</td>
+                  <td className={FIRST_TD_CLASS}>
+                    <SourceBrand source={r.source} />
+                  </td>
 
                   <td className={TD_CLASS}>
                     <DataBarCell value={impr} max={srcMax.maxImpr} />

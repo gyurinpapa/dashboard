@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { ReportType } from "../../../../src/lib/report/types";
 import {
   progressRate,
@@ -18,6 +18,7 @@ type Props = {
   setMonthGoal: any;
   monthGoalInsight: string;
   lastDataDate?: string;
+  goalProgressContent?: ReactNode;
 };
 
 function toSafeNumber(value: any) {
@@ -230,6 +231,7 @@ export default function SummaryGoal({
   setMonthGoal,
   monthGoalInsight,
   lastDataDate,
+  goalProgressContent,
 }: Props) {
   const mode = useMemo(() => getGoalMode(reportType), [reportType]);
   const [mounted, setMounted] = useState(false);
@@ -866,6 +868,8 @@ export default function SummaryGoal({
       <p className="mt-3 text-xs text-slate-500">
         * 목표 &amp; 달성현황은 필터의 영향을 받지 않습니다.
       </p>
+
+      {goalProgressContent}
 
       {monthGoalInsight ? (
         <div className="mt-6">

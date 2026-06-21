@@ -77,6 +77,9 @@ const SHAPE = {
   ellipse: "ellipse" as any,
 };
 
+const SOURCE_PILL_H = 0.36;
+const SOURCE_PILL_FONT_SIZE = 9.4;
+
 function asStr(v: any) {
   if (v == null) return "";
   const s = String(v).trim();
@@ -305,22 +308,54 @@ function normalizeShortActionLine(value: string) {
   if (!text) return "";
 
   text = text
-    .replace(/합니다\.?$/g, "검토.")
-    .replace(/필요합니다\.?$/g, "필요.")
-    .replace(/권장합니다\.?$/g, "권장.")
-    .replace(/유효합니다\.?$/g, "유효.")
-    .replace(/확대합니다\.?$/g, "확대 검토.")
-    .replace(/축소합니다\.?$/g, "축소 검토.")
-    .replace(/운영합니다\.?$/g, "운영 검토.")
-    .replace(/개선합니다\.?$/g, "개선 검토.")
-    .replace(/점검합니다\.?$/g, "점검.")
-    .replace(/강화합니다\.?$/g, "강화.");
+    .replace(/해야 하는 구간입니다\.?/g, "필요 구간.")
+    .replace(/해야 합니다\.?/g, ".")
+    .replace(/해야 해\.?/g, ".")
+    .replace(/필요합니다\.?/g, "필요.")
+    .replace(/권장합니다\.?/g, "권장.")
+    .replace(/유효합니다\.?/g, "유효.")
+    .replace(/가능합니다\.?/g, "가능.")
+    .replace(/나타날 수 있으므로/g, "차이 발생.")
+    .replace(/집계됩니다\.?/g, "집계.")
+    .replace(/확인합니다\.?/g, "확인.")
+    .replace(/점검합니다\.?/g, "점검.")
+    .replace(/유지합니다\.?/g, "유지.")
+    .replace(/강화합니다\.?/g, "강화.")
+    .replace(/확대합니다\.?/g, "확대.")
+    .replace(/축소합니다\.?/g, "축소.")
+    .replace(/운영합니다\.?/g, "운영.")
+    .replace(/개선합니다\.?/g, "개선.")
+    .replace(/관리합니다\.?/g, "관리.")
+    .replace(/분리합니다\.?/g, "분리.")
+    .replace(/정리합니다\.?/g, "정리.")
+    .replace(/재배분합니다\.?/g, "재배분.")
+    .replace(/재활용합니다\.?/g, "재활용.")
+    .replace(/조정합니다\.?/g, "조정.")
+    .replace(/설계합니다\.?/g, "설계.")
+    .replace(/실행합니다\.?/g, "실행.")
+    .replace(/반영합니다\.?/g, "반영.")
+    .replace(/활용합니다\.?/g, "활용.")
+    .replace(/입니다\.?/g, ".")
+    .replace(/합니다\.?/g, ".")
+    .replace(/\s*\.\s*\.\s*/g, ". ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  text = text.replace(/([.!?])\s+([.!?])/g, "$1").trim();
 
   if (!/[.!?]$/.test(text)) {
     text = `${text}.`;
   }
 
   return text;
+}
+
+function pptTone(value: any) {
+  return normalizeShortActionLine(asStr(value));
+}
+
+function pptToneList(values: string[]) {
+  return (values ?? []).map((value) => pptTone(value)).filter(Boolean);
 }
 
 function buildExecutiveActionLines(item: any) {
@@ -505,20 +540,6 @@ function addTemplateHeader(args: {
     });
   }
 
-  if (pageNo && totalPages) {
-    slide.addText(`${String(pageNo).padStart(2, "0")} / ${totalPages}`, {
-      x: 11.45,
-      y: 0.42,
-      w: 1.28,
-      h: 0.18,
-      fontFace: FONT.body,
-      fontSize: 8.2,
-      bold: true,
-      color: COLOR.muted,
-      align: "right",
-      margin: 0,
-    });
-  }
 
   slide.addShape(SHAPE.line, {
     x: 0.58,
@@ -557,16 +578,6 @@ function addFooter(args: {
     margin: 0,
   });
 
-  slide.addText(formatGeneratedAt(deck.generatedAt), {
-    x: 3.05,
-    y: 7.2,
-    w: 3.8,
-    h: 0.16,
-    fontFace: FONT.body,
-    fontSize: 6,
-    color: COLOR.muted,
-    margin: 0,
-  });
 
   if (pageNo && totalPages) {
     slide.addText(`${String(pageNo).padStart(2, "0")} / ${totalPages}`, {
@@ -729,7 +740,7 @@ function addTocSlide(pptxDoc: pptxgen, deck: PptReportDeck, totalPages: number) 
     slide,
     eyebrow: "CONTENTS",
     title: "보고서 목차",
-    subtitle: "리뷰형 템플릿 흐름에 맞춰 성과 요약, 매체별 진단, 다음 액션을 순서대로 확인합니다.",
+    subtitle: "성과 요약 · 매체 진단 · 다음 액션 순서 정리.",
     pageNo: 2,
     totalPages,
   });
@@ -1206,6 +1217,11 @@ function addBulletBox(args: {
   tone?: "analysis" | "insight";
 }) {
   const { slide, title, lines, x, y, w, h, tone = "analysis" } = args;
+  const safeLines = pptToneList(lines ?? []).slice(0, 3);
+
+  if (!safeLines.length) {
+    return;
+  }
 
   const fill = tone === "insight" ? COLOR.greenSoft : COLOR.paper;
   const labelColor = tone === "insight" ? COLOR.green : COLOR.blue;
@@ -1229,7 +1245,6 @@ function addBulletBox(args: {
     color: labelColor,
   });
 
-  const safeLines = (lines ?? []).slice(0, 3);
   const lineGap = h < 0.9 ? 0.16 : 0.28;
   const fontSize = h < 0.9 ? 5.3 : 7;
 
@@ -1348,19 +1363,19 @@ function addSourceBadge(args: {
     x,
     y,
     w: estimatedW,
-    h: 0.38,
-    rectRadius: 0.1,
+    h: SOURCE_PILL_H,
+    rectRadius: 0.07,
     fill: { color: "000000" },
     line: { color: "000000", width: 0.5 },
   });
 
   slide.addText(prettyLabel, {
     x,
-    y: y + 0.095,
+    y,
     w: estimatedW,
-    h: 0.14,
+    h: SOURCE_PILL_H,
     fontFace: FONT.head,
-    fontSize: 9.8,
+    fontSize: SOURCE_PILL_FONT_SIZE,
     bold: true,
     color: accentColor,
     align: "center",
@@ -1388,7 +1403,7 @@ function addExecutiveSummarySlide(args: {
     title: "운영 리뷰",
     subtitle:
       slideData.subtitle ||
-      "매체별 구조를 점검하고 다음 운영 방향을 정교화합니다.",
+      "매체 구조 점검, 다음 운영 방향 정교화.",
     pageNo,
     totalPages,
   });
@@ -1558,30 +1573,7 @@ function addExecutiveSummarySlide(args: {
     });
   }
 
-  slide.addText("Etrylue Performance", {
-    x: 0.72,
-    y: 7.0,
-    w: 2.8,
-    h: 0.14,
-    fontFace: FONT.body,
-    fontSize: 6.8,
-    bold: true,
-    color: COLOR.navy,
-    margin: 0,
-  });
-
-  slide.addText(`${String(pageNo).padStart(2, "0")} / ${totalPages}`, {
-    x: 11.55,
-    y: 7.0,
-    w: 1.08,
-    h: 0.14,
-    fontFace: FONT.body,
-    fontSize: 6.8,
-    bold: true,
-    color: COLOR.muted,
-    align: "right",
-    margin: 0,
-  });
+  addFooter({ slide, deck, pageNo, totalPages });
 }
 
 
@@ -1595,6 +1587,30 @@ function getSourceAccent(index: number) {
   ];
 
   return colors[index % colors.length] || COLOR.orange;
+}
+
+function getSourceAccentForSummary(
+  deck: PptReportDeck,
+  sourceSummary: PptSourceSummary | undefined,
+  fallbackIndex: number,
+) {
+  const sources = (((deck as any).sources ?? []) as PptSourceSummary[]).filter(Boolean);
+  const targetSource = asStr(sourceSummary?.source).toLowerCase();
+  const targetDisplayName = asStr(sourceSummary?.displayName).toLowerCase();
+
+  const matchedIndex = sources.findIndex((item) => {
+    const source = asStr(item?.source).toLowerCase();
+    const displayName = asStr(item?.displayName).toLowerCase();
+
+    if (targetSource && source && source === targetSource) return true;
+    if (targetDisplayName && displayName && displayName === targetDisplayName) return true;
+    if (targetSource && displayName && displayName === targetSource) return true;
+    if (targetDisplayName && source && source === targetDisplayName) return true;
+
+    return false;
+  });
+
+  return getSourceAccent(matchedIndex >= 0 ? matchedIndex : fallbackIndex);
 }
 
 function addSourcePill(args: {
@@ -1613,9 +1629,9 @@ function addSourcePill(args: {
     x,
     y,
     w,
-    h = 0.26,
+    h = SOURCE_PILL_H,
     accent = COLOR.orange,
-    fontSize = 7.2,
+    fontSize = SOURCE_PILL_FONT_SIZE,
   } = args;
 
   slide.addShape(SHAPE.roundRect, {
@@ -1630,14 +1646,15 @@ function addSourcePill(args: {
 
   slide.addText(truncateText(label, 18), {
     x: x + 0.12,
-    y: y + 0.07,
+    y,
     w: w - 0.24,
-    h: 0.1,
-    fontFace: FONT.body,
+    h,
+    fontFace: FONT.head,
     fontSize,
     bold: true,
     color: accent,
     align: "center",
+    valign: "middle",
     margin: 0,
     fit: "shrink",
   });
@@ -1711,6 +1728,7 @@ function addSourceOverviewCard(args: {
     fontSize: 8.4,
     bold: true,
     color: COLOR.ink,
+    valign: "middle",
     margin: 0,
     fit: "shrink",
   });
@@ -1863,10 +1881,6 @@ function addSourceOverviewSlide(args: {
   const slide = pptxDoc.addSlide();
   addPageBackground(slide);
 
-  const sourceSummaries = ((slideData as any).sourceSummaries ?? []) as PptSourceSummary[];
-  const primarySources = sourceSummaries.slice(0, 3);
-  const restSources = sourceSummaries.slice(3, 7);
-
   addTemplateHeader({
     slide,
     eyebrow: slideData.eyebrow || "SOURCE OVERVIEW",
@@ -1876,11 +1890,111 @@ function addSourceOverviewSlide(args: {
     totalPages,
   });
 
+  const sourceSummaries = (((slideData as any).sourceSummaries ?? []) as PptSourceSummary[])
+    .filter(Boolean)
+    .slice(0, 8);
+
+  const sourceCount = sourceSummaries.length;
+  const reportType = asStr((deck as any).reportType || (deck as any).reportTypeKey);
+
+  const accentColors = [
+    COLOR.orange,
+    COLOR.teal,
+    COLOR.green,
+    COLOR.deepBlue,
+    COLOR.amber,
+    COLOR.navy,
+    COLOR.red,
+    COLOR.blueDark,
+  ];
+
+  const softColors = [
+    COLOR.amberSoft,
+    COLOR.greenSoft,
+    COLOR.blueSoft,
+    COLOR.creamSoft,
+    COLOR.amberSoft,
+    COLOR.blueSoft,
+    COLOR.redSoft,
+    COLOR.greenSoft,
+  ];
+
+  const contentX = 0.64;
+  const contentW = 12.05;
+
+  const cardGapX = 0.22;
+  const cardGapY = 0.2;
+
+  const topY = 1.76;
+  const topH = sourceCount <= 2 ? 2.08 : sourceCount <= 4 ? 2.34 : 2.72;
+
+  const lowerY = topY + topH + 0.34;
+  const lowerH = 1.82;
+
+  const stripY = 6.48;
+  const stripH = 0.42;
+
+  const columns =
+    sourceCount <= 1
+      ? 1
+      : sourceCount === 2
+        ? 2
+        : sourceCount <= 4
+          ? sourceCount
+          : 4;
+
+  const rows = Math.max(1, Math.ceil(Math.max(sourceCount, 1) / columns));
+  const cardW = (contentW - cardGapX * (columns - 1)) / columns;
+  const cardH = Math.max(0.92, (topH - cardGapY * (rows - 1)) / rows);
+
+  const titleFontSize = sourceCount <= 2 ? 11.2 : sourceCount <= 4 ? 9.8 : 8.6;
+  const metricLabelFontSize = sourceCount <= 2 ? 6.7 : sourceCount <= 4 ? 6.1 : 5.5;
+  const metricValueFontSize = sourceCount <= 2 ? 15.2 : sourceCount <= 4 ? 12.6 : 10.6;
+  const bodyFontSize = sourceCount <= 2 ? 8.7 : sourceCount <= 4 ? 7.7 : 6.8;
+  const pillFontSize = sourceCount <= 2 ? 7.4 : sourceCount <= 4 ? 6.7 : 5.9;
+
+  const getMetric = (item: PptSourceSummary, labels: string[], fallbackLabel: string) => {
+    const value = pickKpiValue(item.kpis, labels);
+    return {
+      label: fallbackLabel,
+      value: value === "-" ? "-" : value,
+    };
+  };
+
+  const getPrimaryMetrics = (item: PptSourceSummary) => {
+    const normalizedType = reportType.toLowerCase();
+
+    if (normalizedType === "traffic" || normalizedType.includes("traffic") || normalizedType.includes("트래픽")) {
+      return [
+        getMetric(item, ["클릭", "click"], "클릭"),
+        getMetric(item, ["CPC", "cpc"], "CPC"),
+      ];
+    }
+
+    if (
+      normalizedType === "db_acquisition" ||
+      normalizedType.includes("db") ||
+      normalizedType.includes("acquisition") ||
+      normalizedType.includes("획득") ||
+      normalizedType.includes("전환")
+    ) {
+      return [
+        getMetric(item, ["전환수", "conversion", "conversions"], "전환수"),
+        getMetric(item, ["CPA", "cpa"], "CPA"),
+      ];
+    }
+
+    return [
+      getMetric(item, ["전환매출", "매출", "revenue", "sales"], "전환매출"),
+      getMetric(item, ["ROAS", "roas"], "ROAS"),
+    ];
+  };
+
   slide.addText("Media Role Summary", {
-    x: 0.64,
-    y: 1.58,
-    w: 3.4,
-    h: 0.18,
+    x: contentX,
+    y: 1.55,
+    w: 2.5,
+    h: 0.16,
     fontFace: FONT.body,
     fontSize: 7.4,
     bold: true,
@@ -1889,183 +2003,297 @@ function addSourceOverviewSlide(args: {
     fit: "shrink",
   });
 
-  slide.addText("매체별 숫자 순위보다 역할 판단과 다음 운영 방향을 우선 정리합니다.", {
-    x: 3.3,
-    y: 1.58,
-    w: 7.7,
-    h: 0.18,
+  slide.addText("숫자 순위보다 역할 판단과 운영 방향 우선 정리.", {
+    x: contentX + 2.7,
+    y: 1.55,
+    w: 7.5,
+    h: 0.16,
     fontFace: FONT.body,
-    fontSize: 7,
+    fontSize: 6.4,
+    bold: true,
     color: COLOR.sub,
     margin: 0,
     fit: "shrink",
   });
 
-  if (primarySources.length) {
-    primarySources.forEach((item, index) => {
-      const cardW = 3.86;
-      const gap = 0.24;
-      addSourceOverviewCard({
+  if (sourceSummaries.length) {
+    sourceSummaries.forEach((item, index) => {
+      const col = index % columns;
+      const row = Math.floor(index / columns);
+      const x = contentX + col * (cardW + cardGapX);
+      const y = topY + row * (cardH + cardGapY);
+
+      const accent = accentColors[index % accentColors.length];
+      const soft = softColors[index % softColors.length];
+      const [primaryMetric, secondaryMetric] = getPrimaryMetrics(item);
+      const metricGap = 0.16;
+      const metricBoxY = y + (sourceCount <= 2 ? 1.04 : 0.96);
+      const metricBoxH = sourceCount <= 2 ? 0.52 : 0.42;
+      const metricBoxW = (cardW - 0.44 - metricGap) / 2;
+
+      addCard({
         slide,
-        item,
-        index,
-        x: 0.64 + index * (cardW + gap),
-        y: 1.92,
+        x,
+        y,
         w: cardW,
-        h: 2.12,
+        h: cardH,
+        fill: COLOR.paper,
+        line: index % 2 === 0 ? COLOR.lineSoft : COLOR.cream,
       });
+
+      slide.addShape(SHAPE.rect, {
+        x,
+        y,
+        w: 0.08,
+        h: cardH,
+        fill: { color: accent },
+        line: { color: accent },
+      });
+
+      addSourcePill({
+        slide,
+        label: item.displayName || item.source || "source",
+        x: x + 0.18,
+        y: y + 0.16,
+        w: Math.min(1.62, cardW - 0.36),
+        h: SOURCE_PILL_H,
+        accent,
+        fontSize: SOURCE_PILL_FONT_SIZE,
+      });
+
+      slide.addText(truncateText(item.headline || item.oneLineSummary || "운영 판단 정리", 48), {
+        x: x + 0.18,
+        y: y + 0.58,
+        w: cardW - 0.36,
+        h: sourceCount <= 2 ? 0.34 : 0.28,
+        fontFace: FONT.head,
+        fontSize: titleFontSize,
+        bold: true,
+        color: COLOR.ink,
+        margin: 0,
+        fit: "shrink",
+      });
+
+      const renderMetricBox = (metric: { label: string; value: string }, metricIndex: number) => {
+        const metricX = x + 0.2 + metricIndex * (metricBoxW + metricGap);
+
+        slide.addShape(SHAPE.roundRect, {
+          x: metricX,
+          y: metricBoxY,
+          w: metricBoxW,
+          h: metricBoxH,
+          rectRadius: 0.05,
+          fill: { color: metricIndex === 0 ? COLOR.white : soft },
+          line: { color: metricIndex === 0 ? COLOR.lineSoft : soft, width: 0.5 },
+        });
+
+        slide.addText(metric.label, {
+          x: metricX + 0.1,
+          y: metricBoxY + 0.09,
+          w: metricBoxW - 0.2,
+          h: 0.1,
+          fontFace: FONT.body,
+          fontSize: metricLabelFontSize,
+          bold: true,
+          color: COLOR.muted,
+          align: "center",
+          margin: 0,
+          fit: "shrink",
+        });
+
+        slide.addText(truncateText(metric.value, 18), {
+          x: metricX + 0.1,
+          y: metricBoxY + (sourceCount <= 2 ? 0.27 : 0.23),
+          w: metricBoxW - 0.2,
+          h: 0.17,
+          fontFace: FONT.head,
+          fontSize: metricValueFontSize,
+          bold: true,
+          color: metricIndex === 0 ? accent : COLOR.ink,
+          align: "center",
+          margin: 0,
+          fit: "shrink",
+        });
+      };
+
+      renderMetricBox(primaryMetric, 0);
+      renderMetricBox(secondaryMetric, 1);
+
+      slide.addShape(SHAPE.roundRect, {
+        x: x + 0.18,
+        y: y + cardH - 0.48,
+        w: cardW - 0.36,
+        h: 0.32,
+        rectRadius: 0.05,
+        fill: { color: soft },
+        line: { color: soft },
+      });
+
+      slide.addText(
+        truncateText(item.oneLineInsight || item.oneLineSummary || item.nextDirection || "다음 운영 방향 정리", sourceCount <= 2 ? 72 : 52),
+        {
+          x: x + 0.28,
+          y: y + cardH - 0.38,
+          w: cardW - 0.56,
+          h: 0.14,
+          fontFace: FONT.body,
+          fontSize: bodyFontSize,
+          bold: true,
+          color: COLOR.ink,
+          margin: 0,
+          fit: "shrink",
+        },
+      );
     });
   } else {
     addBulletBox({
       slide,
       title: "Insight",
       lines: insightText.insights,
-      x: 0.72,
-      y: 1.9,
-      w: 11.92,
-      h: 2.2,
+      x: contentX,
+      y: topY,
+      w: contentW,
+      h: topH,
       tone: "insight",
     });
   }
 
   addCard({
     slide,
-    x: 0.64,
-    y: 4.36,
-    w: 12.05,
-    h: 1.74,
+    x: contentX,
+    y: lowerY,
+    w: contentW,
+    h: lowerH,
     fill: COLOR.paper,
     line: COLOR.lineSoft,
   });
 
+  const lowerLeftX = contentX + 0.24;
+  const lowerRightX = contentX + contentW * 0.5 + 0.18;
+  const lowerColW = contentW * 0.5 - 0.48;
+
   slide.addText("OPERATING JUDGEMENT", {
-    x: 0.88,
-    y: 4.58,
-    w: 2.5,
-    h: 0.14,
+    x: lowerLeftX,
+    y: lowerY + 0.24,
+    w: lowerColW,
+    h: 0.16,
     fontFace: FONT.body,
-    fontSize: 6.4,
+    fontSize: 8.8,
     bold: true,
-    color: COLOR.navy,
+    color: COLOR.ink,
     margin: 0,
+    fit: "shrink",
   });
 
   const judgementLines = uniqueNonEmptyTexts([
-    ...sourceSummaries
-      .slice(0, 4)
-      .map((item) => `${item.displayName}: ${item.oneLineSummary || item.headline}`),
-    ...insightText.insights,
+    ...sourceSummaries.slice(0, 4).map((item) => {
+      return `${item.displayName || item.source}: ${item.oneLineSummary || item.headline || item.nextDirection}`;
+    }),
+    "매체별 결과는 유지·강화·축소 역할로 구분.",
+    "성과 확인 매체는 확장 후보, 비용 부담 매체는 정리 후보.",
   ]).slice(0, 4);
 
   judgementLines.forEach((line, index) => {
-    const y = 4.9 + index * 0.25;
-    const accent = getSourceAccent(index);
+    const accent = accentColors[index % accentColors.length];
 
     slide.addShape(SHAPE.ellipse, {
-      x: 0.92,
-      y: y + 0.02,
-      w: 0.08,
-      h: 0.08,
+      x: lowerLeftX + 0.04,
+      y: lowerY + 0.68 + index * 0.32,
+      w: 0.09,
+      h: 0.09,
       fill: { color: accent },
       line: { color: accent },
     });
 
-    slide.addText(truncateText(line, 96), {
-      x: 1.12,
-      y,
-      w: 5.0,
-      h: 0.12,
+    slide.addText(truncateText(line, 76), {
+      x: lowerLeftX + 0.24,
+      y: lowerY + 0.62 + index * 0.32,
+      w: lowerColW - 0.26,
+      h: 0.16,
       fontFace: FONT.body,
-      fontSize: 6.2,
-      bold: index === 0,
+      fontSize: 8.0,
+      bold: true,
       color: COLOR.ink,
       margin: 0,
       fit: "shrink",
     });
   });
 
-  const matrixTitle = restSources.length ? "ADDITIONAL SOURCES" : "NEXT OPERATING RULE";
-  slide.addText(matrixTitle, {
-    x: 6.66,
-    y: 4.58,
-    w: 2.8,
-    h: 0.14,
+  slide.addText("NEXT OPERATING RULE", {
+    x: lowerRightX,
+    y: lowerY + 0.24,
+    w: lowerColW,
+    h: 0.16,
     fontFace: FONT.body,
-    fontSize: 6.4,
+    fontSize: 8.8,
     bold: true,
-    color: COLOR.navy,
+    color: COLOR.ink,
     margin: 0,
+    fit: "shrink",
   });
 
-  if (restSources.length) {
-    restSources.forEach((item, index) => {
-      addSourceCompactRow({
-        slide,
-        item,
-        index: index + 3,
-        x: 6.66,
-        y: 4.85 + index * 0.42,
-        w: 5.74,
-      });
-    });
-  } else {
-    const rules = [
-      "성과축은 유지·강화, 비용축은 선별 축소.",
-      "캠페인·키워드·소재 신호 기준으로 예산 재배분.",
-      "최근 주차 흐름을 보고 증액·감액 속도 조정.",
-    ];
+  const nextRules = uniqueNonEmptyTexts([
+    ...sourceSummaries.flatMap((item) => item.nextActions ?? []),
+    "성과축은 유지·강화, 비용축은 선별 축소.",
+    "캠페인·키워드·소재 신호 기준으로 예산 재배분.",
+    "최근 주차 흐름을 보고 증액·감액 속도 조정.",
+  ]).slice(0, 3);
 
-    rules.forEach((rule, index) => {
-      slide.addText(`0${index + 1}`, {
-        x: 6.68,
-        y: 4.86 + index * 0.34,
-        w: 0.32,
-        h: 0.11,
-        fontFace: FONT.body,
-        fontSize: 5.8,
-        bold: true,
-        color: getSourceAccent(index),
-        margin: 0,
-      });
+  nextRules.forEach((line, index) => {
+    const accent = accentColors[index % accentColors.length];
 
-      slide.addText(rule, {
-        x: 7.1,
-        y: 4.86 + index * 0.34,
-        w: 5.0,
-        h: 0.12,
-        fontFace: FONT.body,
-        fontSize: 6.2,
-        bold: true,
-        color: COLOR.ink,
-        margin: 0,
-        fit: "shrink",
-      });
+    slide.addText(String(index + 1).padStart(2, "0"), {
+      x: lowerRightX + 0.02,
+      y: lowerY + 0.6 + index * 0.38,
+      w: 0.24,
+      h: 0.13,
+      fontFace: FONT.body,
+      fontSize: 7.8,
+      bold: true,
+      color: accent,
+      margin: 0,
     });
-  }
+
+    slide.addText(truncateText(line, 68), {
+      x: lowerRightX + 0.46,
+      y: lowerY + 0.6 + index * 0.38,
+      w: lowerColW - 0.54,
+      h: 0.16,
+      fontFace: FONT.body,
+      fontSize: 8.0,
+      bold: true,
+      color: COLOR.ink,
+      margin: 0,
+      fit: "shrink",
+    });
+  });
 
   slide.addShape(SHAPE.roundRect, {
-    x: 0.64,
-    y: 6.34,
-    w: 12.05,
-    h: 0.38,
+    x: contentX,
+    y: stripY,
+    w: contentW,
+    h: stripH,
     rectRadius: 0.05,
     fill: { color: COLOR.navy },
     line: { color: COLOR.navy },
   });
 
-  slide.addText("다음 장부터는 매체별 CORE INSIGHT와 SIGNAL 기준으로 유지·강화·축소 대상을 구체화합니다.", {
-    x: 0.92,
-    y: 6.46,
-    w: 11.48,
-    h: 0.11,
-    fontFace: FONT.body,
-    fontSize: 6.8,
-    bold: true,
-    color: COLOR.white,
-    align: "center",
-    margin: 0,
-    fit: "shrink",
-  });
+  slide.addText(
+    "다음 장부터 CORE INSIGHT·SIGNAL 기준 유지·강화·축소 대상 구체화.",
+    {
+      x: contentX + 0.3,
+      y: stripY + 0.125,
+      w: contentW - 0.6,
+      h: 0.14,
+      fontFace: FONT.body,
+      fontSize: 8.7,
+      bold: true,
+      color: COLOR.white,
+      align: "center",
+      margin: 0,
+      fit: "shrink",
+    },
+  );
 
   addFooter({ slide, deck, pageNo, totalPages });
 }
@@ -2084,13 +2312,61 @@ function addSourceDetailSlide(args: {
 
   const sourceSummary = (slideData as any).sourceSummary as PptSourceSummary | undefined;
   const signals = ((slideData as any).signals ?? sourceSummary?.signals ?? []) as any[];
-  const sourceLabel = asStr(sourceSummary?.displayName || sourceSummary?.source || slideData.eyebrow || "SOURCE");
-  const headline = asStr(sourceSummary?.oneLineSummary || sourceSummary?.headline || slideData.subtitle);
-  const accent = getSourceAccent(Math.max(0, pageNo - 4));
+  const sourceLabel = asStr(
+    sourceSummary?.displayName || sourceSummary?.source || slideData.eyebrow || "SOURCE",
+  );
+  const accent = getSourceAccentForSummary(
+    deck,
+    sourceSummary,
+    Math.max(0, pageNo - 5),
+  );
+  const reportType = asStr((deck as any).reportType || (deck as any).reportTypeKey).toLowerCase();
+  const sourceKpis = sourceSummary?.kpis?.length ? sourceSummary.kpis : slideData.kpis;
+
+  const makeMetric = (labels: string[], fallbackLabel: string) => {
+    const value = pickKpiValue(sourceKpis, labels);
+    return {
+      label: fallbackLabel,
+      value: value === "-" ? "-" : value,
+    };
+  };
+
+  const detailMetrics = (() => {
+    if (reportType === "traffic" || reportType.includes("traffic") || reportType.includes("트래픽")) {
+      return [
+        makeMetric(["클릭", "click"], "클릭"),
+        makeMetric(["CPC", "cpc"], "CPC"),
+        makeMetric(["CTR", "ctr"], "CTR"),
+        makeMetric(["광고비", "cost", "비용"], "광고비"),
+      ];
+    }
+
+    if (
+      reportType === "db_acquisition" ||
+      reportType.includes("db") ||
+      reportType.includes("acquisition") ||
+      reportType.includes("획득") ||
+      reportType.includes("전환")
+    ) {
+      return [
+        makeMetric(["전환수", "conversion", "conversions"], "전환수"),
+        makeMetric(["CPA", "cpa"], "CPA"),
+        makeMetric(["CVR", "cvr"], "CVR"),
+        makeMetric(["광고비", "cost", "비용"], "광고비"),
+      ];
+    }
+
+    return [
+      makeMetric(["전환매출", "매출", "revenue", "sales"], "전환매출"),
+      makeMetric(["ROAS", "roas"], "ROAS"),
+      makeMetric(["전환수", "conversion", "conversions"], "전환수"),
+      makeMetric(["광고비", "cost", "비용"], "광고비"),
+    ];
+  })();
 
   addTemplateHeader({
     slide,
-    eyebrow: slideData.eyebrow || sourceLabel || "SOURCE DETAIL",
+    eyebrow: "SOURCE DETAIL",
     title: slideData.title,
     subtitle: slideData.subtitle,
     pageNo,
@@ -2101,49 +2377,76 @@ function addSourceDetailSlide(args: {
     slide,
     label: sourceLabel,
     x: 0.64,
-    y: 1.58,
-    w: 1.58,
+    y: 1.56,
+    w: 1.88,
+    h: 0.36,
     accent,
+    fontSize: 9.4,
   });
 
-  slide.addText(truncateText(headline, 92), {
-    x: 2.42,
-    y: 1.62,
-    w: 8.8,
-    h: 0.14,
-    fontFace: FONT.body,
-    fontSize: 7.4,
-    bold: true,
-    color: COLOR.ink,
-    margin: 0,
-    fit: "shrink",
-  });
+  const metricX = 0.64;
+  const metricY = 2.02;
+  const metricW = 12.05;
+  const metricH = 0.6;
+  const metricGap = 0.12;
+  const metricItemW = (metricW - metricGap * (detailMetrics.length - 1)) / detailMetrics.length;
 
-  addMiniKpis({
-    slide,
-    kpis: slideData.kpis,
-    x: 0.64,
-    y: 1.98,
-    w: 12.05,
-    h: 0.5,
-    maxItems: 6,
+  detailMetrics.forEach((metric, index) => {
+    const x = metricX + index * (metricItemW + metricGap);
+    const metricAccent = index === 0 ? accent : getSourceAccent(index + 1);
+
+    slide.addShape(SHAPE.roundRect, {
+      x,
+      y: metricY,
+      w: metricItemW,
+      h: metricH,
+      rectRadius: 0.04,
+      fill: { color: index === 0 ? COLOR.creamSoft : COLOR.blueSoft },
+      line: { color: index === 0 ? COLOR.cream : COLOR.lineSoft, width: 0.6 },
+    });
+
+    slide.addText(metric.label, {
+      x: x + 0.12,
+      y: metricY + 0.12,
+      w: metricItemW - 0.24,
+      h: 0.11,
+      fontFace: FONT.body,
+      fontSize: 6.6,
+      bold: true,
+      color: COLOR.muted,
+      margin: 0,
+      fit: "shrink",
+    });
+
+    slide.addText(truncateText(metric.value, 18), {
+      x: x + 0.12,
+      y: metricY + 0.32,
+      w: metricItemW - 0.24,
+      h: 0.16,
+      fontFace: FONT.head,
+      fontSize: 9.4,
+      bold: true,
+      color: metricAccent,
+      margin: 0,
+      fit: "shrink",
+    });
   });
 
   addCard({
     slide,
     x: 0.64,
-    y: 2.74,
-    w: 4.58,
-    h: 2.82,
+    y: 2.86,
+    w: 4.72,
+    h: 2.88,
     fill: COLOR.paper,
     line: COLOR.lineSoft,
   });
 
   slide.addShape(SHAPE.rect, {
     x: 0.64,
-    y: 2.74,
+    y: 2.86,
     w: 0.1,
-    h: 2.82,
+    h: 2.88,
     fill: { color: accent },
     line: { color: accent },
   });
@@ -2151,52 +2454,57 @@ function addSourceDetailSlide(args: {
   addSectionLabel({
     slide,
     label: "CORE INSIGHT",
-    x: 0.94,
-    y: 2.96,
-    w: 3.8,
+    x: 0.96,
+    y: 3.08,
+    w: 3.92,
     color: accent,
-    size: 7.2,
+    size: 8.2,
   });
 
   slide.addText(
-    truncateText(sourceSummary?.coreInsightTitle || "핵심 데이터를 기준으로 성과를 정리합니다.", 34),
+    truncateText(
+      sourceSummary?.coreInsightTitle || "핵심 데이터 기준 성과 정리.",
+      34,
+    ),
     {
-      x: 0.94,
-      y: 3.32,
-      w: 3.94,
+      x: 0.96,
+      y: 3.47,
+      w: 4.02,
       h: 0.58,
       fontFace: FONT.head,
-      fontSize: 15.2,
+      fontSize: 16.6,
       bold: true,
       color: COLOR.ink,
       margin: 0,
       fit: "shrink",
-      breakLine: false,
     },
   );
 
   const coreLines = (sourceSummary?.coreInsightBody ?? insightText.analysis).slice(0, 3);
   coreLines.forEach((line: string, index: number) => {
-    slide.addText(truncateText(line, 78), {
-      x: 0.98,
-      y: 4.08 + index * 0.38,
-      w: 3.82,
-      h: 0.22,
+    slide.addText(truncateText(line, 82), {
+      x: 1.0,
+      y: 4.22 + index * 0.4,
+      w: 3.92,
+      h: 0.2,
       fontFace: FONT.body,
-      fontSize: 6.5,
-      color: COLOR.sub,
+      fontSize: 7.2,
+      bold: index === 0,
+      color: index === 0 ? COLOR.ink : COLOR.sub,
       margin: 0,
       fit: "shrink",
-      breakLine: false,
     });
   });
 
-  const signalStartX = 5.46;
-  const signalW = 2.26;
+  const signalStartX = 5.6;
+  const signalW = 2.25;
   const signalGap = 0.2;
-  signals.slice(0, 3).forEach((signal, index) => {
+  const signalH = 2.88;
+  const safeSignals = signals.slice(0, 3);
+
+  safeSignals.forEach((signal, index) => {
     const x = signalStartX + index * (signalW + signalGap);
-    const y = 2.74;
+    const y = 2.86;
     const signalAccent = getSourceAccent(index + 1);
 
     addCard({
@@ -2204,18 +2512,18 @@ function addSourceDetailSlide(args: {
       x,
       y,
       w: signalW,
-      h: 2.82,
+      h: signalH,
       fill: index === 0 ? COLOR.creamSoft : index === 1 ? COLOR.greenSoft : COLOR.blueSoft,
       line: COLOR.lineSoft,
     });
 
     slide.addText(signal.label || `SIGNAL ${String(index + 1).padStart(2, "0")}`, {
       x: x + 0.16,
-      y: y + 0.18,
-      w: 1.4,
-      h: 0.12,
+      y: y + 0.2,
+      w: 1.56,
+      h: 0.13,
       fontFace: FONT.body,
-      fontSize: 5.8,
+      fontSize: 6.6,
       bold: true,
       color: signalAccent,
       margin: 0,
@@ -2224,34 +2532,33 @@ function addSourceDetailSlide(args: {
 
     slide.addShape(SHAPE.line, {
       x: x + 0.16,
-      y: y + 0.43,
+      y: y + 0.48,
       w: 1.88,
       h: 0,
       line: { color: signalAccent, width: 1.1, transparency: 5 },
     });
 
-    slide.addText(truncateText(signal.title, 26), {
+    slide.addText(truncateText(signal.title, 30), {
       x: x + 0.16,
-      y: y + 0.62,
+      y: y + 0.66,
       w: signalW - 0.32,
       h: 0.42,
       fontFace: FONT.head,
-      fontSize: 10.2,
+      fontSize: 10.9,
       bold: true,
       color: COLOR.ink,
       margin: 0,
       fit: "shrink",
-      breakLine: false,
     });
 
     if (signal.value) {
-      slide.addText(truncateText(signal.value, 30), {
+      slide.addText(truncateText(signal.value, 34), {
         x: x + 0.16,
-        y: y + 1.18,
+        y: y + 1.16,
         w: signalW - 0.32,
-        h: 0.16,
+        h: 0.15,
         fontFace: FONT.body,
-        fontSize: 6.4,
+        fontSize: 7.0,
         bold: true,
         color: signalAccent,
         margin: 0,
@@ -2259,38 +2566,37 @@ function addSourceDetailSlide(args: {
       });
     }
 
-    slide.addText(truncateText(signal.body, 90), {
+    slide.addText(truncateText(signal.body, 94), {
       x: x + 0.16,
-      y: y + 1.52,
+      y: y + 1.48,
       w: signalW - 0.32,
-      h: 0.88,
+      h: 0.78,
       fontFace: FONT.body,
-      fontSize: 6.0,
+      fontSize: 6.5,
       color: COLOR.sub,
       margin: 0,
       fit: "shrink",
-      breakLine: false,
     });
 
     const action = asStr(sourceSummary?.nextActions?.[index]);
     if (action) {
       slide.addShape(SHAPE.roundRect, {
         x: x + 0.16,
-        y: y + 2.42,
+        y: y + 2.44,
         w: signalW - 0.32,
-        h: 0.24,
+        h: 0.26,
         rectRadius: 0.04,
         fill: { color: COLOR.white },
         line: { color: COLOR.white, width: 0.4 },
       });
 
-      slide.addText(truncateText(action, 46), {
+      slide.addText(truncateText(action, 50), {
         x: x + 0.26,
-        y: y + 2.5,
+        y: y + 2.525,
         w: signalW - 0.52,
-        h: 0.09,
+        h: 0.1,
         fontFace: FONT.body,
-        fontSize: 5.2,
+        fontSize: 5.8,
         bold: true,
         color: COLOR.navy,
         margin: 0,
@@ -2299,11 +2605,24 @@ function addSourceDetailSlide(args: {
     }
   });
 
+  if (!safeSignals.length) {
+    addBulletBox({
+      slide,
+      title: "Signals",
+      lines: insightText.insights,
+      x: 5.6,
+      y: 2.86,
+      w: 7.09,
+      h: 2.88,
+      tone: "insight",
+    });
+  }
+
   slide.addShape(SHAPE.roundRect, {
     x: 0.64,
-    y: 5.92,
+    y: 6.04,
     w: 12.05,
-    h: 0.62,
+    h: 0.6,
     rectRadius: 0.05,
     fill: { color: COLOR.navy },
     line: { color: COLOR.navy },
@@ -2311,13 +2630,14 @@ function addSourceDetailSlide(args: {
 
   slide.addText("ONE-LINE INSIGHT", {
     x: 0.92,
-    y: 6.12,
-    w: 2.12,
-    h: 0.12,
+    y: 6.235,
+    w: 2.2,
+    h: 0.18,
     fontFace: FONT.body,
-    fontSize: 6.0,
+    fontSize: 8.8,
     bold: true,
     color: accent,
+    valign: "middle",
     margin: 0,
   });
 
@@ -2326,17 +2646,18 @@ function addSourceDetailSlide(args: {
       (slideData as any).oneLineInsight ||
         sourceSummary?.oneLineInsight ||
         insightText.insights[0],
-      138,
+      142,
     ),
     {
-      x: 3.02,
-      y: 6.08,
-      w: 9.26,
-      h: 0.17,
+      x: 3.08,
+      y: 6.19,
+      w: 9.18,
+      h: 0.24,
       fontFace: FONT.body,
-      fontSize: 7.4,
+      fontSize: 10.0,
       bold: true,
       color: COLOR.white,
+      valign: "middle",
       margin: 0,
       fit: "shrink",
     },
@@ -2386,7 +2707,16 @@ function addReviewTableSlide(args: {
       maxCols: 6,
       maxRows: 8,
     });
-  } else {
+  } else if (slideData.chart) {
+    addSimpleChart({
+      slide,
+      chart: slideData.chart,
+      x: 0.64,
+      y: 1.58,
+      w: 12.05,
+      h: 3.35,
+    });
+  } else if (slideData.table) {
     addTable({
       slide,
       table: slideData.table,
@@ -2396,6 +2726,29 @@ function addReviewTableSlide(args: {
       h: 3.35,
       maxCols: 6,
       maxRows: 10,
+    });
+  } else {
+    addCard({
+      slide,
+      x: 0.64,
+      y: 1.58,
+      w: 12.05,
+      h: 3.35,
+      fill: COLOR.paper,
+      line: COLOR.lineSoft,
+    });
+
+    slide.addText("표시할 차트 또는 표 데이터가 없습니다.", {
+      x: 0.94,
+      y: 3.08,
+      w: 11.45,
+      h: 0.24,
+      fontFace: FONT.body,
+      fontSize: 10,
+      color: COLOR.muted,
+      align: "center",
+      margin: 0,
+      fit: "shrink",
     });
   }
 
@@ -2583,23 +2936,24 @@ function addCreativeSlide(args: {
 
   slide.addText("ONE-LINE INSIGHT", {
     x: 0.88,
-    y: 5.86,
+    y: 5.865,
     w: 2.1,
-    h: 0.14,
+    h: 0.18,
     fontFace: FONT.body,
-    fontSize: 6.5,
+    fontSize: 8.5,
     bold: true,
     color: COLOR.green,
+    valign: "middle",
     margin: 0,
   });
 
   slide.addText(truncateText((slideData as any).oneLineInsight || insightText.insights[0], 150), {
     x: 3.0,
-    y: 5.82,
+    y: 5.80,
     w: 9.38,
-    h: 0.22,
+    h: 0.28,
     fontFace: FONT.body,
-    fontSize: 8.4,
+    fontSize: 10.4,
     bold: true,
     color: COLOR.ink,
     margin: 0,
@@ -2952,7 +3306,7 @@ function addThankYouSlide(args: {
     line: { color: COLOR.line, width: 1 },
   });
 
-  slide.addText(slideData.title || "감사합니다.", {
+  slide.addText(slideData.title || "Thank you", {
     x: 1.5,
     y: 2.65,
     w: 10.3,
@@ -3102,6 +3456,59 @@ function addGenericBodySlide(args: {
   addFooter({ slide, deck, pageNo, totalPages });
 }
 
+function addEmptyStateSlide(args: {
+  pptxDoc: pptxgen;
+  deck: PptReportDeck;
+  slideData: PptSlide;
+  insightText: PptSlideInsightText;
+  pageNo: number;
+  totalPages: number;
+}) {
+  const { pptxDoc, deck, slideData, pageNo, totalPages } = args;
+  const slide = pptxDoc.addSlide();
+  addPageBackground(slide);
+
+  addTemplateHeader({
+    slide,
+    eyebrow: slideData.eyebrow || "ETRYLUE PERFORMANCE",
+    title: slideData.title,
+    subtitle: slideData.subtitle,
+    pageNo,
+    totalPages,
+  });
+
+  addCard({
+    slide,
+    x: 0.64,
+    y: 1.72,
+    w: 12.05,
+    h: 4.92,
+    fill: COLOR.paper,
+    line: COLOR.lineSoft,
+  });
+
+  slide.addText(
+    asStr(slideData.emptyStateMessage) ||
+      "선택한 조건에 해당하는 데이터가 없습니다.",
+    {
+      x: 1.14,
+      y: 3.77,
+      w: 11.05,
+      h: 0.34,
+      fontFace: FONT.head,
+      fontSize: 16,
+      bold: true,
+      color: COLOR.muted,
+      align: "center",
+      valign: "middle",
+      margin: 0,
+      fit: "shrink",
+    },
+  );
+
+  addFooter({ slide, deck, pageNo, totalPages });
+}
+
 function addBodySlide(args: {
   pptxDoc: pptxgen;
   deck: PptReportDeck;
@@ -3112,6 +3519,11 @@ function addBodySlide(args: {
 }) {
   const { slideData } = args;
   const type = asStr((slideData as any).type || slideData.key);
+
+  if (asStr(slideData.emptyStateMessage)) {
+    addEmptyStateSlide(args);
+    return;
+  }
 
   if (type === "executive-summary" || slideData.key === "executive-summary") {
     addExecutiveSummarySlide(args);

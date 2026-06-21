@@ -25,6 +25,7 @@ import SummaryKPI from "./summary/SummaryKPI";
 import SummaryTable from "./summary/SummaryTable";
 import TrendCell from "../ui/TrendCell";
 import DataBarCell from "../ui/DataBarCell";
+import SourceBrand from "../ui/SourceBrand";
 
 type Props = {
   reportType?: ReportType;
@@ -867,7 +868,7 @@ const SourcePerformanceRow = memo(function SourcePerformanceRow({
       style={{ height: `${SOURCE_ROW_HEIGHT}px` }}
     >
       <td className={`${FIRST_TD_CLASS} truncate`} title={row.title}>
-        {row.source}
+        <SourceBrand source={row.source} />
       </td>
 
       <td className={TD_CLASS}>

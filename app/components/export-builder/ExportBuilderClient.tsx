@@ -1,7 +1,8 @@
 // app/components/export-builder/ExportBuilderClient.tsx
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { supabase } from "@/src/lib/supabase/client";
 import type {
   PptExportConfig,
   PptExportFilterValues,
@@ -82,6 +83,88 @@ const CATEGORY_LABELS: Record<
   insight: "인사이트",
   closing: "마무리",
 };
+
+async function safeJson(res: Response) {
+  const raw = await res.text().catch(() => "");
+
+  try {
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return {
+      ok: false,
+      error: raw || "응답 내용을 확인할 수 없습니다.",
+    };
+  }
+}
+
+async function getAccessToken(): Promise<string | null> {
+  try {
+    const { data } = await supabase.auth.getSession();
+    return data?.session?.access_token ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function authFetch(input: RequestInfo | URL, init?: RequestInit) {
+  const token = await getAccessToken();
+  const headers = new Headers(init?.headers || undefined);
+
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  return fetch(input, {
+    ...init,
+    headers,
+    credentials: "include",
+    cache: "no-store",
+  });
+}
+
+function pickDownloadFileNameFromContentDisposition(
+  contentDisposition: string | null,
+) {
+  const header = String(contentDisposition ?? "").trim();
+  if (!header) return "";
+
+  const utf8Match = header.match(/filename\*=UTF-8''([^;]+)/i);
+
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1].trim());
+    } catch {
+      return utf8Match[1].trim();
+    }
+  }
+
+  const basicMatch = header.match(/filename="?([^";]+)"?/i);
+  return basicMatch?.[1]?.trim() || "";
+}
+
+function buildFallbackPptFileName(advertiserName: string) {
+  const safeName = String(advertiserName || "Etrylue Performance")
+    .replace(/[\\/:*?"<>|]/g, "_")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return `${safeName || "Etrylue Performance"}_PPT_Report.pptx`;
+}
+
+function downloadBlobFile(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.rel = "noopener";
+
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 function createPageId() {
   if (
@@ -200,6 +283,8 @@ export default function ExportBuilderClient({
 
   const [toast, setToast] = useState<ToastState>(null);
   const [showPayload, setShowPayload] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const generatingRef = useRef(false);
 
   const selectedPage = useMemo(() => {
     return (
@@ -488,7 +573,11 @@ export default function ExportBuilderClient({
     });
   }
 
-  function handlePreparePayload() {
+  async function handleDownloadPpt() {
+    if (generatingRef.current || isGenerating) {
+      return;
+    }
+
     if (!countEnabledPages(payload)) {
       setToast({
         type: "error",
@@ -497,12 +586,88 @@ export default function ExportBuilderClient({
       return;
     }
 
-    setShowPayload(true);
+    generatingRef.current = true;
+    setIsGenerating(true);
     setToast({
-      type: "success",
-      message:
-        "PPT 생성 요청 payload 구성이 완료되었습니다. 서버 POST 연결은 다음 단계에서 진행합니다.",
+      type: "info",
+      message: "선택한 설정으로 PPT를 생성하고 있습니다.",
     });
+
+    try {
+      const response = await authFetch(`/api/reports/${reportId}/ppt`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          config: payload,
+        }),
+      });
+
+      const contentType = String(
+        response.headers.get("content-type") ?? "",
+      ).toLowerCase();
+
+      if (!response.ok) {
+        const errorBody = contentType.includes("application/json")
+          ? await safeJson(response)
+          : {
+              error:
+                (await response.text().catch(() => "")) ||
+                `PPT 생성에 실패했습니다. (${response.status})`,
+            };
+
+        const firstIssue = Array.isArray(errorBody?.issues)
+          ? errorBody.issues[0]
+          : null;
+
+        throw new Error(
+          firstIssue?.message ||
+            errorBody?.detail ||
+            errorBody?.error ||
+            `PPT 생성에 실패했습니다. (${response.status})`,
+        );
+      }
+
+      if (
+        contentType &&
+        !contentType.includes(
+          "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        ) &&
+        !contentType.includes("application/octet-stream")
+      ) {
+        const unexpected = await response.text().catch(() => "");
+        throw new Error(
+          unexpected || "PPT 파일 응답 형식이 올바르지 않습니다.",
+        );
+      }
+
+      const blob = await response.blob();
+
+      if (!blob.size) {
+        throw new Error("생성된 PPT 파일이 비어 있습니다.");
+      }
+
+      const fileName =
+        pickDownloadFileNameFromContentDisposition(
+          response.headers.get("content-disposition"),
+        ) || buildFallbackPptFileName(initialMeta.advertiserName);
+
+      downloadBlobFile(blob, fileName);
+
+      setToast({
+        type: "success",
+        message: "PPT 생성이 완료되어 다운로드를 시작했습니다.",
+      });
+    } catch (error: any) {
+      setToast({
+        type: "error",
+        message: error?.message || "PPT 생성 중 오류가 발생했습니다.",
+      });
+    } finally {
+      generatingRef.current = false;
+      setIsGenerating(false);
+    }
   }
 
   return (
@@ -562,10 +727,16 @@ export default function ExportBuilderClient({
 
               <button
                 type="button"
-                onClick={handlePreparePayload}
-                className="rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                onClick={handleDownloadPpt}
+                disabled={isGenerating}
+                className={[
+                  "rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition",
+                  isGenerating
+                    ? "cursor-not-allowed bg-slate-400"
+                    : "bg-slate-950 hover:bg-slate-800",
+                ].join(" ")}
               >
-                PPT 생성 준비
+                {isGenerating ? "PPT 생성 중..." : "PPT 다운로드"}
               </button>
             </div>
           </div>
@@ -577,7 +748,7 @@ export default function ExportBuilderClient({
               </div>
               <p className="mt-1 text-xs leading-5 text-slate-500">
                 페이지별 기간을 지정하면 이 공통 기간보다 우선 적용됩니다.
-                현재 단계에서는 설정 payload만 구성합니다.
+                페이지별 설정은 실제 PPT 생성 요청에 그대로 반영됩니다.
               </p>
             </div>
 
@@ -666,7 +837,7 @@ export default function ExportBuilderClient({
                   POST 요청 예정 Payload
                 </div>
                 <div className="mt-1 text-xs text-slate-400">
-                  다음 단계에서 `/api/reports/{reportId}/ppt`로 전달합니다.
+                  실제 `/api/reports/{reportId}/ppt` POST 요청에 사용됩니다.
                 </div>
               </div>
             </div>
@@ -1223,9 +1394,8 @@ export default function ExportBuilderClient({
                     필터 옵션 연결 상태
                   </div>
                   <p className="mt-2 text-xs leading-5 text-slate-500">
-                    현재는 UI와 payload 골격 단계입니다. 소스·캠페인·그룹
-                    등의 실제 선택 목록은 다음 단계의 경량 옵션 API에서
-                    연결합니다. raw rows는 브라우저로 전달하지 않습니다.
+                    소스·캠페인·그룹 값은 서버에서 raw rows를 다시 조회해 필터링합니다.
+                    raw rows는 브라우저로 전달하지 않습니다.
                   </p>
                 </div>
               </div>

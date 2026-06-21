@@ -62,6 +62,10 @@ type WorkspaceMemberRow = {
   department: string | null;
   team: string | null;
   workspace_name?: string | null;
+  workspace_logo_url?: string | null;
+  logo_storage_bucket?: string | null;
+  logo_storage_path?: string | null;
+  logo_updated_at?: string | null;
 };
 
 const ROLE_RANK: Record<Exclude<MemberRole, null>, number> = {
@@ -144,6 +148,17 @@ function canUpdatePublicSlugByRole(
   email?: string | null
 ) {
   if (role === "director" || role === "admin" || role === "staff") {
+    return true;
+  }
+
+  return canUseTrueMasterPower(role, email);
+}
+
+function canManageWorkspaceLogoByRole(
+  role: MemberRole,
+  email?: string | null
+) {
+  if (role === "director") {
     return true;
   }
 
@@ -264,6 +279,11 @@ export default function ReportBuilderPage() {
   const [selectedReportIds, setSelectedReportIds] = useState<string[]>([]);
   const [deletingReports, setDeletingReports] = useState(false);
 
+  const [workspaceLogoFile, setWorkspaceLogoFile] = useState<File | null>(null);
+  const [uploadingWorkspaceLogo, setUploadingWorkspaceLogo] = useState(false);
+  const [deletingWorkspaceLogo, setDeletingWorkspaceLogo] = useState(false);
+  const workspaceLogoInputRef = useRef<HTMLInputElement | null>(null);
+
   const FOLDER_ROW_HEIGHT = 58;
   const REPORT_ROW_HEIGHT = 68;
   const OVERSCAN = 8;
@@ -291,6 +311,21 @@ export default function ReportBuilderPage() {
     canDeleteAdvertisersByRole(memberRole, userEmail) && !isAllWorkspaceMode;
   const canUpdatePublicSlug =
     canUpdatePublicSlugByRole(memberRole, userEmail) && !isAllWorkspaceMode;
+  const canManageWorkspaceLogo =
+    canManageWorkspaceLogoByRole(memberRole, userEmail) && !isAllWorkspaceMode;
+
+  const currentWorkspaceMembership = useMemo(() => {
+    if (!workspaceId || isAllWorkspaceMode) return null;
+
+    return (
+      workspaceMemberships.find(
+        (row) => row.workspace_id === workspaceId
+      ) ?? null
+    );
+  }, [workspaceId, workspaceMemberships, isAllWorkspaceMode]);
+
+  const workspaceLogoUrl =
+    currentWorkspaceMembership?.workspace_logo_url ?? null;
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -591,6 +626,18 @@ export default function ReportBuilderPage() {
           department: row.department ?? null,
           team: row.team ?? null,
           workspace_name: row.workspace_name ? String(row.workspace_name) : null,
+          workspace_logo_url: row.workspace_logo_url
+            ? String(row.workspace_logo_url)
+            : null,
+          logo_storage_bucket: row.logo_storage_bucket
+            ? String(row.logo_storage_bucket)
+            : null,
+          logo_storage_path: row.logo_storage_path
+            ? String(row.logo_storage_path)
+            : null,
+          logo_updated_at: row.logo_updated_at
+            ? String(row.logo_updated_at)
+            : null,
         })) ?? [];
 
       const validRows = rows.filter((row) => row.workspace_id);
@@ -802,6 +849,218 @@ export default function ReportBuilderPage() {
     setSelectedReportIds([]);
     setSelectedAdvertiserIds([]);
     setDeletingAdvertisers(false);
+    setWorkspaceLogoFile(null);
+    setUploadingWorkspaceLogo(false);
+    setDeletingWorkspaceLogo(false);
+    if (workspaceLogoInputRef.current) {
+      workspaceLogoInputRef.current.value = "";
+    }
+  }
+
+  function updateWorkspaceLogoState(workspace: any) {
+    const targetWorkspaceId = String(workspace?.workspace_id ?? "").trim();
+
+    if (!targetWorkspaceId) return;
+
+    setWorkspaceMemberships((prev) =>
+      prev.map((row) => {
+        if (row.workspace_id !== targetWorkspaceId) return row;
+
+        return {
+          ...row,
+          workspace_logo_url: workspace?.workspace_logo_url
+            ? String(workspace.workspace_logo_url)
+            : null,
+          logo_storage_bucket: workspace?.logo_storage_bucket
+            ? String(workspace.logo_storage_bucket)
+            : null,
+          logo_storage_path: workspace?.logo_storage_path
+            ? String(workspace.logo_storage_path)
+            : null,
+          logo_updated_at: workspace?.logo_updated_at
+            ? String(workspace.logo_updated_at)
+            : null,
+        };
+      })
+    );
+  }
+
+  function handleWorkspaceLogoFileChange(
+    event: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const file = event.target.files?.[0] ?? null;
+
+    if (!file) {
+      setWorkspaceLogoFile(null);
+      return;
+    }
+
+    const allowedTypes = new Set([
+      "image/png",
+      "image/jpeg",
+      "image/webp",
+    ]);
+
+    if (!allowedTypes.has(file.type)) {
+      setWorkspaceLogoFile(null);
+      event.target.value = "";
+      setLocalMsg("로고는 PNG, JPG, WebP 파일만 등록할 수 있습니다.");
+      return;
+    }
+
+    if (file.size <= 0) {
+      setWorkspaceLogoFile(null);
+      event.target.value = "";
+      setLocalMsg("비어 있는 파일은 등록할 수 없습니다.");
+      return;
+    }
+
+    if (file.size > 3 * 1024 * 1024) {
+      setWorkspaceLogoFile(null);
+      event.target.value = "";
+      setLocalMsg("로고 파일은 최대 3MB까지 등록할 수 있습니다.");
+      return;
+    }
+
+    setWorkspaceLogoFile(file);
+    setLocalMsg(`선택된 로고: ${file.name}`);
+  }
+
+  async function uploadWorkspaceLogo() {
+    if (!workspaceId || isAllWorkspaceMode) {
+      setLocalMsg("특정 workspace를 선택해 주세요.");
+      return;
+    }
+
+    if (!canManageWorkspaceLogo) {
+      setLocalMsg("workspace 로고 수정 권한이 없습니다.");
+      return;
+    }
+
+    if (!workspaceLogoFile || uploadingWorkspaceLogo) {
+      setLocalMsg("등록할 로고 파일을 먼저 선택하세요.");
+      return;
+    }
+
+    setUploadingWorkspaceLogo(true);
+    setLocalMsg("");
+
+    try {
+      const token = await getAccessToken();
+
+      if (!token) {
+        setLocalMsg("로그인 세션이 없습니다.");
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("file", workspaceLogoFile);
+
+      const res = await fetch(
+        `/api/workspaces/${encodeURIComponent(workspaceId)}/logo`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          body: formData,
+        }
+      );
+
+      const json = await safeReadJson(res);
+
+      if (!res.ok || !(json as any)?.ok) {
+        console.warn("[workspace/logo] upload failed", res.status, json);
+        setLocalMsg(
+          (json as any)?.message ||
+            (json as any)?.error ||
+            "workspace 로고 등록 실패"
+        );
+        return;
+      }
+
+      updateWorkspaceLogoState((json as any)?.workspace);
+      setWorkspaceLogoFile(null);
+
+      if (workspaceLogoInputRef.current) {
+        workspaceLogoInputRef.current.value = "";
+      }
+
+      setLocalMsg("workspace 기업 로고 등록 완료");
+    } catch (e: any) {
+      setLocalMsg(e?.message || "workspace 로고 등록 실패");
+    } finally {
+      setUploadingWorkspaceLogo(false);
+    }
+  }
+
+  async function deleteWorkspaceLogo() {
+    if (!workspaceId || isAllWorkspaceMode) {
+      setLocalMsg("특정 workspace를 선택해 주세요.");
+      return;
+    }
+
+    if (!canManageWorkspaceLogo) {
+      setLocalMsg("workspace 로고 삭제 권한이 없습니다.");
+      return;
+    }
+
+    if (!workspaceLogoUrl || deletingWorkspaceLogo) return;
+
+    const ok = window.confirm(
+      "현재 workspace 기업 로고를 삭제하시겠습니까?"
+    );
+
+    if (!ok) return;
+
+    setDeletingWorkspaceLogo(true);
+    setLocalMsg("");
+
+    try {
+      const token = await getAccessToken();
+
+      if (!token) {
+        setLocalMsg("로그인 세션이 없습니다.");
+        return;
+      }
+
+      const res = await fetch(
+        `/api/workspaces/${encodeURIComponent(workspaceId)}/logo`,
+        {
+          method: "DELETE",
+          credentials: "include",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      const json = await safeReadJson(res);
+
+      if (!res.ok || !(json as any)?.ok) {
+        console.warn("[workspace/logo] delete failed", res.status, json);
+        setLocalMsg(
+          (json as any)?.message ||
+            (json as any)?.error ||
+            "workspace 로고 삭제 실패"
+        );
+        return;
+      }
+
+      updateWorkspaceLogoState((json as any)?.workspace);
+      setWorkspaceLogoFile(null);
+
+      if (workspaceLogoInputRef.current) {
+        workspaceLogoInputRef.current.value = "";
+      }
+
+      setLocalMsg("workspace 기업 로고 삭제 완료");
+    } catch (e: any) {
+      setLocalMsg(e?.message || "workspace 로고 삭제 실패");
+    } finally {
+      setDeletingWorkspaceLogo(false);
+    }
   }
 
   async function createAdvertiser() {
@@ -1337,6 +1596,10 @@ export default function ReportBuilderPage() {
     setSelectedReportIds([]);
     setSearch("");
     setLocalMsg("");
+    setWorkspaceLogoFile(null);
+    if (workspaceLogoInputRef.current) {
+      workspaceLogoInputRef.current.value = "";
+    }
     resetReportsState();
     router.replace(`/report-builder?workspace_id=${encodeURIComponent(nextWorkspaceId)}`);
   }
@@ -1904,6 +2167,184 @@ export default function ReportBuilderPage() {
                       </option>
                     ))}
                   </select>
+                </div>
+              ) : null}
+
+              {workspaceId && !isAllWorkspaceMode ? (
+                <div
+                  style={{
+                    width: "100%",
+                    maxWidth: 520,
+                    border: "1px solid #cfd4dc",
+                    borderRadius: 18,
+                    background: "rgba(255, 255, 255, 0.58)",
+                    padding: 16,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 12,
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 900,
+                        color: "#111827",
+                      }}
+                    >
+                      리포트 작성 기업 로고
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 4,
+                        fontSize: 12,
+                        lineHeight: 1.5,
+                        color: "#6b7280",
+                      }}
+                    >
+                      이 workspace에서 작성·발행하는 리포트 상단에 표시될 기업 로고입니다.
+                    </div>
+                  </div>
+
+                  {workspaceLogoUrl ? (
+                    <div
+                      style={{
+                        width: "100%",
+                        minHeight: 92,
+                        border: "1px solid #e5e7eb",
+                        borderRadius: 14,
+                        background: "#ffffff",
+                        padding: 14,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <img
+                        src={workspaceLogoUrl}
+                        alt={`${workspaceName || "workspace"} 기업 로고`}
+                        style={{
+                          width: "100%",
+                          maxWidth: 240,
+                          height: 64,
+                          objectFit: "contain",
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        minHeight: 76,
+                        border: "1px dashed #cbd5e1",
+                        borderRadius: 14,
+                        background: "#f8fafc",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        padding: 14,
+                        textAlign: "center",
+                        fontSize: 12,
+                        lineHeight: 1.5,
+                        color: "#64748b",
+                      }}
+                    >
+                      등록된 기업 로고가 없습니다.
+                    </div>
+                  )}
+
+                  {canManageWorkspaceLogo ? (
+                    <>
+                      <input
+                        ref={workspaceLogoInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        onChange={handleWorkspaceLogoFileChange}
+                        disabled={
+                          uploadingWorkspaceLogo || deletingWorkspaceLogo
+                        }
+                        style={{ display: "none" }}
+                      />
+
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          alignItems: "center",
+                          flexWrap: "wrap",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          className="subBtn"
+                          onClick={() => workspaceLogoInputRef.current?.click()}
+                          disabled={
+                            uploadingWorkspaceLogo || deletingWorkspaceLogo
+                          }
+                        >
+                          {workspaceLogoUrl ? "로고 교체 파일 선택" : "로고 파일 선택"}
+                        </button>
+
+                        <button
+                          type="button"
+                          className="subBtn"
+                          onClick={uploadWorkspaceLogo}
+                          disabled={
+                            !workspaceLogoFile ||
+                            uploadingWorkspaceLogo ||
+                            deletingWorkspaceLogo
+                          }
+                        >
+                          {uploadingWorkspaceLogo
+                            ? "등록 중..."
+                            : workspaceLogoUrl
+                            ? "선택 파일로 교체"
+                            : "로고 등록"}
+                        </button>
+
+                        {workspaceLogoUrl ? (
+                          <button
+                            type="button"
+                            className="subBtn deleteBtn"
+                            onClick={deleteWorkspaceLogo}
+                            disabled={
+                              uploadingWorkspaceLogo || deletingWorkspaceLogo
+                            }
+                          >
+                            {deletingWorkspaceLogo ? "삭제 중..." : "로고 삭제"}
+                          </button>
+                        ) : null}
+                      </div>
+
+                      <div
+                        style={{
+                          fontSize: 11,
+                          lineHeight: 1.5,
+                          textAlign: "center",
+                          color: "#6b7280",
+                        }}
+                      >
+                        PNG, JPG, WebP · 최대 3MB · 가로형·세로형·투명 PNG 지원
+                        {workspaceLogoFile ? (
+                          <>
+                            <br />
+                            선택 파일: <b>{workspaceLogoFile.name}</b>
+                          </>
+                        ) : null}
+                      </div>
+                    </>
+                  ) : (
+                    <div
+                      style={{
+                        fontSize: 11,
+                        lineHeight: 1.5,
+                        textAlign: "center",
+                        color: "#6b7280",
+                      }}
+                    >
+                      로고 등록·교체·삭제는 true master 또는 director만 가능합니다.
+                    </div>
+                  )}
                 </div>
               ) : null}
 

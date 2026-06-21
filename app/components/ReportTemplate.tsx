@@ -309,6 +309,15 @@ type Props = {
    * 기존 화면의 탭 state/setTab 동작은 건드리지 않는다.
    */
   forcedTab?: TabKey;
+  /**
+   * PPT 캡처 전용 모드.
+   * 기존 일반 화면에는 영향을 주지 않고 header/navigation chrome을 제거한다.
+   */
+  exportMode?: boolean;
+  /**
+   * forcedTab 내부의 슬라이드 번호를 0부터 강제 지정한다.
+   */
+  forcedSlideIndex?: number;
 };
 
 type ReportFilterKey = FilterKey;
@@ -321,6 +330,14 @@ type HypothesisTabKey =
   | "hypothesis3"
   | "hypothesis4"
   | "hypothesis5";
+
+const HYPOTHESIS_TABS: readonly HypothesisTabKey[] = [
+  "hypothesis1",
+  "hypothesis2",
+  "hypothesis3",
+  "hypothesis4",
+  "hypothesis5",
+];
 
 type ManualHypothesisDraft = {
   title: string;
@@ -2988,9 +3005,28 @@ function getReportTypeDisplayName(
   return rawName;
 }
 
-const HeaderSurface = memo(function HeaderSurface(props: HeaderBarProps) {
+type HeaderSurfaceProps = HeaderBarProps & {
+  exportMode?: boolean;
+};
+
+function clampSlideIndex(value: unknown, max: number, fallback: SummarySlideIndex) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.min(max, Math.max(0, Math.trunc(numeric))) as SummarySlideIndex;
+}
+
+const HeaderSurface = memo(function HeaderSurface({
+  exportMode = false,
+  ...props
+}: HeaderSurfaceProps) {
   return (
-    <div className="sticky top-0 z-[200] isolate w-full self-start">
+    <div
+      className={
+        exportMode
+          ? "relative z-[1] isolate w-full self-start"
+          : "sticky top-0 z-[200] isolate w-full self-start"
+      }
+    >
       <div className="absolute inset-0 -z-10 bg-[linear-gradient(135deg,rgba(248,244,237,0.985)_0%,rgba(244,233,218,0.975)_38%,rgba(222,239,244,0.965)_72%,rgba(190,220,232,0.965)_100%)] shadow-[0_10px_30px_rgba(90,117,136,0.10)] backdrop-blur-xl" />
       <MemoHeaderBar {...props} />
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-[linear-gradient(90deg,transparent_0%,rgba(127,166,196,0.50)_18%,rgba(127,166,196,0.50)_82%,transparent_100%)]" />
@@ -3015,6 +3051,8 @@ export default function ReportTemplate({
   hidePeriodEditor = false,
   hideTabPeriodText = false,
   forcedTab,
+  exportMode = false,
+  forcedSlideIndex,
 }: Props) {
   const [internalTab, setInternalTab] = useState<TabKey>("summary");
   const [summarySlide, setSummarySlide] = useState<SummarySlideIndex>(0);
@@ -3122,6 +3160,28 @@ export default function ReportTemplate({
   const deferredSelectedSource = useDeferredValue(selectedSource);
   const deferredSelectedProduct = useDeferredValue(selectedProduct);
 
+  const [visitedTabs, setVisitedTabs] = useState<Set<TabKey>>(() =>
+    new Set<TabKey>(["summary"]),
+  );
+
+  useEffect(() => {
+    if (forcedTab) return;
+    setVisitedTabs((current) => {
+      if (current.has(deferredTab)) return current;
+      const next = new Set(current);
+      next.add(deferredTab);
+      return next;
+    });
+  }, [deferredTab, forcedTab]);
+
+  const hasVisitedTab = useCallback(
+    (candidate: TabKey) => {
+      if (forcedTab) return forcedTab === candidate;
+      return candidate === deferredTab || visitedTabs.has(candidate);
+    },
+    [deferredTab, forcedTab, visitedTabs],
+  );
+
   const [storedMonthGoal, setStoredMonthGoal] = useLocalStorageState<GoalState>(
     MONTH_GOAL_KEY,
     DEFAULT_GOAL,
@@ -3178,10 +3238,10 @@ export default function ReportTemplate({
   }, [brandSearchCostAppliedRows, stableReportPeriod]);
 
   const shouldRetainKeywordRowsForActiveTab =
-    deferredTab === "keyword" || deferredTab === "keywordDetail";
+    hasVisitedTab("keyword") || hasVisitedTab("keywordDetail");
 
   const shouldRetainCreativeRowsForActiveTab =
-    deferredTab === "creative" || deferredTab === "creativeDetail";
+    hasVisitedTab("creative") || hasVisitedTab("creativeDetail");
 
   const rowLevelBuckets = useMemo(() => {
     if (!reportPeriodRows.length) {
@@ -3248,6 +3308,52 @@ export default function ReportTemplate({
   const summary2SlideCount = reportType === "traffic" ? 1 : 3;
   const summary2LastSlide = (summary2SlideCount - 1) as SummarySlideIndex;
 
+  const effectiveSummarySlide =
+    forcedTab === "summary"
+      ? clampSlideIndex(forcedSlideIndex, 2, summarySlide)
+      : summarySlide;
+  const effectiveSummary2Slide =
+    forcedTab === "summary2"
+      ? clampSlideIndex(forcedSlideIndex, summary2SlideCount - 1, summary2Slide)
+      : summary2Slide;
+  const effectiveStructureSlide =
+    forcedTab === "structure"
+      ? clampSlideIndex(forcedSlideIndex, 2, structureSlide)
+      : structureSlide;
+  const effectiveKeywordSlide =
+    forcedTab === "keyword"
+      ? clampSlideIndex(forcedSlideIndex, 1, keywordSlide)
+      : keywordSlide;
+  const effectiveKeywordDetailSlide =
+    forcedTab === "keywordDetail"
+      ? clampSlideIndex(forcedSlideIndex, 2, keywordDetailSlide)
+      : keywordDetailSlide;
+  const effectiveCreativeSlide =
+    forcedTab === "creative"
+      ? clampSlideIndex(forcedSlideIndex, 1, creativeSlide)
+      : creativeSlide;
+  const effectiveCreativeDetailSlide =
+    forcedTab === "creativeDetail"
+      ? clampSlideIndex(forcedSlideIndex, 2, creativeDetailSlide)
+      : creativeDetailSlide;
+
+  const effectiveCaptureSlideIndex =
+    deferredTab === "summary"
+      ? effectiveSummarySlide
+      : deferredTab === "summary2"
+        ? effectiveSummary2Slide
+        : deferredTab === "structure"
+          ? effectiveStructureSlide
+          : deferredTab === "keyword"
+            ? effectiveKeywordSlide
+            : deferredTab === "keywordDetail"
+              ? effectiveKeywordDetailSlide
+              : deferredTab === "creative"
+                ? effectiveCreativeSlide
+                : deferredTab === "creativeDetail"
+                  ? effectiveCreativeDetailSlide
+                  : 0;
+
   const goToPreviousSummary2Slide = useCallback(() => {
     setSummary2Slide((current) =>
       Math.max(0, current - 1) as SummarySlideIndex,
@@ -3307,12 +3413,6 @@ export default function ReportTemplate({
     }
   }, [tab, selectedChannel, readOnlyHeader]);
 
-  const needCreativeRows =
-    deferredTab === "structure" ||
-    deferredTab === "keywordDetail" ||
-    deferredTab === "creative" ||
-    deferredTab === "creativeDetail";
-
   /**
    * ✅ 대용량 rows 렌더링 최적화
    * - useReportAggregates는 내부에서 filteredRows, options, totals, bySource,
@@ -3331,6 +3431,22 @@ export default function ReportTemplate({
   const isDecisionTab = deferredTab === "decision";
   const isHypothesisOperationTab = isHypothesisTab(deferredTab);
   const isDecisionLikeTab = isDecisionTab || isHypothesisOperationTab;
+
+  const needsSummaryData = hasVisitedTab("summary");
+  const needsStructureData = hasVisitedTab("structure");
+  const needsKeywordData = hasVisitedTab("keyword");
+  const needsKeywordDetailData = hasVisitedTab("keywordDetail");
+  const needsCreativeData = hasVisitedTab("creative");
+  const needsCreativeDetailData = hasVisitedTab("creativeDetail");
+  const needsDecisionData =
+    hasVisitedTab("decision") || HYPOTHESIS_TABS.some(hasVisitedTab);
+  const needsKeywordFamilyData = needsKeywordData || needsKeywordDetailData;
+  const needsCreativeFamilyData = needsCreativeData || needsCreativeDetailData;
+
+  const needCreativeRows =
+    needsStructureData ||
+    needsKeywordDetailData ||
+    needsCreativeFamilyData;
 
   const originalRowById = useMemo(() => {
     if (!needCreativeRows || !normalizedRows.length) return null;
@@ -3368,14 +3484,14 @@ export default function ReportTemplate({
        * ✅ 메인 representative aggregate는 Header 옵션/filteredRows는 항상 유지하되,
        * 무거운 표/차트 집계는 현재 탭에서 필요한 것만 계산한다.
        */
-      needCurrentMonthActual: isSummaryTab || isKeywordTab,
-      needTotals: isSummaryTab,
-      needBySource: isSummaryTab || isStructureTab,
-      needByCampaign: isStructureTab || isDecisionLikeTab,
+      needCurrentMonthActual: needsSummaryData || needsKeywordData,
+      needTotals: needsSummaryData,
+      needBySource: needsSummaryData || needsStructureData,
+      needByCampaign: needsStructureData || needsDecisionData,
       needByGroup: false,
-      needByWeek: isSummaryTab || isDecisionLikeTab,
-      needByMonth: isSummaryTab || isDecisionLikeTab,
-      needHydratedFilteredRows: isStructureTab,
+      needByWeek: needsSummaryData || needsDecisionData,
+      needByMonth: needsSummaryData || needsDecisionData,
+      needHydratedFilteredRows: needsStructureData,
       needOptions: true,
       needFilteredRows: true,
       needPeriodText: true,
@@ -3390,10 +3506,10 @@ export default function ReportTemplate({
     deferredSelectedProduct,
     stableMonthGoal,
     handleInvalidWeek,
-    isSummaryTab,
-    isKeywordTab,
-    isStructureTab,
-    isDecisionLikeTab,
+    needsSummaryData,
+    needsKeywordData,
+    needsStructureData,
+    needsDecisionData,
   ]);
 
   const stableReportAggregatesParams =
@@ -3422,11 +3538,9 @@ export default function ReportTemplate({
   } = useReportAggregates(stableReportAggregatesParams);
 
   const keywordRowsForActiveTab = useMemo(() => {
-    if (deferredTab !== "keyword" && deferredTab !== "keywordDetail") {
-      return EMPTY_ROWS;
-    }
+    if (!needsKeywordFamilyData) return EMPTY_ROWS;
     return keywordReportRows;
-  }, [deferredTab, keywordReportRows]);
+  }, [needsKeywordFamilyData, keywordReportRows]);
 
   const keywordAggregatesParams = useMemo(() => {
     return {
@@ -3453,7 +3567,7 @@ export default function ReportTemplate({
       needByGroup: false,
       needByWeek: false,
       needByMonth: false,
-      needHydratedFilteredRows: isKeywordDetailTab,
+      needHydratedFilteredRows: needsKeywordDetailData,
       needOptions: false,
       needFilteredRows: true,
       needPeriodText: false,
@@ -3468,7 +3582,7 @@ export default function ReportTemplate({
     deferredSelectedProduct,
     stableMonthGoal,
     noopInvalidWeek,
-    isKeywordDetailTab,
+    needsKeywordDetailData,
   ]);
 
   const stableKeywordAggregatesParams =
@@ -3479,11 +3593,9 @@ export default function ReportTemplate({
   );
 
   const creativeRowsForActiveTab = useMemo(() => {
-    if (deferredTab !== "creative" && deferredTab !== "creativeDetail") {
-      return EMPTY_ROWS;
-    }
+    if (!needsCreativeFamilyData) return EMPTY_ROWS;
     return creativeReportRows;
-  }, [deferredTab, creativeReportRows]);
+  }, [needsCreativeFamilyData, creativeReportRows]);
 
   const creativeAggregatesParams = useMemo(() => {
     return {
@@ -3510,7 +3622,7 @@ export default function ReportTemplate({
       needByGroup: false,
       needByWeek: false,
       needByMonth: false,
-      needHydratedFilteredRows: isCreativeTab || isCreativeDetailTab,
+      needHydratedFilteredRows: needsCreativeFamilyData,
       needOptions: false,
       needFilteredRows: true,
       needPeriodText: false,
@@ -3525,8 +3637,7 @@ export default function ReportTemplate({
     deferredSelectedProduct,
     stableMonthGoal,
     noopInvalidWeek,
-    isCreativeTab,
-    isCreativeDetailTab,
+    needsCreativeFamilyData,
   ]);
 
   const stableCreativeAggregatesParams =
@@ -3626,10 +3737,10 @@ export default function ReportTemplate({
   }, [stableProductOptions]);
 
   const byDay = useMemo(() => {
-    if (deferredTab !== "summary") return EMPTY_ROWS;
+    if (!needsSummaryData) return EMPTY_ROWS;
     if (!(summaryFilteredRows as any[])?.length) return EMPTY_ROWS;
     return buildDailySummaryRows(summaryFilteredRows as any[]);
-  }, [deferredTab, summaryFilteredRows]);
+  }, [needsSummaryData, summaryFilteredRows]);
 
   useEffect(() => {
     if (readOnlyHeader) return;
@@ -3709,7 +3820,7 @@ export default function ReportTemplate({
   const stablePeriodFixed = useStableShallowValue(periodFixed);
 
   const insightsCurrentMonthActual = useMemo(() => {
-    if (deferredTab !== "summary") {
+    if (!needsSummaryData) {
       return {
         impressions: 0,
         clicks: 0,
@@ -3736,7 +3847,7 @@ export default function ReportTemplate({
       cpa: Number(currentMonthActual?.cpa ?? 0),
       roas: Number(currentMonthActual?.roas ?? 0),
     };
-  }, [deferredTab, currentMonthActual]);
+  }, [needsSummaryData, currentMonthActual]);
 
   const stableInsightsCurrentMonthActual =
     useStableShallowValue(insightsCurrentMonthActual);
@@ -3749,8 +3860,8 @@ export default function ReportTemplate({
       monthGoal: stableMonthGoal,
       currentMonthActual: stableInsightsCurrentMonthActual,
       currentMonthGoalComputed,
-      enableMonthlyInsight: deferredTab === "summary",
-      enableMonthGoalInsight: deferredTab === "summary",
+      enableMonthlyInsight: needsSummaryData,
+      enableMonthGoalInsight: needsSummaryData,
       reportType,
     };
   }, [
@@ -3760,7 +3871,7 @@ export default function ReportTemplate({
     stableMonthGoal,
     stableInsightsCurrentMonthActual,
     currentMonthGoalComputed,
-    deferredTab,
+    needsSummaryData,
     reportType,
   ]);
 
@@ -3768,13 +3879,13 @@ export default function ReportTemplate({
   const { monthGoalInsight } = useInsights(stableInsightsParams);
 
   const keywordAgg = useMemo(() => {
-    if (deferredTab !== "keyword") return EMPTY_ROWS;
+    if (!needsKeywordData) return EMPTY_ROWS;
     if (!(keywordOnlyRows as any[])?.length) return EMPTY_ROWS;
     return groupByKeyword(keywordOnlyRows as any[]);
-  }, [deferredTab, keywordOnlyRows]);
+  }, [needsKeywordData, keywordOnlyRows]);
 
   const keywordInsight = useMemo(() => {
-    if (deferredTab !== "keyword") return "";
+    if (!needsKeywordData) return "";
     return buildKeywordInsight({
       keywordAgg: keywordAgg as any[],
       keywordBaseRows: keywordOnlyRows as any[],
@@ -3783,7 +3894,7 @@ export default function ReportTemplate({
       reportType,
     });
   }, [
-    deferredTab,
+    needsKeywordData,
     keywordAgg,
     keywordOnlyRows,
     currentMonthActual,
@@ -3877,13 +3988,11 @@ export default function ReportTemplate({
   }, [needCreativeRows, rowsForCreativeHydration, creativesMapNormalized, originalRowById]);
 
   const creativeBaseRows = useMemo(() => {
-    if (deferredTab !== "creative" && deferredTab !== "creativeDetail") {
-      return EMPTY_ROWS;
-    }
+    if (!needsCreativeFamilyData) return EMPTY_ROWS;
     const list = (summaryFilteredRowsWithCreatives as any[]) ?? EMPTY_ROWS;
     if (!list.length) return EMPTY_ROWS;
     return list.filter((r) => !!r?.creative_url);
-  }, [deferredTab, summaryFilteredRowsWithCreatives]);
+  }, [needsCreativeFamilyData, summaryFilteredRowsWithCreatives]);
 
   const stableSummaryGoalCurrentMonthActual = useStableShallowValue(
     summaryGoalCurrentMonthActual,
@@ -4019,6 +4128,10 @@ export default function ReportTemplate({
       setMonthGoal,
       monthGoalInsight: stableMonthGoalInsight,
       lastDataDate: summaryGoalLastDataDate,
+      goalProgressCurrentMonthKey: currentMonthKey,
+      goalProgressCurrentMonthActual: stableCurrentMonthActual,
+      goalProgressCurrentMonthGoalComputed: stableCurrentMonthGoalComputed,
+      goalProgressByDay: stableByDay,
     };
   }, [
     reportType,
@@ -4029,6 +4142,10 @@ export default function ReportTemplate({
     setMonthGoal,
     stableMonthGoalInsight,
     summaryGoalLastDataDate,
+    currentMonthKey,
+    stableCurrentMonthActual,
+    stableCurrentMonthGoalComputed,
+    stableByDay,
   ]);
 
   const summarySectionProps = useMemo(() => {
@@ -4176,8 +4293,16 @@ export default function ReportTemplate({
   ]);
 
     return (
-    <main className="min-h-screen w-full min-w-0 max-w-full overflow-x-clip bg-[radial-gradient(circle_at_top_right,rgba(183,215,227,0.28),transparent_28%),linear-gradient(180deg,var(--nature-page)_0%,rgba(250,247,241,0.96)_100%)] text-slate-900">
-      <HeaderSurface {...headerBarProps} />
+    <main
+      data-ppt-export-mode={exportMode ? "true" : undefined}
+      className={[
+        "min-h-screen w-full min-w-0 max-w-full overflow-x-clip bg-[radial-gradient(circle_at_top_right,rgba(183,215,227,0.28),transparent_28%),linear-gradient(180deg,var(--nature-page)_0%,rgba(250,247,241,0.96)_100%)] text-slate-900",
+        exportMode
+          ? "[&_*]:!animate-none [&_*]:!transition-none"
+          : "",
+      ].join(" ")}
+    >
+      {!exportMode ? <HeaderSurface {...headerBarProps} /> : null}
 
       <div className="relative -mt-1 px-4 pb-12 pt-0 sm:px-6 lg:px-8">
         <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-[linear-gradient(180deg,rgba(183,215,227,0.13)_0%,rgba(243,228,210,0.08)_48%,transparent_100%)]" />
@@ -4196,19 +4321,36 @@ export default function ReportTemplate({
             </div>
           ) : null}
 
-          <div className="relative min-w-0 max-w-full">
+          <div
+            className="relative min-w-0 max-w-full"
+            data-ppt-capture-root={exportMode ? "true" : undefined}
+            data-ppt-ready={exportMode ? (isLoading ? "false" : "true") : undefined}
+            data-ppt-tab={exportMode ? deferredTab : undefined}
+            data-ppt-slide-index={
+              exportMode ? String(effectiveCaptureSlideIndex) : undefined
+            }
+          >
             <div className="min-w-0 w-full">
               <div className="mx-auto w-full min-w-0 max-w-full">
                 <div className="space-y-8 pt-0">
-                  {deferredTab === "summary" && (
-                    forcedTab === "summary" ? (
+                                    {hasVisitedTab("summary") && (
+                    <div
+                      className={deferredTab === "summary" ? "block" : "hidden"}
+                      aria-hidden={deferredTab !== "summary"}
+                    >
+                      {forcedTab === "summary" ? (
                       <>
-                        <div className="relative overflow-hidden rounded-[32px] bg-[linear-gradient(145deg,rgba(255,253,249,0.97)_0%,rgba(255,250,242,0.94)_56%,rgba(241,248,250,0.94)_100%)] shadow-[0_18px_46px_rgba(90,117,136,0.10)] [&>section]:rounded-[32px] [&>section]:border-0 [&>section]:bg-transparent [&>section]:shadow-none">
-                          <MonthGoalSection {...(monthGoalSectionProps as any)} />
-                        </div>
+                        {effectiveSummarySlide === 0 ? (
+                          <div className="relative overflow-hidden rounded-[32px] bg-[linear-gradient(145deg,rgba(255,253,249,0.97)_0%,rgba(255,250,242,0.94)_56%,rgba(241,248,250,0.94)_100%)] shadow-[0_18px_46px_rgba(90,117,136,0.10)] [&>section]:rounded-[32px] [&>section]:border-0 [&>section]:bg-transparent [&>section]:shadow-none">
+                            <MonthGoalSection {...(monthGoalSectionProps as any)} />
+                          </div>
+                        ) : null}
 
-                        <div className="rounded-2xl">
-                          <SummarySection {...(summarySectionProps as any)} />
+                        <div className={effectiveSummarySlide === 0 ? "mt-6 rounded-2xl" : "rounded-2xl"}>
+                          <SummarySection
+                            {...(summarySectionProps as any)}
+                            activeSlide={effectiveSummarySlide}
+                          />
                         </div>
                       </>
                     ) : (
@@ -4287,49 +4429,62 @@ export default function ReportTemplate({
                         </div>
 
                       </section>
-                    )
+                    )}
+                    </div>
                   )}
 
-                  {deferredTab === "decision" && (
-                    <div className="rounded-2xl">
+                                    {hasVisitedTab("decision") && (
+                    <div
+                      className={deferredTab === "decision" ? "block" : "hidden"}
+                      aria-hidden={deferredTab !== "decision"}
+                    >
+                      {<div className="rounded-2xl">
                       <DecisionPanel {...(decisionPanelProps as any)} />
+                    </div>}
                     </div>
                   )}
 
-                  {isHypothesisTab(deferredTab) && (
-                    <div className="rounded-2xl">
-                      <HypothesisOperationPanel
-                        index={hypothesisNumberOf(deferredTab)}
-                        item={
-                          operationHypotheses[
-                            hypothesisNumberOf(deferredTab) - 1
-                          ]
-                        }
-                        isManual={String(
-                          (
-                            operationHypotheses[
-                              hypothesisNumberOf(deferredTab) - 1
-                            ] as any
-                          )?.hypothesisId ?? "",
-                        ).startsWith("manual-hypothesis-")}
-                        onChangeManualHypothesis={(next) => {
-                          const index = hypothesisNumberOf(deferredTab);
+                                    {HYPOTHESIS_TABS.map((hypothesisTab) => {
+                    if (!hasVisitedTab(hypothesisTab)) return null;
 
-                          setManualHypothesisDrafts((prev) => ({
-                            ...prev,
-                            [index]: next,
-                          }));
-                        }}
-                      />
-                    </div>
-                  )}
+                    const isActiveHypothesis = deferredTab === hypothesisTab;
+                    const hypothesisIndex = hypothesisNumberOf(hypothesisTab);
+                    const hypothesisItem = operationHypotheses[hypothesisIndex - 1];
 
-                  {deferredTab === "summary2" && (
-                    forcedTab === "summary2" ? (
+                    return (
+                      <div
+                        key={hypothesisTab}
+                        className={isActiveHypothesis ? "rounded-2xl" : "hidden"}
+                        aria-hidden={!isActiveHypothesis}
+                      >
+                        <HypothesisOperationPanel
+                          index={hypothesisIndex}
+                          item={hypothesisItem}
+                          isManual={String(
+                            (hypothesisItem as any)?.hypothesisId ?? "",
+                          ).startsWith("manual-hypothesis-")}
+                          onChangeManualHypothesis={(next) => {
+                            setManualHypothesisDrafts((prev) => ({
+                              ...prev,
+                              [hypothesisIndex]: next,
+                            }));
+                          }}
+                        />
+                      </div>
+                    );
+                  })}
+
+                                    {hasVisitedTab("summary2") && (
+                    <div
+                      className={deferredTab === "summary2" ? "block" : "hidden"}
+                      aria-hidden={deferredTab !== "summary2"}
+                    >
+                      {forcedTab === "summary2" ? (
                       <div className="rounded-2xl">
                         <Summary2Section
                           {...({ reportType } as any)}
                           rows={summaryFilteredRows as any[]}
+                          activeSlide={effectiveSummary2Slide}
                         />
                       </div>
                     ) : (
@@ -4392,11 +4547,16 @@ export default function ReportTemplate({
                           </div>
                         </div>
                       </section>
-                    )
+                    )}
+                    </div>
                   )}
 
-                  {deferredTab === "structure" && (
-                    forcedTab === "structure" ? (
+                                    {hasVisitedTab("structure") && (
+                    <div
+                      className={deferredTab === "structure" ? "block" : "hidden"}
+                      aria-hidden={deferredTab !== "structure"}
+                    >
+                      {forcedTab === "structure" ? (
                       <div className="rounded-2xl">
                         <StructureSection
                           {...({ reportType } as any)}
@@ -4404,6 +4564,7 @@ export default function ReportTemplate({
                           byCampaign={byCampaign}
                           rows={summaryFilteredRowsWithCreatives}
                           monthGoal={stableMonthGoal}
+                          activeSlide={effectiveStructureSlide}
                         />
                       </div>
                     ) : (
@@ -4427,7 +4588,7 @@ export default function ReportTemplate({
                               className="flex items-center gap-2"
                               aria-label="구조 슬라이드 선택"
                             >
-                              {([0, 1] as SummarySlideIndex[]).map(
+                              {([0, 1, 2] as SummarySlideIndex[]).map(
                                 (slideIndex) => (
                                   <button
                                     key={slideIndex}
@@ -4476,16 +4637,22 @@ export default function ReportTemplate({
                           </div>
                         </div>
                       </section>
-                    )
+                    )}
+                    </div>
                   )}
 
-                  {deferredTab === "keyword" && (
-                    forcedTab === "keyword" ? (
+                                    {hasVisitedTab("keyword") && (
+                    <div
+                      className={deferredTab === "keyword" ? "block" : "hidden"}
+                      aria-hidden={deferredTab !== "keyword"}
+                    >
+                      {forcedTab === "keyword" ? (
                       <div className="rounded-2xl">
                         <KeywordSection
                           {...({ reportType } as any)}
                           keywordAgg={keywordAgg}
                           keywordInsight={keywordInsight}
+                          activeSlide={effectiveKeywordSlide}
                         />
                       </div>
                     ) : (
@@ -4556,15 +4723,21 @@ export default function ReportTemplate({
                           </div>
                         </div>
                       </section>
-                    )
+                    )}
+                    </div>
                   )}
 
-                  {deferredTab === "keywordDetail" &&
-                    (forcedTab === "keywordDetail" ? (
+                                    {hasVisitedTab("keywordDetail") && (
+                    <div
+                      className={deferredTab === "keywordDetail" ? "block" : "hidden"}
+                      aria-hidden={deferredTab !== "keywordDetail"}
+                    >
+                      {forcedTab === "keywordDetail" ? (
                       <div className="rounded-2xl">
                         <KeywordDetailSection
                           {...({ reportType } as any)}
                           rows={keywordOnlyRows as any[]}
+                          activeSlide={effectiveKeywordDetailSlide}
                         />
                       </div>
                     ) : (
@@ -4638,15 +4811,21 @@ export default function ReportTemplate({
                           </div>
                         </div>
                       </section>
-                    )
+                    )}
+                    </div>
                   )}
 
-                  {deferredTab === "creative" &&
-                    (forcedTab === "creative" ? (
+                                    {hasVisitedTab("creative") && (
+                    <div
+                      className={deferredTab === "creative" ? "block" : "hidden"}
+                      aria-hidden={deferredTab !== "creative"}
+                    >
+                      {forcedTab === "creative" ? (
                       <div className="rounded-2xl">
                         <CreativeSection
                           {...({ reportType } as any)}
                           rows={summaryFilteredRowsWithCreatives as any[]}
+                          activeSlide={effectiveCreativeSlide as 0 | 1}
                         />
                       </div>
                     ) : (
@@ -4716,15 +4895,21 @@ export default function ReportTemplate({
                           </div>
                         </div>
                       </section>
-                    )
+                    )}
+                    </div>
                   )}
 
-                  {deferredTab === "creativeDetail" &&
-                    (forcedTab === "creativeDetail" ? (
+                                    {hasVisitedTab("creativeDetail") && (
+                    <div
+                      className={deferredTab === "creativeDetail" ? "block" : "hidden"}
+                      aria-hidden={deferredTab !== "creativeDetail"}
+                    >
+                      {forcedTab === "creativeDetail" ? (
                       <div className="rounded-2xl">
                         <CreativeDetailSection
                           {...({ reportType } as any)}
                           rows={summaryFilteredRowsWithCreatives as any[]}
+                          activeSlide={effectiveCreativeDetailSlide}
                         />
                       </div>
                     ) : (
@@ -4801,7 +4986,8 @@ export default function ReportTemplate({
                           </div>
                         </div>
                       </section>
-                    )
+                    )}
+                    </div>
                   )}
                 </div>
               </div>

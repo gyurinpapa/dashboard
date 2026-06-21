@@ -297,7 +297,7 @@ function sigOfRow(r: any) {
   ].join("|");
 }
 
-function hydrateFilteredRows(filteredRows: any[], originalRows: any[]) {
+function buildOriginalRowsBySignature(originalRows: any[]) {
   const origBySig = new Map<string, any>();
 
   for (const o of originalRows ?? []) {
@@ -305,6 +305,13 @@ function hydrateFilteredRows(filteredRows: any[], originalRows: any[]) {
     if (!origBySig.has(sig)) origBySig.set(sig, o);
   }
 
+  return origBySig;
+}
+
+function hydrateFilteredRows(
+  filteredRows: any[],
+  origBySig: Map<string, any>,
+) {
   return (filteredRows ?? []).map((fr) => {
     const sig = sigOfRow(fr);
     const orig = origBySig.get(sig);
@@ -539,13 +546,14 @@ export function useReportAggregates({
   const channelBaseRows = useMemo(() => {
     if (!needOptions) return EMPTY_LIST;
 
-    return applyProductFilter(
-      (baseFilteredRows as any[]).filter((r) => {
-        if (selectedSource === "all") return true;
-        return asStr(r?.source) === String(selectedSource);
-      }),
-      selectedProduct
-    );
+    const sourceFilteredRows =
+      selectedSource === "all"
+        ? (baseFilteredRows as any[])
+        : (baseFilteredRows as any[]).filter(
+            (r) => asStr(r?.source) === String(selectedSource),
+          );
+
+    return applyProductFilter(sourceFilteredRows, selectedProduct);
   }, [needOptions, baseFilteredRows, selectedSource, selectedProduct]);
 
   const { channelOptions } = useMemo(() => {
@@ -561,13 +569,14 @@ export function useReportAggregates({
   const sourceBaseRows = useMemo(() => {
     if (!needOptions) return EMPTY_LIST;
 
-    return applyProductFilter(
-      (baseFilteredRows as any[]).filter((r) => {
-        if (selectedChannel === "all") return true;
-        return asStr(r?.channel) === String(selectedChannel);
-      }),
-      selectedProduct
-    );
+    const channelFilteredRows =
+      selectedChannel === "all"
+        ? (baseFilteredRows as any[])
+        : (baseFilteredRows as any[]).filter(
+            (r) => asStr(r?.channel) === String(selectedChannel),
+          );
+
+    return applyProductFilter(channelFilteredRows, selectedProduct);
   }, [needOptions, baseFilteredRows, selectedChannel, selectedProduct]);
 
   const { sourceOptions } = useMemo(() => {
@@ -582,6 +591,9 @@ export function useReportAggregates({
   // ============================================================
   const productBaseRows = useMemo(() => {
     if (!needOptions && !needByMonth) return EMPTY_LIST;
+    if (selectedChannel === "all" && selectedSource === "all") {
+      return baseFilteredRows as any[];
+    }
 
     return (baseFilteredRows as any[]).filter((r) => {
       const channelOk =
@@ -589,10 +601,10 @@ export function useReportAggregates({
         asStr(r?.channel) === String(selectedChannel);
       if (!channelOk) return false;
 
-      const sourceOk =
+      return (
         selectedSource === "all" ||
-        asStr(r?.source) === String(selectedSource);
-      return sourceOk;
+        asStr(r?.source) === String(selectedSource)
+      );
     });
   }, [needOptions, needByMonth, baseFilteredRows, selectedChannel, selectedSource]);
 
@@ -617,19 +629,32 @@ export function useReportAggregates({
       });
     }
 
-    return applyProductFilter(
-      (baseFilteredRows as any[]).filter((r) => {
-        const channelOk =
-          selectedChannel === "all" ||
-          asStr(r?.channel) === String(selectedChannel);
-        if (!channelOk) return false;
+    if (
+      selectedChannel === "all" &&
+      selectedSource === "all" &&
+      selectedProduct === "all"
+    ) {
+      return baseFilteredRows as any[];
+    }
 
-        const sourceOk =
-          selectedSource === "all" ||
-          asStr(r?.source) === String(selectedSource);
-        return sourceOk;
-      }),
-      selectedProduct
+    const channelAndSourceFilteredRows =
+      selectedChannel === "all" && selectedSource === "all"
+        ? (baseFilteredRows as any[])
+        : (baseFilteredRows as any[]).filter((r) => {
+            const channelOk =
+              selectedChannel === "all" ||
+              asStr(r?.channel) === String(selectedChannel);
+            if (!channelOk) return false;
+
+            return (
+              selectedSource === "all" ||
+              asStr(r?.source) === String(selectedSource)
+            );
+          });
+
+    return applyProductFilter(
+      channelAndSourceFilteredRows,
+      selectedProduct,
     );
   }, [
     shouldBuildFilteredRows,
@@ -644,6 +669,11 @@ export function useReportAggregates({
     selectedProduct,
   ]);
 
+  const originalRowsBySignature = useMemo(() => {
+    if (!needHydratedFilteredRows) return null;
+    return buildOriginalRowsBySignature(rows as any[]);
+  }, [needHydratedFilteredRows, rows]);
+
   /**
    * [수정 포인트]
    * creative/image 원본 hydrate는 실제 필요한 탭에서만 수행
@@ -652,9 +682,19 @@ export function useReportAggregates({
    */
   const filteredRows = useMemo(() => {
     if (!shouldBuildFilteredRows) return EMPTY_LIST;
-    if (!needHydratedFilteredRows) return filteredRowsRaw as any[];
-    return hydrateFilteredRows(filteredRowsRaw as any[], rows as any[]);
-  }, [shouldBuildFilteredRows, needHydratedFilteredRows, filteredRowsRaw, rows]);
+    if (!needHydratedFilteredRows || !originalRowsBySignature) {
+      return filteredRowsRaw as any[];
+    }
+    return hydrateFilteredRows(
+      filteredRowsRaw as any[],
+      originalRowsBySignature,
+    );
+  }, [
+    shouldBuildFilteredRows,
+    needHydratedFilteredRows,
+    filteredRowsRaw,
+    originalRowsBySignature,
+  ]);
 
   // ===== DEBUG =====
   useEffect(() => {

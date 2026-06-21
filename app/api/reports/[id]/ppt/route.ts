@@ -5,9 +5,22 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
 import { isPlatformOwner } from "@/src/lib/supabase/platform-role";
 
-import { buildPptReportData } from "@/src/lib/report/ppt/build-ppt-data";
+import {
+  buildPptExportReportData,
+  buildPptReportData,
+} from "@/src/lib/report/ppt/build-ppt-data";
 import { buildPptInsights } from "@/src/lib/report/ppt/build-ppt-insights";
 import { writePptxBufferFromReportDeck } from "@/src/lib/report/ppt/render-ppt";
+import type {
+  PptExportFilterValues,
+  PptExportPage,
+} from "@/src/lib/report/ppt/export-config";
+import {
+  buildPptExportFilterCacheKey,
+  MAX_PPT_EXPORT_REQUEST_BYTES,
+  resolvePptExportFilters,
+  validatePptExportRequestBody,
+} from "@/src/lib/report/ppt/export-config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +30,7 @@ type Ctx = { params: Promise<{ id: string }> };
 const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
 const REPORT_ROWS_PAGE_SIZE = 1000;
 const MAX_REPORT_ROWS_FOR_PPT = 150000;
+const MAX_PPT_BUILD_ROWS = 12000;
 
 function jsonError(status: number, message: string, extra?: Record<string, any>) {
   return NextResponse.json(
@@ -326,6 +340,149 @@ function normalizeReportRowRecord(rec: any) {
   return { ...(rec ?? {}) };
 }
 
+function getPptRowRaw(row: any) {
+  const raw = row?.row ?? row?.data ?? row?.payload;
+
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    return raw;
+  }
+
+  return row && typeof row === "object" ? row : {};
+}
+
+function getPptRowDate(row: any) {
+  const raw = getPptRowRaw(row);
+
+  return (
+    asString(row?.date) ||
+    asString(raw?.date) ||
+    asString(raw?.report_date) ||
+    asString(raw?.day) ||
+    asString(raw?.ymd) ||
+    asString(raw?.dt) ||
+    asString(raw?.segment_date) ||
+    asString(raw?.stat_date) ||
+    "unknown-date"
+  ).slice(0, 10);
+}
+
+function getPptRowSource(row: any) {
+  const raw = getPptRowRaw(row);
+
+  return (
+    asString(row?.source) ||
+    asString(raw?.source) ||
+    asString(raw?.platform) ||
+    asString(raw?.media_source) ||
+    asString(raw?.media) ||
+    asString(raw?.publisher) ||
+    asString(raw?.channel) ||
+    asString(raw?.매체) ||
+    "unknown-source"
+  );
+}
+
+function getPptRowLevel(row: any) {
+  const raw = getPptRowRaw(row);
+
+  return (
+    asString(row?.row_level) ||
+    asString(row?.data_level) ||
+    asString(raw?.row_level) ||
+    asString(raw?.data_level) ||
+    "unknown-level"
+  );
+}
+
+function getPptRowStableKey(row: any, fallbackIndex: number) {
+  const raw = getPptRowRaw(row);
+
+  return (
+    asString(row?.id) ||
+    asString(row?.__row_id) ||
+    asString(raw?.id) ||
+    asString(raw?.__row_id) ||
+    `${asString(row?.row_index) || asString(raw?.row_index) || fallbackIndex}`
+  );
+}
+
+function pickPptSafeRows(rows: any[], maxRows = MAX_PPT_BUILD_ROWS) {
+  const list = Array.isArray(rows) ? rows.filter(Boolean) : [];
+
+  if (list.length <= maxRows) {
+    return {
+      rows: list,
+      sampled: false,
+      rawRows: list.length,
+      pptRows: list.length,
+      bucketCount: 0,
+    };
+  }
+
+  const buckets = new Map<string, any[]>();
+
+  for (const row of list) {
+    const date = getPptRowDate(row);
+    const source = getPptRowSource(row);
+    const rowLevel = getPptRowLevel(row);
+    const key = `${date}__${source}__${rowLevel}`;
+
+    const bucket = buckets.get(key) ?? [];
+
+    if (bucket.length < 80) {
+      bucket.push(row);
+      buckets.set(key, bucket);
+    } else if (!buckets.has(key)) {
+      buckets.set(key, bucket);
+    }
+  }
+
+  const sampled: any[] = [];
+  const seen = new Set<string>();
+
+  for (const bucket of buckets.values()) {
+    for (const row of bucket) {
+      const key = getPptRowStableKey(row, sampled.length);
+      if (seen.has(key)) continue;
+
+      sampled.push(row);
+      seen.add(key);
+
+      if (sampled.length >= maxRows) {
+        break;
+      }
+    }
+
+    if (sampled.length >= maxRows) {
+      break;
+    }
+  }
+
+  if (sampled.length < maxRows) {
+    for (let index = 0; index < list.length; index += 1) {
+      const row = list[index];
+      const key = getPptRowStableKey(row, index);
+
+      if (seen.has(key)) continue;
+
+      sampled.push(row);
+      seen.add(key);
+
+      if (sampled.length >= maxRows) {
+        break;
+      }
+    }
+  }
+
+  return {
+    rows: sampled.slice(0, maxRows),
+    sampled: true,
+    rawRows: list.length,
+    pptRows: Math.min(sampled.length, maxRows),
+    bucketCount: buckets.size,
+  };
+}
+
 async function fetchReportRowsByIngestion(args: {
   reportId: string;
   ingestionId: string;
@@ -343,21 +500,21 @@ async function fetchReportRowsByIngestion(args: {
     const { data, error } = await supabaseAdmin
       .from("report_rows")
       .select(
-            [
-                "id",
-                "report_id",
-                "ingestion_id",
-                "row_index",
-                "row",
-                "created_at",
-                "date",
-                "channel",
-                "device",
-                "source",
-            ].join(", "),
-        )
+        [
+          "id",
+          "report_id",
+          "ingestion_id",
+          "row_index",
+          "row",
+          "created_at",
+          "date",
+          "channel",
+          "device",
+          "source",
+        ].join(", "),
+      )
       .eq("report_id", reportId)
-    .eq("ingestion_id", ingestionId)
+      .eq("ingestion_id", ingestionId)
       .order("row_index", { ascending: true })
       .range(from, to);
 
@@ -402,18 +559,18 @@ async function fetchReportRowsLegacy(args: {
       .from("report_rows")
       .select(
         [
-            "id",
-            "report_id",
-            "ingestion_id",
-            "row_index",
-            "row",
-            "created_at",
-            "date",
-            "channel",
-            "device",
-            "source",
+          "id",
+          "report_id",
+          "ingestion_id",
+          "row_index",
+          "row",
+          "created_at",
+          "date",
+          "channel",
+          "device",
+          "source",
         ].join(", "),
-        )
+      )
       .eq("report_id", reportId)
       .order("row_index", { ascending: true })
       .range(from, to);
@@ -694,6 +851,323 @@ function pickReportTitle(args: {
   );
 }
 
+
+
+function getFilterRowRaw(row: any) {
+  const raw = row?.row ?? row?.data ?? row?.payload;
+
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    return raw;
+  }
+
+  return row && typeof row === "object" ? row : {};
+}
+
+function pickFirstFilterValue(row: any, keys: string[]) {
+  const raw = getFilterRowRaw(row);
+
+  for (const key of keys) {
+    const direct = asString(row?.[key]);
+    if (direct) return direct;
+
+    const nested = asString(raw?.[key]);
+    if (nested) return nested;
+  }
+
+  return "";
+}
+
+function pickFilterDate(row: any) {
+  return pickFirstFilterValue(row, [
+    "date",
+    "report_date",
+    "day",
+    "ymd",
+    "dt",
+    "segment_date",
+    "stat_date",
+  ]).slice(0, 10);
+}
+
+function normalizeFilterComparable(value: any) {
+  return asString(value).replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function matchesFilterValues(value: string, allowed?: string[]) {
+  if (!Array.isArray(allowed) || allowed.length === 0) {
+    return true;
+  }
+
+  const normalizedValue = normalizeFilterComparable(value);
+  if (!normalizedValue) return false;
+
+  return allowed.some(
+    (item) => normalizeFilterComparable(item) === normalizedValue,
+  );
+}
+
+function filterRowsForPptExport(
+  rows: any[],
+  filters: PptExportFilterValues,
+) {
+  const list = Array.isArray(rows) ? rows : [];
+
+  return list.filter((row) => {
+    const date = pickFilterDate(row);
+
+    if (filters.dateFrom && (!date || date < filters.dateFrom)) {
+      return false;
+    }
+
+    if (filters.dateTo && (!date || date > filters.dateTo)) {
+      return false;
+    }
+
+    if (
+      filters.month?.length &&
+      (!date || !matchesFilterValues(date.slice(0, 7), filters.month))
+    ) {
+      return false;
+    }
+
+    if (
+      !matchesFilterValues(
+        pickFirstFilterValue(row, [
+          "source",
+          "platform",
+          "media_source",
+          "media",
+          "publisher",
+          "매체",
+        ]),
+        filters.source,
+      )
+    ) {
+      return false;
+    }
+
+    if (
+      !matchesFilterValues(
+        pickFirstFilterValue(row, [
+          "channel",
+          "channel_name",
+          "channelName",
+          "media_channel",
+          "채널",
+        ]),
+        filters.channel,
+      )
+    ) {
+      return false;
+    }
+
+    if (
+      !matchesFilterValues(
+        pickFirstFilterValue(row, [
+          "device",
+          "device_type",
+          "deviceType",
+          "platform_device",
+          "기기",
+        ]),
+        filters.device,
+      )
+    ) {
+      return false;
+    }
+
+    if (
+      !matchesFilterValues(
+        pickFirstFilterValue(row, [
+          "campaign_name",
+          "campaignName",
+          "campaign",
+          "캠페인",
+        ]),
+        filters.campaign,
+      )
+    ) {
+      return false;
+    }
+
+    if (
+      !matchesFilterValues(
+        pickFirstFilterValue(row, [
+          "group_name",
+          "adgroup_name",
+          "ad_group_name",
+          "groupName",
+          "adgroupName",
+          "group",
+          "ad_group",
+          "광고그룹",
+          "그룹",
+        ]),
+        filters.group,
+      )
+    ) {
+      return false;
+    }
+
+    if (
+      !matchesFilterValues(
+        pickFirstFilterValue(row, [
+          "keyword",
+          "keyword_name",
+          "search_term",
+          "query",
+          "term",
+          "키워드",
+        ]),
+        filters.keyword,
+      )
+    ) {
+      return false;
+    }
+
+    if (
+      !matchesFilterValues(
+        pickFirstFilterValue(row, [
+          "creative",
+          "creative_name",
+          "creativeName",
+          "creative_file",
+          "creativeFile",
+          "imagepath_raw",
+          "imagepath",
+          "imagePath",
+          "소재",
+        ]),
+        filters.creative,
+      )
+    ) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
+function getRequestContentLength(req: Request) {
+  const raw = req.headers.get("content-length");
+  if (!raw) return 0;
+
+  const size = Number(raw);
+  return Number.isFinite(size) && size > 0 ? size : 0;
+}
+
+function getSerializedByteLength(value: unknown) {
+  try {
+    return new TextEncoder().encode(JSON.stringify(value)).byteLength;
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
+}
+
+function buildPptResponse(args: {
+  buffer: any;
+  fileName: string;
+  reportId: string;
+  rowsCount: number;
+  pptRowsCount: number;
+  ingestionIdUsed: string;
+  fallbackUsed: boolean;
+  slidesCount: number;
+  exportMode: "default" | "builder";
+}) {
+  return new NextResponse(args.buffer as any, {
+    status: 200,
+    headers: {
+      "Content-Type":
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(
+        args.fileName,
+      )}`,
+      "Cache-Control": "no-store",
+      "X-Report-Id": args.reportId,
+      "X-Report-Rows-Count": String(args.rowsCount),
+      "X-PPT-Rows-Count": String(args.pptRowsCount),
+      "X-PPT-Rows-Sampled": "0",
+      "X-Report-Ingestion-Id": args.ingestionIdUsed || "",
+      "X-Report-Ingestion-Fallback": args.fallbackUsed ? "1" : "0",
+      "X-PPT-Slides-Count": String(args.slidesCount),
+      "X-PPT-Mode":
+        args.exportMode === "builder" ? "data-driven-builder" : "data-driven",
+    },
+  });
+}
+
+function handlePptRouteError(e: any) {
+  const msg = String(e?.message ?? "");
+
+  console.error("[ppt] generation failed", {
+    message: msg,
+    stack: e?.stack || null,
+  });
+
+  if (msg.startsWith("PROFILE_EMAIL_FETCH_FAILED:")) {
+    return jsonError(500, "PROFILE_EMAIL_FETCH_FAILED", {
+      detail: msg.replace("PROFILE_EMAIL_FETCH_FAILED:", ""),
+    });
+  }
+
+  if (msg.startsWith("WORKSPACE_ROLE_CHECK_FAILED:")) {
+    return jsonError(500, "WORKSPACE_ROLE_CHECK_FAILED", {
+      detail: msg.replace("WORKSPACE_ROLE_CHECK_FAILED:", ""),
+    });
+  }
+
+  if (msg.startsWith("MASTER_MEMBERSHIP_CHECK_FAILED:")) {
+    return jsonError(500, "MASTER_MEMBERSHIP_CHECK_FAILED", {
+      detail: msg.replace("MASTER_MEMBERSHIP_CHECK_FAILED:", ""),
+    });
+  }
+
+  if (msg.startsWith("REPORT_FETCH_FAILED:")) {
+    return jsonError(500, "REPORT_FETCH_FAILED", {
+      detail: msg.replace("REPORT_FETCH_FAILED:", ""),
+    });
+  }
+
+  if (msg.startsWith("ADVERTISER_FETCH_FAILED:")) {
+    return jsonError(500, "ADVERTISER_FETCH_FAILED", {
+      detail: msg.replace("ADVERTISER_FETCH_FAILED:", ""),
+    });
+  }
+
+  if (msg.startsWith("REPORT_TYPE_FETCH_FAILED:")) {
+    return jsonError(500, "REPORT_TYPE_FETCH_FAILED", {
+      detail: msg.replace("REPORT_TYPE_FETCH_FAILED:", ""),
+    });
+  }
+
+  if (msg.startsWith("REPORT_ROWS_FETCH_FAILED:")) {
+    return jsonError(500, "REPORT_ROWS_FETCH_FAILED", {
+      detail: msg.replace("REPORT_ROWS_FETCH_FAILED:", ""),
+    });
+  }
+
+  if (msg.startsWith("REPORT_ROWS_INGESTION_LOOKUP_FAILED:")) {
+    return jsonError(500, "REPORT_ROWS_INGESTION_LOOKUP_FAILED", {
+      detail: msg.replace("REPORT_ROWS_INGESTION_LOOKUP_FAILED:", ""),
+    });
+  }
+
+  if (msg.startsWith("REPORT_ROWS_TOO_LARGE_FOR_PPT:")) {
+    const parts = msg.split(":");
+    return jsonError(413, "REPORT_ROWS_TOO_LARGE_FOR_PPT", {
+      rows_count: Number(parts[1] || 0),
+      max_rows: Number(parts[2] || MAX_REPORT_ROWS_FOR_PPT),
+      message:
+        "현재 PPT 생성은 최대 150,000 rows까지 지원합니다. 이후 aggregate snapshot 구조로 확장할 수 있습니다.",
+    });
+  }
+
+  return jsonError(500, "PPT_GENERATION_FAILED", {
+    detail: e?.message || String(e),
+  });
+}
+
 export async function GET(req: Request, ctx: Ctx) {
   try {
     const { id: idRaw } = await ctx.params;
@@ -746,6 +1220,19 @@ export async function GET(req: Request, ctx: Ctx) {
       });
     }
 
+    const pptRowsResult = pickPptSafeRows(rows, MAX_PPT_BUILD_ROWS);
+    const pptRows = pptRowsResult.rows;
+
+    console.log("[ppt] rows prepared", {
+      reportId,
+      ingestionIdUsed: rowsResult.ingestionIdUsed || null,
+      fallbackUsed: rowsResult.fallbackUsed,
+      rawRows: pptRowsResult.rawRows,
+      pptRows: pptRowsResult.pptRows,
+      sampled: pptRowsResult.sampled,
+      bucketCount: pptRowsResult.bucketCount,
+    });
+
     const advertiserName = pickAdvertiserName({
       report,
       advertiser,
@@ -768,7 +1255,7 @@ export async function GET(req: Request, ctx: Ctx) {
     });
 
     const deck = buildPptReportData({
-      rows,
+      rows: pptRows,
       advertiserName,
       reportTypeName,
       reportTypeKey,
@@ -802,6 +1289,8 @@ export async function GET(req: Request, ctx: Ctx) {
         "Cache-Control": "no-store",
         "X-Report-Id": reportId,
         "X-Report-Rows-Count": String(rows.length),
+        "X-PPT-Rows-Count": String(pptRows.length),
+        "X-PPT-Rows-Sampled": pptRowsResult.sampled ? "1" : "0",
         "X-Report-Ingestion-Id": rowsResult.ingestionIdUsed || "",
         "X-Report-Ingestion-Fallback": rowsResult.fallbackUsed ? "1" : "0",
         "X-PPT-Slides-Count": String(deck.slides.length + 2),
@@ -810,6 +1299,11 @@ export async function GET(req: Request, ctx: Ctx) {
     });
   } catch (e: any) {
     const msg = String(e?.message ?? "");
+
+    console.error("[ppt] generation failed", {
+      message: msg,
+      stack: e?.stack || null,
+    });
 
     if (msg.startsWith("PROFILE_EMAIL_FETCH_FAILED:")) {
       return jsonError(500, "PROFILE_EMAIL_FETCH_FAILED", {
@@ -874,3 +1368,207 @@ export async function GET(req: Request, ctx: Ctx) {
     });
   }
 }
+
+export async function POST(req: Request, ctx: Ctx) {
+  try {
+    const contentLength = getRequestContentLength(req);
+
+    if (
+      contentLength > 0 &&
+      contentLength > MAX_PPT_EXPORT_REQUEST_BYTES
+    ) {
+      return jsonError(413, "PPT_EXPORT_REQUEST_TOO_LARGE", {
+        max_bytes: MAX_PPT_EXPORT_REQUEST_BYTES,
+      });
+    }
+
+    const body = await req.json().catch(() => null);
+
+    if (!body) {
+      return jsonError(400, "INVALID_JSON_BODY");
+    }
+
+    const actualBytes = getSerializedByteLength(body);
+
+    if (actualBytes > MAX_PPT_EXPORT_REQUEST_BYTES) {
+      return jsonError(413, "PPT_EXPORT_REQUEST_TOO_LARGE", {
+        max_bytes: MAX_PPT_EXPORT_REQUEST_BYTES,
+        request_bytes: actualBytes,
+      });
+    }
+
+    const validation = validatePptExportRequestBody(body);
+
+    if (!validation.ok) {
+      return jsonError(400, "INVALID_PPT_EXPORT_CONFIG", {
+        issues: validation.issues,
+      });
+    }
+
+    const { id: idRaw } = await ctx.params;
+    const reportId = asString(idRaw);
+
+    if (!reportId) {
+      return jsonError(400, "REPORT_ID_REQUIRED");
+    }
+
+    const { user, error: authErr } = await getActor(req);
+
+    if (authErr || !user) {
+      return jsonError(401, "UNAUTHORIZED");
+    }
+
+    const report = await fetchReportDetail(reportId);
+
+    if (!report) {
+      return jsonError(404, "REPORT_NOT_FOUND");
+    }
+
+    const access = await assertReportAccess({
+      userId: user.id,
+      report,
+    });
+
+    if (!access.ok) {
+      return jsonError(access.status, access.message, {
+        role: access.role || null,
+      });
+    }
+
+    const [advertiser, reportType] = await Promise.all([
+      fetchAdvertiserInfo(asString((report as any)?.advertiser_id)),
+      fetchReportTypeInfo(asString((report as any)?.report_type_id)),
+    ]);
+
+    const rowsResult = await fetchRowsForPpt({
+      reportId,
+      currentIngestionId: asString((report as any)?.current_ingestion_id),
+    });
+
+    const rows = rowsResult.rows;
+
+    if (!rows.length) {
+      return jsonError(409, "REPORT_ROWS_EMPTY", {
+        message: "PPT를 생성할 rows를 찾지 못했습니다.",
+        ingestion_id_used: rowsResult.ingestionIdUsed || null,
+        fallback_used: rowsResult.fallbackUsed,
+      });
+    }
+
+    const config = validation.config;
+    const activePages = config.pages.filter((page) => page.enabled);
+    const filterCache = new Map<string, any[]>();
+
+    const getFilteredRows = (filters: PptExportFilterValues) => {
+      const cacheKey = buildPptExportFilterCacheKey(filters);
+      const cached = filterCache.get(cacheKey);
+
+      if (cached) {
+        return cached;
+      }
+
+      const filtered = filterRowsForPptExport(rows, filters);
+      filterCache.set(cacheKey, filtered);
+      return filtered;
+    };
+
+    const globalFilters = resolvePptExportFilters({
+      globalFilters: config.globalFilters,
+      pageFilters: null,
+    });
+
+    const globalRows = getFilteredRows(globalFilters);
+
+    const pageInputs: Array<{ page: PptExportPage; rows: any[] }> =
+      activePages.map((page) => {
+        const resolvedFilters = resolvePptExportFilters({
+          globalFilters: config.globalFilters,
+          pageFilters: page.filters,
+        });
+
+        return {
+          page,
+          rows: getFilteredRows(resolvedFilters),
+        };
+      });
+
+    const advertiserName = pickAdvertiserName({
+      report,
+      advertiser,
+    });
+
+    const reportTypeName = pickReportTypeName({
+      report,
+      reportType,
+    });
+
+    const reportTypeKey = pickReportTypeKey({
+      report,
+      reportType,
+    });
+
+    const reportTitle = pickReportTitle({
+      report,
+      advertiserName,
+      reportTypeName,
+    });
+
+    const deck = buildPptExportReportData({
+      pages: pageInputs,
+      allRows: globalRows,
+      advertiserName,
+      reportTypeName,
+      reportTypeKey,
+      reportTitle,
+    });
+
+    const insights = buildPptInsights({
+      deck,
+    });
+
+    const fileName = buildDownloadFileName({
+      advertiserName,
+      reportTypeName,
+      reportId,
+    });
+
+    const buffer = await writePptxBufferFromReportDeck({
+      deck,
+      insights,
+      fileName,
+    });
+
+    const uniqueFilteredRows = new Set<any>();
+    for (const item of pageInputs) {
+      for (const row of item.rows) {
+        uniqueFilteredRows.add(row);
+      }
+    }
+
+    console.log("[ppt:builder] export generated", {
+      reportId,
+      rawRows: rows.length,
+      globalRows: globalRows.length,
+      activePages: activePages.length,
+      filterCacheEntries: filterCache.size,
+      uniqueFilteredRows: uniqueFilteredRows.size,
+      ingestionIdUsed: rowsResult.ingestionIdUsed || null,
+      fallbackUsed: rowsResult.fallbackUsed,
+    });
+
+    return buildPptResponse({
+      buffer,
+      fileName,
+      reportId,
+      rowsCount: rows.length,
+      pptRowsCount: uniqueFilteredRows.size,
+      ingestionIdUsed: rowsResult.ingestionIdUsed,
+      fallbackUsed: rowsResult.fallbackUsed,
+      slidesCount: deck.slides.length + 2,
+      exportMode: "builder",
+    });
+  } catch (e: any) {
+    return handlePptRouteError(e);
+  }
+}
+

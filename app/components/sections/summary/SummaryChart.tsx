@@ -31,22 +31,6 @@ const EMPTY_INSIGHT: SummaryChartInsight = {
 
 const EMPTY_DATA: any[] = [];
 
-const TRAFFIC_TITLE = "📈 주차별 노출 · 클릭 · CTR";
-const DB_ACQUISITION_TITLE = "📈 주차별 비용 · 전환 · CPA";
-const COMMERCE_TITLE = "📈 주차별 비용 · 전환매출 · ROAS";
-
-function getChartSubtitle(reportType: ReportType) {
-  if (reportType === "traffic") {
-    return "최근 주차별 유입 중심 핵심 성과 흐름을 시각적으로 살펴봅니다";
-  }
-
-  if (reportType === "db_acquisition") {
-    return "최근 주차별 DB 확보·전환 효율 흐름을 시각적으로 살펴봅니다";
-  }
-
-  return "최근 주차별 핵심 성과 흐름을 시각적으로 살펴봅니다";
-}
-
 function buildTrafficChartModel(safeData: any[]): {
   insight: SummaryChartInsight;
   chartData: SummaryChartViewPoint[];
@@ -78,10 +62,7 @@ function buildTrafficChartModel(safeData: any[]): {
       roas: ctr,
     };
 
-    if (
-      clicks >
-      toSafeNumber(maxClicksRow?.clicks ?? maxClicksRow?.click)
-    ) {
+    if (clicks > toSafeNumber(maxClicksRow?.clicks ?? maxClicksRow?.click)) {
       maxClicksRow = item;
     }
 
@@ -245,30 +226,23 @@ function buildChartModel(
   return buildCommerceChartModel(safeData);
 }
 
-function getChartTitle(reportType: ReportType) {
-  if (reportType === "traffic") return TRAFFIC_TITLE;
-  if (reportType === "db_acquisition") return DB_ACQUISITION_TITLE;
-  return COMMERCE_TITLE;
-}
-
 function SummaryChart({ reportType = "commerce", data }: Props) {
-  const safeData = useMemo(() => (Array.isArray(data) ? data : EMPTY_DATA), [data]);
+  const safeData = useMemo(
+    () => (Array.isArray(data) ? data : EMPTY_DATA),
+    [data]
+  );
 
   const { insight, chartData } = useMemo(() => {
     return buildChartModel(safeData, reportType);
   }, [safeData, reportType]);
 
-  const title = useMemo(() => getChartTitle(reportType), [reportType]);
-  const subtitle = useMemo(() => getChartSubtitle(reportType), [reportType]);
-
   return (
     <SummaryChartView
-      title={title}
-      subtitle={subtitle}
       data={chartData}
       density="report"
       insight={insight}
       reportType={reportType}
+      hideHeader
     />
   );
 }

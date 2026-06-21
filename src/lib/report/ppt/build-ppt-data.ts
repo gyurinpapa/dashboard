@@ -1,3 +1,11 @@
+import type {
+  PptExportPage,
+  PptExportPageOptions,
+  PptExportPageType,
+  PptExportSortDirection,
+  PptExportSortMetric,
+} from "./export-config";
+
 // src/lib/report/ppt/build-ppt-data.ts
 
 export type PptReportType = "commerce" | "traffic" | "db_acquisition";
@@ -111,6 +119,8 @@ export type PptSlide = {
   keyMessage?: string;
   analysisInputs: string[];
   insightInputs: string[];
+  includeInsight?: boolean;
+  emptyStateMessage?: string;
 };
 
 export type PptReportDeck = {
@@ -127,6 +137,20 @@ export type PptReportDeck = {
 
 export type BuildPptReportDataParams = {
   rows: any[];
+  advertiserName?: string | null;
+  reportTypeName?: string | null;
+  reportTypeKey?: string | null;
+  reportTitle?: string | null;
+};
+
+export type BuildPptExportPageInput = {
+  page: PptExportPage;
+  rows: any[];
+};
+
+export type BuildPptExportReportDataParams = {
+  pages: BuildPptExportPageInput[];
+  allRows?: any[];
   advertiserName?: string | null;
   reportTypeName?: string | null;
   reportTypeKey?: string | null;
@@ -402,26 +426,137 @@ function uniqueNonEmpty(values: string[]) {
   return out;
 }
 
-function cleanActionText(value: string) {
+function normalizeOperationText(value: string) {
   let text = asStr(value).replace(/\s+/g, " ").trim();
   if (!text) return "";
 
   text = text
-    .replace(/합니다\.?$/g, "검토.")
-    .replace(/필요합니다\.?$/g, "필요.")
-    .replace(/점검합니다\.?$/g, "점검.")
-    .replace(/유지합니다\.?$/g, "유지.")
-    .replace(/강화합니다\.?$/g, "강화.")
-    .replace(/확대합니다\.?$/g, "확대 검토.")
-    .replace(/축소합니다\.?$/g, "축소 검토.")
-    .replace(/운영합니다\.?$/g, "운영 검토.")
-    .replace(/개선합니다\.?$/g, "개선 검토.");
+    .replace(/해야 하는 구간입니다\.?/g, "필요 구간.")
+    .replace(/해야 합니다\.?/g, ".")
+    .replace(/해야 해\.?/g, ".")
+    .replace(/해야 함\.?/g, ".")
+    .replace(/필요합니다\.?/g, "필요.")
+    .replace(/권장합니다\.?/g, "권장.")
+    .replace(/유효합니다\.?/g, "유효.")
+    .replace(/가능합니다\.?/g, "가능.")
+    .replace(/나타날 수 있으므로/g, "차이 발생.")
+    .replace(/집계됩니다\.?/g, "집계.")
+    .replace(/확인합니다\.?/g, "확인.")
+    .replace(/점검합니다\.?/g, "점검.")
+    .replace(/유지합니다\.?/g, "유지.")
+    .replace(/강화합니다\.?/g, "강화.")
+    .replace(/확대합니다\.?/g, "확대.")
+    .replace(/축소합니다\.?/g, "축소.")
+    .replace(/운영합니다\.?/g, "운영.")
+    .replace(/개선합니다\.?/g, "개선.")
+    .replace(/관리합니다\.?/g, "관리.")
+    .replace(/분리합니다\.?/g, "분리.")
+    .replace(/정리합니다\.?/g, "정리.")
+    .replace(/재배분합니다\.?/g, "재배분.")
+    .replace(/재활용합니다\.?/g, "재활용.")
+    .replace(/조정합니다\.?/g, "조정.")
+    .replace(/설계합니다\.?/g, "설계.")
+    .replace(/실행합니다\.?/g, "실행.")
+    .replace(/반영합니다\.?/g, "반영.")
+    .replace(/활용합니다\.?/g, "활용.")
+    .replace(/제시합니다\.?/g, "제시.")
+    .replace(/좌우합니다\.?/g, "좌우.")
+    .replace(/봅니다\.?/g, "검토.")
+    .replace(/보입니다\.?/g, "확인.")
+    .replace(/입니다\.?/g, ".")
+    .replace(/합니다\.?/g, ".")
+    .replace(/\s*\.\s*\.\s*/g, ". ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  text = text.replace(/([.!?])\s+([.!?])/g, "$1").trim();
 
   if (!/[.!?]$/.test(text)) {
     text = `${text}.`;
   }
 
   return text;
+}
+
+function cleanActionText(value: string) {
+  return normalizeOperationText(value);
+}
+
+function normalizeTextList(values: string[]) {
+  return (values ?? []).map(normalizeOperationText).filter(Boolean);
+}
+
+function normalizeSignalTone(signal: PptSignal): PptSignal {
+  return {
+    ...signal,
+    title: normalizeOperationText(signal.title),
+    body: normalizeOperationText(signal.body),
+  };
+}
+
+function normalizeSourceSummaryTone(item: PptSourceSummary): PptSourceSummary {
+  return {
+    ...item,
+    headline: normalizeOperationText(item.headline),
+    oneLineSummary: normalizeOperationText(item.oneLineSummary),
+    nextDirection: normalizeOperationText(item.nextDirection),
+    nextActions: normalizeTextList(item.nextActions),
+    coreInsightTitle: normalizeOperationText(item.coreInsightTitle),
+    coreInsightBody: normalizeTextList(item.coreInsightBody),
+    signals: (item.signals ?? []).map(normalizeSignalTone),
+    oneLineInsight: normalizeOperationText(item.oneLineInsight),
+  };
+}
+
+function normalizeReviewCardTone(card: PptReviewCard): PptReviewCard {
+  return {
+    ...card,
+    action: card.action ? normalizeOperationText(card.action) : card.action,
+  };
+}
+
+function normalizeSlideTone(slide: PptSlide): PptSlide {
+  return {
+    ...slide,
+    subtitle: slide.subtitle
+      ? normalizeOperationText(slide.subtitle)
+      : slide.subtitle,
+    keyMessage: slide.keyMessage
+      ? normalizeOperationText(slide.keyMessage)
+      : slide.keyMessage,
+    oneLineInsight: slide.oneLineInsight
+      ? normalizeOperationText(slide.oneLineInsight)
+      : slide.oneLineInsight,
+    sourceSummary: slide.sourceSummary
+      ? normalizeSourceSummaryTone(slide.sourceSummary)
+      : slide.sourceSummary,
+    sourceSummaries: slide.sourceSummaries
+      ? slide.sourceSummaries.map(normalizeSourceSummaryTone)
+      : slide.sourceSummaries,
+    signals: slide.signals
+      ? slide.signals.map(normalizeSignalTone)
+      : slide.signals,
+    reviewCards: slide.reviewCards
+      ? slide.reviewCards.map(normalizeReviewCardTone)
+      : slide.reviewCards,
+    actionItems: slide.actionItems
+      ? slide.actionItems.map((item) => ({
+          ...item,
+          current: normalizeOperationText(item.current),
+          next: normalizeOperationText(item.next),
+        }))
+      : slide.actionItems,
+    priorityItems: slide.priorityItems
+      ? slide.priorityItems.map((item) => ({
+          ...item,
+          title: normalizeOperationText(item.title),
+          actions: normalizeTextList(item.actions),
+          goal: normalizeOperationText(item.goal),
+        }))
+      : slide.priorityItems,
+    analysisInputs: normalizeTextList(slide.analysisInputs),
+    insightInputs: normalizeTextList(slide.insightInputs),
+  };
 }
 
 function hasEnoughSignal(group: GroupedMetricRows | undefined | null) {
@@ -439,14 +574,17 @@ function rankHighGroup(
   groups: GroupedMetricRows[],
   reportType: PptReportType,
 ): GroupedMetricRows | undefined {
-  const usable = groups.filter((g) => g.key !== "미분류").filter(hasEnoughSignal);
+  const usable = groups
+    .filter((g) => g.key !== "미분류")
+    .filter(hasEnoughSignal);
 
   if (!usable.length) return undefined;
 
   if (reportType === "traffic") {
     return topBy(
       usable,
-      (g) => g.summary.clicks * 1000000 + g.summary.ctr * 100000 + g.summary.cost,
+      (g) =>
+        g.summary.clicks * 1000000 + g.summary.ctr * 100000 + g.summary.cost,
       1,
     )[0];
   }
@@ -649,7 +787,11 @@ function buildSourceNextActions(args: {
     actions.push(`${lowGroup.key} 저효율 그룹 입찰·예산 축소 검토.`);
   }
 
-  if (lowDevice && lowDevice.key !== topDevice?.key && lowDevice.key !== "미분류") {
+  if (
+    lowDevice &&
+    lowDevice.key !== topDevice?.key &&
+    lowDevice.key !== "미분류"
+  ) {
     actions.push(`${lowDevice.key} 기기 저효율 구간 선별 축소.`);
   }
 
@@ -752,7 +894,10 @@ function summarize(rows: any[]): MetricSummary {
   };
 }
 
-function groupRows(rows: any[], keyFn: (row: any) => string): GroupedMetricRows[] {
+function groupRows(
+  rows: any[],
+  keyFn: (row: any) => string,
+): GroupedMetricRows[] {
   const map = new Map<string, any[]>();
 
   for (const row of rows ?? []) {
@@ -775,6 +920,53 @@ function topBy<T>(items: T[], pick: (item: T) => number, limit: number) {
 
 function bottomBy<T>(items: T[], pick: (item: T) => number, limit: number) {
   return [...items].sort((a, b) => pick(a) - pick(b)).slice(0, limit);
+}
+
+function getSummarySortValue(
+  summary: MetricSummary,
+  sortBy?: PptExportSortMetric | string,
+) {
+  if (!sortBy) return 0;
+
+  const value = summary[sortBy as keyof MetricSummary];
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function sortGroupedMetricRows(args: {
+  groups: GroupedMetricRows[];
+  sortBy?: PptExportSortMetric | string;
+  sortDirection?: PptExportSortDirection;
+  fallbackPick: (item: GroupedMetricRows) => number;
+  limit: number;
+}) {
+  const { groups, sortBy, sortDirection = "desc", fallbackPick, limit } = args;
+
+  const pick = sortBy
+    ? (item: GroupedMetricRows) => getSummarySortValue(item.summary, sortBy)
+    : fallbackPick;
+
+  const direction = sortDirection === "asc" ? 1 : -1;
+
+  return [...groups]
+    .sort((a, b) => {
+      const primary = (pick(a) - pick(b)) * direction;
+      if (primary !== 0) return primary;
+      return a.key.localeCompare(b.key);
+    })
+    .slice(0, Math.max(1, limit));
+}
+
+function getExportLimit(
+  options: PptExportPageOptions | undefined,
+  fallback: number,
+) {
+  const value = options?.limit;
+
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.max(1, Math.min(100, Math.round(value)));
 }
 
 function resolveReportType(input: {
@@ -822,7 +1014,9 @@ function getRecentMonthGroups(rows: any[], limit = 3) {
   return months.slice(-limit);
 }
 
-function averageSummary(groups: Array<{ summary: MetricSummary }>): MetricSummary {
+function averageSummary(
+  groups: Array<{ summary: MetricSummary }>,
+): MetricSummary {
   if (!groups.length) {
     return summarize([]);
   }
@@ -882,7 +1076,10 @@ function directionWordForLowerBetter(delta: number) {
   return "유지";
 }
 
-function buildTypeKpis(reportType: PptReportType, total: MetricSummary): PptKpi[] {
+function buildTypeKpis(
+  reportType: PptReportType,
+  total: MetricSummary,
+): PptKpi[] {
   if (reportType === "db_acquisition") {
     return [
       {
@@ -957,7 +1154,10 @@ function buildTypeKpis(reportType: PptReportType, total: MetricSummary): PptKpi[
   ];
 }
 
-function buildSourceKpis(reportType: PptReportType, summary: MetricSummary): PptKpi[] {
+function buildSourceKpis(
+  reportType: PptReportType,
+  summary: MetricSummary,
+): PptKpi[] {
   if (reportType === "traffic") {
     return [
       { label: "노출", value: fmtInt(summary.impressions) },
@@ -1014,9 +1214,9 @@ function buildSourceTableRow(args: {
       roas: "",
       cpa: "",
       oneLine:
-      summary.ctr >= 0.02
-        ? "유입 반응 유지 + 단가 관리 필요"
-        : "클릭 품질 점검 + 고단가 구간 정리",
+        summary.ctr >= 0.02
+          ? "유입 반응 유지 + 단가 관리 필요"
+          : "클릭 품질 점검 + 고단가 구간 정리",
     };
   }
 
@@ -1033,9 +1233,9 @@ function buildSourceTableRow(args: {
       roas: "",
       cpa: summary.cpa ? fmtWon(summary.cpa) : "-",
       oneLine:
-      summary.conversions > 0
-        ? "전환 발생 구간 중심 CPA 방어"
-        : "무전환 고비용 구간 우선 정리",
+        summary.conversions > 0
+          ? "전환 발생 구간 중심 CPA 방어"
+          : "무전환 고비용 구간 우선 정리",
     };
   }
 
@@ -1051,11 +1251,11 @@ function buildSourceTableRow(args: {
     roas: fmtRoas(summary.roas),
     cpa: summary.cpa ? fmtWon(summary.cpa) : "-",
     oneLine:
-    summary.roas >= 5
-      ? "매출 기여 우수 + 확장 후보"
-      : summary.roas >= 2
-        ? "매출 볼륨 유지 + 효율 관리 필요"
-        : "저효율 비용 구간 우선 정리",
+      summary.roas >= 5
+        ? "매출 기여 우수 + 확장 후보"
+        : summary.roas >= 2
+          ? "매출 볼륨 유지 + 효율 관리 필요"
+          : "저효율 비용 구간 우선 정리",
   };
 }
 
@@ -1100,7 +1300,10 @@ function buildSourceTableColumns(reportType: PptReportType): PptTableColumn[] {
   ];
 }
 
-function buildSourceHeadline(reportType: PptReportType, summary: MetricSummary) {
+function buildSourceHeadline(
+  reportType: PptReportType,
+  summary: MetricSummary,
+) {
   if (reportType === "traffic") {
     if (summary.ctr >= 0.02 && summary.cpc > 0) {
       return "유입 반응 유지 + CPC 관리 필요";
@@ -1140,7 +1343,10 @@ function buildSourceHeadline(reportType: PptReportType, summary: MetricSummary) 
   return "매출 기여 구간 선별 운영 필요";
 }
 
-function buildSourceOneLineSummary(reportType: PptReportType, summary: MetricSummary) {
+function buildSourceOneLineSummary(
+  reportType: PptReportType,
+  summary: MetricSummary,
+) {
   if (reportType === "traffic") {
     if (summary.ctr >= 0.02) {
       return "클릭 반응이 확인된 구간을 중심으로 유입 품질을 유지합니다.";
@@ -1168,7 +1374,10 @@ function buildSourceOneLineSummary(reportType: PptReportType, summary: MetricSum
   return "비용 대비 매출 기여가 낮은 구간을 우선 정리합니다.";
 }
 
-function buildSourceNextDirection(reportType: PptReportType, summary: MetricSummary) {
+function buildSourceNextDirection(
+  reportType: PptReportType,
+  summary: MetricSummary,
+) {
   if (reportType === "traffic") {
     if (summary.ctr >= 0.02 && summary.cpc > 0) {
       return "반응이 확인된 소재·캠페인을 유지하고 CPC 상승 구간을 선별 관리.";
@@ -1242,7 +1451,8 @@ function buildSourceSignals(args: {
     const title = asStr(signal.title);
     const body = asStr(signal.body);
     if (!title || !body) return;
-    if (signals.some((item) => item.title === title || item.body === body)) return;
+    if (signals.some((item) => item.title === title || item.body === body))
+      return;
 
     signals.push({
       label: `SIGNAL ${String(signals.length + 1).padStart(2, "0")}`,
@@ -1553,22 +1763,34 @@ function buildSourceSummaries(args: {
   rows: any[];
   total: MetricSummary;
   reportType: PptReportType;
+  options?: PptExportPageOptions;
 }) {
-  const { rows, total, reportType } = args;
+  const { rows, total, reportType, options } = args;
 
   const groups = groupRows(rows, pickSource)
     .filter((g) => g.key !== "미분류")
-    .filter((g) => g.summary.cost > 0 || g.summary.clicks > 0 || g.summary.conversions > 0);
+    .filter(
+      (g) =>
+        g.summary.cost > 0 || g.summary.clicks > 0 || g.summary.conversions > 0,
+    );
 
-  const selected = topBy(
+  const selected = sortGroupedMetricRows({
     groups,
-    (g) => {
+    sortBy: options?.sortBy,
+    sortDirection: options?.sortDirection,
+    fallbackPick: (g) => {
       if (reportType === "traffic") return g.summary.clicks;
-      if (reportType === "db_acquisition") return g.summary.conversions * 100000000 + g.summary.cost;
-      return g.summary.revenue * 10 + g.summary.conversions * 1000000 + g.summary.cost;
+      if (reportType === "db_acquisition") {
+        return g.summary.conversions * 100000000 + g.summary.cost;
+      }
+      return (
+        g.summary.revenue * 10 +
+        g.summary.conversions * 1000000 +
+        g.summary.cost
+      );
     },
-    5,
-  );
+    limit: getExportLimit(options, 5),
+  });
 
   return selected.map((g): PptSourceSummary => {
     const coreInsight = buildSourceCoreInsight({
@@ -1620,7 +1842,9 @@ function buildExecutiveKeyMessage(args: {
   latestSummary: MetricSummary;
 }) {
   const { reportType, latestMonth, latestSummary } = args;
-  const month = latestMonth ? `${Number(latestMonth.slice(5, 7))}월` : "최근 월";
+  const month = latestMonth
+    ? `${Number(latestMonth.slice(5, 7))}월`
+    : "최근 월";
 
   if (reportType === "traffic") {
     const trafficQuality =
@@ -1682,7 +1906,10 @@ function buildExecutiveInsightLines(args: {
   }
 
   if (reportType === "traffic") {
-    const clickDelta = compareRate(latestSummary.clicks, previousAverage.clicks);
+    const clickDelta = compareRate(
+      latestSummary.clicks,
+      previousAverage.clicks,
+    );
     const cpcDelta = compareRate(latestSummary.cpc, previousAverage.cpc);
     const clickTrend = trendWord(clickDelta);
     const cpcTrend = directionWordForLowerBetter(cpcDelta);
@@ -1699,7 +1926,10 @@ function buildExecutiveInsightLines(args: {
   }
 
   const roasDelta = compareRate(latestSummary.roas, previousAverage.roas);
-  const revenueDelta = compareRate(latestSummary.revenue, previousAverage.revenue);
+  const revenueDelta = compareRate(
+    latestSummary.revenue,
+    previousAverage.revenue,
+  );
   const roasTrend = trendWord(roasDelta);
   const revenueTrend = trendWord(revenueDelta);
 
@@ -1825,10 +2055,10 @@ function buildExecutiveSummarySlide(args: {
     table: {
       title: "매체별 한 줄 요약",
       columns: [
-      { key: "source", label: "매체" },
-      { key: "headline", label: "핵심 운영 인사이트" },
-      { key: "next", label: "다음 운영 방향" },
-    ],
+        { key: "source", label: "매체" },
+        { key: "headline", label: "핵심 운영 인사이트" },
+        { key: "next", label: "다음 운영 방향" },
+      ],
       rows: sourceSummaries.map((item) => ({
         source: item.displayName,
         headline: item.headline,
@@ -1867,7 +2097,8 @@ function buildSourceOverviewSlide(args: {
     type: "source-overview",
     eyebrow: "SOURCE OVERVIEW",
     title: "매체별 성과 요약",
-    subtitle: "매체별 역할, 운영 판단, 다음 정리 방향을 리뷰형 카드로 정리합니다.",
+    subtitle:
+      "매체별 역할, 운영 판단, 다음 정리 방향을 리뷰형 카드로 정리합니다.",
     sourceSummaries,
     table: {
       title: "매체별 성과 요약",
@@ -1885,7 +2116,9 @@ function buildSourceOverviewSlide(args: {
   };
 }
 
-function buildSourceDetailSlides(sourceSummaries: PptSourceSummary[]): PptSlide[] {
+function buildSourceDetailSlides(
+  sourceSummaries: PptSourceSummary[],
+): PptSlide[] {
   return sourceSummaries.map((item, index): PptSlide => {
     return {
       key: `source-detail-${toSlug(item.displayName)}-${index + 1}`,
@@ -1921,19 +2154,27 @@ function buildSourceDetailSlides(sourceSummaries: PptSourceSummary[]): PptSlide[
   });
 }
 
-function buildCampaignReviewSlide(rows: any[], reportType: PptReportType): PptSlide | null {
-  const groups = groupRows(rows, pickCampaign).filter((g) => g.key !== "미분류");
+function buildCampaignReviewSlide(
+  rows: any[],
+  reportType: PptReportType,
+  options?: PptExportPageOptions,
+): PptSlide | null {
+  const groups = groupRows(rows, pickCampaign).filter(
+    (g) => g.key !== "미분류",
+  );
   if (!groups.length) return null;
 
-  const selected = topBy(
+  const selected = sortGroupedMetricRows({
     groups,
-    (g) => {
+    sortBy: options?.sortBy,
+    sortDirection: options?.sortDirection,
+    fallbackPick: (g) => {
       if (reportType === "traffic") return g.summary.clicks;
       if (reportType === "db_acquisition") return g.summary.conversions;
       return g.summary.revenue;
     },
-    8,
-  );
+    limit: getExportLimit(options, 8),
+  });
 
   return {
     key: "campaign-review",
@@ -2010,19 +2251,25 @@ function buildCampaignReviewSlide(rows: any[], reportType: PptReportType): PptSl
   };
 }
 
-function buildKeywordReviewSlide(rows: any[], reportType: PptReportType): PptSlide | null {
+function buildKeywordReviewSlide(
+  rows: any[],
+  reportType: PptReportType,
+  options?: PptExportPageOptions,
+): PptSlide | null {
   const groups = groupRows(rows, pickKeyword).filter((g) => g.key !== "미분류");
   if (!groups.length) return null;
 
-  const selected = topBy(
+  const selected = sortGroupedMetricRows({
     groups,
-    (g) => {
+    sortBy: options?.sortBy,
+    sortDirection: options?.sortDirection,
+    fallbackPick: (g) => {
       if (reportType === "traffic") return g.summary.clicks;
       if (reportType === "db_acquisition") return g.summary.conversions;
       return g.summary.conversions * 100000000 + g.summary.revenue;
     },
-    10,
-  );
+    limit: getExportLimit(options, 10),
+  });
 
   return {
     key: "keyword-review",
@@ -2069,38 +2316,43 @@ function buildCreativeCards(args: {
   rows: any[];
   reportType: PptReportType;
   mode: "top" | "low";
+  options?: PptExportPageOptions;
 }) {
-  const { rows, reportType, mode } = args;
+  const { rows, reportType, mode, options } = args;
 
   const groups = groupRows(rows, pickCreative)
     .filter((g) => g.key !== "미분류")
-    .filter((g) => g.summary.cost > 0 || g.summary.clicks > 0 || g.summary.conversions > 0);
+    .filter(
+      (g) =>
+        g.summary.cost > 0 || g.summary.clicks > 0 || g.summary.conversions > 0,
+    );
 
   const filtered =
     mode === "top"
       ? groups.filter((g) => g.summary.conversions > 0 || g.summary.clicks > 0)
       : groups.filter((g) => g.summary.cost > 0);
 
-  const selected =
-    mode === "top"
-      ? topBy(
-          filtered,
-          (g) => {
-            if (reportType === "traffic") return g.summary.clicks;
-            if (reportType === "db_acquisition") return g.summary.conversions;
-            return g.summary.roas * 100000000 + g.summary.revenue;
-          },
-          5,
-        )
-      : bottomBy(
-          filtered,
-          (g) => {
-            if (reportType === "traffic") return g.summary.ctr || 999;
-            if (reportType === "db_acquisition") return g.summary.conversions > 0 ? g.summary.cpa : 999999999;
-            return g.summary.roas || 0;
-          },
-          5,
-        );
+  const fallbackPick = (g: GroupedMetricRows) => {
+    if (mode === "top") {
+      if (reportType === "traffic") return g.summary.clicks;
+      if (reportType === "db_acquisition") return g.summary.conversions;
+      return g.summary.roas * 100000000 + g.summary.revenue;
+    }
+
+    if (reportType === "traffic") return g.summary.ctr || 999;
+    if (reportType === "db_acquisition") {
+      return g.summary.conversions > 0 ? g.summary.cpa : 999999999;
+    }
+    return g.summary.roas || 0;
+  };
+
+  const selected = sortGroupedMetricRows({
+    groups: filtered,
+    sortBy: options?.sortBy,
+    sortDirection: options?.sortDirection ?? (mode === "top" ? "desc" : "asc"),
+    fallbackPick,
+    limit: getExportLimit(options, 5),
+  });
 
   return selected.map((g): PptReviewCard => {
     const mainValue =
@@ -2145,11 +2397,13 @@ function buildCreativeCards(args: {
 function buildCreativeAnalysisSlide(
   rows: any[],
   reportType: PptReportType,
+  options?: PptExportPageOptions,
 ): PptSlide | null {
   const cards = buildCreativeCards({
     rows,
     reportType,
     mode: "top",
+    options,
   });
 
   if (!cards.length) return null;
@@ -2159,7 +2413,8 @@ function buildCreativeAnalysisSlide(
     type: "creative-analysis",
     eyebrow: "CREATIVE ANALYSIS",
     title: "소재 효율 분석 — TOP 소재",
-    subtitle: "성과가 확인된 소재를 기준으로 다음 운영에 활용할 메시지 축을 정리합니다.",
+    subtitle:
+      "성과가 확인된 소재를 기준으로 다음 운영에 활용할 메시지 축을 정리합니다.",
     reviewCards: cards,
     oneLineInsight:
       reportType === "traffic"
@@ -2181,11 +2436,13 @@ function buildCreativeAnalysisSlide(
 function buildCreativeReviewSlide(
   rows: any[],
   reportType: PptReportType,
+  options?: PptExportPageOptions,
 ): PptSlide | null {
   const cards = buildCreativeCards({
     rows,
     reportType,
     mode: "low",
+    options,
   });
 
   if (!cards.length) return null;
@@ -2210,22 +2467,27 @@ function buildCreativeReviewSlide(
   };
 }
 
-function buildActionPlanSlide(sourceSummaries: PptSourceSummary[]): PptSlide {
-  const actionItems = sourceSummaries.map((item, index): PptActionPlanItem => {
-    return {
-      no: String(index + 1).padStart(2, "0"),
-      source: item.displayName,
-      current: item.headline,
-      next: item.nextActions?.[0] || item.nextDirection,
-    };
-  });
+function buildActionPlanSlide(
+  sourceSummaries: PptSourceSummary[],
+  options?: PptExportPageOptions,
+): PptSlide {
+  const actionItems = sourceSummaries
+    .slice(0, getExportLimit(options, sourceSummaries.length || 1))
+    .map((item, index): PptActionPlanItem => {
+      return {
+        no: String(index + 1).padStart(2, "0"),
+        source: item.displayName,
+        current: item.headline,
+        next: item.nextActions?.[0] || item.nextDirection,
+      };
+    });
 
   return {
     key: "action-plan",
     type: "action-plan",
     eyebrow: "ACTION PLAN",
     title: "다음 달 액션 플랜 요약",
-    subtitle: "이번 기간에 확인된 축을 기준으로 다음 운영 방향을 정리합니다.",
+    subtitle: "확인 축 기준 다음 운영 방향 정리.",
     actionItems,
     table: {
       title: "매체별 액션 플랜",
@@ -2269,10 +2531,10 @@ function buildPriorityClosingSlide(args: {
             : "매출 기여 축 확대 + ROAS 방어",
       actions: [
         primary
-      ? `${primary.displayName}: ${
-          primary.nextActions?.[0] || primary.nextDirection
-        }`
-      : "성과가 확인된 매체 중심으로 운영 비중 우선 유지",
+          ? `${primary.displayName}: ${
+              primary.nextActions?.[0] || primary.nextDirection
+            }`
+          : "성과가 확인된 매체 중심으로 운영 비중 우선 유지",
         "핵심 KPI가 흔들리는 구간은 주 단위로 조정",
         "성과가 확인된 메시지·키워드·캠페인 구조를 재활용",
       ],
@@ -2290,12 +2552,12 @@ function buildPriorityClosingSlide(args: {
         : "캠페인/키워드 구조 정교화",
       actions: [
         secondary
-      ? `${secondary.displayName}: ${
-          secondary.nextActions?.[1] ||
-          secondary.nextActions?.[0] ||
-          `${secondary.headline} 기준 운영 구조 점검`
-        }`
-      : "캠페인별 비용 집중과 전환 기여 구조 점검",
+          ? `${secondary.displayName}: ${
+              secondary.nextActions?.[1] ||
+              secondary.nextActions?.[0] ||
+              `${secondary.headline} 기준 운영 구조 점검`
+            }`
+          : "캠페인별 비용 집중과 전환 기여 구조 점검",
         "성과 캠페인은 유지하고 저효율 캠페인은 점진 축소",
         "키워드·그룹 단위로 확장 후보와 제외 후보를 분리",
       ],
@@ -2308,12 +2570,12 @@ function buildPriorityClosingSlide(args: {
         : "소재/신규 테스트 모니터링",
       actions: [
         tertiary
-      ? `${tertiary.displayName}: ${
-          tertiary.nextActions?.[2] ||
-          tertiary.nextActions?.[0] ||
-          tertiary.nextDirection
-        }`
-      : "소재별 클릭 반응과 전환 기여 구조 분리",
+          ? `${tertiary.displayName}: ${
+              tertiary.nextActions?.[2] ||
+              tertiary.nextActions?.[0] ||
+              tertiary.nextDirection
+            }`
+          : "소재별 클릭 반응과 전환 기여 구조 분리",
         "성과 소재의 메시지 구조를 다음 제작 기준으로 활용",
         "신규 테스트는 작은 예산으로 시작해 결과를 확인",
       ],
@@ -2326,7 +2588,7 @@ function buildPriorityClosingSlide(args: {
     type: "priority-closing",
     eyebrow: "PRIORITY & CLOSING",
     title: "Priority & Closing",
-    subtitle: "다음 운영에서 집중할 우선순위를 정리합니다.",
+    subtitle: "다음 운영 우선순위 정리.",
     priorityItems,
     analysisInputs: priorityItems.map(
       (item) => `${item.no}: ${item.title} / 목표: ${item.goal}`,
@@ -2344,12 +2606,12 @@ function buildThankYouSlide(): PptSlide {
     key: "thank-you",
     type: "thank-you",
     eyebrow: "THANK YOU",
-    title: "감사합니다.",
+    title: "Thank you",
     subtitle: "Etrylue Performance",
     analysisInputs: [
-      "이번 보고서는 업로드된 광고 성과 데이터를 기준으로 자동 구성되었습니다.",
-      "다음 운영에서는 확인된 성과 축을 중심으로 개선 방향을 실행합니다.",
-      "실행 결과는 다음 리포트에서 다시 측정하고 우선순위에 반영합니다.",
+      "업로드 성과 데이터 기준 자동 구성.",
+      "확인 성과축 중심 개선 실행.",
+      "실행 결과 측정, 다음 우선순위 반영.",
     ],
     insightInputs: [
       "성과 리뷰는 단순 보고가 아니라 다음 운영을 더 정확하게 만드는 기준입니다.",
@@ -2368,10 +2630,13 @@ function buildReportingPeriodLabel(rows: any[]) {
   if (!dates.length) return "REPORTING PERIOD | 전체 기간";
 
   const latestMonth = dates[dates.length - 1].slice(0, 7);
-  const latestMonthDates = dates.filter((date) => date.slice(0, 7) === latestMonth);
+  const latestMonthDates = dates.filter(
+    (date) => date.slice(0, 7) === latestMonth,
+  );
 
   const start = `${latestMonth}-01`;
-  const end = latestMonthDates[latestMonthDates.length - 1] || dates[dates.length - 1];
+  const end =
+    latestMonthDates[latestMonthDates.length - 1] || dates[dates.length - 1];
 
   return `REPORTING PERIOD | ${start} ─ ${end}`;
 }
@@ -2387,7 +2652,9 @@ function buildDeckTitle(args: {
     .sort((a, b) => a.localeCompare(b));
 
   const latestDate = dates[dates.length - 1] || "";
-  const latestMonthText = latestDate ? `${Number(latestDate.slice(5, 7))}월` : "";
+  const latestMonthText = latestDate
+    ? `${Number(latestDate.slice(5, 7))}월`
+    : "";
 
   if (latestMonthText) {
     return `${latestMonthText} 광고 성과 리뷰`;
@@ -2398,6 +2665,224 @@ function buildDeckTitle(args: {
 
   const advertiserName = asStr(args.advertiserName) || "광고주";
   return `${advertiserName} 광고 성과 리뷰`;
+}
+
+function applyExportSlideOptions(args: {
+  slide: PptSlide;
+  page: PptExportPage;
+}) {
+  const { slide, page } = args;
+  const options = page.options ?? {};
+  const toned = normalizeSlideTone(slide);
+
+  const output: PptSlide = {
+    ...toned,
+    key: page.id,
+    type: page.type,
+    title: asStr(options.title) || toned.title,
+    subtitle:
+      options.subtitle !== undefined ? asStr(options.subtitle) : toned.subtitle,
+    includeInsight: options.includeInsight !== false,
+  };
+
+  if (options.includeChart === false) {
+    output.chart = undefined;
+  }
+
+  if (options.includeTable === false) {
+    output.table = undefined;
+  }
+
+  return output;
+}
+
+function buildEmptyExportSlide(args: { page: PptExportPage }) {
+  const { page } = args;
+  const definitionTitle = asStr(page.options?.title) || "PPT 페이지";
+  const definitionSubtitle = asStr(page.options?.subtitle);
+
+  return {
+    key: page.id,
+    type: page.type,
+    eyebrow: page.type.replace(/-/g, " ").toUpperCase(),
+    title: definitionTitle,
+    subtitle: definitionSubtitle || undefined,
+    emptyStateMessage: "선택한 조건에 해당하는 데이터가 없습니다.",
+    includeInsight: false,
+    analysisInputs: [],
+    insightInputs: [],
+  } satisfies PptSlide;
+}
+
+function buildExportSlide(args: {
+  page: PptExportPage;
+  rows: any[];
+  reportType: PptReportType;
+}) {
+  const { page, rows, reportType } = args;
+  const options = page.options;
+  const safeRows = Array.isArray(rows) ? rows : [];
+
+  if (!safeRows.length && page.type !== "thank-you") {
+    return buildEmptyExportSlide({ page });
+  }
+
+  const total = summarize(safeRows);
+  const latestMonth = getLatestMonthKey(safeRows);
+  const latestRows = latestMonth
+    ? getRowsByMonth(safeRows, latestMonth)
+    : safeRows;
+  const latestSummary = summarize(latestRows);
+
+  const sourceSummaries = buildSourceSummaries({
+    rows: latestRows,
+    total: latestSummary,
+    reportType,
+    options,
+  }).map(normalizeSourceSummaryTone);
+
+  let slide: PptSlide | null = null;
+
+  switch (page.type as PptExportPageType) {
+    case "executive-summary":
+      slide = buildExecutiveSummarySlide({
+        rows: safeRows,
+        total,
+        reportType,
+        sourceSummaries,
+      });
+      break;
+
+    case "source-overview":
+      slide = buildSourceOverviewSlide({
+        sourceSummaries,
+        reportType,
+      });
+      break;
+
+    case "source-detail": {
+      const sourceSlide = buildSourceDetailSlides(sourceSummaries)[0] ?? null;
+      slide = sourceSlide;
+      break;
+    }
+
+    case "campaign-review":
+      slide = buildCampaignReviewSlide(safeRows, reportType, options);
+      break;
+
+    case "keyword-review":
+      slide = buildKeywordReviewSlide(safeRows, reportType, options);
+      break;
+
+    case "creative-analysis":
+      slide = buildCreativeAnalysisSlide(safeRows, reportType, options);
+      break;
+
+    case "creative-review":
+      slide = buildCreativeReviewSlide(safeRows, reportType, options);
+      break;
+
+    case "action-plan":
+      slide = buildActionPlanSlide(sourceSummaries, options);
+      break;
+
+    case "priority-closing":
+      slide = buildPriorityClosingSlide({
+        reportType,
+        sourceSummaries,
+      });
+      break;
+
+    case "thank-you":
+      slide = buildThankYouSlide();
+      break;
+  }
+
+  if (!slide) {
+    return buildEmptyExportSlide({ page });
+  }
+
+  return applyExportSlideOptions({
+    slide,
+    page,
+  });
+}
+
+export function buildPptExportReportData({
+  pages,
+  allRows,
+  advertiserName,
+  reportTypeName,
+  reportTypeKey,
+  reportTitle,
+}: BuildPptExportReportDataParams): PptReportDeck {
+  const activePages = (Array.isArray(pages) ? pages : [])
+    .filter((item) => item?.page?.enabled !== false)
+    .slice(0, 16);
+
+  const baseRows = Array.isArray(allRows)
+    ? allRows
+    : activePages.flatMap((item) =>
+        Array.isArray(item?.rows) ? item.rows : [],
+      );
+
+  const reportType = resolveReportType({
+    reportTypeKey,
+    reportTypeName,
+  });
+
+  const safeAdvertiserName = asStr(advertiserName) || "광고주";
+  const title = buildDeckTitle({
+    advertiserName: safeAdvertiserName,
+    reportTitle,
+    rows: baseRows,
+  });
+
+  const slides = activePages.map(({ page, rows }) =>
+    buildExportSlide({
+      page,
+      rows,
+      reportType,
+    }),
+  );
+
+  const sourceRows =
+    activePages.find((item) => Array.isArray(item.rows) && item.rows.length)
+      ?.rows ?? baseRows;
+
+  const sourceTotal = summarize(sourceRows);
+  const sources = buildSourceSummaries({
+    rows: sourceRows,
+    total: sourceTotal,
+    reportType,
+    options: {
+      limit: 5,
+    },
+  }).map(normalizeSourceSummaryTone);
+
+  const latestMonth = getLatestMonthKey(baseRows);
+  const latestRows = latestMonth
+    ? getRowsByMonth(baseRows, latestMonth)
+    : baseRows;
+  const latestSummary = summarize(latestRows);
+
+  const keyMessage = buildExecutiveKeyMessage({
+    reportType,
+    latestMonth,
+    latestSummary,
+  });
+
+  return {
+    title,
+    advertiserName: safeAdvertiserName,
+    reportTypeName: asStr(reportTypeName) || "성과 보고서",
+    reportType,
+    generatedAt: new Date().toISOString(),
+    reportingPeriodLabel: buildReportingPeriodLabel(baseRows),
+    keyMessage: normalizeOperationText(keyMessage),
+    sources,
+    slides,
+  };
 }
 
 export function buildPptReportData({
@@ -2418,14 +2903,16 @@ export function buildPptReportData({
   });
 
   const latestMonth = getLatestMonthKey(safeRows);
-  const latestRows = latestMonth ? getRowsByMonth(safeRows, latestMonth) : safeRows;
+  const latestRows = latestMonth
+    ? getRowsByMonth(safeRows, latestMonth)
+    : safeRows;
   const latestSummary = summarize(latestRows);
 
   const sourceSummaries = buildSourceSummaries({
     rows: latestRows,
     total: latestSummary,
     reportType,
-  });
+  }).map(normalizeSourceSummaryTone);
 
   const keyMessage = buildExecutiveKeyMessage({
     reportType,
@@ -2457,7 +2944,10 @@ export function buildPptReportData({
     slides.push(keywordReviewSlide);
   }
 
-  const creativeAnalysisSlide = buildCreativeAnalysisSlide(safeRows, reportType);
+  const creativeAnalysisSlide = buildCreativeAnalysisSlide(
+    safeRows,
+    reportType,
+  );
   if (creativeAnalysisSlide) {
     slides.push(creativeAnalysisSlide);
   }
@@ -2476,6 +2966,8 @@ export function buildPptReportData({
   );
   slides.push(buildThankYouSlide());
 
+  const tonedSlides = slides.map(normalizeSlideTone);
+
   return {
     title,
     advertiserName: safeAdvertiserName,
@@ -2483,8 +2975,8 @@ export function buildPptReportData({
     reportType,
     generatedAt: new Date().toISOString(),
     reportingPeriodLabel: buildReportingPeriodLabel(safeRows),
-    keyMessage,
+    keyMessage: normalizeOperationText(keyMessage),
     sources: sourceSummaries,
-    slides,
+    slides: tonedSlides,
   };
 }
