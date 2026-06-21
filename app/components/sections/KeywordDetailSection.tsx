@@ -742,11 +742,11 @@ const KeywordListItem = memo(function KeywordListItem({
       type="button"
       onClick={handleClick}
       className={[
-        "block h-10 w-full rounded-xl border px-3 text-left text-sm font-semibold transition",
+        "block h-10 w-full rounded-[10px] border px-3 text-left text-sm font-semibold",
         "overflow-hidden text-ellipsis whitespace-nowrap",
         active
           ? "border-[#7FA6C4] bg-[#7FA6C4] text-white"
-          : "border-[#CFC2B1]/55 bg-white text-[#27364A] hover:border-[#7FA6C4] hover:bg-[#B7D7E3]/16",
+          : "border-[#CFC2B1]/55 bg-white text-[#27364A] hover:border-[#7FA6C4]/75 hover:bg-[#B7D7E3]/10",
       ].join(" ")}
       title={keyword}
     >
@@ -922,7 +922,7 @@ const KeywordListPanel = memo(function KeywordListPanel({
   );
 
   return (
-    <aside className="min-w-0 rounded-2xl border border-[#CFC2B1]/55 bg-white p-4 lg:sticky lg:top-24 lg:max-h-[calc(100vh-6rem)] lg:overflow-hidden">
+    <aside className="min-w-0 rounded-[20px] border border-[var(--nature-border-blue)] bg-white p-4 shadow-[0_4px_14px_rgba(127,166,196,0.07)] lg:sticky lg:top-24 lg:max-h-[calc(100vh-6rem)] lg:overflow-hidden">
       <div className="flex items-center justify-between gap-3">
         <div className="text-sm font-semibold">키워드 리스트</div>
         <div className="min-w-0 truncate text-xs text-[#7A8794]">
@@ -936,12 +936,12 @@ const KeywordListPanel = memo(function KeywordListPanel({
           value={keywordQuery}
           onChange={handleChange}
           placeholder="키워드 검색"
-          className="h-10 w-full rounded-xl border border-[#CFC2B1]/55 bg-white px-3 text-sm text-[#27364A] outline-none transition placeholder:text-[#9A8F81] focus:border-[#7FA6C4] focus:ring-2 focus:ring-[#B7D7E3]/40"
+          className="h-10 w-full rounded-[10px] border border-[#CFC2B1]/55 bg-white px-3 text-sm text-[#27364A] outline-none placeholder:text-[#9A8F81] focus:border-[#7FA6C4] focus:ring-2 focus:ring-[#B7D7E3]/30"
         />
       </div>
 
       {keywords.length === 0 ? (
-        <div className="mt-3 rounded-xl bg-[#F3E4D2]/35 p-4 text-sm text-[#6F7B86]">
+        <div className="mt-3 rounded-[12px] border border-[#CFC2B1]/45 bg-[#F3E4D2]/22 p-4 text-sm text-[#6F7B86]">
           {hasQuery ? "검색 결과가 없습니다." : "키워드 데이터가 없습니다."}
         </div>
       ) : (
@@ -952,7 +952,7 @@ const KeywordListPanel = memo(function KeywordListPanel({
         />
       )}
 
-      <div className="mt-4 rounded-xl bg-[#F3E4D2]/35 p-3 text-xs text-[#6F7B86]">
+      <div className="mt-4 rounded-[12px] border border-[#CFC2B1]/45 bg-[#F3E4D2]/22 p-3 text-xs text-[#6F7B86]">
         <b>메모</b>
         <div className="mt-1">
           오른쪽은 선택 키워드 기준으로 요약 탭 성과 구성(월별/주별/소스별/일자별)을 재사용합니다.
@@ -987,7 +987,7 @@ const InsightPanel = memo(function InsightPanel({
       : "다음 운영 액션(클릭 · 전환 · ROAS)";
 
   return (
-    <section className="min-w-0 rounded-2xl border border-[#CFC2B1]/55 bg-white p-6">
+    <section className="min-w-0 rounded-[20px] border border-[var(--nature-border-blue)] bg-white p-6 shadow-[0_4px_14px_rgba(127,166,196,0.07)]">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <h3 className="text-base font-semibold">{title}</h3>
@@ -996,25 +996,38 @@ const InsightPanel = memo(function InsightPanel({
           </div>
         </div>
 
-        <div className="shrink-0 text-right">
-          <div className="text-xs text-[#7A8794]">Avg.rank</div>
-          <div className="mt-1 text-lg font-semibold">
+        <div className="shrink-0 rounded-[14px] border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/12 px-3 py-2 text-right">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#7A8794]">
+            Avg.rank
+          </div>
+          <div className="mt-1 text-lg font-semibold text-[#4F7F9E]">
             {avgRank == null ? "-" : avgRank.toFixed(2)}
           </div>
         </div>
       </div>
 
-      <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-[#52606D]">
+      <ul className="mt-4 space-y-2 text-sm text-[#52606D]">
         {bullets.map((b, i) => (
-          <li key={i}>{b}</li>
+          <li
+            key={i}
+            className="flex gap-3 rounded-[14px] border border-[#CFC2B1]/40 bg-[#F3E4D2]/14 px-4 py-3 leading-6"
+          >
+            <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#7FA6C4]" />
+            <span>{b}</span>
+          </li>
         ))}
       </ul>
 
-      <div className="mt-4 rounded-xl bg-[#F3E4D2]/35 p-4">
+      <div className="mt-4 rounded-[16px] border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/10 p-4">
         <div className="text-sm font-semibold text-[#27364A]">{actionTitle}</div>
-        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-[#52606D]">
+        <ul className="mt-3 space-y-2 text-sm text-[#52606D]">
           {actions.map((a, i) => (
-            <li key={i}>{a}</li>
+            <li key={i} className="flex gap-3 leading-6">
+              <span className="mt-2 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[#B7D7E3] bg-white text-[10px] font-semibold text-[#5F87A3]">
+                {i + 1}
+              </span>
+              <span>{a}</span>
+            </li>
           ))}
         </ul>
       </div>

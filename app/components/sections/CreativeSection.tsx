@@ -359,7 +359,7 @@ const SectionHeader = memo(function SectionHeader({
     <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
         <div className="mb-2">
-          <span className="inline-flex items-center rounded-full border border-[#B7D7E3]/70 bg-[#B7D7E3]/22 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-[#5F87A3]">
+          <span className="inline-flex items-center rounded-full border border-[#B7D7E3]/70 bg-[#B7D7E3]/14 px-2.5 py-1 text-[10px] font-semibold tracking-[0.08em] text-[#5F87A3]">
             {badge}
           </span>
         </div>
@@ -385,7 +385,7 @@ const ChartCard = memo(function ChartCard({
   children: ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-[#CFC2B1]/55 bg-white p-5 shadow-[0_8px_22px_rgba(127,166,196,0.10)] transition hover:shadow-[0_12px_28px_rgba(127,166,196,0.14)]">
+    <div className="rounded-[20px] border border-[var(--nature-border-blue)] bg-white p-5 shadow-[0_4px_14px_rgba(127,166,196,0.07)]">
       <SectionHeader badge={badge} title={title} description={description} />
       {children}
     </div>
@@ -427,7 +427,7 @@ const Th = memo(function Th({
       className={[
         "select-none whitespace-nowrap px-4 py-3.5 text-[11px] font-semibold uppercase tracking-[0.08em]",
         align === "left" ? "text-left" : "text-right",
-        "cursor-pointer border-b border-[#CFC2B1]/55 text-[#7A8794] transition hover:bg-[#F3E4D2]/35 hover:text-[#5F87A3]",
+        "cursor-pointer border-b border-[#CFC2B1]/55 text-[#7A8794] hover:bg-[#F3E4D2]/24 hover:text-[#5F87A3]",
       ].join(" ")}
       onClick={() => onClickHeader(k)}
       title={`정렬: ${SORT_LABEL[k]}`}
@@ -465,7 +465,7 @@ const CreativeTableRow = memo(function CreativeTableRow({
 
   return (
     <tr
-      className="cursor-pointer border-t border-[#CFC2B1]/45 transition hover:bg-[#B7D7E3]/16"
+      className="cursor-pointer border-t border-[#CFC2B1]/45 even:bg-[#F3E4D2]/10 hover:bg-[#B7D7E3]/12"
       onClick={() => onSelectCreative(row)}
     >
       <td className="whitespace-nowrap px-4 py-3.5 text-left font-medium text-[#27364A]">
@@ -474,7 +474,7 @@ const CreativeTableRow = memo(function CreativeTableRow({
           onMouseEnter={(e) => onPreviewEnter(row, e.currentTarget as HTMLElement)}
           onMouseLeave={onPreviewLeave}
         >
-          <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-lg border border-[#CFC2B1]/45 bg-[#F3E4D2]/30 px-2 text-[11px] font-semibold text-[#7A8794]">
+          <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-[8px] border border-[#CFC2B1]/45 bg-[#F3E4D2]/20 px-2 text-[11px] font-semibold text-[#7A8794]">
             AD
           </span>
 
@@ -486,11 +486,11 @@ const CreativeTableRow = memo(function CreativeTableRow({
           </span>
 
           {!!row.imagePath ? (
-            <span className="shrink-0 rounded-full bg-[#B7D7E3]/22 px-2 py-0.5 text-[10px] font-semibold text-[#5F87A3]">
+            <span className="shrink-0 rounded-full bg-[#B7D7E3]/14 px-2 py-0.5 text-[10px] font-semibold text-[#5F87A3]">
               Preview
             </span>
           ) : (
-            <span className="shrink-0 rounded-full bg-[#F3E4D2]/35 px-2 py-0.5 text-[10px] font-semibold text-[#7A8794]">
+            <span className="shrink-0 rounded-full bg-[#F3E4D2]/22 px-2 py-0.5 text-[10px] font-semibold text-[#7A8794]">
               No image
             </span>
           )}
@@ -596,7 +596,7 @@ const CreativePreviewOverlay = memo(function CreativePreviewOverlay({
       onMouseEnter={keepPreviewOpen}
       onMouseLeave={closePreview}
     >
-      <div className="overflow-hidden rounded-2xl border border-[#CFC2B1]/55 bg-white shadow-[0_14px_32px_rgba(127,166,196,0.14)]">
+      <div className="overflow-hidden rounded-[18px] border border-[var(--nature-border-blue)] bg-white shadow-[0_6px_18px_rgba(127,166,196,0.10)]">
         <div className="border-b border-[#CFC2B1]/40 px-4 py-3">
           <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#9A8F81]">
             Creative Preview
@@ -610,7 +610,7 @@ const CreativePreviewOverlay = memo(function CreativePreviewOverlay({
         </div>
 
         <div className="bg-[#F3E4D2]/25 p-3">
-          <div className="overflow-hidden rounded-xl border border-[#CFC2B1]/45 bg-white">
+          <div className="overflow-hidden rounded-[12px] border border-[#CFC2B1]/45 bg-white">
             {hasPreviewImage ? (
               <img
                 src={hoveredCreative.imagePath}
@@ -642,8 +642,8 @@ const CreativePreviewOverlay = memo(function CreativePreviewOverlay({
             className={[
               "rounded-full px-2 py-0.5 font-semibold",
               hasPreviewImage
-                ? "bg-[#B7D7E3]/22 text-[#5F87A3]"
-                : "bg-[#F3E4D2]/35 text-[#7A8794]",
+                ? "bg-[#B7D7E3]/14 text-[#5F87A3]"
+                : "bg-[#F3E4D2]/22 text-[#7A8794]",
             ].join(" ")}
           >
             {hasPreviewImage ? "IMAGE" : "EMPTY"}
@@ -1073,7 +1073,7 @@ export default function CreativeSection({
                   layout="vertical"
                   margin={{ top: 6, right: 70, left: 0, bottom: 6 }}
                 >
-                  <CartesianGrid strokeDasharray="3 3" />
+                  <CartesianGrid strokeDasharray="2 5" strokeOpacity={0.62} />
                   <XAxis
                     type="number"
                     tick={{ fontSize: 11 }}
@@ -1094,6 +1094,7 @@ export default function CreativeSection({
                     dataKey="impressions"
                     fill="#B7D7E3"
                     isAnimationActive={false}
+                    radius={[0, 6, 6, 0]}
                     onClick={(_: any, idx: number) => {
                       const item = topImpressions?.[idx];
                       if (item) setSelectedCreative(item);
@@ -1128,7 +1129,7 @@ export default function CreativeSection({
                   layout="vertical"
                   margin={{ top: 6, right: 70, left: 0, bottom: 6 }}
                 >
-                  <CartesianGrid strokeDasharray="3 3" />
+                  <CartesianGrid strokeDasharray="2 5" strokeOpacity={0.62} />
                   <XAxis
                     type="number"
                     tick={{ fontSize: 11 }}
@@ -1149,6 +1150,7 @@ export default function CreativeSection({
                     dataKey="clicks"
                     fill="#7FA6C4"
                     isAnimationActive={false}
+                    radius={[0, 6, 6, 0]}
                     onClick={(_: any, idx: number) => {
                       const item = topClicks?.[idx];
                       if (item) setSelectedCreative(item);
@@ -1183,7 +1185,7 @@ export default function CreativeSection({
                   layout="vertical"
                   margin={{ top: 6, right: 82, left: 0, bottom: 6 }}
                 >
-                  <CartesianGrid strokeDasharray="3 3" />
+                  <CartesianGrid strokeDasharray="2 5" strokeOpacity={0.62} />
                   <XAxis
                     type="number"
                     tick={{ fontSize: 11 }}
@@ -1204,6 +1206,7 @@ export default function CreativeSection({
                     dataKey="cost"
                     fill="#CFC2B1"
                     isAnimationActive={false}
+                    radius={[0, 6, 6, 0]}
                     onClick={(_: any, idx: number) => {
                       const item = topCost?.[idx];
                       if (item) setSelectedCreative(item);
@@ -1244,7 +1247,7 @@ export default function CreativeSection({
                   layout="vertical"
                   margin={{ top: 6, right: 70, left: 0, bottom: 6 }}
                 >
-                  <CartesianGrid strokeDasharray="3 3" />
+                  <CartesianGrid strokeDasharray="2 5" strokeOpacity={0.62} />
                   <XAxis
                     type="number"
                     tick={{ fontSize: 11 }}
@@ -1265,6 +1268,7 @@ export default function CreativeSection({
                     dataKey="clicks"
                     fill="#7FA6C4"
                     isAnimationActive={false}
+                    radius={[0, 6, 6, 0]}
                     onClick={(_: any, idx: number) => {
                       const item = topClicks?.[idx];
                       if (item) setSelectedCreative(item);
@@ -1299,7 +1303,7 @@ export default function CreativeSection({
                   layout="vertical"
                   margin={{ top: 6, right: 70, left: 0, bottom: 6 }}
                 >
-                  <CartesianGrid strokeDasharray="3 3" />
+                  <CartesianGrid strokeDasharray="2 5" strokeOpacity={0.62} />
                   <XAxis
                     type="number"
                     tick={{ fontSize: 11 }}
@@ -1320,6 +1324,7 @@ export default function CreativeSection({
                     dataKey="conversions"
                     fill="#8FB9B0"
                     isAnimationActive={false}
+                    radius={[0, 6, 6, 0]}
                     onClick={(_: any, idx: number) => {
                       const item = topConv?.[idx];
                       if (item) setSelectedCreative(item);
@@ -1354,7 +1359,7 @@ export default function CreativeSection({
                   layout="vertical"
                   margin={{ top: 6, right: 82, left: 0, bottom: 6 }}
                 >
-                  <CartesianGrid strokeDasharray="3 3" />
+                  <CartesianGrid strokeDasharray="2 5" strokeOpacity={0.62} />
                   <XAxis
                     type="number"
                     tick={{ fontSize: 11 }}
@@ -1375,6 +1380,7 @@ export default function CreativeSection({
                     dataKey="cpa"
                     fill="#D8B77C"
                     isAnimationActive={false}
+                    radius={[0, 6, 6, 0]}
                     onClick={(_: any, idx: number) => {
                       const item = topCpa?.[idx];
                       if (item) setSelectedCreative(item);
@@ -1414,7 +1420,7 @@ export default function CreativeSection({
                 layout="vertical"
                 margin={{ top: 6, right: 70, left: 0, bottom: 6 }}
               >
-                <CartesianGrid strokeDasharray="3 3" />
+                <CartesianGrid strokeDasharray="2 5" strokeOpacity={0.62} />
                 <XAxis
                   type="number"
                   tick={{ fontSize: 11 }}
@@ -1435,6 +1441,7 @@ export default function CreativeSection({
                   dataKey="clicks"
                   fill="#7FA6C4"
                     isAnimationActive={false}
+                  radius={[0, 6, 6, 0]}
                   onClick={(_: any, idx: number) => {
                     const item = topClicks?.[idx];
                     if (item) setSelectedCreative(item);
@@ -1469,7 +1476,7 @@ export default function CreativeSection({
                 layout="vertical"
                 margin={{ top: 6, right: 70, left: 0, bottom: 6 }}
               >
-                <CartesianGrid strokeDasharray="3 3" />
+                <CartesianGrid strokeDasharray="2 5" strokeOpacity={0.62} />
                 <XAxis
                   type="number"
                   tick={{ fontSize: 11 }}
@@ -1490,6 +1497,7 @@ export default function CreativeSection({
                   dataKey="conversions"
                   fill="#8FB9B0"
                     isAnimationActive={false}
+                  radius={[0, 6, 6, 0]}
                   onClick={(_: any, idx: number) => {
                     const item = topConv?.[idx];
                     if (item) setSelectedCreative(item);
@@ -1524,7 +1532,7 @@ export default function CreativeSection({
                 layout="vertical"
                 margin={{ top: 6, right: 82, left: 0, bottom: 6 }}
               >
-                <CartesianGrid strokeDasharray="3 3" />
+                <CartesianGrid strokeDasharray="2 5" strokeOpacity={0.62} />
                 <XAxis
                   type="number"
                   tick={{ fontSize: 11 }}
@@ -1545,6 +1553,7 @@ export default function CreativeSection({
                   dataKey="roas"
                   fill="#9B9AC7"
                     isAnimationActive={false}
+                  radius={[0, 6, 6, 0]}
                   onClick={(_: any, idx: number) => {
                     const item = topRoas?.[idx];
                     if (item) setSelectedCreative(item);
@@ -1629,7 +1638,7 @@ export default function CreativeSection({
           </div>
 
           <section>
-            <div className="rounded-2xl border border-[#CFC2B1]/55 bg-white p-5 shadow-[0_8px_22px_rgba(127,166,196,0.10)] sm:p-6">
+            <div className="rounded-[20px] border border-[var(--nature-border-blue)] bg-white p-5 shadow-[0_4px_14px_rgba(127,166,196,0.07)] sm:p-6">
               <SectionHeader
                 badge="AI Insight"
                 title="소재 요약 인사이트"
@@ -1655,7 +1664,7 @@ export default function CreativeSection({
           className={isTableSlideActive ? "" : "hidden"}
           aria-hidden={!isTableSlideActive}
         >
-        <div className="rounded-2xl border border-[#CFC2B1]/55 bg-white p-5 shadow-[0_8px_22px_rgba(127,166,196,0.10)] sm:p-6">
+        <div className="rounded-[20px] border border-[var(--nature-border-blue)] bg-white p-5 shadow-[0_4px_14px_rgba(127,166,196,0.07)] sm:p-6">
           <SectionHeader
             badge="Creative Table"
             title="소재 상세 성과"
@@ -1682,9 +1691,9 @@ export default function CreativeSection({
             </div>
           </div>
 
-          <div className="overflow-auto rounded-2xl border border-[#CFC2B1]/55 bg-white shadow-[0_8px_20px_rgba(127,166,196,0.08)]">
+          <div className="overflow-auto rounded-[18px] border border-[var(--nature-border-blue)] bg-white shadow-[0_3px_12px_rgba(127,166,196,0.06)]">
             <table className="w-full border-collapse text-sm">
-              <thead className="sticky top-0 z-10 bg-[#F3E4D2]/45 backdrop-blur">
+              <thead className="sticky top-0 z-10 bg-[#F3E4D2]/52">
                 <tr>
                   <Th
                     k="creative"

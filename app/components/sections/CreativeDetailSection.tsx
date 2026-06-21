@@ -216,10 +216,10 @@ function groupByDayFromRows(rows: Row[]) {
 type BadgeKey = "ctr" | "conversions" | "roas" | "cpa";
 
 const BADGE_META: Record<BadgeKey, { label: string; className: string }> = {
-  ctr: { label: "TOP CTR", className: "bg-[#7FA6C4] text-white" },
-  conversions: { label: "TOP 전환", className: "bg-[#5F87A3] text-white" },
-  roas: { label: "TOP ROAS", className: "bg-[#8FB9B0] text-white" },
-  cpa: { label: "TOP CPA", className: "bg-[#CFC2B1] text-[#27364A]" },
+  ctr: { label: "TOP CTR", className: "border border-[#B7D7E3] bg-[#B7D7E3]/18 text-[#5F87A3]" },
+  conversions: { label: "TOP 전환", className: "border border-[#B7D7E3] bg-[#7FA6C4]/12 text-[#4F7F9E]" },
+  roas: { label: "TOP ROAS", className: "border border-[#B7D7E3] bg-[#B7D7E3]/16 text-[#4F7F9E]" },
+  cpa: { label: "TOP CPA", className: "border border-[#CFC2B1] bg-[#F3E4D2]/28 text-[#7B7166]" },
 };
 
 const BadgePill = memo(function BadgePill({ k }: { k: BadgeKey }) {
@@ -232,7 +232,7 @@ const BadgePill = memo(function BadgePill({ k }: { k: BadgeKey }) {
       ].join(" ")}
       title={meta.label}
     >
-      🥇 {meta.label}
+      {meta.label}
     </span>
   );
 });
@@ -797,23 +797,23 @@ const CreativeOptionButton = memo(function CreativeOptionButton({
       type="button"
       onClick={handleClick}
       className={[
-        "group relative block w-full overflow-hidden rounded-2xl border text-left transition-all",
+        "group relative block w-full overflow-hidden rounded-[16px] border text-left",
         active
-          ? "border-[#7FA6C4] bg-[linear-gradient(180deg,rgba(183,215,227,0.26),rgba(255,255,255,1))] shadow-[0_10px_24px_rgba(127,166,196,0.14)]"
-          : "border-[#CFC2B1]/55 bg-white hover:border-[#7FA6C4]/70 hover:bg-[#B7D7E3]/16 hover:shadow-[0_6px_16px_rgba(127,166,196,0.08)]",
+          ? "border-[#7FA6C4] bg-[#B7D7E3]/14 shadow-[0_4px_14px_rgba(127,166,196,0.08)]"
+          : "border-[#CFC2B1]/55 bg-white hover:border-[#7FA6C4]/70 hover:bg-[#B7D7E3]/10",
       ].join(" ")}
       title={creative}
     >
       <div
         className={[
-          "absolute inset-y-0 left-0 w-1 transition-all",
-          active ? "bg-orange-500" : "bg-transparent group-hover:bg-orange-200",
+          "absolute inset-y-0 left-0 w-[3px]",
+          active ? "bg-[#7FA6C4]" : "bg-transparent group-hover:bg-[#B7D7E3]",
         ].join(" ")}
       />
 
       <div className="flex items-start gap-3 px-3.5 py-3.5">
         <div className="shrink-0">
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+          <div className="overflow-hidden rounded-[10px] border border-slate-200 bg-slate-50">
             {previewUrl ? (
               <img
                 src={previewUrl}
@@ -852,7 +852,7 @@ const CreativeOptionButton = memo(function CreativeOptionButton({
               className={[
                 "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold",
                 active
-                  ? "bg-orange-100 text-orange-700"
+                  ? "border border-[#B7D7E3] bg-[#B7D7E3]/16 text-[#5F87A3]"
                   : "bg-slate-100 text-slate-500",
               ].join(" ")}
             >
@@ -868,7 +868,7 @@ const CreativeOptionButton = memo(function CreativeOptionButton({
                   className={[
                     "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
                     active
-                      ? "bg-white text-slate-700 border border-orange-200"
+                      ? "border border-[#B7D7E3] bg-white text-slate-700"
                       : BADGE_META[b].className,
                   ].join(" ")}
                 >
@@ -906,7 +906,7 @@ const SideThumbButton = memo(function SideThumbButton({
     <button
       type="button"
       onClick={handleClick}
-      className="overflow-hidden rounded-lg border border-gray-200 bg-white hover:border-orange-300"
+      className="overflow-hidden rounded-[10px] border border-gray-200 bg-white hover:border-[#7FA6C4]/70"
       title={creative}
     >
       <img
@@ -1315,14 +1315,14 @@ export default function CreativeDetailSection({
       <div className="mt-4 grid grid-cols-1 items-start gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
         <aside
           className={[
-            "min-w-0 rounded-[28px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.96))] p-4 shadow-[0_10px_30px_rgba(15,23,42,0.06)] self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-hidden",
+            "min-w-0 rounded-[20px] border border-[var(--nature-border-blue)] bg-white p-4 shadow-[0_4px_14px_rgba(127,166,196,0.07)] self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-hidden",
             showOverviewSlide ? "" : "hidden",
           ].join(" ")}
         >
-          <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm">
+          <div className="rounded-[16px] border border-slate-200/80 bg-white p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <div className="inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-orange-700">
+                <div className="inline-flex items-center rounded-full border border-[#B7D7E3]/75 bg-[#B7D7E3]/14 px-2.5 py-1 text-[10px] font-semibold tracking-[0.08em] text-[#5F87A3]">
                   Creative Selector
                 </div>
                 <div className="mt-3 text-sm font-semibold text-slate-900">
@@ -1333,7 +1333,7 @@ export default function CreativeDetailSection({
                 </div>
               </div>
 
-              <div className="shrink-0 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-right">
+              <div className="shrink-0 rounded-[14px] border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/10 px-3 py-2 text-right">
                 <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
                   Total
                 </div>
@@ -1352,13 +1352,13 @@ export default function CreativeDetailSection({
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
                   placeholder="소재명 검색"
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:bg-white focus:ring-4 focus:ring-orange-100"
+                  className="w-full rounded-[12px] border border-slate-200 bg-slate-50/70 px-4 py-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-[#7FA6C4] focus:bg-white focus:ring-2 focus:ring-[#B7D7E3]/30"
                 />
                 {searchText ? (
                   <button
                     type="button"
                     onClick={() => setSearchText("")}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-300"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-50"
                     title="검색 초기화"
                   >
                     초기화
@@ -1367,7 +1367,7 @@ export default function CreativeDetailSection({
               </div>
             </div>
 
-            <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2.5">
+            <div className="mt-4 flex items-center justify-between gap-3 rounded-[14px] border border-slate-200 bg-slate-50/70 px-3 py-2.5">
               <div className="min-w-0">
                 <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
                   Current Selection
@@ -1377,7 +1377,7 @@ export default function CreativeDetailSection({
                 </div>
               </div>
 
-              <div className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 shadow-sm">
+              <div className="shrink-0 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">
                 {filteredCreatives.length}개 표시
               </div>
             </div>
@@ -1386,11 +1386,11 @@ export default function CreativeDetailSection({
           <div className="mt-4 overflow-auto pr-1 lg:max-h-[calc(100vh-20rem)]">
             <div className="flex flex-col gap-2.5">
               {creatives.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">
+                <div className="rounded-[14px] border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">
                   소재 데이터가 없습니다. (소재 컬럼 매핑 필요)
                 </div>
               ) : filteredCreatives.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5">
+                <div className="rounded-[14px] border border-dashed border-slate-200 bg-slate-50 p-5">
                   <div className="text-sm font-semibold text-slate-700">
                     검색 결과가 없습니다
                   </div>
@@ -1413,7 +1413,7 @@ export default function CreativeDetailSection({
             </div>
           </div>
 
-          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-3 text-xs leading-5 text-slate-600">
+          <div className="mt-4 rounded-[14px] border border-slate-200 bg-slate-50/70 p-3 text-xs leading-5 text-slate-600">
             <b className="text-slate-800">메모</b>
             <div className="mt-1">
               검색과 선택만 담당하는 패널입니다. 우측 상세 성과 영역의 데이터 흐름은 그대로 유지됩니다.
@@ -1428,7 +1428,7 @@ export default function CreativeDetailSection({
           ].join(" ")}
         >
           <div className={showOverviewSlide ? "min-w-0" : "hidden"}>
-            <section className="min-w-0 rounded-2xl border border-gray-200 bg-white p-6">
+            <section className="min-w-0 rounded-[20px] border border-[var(--nature-border-blue)] bg-white p-6 shadow-[0_4px_14px_rgba(127,166,196,0.07)]">
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
               <div className="min-w-0">
                 <div className="flex items-start justify-between gap-4">
@@ -1450,31 +1450,42 @@ export default function CreativeDetailSection({
                   )}
                 </div>
 
-                <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-gray-700">
+                <ul className="mt-4 space-y-2 text-sm text-gray-700">
                   {insight.bullets.map((b, i) => (
-                    <li key={i}>{b}</li>
+                    <li
+                      key={i}
+                      className="flex gap-3 rounded-[14px] border border-[#CFC2B1]/40 bg-[#F3E4D2]/14 px-4 py-3 leading-6"
+                    >
+                      <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#7FA6C4]" />
+                      <span>{b}</span>
+                    </li>
                   ))}
                 </ul>
 
-                <div className="mt-4 rounded-xl bg-gray-50 p-4">
+                <div className="mt-4 rounded-[16px] border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/10 p-4">
                   <div className="text-sm font-semibold text-gray-900">
                     {actionTitle}
                   </div>
-                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-gray-700">
+                  <ul className="mt-3 space-y-2 text-sm text-gray-700">
                     {insight.actions.map((a, i) => (
-                      <li key={i}>{a}</li>
+                      <li key={i} className="flex gap-3 leading-6">
+                        <span className="mt-2 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[#B7D7E3] bg-white text-[10px] font-semibold text-[#5F87A3]">
+                          {i + 1}
+                        </span>
+                        <span>{a}</span>
+                      </li>
                     ))}
                   </ul>
                 </div>
               </div>
 
               <div className="min-w-0">
-                <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                <div className="rounded-[16px] border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/8 p-4">
                   <div className="text-sm font-semibold text-gray-900">
                     선택 소재 미리보기
                   </div>
 
-                  <div className="mt-3 overflow-hidden rounded-xl border border-gray-200 bg-white">
+                  <div className="mt-3 overflow-hidden rounded-[12px] border border-gray-200 bg-white">
                     {selectedPreviewUrl ? (
                       <img
                         src={selectedPreviewUrl}

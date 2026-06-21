@@ -16,6 +16,7 @@ type Props = {
  * - formatCount 결과를 useMemo로 고정
  * - width / height / 배경 style object를 useMemo로 안정화
  * - pct 계산 시 clamp 처리로 불필요한 비정상 width 방지
+ * - 애니메이션과 hover 기반 효과를 제거해 일반 웹/PPT 캡처 결과를 동일하게 유지
  */
 function DataBarCellComponent({
   value,
@@ -42,9 +43,8 @@ function DataBarCellComponent({
       width: `${pct}%`,
       height: `${height}px`,
       background:
-        "linear-gradient(90deg,#B7D7E3 0%,#7FA6C4 68%,#5F87A3 100%)",
-      boxShadow:
-        "inset 0 0 0 1px rgba(255,255,255,0.22), 0 1px 2px rgba(127,166,196,0.12)",
+        "linear-gradient(90deg, rgba(183,215,227,0.92) 0%, rgba(127,166,196,0.96) 100%)",
+      boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.18)",
     }),
     [pct, height]
   );
@@ -55,10 +55,10 @@ function DataBarCellComponent({
   );
 
   return (
-    <div className="group flex w-full items-center gap-2.5">
-      <div className="relative w-full overflow-hidden rounded-xl border border-[#CFC2B1]/55 bg-[#F3E4D2]/35">
+    <div className="flex w-full items-center gap-2.5">
+      <div className="relative w-full overflow-hidden rounded-lg border border-[#CFC2B1]/50 bg-[#F3E4D2]/28">
         <div
-          className="rounded-xl transition-all duration-700 ease-out group-hover:brightness-[1.03]"
+          className="rounded-lg"
           style={barStyle}
         />
 

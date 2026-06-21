@@ -66,13 +66,13 @@ const FIRST_TD_CLASS =
   "px-4 py-3.5 text-left text-sm font-medium text-slate-900 whitespace-nowrap align-middle";
 
 const TABLE_SURFACE_CLASS =
-  "overflow-x-auto rounded-[24px] border border-[var(--nature-border-blue)] bg-[linear-gradient(180deg,var(--nature-surface),rgba(243,228,210,0.46))] shadow-[0_1px_3px_rgba(127,166,196,0.08)] ring-1 ring-white/70";
+  "overflow-x-auto rounded-[20px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] shadow-[0_4px_14px_rgba(127,166,196,0.07)]";
 
 const SOURCE_TABLE_SURFACE_CLASS =
-  "overflow-auto rounded-[24px] border border-[var(--nature-border-blue)] bg-[linear-gradient(180deg,var(--nature-surface),rgba(243,228,210,0.46))] shadow-[0_1px_3px_rgba(127,166,196,0.08)] ring-1 ring-white/70 max-h-[720px]";
+  "max-h-[720px] overflow-auto rounded-[20px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] shadow-[0_4px_14px_rgba(127,166,196,0.07)]";
 
 const DAILY_TABLE_SURFACE_CLASS =
-  "overflow-x-auto rounded-[24px] border border-[var(--nature-border-blue)] bg-[linear-gradient(180deg,var(--nature-surface),rgba(243,228,210,0.46))] shadow-[0_1px_3px_rgba(127,166,196,0.08)] ring-1 ring-white/70";
+  "overflow-x-auto rounded-[20px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] shadow-[0_4px_14px_rgba(127,166,196,0.07)]";
 
 const TABLE_HEAD_CLASS =
   "sticky top-0 z-10 border-b border-[var(--nature-border)] bg-[var(--nature-cream)]/85";
@@ -225,7 +225,7 @@ const SectionIntro = memo(function SectionIntro({
         compact ? "mb-5 flex flex-col gap-2" : "mb-6 flex flex-col gap-2.5"
       }
     >
-      <div className="inline-flex w-fit items-center rounded-full border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/35 px-3 py-1 text-[10px] font-semibold tracking-[0.12em] text-slate-600 shadow-sm">
+      <div className="inline-flex w-fit items-center rounded-full border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/24 px-3 py-1 text-[10px] font-semibold tracking-[0.12em] text-slate-600">
         {badge}
       </div>
 
@@ -564,7 +564,7 @@ const WeeklyDeltaRow = memo(function WeeklyDeltaRow({
   if (!lastRow || !prevRow) return null;
 
   return (
-    <tr className="border-b border-[var(--nature-border)] bg-[linear-gradient(180deg,rgba(243,228,210,0.72),rgba(255,250,243,0.94))] font-medium text-slate-800">
+    <tr className="border-b border-[var(--nature-border)] bg-[var(--nature-cream)]/30 font-medium text-slate-800">
       <td className={`${FIRST_TD_CLASS} truncate`}>증감(최근주-전주)</td>
 
       <td className={TD_CLASS}>
@@ -686,7 +686,7 @@ const WeeklyPerformanceRow = memo(function WeeklyPerformanceRow({
   maxRev: number;
 }) {
   return (
-    <tr className="border-t border-[var(--nature-border)] even:bg-[var(--nature-cream)]/24 hover:bg-[var(--nature-blue-light)]/28 transition-colors">
+    <tr className="border-t border-[var(--nature-border)] even:bg-[var(--nature-cream)]/16 hover:bg-[var(--nature-blue-light)]/14">
       <td className={`${FIRST_TD_CLASS} truncate`} title={row.title}>
         {row.label}
       </td>
@@ -699,7 +699,7 @@ const WeeklyPerformanceRow = memo(function WeeklyPerformanceRow({
         <DataBarCell value={row.clicks} max={maxClicks} />
       </td>
 
-      <td className={`${TD_CLASS} font-medium text-violet-600`}>
+      <td className={`${TD_CLASS} font-medium text-[#4F7F9E]`}>
         {row.ctrText}
       </td>
 
@@ -716,7 +716,7 @@ const WeeklyPerformanceRow = memo(function WeeklyPerformanceRow({
       )}
 
       {mode.showCvr && (
-        <td className={`${TD_CLASS} font-medium text-violet-600`}>
+        <td className={`${TD_CLASS} font-medium text-[#4F7F9E]`}>
           {row.cvrText}
         </td>
       )}
@@ -734,7 +734,7 @@ const WeeklyPerformanceRow = memo(function WeeklyPerformanceRow({
       )}
 
       {mode.showRoas && (
-        <td className={`${TD_CLASS} font-semibold text-orange-600`}>
+        <td className={`${TD_CLASS} font-semibold text-[#4F7F9E]`}>
           {row.roasText}
         </td>
       )}
@@ -864,7 +864,7 @@ const SourcePerformanceRow = memo(function SourcePerformanceRow({
 }) {
   return (
     <tr
-      className="border-t border-[var(--nature-border)] even:bg-[var(--nature-cream)]/24 hover:bg-[var(--nature-blue-light)]/28 transition-colors"
+      className="border-t border-[var(--nature-border)] even:bg-[var(--nature-cream)]/16 hover:bg-[var(--nature-blue-light)]/14"
       style={{ height: `${SOURCE_ROW_HEIGHT}px` }}
     >
       <td className={`${FIRST_TD_CLASS} truncate`} title={row.title}>
@@ -879,7 +879,7 @@ const SourcePerformanceRow = memo(function SourcePerformanceRow({
         <DataBarCell value={row.clicks} max={maxClicks} />
       </td>
 
-      <td className={`${TD_CLASS} font-medium text-violet-600`}>
+      <td className={`${TD_CLASS} font-medium text-[#4F7F9E]`}>
         {row.ctrText}
       </td>
 
@@ -896,7 +896,7 @@ const SourcePerformanceRow = memo(function SourcePerformanceRow({
       )}
 
       {mode.showCvr && (
-        <td className={`${TD_CLASS} font-medium text-violet-600`}>
+        <td className={`${TD_CLASS} font-medium text-[#4F7F9E]`}>
           {row.cvrText}
         </td>
       )}
@@ -914,7 +914,7 @@ const SourcePerformanceRow = memo(function SourcePerformanceRow({
       )}
 
       {mode.showRoas && (
-        <td className={`${TD_CLASS} font-semibold text-orange-600`}>
+        <td className={`${TD_CLASS} font-semibold text-[#4F7F9E]`}>
           {row.roasText}
         </td>
       )}
@@ -1155,7 +1155,7 @@ const DailyEmptyRow = memo(function DailyEmptyRow({
 }) {
   return (
     <tr
-      className="border-t border-[var(--nature-border)] even:bg-[var(--nature-cream)]/24 hover:bg-[var(--nature-blue-light)]/28 transition-colors"
+      className="border-t border-[var(--nature-border)] even:bg-[var(--nature-cream)]/16 hover:bg-[var(--nature-blue-light)]/14"
       style={{ height: `${DAILY_ROW_HEIGHT}px` }}
     >
       <td className={EMPTY_STATE_CLASS} colSpan={colSpan}>
@@ -1184,7 +1184,7 @@ const DailyPerformanceRow = memo(function DailyPerformanceRow({
 }) {
   return (
     <tr
-      className="border-t border-slate-200/90 even:bg-slate-50/45 hover:bg-amber-50/45 transition-colors"
+      className="border-t border-[var(--nature-border)] even:bg-[var(--nature-cream)]/16 hover:bg-[var(--nature-blue-light)]/14"
       style={{ height: `${DAILY_ROW_HEIGHT}px` }}
     >
       <td className={`${FIRST_TD_CLASS} truncate`} title={row.title}>
@@ -1199,7 +1199,7 @@ const DailyPerformanceRow = memo(function DailyPerformanceRow({
         <DataBarCell value={row.clicks} max={maxClicks} />
       </td>
 
-      <td className={`${TD_CLASS} font-medium text-violet-600`}>
+      <td className={`${TD_CLASS} font-medium text-[#4F7F9E]`}>
         {row.ctrText}
       </td>
 
@@ -1216,7 +1216,7 @@ const DailyPerformanceRow = memo(function DailyPerformanceRow({
       )}
 
       {mode.showCvr && (
-        <td className={`${TD_CLASS} font-medium text-violet-600`}>
+        <td className={`${TD_CLASS} font-medium text-[#4F7F9E]`}>
           {row.cvrText}
         </td>
       )}
@@ -1234,7 +1234,7 @@ const DailyPerformanceRow = memo(function DailyPerformanceRow({
       )}
 
       {mode.showRoas && (
-        <td className={`${TD_CLASS} font-semibold text-orange-600`}>
+        <td className={`${TD_CLASS} font-semibold text-[#4F7F9E]`}>
           {row.roasText}
         </td>
       )}
@@ -1608,13 +1608,13 @@ function SummarySectionComponent(props: Props) {
           aria-hidden={!isGoalSlideActive}
         >
           <SectionIntro
-            badge="📊 KPI"
+            badge="KPI"
             title={copy.kpiTitle}
             description={copy.kpiDescription}
             compact
           />
 
-          <div className="rounded-[26px] border border-[var(--nature-border-blue)] bg-[linear-gradient(180deg,var(--nature-surface),rgba(243,228,210,0.48))] p-2.5 shadow-[0_8px_22px_rgba(127,166,196,0.10)] sm:p-3">
+          <div className="rounded-[22px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] p-2.5 shadow-[0_4px_14px_rgba(127,166,196,0.07)] sm:p-3">
             <SummaryKPI reportType={reportType} totals={stableTotals} />
           </div>
         </div>
@@ -1633,7 +1633,7 @@ function SummarySectionComponent(props: Props) {
         >
           <div>
             <SectionIntro
-              badge="📋 SUMMARY TABLE"
+              badge="SUMMARY TABLE"
               title={copy.monthTitle}
               description={copy.monthDescription}
               compact
@@ -1643,7 +1643,7 @@ function SummarySectionComponent(props: Props) {
 
           <div>
             <SectionIntro
-              badge="📅 WEEKLY"
+              badge="WEEKLY"
               title={copy.weeklyTitle}
               description={copy.weeklyDescription}
               compact
@@ -1683,7 +1683,7 @@ function SummarySectionComponent(props: Props) {
         >
           <div>
             <SectionIntro
-              badge="🧭 SOURCE"
+              badge="SOURCE"
               title={copy.sourceTitle}
               description={copy.sourceDescription}
               compact
@@ -1702,7 +1702,7 @@ function SummarySectionComponent(props: Props) {
 
           <div>
             <SectionIntro
-              badge="🗓️ DAILY"
+              badge="DAILY"
               title={copy.dailyTitle}
               description={copy.dailyDescription}
               compact

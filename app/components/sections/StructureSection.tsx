@@ -46,10 +46,10 @@ const pctText = (rate01: number, digits = 1) =>
 const safeDiv = (a: number, b: number) => (b === 0 ? 0 : a / b);
 
 const TABLE_SURFACE_CLASS =
-  "overflow-x-auto rounded-[24px] border border-[#CFC2B1]/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(243,228,210,0.24))] shadow-[0_10px_30px_rgba(127,166,196,0.10)] ring-1 ring-white/70";
+  "overflow-x-auto rounded-[20px] border border-[#CFC2B1]/60 bg-white shadow-[0_8px_20px_rgba(127,166,196,0.07)]";
 
 const TABLE_HEAD_CLASS =
-  "border-b border-[#CFC2B1]/55 bg-[rgba(243,228,210,0.42)] backdrop-blur supports-[backdrop-filter]:bg-[rgba(243,228,210,0.34)]";
+  "border-b border-[#CFC2B1]/55 bg-[#F3E4D2]/30";
 
 const TH_CLASS =
   "whitespace-nowrap px-4 py-3.5 text-right text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7B7166]";
@@ -151,7 +151,7 @@ function SectionIntro({
         compact ? "mb-5 flex flex-col gap-2" : "mb-6 flex flex-col gap-2.5"
       }
     >
-      <div className="inline-flex w-fit items-center rounded-full border border-[#CFC2B1]/60 bg-white/95 px-3 py-1 text-[10px] font-semibold tracking-[0.12em] text-[#7B7166] shadow-[0_6px_16px_rgba(127,166,196,0.08)]">
+      <div className="inline-flex w-fit items-center rounded-full border border-[#CFC2B1]/60 bg-white px-3 py-1 text-[10px] font-semibold tracking-[0.14em] text-[#7B7166]">
         {badge}
       </div>
 
@@ -560,10 +560,14 @@ const SourceTable = memo(function SourceTable({
               return (
                 <tr
                   key={r.source ?? idx}
-                  className="border-t border-[#CFC2B1]/60 even:bg-[#F3E4D2]/20 hover:bg-[#B7D7E3]/24 transition-colors"
+                  className="border-t border-[#CFC2B1]/60 even:bg-[#F3E4D2]/16 hover:bg-[#B7D7E3]/16"
                 >
                   <td className={FIRST_TD_CLASS}>
-                    <SourceBrand source={r.source} />
+                    <SourceBrand
+                      source={r.source}
+                      className="font-semibold text-[#2F3A40]"
+                      logoClassName="h-[18px] w-[18px]"
+                    />
                   </td>
 
                   <td className={TD_CLASS}>
@@ -648,11 +652,11 @@ const InsightPanel = memo(function InsightPanel({
   }, [reportMode, sourceRows, monthGoal]);
 
   return (
-    <div className="overflow-hidden rounded-[26px] border border-[#CFC2B1]/60 bg-[linear-gradient(135deg,rgba(127,166,196,0.06),rgba(255,255,255,0.98)_18%,rgba(183,215,227,0.28)_56%,rgba(243,228,210,0.34)_100%)] shadow-[0_14px_34px_rgba(127,166,196,0.12)] ring-1 ring-white/70">
-      <div className="border-b border-[#CFC2B1]/55 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(243,228,210,0.28))] px-5 py-4">
+    <div className="overflow-hidden rounded-[22px] border border-[#CFC2B1]/60 bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(183,215,227,0.14)_58%,rgba(243,228,210,0.18)_100%)] shadow-[0_8px_22px_rgba(127,166,196,0.08)]">
+      <div className="border-b border-[#CFC2B1]/55 bg-white/88 px-5 py-4">
         <div className="flex flex-wrap items-center gap-2 text-sm text-[#5F554B]">
-          <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#B7D7E3]/65 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(183,215,227,0.22)] shadow-[0_6px_16px_rgba(127,166,196,0.08)]">
-            🧠
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#B7D7E3]/70 bg-[#B7D7E3]/18 text-[9px] font-bold tracking-[0.08em] text-[#4F7F9E]">
+            AI
           </span>
 
           <span className="inline-flex items-center rounded-full border border-[#B7D7E3]/70 bg-[#B7D7E3]/22 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#4F7F9E]">
@@ -687,7 +691,7 @@ const InsightPanel = memo(function InsightPanel({
             {sentences.map((s, i) => (
               <div
                 key={i}
-                className="group rounded-[22px] border border-[#CFC2B1]/55 bg-white/88 px-4 py-4 shadow-[0_8px_22px_rgba(127,166,196,0.08)] transition hover:-translate-y-[1px] hover:shadow-[0_12px_28px_rgba(127,166,196,0.10)]"
+                className="rounded-[18px] border border-[#CFC2B1]/55 bg-white/90 px-4 py-4 shadow-[0_4px_14px_rgba(127,166,196,0.06)]"
               >
                 <div className="flex items-start gap-3">
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(180deg,rgba(127,166,196,0.18),rgba(183,215,227,0.14))] text-xs font-bold text-[#4F7F9E] ring-1 ring-[#B7D7E3]/70">
@@ -768,7 +772,7 @@ const CampaignTable = memo(function CampaignTable({
             return (
               <tr
                 key={r.campaign ?? idx}
-                className="border-t border-[#CFC2B1]/60 even:bg-[#F3E4D2]/20 hover:bg-[#B7D7E3]/24 transition-colors"
+                className="border-t border-[#CFC2B1]/60 even:bg-[#F3E4D2]/16 hover:bg-[#B7D7E3]/16"
               >
                 <td className={FIRST_TD_CLASS}>{r.campaign}</td>
 
@@ -892,7 +896,7 @@ const GroupTable = memo(function GroupTable({
             return (
               <tr
                 key={r.group ?? idx}
-                className="border-t border-[#CFC2B1]/60 even:bg-[#F3E4D2]/20 hover:bg-[#B7D7E3]/24 transition-colors"
+                className="border-t border-[#CFC2B1]/60 even:bg-[#F3E4D2]/16 hover:bg-[#B7D7E3]/16"
               >
                 <td className={FIRST_TD_CLASS}>{r.group}</td>
 
@@ -1001,7 +1005,7 @@ const GroupSection = memo(function GroupSection({
   return (
     <div className="relative">
       <SectionIntro
-        badge="🧩 GROUP"
+        badge="GROUP"
         title="그룹별 성과"
         description={description}
         compact
@@ -1015,14 +1019,14 @@ const GroupSection = memo(function GroupSection({
               e.stopPropagation();
               setCampaignOpen((prev) => !prev);
             }}
-            className="rounded-xl border border-[#CFC2B1]/60 bg-white/95 px-4 py-2 text-sm font-semibold text-[#5F554B] shadow-[0_6px_16px_rgba(127,166,196,0.08)] transition hover:border-[#B7D7E3] hover:bg-[#F3E4D2]/25"
+            className="rounded-xl border border-[#CFC2B1]/60 bg-white px-4 py-2 text-sm font-semibold text-[#5F554B] shadow-[0_4px_12px_rgba(127,166,196,0.06)] hover:border-[#B7D7E3] hover:bg-[#F3E4D2]/20"
           >
             캠페인명 {campaignOpen ? "▲" : "▼"}
           </button>
 
           {campaignOpen && (
             <div
-              className="absolute right-0 z-50 mt-2 w-64 rounded-2xl border border-[#CFC2B1]/60 bg-white/95 p-2 shadow-[0_18px_40px_rgba(127,166,196,0.18)]"
+              className="absolute right-0 z-50 mt-2 w-64 rounded-2xl border border-[#CFC2B1]/60 bg-white p-2 shadow-[0_12px_28px_rgba(127,166,196,0.12)]"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="max-h-80 space-y-1 overflow-auto">
@@ -1125,7 +1129,7 @@ export default function StructureSection({
         >
           <div>
             <SectionIntro
-              badge="🧭 SOURCE"
+              badge="SOURCE"
               title="소스별 구조 성과"
               description={copy.sourceDescription}
               compact
@@ -1161,7 +1165,7 @@ export default function StructureSection({
           aria-hidden={!showAllSlides && activeSlide !== 1}
         >
           <SectionIntro
-            badge="📣 CAMPAIGN"
+            badge="CAMPAIGN"
             title="캠페인별 성과"
             description={copy.campaignDescription}
             compact

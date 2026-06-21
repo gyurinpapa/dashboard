@@ -367,15 +367,28 @@ const GoalProgressCard = memo(function GoalProgressCard({
 }) {
   const toneClass =
     tone === "emerald"
-      ? "border-emerald-200 bg-emerald-50/70 text-emerald-800"
+      ? "border-emerald-200/80 bg-emerald-50/38 text-emerald-800"
       : tone === "amber"
-        ? "border-amber-200 bg-amber-50/70 text-amber-800"
+        ? "border-amber-200/80 bg-amber-50/38 text-amber-800"
         : tone === "blue"
-          ? "border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/35 text-slate-800"
-          : "border-slate-200 bg-white/78 text-slate-800";
+          ? "border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/20 text-slate-800"
+          : "border-slate-200/85 bg-white text-slate-800";
 
   return (
-    <div className={`rounded-2xl border px-4 py-4 ${toneClass}`}>
+    <div className={`relative overflow-hidden rounded-[18px] border px-4 py-4 ${toneClass}`}>
+      <div
+        className={[
+          "absolute inset-y-0 left-0 w-[3px]",
+          tone === "emerald"
+            ? "bg-emerald-300/80"
+            : tone === "amber"
+              ? "bg-amber-300/80"
+              : tone === "blue"
+                ? "bg-[var(--nature-blue)]/75"
+                : "bg-slate-200",
+        ].join(" ")}
+      />
+
       <div className="text-[11px] font-semibold tracking-[0.12em] opacity-70">
         {title}
       </div>
@@ -503,7 +516,7 @@ export default function MonthGoalSection({
 
   return (
     <section className="mb-8 mt-2">
-      <div className="overflow-hidden rounded-[28px] border border-[var(--nature-border-blue)] bg-gradient-to-br from-[var(--nature-surface)] via-[var(--nature-surface)] to-[var(--nature-cream)]/70 shadow-[0_14px_36px_rgba(127,166,196,0.16)]">
+      <div className="overflow-hidden rounded-[22px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] shadow-[0_5px_16px_rgba(127,166,196,0.08)]">
         <div className="px-5 py-5 sm:px-6">
           <SummaryGoal
             reportType={reportType}

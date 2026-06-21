@@ -664,7 +664,7 @@ const FunnelCard = memo(function FunnelCard({
       ].join(" ");
 
       const stroke =
-        i === 0 ? "rgba(75,159,173,0.55)" : "rgba(242,153,90,0.55)";
+        i === 0 ? "rgba(127,166,196,0.42)" : "rgba(207,194,177,0.48)";
 
       paths.push({ d: leftPath, stroke }, { d: rightPath, stroke });
     }
@@ -676,12 +676,12 @@ const FunnelCard = memo(function FunnelCard({
     items.length > 0 ? items.length * barH + (items.length - 1) * gapH : 0;
 
   return (
-    <div className="rounded-2xl border border-[#CFC2B1]/55 bg-white shadow-[0_8px_22px_rgba(127,166,196,0.10)]">
-      <div className="border-b border-[#CFC2B1]/45 px-6 py-4">
+    <div className="rounded-[20px] border border-[var(--nature-border-blue)] bg-white shadow-[0_4px_14px_rgba(127,166,196,0.07)]">
+      <div className="border-b border-[var(--nature-border)] px-6 py-4">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
           <div>
             <div className="mb-3">
-              <span className="inline-flex items-center rounded-full border border-[#B7D7E3]/70 bg-[#B7D7E3]/22 px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] text-[#5F87A3]">
+              <span className="inline-flex items-center rounded-full border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/18 px-2.5 py-1 text-[10px] font-semibold tracking-[0.10em] text-[#4F7F9E]">
                 {badge}
               </span>
             </div>
@@ -713,10 +713,10 @@ const FunnelCard = memo(function FunnelCard({
                   type="button"
                   onClick={onTogglePlay}
                   className={[
-                    "rounded-xl border px-3 py-2 text-sm font-semibold transition",
+                    "rounded-[10px] border px-3 py-2 text-sm font-semibold",
                     isPlaying
                       ? "border-[#7FA6C4] bg-[#7FA6C4] text-white"
-                      : "border-[#CFC2B1]/55 bg-white text-[#27364A] hover:bg-[#F3E4D2]/35",
+                      : "border-[var(--nature-border-blue)] bg-white text-[#27364A] hover:bg-[var(--nature-blue-light)]/12",
                   ].join(" ")}
                 >
                   {isPlaying ? "일시정지" : "재생"}
@@ -731,7 +731,7 @@ const FunnelCard = memo(function FunnelCard({
                   step={1}
                   value={Math.min(playIndex, Math.max(0, maxIndex))}
                   onChange={(e) => onScrubChange(Number(e.target.value))}
-                  className="h-2 w-full cursor-pointer rounded-lg accent-[#7FA6C4]"
+                  className="h-1.5 w-full cursor-pointer rounded-full accent-[#7FA6C4]"
                 />
               </div>
             </div>
@@ -749,10 +749,10 @@ const FunnelCard = memo(function FunnelCard({
                     d={item.d}
                     fill="none"
                     stroke={item.stroke}
-                    strokeWidth="1.2"
+                    strokeWidth="1"
                     strokeLinecap="round"
-                    strokeDasharray="3 4"
-                    className="transition-all duration-700 ease-in-out"
+                    strokeDasharray="2 5"
+                    className=""
                   />
                 ))}
               </svg>
@@ -770,23 +770,17 @@ const FunnelCard = memo(function FunnelCard({
                     </div>
 
                     <div className="relative">
-                      <div className="rounded-[28px] border border-gray-200 bg-gray-50 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+                      <div className="rounded-[14px] border border-[var(--nature-border)] bg-slate-50/65 p-2">
                         <div
-                          className="flex h-[54px] items-center justify-center rounded-2xl px-3 text-center transition-[width,transform,box-shadow] duration-700 ease-in-out"
+                          className="flex h-[54px] items-center justify-center rounded-[12px] px-3 text-center"
                           style={{
                             width: `${item.widthPct}%`,
                             maxWidth: "100%",
-                            background: `linear-gradient(135deg, ${
-                              item.color
-                            } 0%, ${item.color} 72%, ${rgbaFromHex(
+                            backgroundColor: item.color,
+                            boxShadow: `0 3px 10px ${rgbaFromHex(
                               item.color,
-                              0.78,
-                            )} 100%)`,
-                            boxShadow: `0 10px 22px ${rgbaFromHex(
-                              item.color,
-                              0.24,
+                              0.16,
                             )}`,
-                            transform: "translateZ(0)",
                           }}
                           title={[
                             item.label,
@@ -817,7 +811,7 @@ const FunnelCard = memo(function FunnelCard({
 
                     {idx < items.length - 1 ? (
                       <div className="flex h-8 items-center justify-center">
-                        <span className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-[11px] font-semibold text-[#6F7B86] shadow-sm">
+                        <span className="rounded-full border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/12 px-3 py-1 text-[10px] font-semibold tracking-[0.04em] text-[#5F7180]">
                           {transitionBadges[idx] ?? "-"}
                         </span>
                       </div>
@@ -828,7 +822,7 @@ const FunnelCard = memo(function FunnelCard({
             </div>
           </div>
         ) : (
-          <div className="rounded-2xl border border-gray-200 bg-gray-50 px-6 py-10 text-sm text-[#7A8794]">
+          <div className="rounded-[14px] border border-[var(--nature-border)] bg-slate-50/65 px-6 py-10 text-sm text-[#7A8794]">
             표시할 데이터가 없습니다.
           </div>
         )}
@@ -867,22 +861,33 @@ const DonutCard = memo(function DonutCard({
   const [activeKey, setActiveKey] = useState<string | null>(null);
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
-      <div className="border-b border-gray-200 px-6 py-5">
-        <div className="min-w-0 flex-1">
-          <div className="mb-3">
-            <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] text-emerald-700">
-              {badge}
-            </span>
+    <div className="rounded-[20px] border border-[var(--nature-border-blue)] bg-white shadow-[0_4px_14px_rgba(127,166,196,0.07)]">
+      <div className="border-b border-[var(--nature-border)] px-6 py-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="min-w-0 flex-1">
+            <div className="mb-3">
+              <span className="inline-flex items-center rounded-full border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/18 px-2.5 py-1 text-[10px] font-semibold tracking-[0.10em] text-[#4F7F9E]">
+                {badge}
+              </span>
+            </div>
+
+            <h3 className="overflow-hidden text-ellipsis whitespace-nowrap text-base font-semibold text-[#27364A]">
+              {title}
+            </h3>
+
+            <p className="mt-1 overflow-hidden text-ellipsis whitespace-nowrap text-sm text-[#7A8794]">
+              {description}
+            </p>
           </div>
 
-          <h3 className="whitespace-nowrap overflow-hidden text-ellipsis text-base font-semibold text-[#27364A]">
-            {title}
-          </h3>
-
-          <p className="mt-1 whitespace-nowrap overflow-hidden text-ellipsis text-sm text-[#7A8794]">
-            {description}
-          </p>
+          <div className="min-w-[190px] rounded-[14px] border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/10 px-4 py-3">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.10em] text-slate-500">
+              Overview
+            </div>
+            <div className="mt-1 text-sm font-semibold text-[#27364A]">
+              {overview}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -894,7 +899,7 @@ const DonutCard = memo(function DonutCard({
                 viewBox="0 0 260 260"
                 className="h-[220px] w-[220px] max-w-full"
               >
-                {items.map((item) => {
+                {items.map((item, index) => {
                   const isActive = activeKey === item.key;
                   const isDimmed = activeKey !== null && activeKey !== item.key;
 
@@ -912,14 +917,12 @@ const DonutCard = memo(function DonutCard({
                       fill={item.color}
                       onMouseEnter={() => setActiveKey(item.key)}
                       onMouseLeave={() => setActiveKey(null)}
-                      className="cursor-pointer transition-all duration-200"
+                      className="cursor-pointer"
                       style={{
-                        opacity: isDimmed ? 0.28 : 1,
+                        opacity: isDimmed ? 0.68 : 1,
                         filter: isActive
-                          ? "drop-shadow(0 0 10px rgba(15, 23, 42, 0.18))"
+                          ? "drop-shadow(0 2px 4px rgba(127, 166, 196, 0.22))"
                           : "none",
-                        transform: isActive ? "scale(1.03)" : "scale(1)",
-                        transformOrigin: "130px 130px",
                       }}
                     >
                       <title>
@@ -931,14 +934,14 @@ const DonutCard = memo(function DonutCard({
                   );
                 })}
 
-                <circle cx="130" cy="130" r="44" fill="white" />
+                <circle cx="130" cy="130" r="46" fill="white" stroke="rgba(217,205,188,0.72)" strokeWidth="1" />
 
                 <text
                   x="130"
                   y="118"
                   textAnchor="middle"
-                  fontSize="12"
-                  fill="#6b7280"
+                  fontSize="11"
+                  fill="#64748B"
                   fontWeight="600"
                 >
                   {totalLabel}
@@ -949,7 +952,7 @@ const DonutCard = memo(function DonutCard({
                   y="142"
                   textAnchor="middle"
                   fontSize="16"
-                  fill="#111827"
+                  fill="#27364A"
                   fontWeight="700"
                 >
                   {valueFormatter(totalValue)}
@@ -968,11 +971,11 @@ const DonutCard = memo(function DonutCard({
                     onMouseEnter={() => setActiveKey(item.key)}
                     onMouseLeave={() => setActiveKey(null)}
                     className={[
-                      "cursor-pointer rounded-2xl border px-4 py-4 transition-all duration-200",
+                      "cursor-pointer rounded-[16px] border px-4 py-4",
                       isActive
-                        ? "border-gray-400 bg-white shadow-md ring-2 ring-gray-200"
-                        : "border-gray-200 bg-gray-50",
-                      isDimmed ? "opacity-50" : "opacity-100",
+                        ? "border-[var(--nature-blue)] bg-[var(--nature-blue-light)]/12"
+                        : "border-[var(--nature-border)] bg-slate-50/55",
+                      isDimmed ? "opacity-75" : "opacity-100",
                     ].join(" ")}
                   >
                     <div className="flex items-center justify-between gap-3">
@@ -991,7 +994,7 @@ const DonutCard = memo(function DonutCard({
                       </div>
                     </div>
 
-                    <div className="mt-2 break-all text-center text-xl font-semibold text-[#27364A]">
+                    <div className="mt-3 break-all border-t border-[var(--nature-border)] pt-3 text-center text-lg font-semibold tracking-[-0.02em] text-[#27364A]">
                       {valueFormatter(item.value)}
                     </div>
                   </div>
@@ -1000,7 +1003,7 @@ const DonutCard = memo(function DonutCard({
             </div>
           </div>
         ) : (
-          <div className="rounded-2xl border border-gray-200 bg-gray-50 px-6 py-10 text-sm text-[#7A8794]">
+          <div className="rounded-[16px] border border-[var(--nature-border)] bg-slate-50/55 px-6 py-10 text-sm text-[#7A8794]">
             표시할 데이터가 없습니다.
           </div>
         )}
@@ -1047,12 +1050,12 @@ const EfficiencyBarCard = memo(function EfficiencyBarCard({
   const maxMetric = Math.max(0, ...items.map((x) => sortValue(x)));
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
-      <div className="border-b border-gray-200 px-6 py-5">
+    <div className="rounded-[20px] border border-[var(--nature-border-blue)] bg-white shadow-[0_4px_14px_rgba(127,166,196,0.07)]">
+      <div className="border-b border-[var(--nature-border)] px-6 py-5">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
           <div>
             <div className="mb-2">
-              <span className="inline-flex items-center rounded-full border [#CFC2B1]/65 bg-[#F3E4D2]/45 px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] text-[#7B7166]">
+              <span className="inline-flex items-center rounded-full border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/18 px-2.5 py-1 text-[10px] font-semibold tracking-[0.10em] text-[#4F7F9E]">
                 {badge}
               </span>
             </div>
@@ -1060,8 +1063,8 @@ const EfficiencyBarCard = memo(function EfficiencyBarCard({
             <p className="mt-1 text-sm text-[#7A8794]">{description}</p>
           </div>
 
-          <div className="min-w-[220px] rounded-2xl border border-gray-200 bg-gray-50/80 px-4 py-3">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9A8F81]">
+          <div className="min-w-[220px] rounded-[14px] border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/10 px-4 py-3">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.10em] text-slate-500">
               Overview
             </div>
             <div className="mt-1 text-sm font-semibold text-[#27364A]">
@@ -1074,14 +1077,19 @@ const EfficiencyBarCard = memo(function EfficiencyBarCard({
       <div className="px-6 py-6">
         {items.length > 0 ? (
           <div className="space-y-4">
-            {items.map((item) => {
+            {items.map((item, index) => {
               const current = sortValue(item);
               const pct = maxMetric > 0 ? (current / maxMetric) * 100 : 0;
 
               return (
                 <div
                   key={item.channel}
-                  className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4"
+                  className={[
+                    "rounded-[16px] border px-4 py-4",
+                    index === 0
+                      ? "border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/10"
+                      : "border-[var(--nature-border)] bg-slate-50/55",
+                  ].join(" ")}
                 >
                   <div className="mb-2 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
@@ -1093,17 +1101,22 @@ const EfficiencyBarCard = memo(function EfficiencyBarCard({
                         {item.channel}
                       </span>
                     </div>
-                    <span className="text-sm font-semibold text-[#27364A]">
+                    <span
+                      className={[
+                        "text-sm font-semibold",
+                        index === 0 ? "text-[#4F7F9E]" : "text-[#27364A]",
+                      ].join(" ")}
+                    >
                       {primaryMetricFormatter(primaryMetricValue(item))}
                     </span>
                   </div>
 
-                  <div className="h-3 w-full overflow-hidden rounded-full bg-gray-200">
+                  <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
                     <div
-                      className="h-full rounded-full"
+                      className="h-full rounded-full bg-[var(--nature-blue)]"
                       style={{
                         width: `${Math.max(0, Math.min(100, pct))}%`,
-                        backgroundColor: channelColor(item.channel),
+                        opacity: index === 0 ? 1 : 0.72,
                       }}
                     />
                   </div>
@@ -1133,7 +1146,7 @@ const EfficiencyBarCard = memo(function EfficiencyBarCard({
             })}
           </div>
         ) : (
-          <div className="rounded-2xl border border-gray-200 bg-gray-50 px-6 py-10 text-sm text-[#7A8794]">
+          <div className="rounded-[16px] border border-[var(--nature-border)] bg-slate-50/55 px-6 py-10 text-sm text-[#7A8794]">
             {emptyMessage}
           </div>
         )}
@@ -1148,9 +1161,9 @@ const ChannelInsightPanel = memo(function ChannelInsightPanel({
   items: readonly ChannelInsightNarrative[];
 }) {
   return (
-    <section className="mt-6 overflow-hidden rounded-2xl border border-[#CFC2B1]/55 bg-white shadow-[0_8px_22px_rgba(127,166,196,0.10)]">
-      <div className="border-b border-[#CFC2B1]/45 px-6 py-5">
-        <div className="inline-flex items-center rounded-full border border-[#B7D7E3]/70 bg-[#B7D7E3]/22 px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] text-[#5F87A3]">
+    <section className="mt-6 overflow-hidden rounded-[20px] border border-[var(--nature-border-blue)] bg-white shadow-[0_4px_14px_rgba(127,166,196,0.07)]">
+      <div className="border-b border-[var(--nature-border)] px-6 py-5">
+        <div className="inline-flex items-center rounded-full border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/18 px-2.5 py-1 text-[10px] font-semibold tracking-[0.10em] text-[#4F7F9E]">
           AI INSIGHT
         </div>
         <h3 className="mt-3 text-base font-semibold text-[#27364A]">
@@ -1166,9 +1179,21 @@ const ChannelInsightPanel = memo(function ChannelInsightPanel({
         {items.map((item, index) => (
           <div
             key={item.key}
-            className="flex gap-3 rounded-2xl border border-[#CFC2B1]/45 bg-[linear-gradient(135deg,rgba(183,215,227,0.16),rgba(243,228,210,0.22))] px-5 py-4"
+            className={[
+              "flex gap-3 rounded-[16px] border px-5 py-4",
+              index === 0
+                ? "border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/12"
+                : "border-[var(--nature-border)] bg-slate-50/50",
+            ].join(" ")}
           >
-            <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#7FA6C4] text-[11px] font-bold text-white">
+            <span
+              className={[
+                "mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold",
+                index === 0
+                  ? "bg-[var(--nature-blue)] text-white"
+                  : "border border-[var(--nature-border-blue)] bg-white text-[#4F7F9E]",
+              ].join(" ")}
+            >
               {index + 1}
             </span>
             <p className="text-sm font-medium leading-7 text-[#27364A]">
@@ -1244,17 +1269,17 @@ const HeatmapCell = memo(function HeatmapCell({
       onMouseEnter={() => onHoverStart(cellKey, Boolean(agg))}
       onMouseLeave={onHoverEnd}
       className={[
-        "group relative h-10 rounded-xl border transition-[box-shadow,opacity,background-color,border-color] duration-150",
+        "group relative h-10 rounded-[10px] border",
         agg ? heatColorClass(level) : "border-transparent bg-white",
         agg ? "cursor-pointer" : "",
-        isHovered ? "ring-2 ring-black/10" : "",
-        isDimmed ? "opacity-55" : "opacity-100",
+        isHovered ? "ring-2 ring-[var(--nature-blue)]/28 ring-offset-1" : "",
+        isDimmed ? "opacity-65" : "opacity-100",
       ].join(" ")}
       title={title}
     >
       {agg ? (
         <div className="pointer-events-none absolute left-1/2 top-full z-20 hidden w-max -translate-x-1/2 pt-2 group-hover:block">
-          <div className="rounded-xl border border-[#CFC2B1]/55 bg-white px-3 py-2 text-xs shadow-[0_12px_28px_rgba(127,166,196,0.14)]">
+          <div className="rounded-[10px] border border-[var(--nature-border-blue)] bg-white px-3 py-2 text-xs shadow-[0_5px_14px_rgba(127,166,196,0.10)]">
             <div className="font-bold text-[#27364A]">{agg.dateKey}</div>
             <div className="mt-1 text-[#6F7B86]">
               {selectedMetricLabel}:{" "}
@@ -1923,7 +1948,7 @@ export default function Summary2Section({
         key: item.device,
         label: item.device,
         value: item.value,
-        color: deviceColor(item.device),
+        color: "#CFC2B1",
       })),
     ).map((n) => ({ ...n, x: 355 }));
 
@@ -1932,7 +1957,7 @@ export default function Summary2Section({
         key: isDbAcquisition ? "Conversions" : "Revenue",
         label: isDbAcquisition ? "Conversions" : "Revenue",
         value: totalValue,
-        color: "#111827",
+        color: "#7FA6C4",
         x: 690,
         y: topPad + 22,
         width: nodeWidth,
@@ -1997,8 +2022,8 @@ export default function Summary2Section({
         ),
         fill:
           link.sourceType === "channel"
-            ? rgbaFromHex(sourceColor, 0.35)
-            : rgbaFromHex(deviceColor(link.source), 0.35),
+            ? rgbaFromHex(sourceColor, 0.20)
+            : "rgba(127, 166, 196, 0.18)",
       };
     });
 
@@ -2253,12 +2278,12 @@ export default function Summary2Section({
             className={isHeatmapSlideActive ? "block" : "hidden"}
             aria-hidden={!isHeatmapSlideActive}
           >
-          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-            <div className="border-b border-gray-200 px-6 py-5">
+          <div className="overflow-hidden rounded-[20px] border border-[var(--nature-border-blue)] bg-white shadow-[0_4px_14px_rgba(127,166,196,0.07)]">
+            <div className="border-b border-[var(--nature-border)] px-6 py-5">
               <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                 <div>
                   <div className="mb-2">
-                    <span className="inline-flex items-center rounded-full border border-[#B7D7E3]/70 bg-[#B7D7E3]/22 px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] text-[#5F87A3]">
+                    <span className="inline-flex items-center rounded-full border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/20 px-2.5 py-1 text-[10px] font-semibold tracking-[0.10em] text-[#5F87A3]">
                       {heatmapBadge}
                     </span>
                   </div>
@@ -2271,7 +2296,7 @@ export default function Summary2Section({
                 </div>
 
                 <div className="flex min-w-[240px] flex-col gap-3 xl:items-end">
-                  <div className="rounded-2xl border border-[#CFC2B1]/45 bg-[#F3E4D2]/30 px-4 py-3">
+                  <div className="rounded-[14px] border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/10 px-4 py-3">
                     <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9A8F81]">
                       Overview
                     </div>
@@ -2287,10 +2312,10 @@ export default function Summary2Section({
                         type="button"
                         onClick={() => handleMetricChange(item.key)}
                         className={[
-                          "rounded-xl border px-4 py-2 text-sm font-semibold transition",
+                          "rounded-[10px] border px-4 py-2 text-sm font-semibold",
                           metric === item.key
-                            ? "border-black bg-black text-white shadow-sm"
-                            : "border-gray-300 bg-white text-black hover:bg-gray-100",
+                            ? "border-[var(--nature-blue)] bg-[var(--nature-blue)] text-white"
+                            : "border-[var(--nature-border-blue)] bg-white text-slate-700 hover:bg-[var(--nature-blue-light)]/12",
                         ].join(" ")}
                       >
                         {item.label}
@@ -2303,28 +2328,28 @@ export default function Summary2Section({
 
             <div className="px-6 py-5">
               <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-4">
+                <div className="rounded-[14px] border border-slate-200/85 bg-slate-50/55 px-4 py-4">
                   <div className="text-xs text-[#7A8794]">활성 일수</div>
                   <div className="mt-2 text-2xl font-semibold text-[#27364A]">
                     {heatmapSummary.activeDays}일
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-4">
+                <div className="rounded-[14px] border border-slate-200/85 bg-slate-50/55 px-4 py-4">
                   <div className="text-xs text-[#7A8794]">평균</div>
                   <div className="mt-2 text-2xl font-semibold text-[#27364A]">
                     {formatMetricValue(metric, heatmapSummary.avgValue)}
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-4">
+                <div className="rounded-[14px] border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/10 px-4 py-4">
                   <div className="text-xs text-[#7A8794]">최대</div>
                   <div className="mt-2 text-2xl font-semibold text-[#27364A]">
                     {formatMetricValue(metric, heatmapSummary.maxValue)}
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-4">
+                <div className="rounded-[14px] border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/10 px-4 py-4">
                   <div className="text-xs text-[#7A8794]">최고 성과 일자</div>
                   <div className="mt-2 text-lg font-semibold text-[#27364A]">
                     {heatmapSummary.bestDay?.dateKey ?? "-"}
@@ -2418,10 +2443,10 @@ export default function Summary2Section({
                 </div>
               </div>
 
-              <div className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[#CFC2B1]/40 bg-white/85 px-4 py-3">
+              <div className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-[14px] border border-[var(--nature-border-blue)] bg-slate-50/45 px-4 py-3">
                 <div className="text-sm text-[#6F7B86]">
                   선택 지표:{" "}
-                  <span className="rounded-full bg-[#7FA6C4] px-2.5 py-1 text-xs font-semibold text-white">
+                  <span className="rounded-full border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/22 px-2.5 py-1 text-xs font-semibold text-[#4F7F9E]">
                     {selectedMetricLabel}
                   </span>
                 </div>
@@ -2466,8 +2491,8 @@ export default function Summary2Section({
                 description={funnelDescription}
               />
 
-              <div className="flex min-w-0 flex-col rounded-2xl border border-gray-200 bg-white shadow-sm">
-                <div className="border-b border-gray-200 px-6 py-4">
+              <div className="flex min-w-0 flex-col rounded-[20px] border border-[var(--nature-border-blue)] bg-white shadow-[0_4px_14px_rgba(127,166,196,0.07)]">
+                <div className="border-b border-[var(--nature-border)] px-6 py-4">
                   <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
                     <div>
                       <div className="mb-2">
@@ -2487,8 +2512,8 @@ export default function Summary2Section({
                       </p>
                     </div>
 
-                    <div className="min-w-[220px] rounded-2xl border border-gray-200 bg-gray-50/80 px-4 py-3">
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9A8F81]">
+                    <div className="min-w-[220px] rounded-[16px] border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/12 px-4 py-3">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
                         Overview
                       </div>
                       <div className="mt-1 text-sm font-semibold text-[#27364A]">
@@ -2498,7 +2523,7 @@ export default function Summary2Section({
                   </div>
 
                   {sankeyCollapsed ? (
-                    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    <div className="mt-3 rounded-[14px] border border-[var(--nature-border)] bg-[var(--nature-cream)]/28 px-4 py-3 text-sm text-stone-700">
                       현재 데이터는 기기 값이 1개만 보여 중간 기기 구간이
                       단순하게 보일 수 있습니다.
                     </div>
@@ -2507,7 +2532,7 @@ export default function Summary2Section({
 
                 <div className="flex flex-1 flex-col justify-between px-6 py-4">
                   {sankeyData.totalValue > 0 ? (
-                    <div className="flex justify-center pb-6 pt-22">
+                    <div className="flex justify-center pb-5 pt-8">
                       <div className="w-full max-w-[800px]">
                         <svg
                           viewBox="0 0 800 270"
@@ -2524,6 +2549,9 @@ export default function Summary2Section({
                               key={`link-${idx}`}
                               d={link.path}
                               fill={link.fill}
+                              stroke="rgba(255,255,255,0.55)"
+                              strokeWidth="0.6"
+                              className="opacity-90 hover:opacity-100"
                             >
                               <title>
                                 {`${link.source} → ${link.target}\n${sankeyOutcomeLabel}: ${sankeyOutcomeFormatter(
@@ -2540,8 +2568,10 @@ export default function Summary2Section({
                                 y={node.y}
                                 width={node.width}
                                 height={node.height}
-                                rx="8"
+                                rx="5"
                                 fill={node.color}
+                                stroke="#FFFFFF"
+                                strokeWidth="1"
                               />
                               <text
                                 x={node.x - 8}
@@ -2550,7 +2580,7 @@ export default function Summary2Section({
                                 dominantBaseline="middle"
                                 fontSize="12"
                                 fontWeight="600"
-                                fill="#374151"
+                                fill="#475569"
                               >
                                 {node.label}
                               </text>
@@ -2564,8 +2594,11 @@ export default function Summary2Section({
                                 y={node.y}
                                 width={node.width}
                                 height={node.height}
-                                rx="8"
+                                rx="5"
                                 fill={node.color}
+                                fillOpacity="0.72"
+                                stroke="#FFFFFF"
+                                strokeWidth="1"
                               />
                               <text
                                 x={node.x + node.width + 8}
@@ -2574,7 +2607,7 @@ export default function Summary2Section({
                                 dominantBaseline="middle"
                                 fontSize="12"
                                 fontWeight="600"
-                                fill="#374151"
+                                fill="#475569"
                               >
                                 {node.label}
                               </text>
@@ -2588,8 +2621,10 @@ export default function Summary2Section({
                                 y={node.y}
                                 width={node.width}
                                 height={node.height}
-                                rx="8"
+                                rx="5"
                                 fill={node.color}
+                                stroke="#FFFFFF"
+                                strokeWidth="1"
                               />
                               <text
                                 x={node.x + node.width + 8}
@@ -2598,7 +2633,7 @@ export default function Summary2Section({
                                 dominantBaseline="middle"
                                 fontSize="12"
                                 fontWeight="700"
-                                fill="#111827"
+                                fill="#334155"
                               >
                                 {sankeyOutcomeFormatter(node.value)}
                               </text>
@@ -2608,7 +2643,7 @@ export default function Summary2Section({
                       </div>
                     </div>
                   ) : (
-                    <div className="rounded-2xl border border-gray-200 bg-gray-50 px-6 py-10 text-sm text-[#7A8794]">
+                    <div className="rounded-[16px] border border-[var(--nature-border)] bg-[var(--nature-cream)]/18 px-6 py-10 text-sm text-[#7A8794]">
                       {isDbAcquisition
                         ? "흐름 차트를 표시할 전환 데이터가 없습니다."
                         : "Sankey 차트를 표시할 매출 데이터가 없습니다."}

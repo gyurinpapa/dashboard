@@ -26,6 +26,7 @@ type SummaryCardItem = {
   value: string;
   tone?: SummaryKPICardTone;
   footerText?: string;
+  featured?: boolean;
 };
 
 function getGridClass(reportType?: ReportType) {
@@ -105,6 +106,7 @@ function SummaryKPIComponent({ reportType = "commerce", totals }: Props) {
           value: formatCount(clicks),
           tone: "neutral",
           footerText: "유입 발생 수",
+          featured: true,
         },
         {
           key: "ctr",
@@ -145,6 +147,7 @@ function SummaryKPIComponent({ reportType = "commerce", totals }: Props) {
           value: KRW(cpa),
           tone: "cost",
           footerText: "리드 1건 확보 비용",
+          featured: true,
         },
         {
           key: "cvr",
@@ -240,6 +243,7 @@ function SummaryKPIComponent({ reportType = "commerce", totals }: Props) {
         value: formatPercentFromRoas(roas, 1),
         tone: "roas",
         footerText: "광고비 대비 매출 효율",
+        featured: true,
       },
     ];
   }, [reportType, metricValues]);
@@ -255,6 +259,7 @@ function SummaryKPIComponent({ reportType = "commerce", totals }: Props) {
             tone={card.tone ?? "neutral"}
             density="report"
             footerText={card.footerText}
+            featured={card.featured}
           />
         ))}
       </div>

@@ -407,10 +407,10 @@ export default function SummaryGoal({
     "whitespace-nowrap px-3 py-3 text-left text-[13px] font-semibold text-slate-900 align-middle";
 
   const inputClass =
-    "h-9 w-full rounded-xl border border-slate-200 bg-white px-2.5 text-right text-[13px] font-semibold text-slate-900 outline-none transition-all duration-200 placeholder:text-slate-400 focus:border-slate-400 focus:bg-white focus:shadow-[0_0_0_3px_rgba(148,163,184,0.10)]";
+    "h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-right text-[13px] font-semibold text-slate-900 outline-none placeholder:text-slate-400 focus:border-[var(--nature-blue)] focus:ring-2 focus:ring-[var(--nature-blue-light)]/35";
 
   const readonlyTargetClass =
-    "inline-flex h-9 w-full items-center justify-end rounded-xl border border-slate-200 bg-slate-50 px-2.5 text-[13px] font-semibold text-slate-700";
+    "inline-flex h-9 w-full items-center justify-end rounded-lg border border-slate-200 bg-slate-50/80 px-2.5 text-[13px] font-semibold text-slate-700";
 
   const { mainProgressRate, progressPercent } = useMemo(() => {
     const fallback = clamp01(
@@ -446,22 +446,14 @@ export default function SummaryGoal({
   }, [actualCost, goalComputedCost, currentMonthKey, lastDataDate]);
 
   const progressPercentSafe = clamp01(mainProgressRate) * 100;
-  const runnerLeft = `calc(${progressPercentSafe}% - 18px)`;
-  const isFinalSprint = mainProgressRate >= 0.85;
-  const isMidSprint = mainProgressRate >= 0.45 && mainProgressRate < 0.85;
-  const runnerFace = isFinalSprint ? "🙌" : isMidSprint ? "🥵" : "🏃";
-  const runnerCaption = isFinalSprint
-    ? "목표 지점 도착 직전"
-    : isMidSprint
-      ? "열심히 달리는 중"
-      : "출발 후 페이스 업";
+  const progressMarkerLeft = `calc(${progressPercentSafe}% - 7px)`;
 
   return (
     <section>
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="inline-flex items-center rounded-full border border-slate-200/80 bg-white px-3 py-1 text-[11px] font-semibold tracking-[0.08em] text-slate-500 shadow-sm">
-            🎯 MONTH GOAL
+          <div className="inline-flex items-center rounded-full border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/22 px-3 py-1 text-[11px] font-semibold tracking-[0.08em] text-slate-600">
+            MONTH GOAL
           </div>
 
           <h2 className="mt-3 text-[22px] font-semibold tracking-tight text-slate-900">
@@ -473,8 +465,8 @@ export default function SummaryGoal({
           </p>
         </div>
 
-        <div className="rounded-2xl border border-amber-200/70 bg-gradient-to-br from-amber-50 to-orange-50 px-4 py-3 shadow-sm">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-amber-700">
+        <div className="rounded-[16px] border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/16 px-4 py-3">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.10em] text-slate-500">
             {mode.focusLabel}
           </div>
           <div className="mt-1 text-sm font-semibold text-slate-900">
@@ -483,109 +475,55 @@ export default function SummaryGoal({
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-[24px] border border-slate-200/90 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.06)]">
-        <div className="border-b border-slate-200/80 bg-gradient-to-b from-slate-50 via-white to-white px-5 py-3">
+      <div className="overflow-hidden rounded-[20px] border border-slate-200/90 bg-white shadow-[0_4px_14px_rgba(127,166,196,0.07)]">
+        <div className="border-b border-slate-200/80 bg-slate-50/55 px-5 py-4">
           <div className="mx-auto max-w-[720px]">
-            <div className="mb-2 flex items-center justify-between gap-3">
+            <div className="mb-3 flex items-end justify-between gap-3">
               <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                  Monthly Progress Run
+                <div className="text-[10px] font-semibold uppercase tracking-[0.10em] text-slate-500">
+                  Monthly Progress
                 </div>
-                <div className="mt-0.5 text-sm font-semibold text-slate-900">
+                <div className="mt-1 text-sm font-semibold text-slate-900">
                   {mode.titleText}
                 </div>
               </div>
 
-              <div className="rounded-full border border-slate-200/80 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm">
-                진행률 {progressPercent}%
+              <div className="text-right">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.10em] text-slate-500">
+                  Period Progress
+                </div>
+                <div className="mt-1 text-lg font-semibold tracking-[-0.03em] text-[#4F7F9E]">
+                  {progressPercent}%
+                </div>
               </div>
             </div>
 
-            <div className="rounded-[20px] border border-slate-200/80 bg-gradient-to-r from-sky-50 via-white to-amber-50 px-3 py-3">
-              <div className="relative h-[82px] overflow-hidden rounded-[16px] border border-slate-200/70 bg-white/80 px-4">
-                <div className="pointer-events-none absolute inset-x-4 top-[6px] flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">
-                  <span>Start</span>
-                  <span>Finish</span>
-                </div>
+            <div className="rounded-[16px] border border-slate-200/85 bg-white px-4 py-4">
+              <div className="mb-2 flex items-center justify-between text-[10px] font-semibold tracking-[0.08em] text-slate-400">
+                <span>월 초</span>
+                <span>중간 점검</span>
+                <span>말일</span>
+              </div>
 
-                <div className="absolute inset-x-4 top-[34px] h-[10px] rounded-full bg-slate-100 shadow-inner">
+              <div className="relative py-2">
+                <div className="h-2 overflow-hidden rounded-full bg-slate-100">
                   <div
-                    className="h-full rounded-full bg-gradient-to-r from-sky-400 via-indigo-400 to-emerald-400 transition-all duration-700 ease-out"
+                    className="h-full rounded-full bg-[var(--nature-blue)]"
                     style={{ width: `${progressPercentSafe}%` }}
                   />
                 </div>
 
-                <div className="pointer-events-none absolute inset-x-4 top-[37px] flex items-center justify-between px-[6px]">
-                  {Array.from({ length: 9 }).map((_, i) => (
-                    <span
-                      key={i}
-                      className="h-1.5 w-1.5 rounded-full bg-white ring-1 ring-slate-200"
-                    />
-                  ))}
-                </div>
-
-                <div className="absolute left-4 top-[21px] z-[1] flex flex-col items-start gap-1">
-                  <span className="text-[16px] leading-none drop-shadow-[0_2px_3px_rgba(15,23,42,0.16)]">
-                    🚩
-                  </span>
-                  <span className="text-[10px] font-semibold text-slate-400">
-                    1일
-                  </span>
-                </div>
-
                 <div
-                  className="absolute top-[4px] z-10 transition-all duration-700 ease-out"
-                  style={{ left: runnerLeft }}
-                >
-                  <div className="relative flex flex-col items-center">
-                    {!isFinalSprint ? (
-                      <span className="absolute -left-4 top-1 text-[11px] opacity-70 animate-pulse">
-                        {isMidSprint ? "💨" : "✨"}
-                      </span>
-                    ) : (
-                      <span className="absolute -left-5 -top-1 text-[12px] animate-bounce">
-                        🎉
-                      </span>
-                    )}
+                  className="absolute top-0 h-6 w-[14px] rounded-full border-2 border-white bg-[var(--nature-blue)] shadow-[0_2px_6px_rgba(127,166,196,0.24)]"
+                  style={{ left: progressMarkerLeft }}
+                  aria-hidden="true"
+                />
+              </div>
 
-                    <span
-                      className={[
-                        "relative z-10 inline-block text-[30px] leading-none drop-shadow-[0_6px_10px_rgba(15,23,42,0.22)]",
-                        isFinalSprint
-                          ? "animate-bounce"
-                          : "animate-[bounce_1.8s_ease-in-out_infinite]",
-                      ].join(" ")}
-                    >
-                      <span className="inline-block -scale-x-100">
-                        {runnerFace}
-                      </span>
-                    </span>
-
-                    <span className="absolute left-1/2 top-[24px] h-[8px] w-[24px] -translate-x-1/2 rounded-full bg-slate-900/10 blur-[2px]" />
-
-                    <span className="mt-1 rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm">
-                      {runnerCaption}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="absolute right-4 top-[6px] z-10 flex flex-col items-center">
-                  <span
-                    className={[
-                      "inline-block text-[30px] leading-none drop-shadow-[0_6px_10px_rgba(15,23,42,0.18)] transition-all duration-500",
-                      isFinalSprint ? "scale-110" : "scale-100 opacity-90",
-                    ].join(" ")}
-                  >
-                    🏁
-                  </span>
-                  <span className="mt-1 h-[8px] w-[18px] rounded-full bg-slate-900/10 blur-[2px]" />
-                </div>
-
-                <div className="absolute bottom-1.5 left-4 right-4 flex items-center justify-between text-[10px] font-medium text-slate-400">
-                  <span>월 초</span>
-                  <span>중간 점검</span>
-                  <span>말일</span>
-                </div>
+              <div className="mt-2 flex items-center justify-between text-[10px] font-medium text-slate-400">
+                <span>1일</span>
+                <span>{lastDataDate ? `기준일 ${lastDataDate}` : "현재 데이터 기준"}</span>
+                <span>월말</span>
               </div>
             </div>
           </div>
@@ -632,7 +570,7 @@ export default function SummaryGoal({
               )}
             </colgroup>
 
-            <thead className="border-b border-slate-200 bg-gradient-to-b from-slate-50 to-white">
+            <thead className="border-b border-slate-200 bg-slate-50/75">
               <tr>
                 <th className={firstHeadClass}>구분</th>
                 <th className={headClass}>Impr</th>
@@ -769,7 +707,7 @@ export default function SummaryGoal({
                 )}
               </tr>
 
-              <tr className="border-t border-slate-200 bg-gradient-to-r from-sky-50 via-blue-50 to-white">
+              <tr className="border-t border-slate-200 bg-[var(--nature-blue-light)]/14">
                 <td className="whitespace-nowrap px-3 py-3 text-left text-[13px] font-bold text-slate-900">
                   결과
                 </td>
@@ -825,7 +763,7 @@ export default function SummaryGoal({
                 )}
               </tr>
 
-              <tr className="border-t border-slate-200 bg-gradient-to-r from-amber-50 via-yellow-50 to-white">
+              <tr className="border-t border-slate-200 bg-[var(--nature-cream)]/30">
                 <td className={firstTdClass}>달성률</td>
 
                 <td className={`${tdClass} font-semibold text-slate-900`}>
@@ -873,11 +811,11 @@ export default function SummaryGoal({
 
       {monthGoalInsight ? (
         <div className="mt-6">
-          <div className="overflow-hidden rounded-[24px] border border-slate-200/90 bg-gradient-to-br from-amber-50 via-white to-rose-50 shadow-[0_10px_28px_rgba(15,23,42,0.06)]">
+          <div className="overflow-hidden rounded-[20px] border border-[var(--nature-border-blue)] bg-white shadow-[0_4px_14px_rgba(127,166,196,0.07)]">
             <div className="border-b border-slate-200/70 px-5 py-4">
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-sm">
-                  💡
+                <span className="inline-flex h-7 items-center justify-center rounded-full border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/22 px-2.5 text-[10px] font-semibold tracking-[0.08em] text-slate-600">
+                  INSIGHT
                 </span>
                 <span>이번 달 목표 인사이트</span>
               </div>

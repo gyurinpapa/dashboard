@@ -135,16 +135,16 @@ const TD_BAR_CLASS =
   "whitespace-nowrap px-4 py-3.5 text-right align-middle sm:px-5";
 
 const WRAPPER_CLASS_NAME =
-  "overflow-auto rounded-[22px] border border-[var(--nature-border-blue)] bg-[linear-gradient(180deg,var(--nature-surface),rgba(243,228,210,0.42))] shadow-[inset_0_1px_0_rgba(255,255,255,0.86)]";
+  "overflow-auto rounded-[20px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] shadow-[0_4px_14px_rgba(127,166,196,0.07)]";
 const TRAFFIC_TABLE_CLASS_NAME = "w-full min-w-[760px] text-sm";
 const DB_ACQUISITION_TABLE_CLASS_NAME = "w-full min-w-[980px] text-sm";
 const COMMERCE_TABLE_CLASS_NAME = "w-full min-w-[1120px] text-sm";
 const EMPTY_ROW_CLASS_NAME =
   "px-4 py-12 text-center text-sm font-medium text-slate-400";
 const MONTH_ROW_TR_CLASS_NAME =
-  "border-t border-[var(--nature-border)] transition-colors odd:bg-[var(--nature-surface)] even:bg-[var(--nature-cream)]/24 hover:bg-[var(--nature-blue-light)]/28";
+  "border-t border-[var(--nature-border)] odd:bg-[var(--nature-surface)] even:bg-[var(--nature-cream)]/18 hover:bg-[var(--nature-blue-light)]/16";
 const DELTA_ROW_TR_CLASS_NAME =
-  "border-b border-[var(--nature-border)] bg-[linear-gradient(180deg,rgba(243,228,210,0.72),rgba(255,250,243,0.94))] text-slate-800";
+  "border-b border-[var(--nature-border)] bg-[var(--nature-cream)]/30 text-slate-800";
 
 function getMetricMode(reportType?: ReportType): MetricMode {
   const resolvedType: ReportType = reportType ?? "commerce";
@@ -223,7 +223,7 @@ const SummaryTableHeader = memo(function SummaryTableHeader({
   labels,
 }: HeaderProps) {
   return (
-    <thead className="sticky top-0 z-10 border-b border-[var(--nature-border)] bg-[var(--nature-cream)]/85 backdrop-blur">
+    <thead className="sticky top-0 z-10 border-b border-[var(--nature-border)] bg-[var(--nature-cream)]/88">
       <tr>
         <th className={TABLE_HEAD_FIRST_TH_CLASS}>{labels.month}</th>
         <th className={TABLE_HEAD_TH_CLASS}>{labels.impressions}</th>

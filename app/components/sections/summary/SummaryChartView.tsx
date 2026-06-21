@@ -137,18 +137,18 @@ const HIDDEN_AXIS_DOMAIN: ["auto", "auto"] = ["auto", "auto"];
 
 const REPORT_DENSITY: DensityClasses = {
   shell:
-  "overflow-hidden rounded-[24px] border border-[var(--nature-border-blue)] bg-[linear-gradient(180deg,var(--nature-surface),rgba(243,228,210,0.42))] shadow-[0_10px_30px_rgba(127,166,196,0.12)]",
+    "overflow-hidden rounded-[20px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] shadow-[0_4px_14px_rgba(127,166,196,0.07)]",
   headerWrap:
-    "relative border-b border-[var(--nature-border)] bg-[linear-gradient(180deg,rgba(255,250,243,0.96),rgba(243,228,210,0.46))] px-5 py-4 sm:px-6 sm:py-5",
+    "relative border-b border-[var(--nature-border)] bg-[var(--nature-surface)] px-5 py-4 sm:px-6 sm:py-5",
   title: "text-[15px] font-semibold tracking-[-0.02em] text-slate-900 sm:text-[16px]",
   subtitle: "mt-1.5 text-xs font-medium text-slate-500 sm:text-[12px]",
   topStripWrap: "px-4 pt-4 sm:px-6 sm:pt-5",
   topStrip:
-    "rounded-[20px] border border-[var(--nature-border-blue)] bg-[linear-gradient(180deg,var(--nature-surface),rgba(183,215,227,0.24))] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]",
+    "rounded-[16px] border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/12 px-3 py-2.5",
   chartWrap: "h-[430px] px-4 pb-4 pt-3 sm:h-[470px] sm:px-6 sm:pb-5 sm:pt-4",
   chartMinHeight: 340,
   legendPill:
-    "inline-flex h-7 items-center gap-2 rounded-full border border-[var(--nature-border)] bg-[var(--nature-surface)] px-3 text-[11px] font-semibold tracking-[-0.01em] text-slate-700 shadow-sm",
+    "inline-flex h-7 items-center gap-2 rounded-full border border-[var(--nature-border)] bg-white px-3 text-[11px] font-semibold tracking-[-0.01em] text-slate-700",
   insightLabel: "text-[10px]",
   insightValue:
     "max-w-[220px] truncate text-[12px] font-semibold tracking-[-0.01em] text-slate-800",
@@ -437,7 +437,7 @@ const CustomTooltip = memo(function CustomTooltip({
   const roasItem = payload.find((item: any) => item?.dataKey === "roas");
 
   return (
-    <div className="min-w-[220px] rounded-[20px] border border-[var(--nature-border-blue)] bg-[linear-gradient(180deg,var(--nature-surface),rgba(243,228,210,0.48))] px-4 py-3 shadow-[0_12px_32px_rgba(127,166,196,0.18)]">
+    <div className="min-w-[220px] rounded-[16px] border border-[var(--nature-border-blue)] bg-white px-4 py-3 shadow-[0_6px_18px_rgba(127,166,196,0.12)]">
       <div className="text-[12px] font-semibold tracking-[-0.02em] text-slate-900">
         {label}
       </div>
@@ -571,9 +571,8 @@ const HoverAwareDot = memo(function HoverAwareDot({
 
   return (
     <g>
-      {isActive && <circle cx={cx} cy={cy} r={13} fill="rgba(148,163,184,0.10)" />}
-      {isActive && <circle cx={cx} cy={cy} r={9} fill="rgba(148,163,184,0.12)" />}
-      <circle cx={cx} cy={cy} r={isActive ? 6.5 : 5.5} fill="#FFFFFF" />
+      {isActive && <circle cx={cx} cy={cy} r={10} fill="rgba(127,166,196,0.10)" />}
+      <circle cx={cx} cy={cy} r={isActive ? 6 : 5} fill="#FFFFFF" />
       <circle
         cx={cx}
         cy={cy}
@@ -810,7 +809,7 @@ function SummaryChartView({
       </div>
 
       <div className={densityClasses.chartWrap}>
-        <div className="h-full rounded-[20px] border border-[var(--nature-border)] bg-[linear-gradient(180deg,var(--nature-surface),rgba(243,228,210,0.36))] px-2 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:px-3 sm:py-3">
+        <div className="h-full rounded-[16px] border border-[var(--nature-border)] bg-white px-2 py-2 sm:px-3 sm:py-3">
           <ResponsiveContainer
             width="100%"
             height="100%"
@@ -828,7 +827,8 @@ function SummaryChartView({
               <CartesianGrid
                 vertical={false}
                 stroke={TOKENS.surface.grid}
-                strokeDasharray="3 4"
+                strokeDasharray="2 5"
+                strokeOpacity={0.62}
               />
 
               {activeLabel ? (
@@ -889,7 +889,7 @@ function SummaryChartView({
                 dataKey="cost"
                 name={mode.costLabel}
                 fill={TOKENS.metric.cost}
-                radius={[10, 10, 0, 0]}
+                radius={[6, 6, 0, 0]}
                 maxBarSize={densityClasses.maxBarSize}
                 isAnimationActive={false}
               >
@@ -902,7 +902,7 @@ function SummaryChartView({
                   dataKey="revenue"
                   name={mode.revenueLabel}
                   fill={TOKENS.metric.revenue}
-                  radius={[10, 10, 0, 0]}
+                  radius={[6, 6, 0, 0]}
                   maxBarSize={densityClasses.maxBarSize}
                   isAnimationActive={false}
                 >

@@ -23,6 +23,7 @@ type Props = {
   density?: SummaryKPICardDensity;
   footerText?: string;
   className?: string;
+  featured?: boolean;
 };
 
 const TOKENS = {
@@ -39,7 +40,8 @@ const TOKENS = {
  * - tone별 class/style lookup을 정적 상수로 고정
  * - density별 class bundle도 정적 상수화
  * - React.memo로 동일 props 재렌더 방지
- * - glow overlay style은 tone 기준으로만 바뀌므로 useMemo로 안정화
+ * - style object는 tone/featured 기준으로만 바뀌므로 useMemo로 안정화
+ * - hover 이동과 glow overlay를 제거해 일반 웹/PPT 캡처 결과를 동일하게 유지
  */
 
 const ACCENT_BY_TONE: Record<SummaryKPICardTone, string> = {
@@ -57,21 +59,21 @@ const VALUE_CLASS_BY_TONE: Record<SummaryKPICardTone, string> = {
 };
 
 const BADGE_CLASS_BY_TONE: Record<SummaryKPICardTone, string> = {
-  neutral: "border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/30 text-slate-600",
-  cost: "border-[var(--nature-border)] bg-[var(--nature-cream)]/70 text-stone-700",
-  revenue: "border-[var(--nature-border-blue)] bg-[var(--nature-blue)]/12 text-sky-700",
-  roas: "border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/40 text-cyan-700",
+  neutral:
+    "border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/22 text-slate-600",
+  cost:
+    "border-[var(--nature-border)] bg-[var(--nature-cream)]/52 text-stone-700",
+  revenue:
+    "border-[var(--nature-border-blue)] bg-[var(--nature-blue)]/10 text-sky-700",
+  roas:
+    "border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/30 text-cyan-700",
 };
 
 const TONE_SURFACE_CLASS_BY_TONE: Record<SummaryKPICardTone, string> = {
-  neutral:
-    "bg-[linear-gradient(180deg,var(--nature-surface),rgba(243,228,210,0.34))]",
-  cost:
-    "bg-[linear-gradient(180deg,rgba(243,228,210,0.76),var(--nature-surface))]",
-  revenue:
-    "bg-[linear-gradient(180deg,rgba(183,215,227,0.44),var(--nature-surface))]",
-  roas:
-    "bg-[linear-gradient(180deg,rgba(183,215,227,0.34),rgba(243,228,210,0.28))]",
+  neutral: "bg-[var(--nature-surface)]",
+  cost: "bg-[rgba(243,228,210,0.42)]",
+  revenue: "bg-[rgba(183,215,227,0.20)]",
+  roas: "bg-[rgba(183,215,227,0.18)]",
 };
 
 const FOOTER_CLASS_BY_TONE: Record<SummaryKPICardTone, string> = {
@@ -81,30 +83,6 @@ const FOOTER_CLASS_BY_TONE: Record<SummaryKPICardTone, string> = {
   roas: "text-cyan-600",
 };
 
-const GLOW_STYLE_BY_TONE: Record<SummaryKPICardTone, { background: string }> = {
-  neutral: {
-    background:
-      "radial-gradient(circle at top right, rgba(127,166,196,0.14), rgba(127,166,196,0) 58%)",
-  },
-  cost: {
-    background:
-      "radial-gradient(circle at top right, rgba(207,194,177,0.22), rgba(207,194,177,0) 58%)",
-  },
-  revenue: {
-    background:
-      "radial-gradient(circle at top right, rgba(127,166,196,0.18), rgba(127,166,196,0) 58%)",
-  },
-  roas: {
-    background:
-      "radial-gradient(circle at top right, rgba(183,215,227,0.22), rgba(183,215,227,0) 58%)",
-  },
-};
-
-const HOVER_OVERLAY_STYLE = {
-  background:
-    "linear-gradient(135deg, rgba(255,255,255,0.34) 0%, rgba(255,255,255,0) 62%)",
-} as const;
-
 const DENSITY_CLASSES: Record<
   SummaryKPICardDensity,
   {
@@ -112,47 +90,53 @@ const DENSITY_CLASSES: Record<
     badge: string;
     dot: string;
     value: string;
+    featuredValue: string;
     sub: string;
     footer: string;
   }
 > = {
   report: {
-    root: "rounded-[24px] px-4 py-3",
+    root: "rounded-[20px] px-4 py-3",
     badge: "h-6 px-2.5 text-[10px]",
-    dot: "mt-0.5 h-2.5 w-2.5",
+    dot: "mt-0.5 h-2 w-2",
     value: "mt-3 text-[24px] leading-none",
+    featuredValue: "text-[26px]",
     sub: "mt-2 text-[11px]",
     footer: "mt-3 pt-3 text-[10px]",
   },
   "export-full": {
-    root: "rounded-[22px] px-4 py-3.5",
+    root: "rounded-[20px] px-4 py-3.5",
     badge: "h-6 px-2.5 text-[10px]",
-    dot: "mt-0.5 h-2.5 w-2.5",
+    dot: "mt-0.5 h-2 w-2",
     value: "mt-4 text-[24px] leading-none",
+    featuredValue: "text-[26px]",
     sub: "mt-2 text-[11px]",
     footer: "mt-3 pt-3 text-[10px]",
   },
   "export-wide": {
-    root: "rounded-[20px] px-4 py-3",
+    root: "rounded-[18px] px-4 py-3",
     badge: "h-6 px-2.5 text-[10px]",
-    dot: "mt-0.5 h-2.5 w-2.5",
+    dot: "mt-0.5 h-2 w-2",
     value: "mt-3.5 text-[22px] leading-none",
+    featuredValue: "text-[24px]",
     sub: "mt-1.5 text-[11px]",
     footer: "mt-3 pt-3 text-[10px]",
   },
   "export-compact": {
-    root: "rounded-[16px] px-2.5 py-2",
+    root: "rounded-[14px] px-2.5 py-2",
     badge: "h-5 px-2 text-[9px]",
-    dot: "mt-0.5 h-2 w-2",
+    dot: "mt-0.5 h-1.5 w-1.5",
     value: "mt-3 text-[16px] leading-tight",
+    featuredValue: "text-[17px]",
     sub: "mt-1 text-[9px]",
     footer: "mt-2.5 pt-2 text-[8px]",
   },
   "export-side-compact": {
-    root: "rounded-[14px] px-2 py-1.5",
+    root: "rounded-[12px] px-2 py-1.5",
     badge: "h-4.5 px-1.5 text-[8px]",
     dot: "mt-0.5 h-1.5 w-1.5",
     value: "mt-2.5 text-[13px] leading-tight",
+    featuredValue: "text-[14px]",
     sub: "mt-1 text-[8px]",
     footer: "mt-2 pt-1.5 text-[7px]",
   },
@@ -166,6 +150,7 @@ function SummaryKPICardViewComponent({
   density = "report",
   footerText,
   className,
+  featured = false,
 }: Props) {
   const accent = ACCENT_BY_TONE[tone];
   const valueClass = VALUE_CLASS_BY_TONE[tone];
@@ -178,31 +163,49 @@ function SummaryKPICardViewComponent({
   const hasHelperText = Boolean(helperText);
   const hasFooterRow = Boolean(subValue && footerText);
 
-  const accentBarStyle = useMemo(() => ({ backgroundColor: accent }), [accent]);
-  const dotStyle = useMemo(() => ({ backgroundColor: accent }), [accent]);
-  const glowStyle = useMemo(() => GLOW_STYLE_BY_TONE[tone], [tone]);
+  const accentBarStyle = useMemo(
+    () => ({
+      backgroundColor: accent,
+      opacity: featured ? 1 : 0.58,
+    }),
+    [accent, featured]
+  );
+
+  const dotStyle = useMemo(
+    () => ({
+      backgroundColor: accent,
+      opacity: featured ? 1 : 0.68,
+    }),
+    [accent, featured]
+  );
 
   const rootClassName = useMemo(
     () =>
       [
-        "group relative overflow-hidden border border-[var(--nature-border-blue)] shadow-[0_10px_30px_rgba(127,166,196,0.12)] transition-all duration-200 hover:-translate-y-[1px] hover:border-[var(--nature-blue-light)] hover:shadow-[0_14px_34px_rgba(127,166,196,0.16)]",
+        "relative overflow-hidden border",
+        featured
+          ? "border-[var(--nature-blue)] shadow-[0_6px_18px_rgba(127,166,196,0.10)]"
+          : "border-[var(--nature-border-blue)] shadow-[0_3px_12px_rgba(127,166,196,0.06)]",
         toneSurfaceClass,
         densityClasses.root,
         className ?? "",
       ]
         .filter(Boolean)
         .join(" "),
-    [toneSurfaceClass, densityClasses.root, className]
+    [featured, toneSurfaceClass, densityClasses.root, className]
   );
 
   const badgeClassName = useMemo(
     () =>
       [
-        "inline-flex items-center rounded-full border font-semibold uppercase tracking-[0.08em] shadow-sm",
+        "inline-flex items-center rounded-full border font-semibold uppercase tracking-[0.08em]",
         badgeClass,
         densityClasses.badge,
-      ].join(" "),
-    [badgeClass, densityClasses.badge]
+        featured ? "ring-1 ring-[var(--nature-blue-light)]/45" : "",
+      ]
+        .filter(Boolean)
+        .join(" "),
+    [badgeClass, densityClasses.badge, featured]
   );
 
   const dotClassName = useMemo(
@@ -216,8 +219,16 @@ function SummaryKPICardViewComponent({
         "relative font-semibold tracking-[-0.03em]",
         valueClass,
         densityClasses.value,
-      ].join(" "),
-    [valueClass, densityClasses.value]
+        featured ? densityClasses.featuredValue : "",
+      ]
+        .filter(Boolean)
+        .join(" "),
+    [
+      valueClass,
+      densityClasses.value,
+      densityClasses.featuredValue,
+      featured,
+    ]
   );
 
   const helperClassName = useMemo(
@@ -242,14 +253,10 @@ function SummaryKPICardViewComponent({
 
   return (
     <div className={rootClassName}>
-      <div className="absolute inset-x-0 top-0 h-[3px]" style={accentBarStyle} />
-
       <div
-        className="pointer-events-none absolute inset-0 opacity-100"
-        style={glowStyle}
+        className={featured ? "absolute inset-x-0 top-0 h-[3px]" : "absolute inset-x-0 top-0 h-[2px]"}
+        style={accentBarStyle}
       />
-
-      <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent" />
 
       <div className="relative flex items-start justify-between gap-3">
         <div className={badgeClassName}>{title}</div>
@@ -264,11 +271,6 @@ function SummaryKPICardViewComponent({
       {hasHelperText ? <div className={helperClassName}>{helperText}</div> : null}
 
       {hasFooterRow ? <div className={footerClassName}>{footerText}</div> : null}
-
-      <div
-        className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-200 group-hover:opacity-100"
-        style={HOVER_OVERLAY_STYLE}
-      />
     </div>
   );
 }

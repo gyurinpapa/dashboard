@@ -1,4 +1,3 @@
-// app/components/ui/SourceBrand.tsx
 "use client";
 
 import { memo, useEffect, useMemo, useState } from "react";
@@ -49,7 +48,7 @@ const SourceBrand = memo(function SourceBrand({
       title={sourceText}
       aria-label={sourceText}
     >
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-[#CFC2B1]/55 bg-white shadow-[0_4px_12px_rgba(127,166,196,0.10)]">
+      <span className="flex h-7 w-7 shrink-0 select-none items-center justify-center overflow-hidden rounded-md border border-[#CFC2B1]/50 bg-white/95">
         <img
           src={brand.logoSrc}
           alt=""

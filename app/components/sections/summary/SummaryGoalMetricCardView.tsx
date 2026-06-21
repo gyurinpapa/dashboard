@@ -24,75 +24,75 @@ function clampRate(rate: number) {
 function getDensityClasses(density: SummaryGoalMetricCardDensity) {
   if (density === "export-full") {
     return {
-      root: "rounded-[20px] p-4",
+      root: "rounded-[18px] p-4",
       title: "text-sm",
       badge: "px-2.5 py-1 text-[11px]",
       statGrid: "grid-cols-2 gap-3",
-      statCard: "rounded-2xl px-3 py-3",
+      statCard: "rounded-[14px] px-3 py-3",
       statLabel: "text-[11px]",
       statValue: "mt-1 text-sm",
-      progressWrap: "mt-3",
-      progressMeta: "mb-1 text-[11px]",
-      progressBar: "h-3 rounded-full",
+      progressWrap: "mt-3.5",
+      progressMeta: "mb-1.5 text-[11px]",
+      progressBar: "h-2.5 rounded-full",
     };
   }
 
   if (density === "export-wide") {
     return {
-      root: "rounded-[18px] p-3.5",
+      root: "rounded-[16px] p-3.5",
       title: "text-[13px]",
       badge: "px-2.5 py-1 text-[10px]",
       statGrid: "grid-cols-2 gap-2.5",
-      statCard: "rounded-2xl px-3 py-2.5",
+      statCard: "rounded-[13px] px-3 py-2.5",
       statLabel: "text-[10px]",
       statValue: "mt-1 text-[13px]",
-      progressWrap: "mt-2.5",
-      progressMeta: "mb-1 text-[10px]",
-      progressBar: "h-3 rounded-full",
+      progressWrap: "mt-3",
+      progressMeta: "mb-1.5 text-[10px]",
+      progressBar: "h-2.5 rounded-full",
     };
   }
 
   if (density === "export-compact") {
     return {
-      root: "rounded-[16px] p-3",
+      root: "rounded-[14px] p-3",
       title: "text-[12px]",
       badge: "px-2 py-0.5 text-[9px]",
       statGrid: "grid-cols-2 gap-2",
-      statCard: "rounded-[16px] px-2.5 py-2",
+      statCard: "rounded-[12px] px-2.5 py-2",
       statLabel: "text-[9px]",
       statValue: "mt-1 text-[12px]",
-      progressWrap: "mt-2",
+      progressWrap: "mt-2.5",
       progressMeta: "mb-1 text-[9px]",
-      progressBar: "h-2.5 rounded-full",
+      progressBar: "h-2 rounded-full",
     };
   }
 
   if (density === "export-side-compact") {
     return {
-      root: "rounded-[14px] p-2.5",
+      root: "rounded-[12px] p-2.5",
       title: "text-[11px]",
       badge: "px-1.5 py-0.5 text-[8px]",
       statGrid: "grid-cols-1 gap-1.5",
-      statCard: "rounded-[14px] px-2 py-1.5",
+      statCard: "rounded-[10px] px-2 py-1.5",
       statLabel: "text-[8px]",
       statValue: "mt-0.5 text-[10px]",
-      progressWrap: "mt-1.5",
+      progressWrap: "mt-2",
       progressMeta: "mb-1 text-[8px]",
-      progressBar: "h-2 rounded-full",
+      progressBar: "h-1.5 rounded-full",
     };
   }
 
   return {
-    root: "rounded-[20px] p-4",
+    root: "rounded-[18px] p-4",
     title: "text-sm",
     badge: "px-2.5 py-1 text-[11px]",
     statGrid: "grid-cols-2 gap-3",
-    statCard: "rounded-2xl px-3 py-3",
+    statCard: "rounded-[14px] px-3 py-3",
     statLabel: "text-[11px]",
     statValue: "mt-1 text-sm",
-    progressWrap: "mt-3",
-    progressMeta: "mb-1 text-[11px]",
-    progressBar: "h-3 rounded-full",
+    progressWrap: "mt-3.5",
+    progressMeta: "mb-1.5 text-[11px]",
+    progressBar: "h-2.5 rounded-full",
   };
 }
 
@@ -110,11 +110,15 @@ export default function SummaryGoalMetricCardView({
   return (
     <div
       className={[
-        "border border-slate-200 bg-slate-50",
+        "relative overflow-hidden border border-[var(--nature-border-blue)] bg-white shadow-[0_3px_12px_rgba(127,166,196,0.06)]",
         densityClasses.root,
         className ?? "",
-      ].join(" ")}
+      ]
+        .filter(Boolean)
+        .join(" ")}
     >
+      <div className="absolute inset-y-0 left-0 w-[3px] bg-[var(--nature-blue)]/72" />
+
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className={`font-semibold text-slate-900 ${densityClasses.title}`}>
           {label}
@@ -122,7 +126,7 @@ export default function SummaryGoalMetricCardView({
 
         <div
           className={[
-            "rounded-full border border-slate-200 bg-white font-semibold text-slate-600",
+            "rounded-full border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/20 font-semibold text-[#4F7F9E]",
             densityClasses.badge,
           ].join(" ")}
         >
@@ -133,7 +137,7 @@ export default function SummaryGoalMetricCardView({
       <div className={`grid ${densityClasses.statGrid}`}>
         <div
           className={[
-            "border border-slate-200 bg-white",
+            "border border-slate-200/85 bg-slate-50/65",
             densityClasses.statCard,
           ].join(" ")}
         >
@@ -147,7 +151,7 @@ export default function SummaryGoalMetricCardView({
 
         <div
           className={[
-            "border border-slate-200 bg-white",
+            "border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/12",
             densityClasses.statCard,
           ].join(" ")}
         >
@@ -162,15 +166,19 @@ export default function SummaryGoalMetricCardView({
 
       <div className={densityClasses.progressWrap}>
         <div
-          className={`mb-1 flex items-center justify-between text-slate-500 ${densityClasses.progressMeta}`}
+          className={`flex items-center justify-between text-slate-500 ${densityClasses.progressMeta}`}
         >
           <span>달성률</span>
-          <span>{Math.round(safeRate)}%</span>
+          <span className="font-semibold text-[#4F7F9E]">
+            {Math.round(safeRate)}%
+          </span>
         </div>
 
-        <div className={`overflow-hidden bg-slate-200 ${densityClasses.progressBar}`}>
+        <div
+          className={`overflow-hidden bg-slate-100 ${densityClasses.progressBar}`}
+        >
           <div
-            className={`h-full bg-slate-500 ${densityClasses.progressBar}`}
+            className={`h-full bg-[var(--nature-blue)] ${densityClasses.progressBar}`}
             style={{ width: `${safeRate}%` }}
           />
         </div>
