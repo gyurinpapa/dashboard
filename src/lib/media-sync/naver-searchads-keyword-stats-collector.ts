@@ -1,0 +1,2056 @@
+import { setTimeout as delay } from "node:timers/promises";
+
+import type { NaverSearchAdsCredentials } from "./connection-credentials";
+import {
+  NaverSearchAdsApiError,
+  fetchNaverSearchAdsAdgroupPage,
+  fetchNaverSearchAdsCampaignPage,
+  fetchNaverSearchAdsKeywordDailyStats,
+  fetchNaverSearchAdsKeywordPage,
+  type NaverSearchAdsAdgroupRecord,
+  type NaverSearchAdsCampaignRecord,
+  type NaverSearchAdsKeywordDailyStatsResult,
+  type NaverSearchAdsKeywordRecord,
+  type NaverSearchAdsListPage,
+} from "./naver-searchads-api";
+import {
+  NAVER_KEYWORD_STATS_DEFAULT_CHUNK_PAUSE_MS,
+  NAVER_KEYWORD_STATS_DEFAULT_CHUNK_SIZE,
+  NAVER_KEYWORD_STATS_DEFAULT_MAX_RETRY_COUNT,
+  NAVER_KEYWORD_STATS_DEFAULT_REQUEST_INTERVAL_MS,
+  NAVER_KEYWORD_STATS_MAX_JITTER_MS,
+  classifyNaverKeywordStatsRetryCategory,
+  createNaverKeywordStatsFailureState,
+  decideNaverKeywordStatsRetry,
+  markNaverKeywordStatsKeywordCompleted,
+  normalizeNaverKeywordStatsCursor,
+  resolveNaverKeywordStatsResumePosition,
+  setNaverKeywordStatsAdgroupPosition,
+  setNaverKeywordStatsCampaignPosition,
+  setNaverKeywordStatsDiscoveredCount,
+  setNaverKeywordStatsKeywordPagePosition,
+  type NaverKeywordStatsCursor,
+  type NaverKeywordStatsFailureState,
+  type NaverKeywordStatsRetryCategory,
+} from "./naver-searchads-keyword-stats-state";
+
+const NAVER_KEYWORD_STATS_HIERARCHY_RECORD_SIZE = 100;
+
+const NAVER_KEYWORD_STATS_MAX_CAMPAIGN_PAGES = 10_000;
+const NAVER_KEYWORD_STATS_MAX_ADGROUP_PAGES = 10_000;
+const NAVER_KEYWORD_STATS_MAX_KEYWORD_PAGES = 10_000;
+
+export type NaverKeywordStatsCollectorErrorCode =
+  | "INVALID_INPUT"
+  | "COLLECTION_ABORTED"
+  | "API_REQUEST_FAILED"
+  | "RETRY_EXHAUSTED"
+  | "CONSUMER_FAILED"
+  | "INVALID_PAGINATION_CURSOR"
+  | "PAGE_LIMIT_EXCEEDED"
+  | "RESUME_POSITION_NOT_FOUND";
+
+export class NaverKeywordStatsCollectorError extends Error {
+  readonly code: NaverKeywordStatsCollectorErrorCode;
+  readonly cursor: NaverKeywordStatsCursor;
+  readonly failureState: NaverKeywordStatsFailureState | null;
+
+  constructor(
+    code: NaverKeywordStatsCollectorErrorCode,
+    message: string,
+    options: ErrorOptions & {
+      cursor: NaverKeywordStatsCursor;
+      failureState?: NaverKeywordStatsFailureState | null;
+    },
+  ) {
+    super(message, {
+      cause: options.cause,
+    });
+
+    this.name = "NaverKeywordStatsCollectorError";
+    this.code = code;
+    this.cursor = {
+      ...options.cursor,
+    };
+
+    this.failureState =
+      options.failureState
+        ? {
+            ...options.failureState,
+            cursor: {
+              ...options.failureState.cursor,
+            },
+          }
+        : null;
+  }
+}
+
+export type NaverKeywordStatsCollectorItem = {
+  campaign: NaverSearchAdsCampaignRecord;
+  adgroup: NaverSearchAdsAdgroupRecord;
+  keyword: NaverSearchAdsKeywordRecord;
+  stats: NaverSearchAdsKeywordDailyStatsResult;
+
+  cursorBefore: NaverKeywordStatsCursor;
+  cursorAfter: NaverKeywordStatsCursor;
+
+  requestAttemptCount: number;
+};
+
+export type NaverKeywordStatsCollectorConsumer = (
+  item: NaverKeywordStatsCollectorItem,
+) => void | Promise<void>;
+
+export type NaverKeywordStatsCollectorRetryOperation =
+  | "campaign_page"
+  | "adgroup_page"
+  | "keyword_page"
+  | "keyword_stats";
+
+export type NaverKeywordStatsCollectorRetryEvent = {
+  category: Exclude<
+    NaverKeywordStatsRetryCategory,
+    "non_retryable"
+  >;
+
+  retryCount: number;
+  delayMs: number;
+
+  operation: NaverKeywordStatsCollectorRetryOperation;
+
+  keywordId: string | null;
+  httpStatus: number | null;
+  errorCode: string;
+
+  cursor: NaverKeywordStatsCursor;
+};
+
+export type NaverKeywordStatsCollectorRetryCallback = (
+  event: NaverKeywordStatsCollectorRetryEvent,
+) => void | Promise<void>;
+
+export type NaverKeywordStatsCollectorSleep = (
+  milliseconds: number,
+  signal?: AbortSignal,
+) => Promise<void>;
+
+export type NaverKeywordStatsCollectorDependencies = {
+  fetchCampaignPage: typeof fetchNaverSearchAdsCampaignPage;
+  fetchAdgroupPage: typeof fetchNaverSearchAdsAdgroupPage;
+  fetchKeywordPage: typeof fetchNaverSearchAdsKeywordPage;
+  fetchKeywordDailyStats:
+    typeof fetchNaverSearchAdsKeywordDailyStats;
+
+  sleep: NaverKeywordStatsCollectorSleep;
+  now: () => number;
+  random: () => number;
+};
+
+export type NaverKeywordStatsCollectorInput = {
+  credentials: NaverSearchAdsCredentials;
+  cursor: NaverKeywordStatsCursor;
+
+  onKeywordStats: NaverKeywordStatsCollectorConsumer;
+  onRetry?: NaverKeywordStatsCollectorRetryCallback;
+
+  requestIntervalMs?: number;
+  keywordChunkSize?: number;
+  chunkPauseMs?: number;
+  maxRetryCount?: number;
+
+  signal?: AbortSignal;
+
+  dependencies?: Partial<NaverKeywordStatsCollectorDependencies>;
+};
+
+export type NaverKeywordStatsCollectorResult = {
+  completed: true;
+  cursor: NaverKeywordStatsCursor;
+
+  campaignPagesRead: number;
+  campaignsRead: number;
+
+  adgroupPagesRead: number;
+  adgroupsRead: number;
+
+  keywordPagesRead: number;
+  keywordsDiscoveredInRun: number;
+  keywordsCompletedInRun: number;
+
+  statsRequestsAttempted: number;
+  statsRequestsSucceeded: number;
+
+  retryCount: number;
+};
+
+type NormalizedCollectorOptions = {
+  requestIntervalMs: number;
+  keywordChunkSize: number;
+  chunkPauseMs: number;
+  maxRetryCount: number;
+};
+
+type ResolvedCollectorDependencies =
+  NaverKeywordStatsCollectorDependencies;
+
+type CollectorRuntimeState = {
+  cursor: NaverKeywordStatsCursor;
+
+  campaignPagesRead: number;
+  campaignsRead: number;
+
+  adgroupPagesRead: number;
+  adgroupsRead: number;
+
+  keywordPagesRead: number;
+
+  keywordsDiscoveredInRun: number;
+  keywordsCompletedInRun: number;
+
+  statsRequestsAttempted: number;
+  statsRequestsSucceeded: number;
+
+  retryCount: number;
+
+  lastStatsRequestStartedAt: number | null;
+};
+
+type ApiRequestResult<T> = {
+  value: T;
+  attemptCount: number;
+};
+
+type ResumeTarget = {
+  enabled: boolean;
+
+  campaignId: string | null;
+  adgroupId: string | null;
+
+  keywordBaseSearchId: string | null;
+  keywordChunkIndex: number;
+  keywordIndexInChunk: number;
+  lastCompletedKeywordId: string | null;
+
+  campaignMatched: boolean;
+  adgroupMatched: boolean;
+  keywordPageMatched: boolean;
+  keywordChunkMatched: boolean;
+};
+
+const DEFAULT_COLLECTOR_DEPENDENCIES:
+  ResolvedCollectorDependencies = {
+    fetchCampaignPage:
+      fetchNaverSearchAdsCampaignPage,
+
+    fetchAdgroupPage:
+      fetchNaverSearchAdsAdgroupPage,
+
+    fetchKeywordPage:
+      fetchNaverSearchAdsKeywordPage,
+
+    fetchKeywordDailyStats:
+      fetchNaverSearchAdsKeywordDailyStats,
+
+    sleep: async (
+      milliseconds: number,
+      signal?: AbortSignal,
+    ): Promise<void> => {
+      await delay(
+        milliseconds,
+        undefined,
+        signal
+          ? {
+              signal,
+            }
+          : undefined,
+      );
+    },
+
+    now: () => Date.now(),
+    random: () => Math.random(),
+  };
+
+function normalizeNonNegativeInteger(
+  value: unknown,
+  fieldName: string,
+): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value < 0
+  ) {
+    throw new Error(
+      `${fieldName} must be a non-negative integer.`,
+    );
+  }
+
+  return value;
+}
+
+function normalizePositiveInteger(
+  value: unknown,
+  fieldName: string,
+  maximum: number,
+): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value <= 0 ||
+    value > maximum
+  ) {
+    throw new Error(
+      `${fieldName} must be an integer between 1 and ${maximum}.`,
+    );
+  }
+
+  return value;
+}
+
+function normalizeCollectorOptions(
+  input: NaverKeywordStatsCollectorInput,
+): NormalizedCollectorOptions {
+  return {
+    requestIntervalMs:
+      input.requestIntervalMs === undefined
+        ? NAVER_KEYWORD_STATS_DEFAULT_REQUEST_INTERVAL_MS
+        : normalizeNonNegativeInteger(
+            input.requestIntervalMs,
+            "requestIntervalMs",
+          ),
+
+    keywordChunkSize:
+      input.keywordChunkSize === undefined
+        ? NAVER_KEYWORD_STATS_DEFAULT_CHUNK_SIZE
+        : normalizePositiveInteger(
+            input.keywordChunkSize,
+            "keywordChunkSize",
+            NAVER_KEYWORD_STATS_HIERARCHY_RECORD_SIZE,
+          ),
+
+    chunkPauseMs:
+      input.chunkPauseMs === undefined
+        ? NAVER_KEYWORD_STATS_DEFAULT_CHUNK_PAUSE_MS
+        : normalizeNonNegativeInteger(
+            input.chunkPauseMs,
+            "chunkPauseMs",
+          ),
+
+    maxRetryCount:
+      input.maxRetryCount === undefined
+        ? NAVER_KEYWORD_STATS_DEFAULT_MAX_RETRY_COUNT
+        : normalizePositiveInteger(
+            input.maxRetryCount,
+            "maxRetryCount",
+            10,
+          ),
+  };
+}
+
+function resolveCollectorDependencies(
+  dependencies:
+    | Partial<NaverKeywordStatsCollectorDependencies>
+    | undefined,
+): ResolvedCollectorDependencies {
+  const resolvedDependencies:
+    ResolvedCollectorDependencies = {
+      ...DEFAULT_COLLECTOR_DEPENDENCIES,
+      ...dependencies,
+    };
+
+  const dependencyEntries: Array<
+    [
+      keyof ResolvedCollectorDependencies,
+      unknown,
+    ]
+  > = [
+    [
+      "fetchCampaignPage",
+      resolvedDependencies.fetchCampaignPage,
+    ],
+    [
+      "fetchAdgroupPage",
+      resolvedDependencies.fetchAdgroupPage,
+    ],
+    [
+      "fetchKeywordPage",
+      resolvedDependencies.fetchKeywordPage,
+    ],
+    [
+      "fetchKeywordDailyStats",
+      resolvedDependencies.fetchKeywordDailyStats,
+    ],
+    [
+      "sleep",
+      resolvedDependencies.sleep,
+    ],
+    [
+      "now",
+      resolvedDependencies.now,
+    ],
+    [
+      "random",
+      resolvedDependencies.random,
+    ],
+  ];
+
+  for (
+    const [dependencyName, dependency]
+    of dependencyEntries
+  ) {
+    if (typeof dependency !== "function") {
+      throw new Error(
+        `${dependencyName} dependency must be a function.`,
+      );
+    }
+  }
+
+  return resolvedDependencies;
+}
+
+function cloneCursor(
+  cursor: NaverKeywordStatsCursor,
+): NaverKeywordStatsCursor {
+  return {
+    ...cursor,
+  };
+}
+
+function createInitialRuntimeState(
+  cursor: NaverKeywordStatsCursor,
+): CollectorRuntimeState {
+  return {
+    cursor:
+      cloneCursor(cursor),
+
+    campaignPagesRead: 0,
+    campaignsRead: 0,
+
+    adgroupPagesRead: 0,
+    adgroupsRead: 0,
+
+    keywordPagesRead: 0,
+
+    keywordsDiscoveredInRun: 0,
+    keywordsCompletedInRun: 0,
+
+    statsRequestsAttempted: 0,
+    statsRequestsSucceeded: 0,
+
+    retryCount: 0,
+
+    lastStatsRequestStartedAt: null,
+  };
+}
+
+function createResumeTarget(
+  cursor: NaverKeywordStatsCursor,
+): ResumeTarget {
+  const hasHierarchyPosition =
+    cursor.campaignId !== null ||
+    cursor.adgroupId !== null ||
+    cursor.keywordBaseSearchId !== null ||
+    cursor.keywordChunkIndex > 0 ||
+    cursor.keywordIndexInChunk > 0 ||
+    cursor.lastCompletedKeywordId !== null;
+
+  return {
+    enabled:
+      hasHierarchyPosition,
+
+    campaignId:
+      cursor.campaignId,
+
+    adgroupId:
+      cursor.adgroupId,
+
+    keywordBaseSearchId:
+      cursor.keywordBaseSearchId,
+
+    keywordChunkIndex:
+      cursor.keywordChunkIndex,
+
+    keywordIndexInChunk:
+      cursor.keywordIndexInChunk,
+
+    lastCompletedKeywordId:
+      cursor.lastCompletedKeywordId,
+
+    campaignMatched:
+      !hasHierarchyPosition ||
+      cursor.campaignId === null,
+
+    adgroupMatched:
+      !hasHierarchyPosition ||
+      cursor.adgroupId === null,
+
+    keywordPageMatched:
+      !hasHierarchyPosition ||
+      cursor.keywordBaseSearchId === null,
+
+    keywordChunkMatched:
+      !hasHierarchyPosition ||
+      (
+        cursor.keywordBaseSearchId === null &&
+        cursor.keywordChunkIndex === 0
+      ),
+  };
+}
+
+function assertNotAborted(
+  signal: AbortSignal | undefined,
+  cursor: NaverKeywordStatsCursor,
+): void {
+  if (signal?.aborted !== true) {
+    return;
+  }
+
+  throw new NaverKeywordStatsCollectorError(
+    "COLLECTION_ABORTED",
+    "Naver keyword stats collection was aborted.",
+    {
+      cursor,
+    },
+  );
+}
+
+async function waitWithAbort(input: {
+  milliseconds: number;
+  signal: AbortSignal | undefined;
+  cursor: NaverKeywordStatsCursor;
+  dependencies: ResolvedCollectorDependencies;
+}): Promise<void> {
+  if (input.milliseconds <= 0) {
+    assertNotAborted(
+      input.signal,
+      input.cursor,
+    );
+
+    return;
+  }
+
+  assertNotAborted(
+    input.signal,
+    input.cursor,
+  );
+
+  try {
+    await input.dependencies.sleep(
+      input.milliseconds,
+      input.signal,
+    );
+  } catch (error) {
+    if (input.signal?.aborted === true) {
+      throw new NaverKeywordStatsCollectorError(
+        "COLLECTION_ABORTED",
+        "Naver keyword stats collection was aborted while waiting.",
+        {
+          cursor:
+            input.cursor,
+          cause:
+            error,
+        },
+      );
+    }
+
+    throw error;
+  }
+}
+
+function createJitterMs(
+  dependencies: ResolvedCollectorDependencies,
+): number {
+  const randomValue =
+    dependencies.random();
+
+  if (
+    !Number.isFinite(randomValue) ||
+    randomValue < 0 ||
+    randomValue >= 1
+  ) {
+    throw new Error(
+      "random dependency must return a number greater than or equal to 0 and lower than 1.",
+    );
+  }
+
+  return Math.floor(
+    randomValue *
+      (
+        NAVER_KEYWORD_STATS_MAX_JITTER_MS +
+        1
+      ),
+  );
+}
+
+function isNetworkApiError(
+  error: NaverSearchAdsApiError,
+): boolean {
+  return (
+    error.code === "NETWORK_ERROR" ||
+    error.code === "REQUEST_TIMEOUT"
+  );
+}
+
+function getApiErrorCode(
+  error: NaverSearchAdsApiError,
+): string {
+  if (
+    error.code === "HTTP_ERROR" &&
+    error.status !== null
+  ) {
+    return `${error.code}_${error.status}`;
+  }
+
+  return error.code;
+}
+
+function buildFailureState(input: {
+  cursor: NaverKeywordStatsCursor;
+  keywordId: string | null;
+  error: NaverSearchAdsApiError;
+  retryCount: number;
+  dependencies: ResolvedCollectorDependencies;
+}): NaverKeywordStatsFailureState {
+  return createNaverKeywordStatsFailureState({
+    cursor:
+      input.cursor,
+
+    keywordId:
+      input.keywordId,
+
+    httpStatus:
+      input.error.status,
+
+    errorCode:
+      getApiErrorCode(
+        input.error,
+      ),
+
+    retryCount:
+      input.retryCount,
+
+    failedAt:
+      new Date(
+        input.dependencies.now(),
+      ).toISOString(),
+  });
+}
+
+async function notifyRetry(
+  callback:
+    | NaverKeywordStatsCollectorRetryCallback
+    | undefined,
+  event: NaverKeywordStatsCollectorRetryEvent,
+): Promise<void> {
+  if (!callback) {
+    return;
+  }
+
+  await callback({
+    ...event,
+    cursor:
+      cloneCursor(
+        event.cursor,
+      ),
+  });
+}
+
+async function waitForStatsRequestInterval(input: {
+  state: CollectorRuntimeState;
+  options: NormalizedCollectorOptions;
+  signal: AbortSignal | undefined;
+  dependencies: ResolvedCollectorDependencies;
+}): Promise<void> {
+  if (
+    input.state.lastStatsRequestStartedAt ===
+    null
+  ) {
+    return;
+  }
+
+  const elapsedMilliseconds =
+    input.dependencies.now() -
+    input.state.lastStatsRequestStartedAt;
+
+  const remainingMilliseconds =
+    input.options.requestIntervalMs -
+    elapsedMilliseconds;
+
+  if (remainingMilliseconds <= 0) {
+    return;
+  }
+
+  await waitWithAbort({
+    milliseconds:
+      remainingMilliseconds,
+
+    signal:
+      input.signal,
+
+    cursor:
+      input.state.cursor,
+
+    dependencies:
+      input.dependencies,
+  });
+}
+
+async function executeApiRequestWithRetry<T>(input: {
+  operation: NaverKeywordStatsCollectorRetryOperation;
+  keywordId: string | null;
+
+  state: CollectorRuntimeState;
+  options: NormalizedCollectorOptions;
+
+  signal: AbortSignal | undefined;
+
+  onRetry:
+    | NaverKeywordStatsCollectorRetryCallback
+    | undefined;
+
+  dependencies: ResolvedCollectorDependencies;
+
+  beforeAttempt?: () => Promise<void>;
+  request: () => Promise<T>;
+}): Promise<ApiRequestResult<T>> {
+  let retryCount = 0;
+
+  while (true) {
+    assertNotAborted(
+      input.signal,
+      input.state.cursor,
+    );
+
+    if (input.beforeAttempt) {
+      await input.beforeAttempt();
+    }
+
+    if (
+      input.operation ===
+      "keyword_stats"
+    ) {
+      input.state.lastStatsRequestStartedAt =
+        input.dependencies.now();
+
+      input.state.statsRequestsAttempted += 1;
+    }
+
+    try {
+      const value =
+        await input.request();
+
+      if (
+        input.operation ===
+        "keyword_stats"
+      ) {
+        input.state.statsRequestsSucceeded += 1;
+      }
+
+      return {
+        value,
+        attemptCount:
+          retryCount + 1,
+      };
+    } catch (error) {
+      if (
+        !(error instanceof NaverSearchAdsApiError)
+      ) {
+        throw error;
+      }
+
+      const category =
+        classifyNaverKeywordStatsRetryCategory({
+          httpStatus:
+            error.status,
+
+          isNetworkError:
+            isNetworkApiError(error),
+        });
+
+      const retryDecision =
+        decideNaverKeywordStatsRetry({
+          category,
+          retryCount,
+
+          jitterMs:
+            category === "server_error" ||
+            category === "network_error"
+              ? createJitterMs(
+                  input.dependencies,
+                )
+              : 0,
+
+          maxRetryCount:
+            input.options.maxRetryCount,
+        });
+
+      if (!retryDecision.shouldRetry) {
+        const failureState =
+          buildFailureState({
+            cursor:
+              input.state.cursor,
+
+            keywordId:
+              input.keywordId,
+
+            error,
+
+            retryCount:
+              retryDecision.retryCount,
+
+            dependencies:
+              input.dependencies,
+          });
+
+        throw new NaverKeywordStatsCollectorError(
+          retryDecision.reason ===
+            "MAX_RETRY_COUNT_REACHED"
+            ? "RETRY_EXHAUSTED"
+            : "API_REQUEST_FAILED",
+
+          retryDecision.reason ===
+            "MAX_RETRY_COUNT_REACHED"
+            ? "Naver Search Ads API retry limit was reached."
+            : "Naver Search Ads API request failed with a non-retryable error.",
+
+          {
+            cursor:
+              input.state.cursor,
+
+            failureState,
+
+            cause:
+              error,
+          },
+        );
+      }
+
+      retryCount =
+        retryDecision.retryCount;
+
+      input.state.retryCount += 1;
+
+      await notifyRetry(
+        input.onRetry,
+        {
+          category:
+            retryDecision.category,
+
+          retryCount:
+            retryDecision.retryCount,
+
+          delayMs:
+            retryDecision.delayMs,
+
+          operation:
+            input.operation,
+
+          keywordId:
+            input.keywordId,
+
+          httpStatus:
+            error.status,
+
+          errorCode:
+            getApiErrorCode(
+              error,
+            ),
+
+          cursor:
+            input.state.cursor,
+        },
+      );
+
+      await waitWithAbort({
+        milliseconds:
+          retryDecision.delayMs,
+
+        signal:
+          input.signal,
+
+        cursor:
+          input.state.cursor,
+
+        dependencies:
+          input.dependencies,
+      });
+    }
+  }
+}
+
+function splitKeywordPageIntoChunks(
+  keywords: readonly NaverSearchAdsKeywordRecord[],
+  chunkSize: number,
+): NaverSearchAdsKeywordRecord[][] {
+  const chunks:
+    NaverSearchAdsKeywordRecord[][] = [];
+
+  for (
+    let offset = 0;
+    offset < keywords.length;
+    offset += chunkSize
+  ) {
+    chunks.push(
+      keywords.slice(
+        offset,
+        offset + chunkSize,
+      ),
+    );
+  }
+
+  return chunks;
+}
+
+function getSafeDiscoveredCountForChunk(input: {
+  cursor: NaverKeywordStatsCursor;
+  remainingKeywordCount: number;
+}): number {
+  return Math.max(
+    input.cursor.discoveredKeywordCount,
+
+    input.cursor.completedKeywordCount +
+      input.remainingKeywordCount,
+  );
+}
+
+function setCursorDiscoveredLowerBound(input: {
+  cursor: NaverKeywordStatsCursor;
+  remainingKeywordCount: number;
+}): NaverKeywordStatsCursor {
+  const nextDiscoveredCount =
+    getSafeDiscoveredCountForChunk(
+      input,
+    );
+
+  if (
+    nextDiscoveredCount ===
+    input.cursor.discoveredKeywordCount
+  ) {
+    return cloneCursor(
+      input.cursor,
+    );
+  }
+
+  return setNaverKeywordStatsDiscoveredCount(
+    input.cursor,
+    nextDiscoveredCount,
+  );
+}
+
+function assertPaginationCanContinue(input: {
+  currentBaseSearchId: string | null;
+  nextBaseSearchId: string | null;
+
+  recordsLength: number;
+  recordSize: number;
+
+  cursor: NaverKeywordStatsCursor;
+
+  level:
+    | "campaign"
+    | "adgroup"
+    | "keyword";
+}): void {
+  if (
+    input.recordsLength <
+    input.recordSize
+  ) {
+    return;
+  }
+
+  if (
+    !input.nextBaseSearchId ||
+    input.nextBaseSearchId ===
+      input.currentBaseSearchId
+  ) {
+    throw new NaverKeywordStatsCollectorError(
+      "INVALID_PAGINATION_CURSOR",
+      `Naver Search Ads ${input.level} pagination cursor did not advance.`,
+      {
+        cursor:
+          input.cursor,
+      },
+    );
+  }
+}
+
+function shouldSkipCampaignForResume(
+  resumeTarget: ResumeTarget,
+  campaignId: string,
+): boolean {
+  if (
+    !resumeTarget.enabled ||
+    resumeTarget.campaignMatched
+  ) {
+    return false;
+  }
+
+  if (
+    resumeTarget.campaignId ===
+    campaignId
+  ) {
+    resumeTarget.campaignMatched =
+      true;
+
+    return false;
+  }
+
+  return true;
+}
+
+function shouldSkipAdgroupForResume(
+  resumeTarget: ResumeTarget,
+  adgroupId: string,
+): boolean {
+  if (
+    !resumeTarget.enabled ||
+    resumeTarget.adgroupMatched
+  ) {
+    return false;
+  }
+
+  if (
+    resumeTarget.adgroupId ===
+    adgroupId
+  ) {
+    resumeTarget.adgroupMatched =
+      true;
+
+    return false;
+  }
+
+  return true;
+}
+
+function shouldSkipKeywordPageForResume(input: {
+  resumeTarget: ResumeTarget;
+  pageBaseSearchId: string | null;
+}): boolean {
+  if (
+    !input.resumeTarget.enabled ||
+    input.resumeTarget.keywordPageMatched
+  ) {
+    return false;
+  }
+
+  if (
+    input.resumeTarget.keywordBaseSearchId ===
+    input.pageBaseSearchId
+  ) {
+    input.resumeTarget.keywordPageMatched =
+      true;
+
+    return false;
+  }
+
+  return true;
+}
+
+function shouldSkipKeywordChunkForResume(input: {
+  resumeTarget: ResumeTarget;
+  chunkIndex: number;
+}): boolean {
+  if (
+    !input.resumeTarget.enabled ||
+    input.resumeTarget.keywordChunkMatched
+  ) {
+    return false;
+  }
+
+  if (
+    input.resumeTarget.keywordChunkIndex ===
+    input.chunkIndex
+  ) {
+    input.resumeTarget.keywordChunkMatched =
+      true;
+
+    return false;
+  }
+
+  return true;
+}
+
+function resolveChunkStartIndex(input: {
+  resumeTarget: ResumeTarget;
+  cursor: NaverKeywordStatsCursor;
+  chunk: readonly NaverSearchAdsKeywordRecord[];
+}): number {
+  if (!input.resumeTarget.enabled) {
+    return 0;
+  }
+
+  const keywordIds =
+    input.chunk.map(
+      (keyword) =>
+        keyword.id,
+    );
+
+  const resumeCursor:
+    NaverKeywordStatsCursor = {
+      ...input.cursor,
+
+      keywordIndexInChunk:
+        input.resumeTarget.keywordIndexInChunk,
+
+      lastCompletedKeywordId:
+        input.resumeTarget.lastCompletedKeywordId,
+    };
+
+  const resumePosition =
+    resolveNaverKeywordStatsResumePosition(
+      resumeCursor,
+      keywordIds,
+    );
+
+  return resumePosition.keywordIndexInChunk;
+}
+
+function markResumeCompleted(
+  resumeTarget: ResumeTarget,
+): void {
+  resumeTarget.enabled = false;
+  resumeTarget.campaignMatched = true;
+  resumeTarget.adgroupMatched = true;
+  resumeTarget.keywordPageMatched = true;
+  resumeTarget.keywordChunkMatched = true;
+}
+
+function assertResumeTargetResolved(
+  resumeTarget: ResumeTarget,
+  cursor: NaverKeywordStatsCursor,
+): void {
+  if (!resumeTarget.enabled) {
+    return;
+  }
+
+  throw new NaverKeywordStatsCollectorError(
+    "RESUME_POSITION_NOT_FOUND",
+    "The saved Naver keyword stats resume position could not be found in the current hierarchy.",
+    {
+      cursor,
+    },
+  );
+}
+
+async function consumeKeywordChunk(input: {
+  campaign: NaverSearchAdsCampaignRecord;
+  adgroup: NaverSearchAdsAdgroupRecord;
+
+  chunk: readonly NaverSearchAdsKeywordRecord[];
+  chunkIndex: number;
+
+  state: CollectorRuntimeState;
+  options: NormalizedCollectorOptions;
+  resumeTarget: ResumeTarget;
+
+  credentials: NaverSearchAdsCredentials;
+
+  onKeywordStats:
+    NaverKeywordStatsCollectorConsumer;
+
+  onRetry:
+    | NaverKeywordStatsCollectorRetryCallback
+    | undefined;
+
+  signal: AbortSignal | undefined;
+
+  dependencies: ResolvedCollectorDependencies;
+}): Promise<void> {
+  if (
+    shouldSkipKeywordChunkForResume({
+      resumeTarget:
+        input.resumeTarget,
+
+      chunkIndex:
+        input.chunkIndex,
+    })
+  ) {
+    return;
+  }
+
+  const startIndex =
+    resolveChunkStartIndex({
+      resumeTarget:
+        input.resumeTarget,
+
+      cursor:
+        input.state.cursor,
+
+      chunk:
+        input.chunk,
+    });
+
+  if (
+    startIndex < 0 ||
+    startIndex > input.chunk.length
+  ) {
+    throw new NaverKeywordStatsCollectorError(
+      "RESUME_POSITION_NOT_FOUND",
+      "The saved keyword index is outside the rebuilt keyword chunk.",
+      {
+        cursor:
+          input.state.cursor,
+      },
+    );
+  }
+
+  markResumeCompleted(
+    input.resumeTarget,
+  );
+
+  const remainingKeywordCount =
+    input.chunk.length -
+    startIndex;
+
+  input.state.cursor =
+    setCursorDiscoveredLowerBound({
+      cursor:
+        input.state.cursor,
+
+      remainingKeywordCount,
+    });
+
+  input.state.keywordsDiscoveredInRun +=
+    remainingKeywordCount;
+
+  for (
+    let keywordIndex = startIndex;
+    keywordIndex < input.chunk.length;
+    keywordIndex += 1
+  ) {
+    assertNotAborted(
+      input.signal,
+      input.state.cursor,
+    );
+
+    const keyword =
+      input.chunk[keywordIndex];
+
+    if (!keyword) {
+      throw new NaverKeywordStatsCollectorError(
+        "INVALID_INPUT",
+        "The keyword chunk contains an invalid item.",
+        {
+          cursor:
+            input.state.cursor,
+        },
+      );
+    }
+
+    const cursorBefore =
+      cloneCursor(
+        input.state.cursor,
+      );
+
+    const statsRequest:
+      ApiRequestResult<NaverSearchAdsKeywordDailyStatsResult> =
+      await executeApiRequestWithRetry<
+        NaverSearchAdsKeywordDailyStatsResult
+      >({
+        operation:
+          "keyword_stats",
+
+        keywordId:
+          keyword.id,
+
+        state:
+          input.state,
+
+        options:
+          input.options,
+
+        signal:
+          input.signal,
+
+        onRetry:
+          input.onRetry,
+
+        dependencies:
+          input.dependencies,
+
+        beforeAttempt:
+          async (): Promise<void> => {
+            await waitForStatsRequestInterval({
+              state:
+                input.state,
+
+              options:
+                input.options,
+
+              signal:
+                input.signal,
+
+              dependencies:
+                input.dependencies,
+            });
+          },
+
+        request:
+          (): Promise<NaverSearchAdsKeywordDailyStatsResult> =>
+            input.dependencies.fetchKeywordDailyStats({
+              credentials:
+                input.credentials,
+
+              keywordId:
+                keyword.id,
+
+              dateFrom:
+                input.state.cursor.dateFrom,
+
+              dateTo:
+                input.state.cursor.dateTo,
+            }),
+      });
+
+    const cursorAfter =
+      markNaverKeywordStatsKeywordCompleted({
+        cursor:
+          cursorBefore,
+
+        keywordId:
+          keyword.id,
+
+        keywordIndexInChunk:
+          keywordIndex,
+      });
+
+    try {
+      await input.onKeywordStats({
+        campaign:
+          input.campaign,
+
+        adgroup:
+          input.adgroup,
+
+        keyword,
+
+        stats:
+          statsRequest.value,
+
+        cursorBefore,
+
+        cursorAfter:
+          cloneCursor(
+            cursorAfter,
+          ),
+
+        requestAttemptCount:
+          statsRequest.attemptCount,
+      });
+    } catch (error) {
+      throw new NaverKeywordStatsCollectorError(
+        "CONSUMER_FAILED",
+        "The Naver keyword stats consumer failed.",
+        {
+          cursor:
+            cursorBefore,
+
+          cause:
+            error,
+        },
+      );
+    }
+
+    input.state.cursor =
+      cursorAfter;
+
+    input.state.keywordsCompletedInRun += 1;
+  }
+
+  if (
+    input.chunk.length ===
+      input.options.keywordChunkSize &&
+    input.options.chunkPauseMs > 0
+  ) {
+    await waitWithAbort({
+      milliseconds:
+        input.options.chunkPauseMs,
+
+      signal:
+        input.signal,
+
+      cursor:
+        input.state.cursor,
+
+      dependencies:
+        input.dependencies,
+    });
+  }
+}
+
+async function collectKeywordPages(input: {
+  campaign: NaverSearchAdsCampaignRecord;
+  adgroup: NaverSearchAdsAdgroupRecord;
+
+  state: CollectorRuntimeState;
+  options: NormalizedCollectorOptions;
+  resumeTarget: ResumeTarget;
+
+  credentials: NaverSearchAdsCredentials;
+
+  onKeywordStats:
+    NaverKeywordStatsCollectorConsumer;
+
+  onRetry:
+    | NaverKeywordStatsCollectorRetryCallback
+    | undefined;
+
+  signal: AbortSignal | undefined;
+
+  dependencies: ResolvedCollectorDependencies;
+}): Promise<void> {
+  let keywordBaseSearchId:
+    | string
+    | null = null;
+
+  for (
+    let pageNumber = 1;
+    pageNumber <=
+    NAVER_KEYWORD_STATS_MAX_KEYWORD_PAGES;
+    pageNumber += 1
+  ) {
+    const pageBaseSearchId:
+      string | null =
+      keywordBaseSearchId;
+
+    const keywordPageRequest:
+      ApiRequestResult<
+        NaverSearchAdsListPage<NaverSearchAdsKeywordRecord>
+      > =
+      await executeApiRequestWithRetry<
+        NaverSearchAdsListPage<NaverSearchAdsKeywordRecord>
+      >({
+        operation:
+          "keyword_page",
+
+        keywordId:
+          null,
+
+        state:
+          input.state,
+
+        options:
+          input.options,
+
+        signal:
+          input.signal,
+
+        onRetry:
+          input.onRetry,
+
+        dependencies:
+          input.dependencies,
+
+        request:
+          (): Promise<
+            NaverSearchAdsListPage<NaverSearchAdsKeywordRecord>
+          > =>
+            input.dependencies.fetchKeywordPage({
+              credentials:
+                input.credentials,
+
+              adgroupId:
+                input.adgroup.id,
+
+              baseSearchId:
+                pageBaseSearchId,
+
+              recordSize:
+                NAVER_KEYWORD_STATS_HIERARCHY_RECORD_SIZE,
+
+              selector:
+                "NEXT",
+            }),
+      });
+
+    const keywordPage:
+      NaverSearchAdsListPage<NaverSearchAdsKeywordRecord> =
+      keywordPageRequest.value;
+
+    input.state.keywordPagesRead += 1;
+
+    if (
+      !shouldSkipKeywordPageForResume({
+        resumeTarget:
+          input.resumeTarget,
+
+        pageBaseSearchId,
+      })
+    ) {
+      input.state.cursor =
+        setNaverKeywordStatsKeywordPagePosition(
+          input.state.cursor,
+          {
+            keywordBaseSearchId:
+              pageBaseSearchId,
+          },
+        );
+
+      const chunks =
+        splitKeywordPageIntoChunks(
+          keywordPage.records,
+          input.options.keywordChunkSize,
+        );
+
+      for (
+        let chunkIndex = 0;
+        chunkIndex < chunks.length;
+        chunkIndex += 1
+      ) {
+        const chunk =
+          chunks[chunkIndex];
+
+        if (!chunk) {
+          throw new NaverKeywordStatsCollectorError(
+            "INVALID_INPUT",
+            "The generated keyword chunk is invalid.",
+            {
+              cursor:
+                input.state.cursor,
+            },
+          );
+        }
+
+        input.state.cursor = {
+          ...input.state.cursor,
+
+          keywordChunkIndex:
+            chunkIndex,
+
+          keywordIndexInChunk:
+            0,
+
+          lastCompletedKeywordId:
+            null,
+        };
+
+        await consumeKeywordChunk({
+          campaign:
+            input.campaign,
+
+          adgroup:
+            input.adgroup,
+
+          chunk,
+
+          chunkIndex,
+
+          state:
+            input.state,
+
+          options:
+            input.options,
+
+          resumeTarget:
+            input.resumeTarget,
+
+          credentials:
+            input.credentials,
+
+          onKeywordStats:
+            input.onKeywordStats,
+
+          onRetry:
+            input.onRetry,
+
+          signal:
+            input.signal,
+
+          dependencies:
+            input.dependencies,
+        });
+      }
+    }
+
+    if (
+      keywordPage.records.length <
+      NAVER_KEYWORD_STATS_HIERARCHY_RECORD_SIZE
+    ) {
+      return;
+    }
+
+    assertPaginationCanContinue({
+      currentBaseSearchId:
+        pageBaseSearchId,
+
+      nextBaseSearchId:
+        keywordPage.nextBaseSearchId,
+
+      recordsLength:
+        keywordPage.records.length,
+
+      recordSize:
+        NAVER_KEYWORD_STATS_HIERARCHY_RECORD_SIZE,
+
+      cursor:
+        input.state.cursor,
+
+      level:
+        "keyword",
+    });
+
+    keywordBaseSearchId =
+      keywordPage.nextBaseSearchId;
+  }
+
+  throw new NaverKeywordStatsCollectorError(
+    "PAGE_LIMIT_EXCEEDED",
+    "Naver keyword pagination exceeded the safety page limit.",
+    {
+      cursor:
+        input.state.cursor,
+    },
+  );
+}
+
+async function collectAdgroupPages(input: {
+  campaign: NaverSearchAdsCampaignRecord;
+
+  state: CollectorRuntimeState;
+  options: NormalizedCollectorOptions;
+  resumeTarget: ResumeTarget;
+
+  credentials: NaverSearchAdsCredentials;
+
+  onKeywordStats:
+    NaverKeywordStatsCollectorConsumer;
+
+  onRetry:
+    | NaverKeywordStatsCollectorRetryCallback
+    | undefined;
+
+  signal: AbortSignal | undefined;
+
+  dependencies: ResolvedCollectorDependencies;
+}): Promise<void> {
+  let adgroupBaseSearchId:
+    | string
+    | null = null;
+
+  for (
+    let pageNumber = 1;
+    pageNumber <=
+    NAVER_KEYWORD_STATS_MAX_ADGROUP_PAGES;
+    pageNumber += 1
+  ) {
+    const pageBaseSearchId:
+      string | null =
+      adgroupBaseSearchId;
+
+    const adgroupPageRequest:
+      ApiRequestResult<
+        NaverSearchAdsListPage<NaverSearchAdsAdgroupRecord>
+      > =
+      await executeApiRequestWithRetry<
+        NaverSearchAdsListPage<NaverSearchAdsAdgroupRecord>
+      >({
+        operation:
+          "adgroup_page",
+
+        keywordId:
+          null,
+
+        state:
+          input.state,
+
+        options:
+          input.options,
+
+        signal:
+          input.signal,
+
+        onRetry:
+          input.onRetry,
+
+        dependencies:
+          input.dependencies,
+
+        request:
+          (): Promise<
+            NaverSearchAdsListPage<NaverSearchAdsAdgroupRecord>
+          > =>
+            input.dependencies.fetchAdgroupPage({
+              credentials:
+                input.credentials,
+
+              campaignId:
+                input.campaign.id,
+
+              baseSearchId:
+                pageBaseSearchId,
+
+              recordSize:
+                NAVER_KEYWORD_STATS_HIERARCHY_RECORD_SIZE,
+
+              selector:
+                "NEXT",
+            }),
+      });
+
+    const adgroupPage:
+      NaverSearchAdsListPage<NaverSearchAdsAdgroupRecord> =
+      adgroupPageRequest.value;
+
+    input.state.adgroupPagesRead += 1;
+
+    input.state.adgroupsRead +=
+      adgroupPage.records.length;
+
+    for (
+      const adgroup
+      of adgroupPage.records
+    ) {
+      if (
+        shouldSkipAdgroupForResume(
+          input.resumeTarget,
+          adgroup.id,
+        )
+      ) {
+        continue;
+      }
+
+      input.state.cursor =
+        setNaverKeywordStatsAdgroupPosition(
+          input.state.cursor,
+          {
+            adgroupBaseSearchId:
+              pageBaseSearchId,
+
+            adgroupId:
+              adgroup.id,
+          },
+        );
+
+      await collectKeywordPages({
+        campaign:
+          input.campaign,
+
+        adgroup,
+
+        state:
+          input.state,
+
+        options:
+          input.options,
+
+        resumeTarget:
+          input.resumeTarget,
+
+        credentials:
+          input.credentials,
+
+        onKeywordStats:
+          input.onKeywordStats,
+
+        onRetry:
+          input.onRetry,
+
+        signal:
+          input.signal,
+
+        dependencies:
+          input.dependencies,
+      });
+    }
+
+    if (
+      adgroupPage.records.length <
+      NAVER_KEYWORD_STATS_HIERARCHY_RECORD_SIZE
+    ) {
+      return;
+    }
+
+    assertPaginationCanContinue({
+      currentBaseSearchId:
+        pageBaseSearchId,
+
+      nextBaseSearchId:
+        adgroupPage.nextBaseSearchId,
+
+      recordsLength:
+        adgroupPage.records.length,
+
+      recordSize:
+        NAVER_KEYWORD_STATS_HIERARCHY_RECORD_SIZE,
+
+      cursor:
+        input.state.cursor,
+
+      level:
+        "adgroup",
+    });
+
+    adgroupBaseSearchId =
+      adgroupPage.nextBaseSearchId;
+  }
+
+  throw new NaverKeywordStatsCollectorError(
+    "PAGE_LIMIT_EXCEEDED",
+    "Naver adgroup pagination exceeded the safety page limit.",
+    {
+      cursor:
+        input.state.cursor,
+    },
+  );
+}
+
+export async function collectNaverKeywordDailyStats(
+  input: NaverKeywordStatsCollectorInput,
+): Promise<NaverKeywordStatsCollectorResult> {
+  const normalizedCursor =
+    normalizeNaverKeywordStatsCursor(
+      input.cursor,
+    );
+
+  if (
+    typeof input.onKeywordStats !==
+    "function"
+  ) {
+    throw new NaverKeywordStatsCollectorError(
+      "INVALID_INPUT",
+      "onKeywordStats must be a function.",
+      {
+        cursor:
+          normalizedCursor,
+      },
+    );
+  }
+
+  let options:
+    NormalizedCollectorOptions;
+
+  let dependencies:
+    ResolvedCollectorDependencies;
+
+  try {
+    options =
+      normalizeCollectorOptions(
+        input,
+      );
+
+    dependencies =
+      resolveCollectorDependencies(
+        input.dependencies,
+      );
+  } catch (error) {
+    throw new NaverKeywordStatsCollectorError(
+      "INVALID_INPUT",
+      "Naver keyword stats collector input is invalid.",
+      {
+        cursor:
+          normalizedCursor,
+
+        cause:
+          error,
+      },
+    );
+  }
+
+  const state =
+    createInitialRuntimeState(
+      normalizedCursor,
+    );
+
+  const resumeTarget =
+    createResumeTarget(
+      normalizedCursor,
+    );
+
+  let campaignBaseSearchId:
+    | string
+    | null = null;
+
+  for (
+    let pageNumber = 1;
+    pageNumber <=
+    NAVER_KEYWORD_STATS_MAX_CAMPAIGN_PAGES;
+    pageNumber += 1
+  ) {
+    const pageBaseSearchId:
+      string | null =
+      campaignBaseSearchId;
+
+    const campaignPageRequest:
+      ApiRequestResult<
+        NaverSearchAdsListPage<NaverSearchAdsCampaignRecord>
+      > =
+      await executeApiRequestWithRetry<
+        NaverSearchAdsListPage<NaverSearchAdsCampaignRecord>
+      >({
+        operation:
+          "campaign_page",
+
+        keywordId:
+          null,
+
+        state,
+
+        options,
+
+        signal:
+          input.signal,
+
+        onRetry:
+          input.onRetry,
+
+        dependencies,
+
+        request:
+          (): Promise<
+            NaverSearchAdsListPage<NaverSearchAdsCampaignRecord>
+          > =>
+            dependencies.fetchCampaignPage({
+              credentials:
+                input.credentials,
+
+              baseSearchId:
+                pageBaseSearchId,
+
+              recordSize:
+                NAVER_KEYWORD_STATS_HIERARCHY_RECORD_SIZE,
+
+              selector:
+                "NEXT",
+            }),
+      });
+
+    const campaignPage:
+      NaverSearchAdsListPage<NaverSearchAdsCampaignRecord> =
+      campaignPageRequest.value;
+
+    state.campaignPagesRead += 1;
+
+    state.campaignsRead +=
+      campaignPage.records.length;
+
+    for (
+      const campaign
+      of campaignPage.records
+    ) {
+      if (
+        shouldSkipCampaignForResume(
+          resumeTarget,
+          campaign.id,
+        )
+      ) {
+        continue;
+      }
+
+      state.cursor =
+        setNaverKeywordStatsCampaignPosition(
+          state.cursor,
+          {
+            campaignBaseSearchId:
+              pageBaseSearchId,
+
+            campaignId:
+              campaign.id,
+          },
+        );
+
+      await collectAdgroupPages({
+        campaign,
+
+        state,
+
+        options,
+
+        resumeTarget,
+
+        credentials:
+          input.credentials,
+
+        onKeywordStats:
+          input.onKeywordStats,
+
+        onRetry:
+          input.onRetry,
+
+        signal:
+          input.signal,
+
+        dependencies,
+      });
+    }
+
+    if (
+      campaignPage.records.length <
+      NAVER_KEYWORD_STATS_HIERARCHY_RECORD_SIZE
+    ) {
+      assertResumeTargetResolved(
+        resumeTarget,
+        state.cursor,
+      );
+
+      return {
+        completed: true,
+
+        cursor:
+          cloneCursor(
+            state.cursor,
+          ),
+
+        campaignPagesRead:
+          state.campaignPagesRead,
+
+        campaignsRead:
+          state.campaignsRead,
+
+        adgroupPagesRead:
+          state.adgroupPagesRead,
+
+        adgroupsRead:
+          state.adgroupsRead,
+
+        keywordPagesRead:
+          state.keywordPagesRead,
+
+        keywordsDiscoveredInRun:
+          state.keywordsDiscoveredInRun,
+
+        keywordsCompletedInRun:
+          state.keywordsCompletedInRun,
+
+        statsRequestsAttempted:
+          state.statsRequestsAttempted,
+
+        statsRequestsSucceeded:
+          state.statsRequestsSucceeded,
+
+        retryCount:
+          state.retryCount,
+      };
+    }
+
+    assertPaginationCanContinue({
+      currentBaseSearchId:
+        pageBaseSearchId,
+
+      nextBaseSearchId:
+        campaignPage.nextBaseSearchId,
+
+      recordsLength:
+        campaignPage.records.length,
+
+      recordSize:
+        NAVER_KEYWORD_STATS_HIERARCHY_RECORD_SIZE,
+
+      cursor:
+        state.cursor,
+
+      level:
+        "campaign",
+    });
+
+    campaignBaseSearchId =
+      campaignPage.nextBaseSearchId;
+  }
+
+  throw new NaverKeywordStatsCollectorError(
+    "PAGE_LIMIT_EXCEEDED",
+    "Naver campaign pagination exceeded the safety page limit.",
+    {
+      cursor:
+        state.cursor,
+    },
+  );
+}
