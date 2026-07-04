@@ -12,6 +12,9 @@ import {
   type NaverSearchAdsStagingOrchestratorResult,
   type NaverSearchAdsStagingOrchestratorInput,
 } from "./naver-searchads-staging-orchestrator";
+import type {
+  NaverKeywordStatsCollectorProgressEvent,
+} from "./naver-searchads-keyword-stats-collector";
 import {
   saveMediaSyncProcessingCheckpoint,
   MediaSyncProcessingCheckpointError,
@@ -289,6 +292,103 @@ function logStage(input: {
   );
 }
 
+function shouldLogCollectorProgress(
+  event: NaverKeywordStatsCollectorProgressEvent,
+): boolean {
+  if (
+    event.stage !== "keyword_stats:start" &&
+    event.stage !== "keyword_stats:done"
+  ) {
+    return true;
+  }
+
+  const completed =
+    event.keywordsCompletedInRun;
+
+  if (completed <= 1) {
+    return true;
+  }
+
+  return completed % 25 === 0;
+}
+
+function formatCollectorProgressDetail(
+  event: NaverKeywordStatsCollectorProgressEvent,
+): string {
+  const parts: string[] = [
+    `campaignPages=${event.campaignPagesRead}`,
+    `campaigns=${event.campaignsRead}`,
+    `adgroupPages=${event.adgroupPagesRead}`,
+    `adgroups=${event.adgroupsRead}`,
+    `keywordPages=${event.keywordPagesRead}`,
+    `discovered=${event.keywordsDiscoveredInRun}`,
+    `completed=${event.keywordsCompletedInRun}`,
+    `statsAttempts=${event.statsRequestsAttempted}`,
+    `statsSuccess=${event.statsRequestsSucceeded}`,
+  ];
+
+  if (event.campaignId) {
+    parts.push(`campaign=${event.campaignId}`);
+  }
+
+  if (event.adgroupId) {
+    parts.push(`adgroup=${event.adgroupId}`);
+  }
+
+  if (event.keywordId) {
+    parts.push(`keyword=${event.keywordId}`);
+  }
+
+  if (event.pageNumber !== null) {
+    parts.push(`page=${event.pageNumber}`);
+  }
+
+  if (event.recordsRead !== null) {
+    parts.push(`records=${event.recordsRead}`);
+  }
+
+  if (event.chunkIndex !== null) {
+    parts.push(`chunk=${event.chunkIndex}`);
+  }
+
+  if (event.chunkSize !== null) {
+    parts.push(`chunkSize=${event.chunkSize}`);
+  }
+
+  if (event.keywordIndexInChunk !== null) {
+    parts.push(`keywordIndex=${event.keywordIndexInChunk}`);
+  }
+
+  if (event.attemptCount !== null) {
+    parts.push(`attempts=${event.attemptCount}`);
+  }
+
+  if (event.delayMs !== null) {
+    parts.push(`delayMs=${event.delayMs}`);
+  }
+
+  if (event.retryCount > 0) {
+    parts.push(`retries=${event.retryCount}`);
+  }
+
+  return parts.join(" ");
+}
+
+function logCollectorProgress(input: {
+  job: MediaSyncJobRecord;
+  event: NaverKeywordStatsCollectorProgressEvent;
+}): void {
+  if (!shouldLogCollectorProgress(input.event)) {
+    return;
+  }
+
+  logStage({
+    job: input.job,
+    stage: `collector:${input.event.stage}`,
+    detail: formatCollectorProgressDetail(input.event),
+  });
+}
+
 async function markProcessingMediaSyncJobFailed(input: {
   job: MediaSyncJobRecord;
   error: unknown;
@@ -446,6 +546,17 @@ export async function processClaimedNaverMediaSyncJob(
 
         onRetry:
           options.onRetry,
+
+        onCollectorProgress:
+          async (
+            event,
+          ): Promise<void> => {
+            logCollectorProgress({
+              job:
+                context.job,
+              event,
+            });
+          },
 
         dependencies:
           options.dependencies,

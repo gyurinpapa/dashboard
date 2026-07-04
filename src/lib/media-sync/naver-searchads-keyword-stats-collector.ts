@@ -129,6 +129,59 @@ export type NaverKeywordStatsCollectorRetryCallback = (
   event: NaverKeywordStatsCollectorRetryEvent,
 ) => void | Promise<void>;
 
+export type NaverKeywordStatsCollectorProgressStage =
+  | "collector:start"
+  | "collector:done"
+  | "campaign_page:start"
+  | "campaign_page:done"
+  | "campaign:start"
+  | "campaign:done"
+  | "adgroup_page:start"
+  | "adgroup_page:done"
+  | "adgroup:start"
+  | "adgroup:done"
+  | "keyword_page:start"
+  | "keyword_page:done"
+  | "keyword_chunk:start"
+  | "keyword_chunk:done"
+  | "keyword_chunk:pause"
+  | "keyword_stats:start"
+  | "keyword_stats:done";
+
+export type NaverKeywordStatsCollectorProgressEvent = {
+  stage: NaverKeywordStatsCollectorProgressStage;
+
+  cursor: NaverKeywordStatsCursor;
+
+  campaignId: string | null;
+  adgroupId: string | null;
+  keywordId: string | null;
+
+  pageNumber: number | null;
+  recordsRead: number | null;
+  chunkIndex: number | null;
+  chunkSize: number | null;
+  keywordIndexInChunk: number | null;
+
+  campaignPagesRead: number;
+  campaignsRead: number;
+  adgroupPagesRead: number;
+  adgroupsRead: number;
+  keywordPagesRead: number;
+  keywordsDiscoveredInRun: number;
+  keywordsCompletedInRun: number;
+  statsRequestsAttempted: number;
+  statsRequestsSucceeded: number;
+  retryCount: number;
+
+  attemptCount: number | null;
+  delayMs: number | null;
+};
+
+export type NaverKeywordStatsCollectorProgressCallback = (
+  event: NaverKeywordStatsCollectorProgressEvent,
+) => void | Promise<void>;
+
 export type NaverKeywordStatsCollectorSleep = (
   milliseconds: number,
   signal?: AbortSignal,
@@ -152,6 +205,7 @@ export type NaverKeywordStatsCollectorInput = {
 
   onKeywordStats: NaverKeywordStatsCollectorConsumer;
   onRetry?: NaverKeywordStatsCollectorRetryCallback;
+  onProgress?: NaverKeywordStatsCollectorProgressCallback;
 
   requestIntervalMs?: number;
   keywordChunkSize?: number;
@@ -654,6 +708,96 @@ async function notifyRetry(
   });
 }
 
+async function notifyProgress(input: {
+  callback:
+    | NaverKeywordStatsCollectorProgressCallback
+    | undefined;
+  stage: NaverKeywordStatsCollectorProgressStage;
+  state: CollectorRuntimeState;
+  campaignId?: string | null;
+  adgroupId?: string | null;
+  keywordId?: string | null;
+  pageNumber?: number | null;
+  recordsRead?: number | null;
+  chunkIndex?: number | null;
+  chunkSize?: number | null;
+  keywordIndexInChunk?: number | null;
+  attemptCount?: number | null;
+  delayMs?: number | null;
+}): Promise<void> {
+  if (!input.callback) {
+    return;
+  }
+
+  await input.callback({
+    stage:
+      input.stage,
+
+    cursor:
+      cloneCursor(input.state.cursor),
+
+    campaignId:
+      input.campaignId ?? input.state.cursor.campaignId ?? null,
+
+    adgroupId:
+      input.adgroupId ?? input.state.cursor.adgroupId ?? null,
+
+    keywordId:
+      input.keywordId ?? input.state.cursor.lastCompletedKeywordId ?? null,
+
+    pageNumber:
+      input.pageNumber ?? null,
+
+    recordsRead:
+      input.recordsRead ?? null,
+
+    chunkIndex:
+      input.chunkIndex ?? null,
+
+    chunkSize:
+      input.chunkSize ?? null,
+
+    keywordIndexInChunk:
+      input.keywordIndexInChunk ?? null,
+
+    campaignPagesRead:
+      input.state.campaignPagesRead,
+
+    campaignsRead:
+      input.state.campaignsRead,
+
+    adgroupPagesRead:
+      input.state.adgroupPagesRead,
+
+    adgroupsRead:
+      input.state.adgroupsRead,
+
+    keywordPagesRead:
+      input.state.keywordPagesRead,
+
+    keywordsDiscoveredInRun:
+      input.state.keywordsDiscoveredInRun,
+
+    keywordsCompletedInRun:
+      input.state.keywordsCompletedInRun,
+
+    statsRequestsAttempted:
+      input.state.statsRequestsAttempted,
+
+    statsRequestsSucceeded:
+      input.state.statsRequestsSucceeded,
+
+    retryCount:
+      input.state.retryCount,
+
+    attemptCount:
+      input.attemptCount ?? null,
+
+    delayMs:
+      input.delayMs ?? null,
+  });
+}
+
 async function waitForStatsRequestInterval(input: {
   state: CollectorRuntimeState;
   options: NormalizedCollectorOptions;
@@ -1151,6 +1295,10 @@ async function consumeKeywordChunk(input: {
     | NaverKeywordStatsCollectorRetryCallback
     | undefined;
 
+  onProgress:
+    | NaverKeywordStatsCollectorProgressCallback
+    | undefined;
+
   signal: AbortSignal | undefined;
 
   dependencies: ResolvedCollectorDependencies;
@@ -1212,6 +1360,23 @@ async function consumeKeywordChunk(input: {
   input.state.keywordsDiscoveredInRun +=
     remainingKeywordCount;
 
+  await notifyProgress({
+    callback:
+      input.onProgress,
+    stage:
+      "keyword_chunk:start",
+    state:
+      input.state,
+    campaignId:
+      input.campaign.id,
+    adgroupId:
+      input.adgroup.id,
+    chunkIndex:
+      input.chunkIndex,
+    chunkSize:
+      input.chunk.length,
+  });
+
   for (
     let keywordIndex = startIndex;
     keywordIndex < input.chunk.length;
@@ -1240,6 +1405,27 @@ async function consumeKeywordChunk(input: {
       cloneCursor(
         input.state.cursor,
       );
+
+    await notifyProgress({
+      callback:
+        input.onProgress,
+      stage:
+        "keyword_stats:start",
+      state:
+        input.state,
+      campaignId:
+        input.campaign.id,
+      adgroupId:
+        input.adgroup.id,
+      keywordId:
+        keyword.id,
+      chunkIndex:
+        input.chunkIndex,
+      chunkSize:
+        input.chunk.length,
+      keywordIndexInChunk:
+        keywordIndex,
+    });
 
     const statsRequest:
       ApiRequestResult<NaverSearchAdsKeywordDailyStatsResult> =
@@ -1354,13 +1540,74 @@ async function consumeKeywordChunk(input: {
       cursorAfter;
 
     input.state.keywordsCompletedInRun += 1;
+
+    await notifyProgress({
+      callback:
+        input.onProgress,
+      stage:
+        "keyword_stats:done",
+      state:
+        input.state,
+      campaignId:
+        input.campaign.id,
+      adgroupId:
+        input.adgroup.id,
+      keywordId:
+        keyword.id,
+      chunkIndex:
+        input.chunkIndex,
+      chunkSize:
+        input.chunk.length,
+      keywordIndexInChunk:
+        keywordIndex,
+      recordsRead:
+        statsRequest.value.records.length,
+      attemptCount:
+        statsRequest.attemptCount,
+    });
   }
+
+  await notifyProgress({
+    callback:
+      input.onProgress,
+    stage:
+      "keyword_chunk:done",
+    state:
+      input.state,
+    campaignId:
+      input.campaign.id,
+    adgroupId:
+      input.adgroup.id,
+    chunkIndex:
+      input.chunkIndex,
+    chunkSize:
+      input.chunk.length,
+  });
 
   if (
     input.chunk.length ===
       input.options.keywordChunkSize &&
     input.options.chunkPauseMs > 0
   ) {
+    await notifyProgress({
+      callback:
+        input.onProgress,
+      stage:
+        "keyword_chunk:pause",
+      state:
+        input.state,
+      campaignId:
+        input.campaign.id,
+      adgroupId:
+        input.adgroup.id,
+      chunkIndex:
+        input.chunkIndex,
+      chunkSize:
+        input.chunk.length,
+      delayMs:
+        input.options.chunkPauseMs,
+    });
+
     await waitWithAbort({
       milliseconds:
         input.options.chunkPauseMs,
@@ -1394,6 +1641,10 @@ async function collectKeywordPages(input: {
     | NaverKeywordStatsCollectorRetryCallback
     | undefined;
 
+  onProgress:
+    | NaverKeywordStatsCollectorProgressCallback
+    | undefined;
+
   signal: AbortSignal | undefined;
 
   dependencies: ResolvedCollectorDependencies;
@@ -1411,6 +1662,20 @@ async function collectKeywordPages(input: {
     const pageBaseSearchId:
       string | null =
       keywordBaseSearchId;
+
+    await notifyProgress({
+      callback:
+        input.onProgress,
+      stage:
+        "keyword_page:start",
+      state:
+        input.state,
+      campaignId:
+        input.campaign.id,
+      adgroupId:
+        input.adgroup.id,
+      pageNumber,
+    });
 
     const keywordPageRequest:
       ApiRequestResult<
@@ -1467,6 +1732,24 @@ async function collectKeywordPages(input: {
       keywordPageRequest.value;
 
     input.state.keywordPagesRead += 1;
+
+    await notifyProgress({
+      callback:
+        input.onProgress,
+      stage:
+        "keyword_page:done",
+      state:
+        input.state,
+      campaignId:
+        input.campaign.id,
+      adgroupId:
+        input.adgroup.id,
+      pageNumber,
+      recordsRead:
+        keywordPage.records.length,
+      attemptCount:
+        keywordPageRequest.attemptCount,
+    });
 
     if (
       !shouldSkipKeywordPageForResume({
@@ -1552,6 +1835,9 @@ async function collectKeywordPages(input: {
           onRetry:
             input.onRetry,
 
+          onProgress:
+            input.onProgress,
+
           signal:
             input.signal,
 
@@ -1618,6 +1904,10 @@ async function collectAdgroupPages(input: {
     | NaverKeywordStatsCollectorRetryCallback
     | undefined;
 
+  onProgress:
+    | NaverKeywordStatsCollectorProgressCallback
+    | undefined;
+
   signal: AbortSignal | undefined;
 
   dependencies: ResolvedCollectorDependencies;
@@ -1635,6 +1925,18 @@ async function collectAdgroupPages(input: {
     const pageBaseSearchId:
       string | null =
       adgroupBaseSearchId;
+
+    await notifyProgress({
+      callback:
+        input.onProgress,
+      stage:
+        "adgroup_page:start",
+      state:
+        input.state,
+      campaignId:
+        input.campaign.id,
+      pageNumber,
+    });
 
     const adgroupPageRequest:
       ApiRequestResult<
@@ -1695,6 +1997,22 @@ async function collectAdgroupPages(input: {
     input.state.adgroupsRead +=
       adgroupPage.records.length;
 
+    await notifyProgress({
+      callback:
+        input.onProgress,
+      stage:
+        "adgroup_page:done",
+      state:
+        input.state,
+      campaignId:
+        input.campaign.id,
+      pageNumber,
+      recordsRead:
+        adgroupPage.records.length,
+      attemptCount:
+        adgroupPageRequest.attemptCount,
+    });
+
     for (
       const adgroup
       of adgroupPage.records
@@ -1707,6 +2025,19 @@ async function collectAdgroupPages(input: {
       ) {
         continue;
       }
+
+      await notifyProgress({
+        callback:
+          input.onProgress,
+        stage:
+          "adgroup:start",
+        state:
+          input.state,
+        campaignId:
+          input.campaign.id,
+        adgroupId:
+          adgroup.id,
+      });
 
       input.state.cursor =
         setNaverKeywordStatsAdgroupPosition(
@@ -1744,11 +2075,27 @@ async function collectAdgroupPages(input: {
         onRetry:
           input.onRetry,
 
+        onProgress:
+          input.onProgress,
+
         signal:
           input.signal,
 
         dependencies:
           input.dependencies,
+      });
+
+      await notifyProgress({
+        callback:
+          input.onProgress,
+        stage:
+          "adgroup:done",
+        state:
+          input.state,
+        campaignId:
+          input.campaign.id,
+        adgroupId:
+          adgroup.id,
       });
     }
 
@@ -1855,6 +2202,14 @@ export async function collectNaverKeywordDailyStats(
       normalizedCursor,
     );
 
+  await notifyProgress({
+    callback:
+      input.onProgress,
+    stage:
+      "collector:start",
+    state,
+  });
+
   let campaignBaseSearchId:
     | string
     | null = null;
@@ -1868,6 +2223,15 @@ export async function collectNaverKeywordDailyStats(
     const pageBaseSearchId:
       string | null =
       campaignBaseSearchId;
+
+    await notifyProgress({
+      callback:
+        input.onProgress,
+      stage:
+        "campaign_page:start",
+      state,
+      pageNumber,
+    });
 
     const campaignPageRequest:
       ApiRequestResult<
@@ -1922,6 +2286,19 @@ export async function collectNaverKeywordDailyStats(
     state.campaignsRead +=
       campaignPage.records.length;
 
+    await notifyProgress({
+      callback:
+        input.onProgress,
+      stage:
+        "campaign_page:done",
+      state,
+      pageNumber,
+      recordsRead:
+        campaignPage.records.length,
+      attemptCount:
+        campaignPageRequest.attemptCount,
+    });
+
     for (
       const campaign
       of campaignPage.records
@@ -1934,6 +2311,16 @@ export async function collectNaverKeywordDailyStats(
       ) {
         continue;
       }
+
+      await notifyProgress({
+        callback:
+          input.onProgress,
+        stage:
+          "campaign:start",
+        state,
+        campaignId:
+          campaign.id,
+      });
 
       state.cursor =
         setNaverKeywordStatsCampaignPosition(
@@ -1965,10 +2352,23 @@ export async function collectNaverKeywordDailyStats(
         onRetry:
           input.onRetry,
 
+        onProgress:
+          input.onProgress,
+
         signal:
           input.signal,
 
         dependencies,
+      });
+
+      await notifyProgress({
+        callback:
+          input.onProgress,
+        stage:
+          "campaign:done",
+        state,
+        campaignId:
+          campaign.id,
       });
     }
 
@@ -1980,6 +2380,14 @@ export async function collectNaverKeywordDailyStats(
         resumeTarget,
         state.cursor,
       );
+
+      await notifyProgress({
+        callback:
+          input.onProgress,
+        stage:
+          "collector:done",
+        state,
+      });
 
       return {
         completed: true,

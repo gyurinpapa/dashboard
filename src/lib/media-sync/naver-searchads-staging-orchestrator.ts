@@ -20,6 +20,7 @@ import {
 import {
   collectNaverKeywordDailyStats,
   type NaverKeywordStatsCollectorDependencies,
+  type NaverKeywordStatsCollectorProgressCallback,
   type NaverKeywordStatsCollectorResult,
   type NaverKeywordStatsCollectorRetryCallback,
 } from "./naver-searchads-keyword-stats-collector";
@@ -103,6 +104,9 @@ export type NaverSearchAdsStagingOrchestratorInput = {
 
   onRetry?:
     NaverKeywordStatsCollectorRetryCallback;
+
+  onCollectorProgress?:
+    NaverKeywordStatsCollectorProgressCallback;
 
   dependencies?: Partial<
     NaverKeywordStatsCollectorDependencies
@@ -615,6 +619,9 @@ export async function runNaverSearchAdsStagingOrchestrator(
 
       onRetry:
         input.onRetry,
+
+      onProgress:
+        input.onCollectorProgress,
 
       dependencies:
         input.dependencies,
