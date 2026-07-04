@@ -111,6 +111,8 @@ function downloadBlobFile(blob: Blob, fileName: string) {
  * API helpers
  * ========================================================= */
 
+type ReportDataSourceKind = "csv" | "api";
+
 type ReportDetail = {
   id: string;
   title?: string | null;
@@ -145,6 +147,126 @@ type ReportDetail = {
   created_at?: string | null;
   updated_at?: string | null;
 };
+
+function normalizeReportDataSourceKind(value: any): ReportDataSourceKind {
+  const kind = String(value ?? "").trim().toLowerCase();
+
+  if (kind === "api") return "api";
+  return "csv";
+}
+
+function getReportDataSourceKind(report: ReportDetail | null | undefined): ReportDataSourceKind {
+  const meta =
+    report?.meta && typeof report.meta === "object" ? report.meta : {};
+  const dataSource =
+    meta?.data_source && typeof meta.data_source === "object"
+      ? meta.data_source
+      : {};
+
+  return normalizeReportDataSourceKind(dataSource?.kind);
+}
+
+function getReportDataSourceLabel(kind: ReportDataSourceKind) {
+  return kind === "api" ? "API 연동" : "CSV 업로드";
+}
+
+function getReportDataSourceDescription(kind: ReportDataSourceKind) {
+  if (kind === "api") {
+    return "매체 API에서 선택 기간의 데이터를 가져오는 리포트입니다. CSV 업로드는 사용하지 않습니다.";
+  }
+
+  return "CSV 파일 업로드로 데이터를 구성하는 리포트입니다. 기준 기간은 업로드된 CSV 데이터 기준으로 자동 산정됩니다.";
+}
+
+type MediaSyncSettingsDraft = {
+  dateFrom: string;
+  dateTo: string;
+  dataLevel: "keyword" | "creative" | "mixed" | "unknown";
+  mode: "snapshot_replace";
+};
+
+function normalizeYmdInput(value: any) {
+  const normalized = String(value ?? "").trim();
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    return "";
+  }
+
+  return normalized;
+}
+
+function normalizeMediaSyncDataLevel(value: any): MediaSyncSettingsDraft["dataLevel"] {
+  const normalized = String(value ?? "").trim().toLowerCase();
+
+  if (
+    normalized === "keyword" ||
+    normalized === "creative" ||
+    normalized === "mixed" ||
+    normalized === "unknown"
+  ) {
+    return normalized;
+  }
+
+  return "keyword";
+}
+
+function buildEmptyMediaSyncSettingsDraft(): MediaSyncSettingsDraft {
+  return {
+    dateFrom: "",
+    dateTo: "",
+    dataLevel: "keyword",
+    mode: "snapshot_replace",
+  };
+}
+
+function extractMediaSyncSettingsFromReport(
+  detail: ReportDetail | null | undefined,
+): MediaSyncSettingsDraft {
+  const meta =
+    detail?.meta && typeof detail.meta === "object" ? detail.meta : {};
+  const mediaSync =
+    meta?.media_sync && typeof meta.media_sync === "object"
+      ? meta.media_sync
+      : {};
+
+  return {
+    dateFrom: normalizeYmdInput(mediaSync?.date_from),
+    dateTo: normalizeYmdInput(mediaSync?.date_to),
+    dataLevel: normalizeMediaSyncDataLevel(mediaSync?.data_level),
+    mode: "snapshot_replace",
+  };
+}
+
+function mediaSyncSettingsToStableKey(v: MediaSyncSettingsDraft) {
+  return JSON.stringify({
+    dateFrom: normalizeYmdInput(v.dateFrom),
+    dateTo: normalizeYmdInput(v.dateTo),
+    dataLevel: normalizeMediaSyncDataLevel(v.dataLevel),
+    mode: "snapshot_replace",
+  });
+}
+
+function isValidMediaSyncSettingsDraft(v: MediaSyncSettingsDraft) {
+  const dateFrom = normalizeYmdInput(v.dateFrom);
+  const dateTo = normalizeYmdInput(v.dateTo);
+
+  return Boolean(dateFrom && dateTo && dateFrom <= dateTo);
+}
+
+function getMediaSyncSettingsError(v: MediaSyncSettingsDraft) {
+  const dateFrom = normalizeYmdInput(v.dateFrom);
+  const dateTo = normalizeYmdInput(v.dateTo);
+
+  if (!dateFrom || !dateTo) {
+    return "API 동기화 시작일과 종료일을 모두 입력하세요.";
+  }
+
+  if (dateFrom > dateTo) {
+    return "API 동기화 시작일은 종료일보다 늦을 수 없습니다.";
+  }
+
+  return "";
+}
 
 type MonthGoalDraft = {
   revenue: string;
@@ -527,6 +649,40 @@ async function patchReportBrandSearchContracts(
     throw new Error(
       json?.error ||
         `Failed to save brand search contracts (${res.status})`,
+    );
+  }
+
+  return (json.report ?? {}) as ReportDetail;
+}
+
+async function patchReportMediaSyncSettings(
+  reportId: string,
+  next: MediaSyncSettingsDraft,
+): Promise<ReportDetail> {
+  const dateFrom = normalizeYmdInput(next.dateFrom);
+  const dateTo = normalizeYmdInput(next.dateTo);
+
+  if (!dateFrom || !dateTo || dateFrom > dateTo) {
+    throw new Error(getMediaSyncSettingsError(next) || "API 동기화 기간이 올바르지 않습니다.");
+  }
+
+  const res = await authFetch(`/api/reports/${reportId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      media_sync: {
+        date_from: dateFrom,
+        date_to: dateTo,
+        data_level: normalizeMediaSyncDataLevel(next.dataLevel),
+        mode: "snapshot_replace",
+      },
+    }),
+  });
+
+  const json = await safeJson(res);
+  if (!res.ok || !json?.ok) {
+    throw new Error(
+      json?.error || `Failed to save API sync settings (${res.status})`,
     );
   }
 
@@ -1255,6 +1411,12 @@ export default function ReportDetailPage() {
     useState(false);
 
   const [report, setReport] = useState<ReportDetail | null>(null);
+  const reportDataSourceKind = useMemo(
+    () => getReportDataSourceKind(report),
+    [report],
+  );
+  const isCsvReport = reportDataSourceKind === "csv";
+  const isApiReport = reportDataSourceKind === "api";
   const [workspaceLogoUrl, setWorkspaceLogoUrl] = useState<string>("");
   const [rows, setRows] = useState<any[]>([]);
   const rowsLoadedRef = useRef(false);
@@ -1311,6 +1473,13 @@ export default function ReportDetailPage() {
   const [brandSearchContractsSavedText, setBrandSearchContractsSavedText] =
     useState<string>("");
   const lastLoadedBrandSearchContractsKeyRef = useRef<string>("");
+
+  const [mediaSyncSettings, setMediaSyncSettings] =
+    useState<MediaSyncSettingsDraft>(() => buildEmptyMediaSyncSettingsDraft());
+  const [savingMediaSyncSettings, setSavingMediaSyncSettings] = useState(false);
+  const [mediaSyncSettingsSavedText, setMediaSyncSettingsSavedText] =
+    useState<string>("");
+  const lastLoadedMediaSyncSettingsKeyRef = useRef<string>("");
 
   const [creativesMap, setCreativesMap] = useState<Record<string, string>>({});
   const [headerInfo, setHeaderInfo] = useState<ReportHeaderInfo>({
@@ -1479,6 +1648,19 @@ export default function ReportDetailPage() {
     return brandSearchContractsToPayload(brandSearchContracts);
   }, [brandSearchContracts]);
 
+  const mediaSyncSettingsDirty = useMemo(() => {
+    const currentKey = mediaSyncSettingsToStableKey(mediaSyncSettings);
+    return (
+      !!lastLoadedMediaSyncSettingsKeyRef.current &&
+      currentKey !== lastLoadedMediaSyncSettingsKeyRef.current
+    );
+  }, [mediaSyncSettings]);
+
+  const mediaSyncSettingsError = useMemo(() => {
+    if (!isApiReport) return "";
+    return getMediaSyncSettingsError(mediaSyncSettings);
+  }, [isApiReport, mediaSyncSettings]);
+
   useEffect(() => {
     const initial = buildInitialReportPeriod({
       report,
@@ -1503,6 +1685,17 @@ export default function ReportDetailPage() {
     setMonthGoal(nextGoal);
     lastLoadedMonthGoalKeyRef.current = nextKey;
     setMonthGoalSavedText("");
+  }, [report]);
+
+  useEffect(() => {
+    const nextSettings = extractMediaSyncSettingsFromReport(report);
+    const nextKey = mediaSyncSettingsToStableKey(nextSettings);
+
+    if (nextKey === lastLoadedMediaSyncSettingsKeyRef.current) return;
+
+    setMediaSyncSettings(nextSettings);
+    lastLoadedMediaSyncSettingsKeyRef.current = nextKey;
+    setMediaSyncSettingsSavedText("");
   }, [report]);
 
   useEffect(() => {
@@ -2189,6 +2382,44 @@ export default function ReportDetailPage() {
     [],
   );
 
+  const handleSaveMediaSyncSettings = useCallback(async () => {
+    if (!reportId) return;
+
+    const validationMessage = getMediaSyncSettingsError(mediaSyncSettings);
+    if (validationMessage) {
+      setMediaSyncSettingsSavedText("");
+      setMsg(validationMessage);
+      return;
+    }
+
+    setSavingMediaSyncSettings(true);
+    setMediaSyncSettingsSavedText("");
+    setMsg("");
+
+    try {
+      const updated = await patchReportMediaSyncSettings(
+        reportId,
+        mediaSyncSettings,
+      );
+      setReport((prev) => ({ ...(prev ?? {}), ...(updated ?? {}) }));
+
+      const savedSettings = extractMediaSyncSettingsFromReport(updated);
+      const savedKey = mediaSyncSettingsToStableKey(savedSettings);
+
+      setMediaSyncSettings(savedSettings);
+      lastLoadedMediaSyncSettingsKeyRef.current = savedKey;
+      setMediaSyncSettingsSavedText("저장 완료");
+      setMsg(
+        "API 동기화 기간이 저장되었습니다. Report Builder의 동기화 요청은 이 기간만 사용합니다.",
+      );
+    } catch (e: any) {
+      setMediaSyncSettingsSavedText("");
+      setMsg(e?.message || "API 동기화 기간 저장 실패");
+    } finally {
+      setSavingMediaSyncSettings(false);
+    }
+  }, [mediaSyncSettings, reportId]);
+
   const handleSaveBrandSearchContracts = useCallback(async () => {
     if (!reportId) return;
 
@@ -2232,6 +2463,11 @@ export default function ReportDetailPage() {
 
   const handleUploadCsv = useCallback(async () => {
     if (!reportId) return;
+
+    if (!isCsvReport) {
+      setMsg("API 연동형 리포트는 CSV 업로드를 사용할 수 없습니다. 리포트 빌더에서 API 동기화를 요청해 주세요.");
+      return;
+    }
 
     if (!csvFile) {
       setMsg("CSV 파일을 선택하세요.");
@@ -2401,7 +2637,7 @@ export default function ReportDetailPage() {
     } finally {
       setCsvUploading(false);
     }
-  }, [csvFile, pollIngestionStatus, refreshRows, report, reportId]);
+  }, [csvFile, isCsvReport, pollIngestionStatus, refreshRows, report, reportId]);
 
   const handleUploadCreatives = useCallback(async () => {
     if (!reportId) return;
@@ -2808,6 +3044,130 @@ export default function ReportDetailPage() {
           </div>
         </div>
       </div>
+
+      <section className="mb-5 rounded-2xl border bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="text-sm font-semibold text-gray-500">
+              리포트 데이터 방식
+            </div>
+            <div className="mt-1 text-xl font-bold text-gray-900">
+              {getReportDataSourceLabel(reportDataSourceKind)}
+            </div>
+            <div className="mt-2 text-sm leading-6 text-gray-500">
+              {getReportDataSourceDescription(reportDataSourceKind)}
+            </div>
+          </div>
+
+          <div
+            className={`rounded-full border px-4 py-2 text-sm font-bold ${
+              isApiReport
+                ? "border-blue-200 bg-blue-50 text-blue-700"
+                : "border-gray-200 bg-gray-50 text-gray-700"
+            }`}
+          >
+            {isApiReport ? "API 연동형" : "CSV 업로드형"}
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-gray-100 bg-gray-50 p-4 text-sm leading-6 text-gray-600">
+          {isApiReport ? (
+            <div className="space-y-4">
+              <div>
+                API 연동형 리포트는 사용자가 저장한 기간만 media_sync_jobs의 date_from/date_to로 사용합니다.
+                저장만으로 동기화는 실행되지 않으며, 실제 동기화는 Report Builder의 동기화 요청 버튼과 Railway media sync worker가 처리합니다.
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(160px,0.6fr)_auto] md:items-end">
+                <label className="block">
+                  <span className="text-xs font-semibold text-gray-500">API 동기화 시작일</span>
+                  <input
+                    type="date"
+                    value={mediaSyncSettings.dateFrom}
+                    onChange={(event) =>
+                      setMediaSyncSettings((prev) => ({
+                        ...prev,
+                        dateFrom: event.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="text-xs font-semibold text-gray-500">API 동기화 종료일</span>
+                  <input
+                    type="date"
+                    value={mediaSyncSettings.dateTo}
+                    onChange={(event) =>
+                      setMediaSyncSettings((prev) => ({
+                        ...prev,
+                        dateTo: event.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="text-xs font-semibold text-gray-500">데이터 레벨</span>
+                  <select
+                    value={mediaSyncSettings.dataLevel}
+                    onChange={(event) =>
+                      setMediaSyncSettings((prev) => ({
+                        ...prev,
+                        dataLevel: normalizeMediaSyncDataLevel(event.target.value),
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                  >
+                    <option value="keyword">키워드</option>
+                    <option value="creative">소재</option>
+                    <option value="mixed">혼합</option>
+                    <option value="unknown">미지정</option>
+                  </select>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={handleSaveMediaSyncSettings}
+                  disabled={
+                    savingMediaSyncSettings ||
+                    !mediaSyncSettingsDirty ||
+                    !isValidMediaSyncSettingsDraft(mediaSyncSettings)
+                  }
+                  className={`rounded-lg px-4 py-2 text-sm font-bold ${
+                    savingMediaSyncSettings ||
+                    !mediaSyncSettingsDirty ||
+                    !isValidMediaSyncSettingsDraft(mediaSyncSettings)
+                      ? "cursor-not-allowed bg-gray-200 text-gray-500"
+                      : "bg-black text-white"
+                  }`}
+                >
+                  {savingMediaSyncSettings ? "저장 중..." : "기간 저장"}
+                </button>
+              </div>
+
+              <div className="text-xs text-gray-500">
+                {mediaSyncSettingsSavedText ? (
+                  <span className="font-semibold text-green-700">{mediaSyncSettingsSavedText}</span>
+                ) : mediaSyncSettingsDirty ? (
+                  <span className="font-semibold text-amber-700">저장되지 않은 API 동기화 기간이 있습니다.</span>
+                ) : mediaSyncSettingsError ? (
+                  <span className="font-semibold text-red-700">{mediaSyncSettingsError}</span>
+                ) : (
+                  <span>저장된 기간으로만 pending job을 생성합니다.</span>
+                )}
+              </div>
+            </div>
+          ) : (
+            <>
+              CSV 업로드형 리포트의 기간은 업로드된 rows의 날짜 범위로 자동 산정됩니다.
+              기간을 바꾸려면 다른 기간의 CSV를 다시 업로드해야 합니다.
+            </>
+          )}
+        </div>
+      </section>
 
       <div className="mb-5 grid gap-3 rounded-2xl border bg-white p-4 shadow-sm lg:grid-cols-4">
         <div className="rounded-xl border p-3">
@@ -3244,7 +3604,9 @@ export default function ReportDetailPage() {
             CSV 업로드
           </div>
           <div className="mb-4 text-sm text-gray-500">
-            브라우저에서 Storage로 직접 업로드 후 finalize 합니다.
+            {isCsvReport
+              ? "브라우저에서 Storage로 직접 업로드 후 finalize 합니다."
+              : "API 연동형 리포트에서는 CSV 업로드를 사용할 수 없습니다."}
           </div>
 
           <div className="space-y-3">
@@ -3256,6 +3618,7 @@ export default function ReportDetailPage() {
                 const next = e.target.files?.[0] ?? null;
                 setCsvFile(next);
               }}
+              disabled={!isCsvReport}
               className="block w-full text-sm"
             />
 
@@ -3279,6 +3642,7 @@ export default function ReportDetailPage() {
             <button
               type="button"
               className={`rounded-lg px-4 py-2 text-sm font-medium text-white ${
+                !isCsvReport ||
                 csvUploading ||
                 ingestionStatus === "queued" ||
                 ingestionStatus === "processing"
@@ -3287,12 +3651,13 @@ export default function ReportDetailPage() {
               }`}
               onClick={handleUploadCsv}
               disabled={
+                !isCsvReport ||
                 csvUploading ||
                 ingestionStatus === "queued" ||
                 ingestionStatus === "processing"
               }
             >
-              {csvUploadButtonText}
+              {isCsvReport ? csvUploadButtonText : "API 연동형 리포트"}
             </button>
 
             <div className="rounded-xl border bg-gray-50 p-3">
@@ -3522,7 +3887,8 @@ export default function ReportDetailPage() {
         <span className="text-gray-400">·</span> 유형:{" "}
         {effectivePreviewReportTypeName || "-"}{" "}
         <span className="text-gray-400">·</span> 기준 기간:{" "}
-        {previewPeriodLabel || "-"}
+        {previewPeriodLabel || "-"} <span className="text-gray-400">·</span> 데이터 방식:{" "}
+        {getReportDataSourceLabel(reportDataSourceKind)}
       </div>
 
       {exportRenderActive ? (

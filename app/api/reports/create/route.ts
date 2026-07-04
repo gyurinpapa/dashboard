@@ -8,6 +8,8 @@ export const dynamic = "force-dynamic";
 
 const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
 
+type ReportDataSourceKind = "csv" | "api";
+
 type CreateBody = {
   workspace_id?: string;
   advertiser_id?: string | null;
@@ -22,7 +24,7 @@ type CreateBody = {
 function jsonError(
   status: number,
   message: string,
-  extra?: Record<string, any>
+  extra?: Record<string, any>,
 ) {
   return NextResponse.json(
     {
@@ -30,7 +32,7 @@ function jsonError(
       error: message,
       ...(extra ?? {}),
     },
-    { status }
+    { status },
   );
 }
 
@@ -43,8 +45,12 @@ function normalizeEmail(v: any) {
   return asString(v).toLowerCase();
 }
 
+function isPlainObject(v: any): v is Record<string, any> {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
 function safeObj(v: any) {
-  return v && typeof v === "object" ? v : {};
+  return isPlainObject(v) ? v : {};
 }
 
 function isOnlyMasterEmail(email: any) {
@@ -53,7 +59,7 @@ function isOnlyMasterEmail(email: any) {
 
 function canCreateReport(
   role: string | null | undefined,
-  email?: string | null
+  email?: string | null,
 ) {
   const normalizedRole = asString(role).toLowerCase();
 
@@ -68,13 +74,50 @@ function canCreateReport(
   );
 }
 
+function normalizeDataSourceKind(value: any): ReportDataSourceKind {
+  const kind = asString(value).toLowerCase();
+
+  if (kind === "api") return "api";
+  return "csv";
+}
+
+function normalizeReportMeta(input: any) {
+  const meta = safeObj(input);
+  const existingDataSource = isPlainObject(meta.data_source)
+    ? meta.data_source
+    : {};
+
+  const kind = normalizeDataSourceKind(existingDataSource.kind);
+
+  if (kind === "api") {
+    return {
+      ...meta,
+      data_source: {
+        ...existingDataSource,
+        kind: "api" as const,
+        provider: asString(existingDataSource.provider) || "naver_searchad",
+        data_level: asString(existingDataSource.data_level) || "keyword",
+        mode: asString(existingDataSource.mode) || "snapshot_replace",
+      },
+    };
+  }
+
+  return {
+    ...meta,
+    data_source: {
+      ...existingDataSource,
+      kind: "csv" as const,
+    },
+  };
+}
+
 /**
  * ✅ Bearer 우선 + 쿠키(session) fallback
  * - 프론트에서 Authorization: Bearer ... 를 보내면 이걸 먼저 검증
  * - 없으면 sbAuth() 쿠키 세션으로 user 확인
  */
 async function getUser(
-  req: Request
+  req: Request,
 ): Promise<
   | {
       ok: true;
@@ -153,7 +196,15 @@ export async function POST(req: Request) {
 
     const status = asString(body.status) || "draft";
 
-    const meta = safeObj(body.meta);
+    const meta = normalizeReportMeta(body.meta);
+    const dataSourceKind = normalizeDataSourceKind(meta?.data_source?.kind);
+
+    if (dataSourceKind === "api" && !advertiser_id) {
+      return jsonError(
+        400,
+        "API linked reports require advertiser_id",
+      );
+    }
 
     // period는 "들어오면 우선", 없으면 자동세팅
     const period_start_in = body.period_start ?? null;
@@ -195,7 +246,7 @@ export async function POST(req: Request) {
       }
 
       resolved_workspace_id = asString(
-        adv.workspace_id
+        adv.workspace_id,
       );
 
       // body.workspace_id가 들어왔고 advertiser workspace와 다르면 차단
@@ -205,7 +256,7 @@ export async function POST(req: Request) {
       ) {
         return jsonError(
           400,
-          "workspace_id does not match advertiser workspace"
+          "workspace_id does not match advertiser workspace",
         );
       }
     }
@@ -231,14 +282,14 @@ export async function POST(req: Request) {
     if (!wm) {
       return jsonError(
         403,
-        "Forbidden: you are not a member of this workspace"
+        "Forbidden: you are not a member of this workspace",
       );
     }
 
     if (!canCreateReport(wm.role, userEmail)) {
       return jsonError(
         403,
-        "Forbidden: insufficient workspace role"
+        "Forbidden: insufficient workspace role",
       );
     }
 
@@ -259,7 +310,7 @@ export async function POST(req: Request) {
       if (!adv) {
         return jsonError(
           400,
-          "Invalid advertiser_id for this workspace"
+          "Invalid advertiser_id for this workspace",
         );
       }
     }
@@ -330,7 +381,8 @@ export async function POST(req: Request) {
           "period_start",
           "period_end",
           "created_at",
-        ].join(", ")
+          "meta",
+        ].join(", "),
       )
       .single();
 
@@ -345,7 +397,7 @@ export async function POST(req: Request) {
   } catch (e: any) {
     return jsonError(
       500,
-      e?.message ?? String(e)
+      e?.message ?? String(e),
     );
   }
 }

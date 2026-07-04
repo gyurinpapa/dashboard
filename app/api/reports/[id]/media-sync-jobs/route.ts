@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 
 import {
   MediaConnectionAccessError,
@@ -65,6 +66,87 @@ function isActiveMediaSyncJob(
   return (
     job.status === "pending" ||
     job.status === "processing"
+  );
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function normalizeYmdOrNull(value: unknown): string | null {
+  const normalized = String(value ?? "").trim();
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function normalizeDataLevelOrDefault(value: unknown) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+
+  if (
+    normalized === "keyword" ||
+    normalized === "creative" ||
+    normalized === "mixed" ||
+    normalized === "unknown"
+  ) {
+    return normalized;
+  }
+
+  return "keyword";
+}
+
+async function getStoredMediaSyncSettings(input: {
+  reportId: string;
+  workspaceId: string;
+  advertiserId: string;
+}) {
+  const { data, error } = await supabaseAdmin
+    .from("reports")
+    .select("id, workspace_id, advertiser_id, meta")
+    .eq("id", input.reportId)
+    .eq("workspace_id", input.workspaceId)
+    .eq("advertiser_id", input.advertiserId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  const meta = isPlainObject((data as any).meta) ? (data as any).meta : {};
+  const dataSource = isPlainObject((meta as any).data_source)
+    ? ((meta as any).data_source as Record<string, unknown>)
+    : {};
+  const mediaSync = isPlainObject((meta as any).media_sync)
+    ? ((meta as any).media_sync as Record<string, unknown>)
+    : {};
+
+  const kind = String(dataSource.kind ?? "csv").trim().toLowerCase();
+  const dateFrom = normalizeYmdOrNull(mediaSync.date_from);
+  const dateTo = normalizeYmdOrNull(mediaSync.date_to);
+
+  if (kind !== "api" || !dateFrom || !dateTo || dateFrom > dateTo) {
+    return null;
+  }
+
+  return {
+    dateFrom,
+    dateTo,
+    dataLevel: normalizeDataLevelOrDefault(mediaSync.data_level),
+    mode: "snapshot_replace" as const,
+  };
+}
+
+function mediaSyncSettingMismatchResponse() {
+  return jsonError(
+    409,
+    "MEDIA_SYNC_SETTINGS_REQUIRED",
   );
 }
 
@@ -222,6 +304,25 @@ export async function POST(
       canRunSync:
         access.canRunSync,
     };
+
+    const storedSettings = await getStoredMediaSyncSettings({
+      reportId: access.reportId,
+      workspaceId: access.workspaceId,
+      advertiserId: access.advertiserId,
+    });
+
+    if (!storedSettings) {
+      return mediaSyncSettingMismatchResponse();
+    }
+
+    if (
+      parsedRequest.dateFrom !== storedSettings.dateFrom ||
+      parsedRequest.dateTo !== storedSettings.dateTo ||
+      parsedRequest.dataLevel !== storedSettings.dataLevel ||
+      parsedRequest.mode !== storedSettings.mode
+    ) {
+      return mediaSyncSettingMismatchResponse();
+    }
 
     const repositoryInput =
       buildCreatePendingMediaSyncJobRepositoryInput(

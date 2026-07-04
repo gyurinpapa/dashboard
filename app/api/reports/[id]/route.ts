@@ -118,6 +118,50 @@ function normalizeBrandSearchContracts(v: any) {
   return out;
 }
 
+function normalizeYmdOrNull(v: any) {
+  const s = String(v ?? "").trim();
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return null;
+  }
+
+  return s;
+}
+
+function normalizeMediaSyncDataLevel(v: any) {
+  const s = String(v ?? "").trim().toLowerCase();
+
+  if (
+    s === "keyword" ||
+    s === "creative" ||
+    s === "mixed" ||
+    s === "unknown"
+  ) {
+    return s;
+  }
+
+  return "keyword";
+}
+
+function normalizeMediaSyncSettings(v: any) {
+  if (!isPlainObject(v)) return null;
+
+  const dateFrom = normalizeYmdOrNull((v as any).date_from ?? (v as any).dateFrom);
+  const dateTo = normalizeYmdOrNull((v as any).date_to ?? (v as any).dateTo);
+
+  if (!dateFrom || !dateTo || dateFrom > dateTo) {
+    return null;
+  }
+
+  return {
+    date_from: dateFrom,
+    date_to: dateTo,
+    data_level: normalizeMediaSyncDataLevel((v as any).data_level ?? (v as any).dataLevel),
+    mode: "snapshot_replace",
+    updated_at: new Date().toISOString(),
+  };
+}
+
 async function getUserFromSbAuth() {
   const auth = await sbAuth();
   const user = (auth as any)?.user ?? null;
@@ -413,10 +457,25 @@ export async function PATCH(req: Request, ctx: Ctx) {
         )
       : undefined;
 
+    const hasMediaSyncSettings =
+      Object.prototype.hasOwnProperty.call(body, "media_sync") ||
+      (incomingMeta
+        ? Object.prototype.hasOwnProperty.call(incomingMeta, "media_sync")
+        : false);
+
+    const incomingMediaSyncSettings = hasMediaSyncSettings
+      ? normalizeMediaSyncSettings(body.media_sync ?? incomingMeta?.media_sync)
+      : undefined;
+
+    if (hasMediaSyncSettings && incomingMediaSyncSettings === null) {
+      return jsonError(400, "Invalid media_sync settings");
+    }
+
     const meta =
       incomingMeta !== undefined ||
       incomingMonthGoal !== undefined ||
-      incomingBrandSearchContracts !== undefined
+      incomingBrandSearchContracts !== undefined ||
+      incomingMediaSyncSettings !== undefined
         ? {
             ...existingMeta,
             ...(incomingMeta ?? {}),
@@ -425,6 +484,9 @@ export async function PATCH(req: Request, ctx: Ctx) {
               : {}),
             ...(incomingBrandSearchContracts !== undefined
               ? { brand_search_contracts: incomingBrandSearchContracts }
+              : {}),
+            ...(incomingMediaSyncSettings !== undefined
+              ? { media_sync: incomingMediaSyncSettings }
               : {}),
           }
         : undefined;

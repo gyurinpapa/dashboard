@@ -11,6 +11,25 @@ export const dynamic = "force-dynamic";
 const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
 const ALL_WORKSPACES = "__all__";
 
+const REPORT_LIST_SELECT = [
+  "id",
+  "title",
+  "status",
+  "created_at",
+  "created_by",
+  "workspace_id",
+  "advertiser_id",
+  "share_token",
+  "period_start",
+  "period_end",
+  "draft_period_start",
+  "draft_period_end",
+  "published_period_start",
+  "published_period_end",
+  "published_at",
+  "meta",
+].join(", ");
+
 function jsonError(status: number, message: string, extra?: Record<string, any>) {
   return NextResponse.json(
     { ok: false, error: message, ...(extra ?? {}) },
@@ -47,6 +66,10 @@ function asOffset(v: any, def = 0) {
   return x;
 }
 
+function isPlainObject(v: any) {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
 function normalizeRole(v: any) {
   return asString(v).toLowerCase();
 }
@@ -61,6 +84,14 @@ function canSeeAllReportsInWorkspace(role: string) {
 
 function canSeeOwnReportsOnly(role: string) {
   return role === "staff";
+}
+
+function getReportDataSourceKindFromMeta(meta: any): "csv" | "api" {
+  const dataSource = isPlainObject(meta?.data_source) ? meta.data_source : {};
+  const kind = asString(dataSource?.kind).toLowerCase();
+
+  if (kind === "api") return "api";
+  return "csv";
 }
 
 /**
@@ -237,17 +268,40 @@ function normalizeReportRow(args: {
     ? advertiserNameById.get(advertiser_id) ?? null
     : null;
 
+  const meta = isPlainObject(row?.meta) ? row.meta : {};
+  const mediaSync = isPlainObject(meta?.media_sync) ? meta.media_sync : {};
+
+  const mediaSyncSettings = {
+    media_sync_date_from: asNullableString(mediaSync?.date_from),
+    media_sync_date_to: asNullableString(mediaSync?.date_to),
+    media_sync_data_level: asNullableString(mediaSync?.data_level) ?? "keyword",
+    media_sync_mode: asNullableString(mediaSync?.mode) ?? "snapshot_replace",
+  };
+
   return {
     id: row?.id ?? null,
     title: row?.title ?? "",
     status: row?.status ?? "",
     created_at: row?.created_at ?? null,
     created_by: asNullableString(row?.created_by),
+
     workspace_id: asString(row?.workspace_id) || workspaceIdFallback || "",
     workspace_name: workspaceName ?? null,
+
     advertiser_id,
     advertiser_name,
     share_token: asNullableString(row?.share_token),
+
+    period_start: asNullableString(row?.period_start),
+    period_end: asNullableString(row?.period_end),
+    draft_period_start: asNullableString(row?.draft_period_start),
+    draft_period_end: asNullableString(row?.draft_period_end),
+    published_period_start: asNullableString(row?.published_period_start),
+    published_period_end: asNullableString(row?.published_period_end),
+    published_at: asNullableString(row?.published_at),
+
+    data_source_kind: getReportDataSourceKindFromMeta(meta),
+    ...mediaSyncSettings,
   };
 }
 
@@ -287,9 +341,7 @@ export async function GET(req: Request) {
 
       const { data, error } = await supabaseAdmin
         .from("reports")
-        .select(
-          "id,title,status,created_at,created_by,workspace_id,advertiser_id,share_token"
-        )
+        .select(REPORT_LIST_SELECT)
         .order("created_at", { ascending: false })
         .order("id", { ascending: false })
         .range(from, to);
@@ -383,9 +435,7 @@ export async function GET(req: Request) {
 
     let query = supabaseAdmin
       .from("reports")
-      .select(
-        "id,title,status,created_at,created_by,workspace_id,advertiser_id,share_token"
-      )
+      .select(REPORT_LIST_SELECT)
       .eq("workspace_id", workspace_id)
       .order("created_at", { ascending: false })
       .order("id", { ascending: false })

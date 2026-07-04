@@ -11,6 +11,8 @@ type ReportType = {
   name: string;
 };
 
+type ReportDataSourceKind = "csv" | "api";
+
 type ReportRow = {
   id: string;
   title: string;
@@ -41,6 +43,12 @@ type ReportRow = {
   published_period_preset?: string | null;
   published_period_label?: string | null;
   published_at?: string | null;
+
+  data_source_kind?: ReportDataSourceKind;
+  media_sync_date_from?: string | null;
+  media_sync_date_to?: string | null;
+  media_sync_data_level?: MediaSyncDataLevel | null;
+  media_sync_mode?: MediaSyncMode | null;
 };
 
 type AdvertiserRow = {
@@ -263,6 +271,68 @@ function formatAdvertiserLabel(a: AdvertiserRow) {
   return name;
 }
 
+function normalizeReportDataSourceKind(value: any): ReportDataSourceKind {
+  const kind = norm(value);
+
+  if (kind === "api") return "api";
+  return "csv";
+}
+
+function getReportDataSourceKindFromPayload(value: any): ReportDataSourceKind {
+  const direct = normalizeReportDataSourceKind(value?.data_source_kind);
+
+  if (direct === "api") return "api";
+
+  const meta = value?.meta && typeof value.meta === "object" ? value.meta : {};
+  const dataSource =
+    meta?.data_source && typeof meta.data_source === "object"
+      ? meta.data_source
+      : {};
+
+  return normalizeReportDataSourceKind(dataSource?.kind);
+}
+
+function normalizeMediaSyncDataLevelOrDefault(
+  value: any,
+): MediaSyncDataLevel {
+  const normalized = norm(value);
+
+  if (
+    normalized === "keyword" ||
+    normalized === "creative" ||
+    normalized === "mixed" ||
+    normalized === "unknown"
+  ) {
+    return normalized;
+  }
+
+  return "keyword";
+}
+
+function normalizeMediaSyncModeOrDefault(value: any): MediaSyncMode {
+  return norm(value) === "snapshot_replace" ? "snapshot_replace" : "snapshot_replace";
+}
+
+function getReportDataSourceLabel(kind?: ReportDataSourceKind | null) {
+  return kind === "api" ? "API 연동" : "CSV 업로드";
+}
+
+function getReportDataSourceBadgeStyle(kind?: ReportDataSourceKind | null): React.CSSProperties {
+  if (kind === "api") {
+    return {
+      border: "1px solid #93c5fd",
+      background: "#eff6ff",
+      color: "#1d4ed8",
+    };
+  }
+
+  return {
+    border: "1px solid #d1d5db",
+    background: "#f9fafb",
+    color: "#374151",
+  };
+}
+
 function fmtDate(iso?: string | null) {
   if (!iso) return "";
   const d = new Date(iso);
@@ -285,6 +355,19 @@ function normalizeYmdOrNull(value?: string | null) {
 }
 
 function pickReportSyncDateRange(report: ReportRow) {
+  const dataSourceKind = normalizeReportDataSourceKind(report.data_source_kind);
+
+  if (dataSourceKind === "api") {
+    const dateFrom = normalizeYmdOrNull(report.media_sync_date_from);
+    const dateTo = normalizeYmdOrNull(report.media_sync_date_to);
+
+    if (dateFrom && dateTo && dateFrom <= dateTo) {
+      return { dateFrom, dateTo };
+    }
+
+    return null;
+  }
+
   const candidates = [
     {
       from: report.draft_period_start,
@@ -372,6 +455,8 @@ export default function ReportBuilderPage() {
   const [nextOffset, setNextOffset] = useState(0);
 
   const [creating, setCreating] = useState(false);
+  const [selectedReportDataSourceKind, setSelectedReportDataSourceKind] =
+    useState<ReportDataSourceKind>("csv");
 
   const [advertisers, setAdvertisers] = useState<AdvertiserRow[]>([]);
   const [search, setSearch] = useState("");
@@ -520,6 +605,15 @@ export default function ReportBuilderPage() {
         ? String(r.published_period_label)
         : null,
       published_at: r.published_at ? String(r.published_at) : null,
+      data_source_kind: getReportDataSourceKindFromPayload(r),
+      media_sync_date_from: normalizeYmdOrNull(r.media_sync_date_from),
+      media_sync_date_to: normalizeYmdOrNull(r.media_sync_date_to),
+      media_sync_data_level: r.media_sync_data_level
+        ? normalizeMediaSyncDataLevelOrDefault(r.media_sync_data_level)
+        : null,
+      media_sync_mode: r.media_sync_mode
+        ? normalizeMediaSyncModeOrDefault(r.media_sync_mode)
+        : null,
     })) as ReportRow[];
   }, []);
 
@@ -965,6 +1059,7 @@ export default function ReportBuilderPage() {
     setSearch("");
     setReportFilter("all");
     setSelectedAdvertiserId("");
+    setSelectedReportDataSourceKind("csv");
     setNewAdvertiserName("");
     setPublicSlugInput("");
     setSavingPublicSlug(false);
@@ -1441,6 +1536,11 @@ export default function ReportBuilderPage() {
 
     if (!workspaceId || creating) return;
 
+    if (selectedReportDataSourceKind === "api" && !selectedAdvertiserId) {
+      setLocalMsg("API 연동형 리포트는 광고주를 먼저 선택해야 합니다.");
+      return;
+    }
+
     setCreating(true);
     setLocalMsg("");
 
@@ -1452,6 +1552,21 @@ export default function ReportBuilderPage() {
     }
 
     const advertiserId = selectedAdvertiserId || null;
+    const reportDataSourceMeta =
+      selectedReportDataSourceKind === "api"
+        ? {
+            data_source: {
+              kind: "api",
+              provider: "naver_searchad",
+              data_level: "keyword",
+              mode: "snapshot_replace",
+            },
+          }
+        : {
+            data_source: {
+              kind: "csv",
+            },
+          };
 
     const res = await fetch("/api/reports/create", {
       method: "POST",
@@ -1465,7 +1580,7 @@ export default function ReportBuilderPage() {
         advertiser_id: advertiserId,
         report_type_id: type.id,
         title: `${type.name} - Draft`,
-        meta: {},
+        meta: reportDataSourceMeta,
         status: "draft",
       }),
     });
@@ -1573,6 +1688,11 @@ export default function ReportBuilderPage() {
 
     if (!reportId || requestingMediaSyncReportId) return;
 
+    if (normalizeReportDataSourceKind(report.data_source_kind) !== "api") {
+      setLocalMsg("CSV 업로드형 리포트는 API 동기화 요청 대상이 아닙니다.");
+      return;
+    }
+
     if (!report.advertiser_id) {
       setLocalMsg("API 동기화는 광고주가 연결된 리포트에서만 요청할 수 있습니다.");
       return;
@@ -1581,7 +1701,7 @@ export default function ReportBuilderPage() {
     const dateRange = pickReportSyncDateRange(report);
 
     if (!dateRange) {
-      setLocalMsg("리포트 기간이 확정된 뒤 API 동기화를 요청할 수 있습니다.");
+      setLocalMsg("API 동기화 기간이 저장된 뒤 요청할 수 있습니다. 리포트 편집 화면에서 기간을 먼저 저장하세요.");
       return;
     }
 
@@ -1667,8 +1787,8 @@ export default function ReportBuilderPage() {
             connectionId: connection.id,
             dateFrom: dateRange.dateFrom,
             dateTo: dateRange.dateTo,
-            dataLevel: "keyword",
-            mode: "snapshot_replace",
+            dataLevel: report.media_sync_data_level ?? "keyword",
+            mode: report.media_sync_mode ?? "snapshot_replace",
           }),
         }
       );
@@ -1955,6 +2075,7 @@ export default function ReportBuilderPage() {
     if (nextWorkspaceId === workspaceId) return;
 
     setSelectedAdvertiserId("");
+    setSelectedReportDataSourceKind("csv");
     setPublicSlugInput("");
     setSavingPublicSlug(false);
     setSelectedAdvertiserIds([]);
@@ -3052,6 +3173,67 @@ export default function ReportBuilderPage() {
 
             <div
               style={{
+                marginTop: 14,
+                border: "1px solid #e5e7eb",
+                borderRadius: 16,
+                background: "#ffffff",
+                padding: 14,
+              }}
+            >
+              <div style={{ fontSize: 14, fontWeight: 900, color: "#111827" }}>
+                데이터 입력 방식
+              </div>
+              <div style={{ marginTop: 4, fontSize: 12, color: "#6b7280", lineHeight: 1.5 }}>
+                새 리포트를 CSV 업로드형으로 만들지, 매체 API 연동형으로 만들지 먼저 선택합니다.
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))",
+                  gap: 10,
+                  marginTop: 12,
+                }}
+              >
+                {(["csv", "api"] as ReportDataSourceKind[]).map((kind) => {
+                  const active = selectedReportDataSourceKind === kind;
+                  const disabled = kind === "api" && !selectedAdvertiserId;
+
+                  return (
+                    <button
+                      key={kind}
+                      type="button"
+                      className="subBtn"
+                      onClick={() => setSelectedReportDataSourceKind(kind)}
+                      disabled={disabled || creating}
+                      style={{
+                        textAlign: "left",
+                        borderColor: active ? "#111827" : "#d1d5db",
+                        background: active ? "#111827" : "#ffffff",
+                        color: active ? "#ffffff" : "#111827",
+                      }}
+                      title={
+                        disabled
+                          ? "API 연동형 리포트는 광고주 선택이 먼저 필요합니다."
+                          : undefined
+                      }
+                    >
+                      <div style={{ fontWeight: 900 }}>
+                        {kind === "api" ? "API 연동" : "CSV 업로드"}
+                      </div>
+                      <div style={{ marginTop: 4, fontSize: 11, opacity: 0.76, lineHeight: 1.45 }}>
+                        {kind === "api"
+                          ? "기간을 설정한 뒤 매체 API로 데이터를 가져옵니다."
+                          : "CSV 파일을 업로드해 데이터 기간을 자동 산정합니다."}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div
+              style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))",
                 gap: 16,
@@ -3072,7 +3254,7 @@ export default function ReportBuilderPage() {
                     {selectedAdvertiserName
                       ? `"${selectedAdvertiserName}" 광고주로 `
                       : ""}
-                    draft report 생성(API 사용)
+                    draft report 생성({getReportDataSourceLabel(selectedReportDataSourceKind)})
                   </div>
                 </button>
               ))}
@@ -3383,6 +3565,20 @@ export default function ReportBuilderPage() {
                                 {" "}
                                 · {String(r.status ?? "").toUpperCase()}
                               </span>
+                              <span
+                                style={{
+                                  display: "inline-flex",
+                                  marginLeft: 8,
+                                  padding: "2px 7px",
+                                  borderRadius: 999,
+                                  fontSize: 11,
+                                  fontWeight: 800,
+                                  verticalAlign: "middle",
+                                  ...getReportDataSourceBadgeStyle(r.data_source_kind),
+                                }}
+                              >
+                                {getReportDataSourceLabel(r.data_source_kind)}
+                              </span>
                             </div>
                             <div style={{ fontSize: 13, opacity: 0.6 }}>
                               {fmtDate(r.created_at ?? null)}
@@ -3390,6 +3586,30 @@ export default function ReportBuilderPage() {
                           </button>
 
                           {(() => {
+                            const dataSourceKind = normalizeReportDataSourceKind(
+                              r.data_source_kind
+                            );
+
+                            if (dataSourceKind !== "api") {
+                              return (
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    flexDirection: "column",
+                                    alignItems: "flex-end",
+                                    gap: 4,
+                                    paddingRight: 8,
+                                    minWidth: 128,
+                                  }}
+                                  onClick={(event) => event.stopPropagation()}
+                                >
+                                  <div style={{ fontSize: 11, color: "#6b7280", whiteSpace: "nowrap" }}>
+                                    CSV 업로드형
+                                  </div>
+                                </div>
+                              );
+                            }
+
                             const currentSyncJob =
                               mediaSyncJobsByReportId[r.id] ?? null;
                             const syncRange = pickReportSyncDateRange(r);
@@ -3434,7 +3654,7 @@ export default function ReportBuilderPage() {
                                     !r.advertiser_id
                                       ? "광고주가 연결된 리포트만 API 동기화를 요청할 수 있습니다."
                                       : !syncRange
-                                      ? "리포트 기간이 확정되어야 API 동기화를 요청할 수 있습니다."
+                                      ? "API 연동 기간 설정이 필요합니다. 리포트 편집 화면에서 기간을 먼저 저장하세요."
                                       : isActiveSyncJob
                                       ? "이미 대기 또는 처리 중인 API 동기화 job이 있습니다."
                                       : "pending job만 생성하고 실제 동기화는 Railway worker가 처리합니다."
