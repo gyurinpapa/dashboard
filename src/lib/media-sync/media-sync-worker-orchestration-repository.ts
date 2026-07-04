@@ -1,5 +1,6 @@
 // src/lib/media-sync/media-sync-worker-orchestration-repository.ts
 
+import { getSupabaseAdmin } from "../supabase/admin";
 import {
   claimNextNaverMediaSyncJob,
   loadNaverMediaSyncWorkerContext,
@@ -40,11 +41,27 @@ const NAVER_PROVIDER =
 const PROCESSING_STATUS =
   "processing" as const;
 
+const FAILED_STATUS =
+  "failed" as const;
+
+const MEDIA_SYNC_JOBS_TABLE =
+  "media_sync_jobs" as const;
+
+const DEFAULT_JOB_TIMEOUT_MS =
+  10 * 60 * 1_000;
+
+const MIN_JOB_TIMEOUT_MS =
+  30_000;
+
+const MAX_JOB_TIMEOUT_MS =
+  60 * 60 * 1_000;
+
 export type MediaSyncWorkerOrchestrationErrorCode =
   | "NO_JOB"
   | "INVALID_INPUT"
   | "INVALID_JOB"
   | "JOB_NOT_PROCESSING"
+  | "JOB_TIMEOUT"
   | "UNSUPPORTED_PROVIDER"
   | "CLAIM_FAILED"
   | "CONTEXT_FAILED"
@@ -80,6 +97,7 @@ export type ProcessNaverMediaSyncJobOptions = {
   keywordChunkSize?: number;
   chunkPauseMs?: number;
   maxRetryCount?: number;
+  jobTimeoutMs?: number;
   signal?: AbortSignal;
   onRetry?: NaverSearchAdsStagingOrchestratorInput["onRetry"];
   dependencies?: NaverSearchAdsStagingOrchestratorInput["dependencies"];
@@ -155,6 +173,192 @@ function wrapStageError(
   );
 }
 
+function normalizeTimeoutMs(
+  value: unknown,
+): number {
+  if (value === undefined || value === null) {
+    return DEFAULT_JOB_TIMEOUT_MS;
+  }
+
+  const numericValue = Number(value);
+
+  if (
+    !Number.isSafeInteger(numericValue) ||
+    numericValue < MIN_JOB_TIMEOUT_MS ||
+    numericValue > MAX_JOB_TIMEOUT_MS
+  ) {
+    throw new MediaSyncWorkerOrchestrationError(
+      "INVALID_INPUT",
+      `jobTimeoutMs must be an integer between ${MIN_JOB_TIMEOUT_MS} and ${MAX_JOB_TIMEOUT_MS}.`,
+    );
+  }
+
+  return numericValue;
+}
+
+function getMaybeErrorCode(
+  error: unknown,
+): string | null {
+  if (!error || typeof error !== "object") {
+    return null;
+  }
+
+  const maybeCode =
+    (error as { code?: unknown }).code;
+
+  return typeof maybeCode === "string" && maybeCode.trim()
+    ? maybeCode.trim().slice(0, 200)
+    : null;
+}
+
+function getErrorCode(
+  error: unknown,
+): string {
+  if (error instanceof MediaSyncWorkerOrchestrationError) {
+    return error.code;
+  }
+
+  return getMaybeErrorCode(error) ?? "WORKER_FAILED";
+}
+
+function getErrorName(
+  error: unknown,
+): string {
+  if (error instanceof Error) {
+    return error.name || "Error";
+  }
+
+  return "UnknownError";
+}
+
+function getErrorMessage(
+  error: unknown,
+): string {
+  if (error instanceof Error) {
+    return error.message || "Media sync worker failed.";
+  }
+
+  return String(error || "Media sync worker failed.");
+}
+
+function getCauseError(
+  error: unknown,
+): Error | null {
+  if (!(error instanceof Error)) {
+    return null;
+  }
+
+  const cause = error.cause;
+
+  return cause instanceof Error ? cause : null;
+}
+
+function getSafeFailureDetail(
+  error: unknown,
+): Record<string, string | null> {
+  const cause = getCauseError(error);
+  const causeCode = getMaybeErrorCode(cause);
+
+  return {
+    code: getErrorCode(error),
+    message: getErrorMessage(error).slice(0, 500),
+    name: getErrorName(error).slice(0, 100),
+    cause_name: cause?.name?.slice(0, 100) ?? null,
+    cause_code: causeCode,
+    cause_message: cause?.message?.slice(0, 500) ?? null,
+    stage:
+      error instanceof MediaSyncWorkerOrchestrationError
+        ? error.code
+        : "WORKER_FAILED",
+  };
+}
+
+function logStage(input: {
+  job: MediaSyncJobRecord;
+  stage: string;
+  detail?: string;
+}): void {
+  const detail = input.detail ? ` ${input.detail}` : "";
+
+  console.log(
+    `[media-sync-worker] job ${input.job.id} stage ${input.stage}${detail}`,
+  );
+
+  console.log(
+    `[media-sync-worker] report ${input.job.report_id} date ${input.job.date_from}..${input.job.date_to} level ${input.job.data_level}`,
+  );
+}
+
+async function markProcessingMediaSyncJobFailed(input: {
+  job: MediaSyncJobRecord;
+  error: unknown;
+}): Promise<void> {
+  const now = new Date().toISOString();
+  const safeDetail = getSafeFailureDetail(input.error);
+  const safeErrorCode =
+    safeDetail.cause_code ||
+    safeDetail.code ||
+    "WORKER_FAILED";
+
+  const supabase = getSupabaseAdmin();
+
+  const { error } = await supabase
+    .from(MEDIA_SYNC_JOBS_TABLE)
+    .update({
+      status: FAILED_STATUS,
+      progress: 0,
+      error: safeErrorCode,
+      error_detail: safeDetail,
+      finished_at: now,
+      updated_at: now,
+    })
+    .eq("id", input.job.id)
+    .eq("status", PROCESSING_STATUS);
+
+  if (error) {
+    throw wrapStageError(
+      "FINALIZATION_FAILED",
+      "The failed Naver media sync job could not be marked as failed.",
+      error,
+    );
+  }
+
+  console.error(
+    `[media-sync-worker] job ${input.job.id} marked failed: ${safeErrorCode}`,
+  );
+}
+
+function withJobTimeout<T>(input: {
+  job: MediaSyncJobRecord;
+  timeoutMs: number;
+  abortController: AbortController | null;
+  promise: Promise<T>;
+}): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutHandle = setTimeout(() => {
+      input.abortController?.abort();
+
+      reject(
+        new MediaSyncWorkerOrchestrationError(
+          "JOB_TIMEOUT",
+          `The Naver media sync job exceeded the ${input.timeoutMs}ms timeout.`,
+        ),
+      );
+    }, input.timeoutMs);
+  });
+
+  return Promise.race([
+    input.promise,
+    timeoutPromise,
+  ]).finally(() => {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+  });
+}
+
 /**
  * 이미 processing으로 점유된 Naver media_sync_job 1개를
  * collector → staging → checkpoint → materialization
@@ -162,7 +366,8 @@ function wrapStageError(
  *
  * 주의:
  * - 실제 worker loop는 이 함수를 반복 호출하지 않는다.
- * - 실패 시 여기서 임의로 failed 상태로 바꾸지 않는다.
+ * - 실패 시 이 함수 자체는 failed 상태로 바꾸지 않는다.
+ * - processNextNaverMediaSyncJob()이 이미 점유한 job 실패를 failed로 정리한다.
  * - checkpoint/finalization repository의 error_detail 정책을 훼손하지 않는다.
  * - credential/provider 원본 payload를 로그나 DB에 저장하지 않는다.
  */
@@ -172,9 +377,13 @@ export async function processClaimedNaverMediaSyncJob(
 ): Promise<ProcessNaverMediaSyncJobResult> {
   validateProcessingNaverJob(job);
 
+  logStage({ job, stage: "claimed" });
+
   let context;
 
   try {
+    logStage({ job, stage: "context:start" });
+
     context =
       await loadNaverMediaSyncWorkerContext(
         job,
@@ -198,10 +407,14 @@ export async function processClaimedNaverMediaSyncJob(
     );
   }
 
+  logStage({ job: context.job, stage: "context:done" });
+
   let staging:
     NaverSearchAdsStagingOrchestratorResult;
 
   try {
+    logStage({ job: context.job, stage: "staging:start" });
+
     staging =
       await runNaverSearchAdsStagingOrchestrator({
         job:
@@ -256,10 +469,17 @@ export async function processClaimedNaverMediaSyncJob(
     );
   }
 
+  logStage({
+    job: context.job,
+    stage: "staging:done",
+  });
+
   let checkpointJob:
     MediaSyncJobRecord;
 
   try {
+    logStage({ job: context.job, stage: "checkpoint:start" });
+
     checkpointJob =
       await saveMediaSyncProcessingCheckpoint({
         job:
@@ -287,10 +507,14 @@ export async function processClaimedNaverMediaSyncJob(
     );
   }
 
+  logStage({ job: checkpointJob, stage: "checkpoint:done" });
+
   let materialization:
     MediaSyncSnapshotMaterializationResult;
 
   try {
+    logStage({ job: checkpointJob, stage: "materialization:start" });
+
     materialization =
       await materializeMediaSyncSnapshot({
         job:
@@ -318,10 +542,18 @@ export async function processClaimedNaverMediaSyncJob(
     );
   }
 
+  logStage({
+    job: materialization.job,
+    stage: "materialization:done",
+    detail: `rows=${materialization.rowCount}`,
+  });
+
   let activation:
     MediaSyncSnapshotActivationResult;
 
   try {
+    logStage({ job: materialization.job, stage: "activation:start" });
+
     activation =
       await activateMediaSyncSnapshot({
         job:
@@ -349,10 +581,18 @@ export async function processClaimedNaverMediaSyncJob(
     );
   }
 
+  logStage({
+    job: activation.job,
+    stage: "activation:done",
+    detail: `rows=${activation.rowCount}`,
+  });
+
   let finalization:
     MediaSyncFinalizationResult;
 
   try {
+    logStage({ job: activation.job, stage: "finalization:start" });
+
     finalization =
       await finalizeMediaSyncJob({
         job:
@@ -379,6 +619,12 @@ export async function processClaimedNaverMediaSyncJob(
       error,
     );
   }
+
+  logStage({
+    job: finalization.job,
+    stage: "finalization:done",
+    detail: `snapshot=${finalization.snapshotIngestionId} rows=${finalization.rowCount}`,
+  });
 
   return {
     jobId:
@@ -452,8 +698,30 @@ export async function processNextNaverMediaSyncJob(
     return null;
   }
 
-  return processClaimedNaverMediaSyncJob(
-    claimedJob,
-    input,
-  );
+  const timeoutMs = normalizeTimeoutMs(input.jobTimeoutMs);
+  const abortController = input.signal ? null : new AbortController();
+
+  const processingInput: ProcessNaverMediaSyncJobOptions = {
+    ...input,
+    signal: input.signal ?? abortController?.signal,
+  };
+
+  try {
+    return await withJobTimeout({
+      job: claimedJob,
+      timeoutMs,
+      abortController,
+      promise: processClaimedNaverMediaSyncJob(
+        claimedJob,
+        processingInput,
+      ),
+    });
+  } catch (error) {
+    await markProcessingMediaSyncJobFailed({
+      job: claimedJob,
+      error,
+    });
+
+    throw error;
+  }
 }

@@ -32,6 +32,8 @@ import type { SafeMediaSyncJob } from "@/src/lib/media-sync/types";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const MAX_MEDIA_SYNC_DATE_WINDOW_DAYS = 31;
+
 type RouteContext = {
   params: Promise<{
     id: string;
@@ -80,7 +82,34 @@ function normalizeYmdOrNull(value: unknown): string | null {
     return null;
   }
 
+  const date = new Date(`${normalized}T00:00:00.000Z`);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  if (date.toISOString().slice(0, 10) !== normalized) {
+    return null;
+  }
+
   return normalized;
+}
+
+function getInclusiveDateWindowDays(dateFrom: string, dateTo: string) {
+  const fromMs = Date.parse(`${dateFrom}T00:00:00.000Z`);
+  const toMs = Date.parse(`${dateTo}T00:00:00.000Z`);
+
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || toMs < fromMs) {
+    return 0;
+  }
+
+  return Math.floor((toMs - fromMs) / 86_400_000) + 1;
+}
+
+function isMediaSyncDateWindowAllowed(dateFrom: string, dateTo: string) {
+  const days = getInclusiveDateWindowDays(dateFrom, dateTo);
+
+  return days >= 1 && days <= MAX_MEDIA_SYNC_DATE_WINDOW_DAYS;
 }
 
 function normalizeDataLevelOrDefault(value: unknown) {
@@ -132,6 +161,10 @@ async function getStoredMediaSyncSettings(input: {
   const dateTo = normalizeYmdOrNull(mediaSync.date_to);
 
   if (kind !== "api" || !dateFrom || !dateTo || dateFrom > dateTo) {
+    return null;
+  }
+
+  if (!isMediaSyncDateWindowAllowed(dateFrom, dateTo)) {
     return null;
   }
 

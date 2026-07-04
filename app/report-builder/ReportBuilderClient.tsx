@@ -162,6 +162,7 @@ function norm(s: any) {
 const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
 const ALL_WORKSPACES = "__all__";
 const PUBLIC_CLIENT_URL_PREFIX = "https://www.etrylue.com/client/";
+const MAX_MEDIA_SYNC_DATE_WINDOW_DAYS = 31;
 
 function isOnlyMasterEmail(email?: string | null) {
   return norm(email) === ONLY_MASTER_EMAIL;
@@ -351,7 +352,34 @@ function normalizeYmdOrNull(value?: string | null) {
     return null;
   }
 
+  const date = new Date(`${normalized}T00:00:00.000Z`);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  if (date.toISOString().slice(0, 10) !== normalized) {
+    return null;
+  }
+
   return normalized;
+}
+
+function getInclusiveDateWindowDays(dateFrom: string, dateTo: string) {
+  const fromMs = Date.parse(`${dateFrom}T00:00:00.000Z`);
+  const toMs = Date.parse(`${dateTo}T00:00:00.000Z`);
+
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || toMs < fromMs) {
+    return 0;
+  }
+
+  return Math.floor((toMs - fromMs) / 86_400_000) + 1;
+}
+
+function isMediaSyncDateWindowAllowed(dateFrom: string, dateTo: string) {
+  const days = getInclusiveDateWindowDays(dateFrom, dateTo);
+
+  return days >= 1 && days <= MAX_MEDIA_SYNC_DATE_WINDOW_DAYS;
 }
 
 function pickReportSyncDateRange(report: ReportRow) {
@@ -361,7 +389,12 @@ function pickReportSyncDateRange(report: ReportRow) {
     const dateFrom = normalizeYmdOrNull(report.media_sync_date_from);
     const dateTo = normalizeYmdOrNull(report.media_sync_date_to);
 
-    if (dateFrom && dateTo && dateFrom <= dateTo) {
+    if (
+      dateFrom &&
+      dateTo &&
+      dateFrom <= dateTo &&
+      isMediaSyncDateWindowAllowed(dateFrom, dateTo)
+    ) {
       return { dateFrom, dateTo };
     }
 
@@ -1701,7 +1734,7 @@ export default function ReportBuilderPage() {
     const dateRange = pickReportSyncDateRange(report);
 
     if (!dateRange) {
-      setLocalMsg("API 동기화 기간이 저장된 뒤 요청할 수 있습니다. 리포트 편집 화면에서 기간을 먼저 저장하세요.");
+      setLocalMsg("API 동기화 기간은 저장되어 있어야 하며, 네이버 검색광고는 31일 이내만 요청할 수 있습니다.");
       return;
     }
 
@@ -3654,7 +3687,7 @@ export default function ReportBuilderPage() {
                                     !r.advertiser_id
                                       ? "광고주가 연결된 리포트만 API 동기화를 요청할 수 있습니다."
                                       : !syncRange
-                                      ? "API 연동 기간 설정이 필요합니다. 리포트 편집 화면에서 기간을 먼저 저장하세요."
+                                      ? "API 연동 기간 설정이 필요하거나 31일을 초과했습니다. 리포트 편집 화면에서 31일 이내 기간을 저장하세요."
                                       : isActiveSyncJob
                                       ? "이미 대기 또는 처리 중인 API 동기화 job이 있습니다."
                                       : "pending job만 생성하고 실제 동기화는 Railway worker가 처리합니다."

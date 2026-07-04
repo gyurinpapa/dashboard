@@ -5,6 +5,7 @@ import { sbAuth } from "@/src/lib/supabase/auth-server";
 type Ctx = { params: Promise<{ id: string }> };
 
 const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
+const MAX_MEDIA_SYNC_DATE_WINDOW_DAYS = 31;
 
 function asString(v: any) {
   if (v == null) return undefined;
@@ -125,7 +126,36 @@ function normalizeYmdOrNull(v: any) {
     return null;
   }
 
+  const date = new Date(`${s}T00:00:00.000Z`);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  const normalized = date.toISOString().slice(0, 10);
+
+  if (normalized !== s) {
+    return null;
+  }
+
   return s;
+}
+
+function getInclusiveDateWindowDays(dateFrom: string, dateTo: string) {
+  const fromMs = Date.parse(`${dateFrom}T00:00:00.000Z`);
+  const toMs = Date.parse(`${dateTo}T00:00:00.000Z`);
+
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || toMs < fromMs) {
+    return 0;
+  }
+
+  return Math.floor((toMs - fromMs) / 86_400_000) + 1;
+}
+
+function isMediaSyncDateWindowAllowed(dateFrom: string, dateTo: string) {
+  const days = getInclusiveDateWindowDays(dateFrom, dateTo);
+
+  return days >= 1 && days <= MAX_MEDIA_SYNC_DATE_WINDOW_DAYS;
 }
 
 function normalizeMediaSyncDataLevel(v: any) {
@@ -150,6 +180,10 @@ function normalizeMediaSyncSettings(v: any) {
   const dateTo = normalizeYmdOrNull((v as any).date_to ?? (v as any).dateTo);
 
   if (!dateFrom || !dateTo || dateFrom > dateTo) {
+    return null;
+  }
+
+  if (!isMediaSyncDateWindowAllowed(dateFrom, dateTo)) {
     return null;
   }
 

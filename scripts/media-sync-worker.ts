@@ -25,17 +25,29 @@ const POLL_INTERVAL_MS_ENV =
 const IDLE_EXIT_ENV =
   "MEDIA_SYNC_WORKER_EXIT_WHEN_IDLE";
 
+const JOB_TIMEOUT_MS_ENV =
+  "MEDIA_SYNC_WORKER_JOB_TIMEOUT_MS";
+
 const DEFAULT_MAX_JOBS =
   1;
 
 const DEFAULT_POLL_INTERVAL_MS =
   15_000;
 
+const DEFAULT_JOB_TIMEOUT_MS =
+  10 * 60 * 1_000;
+
 const MIN_POLL_INTERVAL_MS =
   5_000;
 
 const MAX_POLL_INTERVAL_MS =
   10 * 60 * 1_000;
+
+const MIN_JOB_TIMEOUT_MS =
+  30_000;
+
+const MAX_JOB_TIMEOUT_MS =
+  60 * 60 * 1_000;
 
 const MAX_JOBS_UPPER_BOUND =
   1_000;
@@ -46,6 +58,7 @@ type WorkerRuntimeOptions = {
   maxJobs: number;
   pollIntervalMs: number;
   exitWhenIdle: boolean;
+  jobTimeoutMs: number;
 };
 
 type SafeErrorLog = {
@@ -141,6 +154,21 @@ function readRuntimeOptions():
         MAX_POLL_INTERVAL_MS,
     });
 
+  const jobTimeoutMs =
+    readPositiveIntegerEnv({
+      name:
+        JOB_TIMEOUT_MS_ENV,
+
+      fallback:
+        DEFAULT_JOB_TIMEOUT_MS,
+
+      min:
+        MIN_JOB_TIMEOUT_MS,
+
+      max:
+        MAX_JOB_TIMEOUT_MS,
+    });
+
   const exitWhenIdle =
     readBooleanEnv(IDLE_EXIT_ENV);
 
@@ -150,6 +178,7 @@ function readRuntimeOptions():
     maxJobs,
     pollIntervalMs,
     exitWhenIdle,
+    jobTimeoutMs,
   };
 }
 
@@ -267,6 +296,10 @@ function logWorkerStart(
   );
 
   console.log(
+    `[${WORKER_NAME}] job timeout ms: ${options.jobTimeoutMs}`,
+  );
+
+  console.log(
     `[${WORKER_NAME}] exit when idle: ${options.exitWhenIdle}`,
   );
 }
@@ -362,10 +395,14 @@ function logSafeError(
   }
 }
 
-async function processSingleJob():
-  Promise<boolean> {
+async function processSingleJob(
+  options: WorkerRuntimeOptions,
+): Promise<boolean> {
   const result =
-    await processNextNaverMediaSyncJob();
+    await processNextNaverMediaSyncJob({
+      jobTimeoutMs:
+        options.jobTimeoutMs,
+    });
 
   if (!result) {
     logNoJob();
@@ -398,9 +435,10 @@ async function processSingleJob():
   return true;
 }
 
-async function runSingleMode():
-  Promise<void> {
-  await processSingleJob();
+async function runSingleMode(
+  options: WorkerRuntimeOptions,
+): Promise<void> {
+  await processSingleJob(options);
 }
 
 async function runLoopMode(
@@ -413,7 +451,7 @@ async function runLoopMode(
     processedJobs < options.maxJobs
   ) {
     const processed =
-      await processSingleJob();
+      await processSingleJob(options);
 
     if (processed) {
       processedJobs += 1;
@@ -455,7 +493,7 @@ async function main():
     return;
   }
 
-  await runSingleMode();
+  await runSingleMode(options);
 }
 
 main().catch(

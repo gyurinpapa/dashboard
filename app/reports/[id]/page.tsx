@@ -36,6 +36,7 @@ import { extractAdvertiserName } from "@/src/lib/report/utils";
 import ReportTemplate from "../../components/ReportTemplate";
 
 const CSV_BUCKET = "report_uploads";
+const MAX_MEDIA_SYNC_DATE_WINDOW_DAYS = 31;
 
 async function safeJson(res: Response) {
   const raw = await res.text().catch(() => "");
@@ -192,7 +193,34 @@ function normalizeYmdInput(value: any) {
     return "";
   }
 
+  const date = new Date(`${normalized}T00:00:00.000Z`);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  if (date.toISOString().slice(0, 10) !== normalized) {
+    return "";
+  }
+
   return normalized;
+}
+
+function getInclusiveDateWindowDays(dateFrom: string, dateTo: string) {
+  const fromMs = Date.parse(`${dateFrom}T00:00:00.000Z`);
+  const toMs = Date.parse(`${dateTo}T00:00:00.000Z`);
+
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || toMs < fromMs) {
+    return 0;
+  }
+
+  return Math.floor((toMs - fromMs) / 86_400_000) + 1;
+}
+
+function isMediaSyncDateWindowAllowed(dateFrom: string, dateTo: string) {
+  const days = getInclusiveDateWindowDays(dateFrom, dateTo);
+
+  return days >= 1 && days <= MAX_MEDIA_SYNC_DATE_WINDOW_DAYS;
 }
 
 function normalizeMediaSyncDataLevel(value: any): MediaSyncSettingsDraft["dataLevel"] {
@@ -250,7 +278,12 @@ function isValidMediaSyncSettingsDraft(v: MediaSyncSettingsDraft) {
   const dateFrom = normalizeYmdInput(v.dateFrom);
   const dateTo = normalizeYmdInput(v.dateTo);
 
-  return Boolean(dateFrom && dateTo && dateFrom <= dateTo);
+  return Boolean(
+    dateFrom &&
+      dateTo &&
+      dateFrom <= dateTo &&
+      isMediaSyncDateWindowAllowed(dateFrom, dateTo),
+  );
 }
 
 function getMediaSyncSettingsError(v: MediaSyncSettingsDraft) {
@@ -263,6 +296,10 @@ function getMediaSyncSettingsError(v: MediaSyncSettingsDraft) {
 
   if (dateFrom > dateTo) {
     return "API 동기화 시작일은 종료일보다 늦을 수 없습니다.";
+  }
+
+  if (!isMediaSyncDateWindowAllowed(dateFrom, dateTo)) {
+    return "네이버 검색광고 API 동기화 기간은 31일 이내로 선택해주세요.";
   }
 
   return "";
@@ -662,7 +699,7 @@ async function patchReportMediaSyncSettings(
   const dateFrom = normalizeYmdInput(next.dateFrom);
   const dateTo = normalizeYmdInput(next.dateTo);
 
-  if (!dateFrom || !dateTo || dateFrom > dateTo) {
+  if (!dateFrom || !dateTo || dateFrom > dateTo || !isMediaSyncDateWindowAllowed(dateFrom, dateTo)) {
     throw new Error(getMediaSyncSettingsError(next) || "API 동기화 기간이 올바르지 않습니다.");
   }
 
