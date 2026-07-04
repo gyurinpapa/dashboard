@@ -717,6 +717,10 @@ async function updateReportIngestionMeta(params: {
   const { reportId, patch } = params;
   const sb = getSupabaseAdmin();
 
+  if (!sb) {
+    throw new Error("SUPABASE_ADMIN_CLIENT_NOT_AVAILABLE");
+  }
+
   const { data: report, error: readErr } = await sb
     .from("reports")
     .select("meta")
