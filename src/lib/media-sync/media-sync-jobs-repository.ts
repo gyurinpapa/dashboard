@@ -72,6 +72,13 @@ export type CreatePendingMediaSyncJobInput = {
   mode: MediaSyncMode;
 };
 
+export type ListRecentMediaSyncJobsForReportInput = {
+  reportId: string;
+  workspaceId: string;
+  advertiserId: string;
+  limit?: number;
+};
+
 type UnknownRecord = Record<string, unknown>;
 
 type ReportScopeRecord = {
@@ -769,4 +776,62 @@ export async function createPendingMediaSyncJob(
   }
 
   return toSafeMediaSyncJob(record);
+}
+
+export async function listRecentMediaSyncJobsForReport(
+  input: ListRecentMediaSyncJobsForReportInput,
+): Promise<SafeMediaSyncJob[]> {
+  const reportId = normalizeRequiredString(
+    input.reportId,
+    "reportId",
+    200,
+  );
+
+  const workspaceId = normalizeRequiredString(
+    input.workspaceId,
+    "workspaceId",
+    200,
+  );
+
+  const advertiserId = normalizeRequiredString(
+    input.advertiserId,
+    "advertiserId",
+    200,
+  );
+
+  const parsedLimit = Number(input.limit ?? 5);
+  const limit =
+    Number.isInteger(parsedLimit) && parsedLimit > 0
+      ? Math.min(parsedLimit, 20)
+      : 5;
+
+  await requireScopedReport({
+    reportId,
+    workspaceId,
+    advertiserId,
+  });
+
+  const supabase = getSupabaseAdmin();
+
+  const { data, error } = await supabase
+    .from(MEDIA_SYNC_JOBS_TABLE)
+    .select("*")
+    .eq("report_id", reportId)
+    .eq("workspace_id", workspaceId)
+    .eq("advertiser_id", advertiserId)
+    .order("updated_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throw wrapDatabaseError(
+      "Recent media sync jobs could not be loaded.",
+      error,
+    );
+  }
+
+  return (data ?? []).map((record) =>
+    toSafeMediaSyncJob(
+      parseMediaSyncJobRecord(record),
+    ),
+  );
 }

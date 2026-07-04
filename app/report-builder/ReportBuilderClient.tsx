@@ -68,6 +68,66 @@ type WorkspaceMemberRow = {
   logo_updated_at?: string | null;
 };
 
+type MediaProvider = "naver_searchad" | "google_ads" | "meta_ads";
+type MediaConnectionStatus = "active" | "disconnected" | "error";
+type MediaSyncJobStatus =
+  | "pending"
+  | "processing"
+  | "done"
+  | "failed"
+  | "cancelled";
+type MediaSyncDataLevel = "keyword" | "creative" | "mixed" | "unknown";
+type MediaSyncMode = "snapshot_replace";
+
+type SafeMediaConnection = {
+  id: string;
+  workspace_id: string;
+  advertiser_id: string;
+  provider: MediaProvider;
+  external_account_id: string;
+  external_account_name: string | null;
+  status: MediaConnectionStatus;
+  has_credentials: boolean;
+  connected_at: string | null;
+  last_verified_at: string | null;
+  last_sync_at: string | null;
+  last_error: string | null;
+  meta: Record<string, unknown>;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type ReportMediaSyncJob = {
+  id: string;
+  workspace_id: string;
+  advertiser_id: string;
+  report_id: string;
+  connection_id: string;
+  provider: MediaProvider;
+  external_account_id: string;
+  date_from: string;
+  date_to: string;
+  data_level: MediaSyncDataLevel;
+  mode: MediaSyncMode;
+  status: MediaSyncJobStatus;
+  progress: number;
+  raw_rows: number;
+  normalized_rows: number;
+  inserted_rows: number;
+  failed_rows: number;
+  previous_ingestion_id: string | null;
+  snapshot_ingestion_id: string | null;
+  attempt_count: number;
+  error: string | null;
+  error_detail: Record<string, unknown> | null;
+  created_by: string;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  updated_at: string;
+};
+
 const ROLE_RANK: Record<Exclude<MemberRole, null>, number> = {
   client: 1,
   staff: 2,
@@ -210,6 +270,60 @@ function fmtDate(iso?: string | null) {
   return d.toLocaleString();
 }
 
+function isActiveMediaSyncJobStatus(status?: string | null) {
+  return status === "pending" || status === "processing";
+}
+
+function normalizeYmdOrNull(value?: string | null) {
+  const normalized = String(value ?? "").trim();
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function pickReportSyncDateRange(report: ReportRow) {
+  const candidates = [
+    {
+      from: report.draft_period_start,
+      to: report.draft_period_end,
+    },
+    {
+      from: report.period_start,
+      to: report.period_end,
+    },
+    {
+      from: report.published_period_start,
+      to: report.published_period_end,
+    },
+  ];
+
+  for (const candidate of candidates) {
+    const dateFrom = normalizeYmdOrNull(candidate.from);
+    const dateTo = normalizeYmdOrNull(candidate.to);
+
+    if (dateFrom && dateTo && dateFrom <= dateTo) {
+      return { dateFrom, dateTo };
+    }
+  }
+
+  return null;
+}
+
+function getMediaSyncJobStatusText(job?: ReportMediaSyncJob | null) {
+  if (!job) return "동기화 요청";
+
+  if (job.status === "pending") return "대기 중";
+  if (job.status === "processing") return `처리 중 ${job.progress}%`;
+  if (job.status === "done") return "완료";
+  if (job.status === "failed") return "실패";
+  if (job.status === "cancelled") return "취소됨";
+
+  return "상태 확인";
+}
+
 function pickCurrentMembership(
   rows: WorkspaceMemberRow[],
   workspaceIdFromQuery: string
@@ -283,6 +397,13 @@ export default function ReportBuilderPage() {
   const [uploadingWorkspaceLogo, setUploadingWorkspaceLogo] = useState(false);
   const [deletingWorkspaceLogo, setDeletingWorkspaceLogo] = useState(false);
   const workspaceLogoInputRef = useRef<HTMLInputElement | null>(null);
+
+  const [mediaSyncJobsByReportId, setMediaSyncJobsByReportId] =
+    useState<Record<string, ReportMediaSyncJob | null>>({});
+  const [loadingMediaSyncReportIds, setLoadingMediaSyncReportIds] =
+    useState<Record<string, boolean>>({});
+  const [requestingMediaSyncReportId, setRequestingMediaSyncReportId] =
+    useState<string | null>(null);
 
   const FOLDER_ROW_HEIGHT = 58;
   const REPORT_ROW_HEIGHT = 68;
@@ -359,6 +480,9 @@ export default function ReportBuilderPage() {
     setNextOffset(0);
     setLoadingReports(false);
     setLoadingMore(false);
+    setMediaSyncJobsByReportId({});
+    setLoadingMediaSyncReportIds({});
+    setRequestingMediaSyncReportId(null);
   }, []);
 
   const normalizeReportList = useCallback((list: any[]): ReportRow[] => {
@@ -1360,6 +1484,247 @@ export default function ReportBuilderPage() {
     await fetchReports();
     router.push(`/reports/${reportId}`);
   }
+
+  const fetchLatestMediaSyncJobForReport = useCallback(
+    async (reportId: string, silent = false) => {
+      const normalizedReportId = String(reportId ?? "").trim();
+
+      if (!normalizedReportId) return null;
+
+      if (!silent) {
+        setLoadingMediaSyncReportIds((prev) => ({
+          ...prev,
+          [normalizedReportId]: true,
+        }));
+      }
+
+      try {
+        const token = await getAccessToken();
+
+        if (!token) {
+          if (!silent) setLocalMsg("로그인 세션이 없습니다.");
+          return null;
+        }
+
+        const res = await fetch(
+          `/api/reports/${encodeURIComponent(
+            normalizedReportId
+          )}/media-sync-jobs`,
+          {
+            method: "GET",
+            credentials: "include",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        const json = await safeReadJson(res);
+
+        if (!res.ok || !(json as any)?.ok) {
+          if (!silent) {
+            console.warn(
+              "[media-sync-jobs:get] failed",
+              res.status,
+              json
+            );
+            setLocalMsg(
+              (json as any)?.error || "동기화 상태 조회 실패"
+            );
+          }
+          return null;
+        }
+
+        const activeJob =
+          ((json as any)?.active_job as ReportMediaSyncJob | null) ?? null;
+        const latestJob = Array.isArray((json as any)?.jobs)
+          ? (((json as any).jobs[0] as ReportMediaSyncJob | undefined) ??
+              null)
+          : null;
+        const nextJob = activeJob ?? latestJob;
+
+        setMediaSyncJobsByReportId((prev) => ({
+          ...prev,
+          [normalizedReportId]: nextJob,
+        }));
+
+        return nextJob;
+      } catch (error: any) {
+        if (!silent) {
+          console.warn("[media-sync-jobs:get] exception", error);
+          setLocalMsg(error?.message || "동기화 상태 조회 실패");
+        }
+        return null;
+      } finally {
+        if (!silent) {
+          setLoadingMediaSyncReportIds((prev) => {
+            const next = { ...prev };
+            delete next[normalizedReportId];
+            return next;
+          });
+        }
+      }
+    },
+    []
+  );
+
+  async function requestMediaSyncForReport(report: ReportRow) {
+    const reportId = String(report.id ?? "").trim();
+
+    if (!reportId || requestingMediaSyncReportId) return;
+
+    if (!report.advertiser_id) {
+      setLocalMsg("API 동기화는 광고주가 연결된 리포트에서만 요청할 수 있습니다.");
+      return;
+    }
+
+    const dateRange = pickReportSyncDateRange(report);
+
+    if (!dateRange) {
+      setLocalMsg("리포트 기간이 확정된 뒤 API 동기화를 요청할 수 있습니다.");
+      return;
+    }
+
+    const currentJob = mediaSyncJobsByReportId[reportId];
+
+    if (isActiveMediaSyncJobStatus(currentJob?.status)) {
+      setLocalMsg("이미 대기 또는 처리 중인 API 동기화 job이 있습니다.");
+      return;
+    }
+
+    setRequestingMediaSyncReportId(reportId);
+    setLocalMsg("API 동기화 요청을 준비합니다...");
+
+    try {
+      const token = await getAccessToken();
+
+      if (!token) {
+        setLocalMsg("로그인 세션이 없습니다.");
+        return;
+      }
+
+      const connectionsRes = await fetch(
+        `/api/advertisers/${encodeURIComponent(
+          report.advertiser_id
+        )}/media-connections`,
+        {
+          method: "GET",
+          credentials: "include",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      const connectionsJson = await safeReadJson(connectionsRes);
+
+      if (!connectionsRes.ok || !(connectionsJson as any)?.ok) {
+        console.warn(
+          "[media-connections:get] failed",
+          connectionsRes.status,
+          connectionsJson
+        );
+        setLocalMsg(
+          (connectionsJson as any)?.error || "매체 연결 조회 실패"
+        );
+        return;
+      }
+
+      const activeNaverConnections =
+        (((connectionsJson as any)?.connections ?? []) as SafeMediaConnection[])
+          .filter((connection) => {
+            return (
+              connection.provider === "naver_searchad" &&
+              connection.status === "active" &&
+              connection.has_credentials
+            );
+          });
+
+      if (activeNaverConnections.length === 0) {
+        setLocalMsg("활성화된 네이버 검색광고 연결이 없습니다.");
+        return;
+      }
+
+      if (activeNaverConnections.length > 1) {
+        setLocalMsg(
+          "활성화된 네이버 연결이 2개 이상입니다. 안전을 위해 자동 선택하지 않습니다."
+        );
+        return;
+      }
+
+      const connection = activeNaverConnections[0];
+
+      const res = await fetch(
+        `/api/reports/${encodeURIComponent(reportId)}/media-sync-jobs`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            connectionId: connection.id,
+            dateFrom: dateRange.dateFrom,
+            dateTo: dateRange.dateTo,
+            dataLevel: "keyword",
+            mode: "snapshot_replace",
+          }),
+        }
+      );
+
+      const json = await safeReadJson(res);
+
+      if (!res.ok || !(json as any)?.ok) {
+        console.warn("[media-sync-jobs:post] failed", res.status, json);
+
+        if ((json as any)?.error === "ACTIVE_JOB_ALREADY_EXISTS") {
+          await fetchLatestMediaSyncJobForReport(reportId, true);
+          setLocalMsg("이미 대기 또는 처리 중인 API 동기화 job이 있습니다.");
+          return;
+        }
+
+        setLocalMsg((json as any)?.error || "API 동기화 요청 실패");
+        return;
+      }
+
+      const job = ((json as any)?.job ?? null) as ReportMediaSyncJob | null;
+
+      setMediaSyncJobsByReportId((prev) => ({
+        ...prev,
+        [reportId]: job,
+      }));
+
+      setLocalMsg(
+        `API 동기화 요청 생성 완료: ${dateRange.dateFrom} ~ ${dateRange.dateTo}`
+      );
+    } catch (error: any) {
+      console.warn("[media-sync-jobs:post] exception", error);
+      setLocalMsg(error?.message || "API 동기화 요청 실패");
+    } finally {
+      setRequestingMediaSyncReportId(null);
+    }
+  }
+
+  useEffect(() => {
+    if (!userId) return;
+
+    const activeReportIds = Object.entries(mediaSyncJobsByReportId)
+      .filter(([, job]) => isActiveMediaSyncJobStatus(job?.status))
+      .map(([reportId]) => reportId);
+
+    if (activeReportIds.length === 0) return;
+
+    const timer = window.setInterval(() => {
+      activeReportIds.forEach((reportId) => {
+        fetchLatestMediaSyncJobForReport(reportId, true);
+      });
+    }, 5000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [userId, mediaSyncJobsByReportId, fetchLatestMediaSyncJobForReport]);
 
   async function deleteSelectedReports() {
     if (!canDeleteReports) {
@@ -3023,6 +3388,80 @@ export default function ReportBuilderPage() {
                               {fmtDate(r.created_at ?? null)}
                             </div>
                           </button>
+
+                          {(() => {
+                            const currentSyncJob =
+                              mediaSyncJobsByReportId[r.id] ?? null;
+                            const syncRange = pickReportSyncDateRange(r);
+                            const isActiveSyncJob = isActiveMediaSyncJobStatus(
+                              currentSyncJob?.status
+                            );
+                            const isLoadingSyncStatus = Boolean(
+                              loadingMediaSyncReportIds[r.id]
+                            );
+                            const isRequestingSync =
+                              requestingMediaSyncReportId === r.id;
+                            const isSyncDisabled =
+                              !r.advertiser_id ||
+                              !syncRange ||
+                              isRequestingSync ||
+                              isLoadingSyncStatus ||
+                              isActiveSyncJob;
+
+                            return (
+                              <div
+                                style={{
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  alignItems: "flex-end",
+                                  gap: 4,
+                                  paddingRight: 8,
+                                  minWidth: 128,
+                                }}
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                <button
+                                  type="button"
+                                  className="subBtn"
+                                  onClick={() => requestMediaSyncForReport(r)}
+                                  disabled={isSyncDisabled}
+                                  style={{
+                                    padding: "8px 10px",
+                                    fontSize: 12,
+                                    whiteSpace: "nowrap",
+                                  }}
+                                  title={
+                                    !r.advertiser_id
+                                      ? "광고주가 연결된 리포트만 API 동기화를 요청할 수 있습니다."
+                                      : !syncRange
+                                      ? "리포트 기간이 확정되어야 API 동기화를 요청할 수 있습니다."
+                                      : isActiveSyncJob
+                                      ? "이미 대기 또는 처리 중인 API 동기화 job이 있습니다."
+                                      : "pending job만 생성하고 실제 동기화는 Railway worker가 처리합니다."
+                                  }
+                                >
+                                  {isRequestingSync
+                                    ? "요청 중..."
+                                    : getMediaSyncJobStatusText(currentSyncJob)}
+                                </button>
+
+                                {currentSyncJob ? (
+                                  <div
+                                    style={{
+                                      fontSize: 11,
+                                      color:
+                                        currentSyncJob.status === "failed"
+                                          ? "#b91c1c"
+                                          : "#6b7280",
+                                      whiteSpace: "nowrap",
+                                    }}
+                                  >
+                                    API {currentSyncJob.status}
+                                  </div>
+                                ) : null}
+                              </div>
+                            );
+                          })()}
                         </div>
                       </div>
                     </div>

@@ -6,9 +6,11 @@ import {
 } from "@/src/lib/media-sync/media-connection-access";
 import {
   createPendingMediaSyncJob,
+  listRecentMediaSyncJobsForReport,
   MediaSyncJobsRepositoryError,
 } from "@/src/lib/media-sync/media-sync-jobs-repository";
 import {
+  assertSafeMediaSyncJobPayload,
   MediaSyncJobRequestError,
   parseCreateMediaSyncJobRequest,
 } from "@/src/lib/media-sync/media-sync-job-request";
@@ -24,6 +26,7 @@ import {
   MediaSyncJobsRoutePolicyError,
   type MediaSyncJobsRouteErrorResponse,
 } from "@/src/lib/media-sync/media-sync-jobs-route-policy";
+import type { SafeMediaSyncJob } from "@/src/lib/media-sync/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -54,6 +57,109 @@ function routeErrorResponse(
     result.status,
     result.error,
   );
+}
+
+function isActiveMediaSyncJob(
+  job: SafeMediaSyncJob,
+): boolean {
+  return (
+    job.status === "pending" ||
+    job.status === "processing"
+  );
+}
+
+/**
+ * media sync job 상태를 조회한다.
+ *
+ * 안전 원칙:
+ * - reportId는 URL params에서만 사용한다.
+ * - workspaceId, advertiserId는 access resolver 결과만 사용한다.
+ * - run_sync 권한이 있는 사용자만 조회한다.
+ * - credential, credential ciphertext, provider 원본 응답은 반환하지 않는다.
+ * - report_rows 또는 staging rows 같은 대량 데이터는 조회하지 않는다.
+ */
+export async function GET(
+  request: Request,
+  context: RouteContext,
+) {
+  try {
+    const { id } = await context.params;
+
+    const access =
+      await resolveReportMediaConnectionAccess({
+        request,
+        reportId: id,
+        action: "run_sync",
+      });
+
+    const jobs =
+      await listRecentMediaSyncJobsForReport({
+        reportId: access.reportId,
+        workspaceId: access.workspaceId,
+        advertiserId: access.advertiserId,
+        limit: 5,
+      });
+
+    const activeJob =
+      jobs.find(isActiveMediaSyncJob) ?? null;
+
+    const response = {
+      ok: true as const,
+      report_id: access.reportId,
+      workspace_id: access.workspaceId,
+      advertiser_id: access.advertiserId,
+      access_scope: access.accessScope,
+      active_job: activeJob,
+      jobs,
+    };
+
+    assertSafeMediaSyncJobPayload(response);
+
+    return NextResponse.json(response);
+  } catch (error) {
+    if (
+      error instanceof
+      MediaConnectionAccessError
+    ) {
+      return routeErrorResponse(
+        mapMediaSyncJobAccessRouteError({
+          status: error.status,
+          code: error.code,
+        }),
+      );
+    }
+
+    if (
+      error instanceof
+      MediaSyncJobsRepositoryError
+    ) {
+      return routeErrorResponse(
+        mapMediaSyncJobsRepositoryRouteError(
+          error.code,
+        ),
+      );
+    }
+
+    if (
+      error instanceof
+      MediaSyncJobsRoutePolicyError
+    ) {
+      return routeErrorResponse(
+        mapMediaSyncJobsRoutePolicyError(
+          error.code,
+        ),
+      );
+    }
+
+    console.error(
+      "[media-sync-jobs:get] Unexpected error",
+      error,
+    );
+
+    return routeErrorResponse(
+      getUnexpectedMediaSyncJobsRouteError(),
+    );
+  }
 }
 
 /**
