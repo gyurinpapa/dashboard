@@ -1,6 +1,16 @@
 // scripts/ingestion-worker.ts
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
+function getRequiredSupabaseAdmin() {
+  const supabase = getSupabaseAdmin();
+
+  if (!supabase) {
+    throw new Error("SUPABASE_ADMIN_CLIENT_NOT_AVAILABLE");
+  }
+
+  return supabase;
+}
+
 type ReportRowLevel = "keyword" | "creative" | "mixed" | "unknown";
 
 type IngestionJob = {
@@ -715,11 +725,7 @@ async function updateReportIngestionMeta(params: {
   patch: Record<string, any>;
 }) {
   const { reportId, patch } = params;
-  const sb = getSupabaseAdmin();
-
-  if (!sb) {
-    throw new Error("SUPABASE_ADMIN_CLIENT_NOT_AVAILABLE");
-  }
+  const sb = getRequiredSupabaseAdmin();
 
   const { data: report, error: readErr } = await sb
     .from("reports")
@@ -762,7 +768,7 @@ async function updateJob(params: {
   patch: Record<string, any>;
 }) {
   const { jobId, patch } = params;
-  const sb = getSupabaseAdmin();
+  const sb = getRequiredSupabaseAdmin();
 
   const { error } = await sb
     .from("ingestion_jobs")
@@ -778,7 +784,7 @@ async function updateJob(params: {
 }
 
 async function claimPendingJob() {
-  const sb = getSupabaseAdmin();
+  const sb = getRequiredSupabaseAdmin();
 
   const { data: candidate, error: selectErr } = await sb
     .from("ingestion_jobs")
@@ -834,7 +840,7 @@ function isLikelyStatementTimeout(error: any) {
 }
 
 async function insertRowsOnce(rows: any[]) {
-  const sb = getSupabaseAdmin();
+  const sb = getRequiredSupabaseAdmin();
   const { error } = await sb.from("report_rows").insert(rows);
 
   if (error) {
@@ -884,7 +890,7 @@ async function insertBatchWithRetry(rows: any[], maxRetries = 2) {
 }
 
 async function processJob(job: IngestionJob) {
-  const sb = getSupabaseAdmin();
+  const sb = getRequiredSupabaseAdmin();
 
   const jobId = job.id;
   const reportId = job.report_id;
@@ -1279,7 +1285,7 @@ async function processJob(job: IngestionJob) {
 
     onChunkProgress: async (processedBytes) => {
       lastBytesProcessed = processedBytes || 0;
-      },
+    },
   });
 
   if (!headerRaw.length || !headers.length || !headerMap) {
@@ -1376,14 +1382,14 @@ async function processJob(job: IngestionJob) {
 }
 
 async function failJob(job: IngestionJob, error: any) {
-  const sb = getSupabaseAdmin();
+  const sb = getRequiredSupabaseAdmin();
 
   await sb
     .from("report_rows")
     .delete()
     .eq("report_id", job.report_id)
     .eq("ingestion_id", job.id);
-    
+
   const message = String(error?.message ?? error);
   const detail = {
     message,
