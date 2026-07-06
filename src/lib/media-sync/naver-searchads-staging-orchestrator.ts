@@ -26,6 +26,8 @@ import {
 } from "./naver-searchads-keyword-stats-collector";
 import {
   createNaverKeywordStatsCursor,
+  normalizeNaverKeywordStatsCursor,
+  type NaverKeywordStatsCursor,
 } from "./naver-searchads-keyword-stats-state";
 import type {
   MediaSyncJobRecord,
@@ -50,6 +52,13 @@ const DEFAULT_CHUNK_PAUSE_MS = 10_000;
 const DEFAULT_MAX_RETRY_COUNT = 3;
 
 const MAX_STAGING_BATCH_SIZE = 10_000;
+
+const MAX_KEYWORD_STATS_PER_RUN = 1_000_000;
+
+const MAX_STATS_REQUESTS_PER_RUN = 1_000_000;
+
+const PROCESSING_CHECKPOINT_KEY =
+  "processing_checkpoint" as const;
 
 export type NaverSearchAdsStagingOrchestratorErrorCode =
   | "INVALID_INPUT"
@@ -100,6 +109,10 @@ export type NaverSearchAdsStagingOrchestratorInput = {
 
   maxRetryCount?: number;
 
+  maxKeywordStatsPerRun?: number;
+
+  maxStatsRequestsPerRun?: number;
+
   signal?: AbortSignal;
 
   onRetry?:
@@ -129,7 +142,41 @@ export type NaverSearchAdsStagingAppendTotals = {
   lastRowIndex: number | null;
 };
 
-export type NaverSearchAdsStagingOrchestratorResult = {
+export type NaverSearchAdsStagingPartialSummary = {
+  isComplete: false;
+
+  totalRows: number;
+
+  expectedRows: number;
+
+  insertedRows: number;
+
+  duplicateRows: number;
+};
+
+export type NaverSearchAdsStagingCheckpointSeed = {
+  insertedRows: number;
+
+  rawRows: number;
+
+  normalizedRows: number;
+
+  failedRows: number;
+
+  collector: {
+    discoveredKeywords: number;
+
+    completedKeywords: number;
+
+    statsRequestsAttempted: number;
+
+    statsRequestsSucceeded: number;
+
+    retryCount: number;
+  };
+};
+
+export type NaverSearchAdsStagingOrchestratorResultBase = {
   jobId: string;
 
   dateWindowIndex: number;
@@ -137,19 +184,53 @@ export type NaverSearchAdsStagingOrchestratorResult = {
   collector:
     NaverKeywordStatsCollectorResult;
 
+  /**
+   * 현재 run에서 새로 canonical 변환된 row 수.
+   * resume 시에는 전체 누적 row 수가 아니라 이번 loop의 증가분이다.
+   */
+  runCanonicalRowCount: number;
+
+  /**
+   * staging 전체 누적 row 수.
+   * completed 검증과 checkpoint payload 기준값이다.
+   */
   canonicalRowCount: number;
 
   callbackCount: number;
+
+  checkpointSeed:
+    NaverSearchAdsStagingCheckpointSeed;
 
   buffer:
     MediaCanonicalRowBatchBufferState;
 
   append:
     NaverSearchAdsStagingAppendTotals;
-
-  summary:
-    MediaSyncStagingSummary;
 };
+
+export type NaverSearchAdsStagingOrchestratorCompletedResult =
+  NaverSearchAdsStagingOrchestratorResultBase & {
+    status: "completed";
+
+    isComplete: true;
+
+    summary:
+      MediaSyncStagingSummary;
+  };
+
+export type NaverSearchAdsStagingOrchestratorPartialResult =
+  NaverSearchAdsStagingOrchestratorResultBase & {
+    status: "partial";
+
+    isComplete: false;
+
+    summary:
+      NaverSearchAdsStagingPartialSummary;
+  };
+
+export type NaverSearchAdsStagingOrchestratorResult =
+  | NaverSearchAdsStagingOrchestratorCompletedResult
+  | NaverSearchAdsStagingOrchestratorPartialResult;
 
 type UnknownRecord =
   Record<string, unknown>;
@@ -242,6 +323,39 @@ function normalizePositiveInteger(
       "INVALID_INPUT",
       `${fieldName} must be an integer between 1 and ${maximum}.`,
     );
+  }
+
+  return value;
+}
+
+function normalizeOptionalPositiveInteger(
+  value: unknown,
+  fieldName: string,
+  maximum: number,
+): number | undefined {
+  if (
+    value === undefined ||
+    value === null
+  ) {
+    return undefined;
+  }
+
+  return normalizePositiveInteger(
+    value,
+    fieldName,
+    maximum,
+  );
+}
+
+function readNonNegativeInteger(
+  value: unknown,
+): number | null {
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value < 0
+  ) {
+    return null;
   }
 
   return value;
@@ -454,6 +568,215 @@ function accumulateAppendResult(input: {
     input.flushContext.rowEndIndex;
 }
 
+function getProcessingCheckpoint(
+  job: MediaSyncJobRecord,
+): UnknownRecord | null {
+  const errorDetail =
+    job.error_detail;
+
+  if (!isPlainObject(errorDetail)) {
+    return null;
+  }
+
+  const checkpoint =
+    errorDetail[PROCESSING_CHECKPOINT_KEY];
+
+  if (!isPlainObject(checkpoint)) {
+    return null;
+  }
+
+  return checkpoint;
+}
+
+function getCheckpointCollector(
+  checkpoint: UnknownRecord | null,
+): UnknownRecord | null {
+  if (!checkpoint) {
+    return null;
+  }
+
+  const collector =
+    checkpoint.collector;
+
+  if (!isPlainObject(collector)) {
+    return null;
+  }
+
+  return collector;
+}
+
+function getCheckpointCursor(
+  checkpoint: UnknownRecord | null,
+): NaverKeywordStatsCursor | null {
+  const collector =
+    getCheckpointCollector(
+      checkpoint,
+    );
+
+  if (!collector) {
+    return null;
+  }
+
+  const cursor =
+    collector.cursor;
+
+  if (!isPlainObject(cursor)) {
+    return null;
+  }
+
+  try {
+    return normalizeNaverKeywordStatsCursor(
+      cursor,
+    );
+  } catch (error) {
+    throw new NaverSearchAdsStagingOrchestratorError(
+      "INVALID_JOB",
+      "The saved media sync processing checkpoint contains an invalid collector cursor.",
+      { cause: error },
+    );
+  }
+}
+
+function getCheckpointSeed(
+  checkpoint: UnknownRecord | null,
+): NaverSearchAdsStagingCheckpointSeed {
+  const collector =
+    getCheckpointCollector(
+      checkpoint,
+    );
+
+  return {
+    insertedRows:
+      readNonNegativeInteger(
+        checkpoint?.inserted_rows,
+      ) ?? 0,
+
+    rawRows:
+      readNonNegativeInteger(
+        checkpoint?.raw_rows,
+      ) ?? 0,
+
+    normalizedRows:
+      readNonNegativeInteger(
+        checkpoint?.normalized_rows,
+      ) ?? 0,
+
+    failedRows:
+      readNonNegativeInteger(
+        checkpoint?.failed_rows,
+      ) ?? 0,
+
+    collector: {
+      discoveredKeywords:
+        readNonNegativeInteger(
+          collector?.discovered_keywords,
+        ) ?? 0,
+
+      completedKeywords:
+        readNonNegativeInteger(
+          collector?.completed_keywords,
+        ) ?? 0,
+
+      statsRequestsAttempted:
+        readNonNegativeInteger(
+          collector?.stats_requests_attempted,
+        ) ?? 0,
+
+      statsRequestsSucceeded:
+        readNonNegativeInteger(
+          collector?.stats_requests_succeeded,
+        ) ?? 0,
+
+      retryCount:
+        readNonNegativeInteger(
+          collector?.retry_count,
+        ) ?? 0,
+    },
+  };
+}
+
+function createFreshCursor(input: {
+  dateWindowIndex: number;
+  job: MediaSyncJobRecord;
+}): NaverKeywordStatsCursor {
+  return createNaverKeywordStatsCursor({
+    dateWindow: {
+      index:
+        input.dateWindowIndex,
+
+      dateFrom:
+        input.job.date_from,
+
+      dateTo:
+        input.job.date_to,
+    },
+  });
+}
+
+function resolveStartCursor(input: {
+  job: MediaSyncJobRecord;
+  dateWindowIndex: number;
+}): NaverKeywordStatsCursor {
+  const checkpoint =
+    getProcessingCheckpoint(
+      input.job,
+    );
+
+  const checkpointCursor =
+    getCheckpointCursor(
+      checkpoint,
+    );
+
+  if (!checkpointCursor) {
+    return createFreshCursor({
+      job:
+        input.job,
+
+      dateWindowIndex:
+        input.dateWindowIndex,
+    });
+  }
+
+  if (
+    checkpointCursor.dateWindowIndex !==
+      input.dateWindowIndex ||
+    checkpointCursor.dateFrom !==
+      input.job.date_from ||
+    checkpointCursor.dateTo !==
+      input.job.date_to
+  ) {
+    throw new NaverSearchAdsStagingOrchestratorError(
+      "INVALID_JOB",
+      "The saved media sync processing checkpoint does not match the current job date window.",
+    );
+  }
+
+  return checkpointCursor;
+}
+
+function createPartialSummary(input: {
+  totalRows: number;
+  insertedRows: number;
+  duplicateRows: number;
+}): NaverSearchAdsStagingPartialSummary {
+  return {
+    isComplete:
+      false,
+
+    totalRows:
+      input.totalRows,
+
+    expectedRows:
+      input.totalRows,
+
+    insertedRows:
+      input.insertedRows,
+
+    duplicateRows:
+      input.duplicateRows,
+  };
+}
+
 export async function runNaverSearchAdsStagingOrchestrator(
   input:
     NaverSearchAdsStagingOrchestratorInput,
@@ -530,10 +853,34 @@ export async function runNaverSearchAdsStagingOrchestrator(
           10,
         );
 
+  const maxKeywordStatsPerRun =
+    normalizeOptionalPositiveInteger(
+      input.maxKeywordStatsPerRun,
+      "maxKeywordStatsPerRun",
+      MAX_KEYWORD_STATS_PER_RUN,
+    );
+
+  const maxStatsRequestsPerRun =
+    normalizeOptionalPositiveInteger(
+      input.maxStatsRequestsPerRun,
+      "maxStatsRequestsPerRun",
+      MAX_STATS_REQUESTS_PER_RUN,
+    );
+
+  const checkpoint =
+    getProcessingCheckpoint(
+      input.job,
+    );
+
+  const checkpointSeed =
+    getCheckpointSeed(
+      checkpoint,
+    );
+
   let callbackCount =
     0;
 
-  let canonicalRowCount =
+  let runCanonicalRowCount =
     0;
 
   const appendTotals =
@@ -549,6 +896,19 @@ export async function runNaverSearchAdsStagingOrchestrator(
           rows,
           flushContext,
         ): Promise<void> => {
+          const absoluteFlushContext:
+            MediaCanonicalRowBatchFlushContext = {
+              ...flushContext,
+
+              rowStartIndex:
+                checkpointSeed.insertedRows +
+                flushContext.rowStartIndex,
+
+              rowEndIndex:
+                checkpointSeed.insertedRows +
+                flushContext.rowEndIndex,
+            };
+
           const appendResult =
             await appendMediaSyncStagingBatch({
               job:
@@ -557,7 +917,7 @@ export async function runNaverSearchAdsStagingOrchestrator(
               rows,
 
               rowStartIndex:
-                flushContext.rowStartIndex,
+                absoluteFlushContext.rowStartIndex,
 
               dateWindowIndex,
             });
@@ -569,7 +929,8 @@ export async function runNaverSearchAdsStagingOrchestrator(
             rowsLength:
               rows.length,
 
-            flushContext,
+            flushContext:
+              absoluteFlushContext,
 
             result:
               appendResult,
@@ -578,25 +939,19 @@ export async function runNaverSearchAdsStagingOrchestrator(
     });
 
   const startCursor =
-    createNaverKeywordStatsCursor({
-      dateWindow: {
-        index:
-          dateWindowIndex,
+    resolveStartCursor({
+      job:
+        input.job,
 
-        dateFrom:
-          input.job.date_from,
-
-        dateTo:
-          input.job.date_to,
-      },
+      dateWindowIndex,
     });
 
   /*
    * collector가 예외로 중단되면 이 호출이 throw되며,
    * 아래 flushRemaining과 complete 검증은 실행되지 않는다.
    *
-   * 이미 성공적으로 flush된 staging batch는 그대로 남아
-   * 상위 worker가 재시도·실패 처리·cleanup 정책을 결정할 수 있다.
+   * collector가 partial을 반환하면 실패가 아니므로,
+   * 현재 buffer를 flush한 뒤 complete 검증 없이 checkpoint 저장 대상으로 반환한다.
    */
   const collectorResult =
     await collectNaverKeywordDailyStats({
@@ -613,6 +968,10 @@ export async function runNaverSearchAdsStagingOrchestrator(
       chunkPauseMs,
 
       maxRetryCount,
+
+      maxKeywordStatsPerRun,
+
+      maxStatsRequestsPerRun,
 
       signal:
         input.signal,
@@ -655,14 +1014,14 @@ export async function runNaverSearchAdsStagingOrchestrator(
           callbackCount +=
             1;
 
-          canonicalRowCount +=
+          runCanonicalRowCount +=
             canonicalRows.length;
         },
     });
 
   /*
-   * 전체 collector가 정상 완료된 경우에만
-   * 마지막 partial batch를 저장한다.
+   * completed/partial 모두 정상 반환이므로,
+   * 마지막 메모리 buffer는 반드시 staging에 저장한다.
    */
   await batchBuffer.flushRemaining();
 
@@ -673,16 +1032,73 @@ export async function runNaverSearchAdsStagingOrchestrator(
     bufferState.pendingRowCount !==
       0 ||
     bufferState.acceptedRowCount !==
-      canonicalRowCount ||
+      runCanonicalRowCount ||
     bufferState.flushedRowCount !==
-      canonicalRowCount ||
+      runCanonicalRowCount ||
     appendTotals.submittedRows !==
-      canonicalRowCount
+      runCanonicalRowCount
   ) {
     throw new NaverSearchAdsStagingOrchestratorError(
       "INVALID_INPUT",
-      "The completed staging pipeline contains inconsistent buffer or append counts.",
+      "The staging pipeline contains inconsistent buffer or append counts.",
     );
+  }
+
+  const canonicalRowCount =
+    checkpointSeed.insertedRows +
+    runCanonicalRowCount;
+
+  const baseResult:
+    NaverSearchAdsStagingOrchestratorResultBase = {
+      jobId:
+        input.job.id,
+
+      dateWindowIndex,
+
+      collector:
+        collectorResult,
+
+      runCanonicalRowCount,
+
+      canonicalRowCount,
+
+      callbackCount,
+
+      checkpointSeed,
+
+      buffer:
+        bufferState,
+
+      append:
+        appendTotals,
+    };
+
+  if (
+    collectorResult.status ===
+    "partial"
+  ) {
+    return {
+      ...baseResult,
+
+      status:
+        "partial",
+
+      isComplete:
+        false,
+
+      summary:
+        createPartialSummary({
+          totalRows:
+            canonicalRowCount,
+
+          insertedRows:
+            checkpointSeed.insertedRows +
+            appendTotals.insertedRows,
+
+          duplicateRows:
+            appendTotals.duplicateRows,
+        }),
+    };
   }
 
   const summary =
@@ -695,23 +1111,13 @@ export async function runNaverSearchAdsStagingOrchestrator(
     });
 
   return {
-    jobId:
-      input.job.id,
+    ...baseResult,
 
-    dateWindowIndex,
+    status:
+      "completed",
 
-    collector:
-      collectorResult,
-
-    canonicalRowCount,
-
-    callbackCount,
-
-    buffer:
-      bufferState,
-
-    append:
-      appendTotals,
+    isComplete:
+      true,
 
     summary,
   };

@@ -366,7 +366,7 @@ function logRecoveredStaleJobs(count: number): void {
   );
 }
 
-function logProcessedJob(input: {
+function logCompletedJob(input: {
   jobId: string;
   reportId: string;
   workspaceId: string;
@@ -376,7 +376,7 @@ function logProcessedJob(input: {
   expectedRows: number;
 }): void {
   console.log(
-    `[${WORKER_NAME}] processed job: ${input.jobId}`,
+    `[${WORKER_NAME}] completed job: ${input.jobId}`,
   );
 
   console.log(
@@ -401,6 +401,39 @@ function logProcessedJob(input: {
 
   console.log(
     `[${WORKER_NAME}] rows: ${input.expectedRows}`,
+  );
+}
+
+function logPartialJob(input: {
+  jobId: string;
+  reportId: string;
+  workspaceId: string;
+  advertiserId: string;
+  connectionId: string;
+  expectedRows: number;
+}): void {
+  console.log(
+    `[${WORKER_NAME}] partial job released for resume: ${input.jobId}`,
+  );
+
+  console.log(
+    `[${WORKER_NAME}] report: ${input.reportId}`,
+  );
+
+  console.log(
+    `[${WORKER_NAME}] workspace: ${input.workspaceId}`,
+  );
+
+  console.log(
+    `[${WORKER_NAME}] advertiser: ${input.advertiserId}`,
+  );
+
+  console.log(
+    `[${WORKER_NAME}] connection: ${input.connectionId}`,
+  );
+
+  console.log(
+    `[${WORKER_NAME}] checkpoint rows: ${input.expectedRows}`,
   );
 }
 
@@ -473,7 +506,31 @@ async function processSingleJob(
     return false;
   }
 
-  logProcessedJob({
+  if (result.status === "partial") {
+    logPartialJob({
+      jobId:
+        result.jobId,
+
+      reportId:
+        result.reportId,
+
+      workspaceId:
+        result.workspaceId,
+
+      advertiserId:
+        result.advertiserId,
+
+      connectionId:
+        result.connectionId,
+
+      expectedRows:
+        result.expectedRows,
+    });
+
+    return true;
+  }
+
+  logCompletedJob({
     jobId:
       result.jobId,
 

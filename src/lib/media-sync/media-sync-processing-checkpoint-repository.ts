@@ -325,9 +325,34 @@ function validateResult(
     );
   }
 
+  if (
+    result.status !== "partial" &&
+    result.status !== "completed"
+  ) {
+    throw new MediaSyncProcessingCheckpointError(
+      "INVALID_INPUT",
+      "The orchestrator result has an invalid status.",
+    );
+  }
+
+  if (
+    result.isComplete !==
+    (result.status === "completed")
+  ) {
+    throw new MediaSyncProcessingCheckpointError(
+      "INVALID_INPUT",
+      "The orchestrator result completion flag is inconsistent.",
+    );
+  }
+
   requireNonNegativeInteger(
     result.dateWindowIndex,
     "result.dateWindowIndex",
+  );
+
+  requireNonNegativeInteger(
+    result.runCanonicalRowCount,
+    "result.runCanonicalRowCount",
   );
 
   requireNonNegativeInteger(
@@ -353,6 +378,13 @@ function validateResult(
     throw new MediaSyncProcessingCheckpointError(
       "INVALID_INPUT",
       "The orchestrator summary result is invalid.",
+    );
+  }
+
+  if (!isPlainObject(result.checkpointSeed)) {
+    throw new MediaSyncProcessingCheckpointError(
+      "INVALID_INPUT",
+      "The orchestrator checkpoint seed is invalid.",
     );
   }
 }
@@ -490,38 +522,107 @@ export async function saveMediaSyncProcessingCheckpoint(
   const summary =
     input.result.summary;
 
-  const discoveredKeywords =
+  const checkpointSeed =
+    input.result.checkpointSeed;
+
+  const runDiscoveredKeywords =
     requireNonNegativeInteger(
       collector
         .keywordsDiscoveredInRun,
       "collector.keywordsDiscoveredInRun",
     );
 
-  const completedKeywords =
+  const runCompletedKeywords =
     requireNonNegativeInteger(
       collector
         .keywordsCompletedInRun,
       "collector.keywordsCompletedInRun",
     );
 
-  const statsRequestsAttempted =
+  const runStatsRequestsAttempted =
     requireNonNegativeInteger(
       collector
         .statsRequestsAttempted,
       "collector.statsRequestsAttempted",
     );
 
-  const statsRequestsSucceeded =
+  const runStatsRequestsSucceeded =
     requireNonNegativeInteger(
       collector
         .statsRequestsSucceeded,
       "collector.statsRequestsSucceeded",
     );
 
-  const retryCount =
+  const runRetryCount =
     requireNonNegativeInteger(
       collector.retryCount,
       "collector.retryCount",
+    );
+
+  const seedInsertedRows =
+    requireNonNegativeInteger(
+      checkpointSeed.insertedRows,
+      "checkpointSeed.insertedRows",
+    );
+
+  const seedRawRows =
+    requireNonNegativeInteger(
+      checkpointSeed.rawRows,
+      "checkpointSeed.rawRows",
+    );
+
+  const seedNormalizedRows =
+    requireNonNegativeInteger(
+      checkpointSeed.normalizedRows,
+      "checkpointSeed.normalizedRows",
+    );
+
+  const seedFailedRows =
+    requireNonNegativeInteger(
+      checkpointSeed.failedRows,
+      "checkpointSeed.failedRows",
+    );
+
+  const seedDiscoveredKeywords =
+    requireNonNegativeInteger(
+      checkpointSeed.collector
+        .discoveredKeywords,
+      "checkpointSeed.collector.discoveredKeywords",
+    );
+
+  const seedCompletedKeywords =
+    requireNonNegativeInteger(
+      checkpointSeed.collector
+        .completedKeywords,
+      "checkpointSeed.collector.completedKeywords",
+    );
+
+  const seedStatsRequestsAttempted =
+    requireNonNegativeInteger(
+      checkpointSeed.collector
+        .statsRequestsAttempted,
+      "checkpointSeed.collector.statsRequestsAttempted",
+    );
+
+  const seedStatsRequestsSucceeded =
+    requireNonNegativeInteger(
+      checkpointSeed.collector
+        .statsRequestsSucceeded,
+      "checkpointSeed.collector.statsRequestsSucceeded",
+    );
+
+  const seedRetryCount =
+    requireNonNegativeInteger(
+      checkpointSeed.collector
+        .retryCount,
+      "checkpointSeed.collector.retryCount",
+    );
+
+  const runCanonicalRowCount =
+    requireNonNegativeInteger(
+      input.result
+        .runCanonicalRowCount,
+      "result.runCanonicalRowCount",
     );
 
   const canonicalRowCount =
@@ -531,7 +632,7 @@ export async function saveMediaSyncProcessingCheckpoint(
       "result.canonicalRowCount",
     );
 
-  const insertedRows =
+  const summaryTotalRows =
     requireNonNegativeInteger(
       summary.totalRows,
       "summary.totalRows",
@@ -543,21 +644,107 @@ export async function saveMediaSyncProcessingCheckpoint(
       "append.submittedRows",
     );
 
+  const appendInsertedRows =
+    requireNonNegativeInteger(
+      append.insertedRows,
+      "append.insertedRows",
+    );
+
+  const appendDuplicateRows =
+    requireNonNegativeInteger(
+      append.duplicateRows,
+      "append.duplicateRows",
+    );
+
+  const discoveredKeywords =
+    seedDiscoveredKeywords +
+    runDiscoveredKeywords;
+
+  const completedKeywords =
+    seedCompletedKeywords +
+    runCompletedKeywords;
+
+  const statsRequestsAttempted =
+    seedStatsRequestsAttempted +
+    runStatsRequestsAttempted;
+
+  const statsRequestsSucceeded =
+    seedStatsRequestsSucceeded +
+    runStatsRequestsSucceeded;
+
+  const retryCount =
+    seedRetryCount +
+    runRetryCount;
+
+  const insertedRows =
+    seedInsertedRows +
+    appendInsertedRows +
+    appendDuplicateRows;
+
+  const rawRows =
+    seedRawRows +
+    runCanonicalRowCount;
+
+  const normalizedRows =
+    seedNormalizedRows +
+    runCanonicalRowCount;
+
+  const failedRows =
+    seedFailedRows;
+
   if (
     completedKeywords >
       discoveredKeywords ||
     statsRequestsSucceeded >
       statsRequestsAttempted ||
+    appendSubmittedRows !==
+      runCanonicalRowCount ||
     insertedRows !==
       canonicalRowCount ||
-    appendSubmittedRows !==
+    rawRows !==
       canonicalRowCount ||
+    normalizedRows !==
+      canonicalRowCount ||
+    summaryTotalRows !==
+      canonicalRowCount ||
+    failedRows !==
+      0 ||
     summary.isComplete !==
-      true
+      input.result.isComplete
   ) {
     throw new MediaSyncProcessingCheckpointError(
       "INVALID_COUNTS",
-      "The completed orchestrator result contains inconsistent checkpoint counts.",
+      "The orchestrator result contains inconsistent checkpoint counts.",
+    );
+  }
+
+  if (
+    input.result.status === "partial" &&
+    (
+      input.result.isComplete !== false ||
+      summary.isComplete !== false ||
+      collector.status !== "partial" ||
+      collector.completed !== false
+    )
+  ) {
+    throw new MediaSyncProcessingCheckpointError(
+      "INVALID_COUNTS",
+      "The partial orchestrator result contains inconsistent completion flags.",
+    );
+  }
+
+  if (
+    input.result.status === "completed" &&
+    (
+      input.result.isComplete !== true ||
+      summary.isComplete !== true ||
+      collector.status !== "completed" ||
+      collector.completed !== true
+    )
+  ) {
+    throw new MediaSyncProcessingCheckpointError(
+      "INVALID_COUNTS",
+      "The completed orchestrator result contains inconsistent completion flags.",
     );
   }
 
@@ -599,7 +786,7 @@ export async function saveMediaSyncProcessingCheckpoint(
       insertedRows,
 
     failed_rows:
-      0,
+      failedRows,
 
     collector: {
       discovered_keywords:
@@ -699,7 +886,7 @@ export async function saveMediaSyncProcessingCheckpoint(
     updatedJob.inserted_rows !==
       insertedRows ||
     updatedJob.failed_rows !==
-      0
+      failedRows
   ) {
     throw new MediaSyncProcessingCheckpointError(
       "INVALID_DATABASE_RESULT",

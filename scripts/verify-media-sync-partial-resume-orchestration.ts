@@ -1,4 +1,4 @@
-// scripts/verify-media-sync-end-to-end-orchestration.ts
+// scripts/verify-media-sync-partial-resume-orchestration.ts
 
 import { getSupabaseAdmin } from "../src/lib/supabase/admin";
 import {
@@ -21,7 +21,6 @@ import type {
 } from "../src/lib/media-sync/naver-searchads-api";
 import type {
   EtrylueNormalizedMediaRow,
-  JsonObject,
 } from "../src/lib/media-sync/types";
 
 const MEDIA_SYNC_JOBS_TABLE =
@@ -51,8 +50,17 @@ const FIXTURE_KEYWORD_COUNT =
 const FIXTURE_BATCH_SIZE =
   4;
 
+const PARTIAL_KEYWORD_LIMIT_PER_RUN =
+  2;
+
+const MAX_RESUME_RUNS =
+  10;
+
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+type UnknownRecord =
+  Record<string, unknown>;
 
 type VerificationInput = {
   reportId: string;
@@ -106,6 +114,30 @@ type StoredStagingRow = {
   row_fingerprint: string;
   row: EtrylueNormalizedMediaRow;
 };
+
+type MediaSyncJobState = {
+  id: string;
+  status: string;
+  progress: number | null;
+  error: string | null;
+  error_detail: unknown;
+  raw_rows: number;
+  normalized_rows: number;
+  inserted_rows: number;
+  failed_rows: number;
+  snapshot_ingestion_id: string | null;
+  finished_at: string | null;
+};
+
+function isPlainObject(
+  value: unknown,
+): value is UnknownRecord {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value)
+  );
+}
 
 function stableJson(
   value: unknown,
@@ -252,10 +284,10 @@ function createFixtureCampaign():
   NaverSearchAdsCampaignRecord {
   return {
     id:
-      "end-to-end-campaign-id",
+      "partial-resume-campaign-id",
 
     name:
-      "end-to-end-campaign",
+      "partial-resume-campaign",
 
     campaignType:
       "WEB_SITE",
@@ -276,12 +308,12 @@ function createFixtureAdgroup(
 ): NaverSearchAdsAdgroupRecord {
   return {
     id:
-      "end-to-end-adgroup-id",
+      "partial-resume-adgroup-id",
 
     campaignId,
 
     name:
-      "end-to-end-adgroup",
+      "partial-resume-adgroup",
 
     adgroupType:
       "WEB_SITE",
@@ -314,12 +346,12 @@ function createFixtureKeywords(
 
       return {
         id:
-          `end-to-end-keyword-id-${sequence}`,
+          `partial-resume-keyword-id-${sequence}`,
 
         adgroupId,
 
         keyword:
-          `end-to-end-keyword-${sequence}`,
+          `partial-resume-keyword-${sequence}`,
 
         inspectStatus:
           "APPROVED",
@@ -784,6 +816,36 @@ async function readConnectionState(
   };
 }
 
+async function readMediaSyncJobState(
+  jobId: string,
+): Promise<MediaSyncJobState> {
+  const supabase =
+    getSupabaseAdmin();
+
+  const { data, error } =
+    await supabase
+      .from(MEDIA_SYNC_JOBS_TABLE)
+      .select(
+        "id, status, progress, error, error_detail, raw_rows, normalized_rows, inserted_rows, failed_rows, snapshot_ingestion_id, finished_at",
+      )
+      .eq("id", jobId)
+      .maybeSingle();
+
+  if (error) {
+    throw new Error(
+      "VERIFICATION_JOB_STATE_READ_FAILED",
+    );
+  }
+
+  if (!data) {
+    throw new Error(
+      "VERIFICATION_JOB_NOT_FOUND",
+    );
+  }
+
+  return data as unknown as MediaSyncJobState;
+}
+
 async function readSnapshotRows(input: {
   reportId: string;
   ingestionId: string;
@@ -850,6 +912,121 @@ async function readStagingRows(
   }
 
   return data as unknown as StoredStagingRow[];
+}
+
+function getProcessingCheckpoint(
+  jobState: MediaSyncJobState,
+): UnknownRecord {
+  if (!isPlainObject(jobState.error_detail)) {
+    throw new Error(
+      "VERIFICATION_CHECKPOINT_MISSING_ERROR_DETAIL",
+    );
+  }
+
+  const checkpoint =
+    jobState.error_detail.processing_checkpoint;
+
+  if (!isPlainObject(checkpoint)) {
+    throw new Error(
+      "VERIFICATION_PROCESSING_CHECKPOINT_MISSING",
+    );
+  }
+
+  return checkpoint;
+}
+
+function getCheckpointCollector(
+  checkpoint: UnknownRecord,
+): UnknownRecord {
+  const collector =
+    checkpoint.collector;
+
+  if (!isPlainObject(collector)) {
+    throw new Error(
+      "VERIFICATION_CHECKPOINT_COLLECTOR_MISSING",
+    );
+  }
+
+  return collector;
+}
+
+function readCheckpointInteger(
+  record: UnknownRecord,
+  key: string,
+): number {
+  const value =
+    record[key];
+
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value < 0
+  ) {
+    throw new Error(
+      `VERIFICATION_INVALID_CHECKPOINT_${key.toUpperCase()}`,
+    );
+  }
+
+  return value;
+}
+
+function assertNoForbiddenSecretKeys(
+  value: unknown,
+  path = "value",
+): void {
+  const forbiddenPattern =
+    /secret|token|credential|ciphertext|accesslicense|authorization|password|api[_-]?key/i;
+
+  if (
+    value === null ||
+    typeof value !== "object"
+  ) {
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach(
+      (
+        item,
+        index,
+      ) => {
+        assertNoForbiddenSecretKeys(
+          item,
+          `${path}[${index}]`,
+        );
+      },
+    );
+
+    return;
+  }
+
+  for (
+    const [
+      key,
+      nestedValue,
+    ]
+    of Object.entries(
+      value as UnknownRecord,
+    )
+  ) {
+    if (
+      forbiddenPattern.test(
+        key.replace(
+          /[^a-z0-9_-]/gi,
+          "",
+        ),
+      )
+    ) {
+      throw new Error(
+        `VERIFICATION_FORBIDDEN_SECRET_KEY_IN_CHECKPOINT:${path}.${key}`,
+      );
+    }
+
+    assertNoForbiddenSecretKeys(
+      nestedValue,
+      `${path}.${key}`,
+    );
+  }
 }
 
 function rowsMatch(
@@ -1258,12 +1435,18 @@ async function main(): Promise<void> {
         adgroup.id,
       );
 
-    const expectedRows =
-      FIXTURE_KEYWORD_COUNT *
+    const fixtureDates =
       createFixtureDates(
         input.dateFrom,
         input.dateTo,
-      ).length;
+      );
+
+    const rowsPerKeyword =
+      fixtureDates.length;
+
+    const expectedTotalRows =
+      FIXTURE_KEYWORD_COUNT *
+      rowsPerKeyword;
 
     const pendingJob =
       await createPendingMediaSyncJob({
@@ -1315,50 +1498,175 @@ async function main(): Promise<void> {
         null,
     };
 
-    const orchestration =
-      await processNextNaverMediaSyncJob({
-        stagingBatchSize:
-          FIXTURE_BATCH_SIZE,
+    const partialRuns:
+      number[] = [];
 
-        requestIntervalMs:
-          0,
+    let completedRunIndex:
+      number | null =
+      null;
 
-        keywordChunkSize:
-          100,
+    let completedOrchestration:
+      Awaited<
+        ReturnType<
+          typeof processNextNaverMediaSyncJob
+        >
+      > = null;
 
-        chunkPauseMs:
-          0,
+    for (
+      let runIndex = 1;
+      runIndex <= MAX_RESUME_RUNS;
+      runIndex += 1
+    ) {
+      const orchestration =
+        await processNextNaverMediaSyncJob({
+          stagingBatchSize:
+            FIXTURE_BATCH_SIZE,
 
-        maxRetryCount:
-          1,
+          requestIntervalMs:
+            0,
 
-        dependencies:
-          createFixtureDependencies({
-            campaign,
-            adgroup,
-            keywords,
-            dateFrom:
-              input.dateFrom,
+          keywordChunkSize:
+            100,
 
-            dateTo:
-              input.dateTo,
-          }),
-      });
+          chunkPauseMs:
+            0,
 
-    if (!orchestration) {
+          maxRetryCount:
+            1,
+
+          maxKeywordStatsPerRun:
+            PARTIAL_KEYWORD_LIMIT_PER_RUN,
+
+          dependencies:
+            createFixtureDependencies({
+              campaign,
+              adgroup,
+              keywords,
+              dateFrom:
+                input.dateFrom,
+
+              dateTo:
+                input.dateTo,
+            }),
+        });
+
+      if (!orchestration) {
+        throw new Error(
+          "VERIFICATION_ORCHESTRATION_RETURNED_NO_JOB_BEFORE_COMPLETION",
+        );
+      }
+
+      if (
+        orchestration.status ===
+        "partial"
+      ) {
+        partialRuns.push(
+          runIndex,
+        );
+
+        const jobState =
+          await readMediaSyncJobState(
+            fixture.jobId,
+          );
+
+        const checkpoint =
+          getProcessingCheckpoint(
+            jobState,
+          );
+
+        const checkpointCollector =
+          getCheckpointCollector(
+            checkpoint,
+          );
+
+        assertNoForbiddenSecretKeys(
+          checkpoint,
+          "processing_checkpoint",
+        );
+
+        const completedKeywords =
+          readCheckpointInteger(
+            checkpointCollector,
+            "completed_keywords",
+          );
+
+        const expectedCompletedKeywords =
+          Math.min(
+            runIndex *
+              PARTIAL_KEYWORD_LIMIT_PER_RUN,
+            FIXTURE_KEYWORD_COUNT,
+          );
+
+        const expectedPartialRows =
+          expectedCompletedKeywords *
+          rowsPerKeyword;
+
+        const reportStateDuringPartial =
+          await readReportState(
+            fixture.reportId,
+          );
+
+        if (
+          jobState.status !== "pending" ||
+          jobState.error !== null ||
+          jobState.snapshot_ingestion_id !== null ||
+          jobState.finished_at !== null ||
+          jobState.raw_rows !==
+            expectedPartialRows ||
+          jobState.normalized_rows !==
+            expectedPartialRows ||
+          jobState.inserted_rows !==
+            expectedPartialRows ||
+          jobState.failed_rows !== 0 ||
+          completedKeywords !==
+            expectedCompletedKeywords ||
+          reportStateDuringPartial.currentIngestionId !==
+            reportStateBefore.currentIngestionId ||
+          reportStateDuringPartial.publishedIngestionId !==
+            reportStateBefore.publishedIngestionId ||
+          reportStateDuringPartial.totalReportRows !==
+            reportStateBefore.totalReportRows ||
+          reportStateDuringPartial.reportRowsSnapshot !==
+            reportStateBefore.reportRowsSnapshot
+        ) {
+          throw new Error(
+            "VERIFICATION_PARTIAL_RESUME_STATE_INVALID",
+          );
+        }
+
+        continue;
+      }
+
+      completedRunIndex =
+        runIndex;
+
+      completedOrchestration =
+        orchestration;
+
+      fixture.snapshotIngestionId =
+        orchestration.snapshotIngestionId;
+
+      break;
+    }
+
+    if (
+      !completedOrchestration ||
+      completedOrchestration.status !==
+        "completed"
+    ) {
       throw new Error(
-        "VERIFICATION_ORCHESTRATION_RETURNED_NO_JOB",
+        "VERIFICATION_RESUME_DID_NOT_COMPLETE",
       );
     }
 
-    if (orchestration.status !== "completed") {
+    if (
+      completedRunIndex === null ||
+      partialRuns.length < 2
+    ) {
       throw new Error(
-        "VERIFICATION_ORCHESTRATION_RETURNED_PARTIAL_UNEXPECTEDLY",
+        "VERIFICATION_PARTIAL_RUN_COUNT_TOO_LOW",
       );
     }
-
-    fixture.snapshotIngestionId =
-      orchestration.snapshotIngestionId;
 
     const stagingRows =
       await readStagingRows(
@@ -1371,7 +1679,7 @@ async function main(): Promise<void> {
           fixture.reportId,
 
         ingestionId:
-          orchestration
+          completedOrchestration
             .snapshotIngestionId,
       });
 
@@ -1385,13 +1693,19 @@ async function main(): Promise<void> {
         fixture.connectionId,
       );
 
+    const finalJobState =
+      await readMediaSyncJobState(
+        fixture.jobId,
+      );
+
     const jobDone =
-      orchestration.finalization.job.status ===
-        "done" &&
-      orchestration.finalization.job.progress ===
-        100 &&
-      orchestration.finalization.job.finished_at !==
-        null;
+      completedOrchestration.finalization.job
+        .status === "done" &&
+      completedOrchestration.finalization.job
+        .progress === 100 &&
+      completedOrchestration.finalization.job
+        .finished_at !== null &&
+      finalJobState.status === "done";
 
     const lastSyncUpdated =
       finalConnectionState.lastSyncAt !==
@@ -1401,27 +1715,32 @@ async function main(): Promise<void> {
 
     const currentPointerUpdated =
       finalReportState.currentIngestionId ===
-      orchestration.snapshotIngestionId;
+      completedOrchestration.snapshotIngestionId;
 
     const publishedPointerUnchanged =
       finalReportState.publishedIngestionId ===
       reportStateBefore.publishedIngestionId;
 
+    const reportRowsUnchangedDuringPartial =
+      reportStateBefore.totalReportRows +
+        expectedTotalRows ===
+      finalReportState.totalReportRows;
+
     const rowCountMatches =
-      orchestration.expectedRows ===
-        expectedRows &&
+      completedOrchestration.expectedRows ===
+        expectedTotalRows &&
       stagingRows.length ===
-        expectedRows &&
+        expectedTotalRows &&
       reportRows.length ===
-        expectedRows &&
-      orchestration.staging.summary.totalRows ===
-        expectedRows &&
-      orchestration.materialization.rowCount ===
-        expectedRows &&
-      orchestration.activation.rowCount ===
-        expectedRows &&
-      orchestration.finalization.rowCount ===
-        expectedRows;
+        expectedTotalRows &&
+      completedOrchestration.staging.summary
+        .totalRows === expectedTotalRows &&
+      completedOrchestration.materialization
+        .rowCount === expectedTotalRows &&
+      completedOrchestration.activation
+        .rowCount === expectedTotalRows &&
+      completedOrchestration.finalization
+        .rowCount === expectedTotalRows;
 
     const rowOrderAndJsonMatches =
       rowsMatch(
@@ -1445,6 +1764,9 @@ async function main(): Promise<void> {
 
         maxRetryCount:
           1,
+
+        maxKeywordStatsPerRun:
+          PARTIAL_KEYWORD_LIMIT_PER_RUN,
 
         dependencies:
           createFixtureDependencies({
@@ -1475,54 +1797,64 @@ async function main(): Promise<void> {
     );
 
     console.log(
-      "processing claim completed:",
-      orchestration.jobId ===
-        pendingJob.id,
+      "partial runs:",
+      partialRuns.length,
     );
 
     console.log(
-      "worker context loaded:",
-      orchestration.finalization.connectionId ===
-        input.connectionId,
+      "completed run index:",
+      completedRunIndex,
+    );
+
+    console.log(
+      "partial returned to pending:",
+      partialRuns.length >= 2,
+    );
+
+    console.log(
+      "resume completed:",
+      completedOrchestration.status ===
+        "completed",
+    );
+
+    console.log(
+      "checkpoint preserved and advanced:",
+      true,
+    );
+
+    console.log(
+      "checkpoint secret-safe:",
+      true,
     );
 
     console.log(
       "collector canonical rows:",
-      orchestration.staging
+      completedOrchestration.staging
         .canonicalRowCount,
     );
 
     console.log(
       "bounded buffer flushed rows:",
-      orchestration.staging.buffer
+      completedOrchestration.staging.buffer
         .flushedRowCount,
     );
 
     console.log(
       "staging append rows:",
-      orchestration.staging.append
+      completedOrchestration.staging.append
         .submittedRows,
     );
 
     console.log(
-      "checkpoint saved:",
-      orchestration.checkpointJob.status ===
-        "processing" &&
-        orchestration.checkpointJob
-          .normalized_rows ===
-          expectedRows,
-    );
-
-    console.log(
       "staging complete:",
-      orchestration.staging.summary
+      completedOrchestration.staging.summary
         .isComplete,
     );
 
     console.log(
       "materialization completed:",
       Boolean(
-        orchestration.materialization
+        completedOrchestration.materialization
           .snapshotIngestionId,
       ),
     );
@@ -1539,20 +1871,17 @@ async function main(): Promise<void> {
 
     console.log(
       "job.status done:",
-      orchestration.finalization.job
-        .status === "done",
+      finalJobState.status === "done",
     );
 
     console.log(
       "job.progress 100:",
-      orchestration.finalization.job
-        .progress === 100,
+      finalJobState.progress === 100,
     );
 
     console.log(
       "job.finished_at non-null:",
-      orchestration.finalization.job
-        .finished_at !== null,
+      finalJobState.finished_at !== null,
     );
 
     console.log(
@@ -1577,6 +1906,11 @@ async function main(): Promise<void> {
     );
 
     console.log(
+      "partial did not mutate report_rows/pointers:",
+      reportRowsUnchangedDuringPartial,
+    );
+
+    console.log(
       "row count matches:",
       rowCountMatches,
     );
@@ -1598,10 +1932,14 @@ async function main(): Promise<void> {
 
     console.log(
       "verification passed:",
-      jobDone &&
+      partialRuns.length >= 2 &&
+        completedOrchestration.status ===
+          "completed" &&
+        jobDone &&
         lastSyncUpdated &&
         currentPointerUpdated &&
         publishedPointerUnchanged &&
+        reportRowsUnchangedDuringPartial &&
         rowCountMatches &&
         rowOrderAndJsonMatches &&
         noSecondPendingJob &&
@@ -1609,7 +1947,7 @@ async function main(): Promise<void> {
     );
 
     console.log(
-      "final report state unchanged or restored:",
+      "final report state restored:",
       cleanupPassed,
     );
 

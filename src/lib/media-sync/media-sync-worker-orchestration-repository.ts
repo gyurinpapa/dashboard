@@ -5,12 +5,14 @@ import {
   claimNextNaverMediaSyncJob,
   loadNaverMediaSyncWorkerContext,
   MediaSyncWorkerRepositoryError,
+  releaseNaverMediaSyncJobForResume,
 } from "./media-sync-worker-repository";
 import {
   runNaverSearchAdsStagingOrchestrator,
   NaverSearchAdsStagingOrchestratorError,
-  type NaverSearchAdsStagingOrchestratorResult,
+  type NaverSearchAdsStagingOrchestratorCompletedResult,
   type NaverSearchAdsStagingOrchestratorInput,
+  type NaverSearchAdsStagingOrchestratorPartialResult,
 } from "./naver-searchads-staging-orchestrator";
 import type {
   NaverKeywordStatsCollectorProgressEvent,
@@ -70,6 +72,7 @@ export type MediaSyncWorkerOrchestrationErrorCode =
   | "CONTEXT_FAILED"
   | "STAGING_FAILED"
   | "CHECKPOINT_FAILED"
+  | "JOB_RELEASE_FAILED"
   | "MATERIALIZATION_FAILED"
   | "ACTIVATION_FAILED"
   | "FINALIZATION_FAILED";
@@ -100,20 +103,24 @@ export type ProcessNaverMediaSyncJobOptions = {
   keywordChunkSize?: number;
   chunkPauseMs?: number;
   maxRetryCount?: number;
+  maxKeywordStatsPerRun?: number;
+  maxStatsRequestsPerRun?: number;
   jobTimeoutMs?: number;
   signal?: AbortSignal;
   onRetry?: NaverSearchAdsStagingOrchestratorInput["onRetry"];
   dependencies?: NaverSearchAdsStagingOrchestratorInput["dependencies"];
 };
 
-export type ProcessNaverMediaSyncJobResult = {
+export type ProcessNaverMediaSyncJobCompletedResult = {
+  status: "completed";
+
   jobId: string;
   reportId: string;
   workspaceId: string;
   advertiserId: string;
   connectionId: string;
 
-  staging: NaverSearchAdsStagingOrchestratorResult;
+  staging: NaverSearchAdsStagingOrchestratorCompletedResult;
   checkpointJob: MediaSyncJobRecord;
   materialization: MediaSyncSnapshotMaterializationResult;
   activation: MediaSyncSnapshotActivationResult;
@@ -122,6 +129,27 @@ export type ProcessNaverMediaSyncJobResult = {
   snapshotIngestionId: string;
   expectedRows: number;
 };
+
+export type ProcessNaverMediaSyncJobPartialResult = {
+  status: "partial";
+
+  jobId: string;
+  reportId: string;
+  workspaceId: string;
+  advertiserId: string;
+  connectionId: string;
+
+  staging: NaverSearchAdsStagingOrchestratorPartialResult;
+  checkpointJob: MediaSyncJobRecord;
+  releasedJob: MediaSyncJobRecord;
+
+  snapshotIngestionId: null;
+  expectedRows: number;
+};
+
+export type ProcessNaverMediaSyncJobResult =
+  | ProcessNaverMediaSyncJobCompletedResult
+  | ProcessNaverMediaSyncJobPartialResult;
 
 export type ProcessNextNaverMediaSyncJobInput =
   ProcessNaverMediaSyncJobOptions;
@@ -460,15 +488,20 @@ function withJobTimeout<T>(input: {
 }
 
 /**
- * 이미 processing으로 점유된 Naver media_sync_job 1개를
+ * 이미 processing으로 점유된 Naver media_sync_job 1개를 처리한다.
+ *
+ * completed:
  * collector → staging → checkpoint → materialization
- * → activation → finalization 순서로 끝까지 처리한다.
+ * → activation → finalization
+ *
+ * partial:
+ * collector → staging → checkpoint → pending 복귀
  *
  * 주의:
- * - 실제 worker loop는 이 함수를 반복 호출하지 않는다.
- * - 실패 시 이 함수 자체는 failed 상태로 바꾸지 않는다.
- * - processNextNaverMediaSyncJob()이 이미 점유한 job 실패를 failed로 정리한다.
- * - checkpoint/finalization repository의 error_detail 정책을 훼손하지 않는다.
+ * - partial은 실패가 아니다.
+ * - partial에서는 materialization / activation / finalization을 절대 실행하지 않는다.
+ * - current_ingestion_id는 completed 후 activation에서만 전환된다.
+ * - published_ingestion_id는 이 흐름에서 변경하지 않는다.
  * - credential/provider 원본 payload를 로그나 DB에 저장하지 않는다.
  */
 export async function processClaimedNaverMediaSyncJob(
@@ -509,8 +542,7 @@ export async function processClaimedNaverMediaSyncJob(
 
   logStage({ job: context.job, stage: "context:done" });
 
-  let staging:
-    NaverSearchAdsStagingOrchestratorResult;
+  let staging;
 
   try {
     logStage({ job: context.job, stage: "staging:start" });
@@ -540,6 +572,12 @@ export async function processClaimedNaverMediaSyncJob(
 
         maxRetryCount:
           options.maxRetryCount,
+
+        maxKeywordStatsPerRun:
+          options.maxKeywordStatsPerRun,
+
+        maxStatsRequestsPerRun:
+          options.maxStatsRequestsPerRun,
 
         signal:
           options.signal,
@@ -582,7 +620,12 @@ export async function processClaimedNaverMediaSyncJob(
 
   logStage({
     job: context.job,
-    stage: "staging:done",
+    stage:
+      staging.status === "partial"
+        ? "staging:partial"
+        : "staging:done",
+    detail:
+      `rows=${staging.canonicalRowCount} runRows=${staging.runCanonicalRowCount}`,
   });
 
   let checkpointJob:
@@ -619,6 +662,78 @@ export async function processClaimedNaverMediaSyncJob(
   }
 
   logStage({ job: checkpointJob, stage: "checkpoint:done" });
+
+  if (staging.status === "partial") {
+    let releasedJob:
+      MediaSyncJobRecord;
+
+    try {
+      logStage({ job: checkpointJob, stage: "resume-release:start" });
+
+      releasedJob =
+        await releaseNaverMediaSyncJobForResume(
+          checkpointJob,
+        );
+    } catch (error) {
+      if (
+        error instanceof
+        MediaSyncWorkerRepositoryError
+      ) {
+        throw wrapStageError(
+          "JOB_RELEASE_FAILED",
+          "The partial Naver media sync job could not be released for resume.",
+          error,
+        );
+      }
+
+      throw wrapStageError(
+        "JOB_RELEASE_FAILED",
+        "The partial Naver media sync job release failed unexpectedly.",
+        error,
+      );
+    }
+
+    logStage({
+      job:
+        releasedJob,
+      stage:
+        "resume-release:done",
+      detail:
+        `rows=${staging.canonicalRowCount} reason=${staging.collector.partialReason}`,
+    });
+
+    return {
+      status:
+        "partial",
+
+      jobId:
+        releasedJob.id,
+
+      reportId:
+        releasedJob.report_id,
+
+      workspaceId:
+        releasedJob.workspace_id,
+
+      advertiserId:
+        releasedJob.advertiser_id,
+
+      connectionId:
+        releasedJob.connection_id,
+
+      staging,
+
+      checkpointJob,
+
+      releasedJob,
+
+      snapshotIngestionId:
+        null,
+
+      expectedRows:
+        staging.canonicalRowCount,
+    };
+  }
 
   let materialization:
     MediaSyncSnapshotMaterializationResult;
@@ -738,6 +853,9 @@ export async function processClaimedNaverMediaSyncJob(
   });
 
   return {
+    status:
+      "completed",
+
     jobId:
       finalization.job.id,
 
@@ -773,9 +891,10 @@ export async function processClaimedNaverMediaSyncJob(
 
 /**
  * pending Naver media_sync_job 1개를 processing으로 점유하고
- * end-to-end orchestration을 1회 실행한다.
+ * orchestration을 1회 실행한다.
  *
- * 실제 worker loop 연결 전 fixture/단발 검증용 진입점이다.
+ * partial이면 job은 failed가 아니라 pending으로 복귀한다.
+ * completed이면 기존대로 snapshot activation/finalization까지 완료한다.
  */
 export async function processNextNaverMediaSyncJob(
   input: ProcessNextNaverMediaSyncJobInput = {},

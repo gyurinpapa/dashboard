@@ -7,15 +7,14 @@ import {
   MediaSyncJobsRepositoryError,
   parseMediaSyncJobRecord,
 } from "./media-sync-jobs-repository";
-import type {
-  MediaSyncJobRecord,
-} from "./types";
-import type {
-  NaverSearchAdsCredentials,
-} from "./connection-credentials";
+import type { MediaSyncJobRecord } from "./types";
+import type { NaverSearchAdsCredentials } from "./connection-credentials";
 
 const CLAIM_NEXT_NAVER_MEDIA_SYNC_JOB_RPC =
   "claim_next_naver_media_sync_job";
+
+const MEDIA_SYNC_JOBS_TABLE =
+  "media_sync_jobs" as const;
 
 const NAVER_SEARCH_ADS_PROVIDER =
   "naver_searchad" as const;
@@ -23,14 +22,21 @@ const NAVER_SEARCH_ADS_PROVIDER =
 const CLAIMED_JOB_STATUS =
   "processing" as const;
 
+const PENDING_JOB_STATUS =
+  "pending" as const;
+
 const ACTIVE_CONNECTION_STATUS =
   "active" as const;
+
+const PROCESSING_CHECKPOINT_KEY =
+  "processing_checkpoint" as const;
 
 export type MediaSyncWorkerRepositoryErrorCode =
   | "INVALID_RECORD"
   | "DATABASE_ERROR"
   | "CLAIM_ERROR"
   | "JOB_NOT_PROCESSING"
+  | "JOB_RELEASE_ERROR"
   | "UNSUPPORTED_PROVIDER"
   | "CONNECTION_NOT_FOUND"
   | "CONNECTION_SCOPE_MISMATCH"
@@ -84,6 +90,53 @@ function wrapDatabaseError(
     "DATABASE_ERROR",
     "The media sync worker repository could not access the database.",
     { cause: error },
+  );
+}
+
+function wrapJobReleaseError(
+  error: unknown,
+): MediaSyncWorkerRepositoryError {
+  return new MediaSyncWorkerRepositoryError(
+    "JOB_RELEASE_ERROR",
+    "The media sync job could not be released for resume.",
+    { cause: error },
+  );
+}
+
+function isPlainObject(
+  value: unknown,
+): value is Record<string, unknown> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value)
+  );
+}
+
+function hasOnlyProcessingCheckpoint(
+  errorDetail: unknown,
+): boolean {
+  if (errorDetail === null) {
+    return true;
+  }
+
+  if (!isPlainObject(errorDetail)) {
+    return false;
+  }
+
+  const keys = Object.keys(errorDetail);
+
+  if (keys.length === 0) {
+    return true;
+  }
+
+  return (
+    keys.length === 1 &&
+    keys[0] === PROCESSING_CHECKPOINT_KEY &&
+    errorDetail[PROCESSING_CHECKPOINT_KEY] !==
+      undefined &&
+    errorDetail[PROCESSING_CHECKPOINT_KEY] !==
+      null
   );
 }
 
@@ -151,10 +204,14 @@ function parseClaimedJob(
     );
   }
 
-  if (record.error_detail !== null) {
+  if (
+    !hasOnlyProcessingCheckpoint(
+      record.error_detail,
+    )
+  ) {
     throw new MediaSyncWorkerRepositoryError(
       "INVALID_RECORD",
-      "The claimed media sync job still contains error_detail.",
+      "The claimed media sync job contains error_detail that is not a resume checkpoint.",
     );
   }
 
@@ -192,6 +249,17 @@ function validateProcessingNaverJob(
     throw new MediaSyncWorkerRepositoryError(
       "INVALID_RECORD",
       "The processing media sync job has an invalid attempt_count value.",
+    );
+  }
+
+  if (
+    !hasOnlyProcessingCheckpoint(
+      job.error_detail,
+    )
+  ) {
+    throw new MediaSyncWorkerRepositoryError(
+      "INVALID_RECORD",
+      "The processing media sync job contains error_detail that is not a resume checkpoint.",
     );
   }
 }
@@ -240,6 +308,107 @@ export async function claimNextNaverMediaSyncJob(): Promise<
   }
 
   return parseClaimedJob(data[0]);
+}
+
+export async function releaseNaverMediaSyncJobForResume(
+  job: MediaSyncJobRecord,
+): Promise<MediaSyncJobRecord> {
+  validateProcessingNaverJob(job);
+
+  const supabase = getSupabaseAdmin();
+
+  let result;
+
+  try {
+    result = await supabase
+      .from(MEDIA_SYNC_JOBS_TABLE)
+      .update({
+        status: PENDING_JOB_STATUS,
+        started_at: null,
+        error: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", job.id)
+      .eq("provider", NAVER_SEARCH_ADS_PROVIDER)
+      .eq("status", CLAIMED_JOB_STATUS)
+      .select("*")
+      .maybeSingle();
+  } catch (error) {
+    throw wrapDatabaseError(error);
+  }
+
+  const { data, error } = result;
+
+  if (error) {
+    throw wrapJobReleaseError(error);
+  }
+
+  if (data === null) {
+    throw new MediaSyncWorkerRepositoryError(
+      "JOB_RELEASE_ERROR",
+      "The media sync job was not released because it is no longer processing.",
+    );
+  }
+
+  let releasedJob: MediaSyncJobRecord;
+
+  try {
+    releasedJob =
+      parseMediaSyncJobRecord(data);
+  } catch (error) {
+    if (
+      error instanceof
+        MediaSyncJobsRepositoryError &&
+      error.code === "INVALID_RECORD"
+    ) {
+      throw new MediaSyncWorkerRepositoryError(
+        "INVALID_RECORD",
+        "The released media sync job record is invalid.",
+        { cause: error },
+      );
+    }
+
+    throw error;
+  }
+
+  if (
+    releasedJob.provider !==
+    NAVER_SEARCH_ADS_PROVIDER
+  ) {
+    throw new MediaSyncWorkerRepositoryError(
+      "INVALID_RECORD",
+      "The released media sync job has an unexpected provider.",
+    );
+  }
+
+  if (
+    releasedJob.status !== PENDING_JOB_STATUS
+  ) {
+    throw new MediaSyncWorkerRepositoryError(
+      "INVALID_RECORD",
+      "The released media sync job has an unexpected status.",
+    );
+  }
+
+  if (releasedJob.error !== null) {
+    throw new MediaSyncWorkerRepositoryError(
+      "INVALID_RECORD",
+      "The released media sync job still contains an error value.",
+    );
+  }
+
+  if (
+    !hasOnlyProcessingCheckpoint(
+      releasedJob.error_detail,
+    )
+  ) {
+    throw new MediaSyncWorkerRepositoryError(
+      "INVALID_RECORD",
+      "The released media sync job contains error_detail that is not a resume checkpoint.",
+    );
+  }
+
+  return releasedJob;
 }
 
 export async function loadNaverMediaSyncWorkerContext(

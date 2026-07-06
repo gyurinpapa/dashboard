@@ -40,6 +40,9 @@ const NAVER_KEYWORD_STATS_MAX_CAMPAIGN_PAGES = 10_000;
 const NAVER_KEYWORD_STATS_MAX_ADGROUP_PAGES = 10_000;
 const NAVER_KEYWORD_STATS_MAX_KEYWORD_PAGES = 10_000;
 
+const NAVER_KEYWORD_STATS_MAX_KEYWORDS_PER_RUN = 1_000_000;
+const NAVER_KEYWORD_STATS_MAX_REQUESTS_PER_RUN = 1_000_000;
+
 export type NaverKeywordStatsCollectorErrorCode =
   | "INVALID_INPUT"
   | "COLLECTION_ABORTED"
@@ -131,6 +134,7 @@ export type NaverKeywordStatsCollectorRetryCallback = (
 
 export type NaverKeywordStatsCollectorProgressStage =
   | "collector:start"
+  | "collector:partial"
   | "collector:done"
   | "campaign_page:start"
   | "campaign_page:done"
@@ -212,13 +216,19 @@ export type NaverKeywordStatsCollectorInput = {
   chunkPauseMs?: number;
   maxRetryCount?: number;
 
+  maxKeywordStatsPerRun?: number;
+  maxStatsRequestsPerRun?: number;
+
   signal?: AbortSignal;
 
   dependencies?: Partial<NaverKeywordStatsCollectorDependencies>;
 };
 
-export type NaverKeywordStatsCollectorResult = {
-  completed: true;
+export type NaverKeywordStatsCollectorPartialReason =
+  | "max_keyword_stats_per_run_reached"
+  | "max_stats_requests_per_run_reached";
+
+export type NaverKeywordStatsCollectorBaseResult = {
   cursor: NaverKeywordStatsCursor;
 
   campaignPagesRead: number;
@@ -237,11 +247,33 @@ export type NaverKeywordStatsCollectorResult = {
   retryCount: number;
 };
 
+export type NaverKeywordStatsCollectorCompletedResult =
+  NaverKeywordStatsCollectorBaseResult & {
+    status: "completed";
+    completed: true;
+    isComplete: true;
+    partialReason: null;
+  };
+
+export type NaverKeywordStatsCollectorPartialResult =
+  NaverKeywordStatsCollectorBaseResult & {
+    status: "partial";
+    completed: false;
+    isComplete: false;
+    partialReason: NaverKeywordStatsCollectorPartialReason;
+  };
+
+export type NaverKeywordStatsCollectorResult =
+  | NaverKeywordStatsCollectorCompletedResult
+  | NaverKeywordStatsCollectorPartialResult;
+
 type NormalizedCollectorOptions = {
   requestIntervalMs: number;
   keywordChunkSize: number;
   chunkPauseMs: number;
   maxRetryCount: number;
+  maxKeywordStatsPerRun: number | null;
+  maxStatsRequestsPerRun: number | null;
 };
 
 type ResolvedCollectorDependencies =
@@ -289,6 +321,19 @@ type ResumeTarget = {
   adgroupMatched: boolean;
   keywordPageMatched: boolean;
   keywordChunkMatched: boolean;
+};
+
+type CollectorTraversalResult =
+  | {
+      status: "continue";
+    }
+  | {
+      status: "partial";
+      reason: NaverKeywordStatsCollectorPartialReason;
+    };
+
+const CONTINUE_TRAVERSAL: CollectorTraversalResult = {
+  status: "continue",
 };
 
 const DEFAULT_COLLECTOR_DEPENDENCIES:
@@ -360,6 +405,22 @@ function normalizePositiveInteger(
   return value;
 }
 
+function normalizeOptionalPositiveInteger(
+  value: unknown,
+  fieldName: string,
+  maximum: number,
+): number | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  return normalizePositiveInteger(
+    value,
+    fieldName,
+    maximum,
+  );
+}
+
 function normalizeCollectorOptions(
   input: NaverKeywordStatsCollectorInput,
 ): NormalizedCollectorOptions {
@@ -397,6 +458,20 @@ function normalizeCollectorOptions(
             "maxRetryCount",
             10,
           ),
+
+    maxKeywordStatsPerRun:
+      normalizeOptionalPositiveInteger(
+        input.maxKeywordStatsPerRun,
+        "maxKeywordStatsPerRun",
+        NAVER_KEYWORD_STATS_MAX_KEYWORDS_PER_RUN,
+      ),
+
+    maxStatsRequestsPerRun:
+      normalizeOptionalPositiveInteger(
+        input.maxStatsRequestsPerRun,
+        "maxStatsRequestsPerRun",
+        NAVER_KEYWORD_STATS_MAX_REQUESTS_PER_RUN,
+      ),
   };
 }
 
@@ -547,6 +622,99 @@ function createResumeTarget(
         cursor.keywordBaseSearchId === null &&
         cursor.keywordChunkIndex === 0
       ),
+  };
+}
+
+function getPartialReasonForCurrentRun(
+  state: CollectorRuntimeState,
+  options: NormalizedCollectorOptions,
+): NaverKeywordStatsCollectorPartialReason | null {
+  if (
+    options.maxKeywordStatsPerRun !== null &&
+    state.keywordsCompletedInRun >=
+      options.maxKeywordStatsPerRun
+  ) {
+    return "max_keyword_stats_per_run_reached";
+  }
+
+  if (
+    options.maxStatsRequestsPerRun !== null &&
+    state.statsRequestsAttempted >=
+      options.maxStatsRequestsPerRun
+  ) {
+    return "max_stats_requests_per_run_reached";
+  }
+
+  return null;
+}
+
+function buildCollectorResult(
+  input:
+    | {
+        status: "completed";
+        state: CollectorRuntimeState;
+      }
+    | {
+        status: "partial";
+        state: CollectorRuntimeState;
+        partialReason:
+          NaverKeywordStatsCollectorPartialReason;
+      },
+): NaverKeywordStatsCollectorResult {
+  const baseResult: NaverKeywordStatsCollectorBaseResult = {
+    cursor:
+      cloneCursor(
+        input.state.cursor,
+      ),
+
+    campaignPagesRead:
+      input.state.campaignPagesRead,
+
+    campaignsRead:
+      input.state.campaignsRead,
+
+    adgroupPagesRead:
+      input.state.adgroupPagesRead,
+
+    adgroupsRead:
+      input.state.adgroupsRead,
+
+    keywordPagesRead:
+      input.state.keywordPagesRead,
+
+    keywordsDiscoveredInRun:
+      input.state.keywordsDiscoveredInRun,
+
+    keywordsCompletedInRun:
+      input.state.keywordsCompletedInRun,
+
+    statsRequestsAttempted:
+      input.state.statsRequestsAttempted,
+
+    statsRequestsSucceeded:
+      input.state.statsRequestsSucceeded,
+
+    retryCount:
+      input.state.retryCount,
+  };
+
+  if (input.status === "completed") {
+    return {
+      ...baseResult,
+      status: "completed",
+      completed: true,
+      isComplete: true,
+      partialReason: null,
+    };
+  }
+
+  return {
+    ...baseResult,
+    status: "partial",
+    completed: false,
+    isComplete: false,
+    partialReason:
+      input.partialReason,
   };
 }
 
@@ -1302,7 +1470,7 @@ async function consumeKeywordChunk(input: {
   signal: AbortSignal | undefined;
 
   dependencies: ResolvedCollectorDependencies;
-}): Promise<void> {
+}): Promise<CollectorTraversalResult> {
   if (
     shouldSkipKeywordChunkForResume({
       resumeTarget:
@@ -1312,7 +1480,7 @@ async function consumeKeywordChunk(input: {
         input.chunkIndex,
     })
   ) {
-    return;
+    return CONTINUE_TRAVERSAL;
   }
 
   const startIndex =
@@ -1382,6 +1550,20 @@ async function consumeKeywordChunk(input: {
     keywordIndex < input.chunk.length;
     keywordIndex += 1
   ) {
+    const partialReasonBeforeKeyword =
+      getPartialReasonForCurrentRun(
+        input.state,
+        input.options,
+      );
+
+    if (partialReasonBeforeKeyword !== null) {
+      return {
+        status: "partial",
+        reason:
+          partialReasonBeforeKeyword,
+      };
+    }
+
     assertNotAborted(
       input.signal,
       input.state.cursor,
@@ -1565,6 +1747,20 @@ async function consumeKeywordChunk(input: {
       attemptCount:
         statsRequest.attemptCount,
     });
+
+    const partialReasonAfterKeyword =
+      getPartialReasonForCurrentRun(
+        input.state,
+        input.options,
+      );
+
+    if (partialReasonAfterKeyword !== null) {
+      return {
+        status: "partial",
+        reason:
+          partialReasonAfterKeyword,
+      };
+    }
   }
 
   await notifyProgress({
@@ -1622,6 +1818,8 @@ async function consumeKeywordChunk(input: {
         input.dependencies,
     });
   }
+
+  return CONTINUE_TRAVERSAL;
 }
 
 async function collectKeywordPages(input: {
@@ -1648,7 +1846,7 @@ async function collectKeywordPages(input: {
   signal: AbortSignal | undefined;
 
   dependencies: ResolvedCollectorDependencies;
-}): Promise<void> {
+}): Promise<CollectorTraversalResult> {
   let keywordBaseSearchId:
     | string
     | null = null;
@@ -1806,44 +2004,52 @@ async function collectKeywordPages(input: {
             null,
         };
 
-        await consumeKeywordChunk({
-          campaign:
-            input.campaign,
+        const chunkResult =
+          await consumeKeywordChunk({
+            campaign:
+              input.campaign,
 
-          adgroup:
-            input.adgroup,
+            adgroup:
+              input.adgroup,
 
-          chunk,
+            chunk,
 
-          chunkIndex,
+            chunkIndex,
 
-          state:
-            input.state,
+            state:
+              input.state,
 
-          options:
-            input.options,
+            options:
+              input.options,
 
-          resumeTarget:
-            input.resumeTarget,
+            resumeTarget:
+              input.resumeTarget,
 
-          credentials:
-            input.credentials,
+            credentials:
+              input.credentials,
 
-          onKeywordStats:
-            input.onKeywordStats,
+            onKeywordStats:
+              input.onKeywordStats,
 
-          onRetry:
-            input.onRetry,
+            onRetry:
+              input.onRetry,
 
-          onProgress:
-            input.onProgress,
+            onProgress:
+              input.onProgress,
 
-          signal:
-            input.signal,
+            signal:
+              input.signal,
 
-          dependencies:
-            input.dependencies,
-        });
+            dependencies:
+              input.dependencies,
+          });
+
+        if (
+          chunkResult.status ===
+          "partial"
+        ) {
+          return chunkResult;
+        }
       }
     }
 
@@ -1851,7 +2057,7 @@ async function collectKeywordPages(input: {
       keywordPage.records.length <
       NAVER_KEYWORD_STATS_HIERARCHY_RECORD_SIZE
     ) {
-      return;
+      return CONTINUE_TRAVERSAL;
     }
 
     assertPaginationCanContinue({
@@ -1911,7 +2117,7 @@ async function collectAdgroupPages(input: {
   signal: AbortSignal | undefined;
 
   dependencies: ResolvedCollectorDependencies;
-}): Promise<void> {
+}): Promise<CollectorTraversalResult> {
   let adgroupBaseSearchId:
     | string
     | null = null;
@@ -2051,39 +2257,47 @@ async function collectAdgroupPages(input: {
           },
         );
 
-      await collectKeywordPages({
-        campaign:
-          input.campaign,
+      const keywordPagesResult =
+        await collectKeywordPages({
+          campaign:
+            input.campaign,
 
-        adgroup,
+          adgroup,
 
-        state:
-          input.state,
+          state:
+            input.state,
 
-        options:
-          input.options,
+          options:
+            input.options,
 
-        resumeTarget:
-          input.resumeTarget,
+          resumeTarget:
+            input.resumeTarget,
 
-        credentials:
-          input.credentials,
+          credentials:
+            input.credentials,
 
-        onKeywordStats:
-          input.onKeywordStats,
+          onKeywordStats:
+            input.onKeywordStats,
 
-        onRetry:
-          input.onRetry,
+          onRetry:
+            input.onRetry,
 
-        onProgress:
-          input.onProgress,
+          onProgress:
+            input.onProgress,
 
-        signal:
-          input.signal,
+          signal:
+            input.signal,
 
-        dependencies:
-          input.dependencies,
-      });
+          dependencies:
+            input.dependencies,
+        });
+
+      if (
+        keywordPagesResult.status ===
+        "partial"
+      ) {
+        return keywordPagesResult;
+      }
 
       await notifyProgress({
         callback:
@@ -2103,7 +2317,7 @@ async function collectAdgroupPages(input: {
       adgroupPage.records.length <
       NAVER_KEYWORD_STATS_HIERARCHY_RECORD_SIZE
     ) {
-      return;
+      return CONTINUE_TRAVERSAL;
     }
 
     assertPaginationCanContinue({
@@ -2334,32 +2548,56 @@ export async function collectNaverKeywordDailyStats(
           },
         );
 
-      await collectAdgroupPages({
-        campaign,
+      const adgroupPagesResult =
+        await collectAdgroupPages({
+          campaign,
 
-        state,
+          state,
 
-        options,
+          options,
 
-        resumeTarget,
+          resumeTarget,
 
-        credentials:
-          input.credentials,
+          credentials:
+            input.credentials,
 
-        onKeywordStats:
-          input.onKeywordStats,
+          onKeywordStats:
+            input.onKeywordStats,
 
-        onRetry:
-          input.onRetry,
+          onRetry:
+            input.onRetry,
 
-        onProgress:
-          input.onProgress,
+          onProgress:
+            input.onProgress,
 
-        signal:
-          input.signal,
+          signal:
+            input.signal,
 
-        dependencies,
-      });
+          dependencies,
+        });
+
+      if (
+        adgroupPagesResult.status ===
+        "partial"
+      ) {
+        await notifyProgress({
+          callback:
+            input.onProgress,
+          stage:
+            "collector:partial",
+          state,
+          campaignId:
+            campaign.id,
+        });
+
+        return buildCollectorResult({
+          status:
+            "partial",
+          state,
+          partialReason:
+            adgroupPagesResult.reason,
+        });
+      }
 
       await notifyProgress({
         callback:
@@ -2389,44 +2627,11 @@ export async function collectNaverKeywordDailyStats(
         state,
       });
 
-      return {
-        completed: true,
-
-        cursor:
-          cloneCursor(
-            state.cursor,
-          ),
-
-        campaignPagesRead:
-          state.campaignPagesRead,
-
-        campaignsRead:
-          state.campaignsRead,
-
-        adgroupPagesRead:
-          state.adgroupPagesRead,
-
-        adgroupsRead:
-          state.adgroupsRead,
-
-        keywordPagesRead:
-          state.keywordPagesRead,
-
-        keywordsDiscoveredInRun:
-          state.keywordsDiscoveredInRun,
-
-        keywordsCompletedInRun:
-          state.keywordsCompletedInRun,
-
-        statsRequestsAttempted:
-          state.statsRequestsAttempted,
-
-        statsRequestsSucceeded:
-          state.statsRequestsSucceeded,
-
-        retryCount:
-          state.retryCount,
-      };
+      return buildCollectorResult({
+        status:
+          "completed",
+        state,
+      });
     }
 
     assertPaginationCanContinue({
