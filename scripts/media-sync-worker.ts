@@ -3,6 +3,9 @@
 import { setTimeout as delay } from "node:timers/promises";
 
 import {
+  recoverStaleProcessingNaverMediaSyncJobs,
+} from "../src/lib/media-sync/media-sync-jobs-repository";
+import {
   MediaSyncWorkerOrchestrationError,
   processNextNaverMediaSyncJob,
 } from "../src/lib/media-sync/media-sync-worker-orchestration-repository";
@@ -28,6 +31,9 @@ const IDLE_EXIT_ENV =
 const JOB_TIMEOUT_MS_ENV =
   "MEDIA_SYNC_WORKER_JOB_TIMEOUT_MS";
 
+const STALE_PROCESSING_MS_ENV =
+  "MEDIA_SYNC_WORKER_STALE_PROCESSING_MS";
+
 const DEFAULT_MAX_JOBS =
   1;
 
@@ -36,6 +42,9 @@ const DEFAULT_POLL_INTERVAL_MS =
 
 const DEFAULT_JOB_TIMEOUT_MS =
   10 * 60 * 1_000;
+
+const DEFAULT_STALE_PROCESSING_MS =
+  60 * 60 * 1_000;
 
 const MIN_POLL_INTERVAL_MS =
   5_000;
@@ -49,6 +58,12 @@ const MIN_JOB_TIMEOUT_MS =
 const MAX_JOB_TIMEOUT_MS =
   60 * 60 * 1_000;
 
+const MIN_STALE_PROCESSING_MS =
+  5 * 60 * 1_000;
+
+const MAX_STALE_PROCESSING_MS =
+  24 * 60 * 60 * 1_000;
+
 const MAX_JOBS_UPPER_BOUND =
   1_000;
 
@@ -59,6 +74,7 @@ type WorkerRuntimeOptions = {
   pollIntervalMs: number;
   exitWhenIdle: boolean;
   jobTimeoutMs: number;
+  staleProcessingMs: number;
 };
 
 type SafeErrorLog = {
@@ -169,6 +185,21 @@ function readRuntimeOptions():
         MAX_JOB_TIMEOUT_MS,
     });
 
+  const staleProcessingMs =
+    readPositiveIntegerEnv({
+      name:
+        STALE_PROCESSING_MS_ENV,
+
+      fallback:
+        DEFAULT_STALE_PROCESSING_MS,
+
+      min:
+        MIN_STALE_PROCESSING_MS,
+
+      max:
+        MAX_STALE_PROCESSING_MS,
+    });
+
   const exitWhenIdle =
     readBooleanEnv(IDLE_EXIT_ENV);
 
@@ -179,6 +210,7 @@ function readRuntimeOptions():
     pollIntervalMs,
     exitWhenIdle,
     jobTimeoutMs,
+    staleProcessingMs,
   };
 }
 
@@ -300,6 +332,10 @@ function logWorkerStart(
   );
 
   console.log(
+    `[${WORKER_NAME}] stale processing ms: ${options.staleProcessingMs}`,
+  );
+
+  console.log(
     `[${WORKER_NAME}] exit when idle: ${options.exitWhenIdle}`,
   );
 }
@@ -317,6 +353,16 @@ function logWorkerDisabled(): void {
 function logNoJob(): void {
   console.log(
     `[${WORKER_NAME}] no pending Naver media sync job`,
+  );
+}
+
+function logRecoveredStaleJobs(count: number): void {
+  if (count <= 0) {
+    return;
+  }
+
+  console.warn(
+    `[${WORKER_NAME}] recovered stale processing Naver media sync jobs: ${count}`,
   );
 }
 
@@ -395,9 +441,27 @@ function logSafeError(
   }
 }
 
+async function recoverStaleProcessingJobs(
+  options: WorkerRuntimeOptions,
+): Promise<void> {
+  const recoveredJobs =
+    await recoverStaleProcessingNaverMediaSyncJobs({
+      staleMs:
+        options.staleProcessingMs,
+      limit:
+        20,
+    });
+
+  logRecoveredStaleJobs(
+    recoveredJobs.length,
+  );
+}
+
 async function processSingleJob(
   options: WorkerRuntimeOptions,
 ): Promise<boolean> {
+  await recoverStaleProcessingJobs(options);
+
   const result =
     await processNextNaverMediaSyncJob({
       jobTimeoutMs:

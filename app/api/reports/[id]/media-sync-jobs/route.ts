@@ -8,6 +8,7 @@ import {
 import {
   createPendingMediaSyncJob,
   listRecentMediaSyncJobsForReport,
+  recoverStaleProcessingMediaSyncJobsForReport,
   MediaSyncJobsRepositoryError,
 } from "@/src/lib/media-sync/media-sync-jobs-repository";
 import {
@@ -33,6 +34,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MAX_MEDIA_SYNC_DATE_WINDOW_DAYS = 31;
+
+const STALE_PROCESSING_JOB_MS =
+  60 * 60 * 1_000;
 
 type RouteContext = {
   params: Promise<{
@@ -207,6 +211,13 @@ export async function GET(
         action: "run_sync",
       });
 
+    await recoverStaleProcessingMediaSyncJobsForReport({
+      reportId: access.reportId,
+      workspaceId: access.workspaceId,
+      advertiserId: access.advertiserId,
+      staleMs: STALE_PROCESSING_JOB_MS,
+    });
+
     const jobs =
       await listRecentMediaSyncJobsForReport({
         reportId: access.reportId,
@@ -362,6 +373,13 @@ export async function POST(
         accessContext,
         parsedRequest,
       );
+
+    await recoverStaleProcessingMediaSyncJobsForReport({
+      reportId: access.reportId,
+      workspaceId: access.workspaceId,
+      advertiserId: access.advertiserId,
+      staleMs: STALE_PROCESSING_JOB_MS,
+    });
 
     const job =
       await createPendingMediaSyncJob(

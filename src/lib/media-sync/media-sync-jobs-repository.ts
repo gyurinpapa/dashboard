@@ -25,8 +25,29 @@ const REPORTS_TABLE = "reports";
 const MEDIA_SYNC_JOB_PENDING_STATUS =
   "pending" as const;
 
+const MEDIA_SYNC_JOB_PROCESSING_STATUS =
+  "processing" as const;
+
+const MEDIA_SYNC_JOB_FAILED_STATUS =
+  "failed" as const;
+
 const MEDIA_SYNC_JOB_MODE =
   "snapshot_replace" as const;
+
+const NAVER_SEARCH_ADS_PROVIDER =
+  "naver_searchad" as const;
+
+const DEFAULT_STALE_PROCESSING_JOB_MS =
+  60 * 60 * 1_000;
+
+const MIN_STALE_PROCESSING_JOB_MS =
+  5 * 60 * 1_000;
+
+const MAX_STALE_PROCESSING_JOB_MS =
+  24 * 60 * 60 * 1_000;
+
+const DEFAULT_STALE_PROCESSING_JOB_LIMIT =
+  20;
 
 const POSTGRES_UNIQUE_VIOLATION_CODE = "23505";
 
@@ -76,6 +97,21 @@ export type ListRecentMediaSyncJobsForReportInput = {
   reportId: string;
   workspaceId: string;
   advertiserId: string;
+  limit?: number;
+};
+
+export type RecoverStaleProcessingMediaSyncJobsForReportInput = {
+  reportId: string;
+  workspaceId: string;
+  advertiserId: string;
+  staleMs?: number;
+  now?: Date;
+  limit?: number;
+};
+
+export type RecoverStaleProcessingNaverMediaSyncJobsInput = {
+  staleMs?: number;
+  now?: Date;
   limit?: number;
 };
 
@@ -524,6 +560,261 @@ async function requireScopedReport(input: {
   return report;
 }
 
+
+function normalizeStaleProcessingJobMs(
+  value: unknown,
+): number {
+  if (value === undefined || value === null) {
+    return DEFAULT_STALE_PROCESSING_JOB_MS;
+  }
+
+  const numericValue = Number(value);
+
+  if (
+    !Number.isSafeInteger(numericValue) ||
+    numericValue < MIN_STALE_PROCESSING_JOB_MS ||
+    numericValue > MAX_STALE_PROCESSING_JOB_MS
+  ) {
+    throw new MediaSyncJobsRepositoryError(
+      "INVALID_INPUT",
+      `staleMs must be an integer between ${MIN_STALE_PROCESSING_JOB_MS} and ${MAX_STALE_PROCESSING_JOB_MS}.`,
+    );
+  }
+
+  return numericValue;
+}
+
+function normalizeRecoveryLimit(
+  value: unknown,
+): number {
+  const numericValue = Number(
+    value ?? DEFAULT_STALE_PROCESSING_JOB_LIMIT,
+  );
+
+  if (
+    !Number.isSafeInteger(numericValue) ||
+    numericValue < 1
+  ) {
+    return DEFAULT_STALE_PROCESSING_JOB_LIMIT;
+  }
+
+  return Math.min(
+    numericValue,
+    DEFAULT_STALE_PROCESSING_JOB_LIMIT,
+  );
+}
+
+function buildStaleProcessingJobCutoff(input: {
+  staleMs: number;
+  now?: Date;
+}): string {
+  const now =
+    input.now instanceof Date &&
+    Number.isFinite(input.now.getTime())
+      ? input.now
+      : new Date();
+
+  return new Date(
+    now.getTime() - input.staleMs,
+  ).toISOString();
+}
+
+function buildStaleProcessingErrorDetail(input: {
+  staleMs: number;
+  cutoff: string;
+}): JsonObject {
+  return {
+    code: "STALE_PROCESSING_JOB",
+    message:
+      "Media sync processing job exceeded the stale processing threshold and was recovered automatically.",
+    stage: "stale_recovery",
+    source: "automatic_recovery",
+    stale_ms: input.staleMs,
+    cutoff: input.cutoff,
+    recovered_at: new Date().toISOString(),
+  };
+}
+
+async function recoverStaleProcessingJobsByIds(input: {
+  ids: string[];
+  staleMs: number;
+  cutoff: string;
+}): Promise<SafeMediaSyncJob[]> {
+  if (input.ids.length === 0) {
+    return [];
+  }
+
+  const supabase = getSupabaseAdmin();
+  const now = new Date().toISOString();
+
+  const { data, error } = await supabase
+    .from(MEDIA_SYNC_JOBS_TABLE)
+    .update({
+      status:
+        MEDIA_SYNC_JOB_FAILED_STATUS satisfies MediaSyncJobStatus,
+      progress: 0,
+      error: "STALE_PROCESSING_JOB",
+      error_detail:
+        buildStaleProcessingErrorDetail({
+          staleMs: input.staleMs,
+          cutoff: input.cutoff,
+        }),
+      finished_at: now,
+      updated_at: now,
+    })
+    .in("id", input.ids)
+    .eq("status", MEDIA_SYNC_JOB_PROCESSING_STATUS)
+    .select("*");
+
+  if (error) {
+    throw wrapDatabaseError(
+      "Stale media sync processing jobs could not be recovered.",
+      error,
+    );
+  }
+
+  return (data ?? []).map((record) =>
+    toSafeMediaSyncJob(
+      parseMediaSyncJobRecord(record),
+    ),
+  );
+}
+
+export async function recoverStaleProcessingMediaSyncJobsForReport(
+  input: RecoverStaleProcessingMediaSyncJobsForReportInput,
+): Promise<SafeMediaSyncJob[]> {
+  const reportId = normalizeRequiredString(
+    input.reportId,
+    "reportId",
+    200,
+  );
+
+  const workspaceId = normalizeRequiredString(
+    input.workspaceId,
+    "workspaceId",
+    200,
+  );
+
+  const advertiserId = normalizeRequiredString(
+    input.advertiserId,
+    "advertiserId",
+    200,
+  );
+
+  const staleMs =
+    normalizeStaleProcessingJobMs(
+      input.staleMs,
+    );
+
+  const limit =
+    normalizeRecoveryLimit(input.limit);
+
+  await requireScopedReport({
+    reportId,
+    workspaceId,
+    advertiserId,
+  });
+
+  const cutoff =
+    buildStaleProcessingJobCutoff({
+      staleMs,
+      now: input.now,
+    });
+
+  const supabase = getSupabaseAdmin();
+
+  const { data, error } = await supabase
+    .from(MEDIA_SYNC_JOBS_TABLE)
+    .select("id")
+    .eq("report_id", reportId)
+    .eq("workspace_id", workspaceId)
+    .eq("advertiser_id", advertiserId)
+    .eq("status", MEDIA_SYNC_JOB_PROCESSING_STATUS)
+    .lt("updated_at", cutoff)
+    .order("updated_at", { ascending: true })
+    .limit(limit);
+
+  if (error) {
+    throw wrapDatabaseError(
+      "Stale media sync processing jobs could not be loaded.",
+      error,
+    );
+  }
+
+  const ids = (data ?? [])
+    .map((record) =>
+      isPlainObject(record) &&
+      typeof record.id === "string"
+        ? record.id
+        : null,
+    )
+    .filter(
+      (id): id is string =>
+        Boolean(id),
+    );
+
+  return recoverStaleProcessingJobsByIds({
+    ids,
+    staleMs,
+    cutoff,
+  });
+}
+
+export async function recoverStaleProcessingNaverMediaSyncJobs(
+  input: RecoverStaleProcessingNaverMediaSyncJobsInput = {},
+): Promise<SafeMediaSyncJob[]> {
+  const staleMs =
+    normalizeStaleProcessingJobMs(
+      input.staleMs,
+    );
+
+  const limit =
+    normalizeRecoveryLimit(input.limit);
+
+  const cutoff =
+    buildStaleProcessingJobCutoff({
+      staleMs,
+      now: input.now,
+    });
+
+  const supabase = getSupabaseAdmin();
+
+  const { data, error } = await supabase
+    .from(MEDIA_SYNC_JOBS_TABLE)
+    .select("id")
+    .eq("provider", NAVER_SEARCH_ADS_PROVIDER)
+    .eq("status", MEDIA_SYNC_JOB_PROCESSING_STATUS)
+    .lt("updated_at", cutoff)
+    .order("updated_at", { ascending: true })
+    .limit(limit);
+
+  if (error) {
+    throw wrapDatabaseError(
+      "Stale Naver media sync processing jobs could not be loaded.",
+      error,
+    );
+  }
+
+  const ids = (data ?? [])
+    .map((record) =>
+      isPlainObject(record) &&
+      typeof record.id === "string"
+        ? record.id
+        : null,
+    )
+    .filter(
+      (id): id is string =>
+        Boolean(id),
+    );
+
+  return recoverStaleProcessingJobsByIds({
+    ids,
+    staleMs,
+    cutoff,
+  });
+}
+
+
 export async function createPendingMediaSyncJob(
   input: CreatePendingMediaSyncJobInput,
 ): Promise<SafeMediaSyncJob> {
@@ -667,6 +958,12 @@ export async function createPendingMediaSyncJob(
       "Media connection is not active.",
     );
   }
+
+  await recoverStaleProcessingMediaSyncJobsForReport({
+    reportId,
+    workspaceId,
+    advertiserId,
+  });
 
   const insertRecord = {
     workspace_id: workspaceId,
