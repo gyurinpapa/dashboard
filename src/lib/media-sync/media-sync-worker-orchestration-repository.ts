@@ -105,6 +105,7 @@ export type ProcessNaverMediaSyncJobOptions = {
   maxRetryCount?: number;
   maxKeywordStatsPerRun?: number;
   maxStatsRequestsPerRun?: number;
+  maxKeywordDiscoveryPagesPerRun?: number;
   jobTimeoutMs?: number;
   signal?: AbortSignal;
   onRetry?: NaverSearchAdsStagingOrchestratorInput["onRetry"];
@@ -578,6 +579,9 @@ export async function processClaimedNaverMediaSyncJob(
 
         maxStatsRequestsPerRun:
           options.maxStatsRequestsPerRun,
+
+        maxKeywordDiscoveryPagesPerRun:
+          options.maxKeywordDiscoveryPagesPerRun,
 
         signal:
           options.signal,

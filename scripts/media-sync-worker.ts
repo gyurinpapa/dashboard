@@ -40,6 +40,9 @@ const MAX_KEYWORD_STATS_PER_RUN_ENV =
 const MAX_STATS_REQUESTS_PER_RUN_ENV =
   "MEDIA_SYNC_WORKER_MAX_STATS_REQUESTS_PER_RUN";
 
+const MAX_KEYWORD_DISCOVERY_PAGES_PER_RUN_ENV =
+  "MEDIA_SYNC_WORKER_MAX_KEYWORD_DISCOVERY_PAGES_PER_RUN";
+
 const DEFAULT_MAX_JOBS =
   1;
 
@@ -79,6 +82,9 @@ const MAX_KEYWORD_STATS_PER_RUN_UPPER_BOUND =
 const MAX_STATS_REQUESTS_PER_RUN_UPPER_BOUND =
   10_000;
 
+const MAX_KEYWORD_DISCOVERY_PAGES_PER_RUN_UPPER_BOUND =
+  100_000;
+
 type WorkerRuntimeOptions = {
   enabled: boolean;
   loop: boolean;
@@ -89,6 +95,7 @@ type WorkerRuntimeOptions = {
   staleProcessingMs: number;
   maxKeywordStatsPerRun?: number;
   maxStatsRequestsPerRun?: number;
+  maxKeywordDiscoveryPagesPerRun?: number;
 };
 
 type SafeErrorLog = {
@@ -274,6 +281,15 @@ function readRuntimeOptions():
         MAX_STATS_REQUESTS_PER_RUN_UPPER_BOUND,
     });
 
+  const maxKeywordDiscoveryPagesPerRun =
+    readOptionalPositiveIntegerEnv({
+      name:
+        MAX_KEYWORD_DISCOVERY_PAGES_PER_RUN_ENV,
+
+      max:
+        MAX_KEYWORD_DISCOVERY_PAGES_PER_RUN_UPPER_BOUND,
+    });
+
   const exitWhenIdle =
     readBooleanEnv(IDLE_EXIT_ENV);
 
@@ -287,6 +303,7 @@ function readRuntimeOptions():
     staleProcessingMs,
     maxKeywordStatsPerRun,
     maxStatsRequestsPerRun,
+    maxKeywordDiscoveryPagesPerRun,
   };
 }
 
@@ -420,6 +437,12 @@ function logWorkerStart(
   console.log(
     `[${WORKER_NAME}] max stats requests per run: ${
       formatOptionalLimit(options.maxStatsRequestsPerRun)
+    }`,
+  );
+
+  console.log(
+    `[${WORKER_NAME}] max keyword discovery pages per run: ${
+      formatOptionalLimit(options.maxKeywordDiscoveryPagesPerRun)
     }`,
   );
 
@@ -630,6 +653,9 @@ async function processSingleJob(
 
       maxStatsRequestsPerRun:
         options.maxStatsRequestsPerRun,
+
+      maxKeywordDiscoveryPagesPerRun:
+        options.maxKeywordDiscoveryPagesPerRun,
     });
 
   if (!result) {

@@ -57,6 +57,8 @@ const MAX_KEYWORD_STATS_PER_RUN = 1_000_000;
 
 const MAX_STATS_REQUESTS_PER_RUN = 1_000_000;
 
+const MAX_KEYWORD_DISCOVERY_PAGES_PER_RUN = 1_000_000;
+
 const PROCESSING_CHECKPOINT_KEY =
   "processing_checkpoint" as const;
 
@@ -112,6 +114,8 @@ export type NaverSearchAdsStagingOrchestratorInput = {
   maxKeywordStatsPerRun?: number;
 
   maxStatsRequestsPerRun?: number;
+
+  maxKeywordDiscoveryPagesPerRun?: number;
 
   signal?: AbortSignal;
 
@@ -867,6 +871,13 @@ export async function runNaverSearchAdsStagingOrchestrator(
       MAX_STATS_REQUESTS_PER_RUN,
     );
 
+  const maxKeywordDiscoveryPagesPerRun =
+    normalizeOptionalPositiveInteger(
+      input.maxKeywordDiscoveryPagesPerRun,
+      "maxKeywordDiscoveryPagesPerRun",
+      MAX_KEYWORD_DISCOVERY_PAGES_PER_RUN,
+    );
+
   const checkpoint =
     getProcessingCheckpoint(
       input.job,
@@ -972,6 +983,8 @@ export async function runNaverSearchAdsStagingOrchestrator(
       maxKeywordStatsPerRun,
 
       maxStatsRequestsPerRun,
+
+      maxKeywordDiscoveryPagesPerRun,
 
       signal:
         input.signal,

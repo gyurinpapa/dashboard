@@ -42,6 +42,7 @@ const NAVER_KEYWORD_STATS_MAX_KEYWORD_PAGES = 10_000;
 
 const NAVER_KEYWORD_STATS_MAX_KEYWORDS_PER_RUN = 1_000_000;
 const NAVER_KEYWORD_STATS_MAX_REQUESTS_PER_RUN = 1_000_000;
+const NAVER_KEYWORD_DISCOVERY_MAX_PAGES_PER_RUN = 1_000_000;
 
 export type NaverKeywordStatsCollectorErrorCode =
   | "INVALID_INPUT"
@@ -218,6 +219,7 @@ export type NaverKeywordStatsCollectorInput = {
 
   maxKeywordStatsPerRun?: number;
   maxStatsRequestsPerRun?: number;
+  maxKeywordDiscoveryPagesPerRun?: number;
 
   signal?: AbortSignal;
 
@@ -226,7 +228,8 @@ export type NaverKeywordStatsCollectorInput = {
 
 export type NaverKeywordStatsCollectorPartialReason =
   | "max_keyword_stats_per_run_reached"
-  | "max_stats_requests_per_run_reached";
+  | "max_stats_requests_per_run_reached"
+  | "max_keyword_discovery_pages_per_run_reached";
 
 export type NaverKeywordStatsCollectorBaseResult = {
   cursor: NaverKeywordStatsCursor;
@@ -274,6 +277,7 @@ type NormalizedCollectorOptions = {
   maxRetryCount: number;
   maxKeywordStatsPerRun: number | null;
   maxStatsRequestsPerRun: number | null;
+  maxKeywordDiscoveryPagesPerRun: number | null;
 };
 
 type ResolvedCollectorDependencies =
@@ -472,6 +476,13 @@ function normalizeCollectorOptions(
         "maxStatsRequestsPerRun",
         NAVER_KEYWORD_STATS_MAX_REQUESTS_PER_RUN,
       ),
+
+    maxKeywordDiscoveryPagesPerRun:
+      normalizeOptionalPositiveInteger(
+        input.maxKeywordDiscoveryPagesPerRun,
+        "maxKeywordDiscoveryPagesPerRun",
+        NAVER_KEYWORD_DISCOVERY_MAX_PAGES_PER_RUN,
+      ),
   };
 }
 
@@ -622,6 +633,122 @@ function createResumeTarget(
         cursor.keywordBaseSearchId === null &&
         cursor.keywordChunkIndex === 0
       ),
+  };
+}
+
+function getKeywordDiscoveryPagesRead(
+  state: CollectorRuntimeState,
+): number {
+  return (
+    state.campaignPagesRead +
+    state.adgroupPagesRead +
+    state.keywordPagesRead
+  );
+}
+
+function getDiscoveryPagePartialReasonForCurrentRun(
+  state: CollectorRuntimeState,
+  options: NormalizedCollectorOptions,
+): NaverKeywordStatsCollectorPartialReason | null {
+  if (
+    options.maxKeywordDiscoveryPagesPerRun !== null &&
+    getKeywordDiscoveryPagesRead(state) >=
+      options.maxKeywordDiscoveryPagesPerRun
+  ) {
+    return "max_keyword_discovery_pages_per_run_reached";
+  }
+
+  return null;
+}
+
+function shouldStopAfterCompletedPage(input: {
+  state: CollectorRuntimeState;
+  options: NormalizedCollectorOptions;
+}): NaverKeywordStatsCollectorPartialReason | null {
+  return getDiscoveryPagePartialReasonForCurrentRun(
+    input.state,
+    input.options,
+  );
+}
+
+function resetCursorForNextCampaignPage(input: {
+  cursor: NaverKeywordStatsCursor;
+  campaignBaseSearchId: string;
+}): NaverKeywordStatsCursor {
+  return {
+    ...input.cursor,
+
+    campaignBaseSearchId:
+      input.campaignBaseSearchId,
+
+    campaignId:
+      null,
+
+    adgroupBaseSearchId:
+      null,
+
+    adgroupId:
+      null,
+
+    keywordBaseSearchId:
+      null,
+
+    keywordChunkIndex:
+      0,
+
+    keywordIndexInChunk:
+      0,
+
+    lastCompletedKeywordId:
+      null,
+  };
+}
+
+function resetCursorForNextAdgroupPage(input: {
+  cursor: NaverKeywordStatsCursor;
+  adgroupBaseSearchId: string;
+}): NaverKeywordStatsCursor {
+  return {
+    ...input.cursor,
+
+    adgroupBaseSearchId:
+      input.adgroupBaseSearchId,
+
+    adgroupId:
+      null,
+
+    keywordBaseSearchId:
+      null,
+
+    keywordChunkIndex:
+      0,
+
+    keywordIndexInChunk:
+      0,
+
+    lastCompletedKeywordId:
+      null,
+  };
+}
+
+function resetCursorForNextKeywordPage(input: {
+  cursor: NaverKeywordStatsCursor;
+  keywordBaseSearchId: string;
+}): NaverKeywordStatsCursor {
+  return {
+    ...input.cursor,
+
+    keywordBaseSearchId:
+      input.keywordBaseSearchId,
+
+    keywordChunkIndex:
+      0,
+
+    keywordIndexInChunk:
+      0,
+
+    lastCompletedKeywordId:
+      null,
   };
 }
 
@@ -1849,7 +1976,10 @@ async function collectKeywordPages(input: {
 }): Promise<CollectorTraversalResult> {
   let keywordBaseSearchId:
     | string
-    | null = null;
+    | null =
+      input.resumeTarget.keywordPageMatched
+        ? null
+        : input.state.cursor.keywordBaseSearchId;
 
   for (
     let pageNumber = 1;
@@ -2080,8 +2210,50 @@ async function collectKeywordPages(input: {
         "keyword",
     });
 
-    keywordBaseSearchId =
+    const nextKeywordBaseSearchId =
       keywordPage.nextBaseSearchId;
+
+    if (!nextKeywordBaseSearchId) {
+      throw new NaverKeywordStatsCollectorError(
+        "INVALID_PAGINATION_CURSOR",
+        "Naver Search Ads keyword pagination cursor did not advance.",
+        {
+          cursor:
+            input.state.cursor,
+        },
+      );
+    }
+
+    keywordBaseSearchId =
+      nextKeywordBaseSearchId;
+
+    input.state.cursor =
+      resetCursorForNextKeywordPage({
+        cursor:
+          input.state.cursor,
+
+        keywordBaseSearchId:
+          nextKeywordBaseSearchId,
+      });
+
+    const partialReasonAfterKeywordPage =
+      shouldStopAfterCompletedPage({
+        state:
+          input.state,
+
+        options:
+          input.options,
+      });
+
+    if (partialReasonAfterKeywordPage !== null) {
+      return {
+        status:
+          "partial",
+
+        reason:
+          partialReasonAfterKeywordPage,
+      };
+    }
   }
 
   throw new NaverKeywordStatsCollectorError(
@@ -2120,7 +2292,10 @@ async function collectAdgroupPages(input: {
 }): Promise<CollectorTraversalResult> {
   let adgroupBaseSearchId:
     | string
-    | null = null;
+    | null =
+      input.resumeTarget.adgroupMatched
+        ? null
+        : input.state.cursor.adgroupBaseSearchId;
 
   for (
     let pageNumber = 1;
@@ -2340,8 +2515,50 @@ async function collectAdgroupPages(input: {
         "adgroup",
     });
 
-    adgroupBaseSearchId =
+    const nextAdgroupBaseSearchId =
       adgroupPage.nextBaseSearchId;
+
+    if (!nextAdgroupBaseSearchId) {
+      throw new NaverKeywordStatsCollectorError(
+        "INVALID_PAGINATION_CURSOR",
+        "Naver Search Ads adgroup pagination cursor did not advance.",
+        {
+          cursor:
+            input.state.cursor,
+        },
+      );
+    }
+
+    adgroupBaseSearchId =
+      nextAdgroupBaseSearchId;
+
+    input.state.cursor =
+      resetCursorForNextAdgroupPage({
+        cursor:
+          input.state.cursor,
+
+        adgroupBaseSearchId:
+          nextAdgroupBaseSearchId,
+      });
+
+    const partialReasonAfterAdgroupPage =
+      shouldStopAfterCompletedPage({
+        state:
+          input.state,
+
+        options:
+          input.options,
+      });
+
+    if (partialReasonAfterAdgroupPage !== null) {
+      return {
+        status:
+          "partial",
+
+        reason:
+          partialReasonAfterAdgroupPage,
+      };
+    }
   }
 
   throw new NaverKeywordStatsCollectorError(
@@ -2426,7 +2643,10 @@ export async function collectNaverKeywordDailyStats(
 
   let campaignBaseSearchId:
     | string
-    | null = null;
+    | null =
+      resumeTarget.campaignMatched
+        ? null
+        : state.cursor.campaignBaseSearchId;
 
   for (
     let pageNumber = 1;
@@ -2654,8 +2874,59 @@ export async function collectNaverKeywordDailyStats(
         "campaign",
     });
 
-    campaignBaseSearchId =
+    const nextCampaignBaseSearchId =
       campaignPage.nextBaseSearchId;
+
+    if (!nextCampaignBaseSearchId) {
+      throw new NaverKeywordStatsCollectorError(
+        "INVALID_PAGINATION_CURSOR",
+        "Naver Search Ads campaign pagination cursor did not advance.",
+        {
+          cursor:
+            state.cursor,
+        },
+      );
+    }
+
+    campaignBaseSearchId =
+      nextCampaignBaseSearchId;
+
+    state.cursor =
+      resetCursorForNextCampaignPage({
+        cursor:
+          state.cursor,
+
+        campaignBaseSearchId:
+          nextCampaignBaseSearchId,
+      });
+
+    const partialReasonAfterCampaignPage =
+      shouldStopAfterCompletedPage({
+        state,
+        options,
+      });
+
+    if (partialReasonAfterCampaignPage !== null) {
+      await notifyProgress({
+        callback:
+          input.onProgress,
+
+        stage:
+          "collector:partial",
+
+        state,
+      });
+
+      return buildCollectorResult({
+        status:
+          "partial",
+
+        state,
+
+        partialReason:
+          partialReasonAfterCampaignPage,
+      });
+    }
   }
 
   throw new NaverKeywordStatsCollectorError(
