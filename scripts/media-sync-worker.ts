@@ -34,6 +34,12 @@ const JOB_TIMEOUT_MS_ENV =
 const STALE_PROCESSING_MS_ENV =
   "MEDIA_SYNC_WORKER_STALE_PROCESSING_MS";
 
+const MAX_KEYWORD_STATS_PER_RUN_ENV =
+  "MEDIA_SYNC_WORKER_MAX_KEYWORD_STATS_PER_RUN";
+
+const MAX_STATS_REQUESTS_PER_RUN_ENV =
+  "MEDIA_SYNC_WORKER_MAX_STATS_REQUESTS_PER_RUN";
+
 const DEFAULT_MAX_JOBS =
   1;
 
@@ -67,6 +73,12 @@ const MAX_STALE_PROCESSING_MS =
 const MAX_JOBS_UPPER_BOUND =
   1_000;
 
+const MAX_KEYWORD_STATS_PER_RUN_UPPER_BOUND =
+  10_000;
+
+const MAX_STATS_REQUESTS_PER_RUN_UPPER_BOUND =
+  10_000;
+
 type WorkerRuntimeOptions = {
   enabled: boolean;
   loop: boolean;
@@ -75,6 +87,8 @@ type WorkerRuntimeOptions = {
   exitWhenIdle: boolean;
   jobTimeoutMs: number;
   staleProcessingMs: number;
+  maxKeywordStatsPerRun?: number;
+  maxStatsRequestsPerRun?: number;
 };
 
 type SafeErrorLog = {
@@ -130,6 +144,48 @@ function readPositiveIntegerEnv(input: {
   }
 
   return numericValue;
+}
+
+function readOptionalPositiveIntegerEnv(input: {
+  name: string;
+  max: number;
+}): number | undefined {
+  const rawValue =
+    String(process.env[input.name] ?? "")
+      .trim();
+
+  if (!rawValue) {
+    return undefined;
+  }
+
+  if (!/^\d+$/.test(rawValue)) {
+    throw new Error(
+      `${input.name} must be a positive integer between 1 and ${input.max}. Received: ${rawValue}`,
+    );
+  }
+
+  const numericValue =
+    Number(rawValue);
+
+  if (
+    !Number.isSafeInteger(numericValue) ||
+    numericValue < 1 ||
+    numericValue > input.max
+  ) {
+    throw new Error(
+      `${input.name} must be a positive integer between 1 and ${input.max}. Received: ${rawValue}`,
+    );
+  }
+
+  return numericValue;
+}
+
+function formatOptionalLimit(
+  value: number | undefined,
+): string {
+  return typeof value === "number"
+    ? String(value)
+    : "unset";
 }
 
 function readRuntimeOptions():
@@ -200,6 +256,24 @@ function readRuntimeOptions():
         MAX_STALE_PROCESSING_MS,
     });
 
+  const maxKeywordStatsPerRun =
+    readOptionalPositiveIntegerEnv({
+      name:
+        MAX_KEYWORD_STATS_PER_RUN_ENV,
+
+      max:
+        MAX_KEYWORD_STATS_PER_RUN_UPPER_BOUND,
+    });
+
+  const maxStatsRequestsPerRun =
+    readOptionalPositiveIntegerEnv({
+      name:
+        MAX_STATS_REQUESTS_PER_RUN_ENV,
+
+      max:
+        MAX_STATS_REQUESTS_PER_RUN_UPPER_BOUND,
+    });
+
   const exitWhenIdle =
     readBooleanEnv(IDLE_EXIT_ENV);
 
@@ -211,6 +285,8 @@ function readRuntimeOptions():
     exitWhenIdle,
     jobTimeoutMs,
     staleProcessingMs,
+    maxKeywordStatsPerRun,
+    maxStatsRequestsPerRun,
   };
 }
 
@@ -336,6 +412,18 @@ function logWorkerStart(
   );
 
   console.log(
+    `[${WORKER_NAME}] max keyword stats per run: ${
+      formatOptionalLimit(options.maxKeywordStatsPerRun)
+    }`,
+  );
+
+  console.log(
+    `[${WORKER_NAME}] max stats requests per run: ${
+      formatOptionalLimit(options.maxStatsRequestsPerRun)
+    }`,
+  );
+
+  console.log(
     `[${WORKER_NAME}] exit when idle: ${options.exitWhenIdle}`,
   );
 }
@@ -410,7 +498,10 @@ function logPartialJob(input: {
   workspaceId: string;
   advertiserId: string;
   connectionId: string;
-  expectedRows: number;
+  checkpointRows: number;
+  partialReason: string | null;
+  stagingCanonicalRowCount: number | null;
+  stagingRunCanonicalRowCount: number | null;
 }): void {
   console.log(
     `[${WORKER_NAME}] partial job released for resume: ${input.jobId}`,
@@ -433,8 +524,42 @@ function logPartialJob(input: {
   );
 
   console.log(
-    `[${WORKER_NAME}] checkpoint rows: ${input.expectedRows}`,
+    `[${WORKER_NAME}] checkpoint rows: ${input.checkpointRows}`,
   );
+
+  console.log(
+    `[${WORKER_NAME}] partial reason: ${input.partialReason ?? "unknown"}`,
+  );
+
+  console.log(
+    `[${WORKER_NAME}] staging canonical rows: ${
+      input.stagingCanonicalRowCount ?? "unknown"
+    }`,
+  );
+
+  console.log(
+    `[${WORKER_NAME}] staging run canonical rows: ${
+      input.stagingRunCanonicalRowCount ?? "unknown"
+    }`,
+  );
+}
+
+function readOptionalString(
+  value: unknown,
+): string | null {
+  return typeof value === "string" &&
+    value.trim().length > 0
+    ? value
+    : null;
+}
+
+function readOptionalNumber(
+  value: unknown,
+): number | null {
+  return typeof value === "number" &&
+    Number.isFinite(value)
+    ? value
+    : null;
 }
 
 function logSafeError(
@@ -499,6 +624,12 @@ async function processSingleJob(
     await processNextNaverMediaSyncJob({
       jobTimeoutMs:
         options.jobTimeoutMs,
+
+      maxKeywordStatsPerRun:
+        options.maxKeywordStatsPerRun,
+
+      maxStatsRequestsPerRun:
+        options.maxStatsRequestsPerRun,
     });
 
   if (!result) {
@@ -507,6 +638,17 @@ async function processSingleJob(
   }
 
   if (result.status === "partial") {
+    const partialResult =
+      result as typeof result & {
+        checkpointRows?: unknown;
+        reason?: unknown;
+        partialReason?: unknown;
+        staging?: {
+          canonicalRowCount?: unknown;
+          runCanonicalRowCount?: unknown;
+        };
+      };
+
     logPartialJob({
       jobId:
         result.jobId,
@@ -523,8 +665,28 @@ async function processSingleJob(
       connectionId:
         result.connectionId,
 
-      expectedRows:
-        result.expectedRows,
+      checkpointRows:
+        readOptionalNumber(
+          partialResult.checkpointRows,
+        ) ?? result.expectedRows,
+
+      partialReason:
+        readOptionalString(
+          partialResult.partialReason,
+        ) ??
+        readOptionalString(
+          partialResult.reason,
+        ),
+
+      stagingCanonicalRowCount:
+        readOptionalNumber(
+          partialResult.staging?.canonicalRowCount,
+        ),
+
+      stagingRunCanonicalRowCount:
+        readOptionalNumber(
+          partialResult.staging?.runCanonicalRowCount,
+        ),
     });
 
     return true;
