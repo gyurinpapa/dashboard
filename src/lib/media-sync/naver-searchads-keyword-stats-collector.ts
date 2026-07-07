@@ -2290,12 +2290,13 @@ async function collectAdgroupPages(input: {
 
   dependencies: ResolvedCollectorDependencies;
 }): Promise<CollectorTraversalResult> {
-  let adgroupBaseSearchId:
+    let adgroupBaseSearchId:
     | string
     | null =
-      input.resumeTarget.adgroupMatched
-        ? null
-        : input.state.cursor.adgroupBaseSearchId;
+      input.state.cursor.campaignId ===
+      input.campaign.id
+        ? input.state.cursor.adgroupBaseSearchId
+        : null;
 
   for (
     let pageNumber = 1;
@@ -2641,12 +2642,10 @@ export async function collectNaverKeywordDailyStats(
     state,
   });
 
-  let campaignBaseSearchId:
+    let campaignBaseSearchId:
     | string
     | null =
-      resumeTarget.campaignMatched
-        ? null
-        : state.cursor.campaignBaseSearchId;
+      state.cursor.campaignBaseSearchId;
 
   for (
     let pageNumber = 1;

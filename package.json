@@ -8,6 +8,9 @@
     "start": "next start",
     "worker:ingestion": "INGESTION_WORKER_LOOP=1 node --import tsx scripts/ingestion-worker.ts",
     "worker:ingestion:local": "INGESTION_WORKER_LOOP=1 node --env-file=.env.local --import tsx scripts/ingestion-worker.ts",
+    "worker:media-sync": "MEDIA_SYNC_WORKER_LOOP=1 node --import tsx scripts/media-sync-worker.ts",
+    "worker:media-sync:local": "MEDIA_SYNC_WORKER_LOOP=1 node --env-file=.env.local --import tsx scripts/media-sync-worker.ts",
+    "verify:media-sync:discovery-partial-resume": "node --env-file=.env.local --import tsx scripts/verify-media-sync-discovery-partial-resume-orchestration.ts",
     "lint": "eslint"
   },
   "dependencies": {
