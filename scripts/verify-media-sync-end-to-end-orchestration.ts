@@ -1141,6 +1141,81 @@ async function cleanupFixture(input: {
   );
 }
 
+function getCauseValue(
+  error: unknown,
+): unknown {
+  if (
+    !error ||
+    typeof error !== "object"
+  ) {
+    return null;
+  }
+
+  return (error as { cause?: unknown }).cause ?? null;
+}
+
+function getMaybeCode(
+  error: unknown,
+): string | null {
+  if (
+    !error ||
+    typeof error !== "object"
+  ) {
+    return null;
+  }
+
+  const code =
+    (error as { code?: unknown }).code;
+
+  return typeof code === "string"
+    ? code
+    : null;
+}
+
+function getErrorNameForLog(
+  error: unknown,
+): string {
+  if (error instanceof Error) {
+    return error.name || "Error";
+  }
+
+  if (
+    error &&
+    typeof error === "object"
+  ) {
+    const name =
+      (error as { name?: unknown }).name;
+
+    if (typeof name === "string") {
+      return name;
+    }
+  }
+
+  return "UnknownError";
+}
+
+function getErrorMessageForLog(
+  error: unknown,
+): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (
+    error &&
+    typeof error === "object"
+  ) {
+    const message =
+      (error as { message?: unknown }).message;
+
+    if (typeof message === "string") {
+      return message;
+    }
+  }
+
+  return String(error);
+}
+
 function logFailure(error: unknown): void {
   if (
     error instanceof
@@ -1155,42 +1230,7 @@ function logFailure(error: unknown): void {
       "orchestration error message:",
       error.message,
     );
-
-    const cause =
-      error.cause;
-
-    if (
-      cause instanceof Error
-    ) {
-      console.error(
-        "orchestration cause name:",
-        cause.name,
-      );
-
-      const maybeCode =
-        (cause as { code?: unknown })
-          .code;
-
-      if (
-        typeof maybeCode ===
-        "string"
-      ) {
-        console.error(
-          "orchestration cause code:",
-          maybeCode,
-        );
-      }
-
-      console.error(
-        "orchestration cause message:",
-        cause.message,
-      );
-    }
-
-    return;
-  }
-
-  if (error instanceof Error) {
+  } else if (error instanceof Error) {
     console.error(
       "verification error name:",
       error.name,
@@ -1200,14 +1240,61 @@ function logFailure(error: unknown): void {
       "verification error message:",
       error.message,
     );
-
-    return;
+  } else {
+    console.error(
+      "verification unknown error:",
+      String(error),
+    );
   }
 
-  console.error(
-    "verification unknown error:",
-    String(error),
-  );
+  let cause =
+    getCauseValue(
+      error,
+    );
+
+  for (
+    let depth = 1;
+    depth <= 8;
+    depth += 1
+  ) {
+    if (
+      cause === null ||
+      cause === undefined
+    ) {
+      break;
+    }
+
+    console.error(
+      `cause[${depth}] name:`,
+      getErrorNameForLog(
+        cause,
+      ),
+    );
+
+    const code =
+      getMaybeCode(
+        cause,
+      );
+
+    if (code) {
+      console.error(
+        `cause[${depth}] code:`,
+        code,
+      );
+    }
+
+    console.error(
+      `cause[${depth}] message:`,
+      getErrorMessageForLog(
+        cause,
+      ),
+    );
+
+    cause =
+      getCauseValue(
+        cause,
+      );
+  }
 }
 
 async function main(): Promise<void> {

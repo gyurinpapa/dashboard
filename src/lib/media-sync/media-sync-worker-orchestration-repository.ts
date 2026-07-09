@@ -61,6 +61,18 @@ const MIN_JOB_TIMEOUT_MS =
 const MAX_JOB_TIMEOUT_MS =
   60 * 60 * 1_000;
 
+const MAX_SAFE_ERROR_TEXT_LENGTH =
+  1_000;
+
+const MAX_SAFE_ERROR_FIELD_LENGTH =
+  500;
+
+const MAX_NESTED_CAUSE_DEPTH =
+  6;
+
+const FORBIDDEN_FAILURE_DETAIL_KEY_PATTERN =
+  /secret|token|credential|ciphertext|accesslicense|authorization|password|api[_-]?key/i;
+
 export type MediaSyncWorkerOrchestrationErrorCode =
   | "NO_JOB"
   | "INVALID_INPUT"
@@ -155,6 +167,32 @@ export type ProcessNaverMediaSyncJobResult =
 export type ProcessNextNaverMediaSyncJobInput =
   ProcessNaverMediaSyncJobOptions;
 
+type SafeFailureDetail = {
+  code: string;
+  message: string;
+  name: string;
+  stage: string;
+  cause_name: string | null;
+  cause_code: string | null;
+  cause_message: string | null;
+  nested_causes: SafeNestedCauseDetail[];
+};
+
+type SafeNestedCauseDetail = {
+  depth: number;
+  name: string;
+  code: string | null;
+  message: string;
+  constructor_name: string | null;
+  postgres_code?: string;
+  postgres_hint?: string;
+  postgres_details?: string;
+  http_status?: number;
+  pending_row_count?: number;
+  flushed_batch_count?: number;
+  flushed_row_count?: number;
+};
+
 function validateProcessingNaverJob(
   job: MediaSyncJobRecord,
 ): void {
@@ -228,19 +266,142 @@ function normalizeTimeoutMs(
   return numericValue;
 }
 
-function getMaybeErrorCode(
-  error: unknown,
+function safeText(
+  value: unknown,
+  fallback: string,
+  maxLength = MAX_SAFE_ERROR_FIELD_LENGTH,
+): string {
+  if (typeof value === "string") {
+    const normalizedValue =
+      value.trim();
+
+    return (
+      normalizedValue || fallback
+    ).slice(
+      0,
+      maxLength,
+    );
+  }
+
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return fallback.slice(
+      0,
+      maxLength,
+    );
+  }
+
+  return String(value || fallback).slice(
+    0,
+    maxLength,
+  );
+}
+
+function isPlainObject(
+  value: unknown,
+): value is Record<string, unknown> {
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    Array.isArray(value)
+  ) {
+    return false;
+  }
+
+  const prototype =
+    Object.getPrototypeOf(value);
+
+  return (
+    prototype === Object.prototype ||
+    prototype === null
+  );
+}
+
+function isForbiddenFailureDetailKey(
+  key: string,
+): boolean {
+  return FORBIDDEN_FAILURE_DETAIL_KEY_PATTERN.test(
+    key.replace(
+      /[^a-z0-9_-]/gi,
+      "",
+    ),
+  );
+}
+
+function getMaybeStringProperty(
+  value: unknown,
+  key: string,
+  maxLength = MAX_SAFE_ERROR_FIELD_LENGTH,
 ): string | null {
-  if (!error || typeof error !== "object") {
+  if (
+    !value ||
+    typeof value !== "object"
+  ) {
     return null;
   }
 
-  const maybeCode =
-    (error as { code?: unknown }).code;
+  if (
+    isForbiddenFailureDetailKey(
+      key,
+    )
+  ) {
+    return null;
+  }
 
-  return typeof maybeCode === "string" && maybeCode.trim()
-    ? maybeCode.trim().slice(0, 200)
+  const propertyValue =
+    (value as Record<string, unknown>)[key];
+
+  if (
+    typeof propertyValue !== "string" ||
+    !propertyValue.trim()
+  ) {
+    return null;
+  }
+
+  return propertyValue.trim().slice(
+    0,
+    maxLength,
+  );
+}
+
+function getMaybeNumberProperty(
+  value: unknown,
+  key: string,
+): number | null {
+  if (
+    !value ||
+    typeof value !== "object"
+  ) {
+    return null;
+  }
+
+  if (
+    isForbiddenFailureDetailKey(
+      key,
+    )
+  ) {
+    return null;
+  }
+
+  const propertyValue =
+    (value as Record<string, unknown>)[key];
+
+  return typeof propertyValue === "number" &&
+    Number.isFinite(propertyValue)
+    ? propertyValue
     : null;
+}
+
+function getMaybeErrorCode(
+  error: unknown,
+): string | null {
+  return getMaybeStringProperty(
+    error,
+    "code",
+    200,
+  );
 }
 
 function getErrorCode(
@@ -257,51 +418,352 @@ function getErrorName(
   error: unknown,
 ): string {
   if (error instanceof Error) {
-    return error.name || "Error";
+    return safeText(
+      error.name,
+      "Error",
+      100,
+    );
   }
 
-  return "UnknownError";
+  return getMaybeStringProperty(
+    error,
+    "name",
+    100,
+  ) ?? "UnknownError";
 }
 
 function getErrorMessage(
   error: unknown,
 ): string {
   if (error instanceof Error) {
-    return error.message || "Media sync worker failed.";
+    return safeText(
+      error.message,
+      "Media sync worker failed.",
+      MAX_SAFE_ERROR_TEXT_LENGTH,
+    );
   }
 
-  return String(error || "Media sync worker failed.");
+  const message =
+    getMaybeStringProperty(
+      error,
+      "message",
+      MAX_SAFE_ERROR_TEXT_LENGTH,
+    );
+
+  if (message) {
+    return message;
+  }
+
+  return safeText(
+    error,
+    "Media sync worker failed.",
+    MAX_SAFE_ERROR_TEXT_LENGTH,
+  );
 }
 
-function getCauseError(
+function getConstructorName(
   error: unknown,
-): Error | null {
-  if (!(error instanceof Error)) {
+): string | null {
+  if (
+    !error ||
+    typeof error !== "object"
+  ) {
     return null;
   }
 
-  const cause = error.cause;
+  const constructorName =
+    error.constructor?.name;
 
-  return cause instanceof Error ? cause : null;
+  return typeof constructorName === "string" &&
+    constructorName.trim()
+    ? constructorName.trim().slice(
+        0,
+        100,
+      )
+    : null;
+}
+
+function getCauseValue(
+  error: unknown,
+): unknown {
+  if (
+    !error ||
+    typeof error !== "object"
+  ) {
+    return null;
+  }
+
+  return (error as { cause?: unknown }).cause ?? null;
+}
+
+function getSafePostgresErrorFields(
+  error: unknown,
+): Partial<SafeNestedCauseDetail> {
+  const postgresCode =
+    getMaybeStringProperty(
+      error,
+      "code",
+      100,
+    );
+
+  const postgresHint =
+    getMaybeStringProperty(
+      error,
+      "hint",
+      MAX_SAFE_ERROR_TEXT_LENGTH,
+    );
+
+  const postgresDetails =
+    getMaybeStringProperty(
+      error,
+      "details",
+      MAX_SAFE_ERROR_TEXT_LENGTH,
+    );
+
+  const httpStatus =
+    getMaybeNumberProperty(
+      error,
+      "status",
+    ) ??
+    getMaybeNumberProperty(
+      error,
+      "statusCode",
+    );
+
+  const detail:
+    Partial<SafeNestedCauseDetail> = {};
+
+  if (postgresCode) {
+    detail.postgres_code =
+      postgresCode;
+  }
+
+  if (postgresHint) {
+    detail.postgres_hint =
+      postgresHint;
+  }
+
+  if (postgresDetails) {
+    detail.postgres_details =
+      postgresDetails;
+  }
+
+  if (
+    typeof httpStatus === "number" &&
+    Number.isFinite(httpStatus)
+  ) {
+    detail.http_status =
+      httpStatus;
+  }
+
+  return detail;
+}
+
+function getSafeBufferErrorFields(
+  error: unknown,
+): Partial<SafeNestedCauseDetail> {
+  const pendingRowCount =
+    getMaybeNumberProperty(
+      error,
+      "pendingRowCount",
+    );
+
+  const flushedBatchCount =
+    getMaybeNumberProperty(
+      error,
+      "flushedBatchCount",
+    );
+
+  const flushedRowCount =
+    getMaybeNumberProperty(
+      error,
+      "flushedRowCount",
+    );
+
+  const detail:
+    Partial<SafeNestedCauseDetail> = {};
+
+  if (
+    typeof pendingRowCount === "number" &&
+    Number.isFinite(pendingRowCount)
+  ) {
+    detail.pending_row_count =
+      pendingRowCount;
+  }
+
+  if (
+    typeof flushedBatchCount === "number" &&
+    Number.isFinite(flushedBatchCount)
+  ) {
+    detail.flushed_batch_count =
+      flushedBatchCount;
+  }
+
+  if (
+    typeof flushedRowCount === "number" &&
+    Number.isFinite(flushedRowCount)
+  ) {
+    detail.flushed_row_count =
+      flushedRowCount;
+  }
+
+  return detail;
+}
+
+function createSafeNestedCauseDetail(
+  error: unknown,
+  depth: number,
+): SafeNestedCauseDetail {
+  return {
+    depth,
+
+    name:
+      getErrorName(
+        error,
+      ),
+
+    code:
+      getMaybeErrorCode(
+        error,
+      ),
+
+    message:
+      getErrorMessage(
+        error,
+      ),
+
+    constructor_name:
+      getConstructorName(
+        error,
+      ),
+
+    ...getSafePostgresErrorFields(
+      error,
+    ),
+
+    ...getSafeBufferErrorFields(
+      error,
+    ),
+  };
+}
+
+function getNestedCauses(
+  error: unknown,
+): SafeNestedCauseDetail[] {
+  const causes:
+    SafeNestedCauseDetail[] = [];
+
+  const visited =
+    new Set<unknown>();
+
+  let current:
+    unknown =
+      getCauseValue(
+        error,
+      );
+
+  for (
+    let depth = 1;
+    depth <= MAX_NESTED_CAUSE_DEPTH;
+    depth += 1
+  ) {
+    if (
+      current === null ||
+      current === undefined
+    ) {
+      break;
+    }
+
+    if (
+      typeof current === "object" &&
+      current !== null
+    ) {
+      if (
+        visited.has(
+          current,
+        )
+      ) {
+        causes.push({
+          depth,
+          name:
+            "CircularCause",
+          code:
+            null,
+          message:
+            "Circular error cause reference was omitted.",
+          constructor_name:
+            getConstructorName(
+              current,
+            ),
+        });
+
+        break;
+      }
+
+      visited.add(
+        current,
+      );
+    }
+
+    causes.push(
+      createSafeNestedCauseDetail(
+        current,
+        depth,
+      ),
+    );
+
+    current =
+      getCauseValue(
+        current,
+      );
+  }
+
+  return causes;
 }
 
 function getSafeFailureDetail(
   error: unknown,
-): Record<string, string | null> {
-  const cause = getCauseError(error);
-  const causeCode = getMaybeErrorCode(cause);
+): SafeFailureDetail {
+  const nestedCauses =
+    getNestedCauses(
+      error,
+    );
+
+  const firstCause =
+    nestedCauses[0] ?? null;
 
   return {
-    code: getErrorCode(error),
-    message: getErrorMessage(error).slice(0, 500),
-    name: getErrorName(error).slice(0, 100),
-    cause_name: cause?.name?.slice(0, 100) ?? null,
-    cause_code: causeCode,
-    cause_message: cause?.message?.slice(0, 500) ?? null,
+    code:
+      getErrorCode(
+        error,
+      ),
+
+    message:
+      getErrorMessage(
+        error,
+      ),
+
+    name:
+      getErrorName(
+        error,
+      ),
+
+    cause_name:
+      firstCause?.name ?? null,
+
+    cause_code:
+      firstCause?.code ?? null,
+
+    cause_message:
+      firstCause?.message ?? null,
+
     stage:
       error instanceof MediaSyncWorkerOrchestrationError
         ? error.code
         : "WORKER_FAILED",
+
+    nested_causes:
+      nestedCauses,
   };
 }
 
