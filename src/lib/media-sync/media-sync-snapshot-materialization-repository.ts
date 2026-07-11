@@ -10,14 +10,29 @@ import {
   type MediaSyncJobRecord,
 } from "./types";
 
-const MATERIALIZE_MEDIA_SYNC_SNAPSHOT_RPC =
-  "materialize_media_sync_snapshot";
+const PREPARE_MEDIA_SYNC_SNAPSHOT_MATERIALIZATION_RPC =
+  "prepare_media_sync_snapshot_materialization";
+
+const MATERIALIZE_MEDIA_SYNC_SNAPSHOT_BATCH_RPC =
+  "materialize_media_sync_snapshot_batch";
+
+const COMPLETE_MEDIA_SYNC_SNAPSHOT_MATERIALIZATION_RPC =
+  "complete_media_sync_snapshot_materialization";
 
 const NAVER_PROVIDER =
   "naver_searchad" as const;
 
 const PROCESSING_STATUS =
   "processing" as const;
+
+const DEFAULT_MATERIALIZATION_BATCH_SIZE =
+  2_000;
+
+const MIN_MATERIALIZATION_BATCH_SIZE =
+  1;
+
+const MAX_MATERIALIZATION_BATCH_SIZE =
+  5_000;
 
 const SHA256_PATTERN =
   /^[0-9a-f]{64}$/;
@@ -60,6 +75,14 @@ export class MediaSyncSnapshotMaterializationError
 export type MaterializeMediaSyncSnapshotInput = {
   job: MediaSyncJobRecord;
   summary: MediaSyncStagingSummary;
+
+  /**
+   * 한 RPC가 처리하는 report_rows 최대 개수.
+   *
+   * 기본값: 2,000
+   * 허용 범위: 1~5,000
+   */
+  batchSize?: number;
 };
 
 export type MediaSyncSnapshotMaterializationResult = {
@@ -74,7 +97,62 @@ export type MediaSyncSnapshotMaterializationResult = {
 type UnknownRecord =
   Record<string, unknown>;
 
-type MaterializationRpcRecord = {
+type MaterializationScope = {
+  jobId: string;
+  reportId: string;
+  workspaceId: string;
+  advertiserId: string;
+  connectionId: string;
+  provider: typeof NAVER_PROVIDER;
+  externalAccountId: string;
+  dateFrom: string;
+  dateTo: string;
+  expectedRows: number;
+};
+
+type PrepareMaterializationRpcRecord = {
+  job: unknown;
+  snapshot_ingestion_id: unknown;
+  expected_rows: unknown;
+  next_row_index: unknown;
+  idempotent: unknown;
+};
+
+type PrepareMaterializationResult = {
+  job: MediaSyncJobRecord;
+  snapshotIngestionId: string;
+  expectedRows: number;
+  nextRowIndex: number;
+  idempotent: boolean;
+};
+
+type MaterializationBatchRpcRecord = {
+  job: unknown;
+  snapshot_ingestion_id: unknown;
+  batch_start: unknown;
+  batch_end_exclusive: unknown;
+  expected_batch_rows: unknown;
+  inserted_rows: unknown;
+  materialized_batch_rows: unknown;
+  next_row_index: unknown;
+  complete: unknown;
+  idempotent: unknown;
+};
+
+type MaterializationBatchResult = {
+  job: MediaSyncJobRecord;
+  snapshotIngestionId: string;
+  batchStart: number;
+  batchEndExclusive: number;
+  expectedBatchRows: number;
+  insertedRows: number;
+  materializedBatchRows: number;
+  nextRowIndex: number;
+  complete: boolean;
+  idempotent: boolean;
+};
+
+type CompleteMaterializationRpcRecord = {
   job: unknown;
   snapshot_ingestion_id: unknown;
   row_count: unknown;
@@ -183,6 +261,73 @@ function normalizeNonNegativeInteger(
   return numberValue;
 }
 
+function normalizePositiveInteger(
+  value: unknown,
+  fieldName: string,
+): number {
+  const numberValue =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number(value)
+        : Number.NaN;
+
+  if (
+    !Number.isSafeInteger(numberValue) ||
+    numberValue <= 0
+  ) {
+    throw new MediaSyncSnapshotMaterializationError(
+      "INVALID_DATABASE_RESULT",
+      `${fieldName} must be a positive safe integer.`,
+    );
+  }
+
+  return numberValue;
+}
+
+function normalizeBoolean(
+  value: unknown,
+  fieldName: string,
+): boolean {
+  if (typeof value !== "boolean") {
+    throw new MediaSyncSnapshotMaterializationError(
+      "INVALID_DATABASE_RESULT",
+      `${fieldName} must be a boolean.`,
+    );
+  }
+
+  return value;
+}
+
+function normalizeBatchSize(
+  value: unknown,
+): number {
+  if (
+    value === undefined ||
+    value === null
+  ) {
+    return DEFAULT_MATERIALIZATION_BATCH_SIZE;
+  }
+
+  const numberValue =
+    Number(value);
+
+  if (
+    !Number.isSafeInteger(numberValue) ||
+    numberValue <
+      MIN_MATERIALIZATION_BATCH_SIZE ||
+    numberValue >
+      MAX_MATERIALIZATION_BATCH_SIZE
+  ) {
+    throw new MediaSyncSnapshotMaterializationError(
+      "INVALID_INPUT",
+      `batchSize must be an integer between ${MIN_MATERIALIZATION_BATCH_SIZE} and ${MAX_MATERIALIZATION_BATCH_SIZE}.`,
+    );
+  }
+
+  return numberValue;
+}
+
 function validateJob(
   value: unknown,
 ): asserts value is MediaSyncJobRecord {
@@ -193,11 +338,30 @@ function validateJob(
     );
   }
 
-  normalizeUuid(value.id, "job.id");
-  normalizeUuid(value.report_id, "job.report_id");
-  normalizeUuid(value.workspace_id, "job.workspace_id");
-  normalizeUuid(value.advertiser_id, "job.advertiser_id");
-  normalizeUuid(value.connection_id, "job.connection_id");
+  normalizeUuid(
+    value.id,
+    "job.id",
+  );
+
+  normalizeUuid(
+    value.report_id,
+    "job.report_id",
+  );
+
+  normalizeUuid(
+    value.workspace_id,
+    "job.workspace_id",
+  );
+
+  normalizeUuid(
+    value.advertiser_id,
+    "job.advertiser_id",
+  );
+
+  normalizeUuid(
+    value.connection_id,
+    "job.connection_id",
+  );
 
   normalizeRequiredString(
     value.external_account_id,
@@ -305,6 +469,78 @@ function validateCompleteSummary(
   }
 }
 
+function buildMaterializationScope(
+  input: MaterializeMediaSyncSnapshotInput,
+): MaterializationScope {
+  return {
+    jobId:
+      input.job.id,
+
+    reportId:
+      input.job.report_id,
+
+    workspaceId:
+      input.job.workspace_id,
+
+    advertiserId:
+      input.job.advertiser_id,
+
+    connectionId:
+      input.job.connection_id,
+
+    provider:
+      NAVER_PROVIDER,
+
+    externalAccountId:
+      input.job.external_account_id,
+
+    dateFrom:
+      input.job.date_from,
+
+    dateTo:
+      input.job.date_to,
+
+    expectedRows:
+      input.summary.totalRows,
+  };
+}
+
+function buildBasePayload(
+  scope: MaterializationScope,
+): Record<string, unknown> {
+  return {
+    job_id:
+      scope.jobId,
+
+    report_id:
+      scope.reportId,
+
+    workspace_id:
+      scope.workspaceId,
+
+    advertiser_id:
+      scope.advertiserId,
+
+    connection_id:
+      scope.connectionId,
+
+    provider:
+      scope.provider,
+
+    external_account_id:
+      scope.externalAccountId,
+
+    date_from:
+      scope.dateFrom,
+
+    date_to:
+      scope.dateTo,
+
+    expected_rows:
+      scope.expectedRows,
+  };
+}
+
 function mapRpcError(
   error: unknown,
 ): MediaSyncSnapshotMaterializationError {
@@ -393,10 +629,10 @@ function mapRpcError(
   );
 }
 
-function parseRpcResult(
+function parseSingleRpcRecord(
   value: unknown,
-  input: MaterializeMediaSyncSnapshotInput,
-): MediaSyncSnapshotMaterializationResult {
+  operationName: string,
+): UnknownRecord {
   if (
     !Array.isArray(value) ||
     value.length !== 1 ||
@@ -404,28 +640,95 @@ function parseRpcResult(
   ) {
     throw new MediaSyncSnapshotMaterializationError(
       "INVALID_DATABASE_RESULT",
-      "The snapshot materialization RPC returned an invalid result.",
+      `The ${operationName} RPC returned an invalid result.`,
     );
   }
 
-  const record =
-    value[0] as MaterializationRpcRecord;
+  return value[0];
+}
 
-  let updatedJob:
-    MediaSyncJobRecord;
-
+function parseJob(
+  value: unknown,
+  operationName: string,
+): MediaSyncJobRecord {
   try {
-    updatedJob =
-      parseMediaSyncJobRecord(
-        record.job,
-      );
+    return parseMediaSyncJobRecord(
+      value,
+    );
   } catch (error) {
     throw new MediaSyncSnapshotMaterializationError(
       "INVALID_DATABASE_RESULT",
-      "The snapshot materialization RPC returned an invalid media sync job.",
+      `The ${operationName} RPC returned an invalid media sync job.`,
       { cause: error },
     );
   }
+}
+
+function validateReturnedJobScope(
+  updatedJob: MediaSyncJobRecord,
+  inputJob: MediaSyncJobRecord,
+  snapshotIngestionId: string,
+  operationName: string,
+): void {
+  if (
+    updatedJob.id !== inputJob.id ||
+    updatedJob.report_id !==
+      inputJob.report_id ||
+    updatedJob.workspace_id !==
+      inputJob.workspace_id ||
+    updatedJob.advertiser_id !==
+      inputJob.advertiser_id ||
+    updatedJob.connection_id !==
+      inputJob.connection_id ||
+    updatedJob.provider !==
+      inputJob.provider ||
+    updatedJob.external_account_id !==
+      inputJob.external_account_id ||
+    updatedJob.date_from !==
+      inputJob.date_from ||
+    updatedJob.date_to !==
+      inputJob.date_to ||
+    updatedJob.mode !==
+      inputJob.mode ||
+    updatedJob.status !==
+      PROCESSING_STATUS ||
+    updatedJob.progress !==
+      inputJob.progress ||
+    updatedJob.finished_at !==
+      inputJob.finished_at ||
+    updatedJob.error !==
+      inputJob.error ||
+    JSON.stringify(
+      updatedJob.error_detail,
+    ) !==
+      JSON.stringify(
+        inputJob.error_detail,
+      ) ||
+    updatedJob.snapshot_ingestion_id !==
+      snapshotIngestionId
+  ) {
+    throw new MediaSyncSnapshotMaterializationError(
+      "INVALID_DATABASE_RESULT",
+      `The ${operationName} result violates the media sync job contract.`,
+    );
+  }
+}
+
+function parsePrepareResult(
+  value: unknown,
+  input: MaterializeMediaSyncSnapshotInput,
+): PrepareMaterializationResult {
+  const record =
+    parseSingleRpcRecord(
+      value,
+      "snapshot materialization preparation",
+    ) as PrepareMaterializationRpcRecord;
+
+  const updatedJob =
+    parseJob(
+      record.job,
+      "snapshot materialization preparation",
+    );
 
   const snapshotIngestionId =
     normalizeUuid(
@@ -433,8 +736,237 @@ function parseRpcResult(
       "snapshot_ingestion_id",
     );
 
-  const rowCount =
+  const expectedRows =
+    normalizePositiveInteger(
+      record.expected_rows,
+      "expected_rows",
+    );
+
+  const nextRowIndex =
     normalizeNonNegativeInteger(
+      record.next_row_index,
+      "next_row_index",
+    );
+
+  const idempotent =
+    normalizeBoolean(
+      record.idempotent,
+      "idempotent",
+    );
+
+  validateReturnedJobScope(
+    updatedJob,
+    input.job,
+    snapshotIngestionId,
+    "snapshot materialization preparation",
+  );
+
+  if (
+    expectedRows !==
+      input.summary.totalRows ||
+    nextRowIndex >
+      expectedRows
+  ) {
+    throw new MediaSyncSnapshotMaterializationError(
+      "INVALID_DATABASE_RESULT",
+      "The snapshot materialization preparation result violates the repository contract.",
+    );
+  }
+
+  return {
+    job:
+      updatedJob,
+
+    snapshotIngestionId,
+
+    expectedRows,
+
+    nextRowIndex,
+
+    idempotent,
+  };
+}
+
+function parseBatchResult(
+  value: unknown,
+  input: {
+    originalJob: MediaSyncJobRecord;
+    snapshotIngestionId: string;
+    expectedRows: number;
+    requestedBatchStart: number;
+    requestedBatchSize: number;
+  },
+): MaterializationBatchResult {
+  const record =
+    parseSingleRpcRecord(
+      value,
+      "snapshot materialization batch",
+    ) as MaterializationBatchRpcRecord;
+
+  const updatedJob =
+    parseJob(
+      record.job,
+      "snapshot materialization batch",
+    );
+
+  const snapshotIngestionId =
+    normalizeUuid(
+      record.snapshot_ingestion_id,
+      "snapshot_ingestion_id",
+    );
+
+  const batchStart =
+    normalizeNonNegativeInteger(
+      record.batch_start,
+      "batch_start",
+    );
+
+  const batchEndExclusive =
+    normalizePositiveInteger(
+      record.batch_end_exclusive,
+      "batch_end_exclusive",
+    );
+
+  const expectedBatchRows =
+    normalizePositiveInteger(
+      record.expected_batch_rows,
+      "expected_batch_rows",
+    );
+
+  const insertedRows =
+    normalizeNonNegativeInteger(
+      record.inserted_rows,
+      "inserted_rows",
+    );
+
+  const materializedBatchRows =
+    normalizePositiveInteger(
+      record.materialized_batch_rows,
+      "materialized_batch_rows",
+    );
+
+  const nextRowIndex =
+    normalizeNonNegativeInteger(
+      record.next_row_index,
+      "next_row_index",
+    );
+
+  const complete =
+    normalizeBoolean(
+      record.complete,
+      "complete",
+    );
+
+  const idempotent =
+    normalizeBoolean(
+      record.idempotent,
+      "idempotent",
+    );
+
+  validateReturnedJobScope(
+    updatedJob,
+    input.originalJob,
+    snapshotIngestionId,
+    "snapshot materialization batch",
+  );
+
+  const expectedBatchEndExclusive =
+    Math.min(
+      input.requestedBatchStart +
+        input.requestedBatchSize,
+      input.expectedRows,
+    );
+
+  const expectedRequestedBatchRows =
+    expectedBatchEndExclusive -
+    input.requestedBatchStart;
+
+  if (
+    snapshotIngestionId !==
+      input.snapshotIngestionId ||
+    batchStart !==
+      input.requestedBatchStart ||
+    batchEndExclusive !==
+      expectedBatchEndExclusive ||
+    expectedBatchRows !==
+      expectedRequestedBatchRows ||
+    materializedBatchRows !==
+      expectedBatchRows ||
+    insertedRows >
+      expectedBatchRows ||
+    nextRowIndex >
+      input.expectedRows ||
+    complete !==
+      (
+        nextRowIndex >=
+        input.expectedRows
+      )
+  ) {
+    throw new MediaSyncSnapshotMaterializationError(
+      "INVALID_DATABASE_RESULT",
+      "The snapshot materialization batch result violates the repository contract.",
+    );
+  }
+
+  if (
+    idempotent &&
+    insertedRows !== 0
+  ) {
+    throw new MediaSyncSnapshotMaterializationError(
+      "INVALID_DATABASE_RESULT",
+      "An idempotent materialization batch unexpectedly inserted rows.",
+    );
+  }
+
+  return {
+    job:
+      updatedJob,
+
+    snapshotIngestionId,
+
+    batchStart,
+
+    batchEndExclusive,
+
+    expectedBatchRows,
+
+    insertedRows,
+
+    materializedBatchRows,
+
+    nextRowIndex,
+
+    complete,
+
+    idempotent,
+  };
+}
+
+function parseCompleteResult(
+  value: unknown,
+  input: MaterializeMediaSyncSnapshotInput,
+  snapshotIngestionId: string,
+): MediaSyncSnapshotMaterializationResult {
+  const record =
+    parseSingleRpcRecord(
+      value,
+      "snapshot materialization completion",
+    ) as CompleteMaterializationRpcRecord;
+
+  const updatedJob =
+    parseJob(
+      record.job,
+      "snapshot materialization completion",
+    );
+
+  const returnedSnapshotIngestionId =
+    normalizeUuid(
+      record.snapshot_ingestion_id,
+      "snapshot_ingestion_id",
+    );
+
+  const rowCount =
+    normalizePositiveInteger(
       record.row_count,
       "row_count",
     );
@@ -453,86 +985,69 @@ function parseRpcResult(
       64,
     );
 
+  const idempotent =
+    normalizeBoolean(
+      record.idempotent,
+      "idempotent",
+    );
+
   if (
-    !SHA256_PATTERN.test(stagingFingerprint) ||
-    !SHA256_PATTERN.test(materializedFingerprint)
+    !SHA256_PATTERN.test(
+      stagingFingerprint,
+    ) ||
+    !SHA256_PATTERN.test(
+      materializedFingerprint,
+    )
   ) {
     throw new MediaSyncSnapshotMaterializationError(
       "INVALID_DATABASE_RESULT",
-      "The snapshot materialization RPC returned an invalid fingerprint.",
+      "The snapshot materialization completion RPC returned an invalid fingerprint.",
     );
   }
 
-  if (typeof record.idempotent !== "boolean") {
-    throw new MediaSyncSnapshotMaterializationError(
-      "INVALID_DATABASE_RESULT",
-      "The snapshot materialization RPC returned an invalid idempotent flag.",
-    );
-  }
+  validateReturnedJobScope(
+    updatedJob,
+    input.job,
+    returnedSnapshotIngestionId,
+    "snapshot materialization completion",
+  );
 
   if (
-    updatedJob.id !== input.job.id ||
-    updatedJob.report_id !== input.job.report_id ||
-    updatedJob.workspace_id !== input.job.workspace_id ||
-    updatedJob.advertiser_id !== input.job.advertiser_id ||
-    updatedJob.connection_id !== input.job.connection_id ||
-    updatedJob.provider !== input.job.provider ||
-    updatedJob.external_account_id !== input.job.external_account_id ||
-    updatedJob.status !== PROCESSING_STATUS ||
-    updatedJob.progress !== input.job.progress ||
-    updatedJob.finished_at !== input.job.finished_at ||
-    updatedJob.error !== input.job.error ||
-    JSON.stringify(updatedJob.error_detail) !==
-      JSON.stringify(input.job.error_detail) ||
-    updatedJob.snapshot_ingestion_id !== snapshotIngestionId ||
-    rowCount !== input.summary.totalRows ||
-    stagingFingerprint !== materializedFingerprint
+    returnedSnapshotIngestionId !==
+      snapshotIngestionId ||
+    rowCount !==
+      input.summary.totalRows ||
+    stagingFingerprint !==
+      materializedFingerprint
   ) {
     throw new MediaSyncSnapshotMaterializationError(
       "INVALID_DATABASE_RESULT",
-      "The snapshot materialization result violates the repository contract.",
+      "The snapshot materialization completion result violates the repository contract.",
     );
   }
 
   return {
-    job: updatedJob,
-    snapshotIngestionId,
+    job:
+      updatedJob,
+
+    snapshotIngestionId:
+      returnedSnapshotIngestionId,
+
     rowCount,
+
     stagingFingerprint,
+
     materializedFingerprint,
-    idempotent: record.idempotent,
+
+    idempotent,
   };
 }
 
-export async function materializeMediaSyncSnapshot(
-  input: MaterializeMediaSyncSnapshotInput,
-): Promise<MediaSyncSnapshotMaterializationResult> {
-  if (!input || typeof input !== "object") {
-    throw new MediaSyncSnapshotMaterializationError(
-      "INVALID_INPUT",
-      "Snapshot materialization input is required.",
-    );
-  }
-
-  validateJob(input.job);
-  validateCompleteSummary(
-    input.job,
-    input.summary,
-  );
-
-  const payload = {
-    job_id: input.job.id,
-    report_id: input.job.report_id,
-    workspace_id: input.job.workspace_id,
-    advertiser_id: input.job.advertiser_id,
-    connection_id: input.job.connection_id,
-    provider: input.job.provider,
-    external_account_id: input.job.external_account_id,
-    date_from: input.job.date_from,
-    date_to: input.job.date_to,
-    expected_rows: input.summary.totalRows,
-  };
-
+async function callMaterializationRpc(
+  rpcName: string,
+  payload: Record<string, unknown>,
+  operationName: string,
+): Promise<unknown> {
   const supabase =
     getSupabaseAdmin();
 
@@ -541,28 +1056,425 @@ export async function materializeMediaSyncSnapshot(
   try {
     result =
       await supabase.rpc(
-        MATERIALIZE_MEDIA_SYNC_SNAPSHOT_RPC,
+        rpcName,
         {
-          p_payload: payload,
+          p_payload:
+            payload,
         },
       );
   } catch (error) {
     throw new MediaSyncSnapshotMaterializationError(
       "DATABASE_ERROR",
-      "The snapshot materialization repository could not access the database.",
+      `The ${operationName} repository operation could not access the database.`,
       { cause: error },
     );
   }
 
-  const { data, error } =
-    result;
+  const {
+    data,
+    error,
+  } = result;
 
   if (error) {
-    throw mapRpcError(error);
+    throw mapRpcError(
+      error,
+    );
   }
 
-  return parseRpcResult(
+  return data;
+}
+
+async function prepareMaterialization(
+  input: MaterializeMediaSyncSnapshotInput,
+  scope: MaterializationScope,
+): Promise<PrepareMaterializationResult> {
+  const data =
+    await callMaterializationRpc(
+      PREPARE_MEDIA_SYNC_SNAPSHOT_MATERIALIZATION_RPC,
+      buildBasePayload(
+        scope,
+      ),
+      "snapshot materialization preparation",
+    );
+
+  return parsePrepareResult(
     data,
     input,
   );
+}
+
+async function materializeBatch(
+  input: {
+    originalInput:
+      MaterializeMediaSyncSnapshotInput;
+
+    scope:
+      MaterializationScope;
+
+    snapshotIngestionId:
+      string;
+
+    batchStart:
+      number;
+
+    batchSize:
+      number;
+  },
+): Promise<MaterializationBatchResult> {
+  const payload = {
+    ...buildBasePayload(
+      input.scope,
+    ),
+
+    snapshot_ingestion_id:
+      input.snapshotIngestionId,
+
+    batch_start:
+      input.batchStart,
+
+    batch_size:
+      input.batchSize,
+  };
+
+  const data =
+    await callMaterializationRpc(
+      MATERIALIZE_MEDIA_SYNC_SNAPSHOT_BATCH_RPC,
+      payload,
+      "snapshot materialization batch",
+    );
+
+  return parseBatchResult(
+    data,
+    {
+      originalJob:
+        input.originalInput.job,
+
+      snapshotIngestionId:
+        input.snapshotIngestionId,
+
+      expectedRows:
+        input.scope.expectedRows,
+
+      requestedBatchStart:
+        input.batchStart,
+
+      requestedBatchSize:
+        input.batchSize,
+    },
+  );
+}
+
+async function completeMaterialization(
+  input: MaterializeMediaSyncSnapshotInput,
+  scope: MaterializationScope,
+  snapshotIngestionId: string,
+): Promise<MediaSyncSnapshotMaterializationResult> {
+  const payload = {
+    ...buildBasePayload(
+      scope,
+    ),
+
+    snapshot_ingestion_id:
+      snapshotIngestionId,
+  };
+
+  const data =
+    await callMaterializationRpc(
+      COMPLETE_MEDIA_SYNC_SNAPSHOT_MATERIALIZATION_RPC,
+      payload,
+      "snapshot materialization completion",
+    );
+
+  return parseCompleteResult(
+    data,
+    input,
+    snapshotIngestionId,
+  );
+}
+
+export async function materializeMediaSyncSnapshot(
+  input: MaterializeMediaSyncSnapshotInput,
+): Promise<MediaSyncSnapshotMaterializationResult> {
+  if (
+    !input ||
+    typeof input !== "object"
+  ) {
+    throw new MediaSyncSnapshotMaterializationError(
+      "INVALID_INPUT",
+      "Snapshot materialization input is required.",
+    );
+  }
+
+  validateJob(
+    input.job,
+  );
+
+  validateCompleteSummary(
+    input.job,
+    input.summary,
+  );
+
+  const batchSize =
+    normalizeBatchSize(
+      input.batchSize,
+    );
+
+  const scope =
+    buildMaterializationScope(
+      input,
+    );
+
+  console.log(
+    "[media-sync-materialization] prepare:start",
+    {
+      jobId:
+        scope.jobId,
+      reportId:
+        scope.reportId,
+      expectedRows:
+        scope.expectedRows,
+      batchSize,
+    },
+  );
+
+  let preparation:
+    PrepareMaterializationResult;
+
+  try {
+    preparation =
+      await prepareMaterialization(
+        input,
+        scope,
+      );
+  } catch (error) {
+    console.error(
+      "[media-sync-materialization] prepare:failed",
+      {
+        jobId:
+          scope.jobId,
+        reportId:
+          scope.reportId,
+        expectedRows:
+          scope.expectedRows,
+      },
+      error,
+    );
+
+    throw error;
+  }
+
+  console.log(
+    "[media-sync-materialization] prepare:done",
+    {
+      jobId:
+        scope.jobId,
+      snapshotIngestionId:
+        preparation.snapshotIngestionId,
+      expectedRows:
+        preparation.expectedRows,
+      nextRowIndex:
+        preparation.nextRowIndex,
+      idempotent:
+        preparation.idempotent,
+    },
+  );
+
+  /*
+   * Exact retry safety:
+   *
+   * A completed snapshot preparation may return nextRowIndex === expectedRows.
+   * Restart from row 0 when preparation is idempotent so every bounded batch
+   * revalidates existing report_rows against staging without inserting
+   * duplicates.
+   */
+  let nextRowIndex =
+    preparation.idempotent
+      ? 0
+      : preparation.nextRowIndex;
+
+  let everyExecutedBatchWasIdempotent =
+    true;
+
+  let executedBatchCount =
+    0;
+
+  while (
+    nextRowIndex <
+    scope.expectedRows
+  ) {
+    const batchStart =
+      nextRowIndex;
+
+    const batchEndExclusive =
+      Math.min(
+        batchStart + batchSize,
+        scope.expectedRows,
+      );
+
+    console.log(
+      "[media-sync-materialization] batch:start",
+      {
+        jobId:
+          scope.jobId,
+        snapshotIngestionId:
+          preparation.snapshotIngestionId,
+        batchStart,
+        batchEndExclusive,
+        expectedRows:
+          scope.expectedRows,
+      },
+    );
+
+    let batch:
+      MaterializationBatchResult;
+
+    try {
+      batch =
+        await materializeBatch({
+          originalInput:
+            input,
+
+          scope,
+
+          snapshotIngestionId:
+            preparation.snapshotIngestionId,
+
+          batchStart,
+
+          batchSize,
+        });
+    } catch (error) {
+      console.error(
+        "[media-sync-materialization] batch:failed",
+        {
+          jobId:
+            scope.jobId,
+          snapshotIngestionId:
+            preparation.snapshotIngestionId,
+          batchStart,
+          batchEndExclusive,
+          expectedRows:
+            scope.expectedRows,
+        },
+        error,
+      );
+
+      throw error;
+    }
+
+    console.log(
+      "[media-sync-materialization] batch:done",
+      {
+        jobId:
+          scope.jobId,
+        snapshotIngestionId:
+          preparation.snapshotIngestionId,
+        batchStart:
+          batch.batchStart,
+        batchEndExclusive:
+          batch.batchEndExclusive,
+        insertedRows:
+          batch.insertedRows,
+        materializedBatchRows:
+          batch.materializedBatchRows,
+        nextRowIndex:
+          batch.nextRowIndex,
+        complete:
+          batch.complete,
+        idempotent:
+          batch.idempotent,
+      },
+    );
+
+    executedBatchCount += 1;
+
+    if (!batch.idempotent) {
+      everyExecutedBatchWasIdempotent =
+        false;
+    }
+
+    if (
+      batch.nextRowIndex <=
+        batchStart &&
+      !batch.complete
+    ) {
+      throw new MediaSyncSnapshotMaterializationError(
+        "INVALID_DATABASE_RESULT",
+        "The bounded materialization batch did not advance the next row index.",
+      );
+    }
+
+    nextRowIndex =
+      batch.nextRowIndex;
+  }
+
+  console.log(
+    "[media-sync-materialization] complete:start",
+    {
+      jobId:
+        scope.jobId,
+      reportId:
+        scope.reportId,
+      snapshotIngestionId:
+        preparation.snapshotIngestionId,
+      expectedRows:
+        scope.expectedRows,
+    },
+  );
+
+  let completion:
+    MediaSyncSnapshotMaterializationResult;
+
+  try {
+    completion =
+      await completeMaterialization(
+        input,
+        scope,
+        preparation.snapshotIngestionId,
+      );
+  } catch (error) {
+    console.error(
+      "[media-sync-materialization] complete:failed",
+      {
+        jobId:
+          scope.jobId,
+        reportId:
+          scope.reportId,
+        snapshotIngestionId:
+          preparation.snapshotIngestionId,
+        expectedRows:
+          scope.expectedRows,
+      },
+      error,
+    );
+
+    throw error;
+  }
+
+  console.log(
+    "[media-sync-materialization] complete:done",
+    {
+      jobId:
+        scope.jobId,
+      snapshotIngestionId:
+        completion.snapshotIngestionId,
+      rowCount:
+        completion.rowCount,
+      idempotent:
+        completion.idempotent,
+    },
+  );
+
+  const idempotent =
+    preparation.idempotent &&
+    (
+      executedBatchCount === 0 ||
+      everyExecutedBatchWasIdempotent
+    ) &&
+    completion.idempotent;
+
+  return {
+    ...completion,
+    idempotent,
+  };
 }

@@ -85,7 +85,6 @@ type ReportState = {
   currentIngestionId: string | null;
   publishedIngestionId: string | null;
   totalReportRows: number;
-  reportRowsSnapshot: string;
 };
 
 type ConnectionState = {
@@ -712,36 +711,20 @@ async function readReportState(
   const rowsResult =
     await supabase
       .from(REPORT_ROWS_TABLE)
-      .select(
-        "id, ingestion_id, row_index, date, channel, device, source, row",
-      )
-      .eq("report_id", reportId)
-      .order("ingestion_id", {
-        ascending:
-          true,
+      .select("id", {
+        count:
+          "exact",
 
-        nullsFirst:
+        head:
           true,
       })
-      .order("row_index", {
-        ascending:
-          true,
-      })
-      .order("id", {
-        ascending:
-          true,
-      });
+      .eq("report_id", reportId);
 
   if (rowsResult.error) {
     throw new Error(
-      "VERIFICATION_REPORT_ROWS_STATE_READ_FAILED",
+      "VERIFICATION_REPORT_ROWS_COUNT_READ_FAILED",
     );
   }
-
-  const rows =
-    Array.isArray(rowsResult.data)
-      ? rowsResult.data
-      : [];
 
   return {
     currentIngestionId:
@@ -761,10 +744,7 @@ async function readReportState(
         : null,
 
     totalReportRows:
-      rows.length,
-
-    reportRowsSnapshot:
-      stableJson(rows),
+      rowsResult.count ?? 0,
   };
 }
 
@@ -1309,8 +1289,6 @@ async function cleanupFixture(input: {
       reportStateBefore.publishedIngestionId &&
     reportStateAfter.totalReportRows ===
       reportStateBefore.totalReportRows &&
-    reportStateAfter.reportRowsSnapshot ===
-      reportStateBefore.reportRowsSnapshot &&
     connectionStateAfter.lastSyncAt ===
       connectionStateBefore.lastSyncAt &&
     connectionStateAfter.lastError ===
@@ -1625,9 +1603,7 @@ async function main(): Promise<void> {
           reportStateDuringPartial.publishedIngestionId !==
             reportStateBefore.publishedIngestionId ||
           reportStateDuringPartial.totalReportRows !==
-            reportStateBefore.totalReportRows ||
-          reportStateDuringPartial.reportRowsSnapshot !==
-            reportStateBefore.reportRowsSnapshot
+            reportStateBefore.totalReportRows
         ) {
           throw new Error(
             "VERIFICATION_PARTIAL_RESUME_STATE_INVALID",

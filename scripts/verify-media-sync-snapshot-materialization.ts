@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { getSupabaseAdmin } from "../src/lib/supabase/admin";
 import {
   createPendingMediaSyncJob,
@@ -44,6 +46,30 @@ const NAVER_PROVIDER =
 
 const PROCESSING_STATUS =
   "processing" as const;
+
+const LARGE_FIXTURE_ENV =
+  "MEDIA_SYNC_LARGE_FIXTURE";
+
+const LARGE_FIXTURE_ROW_COUNT_ENV =
+  "MEDIA_SYNC_LARGE_FIXTURE_ROW_COUNT";
+
+const DEFAULT_LARGE_FIXTURE_ROW_COUNT =
+  44_514;
+
+const MAX_LARGE_FIXTURE_ROW_COUNT =
+  100_000;
+
+const STAGING_APPEND_BATCH_SIZE =
+  500;
+
+const MATERIALIZATION_BATCH_SIZE =
+  2_000;
+
+const DATABASE_PAGE_SIZE =
+  1_000;
+
+const CLEANUP_DELETE_BATCH_SIZE =
+  100;
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -206,6 +232,51 @@ function readVerificationInput(): VerificationInput {
   };
 }
 
+function readBooleanEnv(
+  name: string,
+): boolean {
+  const value =
+    String(process.env[name] ?? "")
+      .trim()
+      .toLowerCase();
+
+  return (
+    value === "1" ||
+    value === "true" ||
+    value === "yes" ||
+    value === "on"
+  );
+}
+
+function readLargeFixtureRowCount(): number {
+  if (!readBooleanEnv(LARGE_FIXTURE_ENV)) {
+    return 3;
+  }
+
+  const rawValue =
+    String(
+      process.env[
+        LARGE_FIXTURE_ROW_COUNT_ENV
+      ] ??
+        DEFAULT_LARGE_FIXTURE_ROW_COUNT,
+    ).trim();
+
+  const value =
+    Number(rawValue);
+
+  if (
+    !Number.isSafeInteger(value) ||
+    value < 3 ||
+    value > MAX_LARGE_FIXTURE_ROW_COUNT
+  ) {
+    throw new Error(
+      `${LARGE_FIXTURE_ROW_COUNT_ENV} must be an integer between 3 and ${MAX_LARGE_FIXTURE_ROW_COUNT}.`,
+    );
+  }
+
+  return value;
+}
+
 function stableJson(value: unknown): string {
   if (
     value === null ||
@@ -281,36 +352,20 @@ async function readReportState(
   ) {
     throw new Error(
       "VERIFICATION_REPORT_STATE_READ_FAILED",
+      {
+        cause:
+          reportResult.error ?? undefined,
+      },
     );
   }
 
-  const rowsResult =
-    await supabase
-      .from(REPORT_ROWS_TABLE)
-      .select(
-        "id, ingestion_id, row_index, date, channel, device, source, row",
-      )
-      .eq("report_id", reportId)
-      .order("ingestion_id", {
-        ascending: true,
-        nullsFirst: true,
-      })
-      .order("row_index", {
-        ascending: true,
-      })
-      .order("id", {
-        ascending: true,
-      });
-
-  if (
-    rowsResult.error ||
-    !Array.isArray(rowsResult.data)
-  ) {
-    throw new Error(
-      "VERIFICATION_REPORT_ROWS_STATE_READ_FAILED",
-    );
-  }
-
+  /*
+   * Large materialization fixtures must not scan or count every existing
+   * report_rows record before they can begin. The fixture already verifies
+   * the newly created snapshot by ingestion_id and removes it during cleanup.
+   * Here we preserve the safety contract by checking only the two report
+   * pointers, which are the state this materialization step must never change.
+   */
   return {
     currentIngestionId:
       reportResult.data
@@ -323,10 +378,10 @@ async function readReportState(
       null,
 
     totalReportRows:
-      rowsResult.data.length,
+      0,
 
     reportRowsSnapshot:
-      stableJson(rowsResult.data),
+      "POINTER_ONLY_REPORT_STATE",
   };
 }
 
@@ -359,20 +414,23 @@ function createCanonicalFixtureRows(input: {
   externalAccountId: string;
   dateFrom: string;
   dateTo: string;
+  rowCount: number;
 }): EtrylueNormalizedMediaRow[] {
-  const dates = [
-    input.dateFrom,
-    input.dateTo,
-    input.dateTo,
-  ];
-
-  return dates.map(
+  return Array.from(
+    { length: input.rowCount },
     (
-      date,
+      _,
       index,
     ): EtrylueNormalizedMediaRow => {
       const suffix =
         String(index + 1);
+
+      const date =
+        index === 0
+          ? input.dateFrom
+          : index % 2 === 0
+            ? input.dateFrom
+            : input.dateTo;
 
       return {
         date,
@@ -416,22 +474,22 @@ function createCanonicalFixtureRows(input: {
           `materialization-fixture-keyword-${suffix}`,
 
         impressions:
-          100 + index,
+          100 + (index % 1_000),
 
         clicks:
-          10 + index,
+          10 + (index % 100),
 
         cost:
           1_000 + index,
 
         conversions:
-          1 + index,
+          1 + (index % 10),
 
         revenue:
           2_000 + index,
 
         rank:
-          1 + index,
+          1 + (index % 15),
 
         row_level:
           "keyword",
@@ -464,11 +522,95 @@ function createCanonicalFixtureRows(input: {
           fixture: true,
           fixture_index: index,
           verification:
-            "snapshot_materialization",
+            input.rowCount > 3
+              ? "large_snapshot_materialization"
+              : "snapshot_materialization",
         },
       };
     },
   );
+}
+
+async function appendRemainingStagingRows(input: {
+  job: MediaSyncJobRecord;
+  rows: EtrylueNormalizedMediaRow[];
+  startIndex: number;
+}): Promise<void> {
+  let completedRows =
+    input.startIndex;
+
+  for (
+    let rowStartIndex = input.startIndex;
+    rowStartIndex < input.rows.length;
+    rowStartIndex += STAGING_APPEND_BATCH_SIZE
+  ) {
+    const rows =
+      input.rows.slice(
+        rowStartIndex,
+        rowStartIndex +
+          STAGING_APPEND_BATCH_SIZE,
+      );
+
+    try {
+      await appendMediaSyncStagingBatch({
+        job: input.job,
+        rows,
+        rowStartIndex,
+        dateWindowIndex:
+          Math.floor(
+            rowStartIndex /
+              STAGING_APPEND_BATCH_SIZE,
+          ),
+      });
+    } catch (error) {
+      console.error(
+        "staging append failed:",
+        {
+          startRowIndex:
+            rowStartIndex,
+          endRowIndex:
+            rowStartIndex +
+            rows.length -
+            1,
+          batchSize:
+            rows.length,
+          completedRows,
+          totalRows:
+            input.rows.length,
+        },
+      );
+
+      const diagnostic =
+        readSafeErrorDiagnostic(
+          error,
+        );
+
+      if (diagnostic) {
+        console.error(
+          "staging append diagnostic:",
+          diagnostic,
+        );
+      }
+
+      throw new Error(
+        "VERIFICATION_STAGING_APPEND_FAILED",
+        { cause: error },
+      );
+    }
+
+    completedRows +=
+      rows.length;
+
+    if (
+      completedRows === input.rows.length ||
+      completedRows % 5_000 < rows.length
+    ) {
+      console.log(
+        "staging fixture rows appended:",
+        `${completedRows}/${input.rows.length}`,
+      );
+    }
+  }
 }
 
 function createSyntheticCompleteSummary(input: {
@@ -564,28 +706,51 @@ async function readMaterializedRows(
   const supabase =
     getSupabaseAdmin();
 
-  const { data, error } =
-    await supabase
-      .from(REPORT_ROWS_TABLE)
-      .select(
-        "id, report_id, workspace_id, advertiser_id, ingestion_id, row_index, date, channel, device, source, row",
-      )
-      .eq("report_id", reportId)
-      .eq("ingestion_id", ingestionId)
-      .order("row_index", {
-        ascending: true,
-      });
+  const rows:
+    MaterializedRow[] = [];
 
-  if (
-    error ||
-    !Array.isArray(data)
+  for (
+    let offset = 0;
+    ;
+    offset += DATABASE_PAGE_SIZE
   ) {
-    throw new Error(
-      "VERIFICATION_MATERIALIZED_ROWS_READ_FAILED",
+    const { data, error } =
+      await supabase
+        .from(REPORT_ROWS_TABLE)
+        .select(
+          "id, report_id, workspace_id, advertiser_id, ingestion_id, row_index, date, channel, device, source, row",
+        )
+        .eq("report_id", reportId)
+        .eq("ingestion_id", ingestionId)
+        .order("row_index", {
+          ascending: true,
+        })
+        .range(
+          offset,
+          offset + DATABASE_PAGE_SIZE - 1,
+        );
+
+    if (
+      error ||
+      !Array.isArray(data)
+    ) {
+      throw new Error(
+        "VERIFICATION_MATERIALIZED_ROWS_READ_FAILED",
+      );
+    }
+
+    rows.push(
+      ...(data as unknown as MaterializedRow[]),
     );
+
+    if (
+      data.length < DATABASE_PAGE_SIZE
+    ) {
+      break;
+    }
   }
 
-  return data as unknown as MaterializedRow[];
+  return rows;
 }
 
 async function readStagingRowsSnapshot(
@@ -594,25 +759,51 @@ async function readStagingRowsSnapshot(
   const supabase =
     getSupabaseAdmin();
 
-  const { data, error } =
-    await supabase
-      .from(MEDIA_SYNC_STAGING_ROWS_TABLE)
-      .select("*")
-      .eq("job_id", jobId)
-      .order("row_index", {
-        ascending: true,
-      });
+  const hash =
+    createHash("sha256");
 
-  if (
-    error ||
-    !Array.isArray(data)
+  for (
+    let offset = 0;
+    ;
+    offset += DATABASE_PAGE_SIZE
   ) {
-    throw new Error(
-      "VERIFICATION_STAGING_SNAPSHOT_READ_FAILED",
-    );
+    const { data, error } =
+      await supabase
+        .from(MEDIA_SYNC_STAGING_ROWS_TABLE)
+        .select("*")
+        .eq("job_id", jobId)
+        .order("row_index", {
+          ascending: true,
+        })
+        .range(
+          offset,
+          offset + DATABASE_PAGE_SIZE - 1,
+        );
+
+    if (
+      error ||
+      !Array.isArray(data)
+    ) {
+      throw new Error(
+        "VERIFICATION_STAGING_SNAPSHOT_READ_FAILED",
+      );
+    }
+
+    for (const row of data) {
+      hash.update(
+        stableJson(row),
+      );
+      hash.update("\n");
+    }
+
+    if (
+      data.length < DATABASE_PAGE_SIZE
+    ) {
+      break;
+    }
   }
 
-  return stableJson(data);
+  return hash.digest("hex");
 }
 
 async function expectMaterializationError(
@@ -702,6 +893,116 @@ async function restoreMaterializedRow(
   }
 }
 
+async function deleteMaterializedRowsInBatches(input: {
+  reportId: string;
+  ingestionId: string;
+}): Promise<void> {
+  const supabase =
+    getSupabaseAdmin();
+
+  while (true) {
+    const page =
+      await supabase
+        .from(REPORT_ROWS_TABLE)
+        .select("id")
+        .eq("report_id", input.reportId)
+        .eq("ingestion_id", input.ingestionId)
+        .order("row_index", {
+          ascending: true,
+        })
+        .limit(CLEANUP_DELETE_BATCH_SIZE);
+
+    if (
+      page.error ||
+      !Array.isArray(page.data)
+    ) {
+      throw new Error(
+        "VERIFICATION_MATERIALIZED_ROWS_CLEANUP_READ_FAILED",
+        { cause: page.error },
+      );
+    }
+
+    if (page.data.length === 0) {
+      return;
+    }
+
+    const ids =
+      page.data
+        .map((row) => row.id)
+        .filter(
+          (id): id is string =>
+            typeof id === "string",
+        );
+
+    const deletion =
+      await supabase
+        .from(REPORT_ROWS_TABLE)
+        .delete()
+        .in("id", ids);
+
+    if (deletion.error) {
+      throw new Error(
+        "VERIFICATION_MATERIALIZED_ROWS_CLEANUP_FAILED",
+        { cause: deletion.error },
+      );
+    }
+  }
+}
+
+async function deleteStagingRowsInBatches(
+  jobId: string,
+): Promise<void> {
+  const supabase =
+    getSupabaseAdmin();
+
+  while (true) {
+    const page =
+      await supabase
+        .from(MEDIA_SYNC_STAGING_ROWS_TABLE)
+        .select("id")
+        .eq("job_id", jobId)
+        .order("row_index", {
+          ascending: true,
+        })
+        .limit(CLEANUP_DELETE_BATCH_SIZE);
+
+    if (
+      page.error ||
+      !Array.isArray(page.data)
+    ) {
+      throw new Error(
+        "VERIFICATION_STAGING_CLEANUP_READ_FAILED",
+        { cause: page.error },
+      );
+    }
+
+    if (page.data.length === 0) {
+      return;
+    }
+
+    const ids =
+      page.data
+        .map((row) => row.id)
+        .filter(
+          (id): id is string =>
+            typeof id === "string",
+        );
+
+    const deletion =
+      await supabase
+        .from(MEDIA_SYNC_STAGING_ROWS_TABLE)
+        .delete()
+        .in("id", ids);
+
+    if (deletion.error) {
+      throw new Error(
+        "VERIFICATION_STAGING_CLEANUP_FAILED",
+        { cause: deletion.error },
+      );
+    }
+  }
+}
+
 async function cleanupFixture(
   fixture: VerificationFixture,
 ): Promise<boolean> {
@@ -709,24 +1010,12 @@ async function cleanupFixture(
     getSupabaseAdmin();
 
   if (fixture.snapshotIngestionId) {
-    const rowsDelete =
-      await supabase
-        .from(REPORT_ROWS_TABLE)
-        .delete()
-        .eq(
-          "report_id",
-          fixture.reportId,
-        )
-        .eq(
-          "ingestion_id",
-          fixture.snapshotIngestionId,
-        );
-
-    if (rowsDelete.error) {
-      throw new Error(
-        "VERIFICATION_MATERIALIZED_ROWS_CLEANUP_FAILED",
-      );
-    }
+    await deleteMaterializedRowsInBatches({
+      reportId:
+        fixture.reportId,
+      ingestionId:
+        fixture.snapshotIngestionId,
+    });
 
     const ingestionDelete =
       await supabase
@@ -744,21 +1033,14 @@ async function cleanupFixture(
     if (ingestionDelete.error) {
       throw new Error(
         "VERIFICATION_INGESTION_CLEANUP_FAILED",
+        { cause: ingestionDelete.error },
       );
     }
   }
 
-  const stagingDelete =
-    await supabase
-      .from(MEDIA_SYNC_STAGING_ROWS_TABLE)
-      .delete()
-      .eq("job_id", fixture.jobId);
-
-  if (stagingDelete.error) {
-    throw new Error(
-      "VERIFICATION_STAGING_CLEANUP_FAILED",
-    );
-  }
+  await deleteStagingRowsInBatches(
+    fixture.jobId,
+  );
 
   const jobDelete =
     await supabase
@@ -770,6 +1052,7 @@ async function cleanupFixture(
   if (jobDelete.error) {
     throw new Error(
       "VERIFICATION_JOB_CLEANUP_FAILED",
+      { cause: jobDelete.error },
     );
   }
 
@@ -935,6 +1218,27 @@ async function main(): Promise<void> {
       contextMatches,
     );
 
+    const fixtureRowCount =
+      readLargeFixtureRowCount();
+
+    const largeFixtureEnabled =
+      fixtureRowCount > 3;
+
+    console.log(
+      "large materialization fixture:",
+      largeFixtureEnabled,
+    );
+
+    console.log(
+      "fixture row count:",
+      fixtureRowCount,
+    );
+
+    console.log(
+      "materialization batch size:",
+      MATERIALIZATION_BATCH_SIZE,
+    );
+
     const canonicalRows =
       createCanonicalFixtureRows({
         externalAccountId:
@@ -943,11 +1247,19 @@ async function main(): Promise<void> {
           claimedJob.date_from,
         dateTo:
           claimedJob.date_to,
+        rowCount:
+          fixtureRowCount,
       });
+
+    const incompleteRowCount =
+      Math.min(2, canonicalRows.length);
 
     await appendMediaSyncStagingBatch({
       job: claimedJob,
-      rows: canonicalRows.slice(0, 2),
+      rows: canonicalRows.slice(
+        0,
+        incompleteRowCount,
+      ),
       rowStartIndex: 0,
       dateWindowIndex: 0,
     });
@@ -972,6 +1284,8 @@ async function main(): Promise<void> {
             },
             summary:
               syntheticCompleteSummary,
+            batchSize:
+              MATERIALIZATION_BATCH_SIZE,
           }),
         "STAGING_INCOMPLETE",
       );
@@ -981,11 +1295,13 @@ async function main(): Promise<void> {
       incompleteRejected,
     );
 
-    await appendMediaSyncStagingBatch({
-      job: claimedJob,
-      rows: canonicalRows.slice(2),
-      rowStartIndex: 2,
-      dateWindowIndex: 1,
+    await appendRemainingStagingRows({
+      job:
+        claimedJob,
+      rows:
+        canonicalRows,
+      startIndex:
+        incompleteRowCount,
     });
 
     const completeSummary =
@@ -1043,6 +1359,8 @@ async function main(): Promise<void> {
           materializeMediaSyncSnapshot({
             job: checkpointJob,
             summary: completeSummary,
+            batchSize:
+              MATERIALIZATION_BATCH_SIZE,
           }),
         "JOB_NOT_PROCESSING",
       );
@@ -1067,6 +1385,8 @@ async function main(): Promise<void> {
                 `${checkpointJob.external_account_id}-mismatch`,
             },
             summary: completeSummary,
+            batchSize:
+              MATERIALIZATION_BATCH_SIZE,
           }),
         "SCOPE_MISMATCH",
       );
@@ -1085,6 +1405,8 @@ async function main(): Promise<void> {
       await materializeMediaSyncSnapshot({
         job: checkpointJob,
         summary: completeSummary,
+        batchSize:
+          MATERIALIZATION_BATCH_SIZE,
       });
 
     fixture.snapshotIngestionId =
@@ -1225,6 +1547,8 @@ async function main(): Promise<void> {
               .snapshotIngestionId,
         },
         summary: completeSummary,
+        batchSize:
+          MATERIALIZATION_BATCH_SIZE,
       });
 
     const exactRetryIdempotent =
@@ -1285,6 +1609,8 @@ async function main(): Promise<void> {
                   .snapshotIngestionId,
             },
             summary: completeSummary,
+            batchSize:
+              MATERIALIZATION_BATCH_SIZE,
           }),
         "MATERIALIZATION_CONFLICT",
       );
@@ -1377,11 +1703,23 @@ async function main(): Promise<void> {
         await restoreMaterializedRow(
           originalMaterializedRow,
         );
-      } catch {
+      } catch (error) {
         console.error(
           "emergency report row restore failed:",
           "RESTORE_ERROR",
         );
+
+        const diagnostic =
+          readSafeErrorDiagnostic(
+            error,
+          );
+
+        if (diagnostic) {
+          console.error(
+            "emergency restore diagnostic:",
+            diagnostic,
+          );
+        }
 
         process.exitCode = 1;
       }
@@ -1405,11 +1743,23 @@ async function main(): Promise<void> {
         if (!emergencyCleanupCompleted) {
           process.exitCode = 1;
         }
-      } catch {
+      } catch (error) {
         console.error(
           "emergency cleanup failed:",
           "CLEANUP_ERROR",
         );
+
+        const diagnostic =
+          readSafeErrorDiagnostic(
+            error,
+          );
+
+        if (diagnostic) {
+          console.error(
+            "emergency cleanup diagnostic:",
+            diagnostic,
+          );
+        }
 
         process.exitCode = 1;
       }
@@ -1438,11 +1788,23 @@ async function main(): Promise<void> {
         if (!finalReportStateUnchanged) {
           process.exitCode = 1;
         }
-      } catch {
+      } catch (error) {
         console.error(
           "final report state check failed:",
           "REPORT_STATE_CHECK_ERROR",
         );
+
+        const diagnostic =
+          readSafeErrorDiagnostic(
+            error,
+          );
+
+        if (diagnostic) {
+          console.error(
+            "final report state diagnostic:",
+            diagnostic,
+          );
+        }
 
         process.exitCode = 1;
       }
@@ -1450,36 +1812,27 @@ async function main(): Promise<void> {
   }
 }
 
-function readSafeDatabaseDiagnostic(
-  error: unknown,
-): {
+type SafeErrorDiagnostic = {
+  depth: number;
+  name: string;
   code: string;
   message: string;
   details: string;
   hint: string;
-} | null {
-  if (
-    !(error instanceof
-      MediaSyncSnapshotMaterializationError)
-  ) {
-    return null;
-  }
+};
 
-  const cause =
-    error.cause;
+function readSafeErrorDiagnostic(
+  error: unknown,
+): SafeErrorDiagnostic[] | null {
+  const diagnostics:
+    SafeErrorDiagnostic[] = [];
 
-  if (
-    !cause ||
-    typeof cause !== "object"
-  ) {
-    return null;
-  }
-
-  const record =
-    cause as Record<string, unknown>;
+  const visited =
+    new Set<unknown>();
 
   const safeText = (
     value: unknown,
+    maxLength = 2_000,
   ): string => {
     if (typeof value !== "string") {
       return "";
@@ -1490,19 +1843,103 @@ function readSafeDatabaseDiagnostic(
         /(?:secret|token|credential|ciphertext|accesslicense|authorization|password|api[_-]?key)\s*[:=]\s*[^\s,;]+/gi,
         "[REDACTED]",
       )
-      .slice(0, 2_000);
+      .slice(0, maxLength);
   };
 
-  return {
-    code:
-      safeText(record.code),
-    message:
-      safeText(record.message),
-    details:
-      safeText(record.details),
-    hint:
-      safeText(record.hint),
-  };
+  let current:
+    unknown =
+      error;
+
+  for (
+    let depth = 0;
+    depth <= 8;
+    depth += 1
+  ) {
+    if (
+      !current ||
+      typeof current !== "object"
+    ) {
+      if (
+        depth === 0 &&
+        current !== undefined &&
+        current !== null
+      ) {
+        diagnostics.push({
+          depth,
+          name:
+            typeof current,
+          code:
+            "",
+          message:
+            safeText(
+              String(current),
+            ),
+          details:
+            "",
+          hint:
+            "",
+        });
+      }
+
+      break;
+    }
+
+    if (visited.has(current)) {
+      break;
+    }
+
+    visited.add(current);
+
+    const record =
+      current as Record<string, unknown>;
+
+    diagnostics.push({
+      depth,
+      name:
+        safeText(
+          record.name,
+          200,
+        ) ||
+        (
+          current instanceof Error
+            ? current.name
+            : current.constructor?.name ?? "UnknownError"
+        ),
+
+      code:
+        safeText(
+          record.code,
+          200,
+        ),
+
+      message:
+        safeText(
+          record.message,
+        ) ||
+        (
+          current instanceof Error
+            ? safeText(current.message)
+            : ""
+        ),
+
+      details:
+        safeText(
+          record.details,
+        ),
+
+      hint:
+        safeText(
+          record.hint,
+        ),
+    });
+
+    current =
+      record.cause;
+  }
+
+  return diagnostics.length > 0
+    ? diagnostics
+    : null;
 }
 
 main().catch((error) => {
@@ -1518,13 +1955,13 @@ main().catch((error) => {
   );
 
   const diagnostic =
-    readSafeDatabaseDiagnostic(
+    readSafeErrorDiagnostic(
       error,
     );
 
   if (diagnostic) {
     console.error(
-      "safe database diagnostic:",
+      "safe error diagnostic:",
       diagnostic,
     );
   }

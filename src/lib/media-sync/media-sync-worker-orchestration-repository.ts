@@ -118,6 +118,7 @@ export type ProcessNaverMediaSyncJobOptions = {
   maxKeywordStatsPerRun?: number;
   maxStatsRequestsPerRun?: number;
   maxKeywordDiscoveryPagesPerRun?: number;
+  materializationBatchSize?: number;
   jobTimeoutMs?: number;
   signal?: AbortSignal;
   onRetry?: NaverSearchAdsStagingOrchestratorInput["onRetry"];
@@ -1214,6 +1215,9 @@ export async function processClaimedNaverMediaSyncJob(
 
         summary:
           staging.summary,
+
+        batchSize:
+          options.materializationBatchSize,
       });
   } catch (error) {
     if (
@@ -1237,7 +1241,10 @@ export async function processClaimedNaverMediaSyncJob(
   logStage({
     job: materialization.job,
     stage: "materialization:done",
-    detail: `rows=${materialization.rowCount}`,
+    detail:
+      `rows=${materialization.rowCount} batchSize=${
+        options.materializationBatchSize ?? 2_000
+      }`,
   });
 
   let activation:

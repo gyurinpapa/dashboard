@@ -40,6 +40,9 @@ const MAX_KEYWORD_STATS_PER_RUN_ENV =
 const MAX_STATS_REQUESTS_PER_RUN_ENV =
   "MEDIA_SYNC_WORKER_MAX_STATS_REQUESTS_PER_RUN";
 
+const MATERIALIZATION_BATCH_SIZE_ENV =
+  "MEDIA_SYNC_WORKER_MATERIALIZATION_BATCH_SIZE";
+
 const MAX_KEYWORD_DISCOVERY_PAGES_PER_RUN_ENV =
   "MEDIA_SYNC_WORKER_MAX_KEYWORD_DISCOVERY_PAGES_PER_RUN";
 
@@ -85,6 +88,9 @@ const MAX_STATS_REQUESTS_PER_RUN_UPPER_BOUND =
 const MAX_KEYWORD_DISCOVERY_PAGES_PER_RUN_UPPER_BOUND =
   100_000;
 
+const MATERIALIZATION_BATCH_SIZE_UPPER_BOUND =
+  5_000;
+
 type WorkerRuntimeOptions = {
   enabled: boolean;
   loop: boolean;
@@ -96,6 +102,7 @@ type WorkerRuntimeOptions = {
   maxKeywordStatsPerRun?: number;
   maxStatsRequestsPerRun?: number;
   maxKeywordDiscoveryPagesPerRun?: number;
+  materializationBatchSize?: number;
 };
 
 type SafeErrorLog = {
@@ -290,6 +297,15 @@ function readRuntimeOptions():
         MAX_KEYWORD_DISCOVERY_PAGES_PER_RUN_UPPER_BOUND,
     });
 
+  const materializationBatchSize =
+    readOptionalPositiveIntegerEnv({
+      name:
+        MATERIALIZATION_BATCH_SIZE_ENV,
+
+      max:
+        MATERIALIZATION_BATCH_SIZE_UPPER_BOUND,
+    });
+
   const exitWhenIdle =
     readBooleanEnv(IDLE_EXIT_ENV);
 
@@ -304,6 +320,7 @@ function readRuntimeOptions():
     maxKeywordStatsPerRun,
     maxStatsRequestsPerRun,
     maxKeywordDiscoveryPagesPerRun,
+    materializationBatchSize,
   };
 }
 
@@ -443,6 +460,12 @@ function logWorkerStart(
   console.log(
     `[${WORKER_NAME}] max keyword discovery pages per run: ${
       formatOptionalLimit(options.maxKeywordDiscoveryPagesPerRun)
+    }`,
+  );
+
+  console.log(
+    `[${WORKER_NAME}] materialization batch size: ${
+      formatOptionalLimit(options.materializationBatchSize)
     }`,
   );
 
@@ -656,6 +679,9 @@ async function processSingleJob(
 
       maxKeywordDiscoveryPagesPerRun:
         options.maxKeywordDiscoveryPagesPerRun,
+
+      materializationBatchSize:
+        options.materializationBatchSize,
     });
 
   if (!result) {
