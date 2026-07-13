@@ -1915,11 +1915,22 @@ export default function ReportDetailPage() {
     return sharePath;
   }, [advertiserPublicSlug, report?.status, sharePath]);
 
-  const hasPublishableRows =
+  const hasCsvPublishableRows =
     Math.max(ingestionInfo.inserted, ingestionInfo.validRows) > 0;
 
-  const isPublishReady =
-    sessionIngested && ingestionStatus === "done" && hasPublishableRows;
+  const isCsvPublishReady =
+    sessionIngested &&
+    ingestionStatus === "done" &&
+    hasCsvPublishableRows;
+
+  const isApiPublishReady =
+    isApiReport &&
+    rowsMetaLoaded &&
+    rowsMetaCount > 0;
+
+  const isPublishReady = isApiReport
+    ? isApiPublishReady
+    : isCsvPublishReady;
 
   const canPublish = !publishing && isPublishReady;
 
@@ -2715,9 +2726,11 @@ export default function ReportDetailPage() {
   const handlePublish = useCallback(async () => {
     if (!reportId) return;
 
-    if (!isPublishReady || !hasPublishableRows) {
+    if (!isPublishReady) {
       setMsg(
-        "CSV 업로드 + 파싱이 완료되어 rows 데이터가 준비되어야 발행할 수 있습니다.",
+        isApiReport
+          ? "API 동기화가 완료되어 현재 snapshot rows가 준비되어야 발행할 수 있습니다."
+          : "CSV 업로드 + 파싱이 완료되어 rows 데이터가 준비되어야 발행할 수 있습니다.",
       );
       return;
     }
@@ -2747,17 +2760,19 @@ export default function ReportDetailPage() {
       }
 
       /**
-       * 대용량 CSV 안정화:
+       * 대용량 rows 안정화:
        * 발행 직후 rows 전체를 다시 조회하지 않는다.
        * 10만 행 이상에서는 /rows 전체 fetch가 statement timeout을 유발할 수 있다.
-       * 발행 가능 여부는 ingestionInfo.inserted / validRows와 publish 응답으로 판단한다.
+       * CSV 리포트는 ingestionInfo의 inserted/validRows를 사용하고,
+       * API 리포트는 이미 로드된 rows metadata의 rowsCount를 사용한다.
+       * 최종 발행 안전성은 publish API의 서버 검증을 그대로 유지한다.
        */
     } catch (e: any) {
       setMsg(e?.message || "발행 실패");
     } finally {
       setPublishing(false);
     }
-  }, [hasPublishableRows, isPublishReady, reportId]);
+  }, [isApiReport, isPublishReady, reportId]);
 
   const handleOpenExportBuilder = useCallback(() => {
     if (!reportId) return;
