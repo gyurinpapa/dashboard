@@ -14,6 +14,9 @@ const NAVER_SEARCH_ADS_ADGROUPS_URI =
 const NAVER_SEARCH_ADS_KEYWORDS_URI =
   "/ncc/keywords";
 
+const NAVER_SEARCH_ADS_ADS_URI =
+  "/ncc/ads";
+
 const NAVER_SEARCH_ADS_STATS_URI =
   "/stats";
 
@@ -35,12 +38,16 @@ const MIN_NAVER_SEARCH_ADS_STATS_BATCH_SIZE =
 const MAX_NAVER_SEARCH_ADS_STATS_BATCH_SIZE =
   5;
 
-const NAVER_SEARCH_ADS_KEYWORD_STATS_FIELDS = [
+const NAVER_SEARCH_ADS_ENTITY_STATS_FIELDS = [
   "impCnt",
   "clkCnt",
   "salesAmt",
   "ccnt",
   "convAmt",
+] as const;
+
+const NAVER_SEARCH_ADS_KEYWORD_STATS_FIELDS = [
+  ...NAVER_SEARCH_ADS_ENTITY_STATS_FIELDS,
   "avgRnk",
 ] as const;
 
@@ -108,6 +115,52 @@ export type NaverSearchAdsKeywordRecord = {
   userLock: boolean | null;
   bidAmount: number | null;
   useGroupBidAmount: boolean | null;
+};
+
+export type NaverSearchAdsAdRecord = {
+  id: string;
+  adgroupId: string;
+  type: string;
+  inspectStatus: string | null;
+  status: string | null;
+  statusReason: string | null;
+  userLock: boolean | null;
+  referenceKey: string | null;
+};
+
+export type NaverSearchAdsStatsEntityType =
+  | "campaign"
+  | "adgroup"
+  | "keyword"
+  | "ad";
+
+export type NaverSearchAdsEntityDailyStatsRecord = {
+  entityId: string;
+  entityType: NaverSearchAdsStatsEntityType;
+  date: string;
+  periodStart: string;
+  periodEnd: string;
+  impCnt: number | null;
+  clkCnt: number | null;
+  salesAmt: number | null;
+  ccnt: number | null;
+  convAmt: number | null;
+};
+
+export type NaverSearchAdsEntityDailyStatsResult = {
+  entityId: string;
+  entityType: NaverSearchAdsStatsEntityType;
+  dateFrom: string;
+  dateTo: string;
+  records: NaverSearchAdsEntityDailyStatsRecord[];
+};
+
+export type FetchNaverSearchAdsEntityDailyStatsInput = {
+  credentials: NaverSearchAdsCredentials;
+  entityId: string;
+  entityType: NaverSearchAdsStatsEntityType;
+  dateFrom: string;
+  dateTo: string;
 };
 
 export type NaverSearchAdsKeywordDailyStatsRecord = {
@@ -224,6 +277,14 @@ export type FetchNaverSearchAdsAdgroupPageInput = {
 };
 
 export type FetchNaverSearchAdsKeywordPageInput = {
+  credentials: NaverSearchAdsCredentials;
+  adgroupId: string;
+  baseSearchId?: string | null;
+  recordSize?: number;
+  selector?: NaverSearchAdsListSelector;
+};
+
+export type FetchNaverSearchAdsAdPageInput = {
   credentials: NaverSearchAdsCredentials;
   adgroupId: string;
   baseSearchId?: string | null;
@@ -395,6 +456,24 @@ function assertDateRange(
       "dateFrom must be earlier than or equal to dateTo.",
     );
   }
+}
+
+function normalizeStatsEntityType(
+  value: unknown,
+): NaverSearchAdsStatsEntityType {
+  if (
+    value !== "campaign" &&
+    value !== "adgroup" &&
+    value !== "keyword" &&
+    value !== "ad"
+  ) {
+    throw new NaverSearchAdsApiError(
+      "INVALID_INPUT",
+      "entityType must be campaign, adgroup, keyword, or ad.",
+    );
+  }
+
+  return value;
 }
 
 function normalizeKeywordIdBatch(
@@ -789,6 +868,172 @@ function parseResponseIsoDate(
   return normalizedValue;
 }
 
+
+function parseEntityDailyStatsDataRecord(
+  value: unknown,
+  entityId: string,
+  entityType: NaverSearchAdsStatsEntityType,
+  dateFrom: string,
+  dateTo: string,
+): NaverSearchAdsEntityDailyStatsRecord {
+  if (!isPlainObject(value)) {
+    throw new NaverSearchAdsApiError(
+      "INVALID_RESPONSE",
+      "Naver Search Ads entity stats data record is invalid.",
+    );
+  }
+
+  const periodStart = parseResponseIsoDate(
+    value.dateStart,
+    "stats.data.dateStart",
+  );
+
+  const periodEnd = parseResponseIsoDate(
+    value.dateEnd,
+    "stats.data.dateEnd",
+  );
+
+  if (periodStart !== periodEnd) {
+    throw new NaverSearchAdsApiError(
+      "INVALID_RESPONSE",
+      "Naver Search Ads daily stats record spans more than one date.",
+    );
+  }
+
+  if (
+    periodStart < dateFrom ||
+    periodStart > dateTo
+  ) {
+    throw new NaverSearchAdsApiError(
+      "INVALID_RESPONSE",
+      "Naver Search Ads daily stats record is outside the requested date range.",
+    );
+  }
+
+  return {
+    entityId,
+    entityType,
+    date: periodStart,
+    periodStart,
+    periodEnd,
+    impCnt:
+      readRequiredNullableResponseNumber(
+        value,
+        "impCnt",
+      ),
+    clkCnt:
+      readRequiredNullableResponseNumber(
+        value,
+        "clkCnt",
+      ),
+    salesAmt:
+      readRequiredNullableResponseNumber(
+        value,
+        "salesAmt",
+      ),
+    ccnt:
+      readRequiredNullableResponseNumber(
+        value,
+        "ccnt",
+      ),
+    convAmt:
+      readRequiredNullableResponseNumber(
+        value,
+        "convAmt",
+      ),
+  };
+}
+
+function parseEntityDailyStatsResponse(
+  value: unknown,
+  entityId: string,
+  entityType: NaverSearchAdsStatsEntityType,
+  dateFrom: string,
+  dateTo: string,
+): NaverSearchAdsEntityDailyStatsRecord[] {
+  if (!isPlainObject(value)) {
+    throw new NaverSearchAdsApiError(
+      "INVALID_RESPONSE",
+      "Naver Search Ads stats response must be an object.",
+    );
+  }
+
+  requireResponseString(
+    value.compTm,
+    "stats.compTm",
+  );
+
+  requireResponseString(
+    value.cycleBaseTm,
+    "stats.cycleBaseTm",
+  );
+
+  if (!isPlainObject(value.summary)) {
+    throw new NaverSearchAdsApiError(
+      "INVALID_RESPONSE",
+      "Naver Search Ads stats summary must be an object.",
+    );
+  }
+
+  const summaryDateStart =
+    parseResponseIsoDate(
+      value.summary.dateStart,
+      "stats.summary.dateStart",
+    );
+
+  const summaryDateEnd =
+    parseResponseIsoDate(
+      value.summary.dateEnd,
+      "stats.summary.dateEnd",
+    );
+
+  if (
+    summaryDateStart !== dateFrom ||
+    summaryDateEnd !== dateTo
+  ) {
+    throw new NaverSearchAdsApiError(
+      "INVALID_RESPONSE",
+      "Naver Search Ads stats summary date range does not match the request.",
+    );
+  }
+
+  if (!Array.isArray(value.data)) {
+    throw new NaverSearchAdsApiError(
+      "INVALID_RESPONSE",
+      "Naver Search Ads stats data must be an array.",
+    );
+  }
+
+  const records = value.data.map((record) =>
+    parseEntityDailyStatsDataRecord(
+      record,
+      entityId,
+      entityType,
+      dateFrom,
+      dateTo,
+    ),
+  );
+
+  const seenDates = new Set<string>();
+
+  for (const record of records) {
+    if (seenDates.has(record.date)) {
+      throw new NaverSearchAdsApiError(
+        "INVALID_RESPONSE",
+        "Naver Search Ads stats response contains a duplicate date.",
+      );
+    }
+
+    seenDates.add(record.date);
+  }
+
+  records.sort((left, right) =>
+    left.date.localeCompare(right.date),
+  );
+
+  return records;
+}
+
 function parseKeywordDailyStatsDataRecord(
   value: unknown,
   keywordId: string,
@@ -1098,6 +1343,60 @@ function parseKeywordRecord(
       readNullableResponseBoolean(
         value.useGroupBidAmt,
         "keyword.useGroupBidAmt",
+      ),
+  };
+}
+
+
+function parseAdRecord(
+  value: unknown,
+): NaverSearchAdsAdRecord {
+  if (!isPlainObject(value)) {
+    throw new NaverSearchAdsApiError(
+      "INVALID_RESPONSE",
+      "Naver Search Ads ad record is invalid.",
+    );
+  }
+
+  return {
+    id: requireResponseString(
+      value.nccAdId,
+      "nccAdId",
+    ),
+    adgroupId:
+      requireResponseString(
+        value.nccAdgroupId,
+        "ad.nccAdgroupId",
+      ),
+    type:
+      requireResponseString(
+        value.type,
+        "ad.type",
+      ),
+    inspectStatus:
+      readNullableResponseString(
+        value.inspectStatus,
+        "ad.inspectStatus",
+      ),
+    status:
+      readNullableResponseString(
+        value.status,
+        "ad.status",
+      ),
+    statusReason:
+      readNullableResponseString(
+        value.statusReason,
+        "ad.statusReason",
+      ),
+    userLock:
+      readNullableResponseBoolean(
+        value.userLock,
+        "ad.userLock",
+      ),
+    referenceKey:
+      readNullableResponseString(
+        value.referenceKey,
+        "ad.referenceKey",
       ),
   };
 }
@@ -1578,6 +1877,150 @@ export async function fetchNaverSearchAdsKeywordPage(
     selector,
     baseSearchId,
   });
+}
+
+
+export async function fetchNaverSearchAdsAdPage(
+  input: FetchNaverSearchAdsAdPageInput,
+): Promise<
+  NaverSearchAdsListPage<
+    NaverSearchAdsAdRecord
+  >
+> {
+  const adgroupId =
+    normalizeRequiredString(
+      input.adgroupId,
+      "adgroupId",
+      200,
+    );
+
+  const recordSize =
+    normalizeRecordSize(
+      input.recordSize,
+    );
+
+  const selector =
+    normalizeSelector(
+      input.selector,
+    );
+
+  const baseSearchId =
+    normalizeOptionalString(
+      input.baseSearchId,
+      "baseSearchId",
+      200,
+    );
+
+  const searchParams =
+    buildPagingSearchParams({
+      recordSize,
+      selector,
+      baseSearchId,
+    });
+
+  searchParams.unshift([
+    "nccAdgroupId",
+    adgroupId,
+  ]);
+
+  const response =
+    await requestNaverSearchAdsJson(
+      input.credentials,
+      NAVER_SEARCH_ADS_ADS_URI,
+      searchParams,
+    );
+
+  const records = parseListResponse(
+    response,
+    parseAdRecord,
+  );
+
+  for (const record of records) {
+    if (
+      record.adgroupId !==
+      adgroupId
+    ) {
+      throw new NaverSearchAdsApiError(
+        "INVALID_RESPONSE",
+        "Naver Search Ads ad response contains a different adgroup ID.",
+      );
+    }
+  }
+
+  return buildListPage(records, {
+    recordSize,
+    selector,
+    baseSearchId,
+  });
+}
+
+export async function fetchNaverSearchAdsEntityDailyStats(
+  input: FetchNaverSearchAdsEntityDailyStatsInput,
+): Promise<NaverSearchAdsEntityDailyStatsResult> {
+  const entityId =
+    normalizeRequiredString(
+      input.entityId,
+      "entityId",
+      200,
+    );
+
+  const entityType =
+    normalizeStatsEntityType(
+      input.entityType,
+    );
+
+  const dateFrom = normalizeIsoDate(
+    input.dateFrom,
+    "dateFrom",
+  );
+
+  const dateTo = normalizeIsoDate(
+    input.dateTo,
+    "dateTo",
+  );
+
+  assertDateRange(dateFrom, dateTo);
+
+  const response =
+    await requestNaverSearchAdsJson(
+      input.credentials,
+      NAVER_SEARCH_ADS_STATS_URI,
+      [
+        ["id", entityId],
+        [
+          "fields",
+          JSON.stringify(
+            NAVER_SEARCH_ADS_ENTITY_STATS_FIELDS,
+          ),
+        ],
+        [
+          "timeRange",
+          JSON.stringify({
+            since: dateFrom,
+            until: dateTo,
+          }),
+        ],
+        [
+          "timeIncrement",
+          NAVER_SEARCH_ADS_DAILY_STATS_TIME_INCREMENT.toString(),
+        ],
+      ],
+    );
+
+  return {
+    entityId,
+    entityType,
+    dateFrom,
+    dateTo,
+    records:
+      parseEntityDailyStatsResponse(
+        response,
+        entityId,
+        entityType,
+        dateFrom,
+        dateTo,
+      ),
+  };
 }
 
 export async function fetchNaverSearchAdsKeywordDailyStats(

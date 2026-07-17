@@ -12,6 +12,9 @@ import type {
   NaverKeywordStatsCollectorDependencies,
 } from "../src/lib/media-sync/naver-searchads-keyword-stats-collector";
 import type {
+  NaverAuthoritativeEntityStatsCollectorDependencies,
+} from "../src/lib/media-sync/naver-searchads-authoritative-entity-stats-collector";
+import type {
   NaverSearchAdsAdgroupRecord,
   NaverSearchAdsCampaignRecord,
   NaverSearchAdsKeywordDailyStatsRecord,
@@ -586,6 +589,79 @@ function createFixtureDependencies(input: {
         0,
   };
 }
+
+function createAuthoritativeFixtureDependencies(input: {
+  campaign:
+    NaverSearchAdsCampaignRecord;
+}): Partial<
+  NaverAuthoritativeEntityStatsCollectorDependencies
+> {
+  let now =
+    Date.parse(
+      "2026-07-14T00:00:00.000Z",
+    );
+
+  return {
+    fetchCampaignPage:
+      async (
+        request,
+      ) => {
+        return createListPage(
+          [
+            input.campaign,
+          ],
+          request.baseSearchId ??
+            null,
+        );
+      },
+
+    fetchAdgroupPage:
+      async (
+        request,
+      ) => {
+        return createListPage(
+          [],
+          request.baseSearchId ??
+            null,
+        );
+      },
+
+    fetchAdPage:
+      async (
+        request,
+      ) => {
+        return createListPage(
+          [],
+          request.baseSearchId ??
+            null,
+        );
+      },
+
+    fetchEntityDailyStats:
+      async () => {
+        throw new Error(
+          "VERIFICATION_AUTHORITATIVE_ENTITY_STATS_MUST_NOT_RUN_FOR_WEB_SITE",
+        );
+      },
+
+    sleep:
+      async () =>
+        undefined,
+
+    now:
+      () => {
+        now +=
+          1_000;
+
+        return now;
+      },
+
+    random:
+      () =>
+        0,
+  };
+}
+
 
 async function assertNoPendingNaverJob():
   Promise<void> {
@@ -1405,6 +1481,11 @@ async function main(): Promise<void> {
             dateTo:
               input.dateTo,
           }),
+
+        authoritativeDependencies:
+          createAuthoritativeFixtureDependencies({
+            campaign,
+          }),
       });
 
     if (!orchestration) {
@@ -1518,6 +1599,11 @@ async function main(): Promise<void> {
 
             dateTo:
               input.dateTo,
+          }),
+
+        authoritativeDependencies:
+          createAuthoritativeFixtureDependencies({
+            campaign,
           }),
       });
 

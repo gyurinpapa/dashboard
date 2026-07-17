@@ -1,0 +1,271 @@
+{
+  "table": {
+    "name": "media_sync_staging_rows",
+    "schema": "public",
+    "rls_enabled": true
+  },
+  "columns": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "not_null": true,
+      "position": 1,
+      "expression": "gen_random_uuid()",
+      "generated_kind": ""
+    },
+    {
+      "name": "job_id",
+      "type": "uuid",
+      "not_null": true,
+      "position": 2,
+      "expression": null,
+      "generated_kind": ""
+    },
+    {
+      "name": "report_id",
+      "type": "uuid",
+      "not_null": true,
+      "position": 3,
+      "expression": null,
+      "generated_kind": ""
+    },
+    {
+      "name": "workspace_id",
+      "type": "uuid",
+      "not_null": true,
+      "position": 4,
+      "expression": null,
+      "generated_kind": ""
+    },
+    {
+      "name": "advertiser_id",
+      "type": "uuid",
+      "not_null": true,
+      "position": 5,
+      "expression": null,
+      "generated_kind": ""
+    },
+    {
+      "name": "connection_id",
+      "type": "uuid",
+      "not_null": true,
+      "position": 6,
+      "expression": null,
+      "generated_kind": ""
+    },
+    {
+      "name": "provider",
+      "type": "text",
+      "not_null": true,
+      "position": 7,
+      "expression": null,
+      "generated_kind": ""
+    },
+    {
+      "name": "external_account_id",
+      "type": "text",
+      "not_null": true,
+      "position": 8,
+      "expression": null,
+      "generated_kind": ""
+    },
+    {
+      "name": "date_window_index",
+      "type": "integer",
+      "not_null": true,
+      "position": 9,
+      "expression": null,
+      "generated_kind": ""
+    },
+    {
+      "name": "date_from",
+      "type": "date",
+      "not_null": true,
+      "position": 10,
+      "expression": null,
+      "generated_kind": ""
+    },
+    {
+      "name": "date_to",
+      "type": "date",
+      "not_null": true,
+      "position": 11,
+      "expression": null,
+      "generated_kind": ""
+    },
+    {
+      "name": "row_index",
+      "type": "bigint",
+      "not_null": true,
+      "position": 12,
+      "expression": null,
+      "generated_kind": ""
+    },
+    {
+      "name": "row_key",
+      "type": "text",
+      "not_null": true,
+      "position": 13,
+      "expression": null,
+      "generated_kind": ""
+    },
+    {
+      "name": "date",
+      "type": "date",
+      "not_null": true,
+      "position": 14,
+      "expression": null,
+      "generated_kind": ""
+    },
+    {
+      "name": "channel",
+      "type": "text",
+      "not_null": false,
+      "position": 15,
+      "expression": null,
+      "generated_kind": ""
+    },
+    {
+      "name": "device",
+      "type": "text",
+      "not_null": false,
+      "position": 16,
+      "expression": null,
+      "generated_kind": ""
+    },
+    {
+      "name": "source",
+      "type": "text",
+      "not_null": false,
+      "position": 17,
+      "expression": null,
+      "generated_kind": ""
+    },
+    {
+      "name": "row",
+      "type": "jsonb",
+      "not_null": true,
+      "position": 18,
+      "expression": null,
+      "generated_kind": ""
+    },
+    {
+      "name": "row_fingerprint",
+      "type": "text",
+      "not_null": false,
+      "position": 19,
+      "expression": "encode(digest((\"row\")::text, 'sha256'::text), 'hex'::text)",
+      "generated_kind": "s"
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "not_null": true,
+      "position": 20,
+      "expression": "now()",
+      "generated_kind": ""
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "not_null": true,
+      "position": 21,
+      "expression": "now()",
+      "generated_kind": ""
+    }
+  ],
+  "indexes": [
+    {
+      "name": "media_sync_staging_rows_job_date_index",
+      "definition": "CREATE INDEX media_sync_staging_rows_job_date_index ON public.media_sync_staging_rows USING btree (job_id, date)"
+    },
+    {
+      "name": "media_sync_staging_rows_job_row_index_unique",
+      "definition": "CREATE UNIQUE INDEX media_sync_staging_rows_job_row_index_unique ON public.media_sync_staging_rows USING btree (job_id, row_index)"
+    },
+    {
+      "name": "media_sync_staging_rows_job_window_index",
+      "definition": "CREATE INDEX media_sync_staging_rows_job_window_index ON public.media_sync_staging_rows USING btree (job_id, date_window_index, row_index)"
+    },
+    {
+      "name": "media_sync_staging_rows_job_window_row_key_unique",
+      "definition": "CREATE UNIQUE INDEX media_sync_staging_rows_job_window_row_key_unique ON public.media_sync_staging_rows USING btree (job_id, date_window_index, row_key)"
+    },
+    {
+      "name": "media_sync_staging_rows_pkey",
+      "definition": "CREATE UNIQUE INDEX media_sync_staging_rows_pkey ON public.media_sync_staging_rows USING btree (id)"
+    },
+    {
+      "name": "media_sync_staging_rows_replacement_scope_index",
+      "definition": "CREATE INDEX media_sync_staging_rows_replacement_scope_index ON public.media_sync_staging_rows USING btree (report_id, provider, external_account_id, date)"
+    },
+    {
+      "name": "media_sync_staging_rows_scope_index",
+      "definition": "CREATE INDEX media_sync_staging_rows_scope_index ON public.media_sync_staging_rows USING btree (workspace_id, advertiser_id, report_id, connection_id, job_id)"
+    }
+  ],
+  "policies": [],
+  "triggers": [],
+  "constraints": [
+    {
+      "name": "media_sync_staging_rows_date_range_check",
+      "type": "c",
+      "definition": "CHECK (date_from <= date_to)"
+    },
+    {
+      "name": "media_sync_staging_rows_date_window_index_check",
+      "type": "c",
+      "definition": "CHECK (date_window_index >= 0)"
+    },
+    {
+      "name": "media_sync_staging_rows_external_account_not_blank_check",
+      "type": "c",
+      "definition": "CHECK (length(btrim(external_account_id)) > 0)"
+    },
+    {
+      "name": "media_sync_staging_rows_job_id_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (job_id) REFERENCES media_sync_jobs(id) ON DELETE CASCADE"
+    },
+    {
+      "name": "media_sync_staging_rows_job_row_index_unique",
+      "type": "u",
+      "definition": "UNIQUE (job_id, row_index)"
+    },
+    {
+      "name": "media_sync_staging_rows_job_window_row_key_unique",
+      "type": "u",
+      "definition": "UNIQUE (job_id, date_window_index, row_key)"
+    },
+    {
+      "name": "media_sync_staging_rows_pkey",
+      "type": "p",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "name": "media_sync_staging_rows_provider_check",
+      "type": "c",
+      "definition": "CHECK (provider = ANY (ARRAY['naver_searchad'::text, 'google_ads'::text, 'meta_ads'::text]))"
+    },
+    {
+      "name": "media_sync_staging_rows_row_date_in_window_check",
+      "type": "c",
+      "definition": "CHECK (date >= date_from AND date <= date_to)"
+    },
+    {
+      "name": "media_sync_staging_rows_row_index_check",
+      "type": "c",
+      "definition": "CHECK (row_index >= 0)"
+    },
+    {
+      "name": "media_sync_staging_rows_row_key_not_blank_check",
+      "type": "c",
+      "definition": "CHECK (length(btrim(row_key)) > 0)"
+    },
+    {
+      "name": "media_sync_staging_rows_row_object_check",
+      "type": "c",
+      "definition": "CHECK (jsonb_typeof(\"row\") = 'object'::text)"
+    }
+  ]
+}

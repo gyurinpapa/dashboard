@@ -8,6 +8,9 @@ import {
 const SUMMARIZE_MEDIA_SYNC_STAGING_RPC =
   "summarize_media_sync_staging";
 
+const SUMMARIZE_NAVER_SEARCH_ADS_COMBINED_STAGING_RPC =
+  "summarize_naver_searchads_combined_staging";
+
 const NAVER_SEARCH_ADS_PROVIDER =
   "naver_searchad" as const;
 
@@ -890,6 +893,123 @@ export async function assertMediaSyncStagingComplete(
     throw new MediaSyncStagingSummaryError(
       "STAGING_INCOMPLETE",
       "The media sync staging rows are not complete.",
+      {
+        summary,
+      },
+    );
+  }
+
+  return summary;
+}
+
+/**
+ * Naver Search Ads combined staging summary.
+ *
+ * The legacy getMediaSyncStagingSummary() remains keyword-only and continues
+ * to call summarize_media_sync_staging. This function is used only after the
+ * WEB_SITE keyword phase and SHOPPING/BRAND_SEARCH authoritative phase have
+ * both completed.
+ */
+export async function getNaverSearchAdsCombinedStagingSummary(
+  input: GetMediaSyncStagingSummaryInput,
+): Promise<MediaSyncStagingSummary> {
+  if (
+    !input ||
+    typeof input !== "object"
+  ) {
+    throw new MediaSyncStagingSummaryError(
+      "INVALID_INPUT",
+      "Combined staging summary input is required.",
+    );
+  }
+
+  validateJob(input.job);
+
+  const expectedRows =
+    normalizeNonNegativeInteger(
+      input.expectedRows,
+      "expectedRows",
+    );
+
+  const payload = {
+    job_id:
+      input.job.id,
+
+    report_id:
+      input.job.report_id,
+
+    workspace_id:
+      input.job.workspace_id,
+
+    advertiser_id:
+      input.job.advertiser_id,
+
+    connection_id:
+      input.job.connection_id,
+
+    provider:
+      input.job.provider,
+
+    external_account_id:
+      input.job.external_account_id,
+
+    date_from:
+      input.job.date_from,
+
+    date_to:
+      input.job.date_to,
+
+    expected_rows:
+      expectedRows,
+  };
+
+  const supabase =
+    getSupabaseAdmin();
+
+  let result;
+
+  try {
+    result =
+      await supabase.rpc(
+        SUMMARIZE_NAVER_SEARCH_ADS_COMBINED_STAGING_RPC,
+        {
+          p_payload: payload,
+        },
+      );
+  } catch (error) {
+    throw new MediaSyncStagingSummaryError(
+      "DATABASE_ERROR",
+      "The combined Naver Search Ads staging summary repository could not access the database.",
+      { cause: error },
+    );
+  }
+
+  const { data, error } =
+    result;
+
+  if (error) {
+    throw mapRpcError(error);
+  }
+
+  return parseRpcResult(
+    data,
+    input.job.id,
+    expectedRows,
+  );
+}
+
+export async function assertNaverSearchAdsCombinedStagingComplete(
+  input: GetMediaSyncStagingSummaryInput,
+): Promise<MediaSyncStagingSummary> {
+  const summary =
+    await getNaverSearchAdsCombinedStagingSummary(
+      input,
+    );
+
+  if (!summary.isComplete) {
+    throw new MediaSyncStagingSummaryError(
+      "STAGING_INCOMPLETE",
+      "The combined Naver Search Ads staging rows are not complete.",
       {
         summary,
       },

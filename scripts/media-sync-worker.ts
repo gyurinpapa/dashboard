@@ -40,6 +40,15 @@ const MAX_KEYWORD_STATS_PER_RUN_ENV =
 const MAX_STATS_REQUESTS_PER_RUN_ENV =
   "MEDIA_SYNC_WORKER_MAX_STATS_REQUESTS_PER_RUN";
 
+const MAX_AUTHORITATIVE_ENTITY_STATS_PER_RUN_ENV =
+  "MEDIA_SYNC_WORKER_MAX_AUTHORITATIVE_ENTITY_STATS_PER_RUN";
+
+const MAX_AUTHORITATIVE_STATS_REQUESTS_PER_RUN_ENV =
+  "MEDIA_SYNC_WORKER_MAX_AUTHORITATIVE_STATS_REQUESTS_PER_RUN";
+
+const MAX_AUTHORITATIVE_DISCOVERY_PAGES_PER_RUN_ENV =
+  "MEDIA_SYNC_WORKER_MAX_AUTHORITATIVE_DISCOVERY_PAGES_PER_RUN";
+
 const MATERIALIZATION_BATCH_SIZE_ENV =
   "MEDIA_SYNC_WORKER_MATERIALIZATION_BATCH_SIZE";
 
@@ -85,6 +94,15 @@ const MAX_KEYWORD_STATS_PER_RUN_UPPER_BOUND =
 const MAX_STATS_REQUESTS_PER_RUN_UPPER_BOUND =
   10_000;
 
+const MAX_AUTHORITATIVE_ENTITY_STATS_PER_RUN_UPPER_BOUND =
+  10_000;
+
+const MAX_AUTHORITATIVE_STATS_REQUESTS_PER_RUN_UPPER_BOUND =
+  10_000;
+
+const MAX_AUTHORITATIVE_DISCOVERY_PAGES_PER_RUN_UPPER_BOUND =
+  100_000;
+
 const MAX_KEYWORD_DISCOVERY_PAGES_PER_RUN_UPPER_BOUND =
   100_000;
 
@@ -102,6 +120,9 @@ type WorkerRuntimeOptions = {
   maxKeywordStatsPerRun?: number;
   maxStatsRequestsPerRun?: number;
   maxKeywordDiscoveryPagesPerRun?: number;
+  maxAuthoritativeEntityStatsPerRun?: number;
+  maxAuthoritativeStatsRequestsPerRun?: number;
+  maxAuthoritativeDiscoveryPagesPerRun?: number;
   materializationBatchSize?: number;
 };
 
@@ -297,6 +318,33 @@ function readRuntimeOptions():
         MAX_KEYWORD_DISCOVERY_PAGES_PER_RUN_UPPER_BOUND,
     });
 
+  const maxAuthoritativeEntityStatsPerRun =
+    readOptionalPositiveIntegerEnv({
+      name:
+        MAX_AUTHORITATIVE_ENTITY_STATS_PER_RUN_ENV,
+
+      max:
+        MAX_AUTHORITATIVE_ENTITY_STATS_PER_RUN_UPPER_BOUND,
+    });
+
+  const maxAuthoritativeStatsRequestsPerRun =
+    readOptionalPositiveIntegerEnv({
+      name:
+        MAX_AUTHORITATIVE_STATS_REQUESTS_PER_RUN_ENV,
+
+      max:
+        MAX_AUTHORITATIVE_STATS_REQUESTS_PER_RUN_UPPER_BOUND,
+    });
+
+  const maxAuthoritativeDiscoveryPagesPerRun =
+    readOptionalPositiveIntegerEnv({
+      name:
+        MAX_AUTHORITATIVE_DISCOVERY_PAGES_PER_RUN_ENV,
+
+      max:
+        MAX_AUTHORITATIVE_DISCOVERY_PAGES_PER_RUN_UPPER_BOUND,
+    });
+
   const materializationBatchSize =
     readOptionalPositiveIntegerEnv({
       name:
@@ -320,6 +368,9 @@ function readRuntimeOptions():
     maxKeywordStatsPerRun,
     maxStatsRequestsPerRun,
     maxKeywordDiscoveryPagesPerRun,
+    maxAuthoritativeEntityStatsPerRun,
+    maxAuthoritativeStatsRequestsPerRun,
+    maxAuthoritativeDiscoveryPagesPerRun,
     materializationBatchSize,
   };
 }
@@ -464,6 +515,24 @@ function logWorkerStart(
   );
 
   console.log(
+    `[${WORKER_NAME}] max authoritative entity stats per run: ${
+      formatOptionalLimit(options.maxAuthoritativeEntityStatsPerRun)
+    }`,
+  );
+
+  console.log(
+    `[${WORKER_NAME}] max authoritative stats requests per run: ${
+      formatOptionalLimit(options.maxAuthoritativeStatsRequestsPerRun)
+    }`,
+  );
+
+  console.log(
+    `[${WORKER_NAME}] max authoritative discovery pages per run: ${
+      formatOptionalLimit(options.maxAuthoritativeDiscoveryPagesPerRun)
+    }`,
+  );
+
+  console.log(
     `[${WORKER_NAME}] materialization batch size: ${
       formatOptionalLimit(options.materializationBatchSize)
     }`,
@@ -545,6 +614,7 @@ function logPartialJob(input: {
   advertiserId: string;
   connectionId: string;
   checkpointRows: number;
+  phase: string | null;
   partialReason: string | null;
   stagingCanonicalRowCount: number | null;
   stagingRunCanonicalRowCount: number | null;
@@ -571,6 +641,10 @@ function logPartialJob(input: {
 
   console.log(
     `[${WORKER_NAME}] checkpoint rows: ${input.checkpointRows}`,
+  );
+
+  console.log(
+    `[${WORKER_NAME}] staging phase: ${input.phase ?? "unknown"}`,
   );
 
   console.log(
@@ -680,6 +754,15 @@ async function processSingleJob(
       maxKeywordDiscoveryPagesPerRun:
         options.maxKeywordDiscoveryPagesPerRun,
 
+      maxAuthoritativeEntityStatsPerRun:
+        options.maxAuthoritativeEntityStatsPerRun,
+
+      maxAuthoritativeStatsRequestsPerRun:
+        options.maxAuthoritativeStatsRequestsPerRun,
+
+      maxAuthoritativeDiscoveryPagesPerRun:
+        options.maxAuthoritativeDiscoveryPagesPerRun,
+
       materializationBatchSize:
         options.materializationBatchSize,
     });
@@ -695,6 +778,7 @@ async function processSingleJob(
         checkpointRows?: unknown;
         reason?: unknown;
         partialReason?: unknown;
+        phase?: unknown;
         staging?: {
           canonicalRowCount?: unknown;
           runCanonicalRowCount?: unknown;
@@ -721,6 +805,11 @@ async function processSingleJob(
         readOptionalNumber(
           partialResult.checkpointRows,
         ) ?? result.expectedRows,
+
+      phase:
+        readOptionalString(
+          partialResult.phase,
+        ),
 
       partialReason:
         readOptionalString(

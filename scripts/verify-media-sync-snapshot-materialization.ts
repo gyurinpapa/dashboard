@@ -1056,82 +1056,121 @@ async function cleanupFixture(
     );
   }
 
-  const [
-    jobCheck,
-    stagingCheck,
-    ingestionCheck,
-    rowsCheck,
-  ] = await Promise.all([
-    supabase
+  /*
+   * Cleanup verification must remain bounded.
+   *
+   * We only need to know whether at least one fixture row remains. Exact
+   * counts can scan large fixture sets again and may fail even after deletion
+   * has already completed. Check each table sequentially with limit(1) so an
+   * error identifies the exact verification step and preserves its cause.
+   */
+  const jobCheck =
+    await supabase
       .from(MEDIA_SYNC_JOBS_TABLE)
-      .select("id", {
-        count: "exact",
-        head: true,
-      })
-      .eq("id", fixture.jobId),
-
-    supabase
-      .from(MEDIA_SYNC_STAGING_ROWS_TABLE)
-      .select("id", {
-        count: "exact",
-        head: true,
-      })
-      .eq("job_id", fixture.jobId),
-
-    fixture.snapshotIngestionId
-      ? supabase
-          .from(REPORT_INGESTIONS_TABLE)
-          .select("id", {
-            count: "exact",
-            head: true,
-          })
-          .eq(
-            "id",
-            fixture.snapshotIngestionId,
-          )
-      : Promise.resolve({
-          count: 0,
-          error: null,
-        }),
-
-    fixture.snapshotIngestionId
-      ? supabase
-          .from(REPORT_ROWS_TABLE)
-          .select("id", {
-            count: "exact",
-            head: true,
-          })
-          .eq(
-            "report_id",
-            fixture.reportId,
-          )
-          .eq(
-            "ingestion_id",
-            fixture.snapshotIngestionId,
-          )
-      : Promise.resolve({
-          count: 0,
-          error: null,
-        }),
-  ]);
+      .select("id")
+      .eq("id", fixture.jobId)
+      .limit(1);
 
   if (
     jobCheck.error ||
-    stagingCheck.error ||
-    ingestionCheck.error ||
-    rowsCheck.error
+    !Array.isArray(jobCheck.data)
   ) {
     throw new Error(
-      "VERIFICATION_CLEANUP_CHECK_FAILED",
+      "VERIFICATION_JOB_CLEANUP_CHECK_FAILED",
+      { cause: jobCheck.error ?? undefined },
     );
   }
 
-  return (
-    (jobCheck.count ?? 0) === 0 &&
-    (stagingCheck.count ?? 0) === 0 &&
-    (ingestionCheck.count ?? 0) === 0 &&
-    (rowsCheck.count ?? 0) === 0
-  );
+  if (jobCheck.data.length > 0) {
+    return false;
+  }
+
+  const stagingCheck =
+    await supabase
+      .from(MEDIA_SYNC_STAGING_ROWS_TABLE)
+      .select("id")
+      .eq("job_id", fixture.jobId)
+      .limit(1);
+
+  if (
+    stagingCheck.error ||
+    !Array.isArray(stagingCheck.data)
+  ) {
+    throw new Error(
+      "VERIFICATION_STAGING_CLEANUP_CHECK_FAILED",
+      {
+        cause:
+          stagingCheck.error ?? undefined,
+      },
+    );
+  }
+
+  if (stagingCheck.data.length > 0) {
+    return false;
+  }
+
+  if (fixture.snapshotIngestionId) {
+    const ingestionCheck =
+      await supabase
+        .from(REPORT_INGESTIONS_TABLE)
+        .select("id")
+        .eq(
+          "id",
+          fixture.snapshotIngestionId,
+        )
+        .limit(1);
+
+    if (
+      ingestionCheck.error ||
+      !Array.isArray(ingestionCheck.data)
+    ) {
+      throw new Error(
+        "VERIFICATION_INGESTION_CLEANUP_CHECK_FAILED",
+        {
+          cause:
+            ingestionCheck.error ??
+            undefined,
+        },
+      );
+    }
+
+    if (ingestionCheck.data.length > 0) {
+      return false;
+    }
+
+    const rowsCheck =
+      await supabase
+        .from(REPORT_ROWS_TABLE)
+        .select("id")
+        .eq(
+          "report_id",
+          fixture.reportId,
+        )
+        .eq(
+          "ingestion_id",
+          fixture.snapshotIngestionId,
+        )
+        .limit(1);
+
+    if (
+      rowsCheck.error ||
+      !Array.isArray(rowsCheck.data)
+    ) {
+      throw new Error(
+        "VERIFICATION_MATERIALIZED_ROWS_CLEANUP_CHECK_FAILED",
+        {
+          cause:
+            rowsCheck.error ?? undefined,
+        },
+      );
+    }
+
+    if (rowsCheck.data.length > 0) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 async function main(): Promise<void> {

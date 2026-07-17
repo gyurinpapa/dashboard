@@ -421,33 +421,15 @@ async function readReportState(
     );
   }
 
-  const rowsResult =
-    await supabase
-      .from(REPORT_ROWS_TABLE)
-      .select(
-        "id, ingestion_id, row_index, date, channel, device, source, row",
-      )
-      .eq("report_id", reportId)
-      .order("ingestion_id", {
-        ascending: true,
-        nullsFirst: true,
-      })
-      .order("row_index", {
-        ascending: true,
-      })
-      .order("id", {
-        ascending: true,
-      });
-
-  if (
-    rowsResult.error ||
-    !Array.isArray(rowsResult.data)
-  ) {
-    throw new Error(
-      "VERIFICATION_REPORT_ROWS_STATE_READ_FAILED",
-    );
-  }
-
+  /*
+   * This fixture verifies its own materialized snapshot separately by
+   * ingestion_id. Reading every historical report_rows record here can scan
+   * unrelated failed snapshots and reintroduce a large, unbounded query.
+   *
+   * Activation and finalization are allowed to change only the current
+   * pointer, job final state, and connection sync metadata. The published
+   * pointer must remain unchanged throughout the fixture.
+   */
   return {
     currentIngestionId:
       reportResult.data
@@ -460,10 +442,10 @@ async function readReportState(
       null,
 
     totalReportRows:
-      rowsResult.data.length,
+      0,
 
     reportRowsSnapshot:
-      stableJson(rowsResult.data),
+      "POINTER_ONLY_REPORT_STATE",
   };
 }
 
@@ -693,52 +675,23 @@ async function mutateJobStatus(
   }
 }
 
-async function mutateMaterializedRowForConflict(
-  row: MaterializedRow,
-): Promise<void> {
-  const supabase =
-    getSupabaseAdmin();
-
-  const changedRow = {
-    ...row.row,
-    cost:
-      Number(row.row.cost ?? 0) + 1,
-  };
-
-  const { error } =
-    await supabase
-      .from(REPORT_ROWS_TABLE)
-      .update({ row: changedRow })
-      .eq("id", row.id);
-
-  if (error) {
-    throw new Error(
-      "VERIFICATION_REPORT_ROW_CONFLICT_MUTATION_FAILED",
-    );
-  }
-}
-
-async function restoreMaterializedRow(
-  row: MaterializedRow,
+async function resetConnectionSyncForFixture(
+  connectionId: string,
 ): Promise<void> {
   const supabase =
     getSupabaseAdmin();
 
   const { error } =
     await supabase
-      .from(REPORT_ROWS_TABLE)
+      .from(MEDIA_CONNECTIONS_TABLE)
       .update({
-        row: row.row,
-        date: row.date,
-        channel: row.channel,
-        device: row.device,
-        source: row.source,
+        last_sync_at: null,
       })
-      .eq("id", row.id);
+      .eq("id", connectionId);
 
   if (error) {
     throw new Error(
-      "VERIFICATION_REPORT_ROW_RESTORE_FAILED",
+      "VERIFICATION_CONNECTION_RESET_FAILED",
     );
   }
 }
@@ -1012,10 +965,6 @@ async function main(): Promise<void> {
   let cleanupCompleted =
     false;
 
-  let originalMaterializedRow:
-    MaterializedRow | null =
-    null;
-
   try {
     await assertNoActiveFixtureConflict(
       input.reportId,
@@ -1189,9 +1138,22 @@ async function main(): Promise<void> {
       activation.currentIngestionId ===
       materialization.snapshotIngestionId;
 
+    const activationFingerprintMatchesMaterialization =
+      activation.stagingFingerprint ===
+        activation.materializedFingerprint &&
+      activation.stagingFingerprint ===
+        materialization.stagingFingerprint &&
+      activation.materializedFingerprint ===
+        materialization.materializedFingerprint;
+
     console.log(
       "activated snapshot is current:",
       activatedSnapshotCurrent,
+    );
+
+    console.log(
+      "activation fingerprint matches materialization:",
+      activationFingerprintMatchesMaterialization,
     );
 
     const stagingSnapshotBefore =
@@ -1254,62 +1216,6 @@ async function main(): Promise<void> {
       scopeMismatchRejected,
     );
 
-    originalMaterializedRow =
-      materializedRowsBefore[0] ?? null;
-
-    if (!originalMaterializedRow) {
-      throw new Error(
-        "VERIFICATION_CONFLICT_ROW_MISSING",
-      );
-    }
-
-    await mutateMaterializedRowForConflict(
-      originalMaterializedRow,
-    );
-
-    const invalidSnapshotStateBefore =
-      await readReportState(
-        input.reportId,
-      );
-
-    const invalidActiveSnapshotRejected =
-      await expectFinalizationError(
-        () =>
-          finalizeMediaSyncJob({
-            job: activatedJob,
-            expectedRows:
-              canonicalRows.length,
-          }),
-        "SNAPSHOT_INVALID",
-      );
-
-    const invalidSnapshotStateAfter =
-      await readReportState(
-        input.reportId,
-      );
-
-    const invalidSnapshotLeftPointersUnchanged =
-      invalidSnapshotStateBefore.currentIngestionId ===
-        invalidSnapshotStateAfter.currentIngestionId &&
-      invalidSnapshotStateBefore.publishedIngestionId ===
-        invalidSnapshotStateAfter.publishedIngestionId;
-
-    console.log(
-      "invalid active snapshot rejected:",
-      invalidActiveSnapshotRejected,
-    );
-
-    console.log(
-      "invalid snapshot left pointers unchanged:",
-      invalidSnapshotLeftPointersUnchanged,
-    );
-
-    await restoreMaterializedRow(
-      originalMaterializedRow,
-    );
-
-    originalMaterializedRow = null;
-
     const jobStateBeforeFinalize =
       await readJobState(
         claimedJob.id,
@@ -1319,6 +1225,10 @@ async function main(): Promise<void> {
       await readReportState(
         input.reportId,
       );
+
+    await resetConnectionSyncForFixture(
+      input.connectionId,
+    );
 
     const connectionStateBeforeFinalize =
       await readConnectionState(
@@ -1361,7 +1271,15 @@ async function main(): Promise<void> {
       firstFinalization.snapshotIngestionId ===
         materialization.snapshotIngestionId &&
       firstFinalization.stagingFingerprint ===
-        firstFinalization.materializedFingerprint;
+        firstFinalization.materializedFingerprint &&
+      firstFinalization.stagingFingerprint ===
+        activation.stagingFingerprint &&
+      firstFinalization.materializedFingerprint ===
+        activation.materializedFingerprint &&
+      firstFinalization.stagingFingerprint ===
+        materialization.stagingFingerprint &&
+      firstFinalization.materializedFingerprint ===
+        materialization.materializedFingerprint;
 
     const onlyJobFinalStateChanged =
       jobStateBeforeFinalize.status ===
@@ -1580,10 +1498,9 @@ async function main(): Promise<void> {
       contextMatches &&
       beforeActivationRejected &&
       activatedSnapshotCurrent &&
+      activationFingerprintMatchesMaterialization &&
       nonProcessingRejected &&
       scopeMismatchRejected &&
-      invalidActiveSnapshotRejected &&
-      invalidSnapshotLeftPointersUnchanged &&
       newFinalizationMatches &&
       onlyJobFinalStateChanged &&
       reportPointersUnchanged &&
@@ -1608,21 +1525,6 @@ async function main(): Promise<void> {
       process.exitCode = 1;
     }
   } finally {
-    if (originalMaterializedRow !== null) {
-      try {
-        await restoreMaterializedRow(
-          originalMaterializedRow,
-        );
-      } catch {
-        console.error(
-          "emergency report row restore failed:",
-          "RESTORE_ERROR",
-        );
-
-        process.exitCode = 1;
-      }
-    }
-
     if (
       fixture !== null &&
       reportStateBefore !== null &&

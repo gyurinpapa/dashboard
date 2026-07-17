@@ -1,4 +1,6 @@
-import { getSupabaseAdmin } from "../supabase/admin";
+import {
+  buildMediaSyncStagingRowKey,
+} from "./media-sync-staging-row-identity";
 import {
   isMediaSyncDataLevel,
   isValidMediaSyncDateRange,
@@ -65,6 +67,22 @@ export type AppendMediaSyncStagingBatchResult = {
   duplicateRows: number;
   firstRowIndex: number | null;
   lastRowIndex: number | null;
+};
+
+export type MediaSyncStagingRepositoryRpcResult = {
+  data: unknown;
+  error: unknown;
+};
+
+export type MediaSyncStagingRepositoryRpcInvoker = (
+  functionName: string,
+  args: {
+    p_payload: unknown;
+  },
+) => Promise<MediaSyncStagingRepositoryRpcResult>;
+
+export type MediaSyncStagingRepositoryDependencies = {
+  invokeRpc?: MediaSyncStagingRepositoryRpcInvoker;
 };
 
 type UnknownRecord = Record<string, unknown>;
@@ -157,6 +175,40 @@ function normalizeDimension(
   }
 
   return value;
+}
+
+function assertOptionalBlankString(
+  value: unknown,
+  fieldName: string,
+  maxLength = 2_000,
+): void {
+  if (
+    value === undefined ||
+    value === null
+  ) {
+    return;
+  }
+
+  if (typeof value !== "string") {
+    throw new MediaSyncStagingRepositoryError(
+      "INVALID_INPUT",
+      `${fieldName} must be empty or omitted.`,
+    );
+  }
+
+  if (value.length > maxLength) {
+    throw new MediaSyncStagingRepositoryError(
+      "INVALID_INPUT",
+      `${fieldName} exceeds the maximum allowed length.`,
+    );
+  }
+
+  if (value.trim()) {
+    throw new MediaSyncStagingRepositoryError(
+      "INVALID_INPUT",
+      `${fieldName} must be empty or omitted.`,
+    );
+  }
 }
 
 function normalizeNonNegativeInteger(
@@ -418,61 +470,6 @@ function validateJob(
   }
 }
 
-function buildNaverKeywordRowKey(
-  row: EtrylueNormalizedMediaRow,
-): string {
-  const provider =
-    normalizeRequiredString(
-      row.provider,
-      "row.provider",
-      100,
-    );
-
-  const externalAccountId =
-    normalizeRequiredString(
-      row.external_account_id,
-      "row.external_account_id",
-      500,
-    );
-
-  const externalCampaignId =
-    normalizeRequiredString(
-      row.external_campaign_id,
-      "row.external_campaign_id",
-      2_000,
-    );
-
-  const externalGroupId =
-    normalizeRequiredString(
-      row.external_group_id,
-      "row.external_group_id",
-      2_000,
-    );
-
-  const externalKeywordId =
-    normalizeRequiredString(
-      row.external_keyword_id,
-      "row.external_keyword_id",
-      2_000,
-    );
-
-  const date =
-    normalizeRequiredString(
-      row.date,
-      "row.date",
-      10,
-    );
-
-  return JSON.stringify([
-    provider,
-    externalAccountId,
-    externalCampaignId,
-    externalGroupId,
-    externalKeywordId,
-    date,
-  ]);
-}
-
 function validateCanonicalRow(input: {
   row: unknown;
   rowIndexInBatch: number;
@@ -484,16 +481,19 @@ function validateCanonicalRow(input: {
     job,
   } = input;
 
+  const rowPath =
+    `rows[${rowIndexInBatch}]`;
+
   if (!isPlainObject(row)) {
     throw new MediaSyncStagingRepositoryError(
       "INVALID_INPUT",
-      `rows[${rowIndexInBatch}] must be a canonical row object.`,
+      `${rowPath} must be a canonical row object.`,
     );
   }
 
   assertJsonSerializable(
     row,
-    `rows[${rowIndexInBatch}]`,
+    rowPath,
     new Set<object>(),
   );
 
@@ -506,7 +506,7 @@ function validateCanonicalRow(input: {
   ) {
     throw new MediaSyncStagingRepositoryError(
       "SCOPE_MISMATCH",
-      `rows[${rowIndexInBatch}] provider does not match the job.`,
+      `${rowPath} provider does not match the job.`,
     );
   }
 
@@ -516,14 +516,14 @@ function validateCanonicalRow(input: {
   ) {
     throw new MediaSyncStagingRepositoryError(
       "INVALID_INPUT",
-      `rows[${rowIndexInBatch}] must use API ingestion_source.`,
+      `${rowPath} must use API ingestion_source.`,
     );
   }
 
   const externalAccountId =
     normalizeRequiredString(
       typedRow.external_account_id,
-      `rows[${rowIndexInBatch}].external_account_id`,
+      `${rowPath}.external_account_id`,
       500,
     );
 
@@ -533,14 +533,14 @@ function validateCanonicalRow(input: {
   ) {
     throw new MediaSyncStagingRepositoryError(
       "SCOPE_MISMATCH",
-      `rows[${rowIndexInBatch}] account does not match the job.`,
+      `${rowPath} account does not match the job.`,
     );
   }
 
   if (!isValidYmd(typedRow.date)) {
     throw new MediaSyncStagingRepositoryError(
       "INVALID_INPUT",
-      `rows[${rowIndexInBatch}].date is invalid.`,
+      `${rowPath}.date is invalid.`,
     );
   }
 
@@ -550,7 +550,7 @@ function validateCanonicalRow(input: {
   ) {
     throw new MediaSyncStagingRepositoryError(
       "SCOPE_MISMATCH",
-      `rows[${rowIndexInBatch}].date is outside the job date range.`,
+      `${rowPath}.date is outside the job date range.`,
     );
   }
 
@@ -564,7 +564,7 @@ function validateCanonicalRow(input: {
   ) {
     throw new MediaSyncStagingRepositoryError(
       "INVALID_INPUT",
-      `rows[${rowIndexInBatch}] canonical date fields do not match.`,
+      `${rowPath} canonical date fields do not match.`,
     );
   }
 
@@ -578,63 +578,180 @@ function validateCanonicalRow(input: {
   ) {
     throw new MediaSyncStagingRepositoryError(
       "INVALID_INPUT",
-      `rows[${rowIndexInBatch}] contains an invalid data level.`,
+      `${rowPath} contains an invalid data level.`,
     );
   }
 
   if (
-    typedRow.row_level !== "keyword" ||
-    typedRow.data_level !== "keyword"
+    typedRow.row_level !==
+    typedRow.data_level
   ) {
     throw new MediaSyncStagingRepositoryError(
       "INVALID_INPUT",
-      `rows[${rowIndexInBatch}] must be a Naver keyword row.`,
+      `${rowPath} row_level and data_level must match.`,
     );
   }
 
   normalizeRequiredString(
     typedRow.external_campaign_id,
-    `rows[${rowIndexInBatch}].external_campaign_id`,
+    `${rowPath}.external_campaign_id`,
   );
 
   normalizeRequiredString(
     typedRow.external_group_id,
-    `rows[${rowIndexInBatch}].external_group_id`,
-  );
-
-  normalizeRequiredString(
-    typedRow.external_keyword_id,
-    `rows[${rowIndexInBatch}].external_keyword_id`,
+    `${rowPath}.external_group_id`,
   );
 
   normalizeRequiredString(
     typedRow.campaign,
-    `rows[${rowIndexInBatch}].campaign`,
+    `${rowPath}.campaign`,
   );
 
   normalizeRequiredString(
     typedRow.group,
-    `rows[${rowIndexInBatch}].group`,
+    `${rowPath}.group`,
   );
 
-  normalizeRequiredString(
-    typedRow.keyword,
-    `rows[${rowIndexInBatch}].keyword`,
-  );
+  if (
+    typedRow.row_level ===
+    "keyword"
+  ) {
+    normalizeRequiredString(
+      typedRow.external_keyword_id,
+      `${rowPath}.external_keyword_id`,
+    );
+
+    normalizeRequiredString(
+      typedRow.keyword,
+      `${rowPath}.keyword`,
+    );
+
+    assertOptionalBlankString(
+      typedRow[
+        "external_creative_id"
+      ],
+      `${rowPath}.external_creative_id`,
+    );
+
+    assertOptionalBlankString(
+      typedRow.external_ad_id,
+      `${rowPath}.external_ad_id`,
+    );
+  } else if (
+    typedRow.row_level ===
+    "creative"
+  ) {
+    if (
+      typedRow.row_level_reason !==
+      "naver_searchad_shopping_ad_daily_stats"
+    ) {
+      throw new MediaSyncStagingRepositoryError(
+        "INVALID_INPUT",
+        `${rowPath} has an invalid SHOPPING creative row_level_reason.`,
+      );
+    }
+
+    normalizeRequiredString(
+      typedRow[
+        "external_creative_id"
+      ],
+      `${rowPath}.external_creative_id`,
+    );
+
+    normalizeRequiredString(
+      typedRow.creative,
+      `${rowPath}.creative`,
+    );
+
+    assertOptionalBlankString(
+      typedRow.external_keyword_id,
+      `${rowPath}.external_keyword_id`,
+    );
+
+    assertOptionalBlankString(
+      typedRow.external_ad_id,
+      `${rowPath}.external_ad_id`,
+    );
+
+    assertOptionalBlankString(
+      typedRow.keyword,
+      `${rowPath}.keyword`,
+    );
+
+    assertOptionalBlankString(
+      typedRow.keyword_name,
+      `${rowPath}.keyword_name`,
+    );
+  } else if (
+    typedRow.row_level ===
+    "mixed"
+  ) {
+    if (
+      typedRow.row_level_reason !==
+      "naver_searchad_brand_search_adgroup_daily_stats"
+    ) {
+      throw new MediaSyncStagingRepositoryError(
+        "INVALID_INPUT",
+        `${rowPath} has an invalid BRAND_SEARCH mixed row_level_reason.`,
+      );
+    }
+
+    assertOptionalBlankString(
+      typedRow.external_keyword_id,
+      `${rowPath}.external_keyword_id`,
+    );
+
+    assertOptionalBlankString(
+      typedRow[
+        "external_creative_id"
+      ],
+      `${rowPath}.external_creative_id`,
+    );
+
+    assertOptionalBlankString(
+      typedRow.external_ad_id,
+      `${rowPath}.external_ad_id`,
+    );
+
+    assertOptionalBlankString(
+      typedRow.keyword,
+      `${rowPath}.keyword`,
+    );
+
+    assertOptionalBlankString(
+      typedRow.keyword_name,
+      `${rowPath}.keyword_name`,
+    );
+
+    assertOptionalBlankString(
+      typedRow.creative,
+      `${rowPath}.creative`,
+    );
+
+    assertOptionalBlankString(
+      typedRow.creative_name,
+      `${rowPath}.creative_name`,
+    );
+  } else {
+    throw new MediaSyncStagingRepositoryError(
+      "INVALID_INPUT",
+      `${rowPath} must be a Naver keyword, creative, or mixed row.`,
+    );
+  }
 
   normalizeDimension(
     typedRow.channel,
-    `rows[${rowIndexInBatch}].channel`,
+    `${rowPath}.channel`,
   );
 
   normalizeDimension(
     typedRow.device,
-    `rows[${rowIndexInBatch}].device`,
+    `${rowPath}.device`,
   );
 
   normalizeDimension(
     typedRow.source,
-    `rows[${rowIndexInBatch}].source`,
+    `${rowPath}.source`,
   );
 
   const metricFields = [
@@ -656,7 +773,7 @@ function validateCanonicalRow(input: {
     ) {
       throw new MediaSyncStagingRepositoryError(
         "INVALID_INPUT",
-        `rows[${rowIndexInBatch}].${metricField} must be a non-negative finite number.`,
+        `${rowPath}.${metricField} must be a non-negative finite number.`,
       );
     }
   }
@@ -839,8 +956,67 @@ function parseRpcResult(
   };
 }
 
+async function invokeDefaultMediaSyncStagingRpc(
+  functionName: string,
+  args: {
+    p_payload: unknown;
+  },
+): Promise<MediaSyncStagingRepositoryRpcResult> {
+  const { getSupabaseAdmin } =
+    await import(
+      "../supabase/admin"
+    );
+
+  const supabase =
+    getSupabaseAdmin();
+
+  const result =
+    await supabase.rpc(
+      functionName,
+      args,
+    );
+
+  return {
+    data:
+      result.data,
+    error:
+      result.error,
+  };
+}
+
+function resolveRpcInvoker(
+  dependencies:
+    | MediaSyncStagingRepositoryDependencies
+    | undefined,
+): MediaSyncStagingRepositoryRpcInvoker {
+  if (
+    dependencies === undefined
+  ) {
+    return invokeDefaultMediaSyncStagingRpc;
+  }
+
+  if (
+    !dependencies ||
+    typeof dependencies !==
+      "object" ||
+    Array.isArray(
+      dependencies,
+    ) ||
+    typeof dependencies.invokeRpc !==
+      "function"
+  ) {
+    throw new MediaSyncStagingRepositoryError(
+      "INVALID_INPUT",
+      "A valid staging repository RPC dependency is required when dependencies are provided.",
+    );
+  }
+
+  return dependencies.invokeRpc;
+}
+
 export async function appendMediaSyncStagingBatch(
   input: AppendMediaSyncStagingBatchInput,
+  dependencies?: MediaSyncStagingRepositoryDependencies,
 ): Promise<AppendMediaSyncStagingBatchResult> {
   if (!input || typeof input !== "object") {
     throw new MediaSyncStagingRepositoryError(
@@ -904,7 +1080,7 @@ export async function appendMediaSyncStagingBatch(
             rowStartIndex + index,
 
           row_key:
-            buildNaverKeywordRowKey(
+            buildMediaSyncStagingRowKey(
               canonicalRow,
             ),
 
@@ -961,13 +1137,16 @@ export async function appendMediaSyncStagingBatch(
       rpcRows,
   };
 
-  const supabase =
-    getSupabaseAdmin();
+  const invokeRpc =
+    resolveRpcInvoker(
+      dependencies,
+    );
 
-  let result;
+  let result:
+    MediaSyncStagingRepositoryRpcResult;
 
   try {
-    result = await supabase.rpc(
+    result = await invokeRpc(
       APPEND_MEDIA_SYNC_STAGING_BATCH_RPC,
       {
         p_payload: payload,

@@ -18,9 +18,32 @@ import type {
   NaverKeywordStatsCollectorProgressEvent,
 } from "./naver-searchads-keyword-stats-collector";
 import {
-  saveMediaSyncProcessingCheckpoint,
-  MediaSyncProcessingCheckpointError,
-} from "./media-sync-processing-checkpoint-repository";
+  runNaverSearchAdsAuthoritativeEntityStagingOrchestrator,
+  NaverSearchAdsAuthoritativeEntityStagingOrchestratorError,
+  type NaverSearchAdsAuthoritativeEntityStagingOrchestratorInput,
+  type NaverSearchAdsAuthoritativeEntityStagingOrchestratorResult,
+} from "./naver-searchads-authoritative-entity-staging-orchestrator";
+import type {
+  NaverAuthoritativeEntityStatsCollectorProgressEvent,
+} from "./naver-searchads-authoritative-entity-stats-collector";
+import {
+  assertNaverSearchAdsCombinedStagingComplete,
+  MediaSyncStagingSummaryError,
+  type MediaSyncStagingSummary,
+} from "./media-sync-staging-summary-repository";
+import type {
+  MediaCanonicalRowBatchBufferState,
+} from "./media-canonical-row-batch-buffer";
+import {
+  createCombinedCheckpointFromAuthoritativeResult,
+  createCombinedCheckpointFromKeywordResult,
+  readNaverSearchAdsCombinedProcessingCheckpoint,
+  saveNaverSearchAdsCombinedProcessingCheckpoint,
+  MediaSyncCombinedProcessingCheckpointError,
+  type MediaSyncCombinedProcessingCheckpointDependencies,
+  type NaverSearchAdsCombinedProcessingCheckpoint,
+  type NaverSearchAdsCombinedStagingPhase,
+} from "./media-sync-combined-processing-checkpoint-repository";
 import {
   materializeMediaSyncSnapshot,
   MediaSyncSnapshotMaterializationError,
@@ -108,6 +131,35 @@ export class MediaSyncWorkerOrchestrationError extends Error {
   }
 }
 
+export type MediaSyncWorkerOrchestrationDependencies = {
+  loadContext:
+    typeof loadNaverMediaSyncWorkerContext;
+
+  runKeywordStaging:
+    typeof runNaverSearchAdsStagingOrchestrator;
+
+  runAuthoritativeStaging:
+    typeof runNaverSearchAdsAuthoritativeEntityStagingOrchestrator;
+
+  saveCombinedCheckpoint:
+    typeof saveNaverSearchAdsCombinedProcessingCheckpoint;
+
+  releaseForResume:
+    typeof releaseNaverMediaSyncJobForResume;
+
+  assertStagingComplete:
+    typeof assertNaverSearchAdsCombinedStagingComplete;
+
+  materialize:
+    typeof materializeMediaSyncSnapshot;
+
+  activate:
+    typeof activateMediaSyncSnapshot;
+
+  finalize:
+    typeof finalizeMediaSyncJob;
+};
+
 export type ProcessNaverMediaSyncJobOptions = {
   dateWindowIndex?: number;
   stagingBatchSize?: number;
@@ -118,47 +170,212 @@ export type ProcessNaverMediaSyncJobOptions = {
   maxKeywordStatsPerRun?: number;
   maxStatsRequestsPerRun?: number;
   maxKeywordDiscoveryPagesPerRun?: number;
+
+  maxAuthoritativeEntityStatsPerRun?: number;
+  maxAuthoritativeStatsRequestsPerRun?: number;
+  maxAuthoritativeDiscoveryPagesPerRun?: number;
+
   materializationBatchSize?: number;
   jobTimeoutMs?: number;
   signal?: AbortSignal;
-  onRetry?: NaverSearchAdsStagingOrchestratorInput["onRetry"];
-  dependencies?: NaverSearchAdsStagingOrchestratorInput["dependencies"];
+
+  onRetry?:
+    NaverSearchAdsStagingOrchestratorInput["onRetry"];
+
+  onAuthoritativeRetry?:
+    NaverSearchAdsAuthoritativeEntityStagingOrchestratorInput["onRetry"];
+
+  dependencies?:
+    NaverSearchAdsStagingOrchestratorInput["dependencies"];
+
+  authoritativeDependencies?:
+    NaverSearchAdsAuthoritativeEntityStagingOrchestratorInput["collectorDependencies"];
+
+  authoritativeStagingRepositoryDependencies?:
+    NaverSearchAdsAuthoritativeEntityStagingOrchestratorInput["stagingRepositoryDependencies"];
+
+  combinedCheckpointDependencies?:
+    MediaSyncCombinedProcessingCheckpointDependencies;
+
+  orchestrationDependencies?: Partial<
+    MediaSyncWorkerOrchestrationDependencies
+  >;
+};
+
+export type NaverSearchAdsWorkerCombinedAppendTotals = {
+  flushCount: number;
+  submittedRows: number;
+  insertedRows: number;
+  duplicateRows: number;
+  maximumBatchSize: number;
+  firstRowIndex: number | null;
+  lastRowIndex: number | null;
+};
+
+export type NaverSearchAdsWorkerCombinedCollectorResult = {
+  phase:
+    NaverSearchAdsCombinedStagingPhase;
+
+  partialReason:
+    string | null;
+
+  keyword:
+    NaverSearchAdsStagingOrchestratorCompletedResult["collector"] |
+    NaverSearchAdsStagingOrchestratorPartialResult["collector"] |
+    null;
+
+  authoritative:
+    NaverSearchAdsAuthoritativeEntityStagingOrchestratorResult["collector"] |
+    null;
+};
+
+export type NaverSearchAdsWorkerCombinedPartialSummary = {
+  isComplete: false;
+  totalRows: number;
+  expectedRows: number;
+  insertedRows: number;
+  duplicateRows: number;
+};
+
+export type NaverSearchAdsWorkerCombinedStagingResult = {
+  status:
+    "partial" |
+    "completed";
+
+  isComplete:
+    boolean;
+
+  phase:
+    NaverSearchAdsCombinedStagingPhase;
+
+  jobId:
+    string;
+
+  dateWindowIndex:
+    number;
+
+  canonicalRowCount:
+    number;
+
+  runCanonicalRowCount:
+    number;
+
+  callbackCount:
+    number;
+
+  collector:
+    NaverSearchAdsWorkerCombinedCollectorResult;
+
+  buffer:
+    MediaCanonicalRowBatchBufferState;
+
+  append:
+    NaverSearchAdsWorkerCombinedAppendTotals;
+
+  summary:
+    MediaSyncStagingSummary |
+    NaverSearchAdsWorkerCombinedPartialSummary;
+
+  keyword:
+    NaverSearchAdsStagingOrchestratorCompletedResult |
+    NaverSearchAdsStagingOrchestratorPartialResult |
+    null;
+
+  authoritative:
+    NaverSearchAdsAuthoritativeEntityStagingOrchestratorResult |
+    null;
 };
 
 export type ProcessNaverMediaSyncJobCompletedResult = {
-  status: "completed";
+  status:
+    "completed";
 
-  jobId: string;
-  reportId: string;
-  workspaceId: string;
-  advertiserId: string;
-  connectionId: string;
+  jobId:
+    string;
+  reportId:
+    string;
+  workspaceId:
+    string;
+  advertiserId:
+    string;
+  connectionId:
+    string;
 
-  staging: NaverSearchAdsStagingOrchestratorCompletedResult;
-  checkpointJob: MediaSyncJobRecord;
-  materialization: MediaSyncSnapshotMaterializationResult;
-  activation: MediaSyncSnapshotActivationResult;
-  finalization: MediaSyncFinalizationResult;
+  staging:
+    NaverSearchAdsWorkerCombinedStagingResult & {
+      status:
+        "completed";
+      isComplete:
+        true;
+      summary:
+        MediaSyncStagingSummary;
+    };
 
-  snapshotIngestionId: string;
-  expectedRows: number;
+  checkpointJob:
+    MediaSyncJobRecord;
+
+  materialization:
+    MediaSyncSnapshotMaterializationResult;
+
+  activation:
+    MediaSyncSnapshotActivationResult;
+
+  finalization:
+    MediaSyncFinalizationResult;
+
+  snapshotIngestionId:
+    string;
+
+  expectedRows:
+    number;
 };
 
 export type ProcessNaverMediaSyncJobPartialResult = {
-  status: "partial";
+  status:
+    "partial";
 
-  jobId: string;
-  reportId: string;
-  workspaceId: string;
-  advertiserId: string;
-  connectionId: string;
+  jobId:
+    string;
+  reportId:
+    string;
+  workspaceId:
+    string;
+  advertiserId:
+    string;
+  connectionId:
+    string;
 
-  staging: NaverSearchAdsStagingOrchestratorPartialResult;
-  checkpointJob: MediaSyncJobRecord;
-  releasedJob: MediaSyncJobRecord;
+  phase:
+    "keyword" |
+    "authoritative";
 
-  snapshotIngestionId: null;
-  expectedRows: number;
+  partialReason:
+    string;
+
+  checkpointRows:
+    number;
+
+  staging:
+    NaverSearchAdsWorkerCombinedStagingResult & {
+      status:
+        "partial";
+      isComplete:
+        false;
+      summary:
+        NaverSearchAdsWorkerCombinedPartialSummary;
+    };
+
+  checkpointJob:
+    MediaSyncJobRecord;
+
+  releasedJob:
+    MediaSyncJobRecord;
+
+  snapshotIngestionId:
+    null;
+
+  expectedRows:
+    number;
 };
 
 export type ProcessNaverMediaSyncJobResult =
@@ -881,6 +1098,131 @@ function logCollectorProgress(input: {
   });
 }
 
+function shouldLogAuthoritativeCollectorProgress(
+  event:
+    NaverAuthoritativeEntityStatsCollectorProgressEvent,
+): boolean {
+  if (
+    event.stage !==
+      "entity_stats:start" &&
+    event.stage !==
+      "entity_stats:done"
+  ) {
+    return true;
+  }
+
+  const completed =
+    event.entitiesCompletedInRun;
+
+  if (completed <= 1) {
+    return true;
+  }
+
+  return completed % 25 === 0;
+}
+
+function formatAuthoritativeCollectorProgressDetail(
+  event:
+    NaverAuthoritativeEntityStatsCollectorProgressEvent,
+): string {
+  const parts:
+    string[] = [
+      `campaignPages=${event.campaignPagesRead}`,
+      `campaigns=${event.campaignsRead}`,
+      `adgroupPages=${event.adgroupPagesRead}`,
+      `adgroups=${event.adgroupsRead}`,
+      `entityPages=${event.entityPagesRead}`,
+      `discovered=${event.entitiesDiscoveredInRun}`,
+      `completed=${event.entitiesCompletedInRun}`,
+      `statsAttempts=${event.statsRequestsAttempted}`,
+      `statsSuccess=${event.statsRequestsSucceeded}`,
+  ];
+
+  if (event.campaignId) {
+    parts.push(
+      `campaign=${event.campaignId}`,
+    );
+  }
+
+  if (event.adgroupId) {
+    parts.push(
+      `adgroup=${event.adgroupId}`,
+    );
+  }
+
+  if (event.entityId) {
+    parts.push(
+      `entity=${event.entityId}`,
+    );
+  }
+
+  if (event.authoritativeGrain) {
+    parts.push(
+      `grain=${event.authoritativeGrain}`,
+    );
+  }
+
+  if (event.pageNumber !== null) {
+    parts.push(
+      `page=${event.pageNumber}`,
+    );
+  }
+
+  if (event.recordsRead !== null) {
+    parts.push(
+      `records=${event.recordsRead}`,
+    );
+  }
+
+  if (event.attemptCount !== null) {
+    parts.push(
+      `attempts=${event.attemptCount}`,
+    );
+  }
+
+  if (event.delayMs !== null) {
+    parts.push(
+      `delayMs=${event.delayMs}`,
+    );
+  }
+
+  if (event.retryCount > 0) {
+    parts.push(
+      `retries=${event.retryCount}`,
+    );
+  }
+
+  return parts.join(
+    " ",
+  );
+}
+
+function logAuthoritativeCollectorProgress(input: {
+  job:
+    MediaSyncJobRecord;
+  event:
+    NaverAuthoritativeEntityStatsCollectorProgressEvent;
+}): void {
+  if (
+    !shouldLogAuthoritativeCollectorProgress(
+      input.event,
+    )
+  ) {
+    return;
+  }
+
+  logStage({
+    job:
+      input.job,
+    stage:
+      `authoritative:${input.event.stage}`,
+    detail:
+      formatAuthoritativeCollectorProgressDetail(
+        input.event,
+      ),
+  });
+}
+
 async function markProcessingMediaSyncJobFailed(input: {
   job: MediaSyncJobRecord;
   error: unknown;
@@ -951,271 +1293,1000 @@ function withJobTimeout<T>(input: {
   });
 }
 
-/**
- * 이미 processing으로 점유된 Naver media_sync_job 1개를 처리한다.
- *
- * completed:
- * collector → staging → checkpoint → materialization
- * → activation → finalization
- *
- * partial:
- * collector → staging → checkpoint → pending 복귀
- *
- * 주의:
- * - partial은 실패가 아니다.
- * - partial에서는 materialization / activation / finalization을 절대 실행하지 않는다.
- * - current_ingestion_id는 completed 후 activation에서만 전환된다.
- * - published_ingestion_id는 이 흐름에서 변경하지 않는다.
- * - credential/provider 원본 payload를 로그나 DB에 저장하지 않는다.
- */
-export async function processClaimedNaverMediaSyncJob(
-  job: MediaSyncJobRecord,
-  options: ProcessNaverMediaSyncJobOptions = {},
-): Promise<ProcessNaverMediaSyncJobResult> {
-  validateProcessingNaverJob(job);
+function resolveOrchestrationDependencies(
+  overrides:
+    Partial<MediaSyncWorkerOrchestrationDependencies> |
+    undefined,
+): MediaSyncWorkerOrchestrationDependencies {
+  return {
+    loadContext:
+      overrides?.loadContext ??
+      loadNaverMediaSyncWorkerContext,
 
-  logStage({ job, stage: "claimed" });
+    runKeywordStaging:
+      overrides?.runKeywordStaging ??
+      runNaverSearchAdsStagingOrchestrator,
 
-  let context;
+    runAuthoritativeStaging:
+      overrides?.runAuthoritativeStaging ??
+      runNaverSearchAdsAuthoritativeEntityStagingOrchestrator,
 
-  try {
-    logStage({ job, stage: "context:start" });
+    saveCombinedCheckpoint:
+      overrides?.saveCombinedCheckpoint ??
+      saveNaverSearchAdsCombinedProcessingCheckpoint,
 
-    context =
-      await loadNaverMediaSyncWorkerContext(
-        job,
+    releaseForResume:
+      overrides?.releaseForResume ??
+      releaseNaverMediaSyncJobForResume,
+
+    assertStagingComplete:
+      overrides?.assertStagingComplete ??
+      assertNaverSearchAdsCombinedStagingComplete,
+
+    materialize:
+      overrides?.materialize ??
+      materializeMediaSyncSnapshot,
+
+    activate:
+      overrides?.activate ??
+      activateMediaSyncSnapshot,
+
+    finalize:
+      overrides?.finalize ??
+      finalizeMediaSyncJob,
+  };
+}
+
+function createEmptyCombinedBuffer(
+  maxBatchSize = 0,
+): MediaCanonicalRowBatchBufferState {
+  return {
+    maxBatchSize,
+    pendingRowCount:
+      0,
+    acceptedRowCount:
+      0,
+    flushedBatchCount:
+      0,
+    flushedRowCount:
+      0,
+    busy:
+      false,
+  };
+}
+
+function combineBufferStates(
+  states:
+    readonly (
+      MediaCanonicalRowBatchBufferState |
+      null
+    )[],
+): MediaCanonicalRowBatchBufferState {
+  const available =
+    states.filter(
+      (
+        state,
+      ): state is MediaCanonicalRowBatchBufferState =>
+        state !== null,
+    );
+
+  if (
+    available.length ===
+    0
+  ) {
+    return createEmptyCombinedBuffer();
+  }
+
+  return {
+    maxBatchSize:
+      Math.max(
+        ...available.map(
+          (
+            state,
+          ) =>
+            state.maxBatchSize,
+        ),
+      ),
+
+    pendingRowCount:
+      available.reduce(
+        (
+          total,
+          state,
+        ) =>
+          total +
+          state.pendingRowCount,
+        0,
+      ),
+
+    acceptedRowCount:
+      available.reduce(
+        (
+          total,
+          state,
+        ) =>
+          total +
+          state.acceptedRowCount,
+        0,
+      ),
+
+    flushedBatchCount:
+      available.reduce(
+        (
+          total,
+          state,
+        ) =>
+          total +
+          state.flushedBatchCount,
+        0,
+      ),
+
+    flushedRowCount:
+      available.reduce(
+        (
+          total,
+          state,
+        ) =>
+          total +
+          state.flushedRowCount,
+        0,
+      ),
+
+    busy:
+      available.some(
+        (
+          state,
+        ) =>
+          state.busy,
+      ),
+  };
+}
+
+function createEmptyCombinedAppend():
+  NaverSearchAdsWorkerCombinedAppendTotals {
+  return {
+    flushCount:
+      0,
+    submittedRows:
+      0,
+    insertedRows:
+      0,
+    duplicateRows:
+      0,
+    maximumBatchSize:
+      0,
+    firstRowIndex:
+      null,
+    lastRowIndex:
+      null,
+  };
+}
+
+function combineAppendTotals(
+  values:
+    readonly (
+      NaverSearchAdsWorkerCombinedAppendTotals |
+      null
+    )[],
+): NaverSearchAdsWorkerCombinedAppendTotals {
+  const result =
+    createEmptyCombinedAppend();
+
+  for (
+    const value
+    of values
+  ) {
+    if (!value) {
+      continue;
+    }
+
+    result.flushCount +=
+      value.flushCount;
+
+    result.submittedRows +=
+      value.submittedRows;
+
+    result.insertedRows +=
+      value.insertedRows;
+
+    result.duplicateRows +=
+      value.duplicateRows;
+
+    result.maximumBatchSize =
+      Math.max(
+        result.maximumBatchSize,
+        value.maximumBatchSize,
       );
-  } catch (error) {
+
     if (
-      error instanceof
-      MediaSyncWorkerRepositoryError
+      result.firstRowIndex ===
+        null &&
+      value.firstRowIndex !==
+        null
     ) {
-      throw wrapStageError(
-        "CONTEXT_FAILED",
-        "The Naver media sync worker context could not be loaded.",
-        error,
+      result.firstRowIndex =
+        value.firstRowIndex;
+    }
+
+    if (
+      value.lastRowIndex !==
+      null
+    ) {
+      result.lastRowIndex =
+        value.lastRowIndex;
+    }
+  }
+
+  return result;
+}
+
+function createCombinedStagingResult(input: {
+  jobId:
+    string;
+
+  checkpoint:
+    NaverSearchAdsCombinedProcessingCheckpoint;
+
+  status:
+    "partial" |
+    "completed";
+
+  partialReason:
+    string | null;
+
+  keyword:
+    NaverSearchAdsStagingOrchestratorCompletedResult |
+    NaverSearchAdsStagingOrchestratorPartialResult |
+    null;
+
+  authoritative:
+    NaverSearchAdsAuthoritativeEntityStagingOrchestratorResult |
+    null;
+
+  summary?:
+    MediaSyncStagingSummary;
+}): NaverSearchAdsWorkerCombinedStagingResult {
+  const runCanonicalRowCount =
+    (
+      input.keyword
+        ?.runCanonicalRowCount ??
+      0
+    ) +
+    (
+      input.authoritative
+        ?.runCanonicalRowCount ??
+      0
+    );
+
+  const callbackCount =
+    (
+      input.keyword
+        ?.callbackCount ??
+      0
+    ) +
+    (
+      input.authoritative
+        ?.callbackCount ??
+      0
+    );
+
+  const buffer =
+    combineBufferStates([
+      input.keyword
+        ?.buffer ??
+        null,
+      input.authoritative
+        ?.buffer ??
+        null,
+    ]);
+
+  const append =
+    combineAppendTotals([
+      input.keyword
+        ?.append ??
+        null,
+      input.authoritative
+        ?.append ??
+        null,
+    ]);
+
+  if (
+    input.status ===
+    "completed"
+  ) {
+    if (
+      !input.summary ||
+      !input.summary.isComplete ||
+      input.summary.totalRows !==
+        input.checkpoint.totalRows
+    ) {
+      throw new MediaSyncWorkerOrchestrationError(
+        "STAGING_FAILED",
+        "The completed combined staging result requires an exact complete summary.",
       );
     }
 
+    return {
+      status:
+        "completed",
+      isComplete:
+        true,
+      phase:
+        "completed",
+      jobId:
+        input.jobId,
+      dateWindowIndex:
+        input.checkpoint.dateWindowIndex,
+      canonicalRowCount:
+        input.checkpoint.totalRows,
+      runCanonicalRowCount,
+      callbackCount,
+      collector: {
+        phase:
+          "completed",
+        partialReason:
+          null,
+        keyword:
+          input.keyword?.collector ??
+          null,
+        authoritative:
+          input.authoritative
+            ?.collector ??
+          null,
+      },
+      buffer,
+      append,
+      summary:
+        input.summary,
+      keyword:
+        input.keyword,
+      authoritative:
+        input.authoritative,
+    };
+  }
+
+  return {
+    status:
+      "partial",
+    isComplete:
+      false,
+    phase:
+      input.checkpoint.phase,
+    jobId:
+      input.jobId,
+    dateWindowIndex:
+      input.checkpoint.dateWindowIndex,
+    canonicalRowCount:
+      input.checkpoint.totalRows,
+    runCanonicalRowCount,
+    callbackCount,
+    collector: {
+      phase:
+        input.checkpoint.phase,
+      partialReason:
+        input.partialReason,
+      keyword:
+        input.keyword?.collector ??
+        null,
+      authoritative:
+        input.authoritative
+          ?.collector ??
+        null,
+    },
+    buffer,
+    append,
+    summary: {
+      isComplete:
+        false,
+      totalRows:
+        input.checkpoint.totalRows,
+      expectedRows:
+        input.checkpoint.totalRows,
+      insertedRows:
+        input.checkpoint.totalRows,
+      duplicateRows:
+        append.duplicateRows,
+    },
+    keyword:
+      input.keyword,
+    authoritative:
+      input.authoritative,
+  };
+}
+
+async function releaseCombinedPartial(input: {
+  job:
+    MediaSyncJobRecord;
+
+  checkpointJob:
+    MediaSyncJobRecord;
+
+  checkpoint:
+    NaverSearchAdsCombinedProcessingCheckpoint;
+
+  partialReason:
+    string;
+
+  keyword:
+    NaverSearchAdsStagingOrchestratorCompletedResult |
+    NaverSearchAdsStagingOrchestratorPartialResult |
+    null;
+
+  authoritative:
+    NaverSearchAdsAuthoritativeEntityStagingOrchestratorResult |
+    null;
+
+  dependencies:
+    MediaSyncWorkerOrchestrationDependencies;
+}): Promise<
+  ProcessNaverMediaSyncJobPartialResult
+> {
+  let releasedJob:
+    MediaSyncJobRecord;
+
+  try {
+    logStage({
+      job:
+        input.checkpointJob,
+      stage:
+        "resume-release:start",
+      detail:
+        `phase=${input.checkpoint.phase} rows=${input.checkpoint.totalRows}`,
+    });
+
+    releasedJob =
+      await input.dependencies
+        .releaseForResume(
+          input.checkpointJob,
+        );
+  } catch (error) {
     throw wrapStageError(
-      "CONTEXT_FAILED",
-      "The Naver media sync worker context failed unexpectedly.",
+      "JOB_RELEASE_FAILED",
+      "The partial Naver media sync job could not be released for resume.",
       error,
     );
   }
 
-  logStage({ job: context.job, stage: "context:done" });
+  const staging =
+    createCombinedStagingResult({
+      jobId:
+        input.checkpointJob.id,
+      checkpoint:
+        input.checkpoint,
+      status:
+        "partial",
+      partialReason:
+        input.partialReason,
+      keyword:
+        input.keyword,
+      authoritative:
+        input.authoritative,
+    }) as ProcessNaverMediaSyncJobPartialResult["staging"];
 
-  let staging;
+  logStage({
+    job:
+      releasedJob,
+    stage:
+      "resume-release:done",
+    detail:
+      `phase=${input.checkpoint.phase} rows=${input.checkpoint.totalRows} reason=${input.partialReason}`,
+  });
+
+  return {
+    status:
+      "partial",
+    jobId:
+      releasedJob.id,
+    reportId:
+      releasedJob.report_id,
+    workspaceId:
+      releasedJob.workspace_id,
+    advertiserId:
+      releasedJob.advertiser_id,
+    connectionId:
+      releasedJob.connection_id,
+    phase:
+      input.checkpoint.phase ===
+      "keyword"
+        ? "keyword"
+        : "authoritative",
+    partialReason:
+      input.partialReason,
+    checkpointRows:
+      input.checkpoint.totalRows,
+    staging,
+    checkpointJob:
+      input.checkpointJob,
+    releasedJob,
+    snapshotIngestionId:
+      null,
+    expectedRows:
+      input.checkpoint.totalRows,
+  };
+}
+
+/**
+ * 이미 processing으로 점유된 Naver media_sync_job 1개를 처리한다.
+ *
+ * staging phase:
+ * 1) WEB_SITE keyword
+ * 2) SHOPPING / BRAND_SEARCH authoritative entity
+ *
+ * 두 phase가 모두 completed이고 combined staging summary가 정확할 때만
+ * materialization → activation → finalization을 실행한다.
+ */
+export async function processClaimedNaverMediaSyncJob(
+  job:
+    MediaSyncJobRecord,
+  options:
+    ProcessNaverMediaSyncJobOptions = {},
+): Promise<
+  ProcessNaverMediaSyncJobResult
+> {
+  validateProcessingNaverJob(
+    job,
+  );
+
+  const dependencies =
+    resolveOrchestrationDependencies(
+      options.orchestrationDependencies,
+    );
+
+  logStage({
+    job,
+    stage:
+      "claimed",
+  });
+
+  let context;
 
   try {
-    logStage({ job: context.job, stage: "staging:start" });
+    logStage({
+      job,
+      stage:
+        "context:start",
+    });
 
-    staging =
-      await runNaverSearchAdsStagingOrchestrator({
-        job:
-          context.job,
-
-        credentials:
-          context.credentials,
-
-        dateWindowIndex:
-          options.dateWindowIndex,
-
-        stagingBatchSize:
-          options.stagingBatchSize,
-
-        requestIntervalMs:
-          options.requestIntervalMs,
-
-        keywordChunkSize:
-          options.keywordChunkSize,
-
-        chunkPauseMs:
-          options.chunkPauseMs,
-
-        maxRetryCount:
-          options.maxRetryCount,
-
-        maxKeywordStatsPerRun:
-          options.maxKeywordStatsPerRun,
-
-        maxStatsRequestsPerRun:
-          options.maxStatsRequestsPerRun,
-
-        maxKeywordDiscoveryPagesPerRun:
-          options.maxKeywordDiscoveryPagesPerRun,
-
-        signal:
-          options.signal,
-
-        onRetry:
-          options.onRetry,
-
-        onCollectorProgress:
-          async (
-            event,
-          ): Promise<void> => {
-            logCollectorProgress({
-              job:
-                context.job,
-              event,
-            });
-          },
-
-        dependencies:
-          options.dependencies,
-      });
-  } catch (error) {
-    if (
-      error instanceof
-      NaverSearchAdsStagingOrchestratorError
-    ) {
-      throw wrapStageError(
-        "STAGING_FAILED",
-        "The Naver media sync staging orchestration failed.",
-        error,
+    context =
+      await dependencies.loadContext(
+        job,
       );
-    }
-
+  } catch (error) {
     throw wrapStageError(
-      "STAGING_FAILED",
-      "The Naver media sync staging orchestration failed unexpectedly.",
+      "CONTEXT_FAILED",
+      "The Naver media sync worker context could not be loaded.",
       error,
     );
   }
 
   logStage({
-    job: context.job,
+    job:
+      context.job,
     stage:
-      staging.status === "partial"
-        ? "staging:partial"
-        : "staging:done",
-    detail:
-      `rows=${staging.canonicalRowCount} runRows=${staging.runCanonicalRowCount}`,
+      "context:done",
   });
 
-  let checkpointJob:
-    MediaSyncJobRecord;
+  let checkpoint:
+    NaverSearchAdsCombinedProcessingCheckpoint;
 
   try {
-    logStage({ job: context.job, stage: "checkpoint:start" });
-
-    checkpointJob =
-      await saveMediaSyncProcessingCheckpoint({
-        job:
-          context.job,
-
-        result:
-          staging,
-      });
-  } catch (error) {
-    if (
-      error instanceof
-      MediaSyncProcessingCheckpointError
-    ) {
-      throw wrapStageError(
-        "CHECKPOINT_FAILED",
-        "The Naver media sync processing checkpoint could not be saved.",
-        error,
+    checkpoint =
+      readNaverSearchAdsCombinedProcessingCheckpoint(
+        context.job,
       );
-    }
-
+  } catch (error) {
     throw wrapStageError(
       "CHECKPOINT_FAILED",
-      "The Naver media sync processing checkpoint failed unexpectedly.",
+      "The Naver combined processing checkpoint could not be read.",
       error,
     );
   }
 
-  logStage({ job: checkpointJob, stage: "checkpoint:done" });
+  let checkpointJob =
+    context.job;
 
-  if (staging.status === "partial") {
-    let releasedJob:
-      MediaSyncJobRecord;
+  let keyword:
+    NaverSearchAdsStagingOrchestratorCompletedResult |
+    NaverSearchAdsStagingOrchestratorPartialResult |
+    null =
+      null;
 
+  let authoritative:
+    NaverSearchAdsAuthoritativeEntityStagingOrchestratorResult |
+    null =
+      null;
+
+  if (
+    checkpoint.phase ===
+    "keyword"
+  ) {
     try {
-      logStage({ job: checkpointJob, stage: "resume-release:start" });
-
-      releasedJob =
-        await releaseNaverMediaSyncJobForResume(
+      logStage({
+        job:
           checkpointJob,
-        );
+        stage:
+          "staging:keyword:start",
+        detail:
+          `rows=${checkpoint.totalRows}`,
+      });
+
+      keyword =
+        await dependencies.runKeywordStaging({
+          job:
+            checkpointJob,
+          credentials:
+            context.credentials,
+          dateWindowIndex:
+            options.dateWindowIndex,
+          stagingBatchSize:
+            options.stagingBatchSize,
+          requestIntervalMs:
+            options.requestIntervalMs,
+          keywordChunkSize:
+            options.keywordChunkSize,
+          chunkPauseMs:
+            options.chunkPauseMs,
+          maxRetryCount:
+            options.maxRetryCount,
+          maxKeywordStatsPerRun:
+            options.maxKeywordStatsPerRun,
+          maxStatsRequestsPerRun:
+            options.maxStatsRequestsPerRun,
+          maxKeywordDiscoveryPagesPerRun:
+            options.maxKeywordDiscoveryPagesPerRun,
+          signal:
+            options.signal,
+          onRetry:
+            options.onRetry,
+          onCollectorProgress:
+            async (
+              event:
+                NaverKeywordStatsCollectorProgressEvent,
+            ): Promise<void> => {
+              logCollectorProgress({
+                job:
+                  checkpointJob,
+                event,
+              });
+            },
+          dependencies:
+            options.dependencies,
+        });
     } catch (error) {
       if (
         error instanceof
-        MediaSyncWorkerRepositoryError
+        NaverSearchAdsStagingOrchestratorError
       ) {
         throw wrapStageError(
-          "JOB_RELEASE_FAILED",
-          "The partial Naver media sync job could not be released for resume.",
+          "STAGING_FAILED",
+          "The Naver keyword staging phase failed.",
           error,
         );
       }
 
       throw wrapStageError(
-        "JOB_RELEASE_FAILED",
-        "The partial Naver media sync job release failed unexpectedly.",
+        "STAGING_FAILED",
+        "The Naver keyword staging phase failed unexpectedly.",
+        error,
+      );
+    }
+
+    checkpoint =
+      createCombinedCheckpointFromKeywordResult({
+        job:
+          checkpointJob,
+        previous:
+          checkpoint,
+        result:
+          keyword,
+      });
+
+    try {
+      checkpointJob =
+        await dependencies
+          .saveCombinedCheckpoint(
+            {
+              job:
+                checkpointJob,
+              checkpoint,
+            },
+            options.combinedCheckpointDependencies,
+          );
+    } catch (error) {
+      if (
+        error instanceof
+        MediaSyncCombinedProcessingCheckpointError
+      ) {
+        throw wrapStageError(
+          "CHECKPOINT_FAILED",
+          "The Naver keyword combined checkpoint could not be saved.",
+          error,
+        );
+      }
+
+      throw wrapStageError(
+        "CHECKPOINT_FAILED",
+        "The Naver keyword combined checkpoint failed unexpectedly.",
         error,
       );
     }
 
     logStage({
       job:
-        releasedJob,
+        checkpointJob,
       stage:
-        "resume-release:done",
+        keyword.status ===
+        "partial"
+          ? "staging:keyword:partial"
+          : "staging:keyword:done",
       detail:
-        `rows=${staging.canonicalRowCount} reason=${staging.collector.partialReason}`,
+        `rows=${checkpoint.totalRows} runRows=${keyword.runCanonicalRowCount}`,
     });
 
-    return {
-      status:
-        "partial",
-
-      jobId:
-        releasedJob.id,
-
-      reportId:
-        releasedJob.report_id,
-
-      workspaceId:
-        releasedJob.workspace_id,
-
-      advertiserId:
-        releasedJob.advertiser_id,
-
-      connectionId:
-        releasedJob.connection_id,
-
-      staging,
-
-      checkpointJob,
-
-      releasedJob,
-
-      snapshotIngestionId:
-        null,
-
-      expectedRows:
-        staging.canonicalRowCount,
-    };
+    if (
+      keyword.status ===
+      "partial"
+    ) {
+      return releaseCombinedPartial({
+        job:
+          context.job,
+        checkpointJob,
+        checkpoint,
+        partialReason:
+          keyword.collector
+            .partialReason ??
+          "keyword_partial",
+        keyword,
+        authoritative:
+          null,
+        dependencies,
+      });
+    }
   }
+
+  if (
+    checkpoint.phase ===
+    "authoritative"
+  ) {
+    try {
+      logStage({
+        job:
+          checkpointJob,
+        stage:
+          "staging:authoritative:start",
+        detail:
+          `rowStart=${checkpoint.nextRowIndex}`,
+      });
+
+      authoritative =
+        await dependencies
+          .runAuthoritativeStaging({
+            job:
+              checkpointJob,
+            credentials:
+              context.credentials,
+            rowStartIndex:
+              checkpoint.nextRowIndex,
+            dateWindowIndex:
+              checkpoint.dateWindowIndex,
+            cursor:
+              checkpoint.authoritative
+                .cursor ??
+              undefined,
+            stagingBatchSize:
+              options.stagingBatchSize,
+            requestIntervalMs:
+              options.requestIntervalMs,
+            maxRetryCount:
+              options.maxRetryCount,
+            maxEntityStatsPerRun:
+              options.maxAuthoritativeEntityStatsPerRun,
+            maxStatsRequestsPerRun:
+              options.maxAuthoritativeStatsRequestsPerRun ??
+              options.maxStatsRequestsPerRun,
+            maxDiscoveryPagesPerRun:
+              options.maxAuthoritativeDiscoveryPagesPerRun,
+            signal:
+              options.signal,
+            onRetry:
+              options.onAuthoritativeRetry,
+            onCollectorProgress:
+              async (
+                event:
+                  NaverAuthoritativeEntityStatsCollectorProgressEvent,
+              ): Promise<void> => {
+                logAuthoritativeCollectorProgress({
+                  job:
+                    checkpointJob,
+                  event,
+                });
+              },
+            collectorDependencies:
+              options.authoritativeDependencies,
+            stagingRepositoryDependencies:
+              options.authoritativeStagingRepositoryDependencies,
+          });
+    } catch (error) {
+      if (
+        error instanceof
+        NaverSearchAdsAuthoritativeEntityStagingOrchestratorError
+      ) {
+        throw wrapStageError(
+          "STAGING_FAILED",
+          "The Naver authoritative staging phase failed.",
+          error,
+        );
+      }
+
+      throw wrapStageError(
+        "STAGING_FAILED",
+        "The Naver authoritative staging phase failed unexpectedly.",
+        error,
+      );
+    }
+
+    checkpoint =
+      createCombinedCheckpointFromAuthoritativeResult({
+        job:
+          checkpointJob,
+        previous:
+          checkpoint,
+        result:
+          authoritative,
+      });
+
+    try {
+      checkpointJob =
+        await dependencies
+          .saveCombinedCheckpoint(
+            {
+              job:
+                checkpointJob,
+              checkpoint,
+            },
+            options.combinedCheckpointDependencies,
+          );
+    } catch (error) {
+      if (
+        error instanceof
+        MediaSyncCombinedProcessingCheckpointError
+      ) {
+        throw wrapStageError(
+          "CHECKPOINT_FAILED",
+          "The Naver authoritative combined checkpoint could not be saved.",
+          error,
+        );
+      }
+
+      throw wrapStageError(
+        "CHECKPOINT_FAILED",
+        "The Naver authoritative combined checkpoint failed unexpectedly.",
+        error,
+      );
+    }
+
+    logStage({
+      job:
+        checkpointJob,
+      stage:
+        authoritative.status ===
+        "partial"
+          ? "staging:authoritative:partial"
+          : "staging:authoritative:done",
+      detail:
+        `rows=${checkpoint.totalRows} runRows=${authoritative.runCanonicalRowCount}`,
+    });
+
+    if (
+      authoritative.status ===
+      "partial"
+    ) {
+      return releaseCombinedPartial({
+        job:
+          context.job,
+        checkpointJob,
+        checkpoint,
+        partialReason:
+          authoritative.collector
+            .partialReason ??
+          "authoritative_partial",
+        keyword,
+        authoritative,
+        dependencies,
+      });
+    }
+  }
+
+  if (
+    checkpoint.phase !==
+      "completed"
+  ) {
+    throw new MediaSyncWorkerOrchestrationError(
+      "CHECKPOINT_FAILED",
+      "The combined staging phases ended without a completed checkpoint.",
+    );
+  }
+
+  let summary:
+    MediaSyncStagingSummary;
+
+  try {
+    logStage({
+      job:
+        checkpointJob,
+      stage:
+        "staging:combined-summary:start",
+      detail:
+        `rows=${checkpoint.totalRows}`,
+    });
+
+    summary =
+      await dependencies
+        .assertStagingComplete({
+          job:
+            checkpointJob,
+          expectedRows:
+            checkpoint.totalRows,
+        });
+  } catch (error) {
+    if (
+      error instanceof
+      MediaSyncStagingSummaryError
+    ) {
+      throw wrapStageError(
+        "STAGING_FAILED",
+        "The combined Naver staging rows are incomplete.",
+        error,
+      );
+    }
+
+    throw wrapStageError(
+      "STAGING_FAILED",
+      "The combined Naver staging summary failed unexpectedly.",
+      error,
+    );
+  }
+
+  const staging =
+    createCombinedStagingResult({
+      jobId:
+        checkpointJob.id,
+      checkpoint,
+      status:
+        "completed",
+      partialReason:
+        null,
+      keyword,
+      authoritative,
+      summary,
+    }) as ProcessNaverMediaSyncJobCompletedResult["staging"];
+
+  logStage({
+    job:
+      checkpointJob,
+    stage:
+      "staging:combined-summary:done",
+    detail:
+      `rows=${staging.canonicalRowCount}`,
+  });
 
   let materialization:
     MediaSyncSnapshotMaterializationResult;
 
   try {
-    logStage({ job: checkpointJob, stage: "materialization:start" });
+    logStage({
+      job:
+        checkpointJob,
+      stage:
+        "materialization:start",
+    });
 
     materialization =
-      await materializeMediaSyncSnapshot({
+      await dependencies.materialize({
         job:
           checkpointJob,
-
         summary:
           staging.summary,
-
         batchSize:
           options.materializationBatchSize,
       });
@@ -1239,11 +2310,14 @@ export async function processClaimedNaverMediaSyncJob(
   }
 
   logStage({
-    job: materialization.job,
-    stage: "materialization:done",
+    job:
+      materialization.job,
+    stage:
+      "materialization:done",
     detail:
       `rows=${materialization.rowCount} batchSize=${
-        options.materializationBatchSize ?? 2_000
+        options.materializationBatchSize ??
+        2_000
       }`,
   });
 
@@ -1251,13 +2325,17 @@ export async function processClaimedNaverMediaSyncJob(
     MediaSyncSnapshotActivationResult;
 
   try {
-    logStage({ job: materialization.job, stage: "activation:start" });
+    logStage({
+      job:
+        materialization.job,
+      stage:
+        "activation:start",
+    });
 
     activation =
-      await activateMediaSyncSnapshot({
+      await dependencies.activate({
         job:
           materialization.job,
-
         expectedRows:
           materialization.rowCount,
       });
@@ -1281,22 +2359,29 @@ export async function processClaimedNaverMediaSyncJob(
   }
 
   logStage({
-    job: activation.job,
-    stage: "activation:done",
-    detail: `rows=${activation.rowCount}`,
+    job:
+      activation.job,
+    stage:
+      "activation:done",
+    detail:
+      `rows=${activation.rowCount}`,
   });
 
   let finalization:
     MediaSyncFinalizationResult;
 
   try {
-    logStage({ job: activation.job, stage: "finalization:start" });
+    logStage({
+      job:
+        activation.job,
+      stage:
+        "finalization:start",
+    });
 
     finalization =
-      await finalizeMediaSyncJob({
+      await dependencies.finalize({
         job:
           activation.job,
-
         expectedRows:
           activation.rowCount,
       });
@@ -1320,43 +2405,34 @@ export async function processClaimedNaverMediaSyncJob(
   }
 
   logStage({
-    job: finalization.job,
-    stage: "finalization:done",
-    detail: `snapshot=${finalization.snapshotIngestionId} rows=${finalization.rowCount}`,
+    job:
+      finalization.job,
+    stage:
+      "finalization:done",
+    detail:
+      `snapshot=${finalization.snapshotIngestionId} rows=${finalization.rowCount}`,
   });
 
   return {
     status:
       "completed",
-
     jobId:
       finalization.job.id,
-
     reportId:
       finalization.job.report_id,
-
     workspaceId:
       finalization.job.workspace_id,
-
     advertiserId:
       finalization.job.advertiser_id,
-
     connectionId:
       finalization.job.connection_id,
-
     staging,
-
     checkpointJob,
-
     materialization,
-
     activation,
-
     finalization,
-
     snapshotIngestionId:
       finalization.snapshotIngestionId,
-
     expectedRows:
       finalization.rowCount,
   };
