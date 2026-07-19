@@ -34,6 +34,9 @@ const JOB_TIMEOUT_MS_ENV =
 const STALE_PROCESSING_MS_ENV =
   "MEDIA_SYNC_WORKER_STALE_PROCESSING_MS";
 
+const REQUEST_INTERVAL_MS_ENV =
+  "MEDIA_SYNC_WORKER_REQUEST_INTERVAL_MS";
+
 const MAX_KEYWORD_STATS_PER_RUN_ENV =
   "MEDIA_SYNC_WORKER_MAX_KEYWORD_STATS_PER_RUN";
 
@@ -66,6 +69,15 @@ const DEFAULT_JOB_TIMEOUT_MS =
 
 const DEFAULT_STALE_PROCESSING_MS =
   60 * 60 * 1_000;
+
+const DEFAULT_REQUEST_INTERVAL_MS =
+  1_000;
+
+const MIN_REQUEST_INTERVAL_MS =
+  250;
+
+const MAX_REQUEST_INTERVAL_MS =
+  60_000;
 
 const MIN_POLL_INTERVAL_MS =
   5_000;
@@ -117,6 +129,7 @@ type WorkerRuntimeOptions = {
   exitWhenIdle: boolean;
   jobTimeoutMs: number;
   staleProcessingMs: number;
+  requestIntervalMs: number;
   maxKeywordStatsPerRun?: number;
   maxStatsRequestsPerRun?: number;
   maxKeywordDiscoveryPagesPerRun?: number;
@@ -291,6 +304,21 @@ function readRuntimeOptions():
         MAX_STALE_PROCESSING_MS,
     });
 
+  const requestIntervalMs =
+    readPositiveIntegerEnv({
+      name:
+        REQUEST_INTERVAL_MS_ENV,
+
+      fallback:
+        DEFAULT_REQUEST_INTERVAL_MS,
+
+      min:
+        MIN_REQUEST_INTERVAL_MS,
+
+      max:
+        MAX_REQUEST_INTERVAL_MS,
+    });
+
   const maxKeywordStatsPerRun =
     readOptionalPositiveIntegerEnv({
       name:
@@ -365,6 +393,7 @@ function readRuntimeOptions():
     exitWhenIdle,
     jobTimeoutMs,
     staleProcessingMs,
+    requestIntervalMs,
     maxKeywordStatsPerRun,
     maxStatsRequestsPerRun,
     maxKeywordDiscoveryPagesPerRun,
@@ -494,6 +523,10 @@ function logWorkerStart(
 
   console.log(
     `[${WORKER_NAME}] stale processing ms: ${options.staleProcessingMs}`,
+  );
+
+  console.log(
+    `[${WORKER_NAME}] request interval ms: ${options.requestIntervalMs}`,
   );
 
   console.log(
@@ -744,6 +777,9 @@ async function processSingleJob(
     await processNextNaverMediaSyncJob({
       jobTimeoutMs:
         options.jobTimeoutMs,
+
+      requestIntervalMs:
+        options.requestIntervalMs,
 
       maxKeywordStatsPerRun:
         options.maxKeywordStatsPerRun,

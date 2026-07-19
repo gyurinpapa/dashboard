@@ -9,6 +9,7 @@ import {
 import {
   appendMediaSyncStagingBatch,
   type AppendMediaSyncStagingBatchResult,
+  type MediaSyncStagingRepositoryDependencies,
 } from "./media-sync-staging-repository";
 import {
   assertMediaSyncStagingComplete,
@@ -128,6 +129,9 @@ export type NaverSearchAdsStagingOrchestratorInput = {
   dependencies?: Partial<
     NaverKeywordStatsCollectorDependencies
   >;
+
+  stagingRepositoryDependencies?:
+    MediaSyncStagingRepositoryDependencies;
 };
 
 export type NaverSearchAdsStagingAppendTotals = {
@@ -921,17 +925,20 @@ export async function runNaverSearchAdsStagingOrchestrator(
             };
 
           const appendResult =
-            await appendMediaSyncStagingBatch({
-              job:
-                input.job,
+            await appendMediaSyncStagingBatch(
+              {
+                job:
+                  input.job,
 
-              rows,
+                rows,
 
-              rowStartIndex:
-                absoluteFlushContext.rowStartIndex,
+                rowStartIndex:
+                  absoluteFlushContext.rowStartIndex,
 
-              dateWindowIndex,
-            });
+                dateWindowIndex,
+              },
+              input.stagingRepositoryDependencies,
+            );
 
           accumulateAppendResult({
             totals:
