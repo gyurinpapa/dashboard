@@ -24,6 +24,12 @@ const API_INGESTION_SOURCE =
 
 const MAX_BATCH_SIZE = 10_000;
 
+const STAGING_RPC_STATEMENT_TIMEOUT_POSTGRES_CODE =
+  "57014" as const;
+
+const STAGING_RPC_STATEMENT_TIMEOUT_RETRY_DELAY_MS =
+  250;
+
 const FORBIDDEN_SECRET_KEY_PATTERN =
   /secret|token|credential|ciphertext|accesslicense|authorization|password|api[_-]?key/i;
 
@@ -81,8 +87,13 @@ export type MediaSyncStagingRepositoryRpcInvoker = (
   },
 ) => Promise<MediaSyncStagingRepositoryRpcResult>;
 
+export type MediaSyncStagingRepositoryWait = (
+  delayMs: number,
+) => Promise<void>;
+
 export type MediaSyncStagingRepositoryDependencies = {
   invokeRpc?: MediaSyncStagingRepositoryRpcInvoker;
+  wait?: MediaSyncStagingRepositoryWait;
 };
 
 type UnknownRecord = Record<string, unknown>;
@@ -122,6 +133,54 @@ function isPlainObject(
   return (
     prototype === Object.prototype ||
     prototype === null
+  );
+}
+
+function isPostgresStatementTimeout(
+  error: unknown,
+): boolean {
+  if (!isPlainObject(error)) {
+    return false;
+  }
+
+  const postgresCode =
+    typeof error.code === "string"
+      ? error.code.trim()
+      : typeof error.postgres_code === "string"
+        ? error.postgres_code.trim()
+        : "";
+
+  const message = [
+    error.message,
+    error.details,
+    error.hint,
+  ]
+    .filter(
+      (value): value is string =>
+        typeof value === "string",
+    )
+    .join(" ")
+    .toLowerCase();
+
+  return (
+    postgresCode ===
+      STAGING_RPC_STATEMENT_TIMEOUT_POSTGRES_CODE &&
+    message.includes(
+      "statement timeout",
+    )
+  );
+}
+
+async function waitForStagingRpcRetry(
+  delayMs: number,
+): Promise<void> {
+  await new Promise<void>(
+    (resolve) => {
+      setTimeout(
+        resolve,
+        delayMs,
+      );
+    },
   );
 }
 
@@ -1014,6 +1073,93 @@ function resolveRpcInvoker(
   return dependencies.invokeRpc;
 }
 
+function resolveRetryWait(
+  dependencies:
+    | MediaSyncStagingRepositoryDependencies
+    | undefined,
+): MediaSyncStagingRepositoryWait {
+  if (
+    dependencies?.wait === undefined
+  ) {
+    return waitForStagingRpcRetry;
+  }
+
+  if (
+    typeof dependencies.wait !==
+      "function"
+  ) {
+    throw new MediaSyncStagingRepositoryError(
+      "INVALID_INPUT",
+      "A valid staging repository wait dependency is required when wait is provided.",
+    );
+  }
+
+  return dependencies.wait;
+}
+
+async function invokeStagingRpcWithStatementTimeoutRetry(input: {
+  invokeRpc: MediaSyncStagingRepositoryRpcInvoker;
+  wait: MediaSyncStagingRepositoryWait;
+  args: {
+    p_payload: unknown;
+  };
+}): Promise<MediaSyncStagingRepositoryRpcResult> {
+  for (
+    let attempt = 0;
+    attempt < 2;
+    attempt += 1
+  ) {
+    let result:
+      MediaSyncStagingRepositoryRpcResult;
+
+    try {
+      result = await input.invokeRpc(
+        APPEND_MEDIA_SYNC_STAGING_BATCH_RPC,
+        input.args,
+      );
+    } catch (error) {
+      if (
+        attempt === 0 &&
+        isPostgresStatementTimeout(
+          error,
+        )
+      ) {
+        await input.wait(
+          STAGING_RPC_STATEMENT_TIMEOUT_RETRY_DELAY_MS,
+        );
+
+        continue;
+      }
+
+      throw new MediaSyncStagingRepositoryError(
+        "DATABASE_ERROR",
+        "The media sync staging repository could not access the database.",
+        { cause: error },
+      );
+    }
+
+    if (
+      attempt === 0 &&
+      isPostgresStatementTimeout(
+        result.error,
+      )
+    ) {
+      await input.wait(
+        STAGING_RPC_STATEMENT_TIMEOUT_RETRY_DELAY_MS,
+      );
+
+      continue;
+    }
+
+    return result;
+  }
+
+  throw new MediaSyncStagingRepositoryError(
+    "DATABASE_ERROR",
+    "The media sync staging batch retry ended unexpectedly.",
+  );
+}
+
 export async function appendMediaSyncStagingBatch(
   input: AppendMediaSyncStagingBatchInput,
   dependencies?: MediaSyncStagingRepositoryDependencies,
@@ -1142,23 +1288,22 @@ export async function appendMediaSyncStagingBatch(
       dependencies,
     );
 
-  let result:
-    MediaSyncStagingRepositoryRpcResult;
+  const wait =
+    resolveRetryWait(
+      dependencies,
+    );
 
-  try {
-    result = await invokeRpc(
-      APPEND_MEDIA_SYNC_STAGING_BATCH_RPC,
-      {
-        p_payload: payload,
-      },
-    );
-  } catch (error) {
-    throw new MediaSyncStagingRepositoryError(
-      "DATABASE_ERROR",
-      "The media sync staging repository could not access the database.",
-      { cause: error },
-    );
-  }
+  const rpcArgs = {
+    p_payload: payload,
+  };
+
+  const result =
+    await invokeStagingRpcWithStatementTimeoutRetry({
+      invokeRpc,
+      wait,
+      args:
+        rpcArgs,
+    });
 
   const { data, error } = result;
 
