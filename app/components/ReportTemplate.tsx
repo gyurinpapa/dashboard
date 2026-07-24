@@ -2315,7 +2315,50 @@ function isDisplayAdRow(row: any) {
   );
 }
 
+function isNaverSearchAdsAuthoritativeShoppingCreativeRow(row: any) {
+  const provider = firstNonEmpty(row?.provider)
+    .toLowerCase()
+    .trim();
+
+  const rowLevel = firstNonEmpty(
+    row?.row_level,
+    row?.rowLevel,
+  )
+    .toLowerCase()
+    .trim();
+
+  const dataLevel = firstNonEmpty(
+    row?.data_level,
+    row?.dataLevel,
+  )
+    .toLowerCase()
+    .trim();
+
+  const rowLevelReason = firstNonEmpty(
+    row?.row_level_reason,
+    row?.rowLevelReason,
+  )
+    .toLowerCase()
+    .trim();
+
+  return (
+    provider === "naver_searchad" &&
+    rowLevel === "creative" &&
+    dataLevel === "creative" &&
+    rowLevelReason ===
+      "naver_searchad_shopping_ad_daily_stats"
+  );
+}
+
 function shouldIncludeCreativeRowInRepresentativeRows(row: any) {
+  /**
+   * Naver SHOPPING의 creative row는 소재 상세 중복 행이 아니라
+   * 해당 캠페인의 유일한 authoritative 성과 행이므로 대표 집계에 포함한다.
+   */
+  if (isNaverSearchAdsAuthoritativeShoppingCreativeRow(row)) {
+    return true;
+  }
+
   if (isSearchAdRow(row)) return false;
   if (isDisplayAdRow(row)) return true;
 
@@ -2374,9 +2417,9 @@ function pickRepresentativeRows(input: {
     ...input.keywordRows,
 
     /**
-     * creative rows는 display ad 또는 keyword 신호가 없는 creative-only rows만
-     * 전체 성과 기준에 포함한다.
-     * search ad creative rows는 소재 탭에서는 사용하지만 전체 성과에서는 제외한다.
+     * creative rows는 display ad, keyword 신호가 없는 creative-only row,
+     * 또는 Naver SHOPPING authoritative creative row만 전체 성과 기준에 포함한다.
+     * 그 외 search ad creative rows는 소재 탭에서는 사용하지만 전체 성과에서는 제외한다.
      */
     ...input.creativeRows.filter((row) =>
       shouldIncludeCreativeRowInRepresentativeRows(row),
@@ -2392,7 +2435,7 @@ function pickRepresentativeRows(input: {
   return representativeRows.length > 0 ? representativeRows : EMPTY_ROWS;
 }
 
-function buildRowLevelBuckets(
+export function buildRowLevelBuckets(
   rows: any[],
   options: RowLevelBucketBuildOptions = {},
 ): ReportRowLevelBuckets {

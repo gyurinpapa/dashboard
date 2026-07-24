@@ -124,7 +124,9 @@ type ReportState = {
     string | null;
   publishedIngestionId:
     string | null;
-  reportRowsCount:
+  currentReportRowsCount:
+    number;
+  publishedReportRowsCount:
     number;
 };
 
@@ -1038,6 +1040,57 @@ async function assertOnlyFixturePendingJob(
   }
 }
 
+async function countReportRowsForIngestion(input: {
+  reportId: string;
+  ingestionId: string | null;
+}): Promise<number> {
+  if (!input.ingestionId) {
+    return 0;
+  }
+
+  const supabase =
+    getSupabaseAdmin();
+
+  const {
+    count,
+    error,
+  } =
+    await supabase
+      .from(
+        REPORT_ROWS_TABLE,
+      )
+      .select(
+        "id",
+        {
+          count:
+            "exact",
+          head:
+            true,
+        },
+      )
+      .eq(
+        "report_id",
+        input.reportId,
+      )
+      .eq(
+        "ingestion_id",
+        input.ingestionId,
+      );
+
+  if (error) {
+    throw new Error(
+      "VERIFICATION_REPORT_ROWS_COUNT_FAILED",
+      {
+        cause:
+          error,
+      },
+    );
+  }
+
+  return count ??
+    0;
+}
+
 async function readReportState(
   reportId: string,
 ): Promise<
@@ -1065,6 +1118,10 @@ async function readReportState(
   ) {
     throw new Error(
       "VERIFICATION_REPORT_STATE_READ_FAILED",
+      {
+        cause:
+          reportResult.error,
+      },
     );
   }
 
@@ -1076,47 +1133,38 @@ async function readReportState(
     );
   }
 
-  const rowsResult =
-    await supabase
-      .from(
-        REPORT_ROWS_TABLE,
-      )
-      .select(
-        "id",
-        {
-          count:
-            "exact",
-          head:
-            true,
-        },
-      )
-      .eq(
-        "report_id",
-        reportId,
-      );
+  const currentIngestionId =
+    reportResult.data
+      .current_ingestion_id ??
+    null;
 
-  if (
-    rowsResult.error
-  ) {
-    throw new Error(
-      "VERIFICATION_REPORT_ROWS_COUNT_FAILED",
-    );
-  }
+  const publishedIngestionId =
+    reportResult.data
+      .published_ingestion_id ??
+    null;
+
+  const currentReportRowsCount =
+    await countReportRowsForIngestion({
+      reportId,
+      ingestionId:
+        currentIngestionId,
+    });
+
+  const publishedReportRowsCount =
+    publishedIngestionId ===
+      currentIngestionId
+      ? currentReportRowsCount
+      : await countReportRowsForIngestion({
+          reportId,
+          ingestionId:
+            publishedIngestionId,
+        });
 
   return {
-    currentIngestionId:
-      reportResult.data
-        .current_ingestion_id ??
-      null,
-
-    publishedIngestionId:
-      reportResult.data
-        .published_ingestion_id ??
-      null,
-
-    reportRowsCount:
-      rowsResult.count ??
-      0,
+    currentIngestionId,
+    publishedIngestionId,
+    currentReportRowsCount,
+    publishedReportRowsCount,
   };
 }
 
@@ -1131,8 +1179,10 @@ function reportStateMatches(
       after.currentIngestionId &&
     before.publishedIngestionId ===
       after.publishedIngestionId &&
-    before.reportRowsCount ===
-      after.reportRowsCount
+    before.currentReportRowsCount ===
+      after.currentReportRowsCount &&
+    before.publishedReportRowsCount ===
+      after.publishedReportRowsCount
   );
 }
 

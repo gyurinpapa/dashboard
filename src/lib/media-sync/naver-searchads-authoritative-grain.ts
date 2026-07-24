@@ -24,6 +24,8 @@ export type NaverSearchAdsCampaignCollectionContract = {
   status: "collect";
   campaignType:
     | "WEB_SITE"
+    | "POWER_CONTENTS"
+    | "PLACE"
     | "SHOPPING"
     | "BRAND_SEARCH";
   authoritativeGrain:
@@ -111,6 +113,40 @@ const CAMPAIGN_CONTRACTS:
         "collect",
       campaignType:
         "WEB_SITE",
+      authoritativeGrain:
+        "keyword",
+      canonicalRowLevel:
+        "keyword",
+      canonicalDataLevel:
+        "keyword",
+      rowLevelReason:
+        "naver_searchad_registered_keyword_daily_stats",
+    },
+
+    POWER_CONTENTS: {
+      provider:
+        NAVER_SEARCH_ADS_PROVIDER,
+      status:
+        "collect",
+      campaignType:
+        "POWER_CONTENTS",
+      authoritativeGrain:
+        "keyword",
+      canonicalRowLevel:
+        "keyword",
+      canonicalDataLevel:
+        "keyword",
+      rowLevelReason:
+        "naver_searchad_registered_keyword_daily_stats",
+    },
+
+    PLACE: {
+      provider:
+        NAVER_SEARCH_ADS_PROVIDER,
+      status:
+        "collect",
+      campaignType:
+        "PLACE",
       authoritativeGrain:
         "keyword",
       canonicalRowLevel:
@@ -237,6 +273,10 @@ export function resolveNaverSearchAdsCampaignCollectionContract(
   if (
     normalizedCampaignType ===
       "WEB_SITE" ||
+    normalizedCampaignType ===
+      "POWER_CONTENTS" ||
+    normalizedCampaignType ===
+      "PLACE" ||
     normalizedCampaignType ===
       "SHOPPING" ||
     normalizedCampaignType ===

@@ -1,3 +1,5 @@
+begin;
+
 /*
  * Etrylue Performance
  * Naver Search Ads combined staging summary RPC
@@ -46,6 +48,18 @@ declare
   v_date_window_summaries jsonb := '[]'::jsonb;
 
   v_is_complete boolean := false;
+
+  /*
+   * Canonical JSON/fingerprint validation is intentionally processed in
+   * bounded row_index ranges. This preserves the exact validation contract
+   * while preventing one large digest/json statement from exceeding the
+   * database statement timeout on large staging snapshots.
+   */
+  v_validation_batch_size bigint := 2000;
+  v_validation_after_row_index bigint := null;
+  v_validation_batch_rows bigint := 0;
+  v_validation_batch_max_row_index bigint := null;
+  v_validation_batch_canonical_mismatch_rows bigint := 0;
 begin
   if p_payload is null
      or jsonb_typeof(p_payload) <> 'object'
@@ -186,6 +200,13 @@ begin
       message = 'MSS_SUMMARY_SCOPE_MISMATCH';
   end if;
 
+  /*
+   * Fast whole-job summary.
+   *
+   * The job_id predicate uses the existing staging job indexes. Expensive
+   * canonical JSON and SHA-256 verification is deliberately excluded here
+   * and performed below in bounded batches.
+   */
   select
     count(*)::bigint,
 
@@ -242,337 +263,6 @@ begin
       where staging.row_fingerprint is null
          or staging.row_fingerprint !~
               '^[0-9a-f]{64}$'
-    )::bigint,
-
-    count(*) filter (
-      where jsonb_typeof(staging.row) <>
-              'object'
-
-         or staging.row ->> 'date'
-              is distinct from
-              to_char(
-                staging.date,
-                'YYYY-MM-DD'
-              )
-
-         or staging.row ->> 'report_date'
-              is distinct from
-              to_char(
-                staging.date,
-                'YYYY-MM-DD'
-              )
-
-         or staging.row ->> 'day'
-              is distinct from
-              to_char(
-                staging.date,
-                'YYYY-MM-DD'
-              )
-
-         or staging.row ->> 'ymd'
-              is distinct from
-              to_char(
-                staging.date,
-                'YYYY-MM-DD'
-              )
-
-         or staging.row ->> 'channel'
-              is distinct from
-              staging.channel
-
-         or staging.row ->> 'device'
-              is distinct from
-              staging.device
-
-         or staging.row ->> 'source'
-              is distinct from
-              staging.source
-
-         or staging.row ->> 'provider'
-              is distinct from
-              staging.provider
-
-         or staging.row ->> 'external_account_id'
-              is distinct from
-              staging.external_account_id
-
-         or staging.row ->> 'ingestion_source'
-              is distinct from
-              'api'
-
-         /*
-          * All combined rows share campaign/group identity and display names.
-          */
-         or nullif(
-              btrim(
-                staging.row
-                  ->> 'external_campaign_id'
-              ),
-              ''
-            ) is null
-
-         or nullif(
-              btrim(
-                staging.row
-                  ->> 'external_group_id'
-              ),
-              ''
-            ) is null
-
-         or nullif(
-              btrim(
-                staging.row
-                  ->> 'campaign'
-              ),
-              ''
-            ) is null
-
-         or nullif(
-              btrim(
-                staging.row
-                  ->> 'group'
-              ),
-              ''
-            ) is null
-
-         /*
-          * Exactly one verified canonical grain is allowed per row.
-          *
-          * WEB_SITE    -> keyword
-          * SHOPPING    -> creative (authoritative ad)
-          * BRAND_SEARCH -> mixed (authoritative adgroup)
-          */
-         or not (
-           (
-             staging.row ->> 'row_level'
-               is not distinct from
-               'keyword'
-
-             and staging.row ->> 'data_level'
-               is not distinct from
-               'keyword'
-
-             and staging.row ->> 'row_level_reason'
-               is not distinct from
-               'naver_searchad_registered_keyword_daily_stats'
-
-             and nullif(
-               btrim(
-                 staging.row
-                   ->> 'external_keyword_id'
-               ),
-               ''
-             ) is not null
-
-             and nullif(
-               btrim(
-                 coalesce(
-                   staging.row
-                     ->> 'external_creative_id',
-                   ''
-                 )
-               ),
-               ''
-             ) is null
-
-             and nullif(
-               btrim(
-                 coalesce(
-                   staging.row
-                     ->> 'external_ad_id',
-                   ''
-                 )
-               ),
-               ''
-             ) is null
-
-             and nullif(
-               btrim(
-                 staging.row
-                   ->> 'keyword'
-               ),
-               ''
-             ) is not null
-           )
-
-           or
-
-           (
-             staging.row ->> 'row_level'
-               is not distinct from
-               'creative'
-
-             and staging.row ->> 'data_level'
-               is not distinct from
-               'creative'
-
-             and staging.row ->> 'row_level_reason'
-               is not distinct from
-               'naver_searchad_shopping_ad_daily_stats'
-
-             and nullif(
-               btrim(
-                 staging.row
-                   ->> 'external_creative_id'
-               ),
-               ''
-             ) is not null
-
-             and nullif(
-               btrim(
-                 coalesce(
-                   staging.row
-                     ->> 'external_keyword_id',
-                   ''
-                 )
-               ),
-               ''
-             ) is null
-
-             and nullif(
-               btrim(
-                 coalesce(
-                   staging.row
-                     ->> 'external_ad_id',
-                   ''
-                 )
-               ),
-               ''
-             ) is null
-
-             and nullif(
-               btrim(
-                 coalesce(
-                   staging.row
-                     ->> 'keyword',
-                   ''
-                 )
-               ),
-               ''
-             ) is null
-
-             and nullif(
-               btrim(
-                 coalesce(
-                   staging.row
-                     ->> 'keyword_name',
-                   ''
-                 )
-               ),
-               ''
-             ) is null
-
-             and nullif(
-               btrim(
-                 staging.row
-                   ->> 'creative'
-               ),
-               ''
-             ) is not null
-           )
-
-           or
-
-           (
-             staging.row ->> 'row_level'
-               is not distinct from
-               'mixed'
-
-             and staging.row ->> 'data_level'
-               is not distinct from
-               'mixed'
-
-             and staging.row ->> 'row_level_reason'
-               is not distinct from
-               'naver_searchad_brand_search_adgroup_daily_stats'
-
-             and nullif(
-               btrim(
-                 coalesce(
-                   staging.row
-                     ->> 'external_keyword_id',
-                   ''
-                 )
-               ),
-               ''
-             ) is null
-
-             and nullif(
-               btrim(
-                 coalesce(
-                   staging.row
-                     ->> 'external_creative_id',
-                   ''
-                 )
-               ),
-               ''
-             ) is null
-
-             and nullif(
-               btrim(
-                 coalesce(
-                   staging.row
-                     ->> 'external_ad_id',
-                   ''
-                 )
-               ),
-               ''
-             ) is null
-
-             and nullif(
-               btrim(
-                 coalesce(
-                   staging.row
-                     ->> 'keyword',
-                   ''
-                 )
-               ),
-               ''
-             ) is null
-
-             and nullif(
-               btrim(
-                 coalesce(
-                   staging.row
-                     ->> 'keyword_name',
-                   ''
-                 )
-               ),
-               ''
-             ) is null
-
-             and nullif(
-               btrim(
-                 coalesce(
-                   staging.row
-                     ->> 'creative',
-                   ''
-                 )
-               ),
-               ''
-             ) is null
-
-             and nullif(
-               btrim(
-                 coalesce(
-                   staging.row
-                     ->> 'creative_name',
-                   ''
-                 )
-               ),
-               ''
-             ) is null
-           )
-         )
-
-         or staging.row_fingerprint <>
-              encode(
-                extensions.digest(
-                  staging.row::text,
-                  'sha256'
-                ),
-                'hex'
-              )
     )::bigint
   into
     v_total_rows,
@@ -583,11 +273,403 @@ begin
     v_out_of_range_rows,
     v_scope_mismatch_rows,
     v_blank_row_key_rows,
-    v_missing_fingerprint_rows,
-    v_canonical_mismatch_rows
+    v_missing_fingerprint_rows
   from public.media_sync_staging_rows
     as staging
   where staging.job_id = v_job_id;
+
+  /*
+   * Exact canonical/fingerprint validation, bounded to 2,000 rows per SQL
+   * statement. Every persisted staging row is still checked exactly once.
+   */
+  v_validation_after_row_index := null;
+  v_canonical_mismatch_rows := 0;
+
+  loop
+    with validation_batch as materialized (
+      select
+        staging.row_index,
+        staging.date,
+        staging.channel,
+        staging.device,
+        staging.source,
+        staging.provider,
+        staging.external_account_id,
+        staging.row,
+        staging.row_fingerprint
+      from public.media_sync_staging_rows
+        as staging
+      where staging.job_id = v_job_id
+        and (
+          v_validation_after_row_index is null
+          or staging.row_index >
+             v_validation_after_row_index
+        )
+      order by staging.row_index
+      limit v_validation_batch_size
+    )
+    select
+      count(*)::bigint,
+      max(staging.row_index),
+      count(*) filter (
+        where
+          jsonb_typeof(staging.row) <>
+                   'object'
+
+              or staging.row ->> 'date'
+                   is distinct from
+                   to_char(
+                     staging.date,
+                     'YYYY-MM-DD'
+                   )
+
+              or staging.row ->> 'report_date'
+                   is distinct from
+                   to_char(
+                     staging.date,
+                     'YYYY-MM-DD'
+                   )
+
+              or staging.row ->> 'day'
+                   is distinct from
+                   to_char(
+                     staging.date,
+                     'YYYY-MM-DD'
+                   )
+
+              or staging.row ->> 'ymd'
+                   is distinct from
+                   to_char(
+                     staging.date,
+                     'YYYY-MM-DD'
+                   )
+
+              or staging.row ->> 'channel'
+                   is distinct from
+                   staging.channel
+
+              or staging.row ->> 'device'
+                   is distinct from
+                   staging.device
+
+              or staging.row ->> 'source'
+                   is distinct from
+                   staging.source
+
+              or staging.row ->> 'provider'
+                   is distinct from
+                   staging.provider
+
+              or staging.row ->> 'external_account_id'
+                   is distinct from
+                   staging.external_account_id
+
+              or staging.row ->> 'ingestion_source'
+                   is distinct from
+                   'api'
+
+              /*
+               * All combined rows share campaign/group identity and display names.
+               */
+              or nullif(
+                   btrim(
+                     staging.row
+                       ->> 'external_campaign_id'
+                   ),
+                   ''
+                 ) is null
+
+              or nullif(
+                   btrim(
+                     staging.row
+                       ->> 'external_group_id'
+                   ),
+                   ''
+                 ) is null
+
+              or nullif(
+                   btrim(
+                     staging.row
+                       ->> 'campaign'
+                   ),
+                   ''
+                 ) is null
+
+              or nullif(
+                   btrim(
+                     staging.row
+                       ->> 'group'
+                   ),
+                   ''
+                 ) is null
+
+              /*
+               * Exactly one verified canonical grain is allowed per row.
+               *
+               * WEB_SITE    -> keyword
+               * SHOPPING    -> creative (authoritative ad)
+               * BRAND_SEARCH -> mixed (authoritative adgroup)
+               */
+              or not (
+                (
+                  staging.row ->> 'row_level'
+                    is not distinct from
+                    'keyword'
+
+                  and staging.row ->> 'data_level'
+                    is not distinct from
+                    'keyword'
+
+                  and staging.row ->> 'row_level_reason'
+                    is not distinct from
+                    'naver_searchad_registered_keyword_daily_stats'
+
+                  and nullif(
+                    btrim(
+                      staging.row
+                        ->> 'external_keyword_id'
+                    ),
+                    ''
+                  ) is not null
+
+                  and nullif(
+                    btrim(
+                      coalesce(
+                        staging.row
+                          ->> 'external_creative_id',
+                        ''
+                      )
+                    ),
+                    ''
+                  ) is null
+
+                  and nullif(
+                    btrim(
+                      coalesce(
+                        staging.row
+                          ->> 'external_ad_id',
+                        ''
+                      )
+                    ),
+                    ''
+                  ) is null
+
+                  and nullif(
+                    btrim(
+                      staging.row
+                        ->> 'keyword'
+                    ),
+                    ''
+                  ) is not null
+                )
+
+                or
+
+                (
+                  staging.row ->> 'row_level'
+                    is not distinct from
+                    'creative'
+
+                  and staging.row ->> 'data_level'
+                    is not distinct from
+                    'creative'
+
+                  and staging.row ->> 'row_level_reason'
+                    is not distinct from
+                    'naver_searchad_shopping_ad_daily_stats'
+
+                  and nullif(
+                    btrim(
+                      staging.row
+                        ->> 'external_creative_id'
+                    ),
+                    ''
+                  ) is not null
+
+                  and nullif(
+                    btrim(
+                      coalesce(
+                        staging.row
+                          ->> 'external_keyword_id',
+                        ''
+                      )
+                    ),
+                    ''
+                  ) is null
+
+                  and nullif(
+                    btrim(
+                      coalesce(
+                        staging.row
+                          ->> 'external_ad_id',
+                        ''
+                      )
+                    ),
+                    ''
+                  ) is null
+
+                  and nullif(
+                    btrim(
+                      coalesce(
+                        staging.row
+                          ->> 'keyword',
+                        ''
+                      )
+                    ),
+                    ''
+                  ) is null
+
+                  and nullif(
+                    btrim(
+                      coalesce(
+                        staging.row
+                          ->> 'keyword_name',
+                        ''
+                      )
+                    ),
+                    ''
+                  ) is null
+
+                  and nullif(
+                    btrim(
+                      staging.row
+                        ->> 'creative'
+                    ),
+                    ''
+                  ) is not null
+                )
+
+                or
+
+                (
+                  staging.row ->> 'row_level'
+                    is not distinct from
+                    'mixed'
+
+                  and staging.row ->> 'data_level'
+                    is not distinct from
+                    'mixed'
+
+                  and staging.row ->> 'row_level_reason'
+                    is not distinct from
+                    'naver_searchad_brand_search_adgroup_daily_stats'
+
+                  and nullif(
+                    btrim(
+                      coalesce(
+                        staging.row
+                          ->> 'external_keyword_id',
+                        ''
+                      )
+                    ),
+                    ''
+                  ) is null
+
+                  and nullif(
+                    btrim(
+                      coalesce(
+                        staging.row
+                          ->> 'external_creative_id',
+                        ''
+                      )
+                    ),
+                    ''
+                  ) is null
+
+                  and nullif(
+                    btrim(
+                      coalesce(
+                        staging.row
+                          ->> 'external_ad_id',
+                        ''
+                      )
+                    ),
+                    ''
+                  ) is null
+
+                  and nullif(
+                    btrim(
+                      coalesce(
+                        staging.row
+                          ->> 'keyword',
+                        ''
+                      )
+                    ),
+                    ''
+                  ) is null
+
+                  and nullif(
+                    btrim(
+                      coalesce(
+                        staging.row
+                          ->> 'keyword_name',
+                        ''
+                      )
+                    ),
+                    ''
+                  ) is null
+
+                  and nullif(
+                    btrim(
+                      coalesce(
+                        staging.row
+                          ->> 'creative',
+                        ''
+                      )
+                    ),
+                    ''
+                  ) is null
+
+                  and nullif(
+                    btrim(
+                      coalesce(
+                        staging.row
+                          ->> 'creative_name',
+                        ''
+                      )
+                    ),
+                    ''
+                  ) is null
+                )
+              )
+
+              or staging.row_fingerprint <>
+                   encode(
+                     extensions.digest(
+                       staging.row::text,
+                       'sha256'
+                     ),
+                     'hex'
+                   )
+      )::bigint
+    into
+      v_validation_batch_rows,
+      v_validation_batch_max_row_index,
+      v_validation_batch_canonical_mismatch_rows
+    from validation_batch
+      as staging;
+
+    exit when v_validation_batch_rows = 0;
+
+    v_canonical_mismatch_rows :=
+      v_canonical_mismatch_rows +
+      v_validation_batch_canonical_mismatch_rows;
+
+    if v_validation_batch_max_row_index is null
+       or (
+         v_validation_after_row_index is not null
+         and v_validation_batch_max_row_index <=
+             v_validation_after_row_index
+       )
+    then
+      raise exception using
+        errcode = 'P0001',
+        message = 'MSS_SUMMARY_INVALID_INPUT';
+    end if;
+
+    v_validation_after_row_index :=
+      v_validation_batch_max_row_index;
+  end loop;
 
   v_missing_expected_rows :=
     greatest(
@@ -728,3 +810,5 @@ is
   'Validates combined Naver Search Ads keyword, SHOPPING creative, and BRAND_SEARCH mixed staging rows without changing the legacy keyword summary RPC.';
 
 notify pgrst, 'reload schema';
+
+commit;

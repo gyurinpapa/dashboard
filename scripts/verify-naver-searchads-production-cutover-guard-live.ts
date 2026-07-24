@@ -697,10 +697,20 @@ function buildProductionCutoverConfirmationToken(
       VerificationInput;
     databaseStateBefore:
       DatabaseState;
-    materialization:
-      MediaSyncSnapshotMaterializationResult;
+    rowCount: number;
+    canonicalFingerprint: string;
   },
 ): string {
+  if (
+    !FINGERPRINT_PATTERN.test(
+      input.canonicalFingerprint,
+    )
+  ) {
+    throw new Error(
+      "VERIFICATION_INVALID_PRODUCTION_CUTOVER_CANONICAL_FINGERPRINT",
+    );
+  }
+
   return [
     "CONFIRM_NAVER_SEARCHADS_PRODUCTION_CUTOVER",
     input.verificationInput
@@ -715,10 +725,7 @@ function buildProductionCutoverConfirmationToken(
       .dateFrom,
     input.verificationInput
       .dateTo,
-    String(
-      input.materialization
-        .rowCount,
-    ),
+    String(input.rowCount),
     String(
       EXPECTED_SEARCH_ADS_TOTAL
         .impressions,
@@ -727,8 +734,7 @@ function buildProductionCutoverConfirmationToken(
       EXPECTED_SEARCH_ADS_TOTAL
         .clicks,
     ),
-    input.materialization
-      .materializedFingerprint,
+    input.canonicalFingerprint,
   ].join(":");
 }
 
@@ -5535,12 +5541,26 @@ async function main():
       materialization
         .snapshotIngestionId;
 
+    const candidateCanonicalFingerprint =
+      activationReadiness
+        .candidateSnapshot
+        .targetCanonicalFingerprint;
+
+    if (!candidateCanonicalFingerprint) {
+      throw new Error(
+        "VERIFICATION_CANDIDATE_CANONICAL_FINGERPRINT_MISSING",
+      );
+    }
+
     productionCutoverConfirmationToken =
       buildProductionCutoverConfirmationToken({
         verificationInput:
           input,
         databaseStateBefore,
-        materialization,
+        rowCount:
+          materialization.rowCount,
+        canonicalFingerprint:
+          candidateCanonicalFingerprint,
       });
 
     const finalJob =

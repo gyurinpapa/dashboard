@@ -11,9 +11,8 @@ import {
   type AppendMediaSyncStagingBatchResult,
   type MediaSyncStagingRepositoryDependencies,
 } from "./media-sync-staging-repository";
-import {
-  assertMediaSyncStagingComplete,
-  type MediaSyncStagingSummary,
+import type {
+  MediaSyncStagingSummary,
 } from "./media-sync-staging-summary-repository";
 import {
   convertNaverKeywordDailyStatsToCanonicalRows,
@@ -222,8 +221,14 @@ export type NaverSearchAdsStagingOrchestratorCompletedResult =
 
     isComplete: true;
 
+    /**
+     * Keyword phase completion does not assert the full combined staging set.
+     * The combined worker performs the single authoritative summary after
+     * keyword and authoritative phases are both complete.
+     */
     summary:
-      MediaSyncStagingSummary;
+      MediaSyncStagingSummary |
+      NaverSearchAdsStagingPartialSummary;
   };
 
 export type NaverSearchAdsStagingOrchestratorPartialResult =
@@ -1121,15 +1126,14 @@ export async function runNaverSearchAdsStagingOrchestrator(
     };
   }
 
-  const summary =
-    await assertMediaSyncStagingComplete({
-      job:
-        input.job,
-
-      expectedRows:
-        canonicalRowCount,
-    });
-
+  /*
+   * Keyword phase completion is not the completion of combined staging.
+   *
+   * Do not execute the full staging summary here. The combined worker first
+   * saves this exact row boundary into the combined checkpoint, completes the
+   * authoritative phase, and then performs one final combined summary before
+   * materialization.
+   */
   return {
     ...baseResult,
 
@@ -1139,6 +1143,17 @@ export async function runNaverSearchAdsStagingOrchestrator(
     isComplete:
       true,
 
-    summary,
+    summary:
+      createPartialSummary({
+        totalRows:
+          canonicalRowCount,
+
+        insertedRows:
+          checkpointSeed.insertedRows +
+          appendTotals.insertedRows,
+
+        duplicateRows:
+          appendTotals.duplicateRows,
+      }),
   };
 }
