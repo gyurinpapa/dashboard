@@ -166,7 +166,7 @@ function LoadingShell({
       <section className="mx-auto flex min-h-[60vh] max-w-3xl items-center justify-center">
         <div className="w-full rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
           <div className="mb-4 inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-            대용량 리포트 준비 중
+            리포트 준비 중
           </div>
 
           <h1 className="text-2xl font-bold text-slate-950">{title}</h1>
@@ -181,7 +181,7 @@ function LoadingShell({
                 {advertiserName ? <p>광고주: {advertiserName}</p> : null}
                 {reportTypeName ? <p>리포트 유형: {reportTypeName}</p> : null}
                 <p>
-                  10만 행 이상 대용량 데이터는 브라우저에서 분석 화면을 준비하는 데
+                  데이터 양에 따라 브라우저에서 분석 화면을 준비하는 데
                   시간이 걸릴 수 있습니다.
                 </p>
               </div>
@@ -496,7 +496,7 @@ export default function ClientSlugReportPage() {
     return (
       <LoadingShell
         title="리포트 분석 데이터를 준비하고 있습니다"
-        description="리포트 기본 정보는 확인되었습니다. 대용량 CSV rows를 불러와 분석 화면을 준비하는 중입니다."
+        description="리포트 기본 정보는 확인되었습니다. 현재 리포트의 rows 데이터를 불러와 분석 화면을 준비하는 중입니다."
         report={report}
       />
     );
@@ -506,7 +506,7 @@ export default function ClientSlugReportPage() {
     return (
       <LoadingShell
         title="리포트 rows 데이터가 아직 없습니다"
-        description="발행 리포트는 확인되었지만 분석 화면에 전달할 rows 데이터가 비어 있습니다. CSV 처리 완료 여부와 published ingestion 상태를 확인해 주세요."
+        description="발행 리포트는 확인되었지만 분석 화면에 전달할 rows 데이터가 비어 있습니다. published ingestion 상태와 rows 저장 결과를 확인해 주세요."
         report={report}
       />
     );
