@@ -14,6 +14,15 @@ const WORKER_ORCHESTRATION_PATH =
 const KEYWORD_ORCHESTRATOR_PATH =
   "src/lib/media-sync/naver-searchads-staging-orchestrator.ts";
 
+const LEGACY_COMBINED_RPC =
+  "summarize_naver_searchads_combined_staging";
+
+const COMBINED_BASE_RPC =
+  "summarize_naver_searchads_combined_staging_base";
+
+const COMBINED_VALIDATION_BATCH_RPC =
+  "validate_naver_searchads_combined_staging_batch";
+
 function hash(
   value: string,
 ): string {
@@ -38,6 +47,17 @@ function requireText(
       expected,
     ),
     message,
+  );
+}
+
+function requireFunction(
+  sql: string,
+  functionName: string,
+): void {
+  requireText(
+    sql.toLowerCase(),
+    `create or replace function public.${functionName}`,
+    `The ${functionName} RPC is missing.`,
   );
 }
 
@@ -69,10 +89,19 @@ async function main(): Promise<void> {
     keywordOrchestrator,
   ] = before;
 
-  requireText(
-    sql.toLowerCase(),
-    "create or replace function public.summarize_naver_searchads_combined_staging",
-    "The combined staging summary RPC is missing.",
+  requireFunction(
+    sql,
+    LEGACY_COMBINED_RPC,
+  );
+
+  requireFunction(
+    sql,
+    COMBINED_BASE_RPC,
+  );
+
+  requireFunction(
+    sql,
+    COMBINED_VALIDATION_BATCH_RPC,
   );
 
   assert.ok(
@@ -82,16 +111,36 @@ async function main(): Promise<void> {
     "The combined SQL must not replace the legacy keyword summary RPC.",
   );
 
-  requireText(
-    sql.toLowerCase(),
-    "security definer",
-    "The combined RPC must remain SECURITY DEFINER.",
+  const securityDefinerCount =
+    sql.match(
+      /security definer/gi,
+    )?.length ?? 0;
+
+  assert.ok(
+    securityDefinerCount >= 3,
+    "All three combined summary RPCs must remain SECURITY DEFINER.",
+  );
+
+  const fixedSearchPathCount =
+    sql.match(
+      /SET search_path TO 'pg_catalog', 'public', 'extensions'/g,
+    )?.length ?? 0;
+
+  assert.ok(
+    fixedSearchPathCount >= 3,
+    "All three combined summary RPCs must use the fixed search_path.",
   );
 
   requireText(
     sql,
-    "SET search_path TO 'pg_catalog', 'public', 'extensions'",
-    "The combined RPC fixed search_path contract is missing.",
+    "v_validation_batch_size > 2000",
+    "The validation batch RPC maximum size guard is missing.",
+  );
+
+  requireText(
+    sql,
+    "after_row_index",
+    "The validation batch cursor contract is missing.",
   );
 
   for (
@@ -142,16 +191,25 @@ async function main(): Promise<void> {
     "The canonical JSON fingerprint validation is missing.",
   );
 
-  requireText(
-    sql,
-    "grant execute",
-    "The service-role execution grant is missing.",
-  );
+  for (
+    const functionName
+    of [
+      LEGACY_COMBINED_RPC,
+      COMBINED_BASE_RPC,
+      COMBINED_VALIDATION_BATCH_RPC,
+    ]
+  ) {
+    requireText(
+      sql,
+      `on function public.${functionName}(jsonb)`,
+      `The ${functionName} permission contract is missing.`,
+    );
+  }
 
   requireText(
     sql,
     "to service_role",
-    "The combined RPC must be granted only to service_role.",
+    "The combined RPCs must be granted only to service_role.",
   );
 
   requireText(
@@ -168,8 +226,41 @@ async function main(): Promise<void> {
 
   requireText(
     summaryRepository,
-    '"summarize_naver_searchads_combined_staging"',
-    "The combined summary RPC constant is missing.",
+    `"${COMBINED_BASE_RPC}"`,
+    "The split combined base summary RPC constant is missing.",
+  );
+
+  requireText(
+    summaryRepository,
+    `"${COMBINED_VALIDATION_BATCH_RPC}"`,
+    "The split combined validation batch RPC constant is missing.",
+  );
+
+  assert.ok(
+    !new RegExp(
+      `["']${LEGACY_COMBINED_RPC}["']`,
+    ).test(
+      summaryRepository,
+    ),
+    "The repository still calls the full combined summary RPC directly.",
+  );
+
+  requireText(
+    summaryRepository,
+    "NAVER_SEARCH_ADS_COMBINED_VALIDATION_BATCH_SIZE",
+    "The bounded combined validation batch size is missing.",
+  );
+
+  requireText(
+    summaryRepository,
+    "combinedBaseSummariesEqual",
+    "The before/after base summary stability guard is missing.",
+  );
+
+  requireText(
+    summaryRepository,
+    '"STAGING_CHANGED"',
+    "The split summary stability error contract is missing.",
   );
 
   requireText(
@@ -209,17 +300,18 @@ async function main(): Promise<void> {
     "The combined worker still defaults to the legacy keyword summary assertion.",
   );
 
-  requireText(
-    keywordOrchestrator,
-    "assertMediaSyncStagingComplete",
-    "The existing keyword orchestrator no longer uses the legacy summary assertion.",
+  assert.ok(
+    !keywordOrchestrator.includes(
+      "assertMediaSyncStagingComplete",
+    ),
+    "The keyword orchestrator must not run the legacy staging summary assertion before the combined phases are complete.",
   );
 
   assert.ok(
     !keywordOrchestrator.includes(
       "assertNaverSearchAdsCombinedStagingComplete",
     ),
-    "The existing keyword orchestrator must not use the combined summary RPC.",
+    "The keyword orchestrator must not run the combined staging summary assertion.",
   );
 
   const after =
@@ -250,7 +342,19 @@ async function main(): Promise<void> {
   );
 
   console.log(
-    "verified combined staging summary accepts keyword creative and mixed contracts: true",
+    "verified backward-compatible full combined summary RPC remains defined: true",
+  );
+
+  console.log(
+    "verified combined base summary RPC is separate from canonical validation: true",
+  );
+
+  console.log(
+    "verified combined canonical validation uses independent bounded RPC calls: true",
+  );
+
+  console.log(
+    "verified combined staging accepts keyword creative and mixed contracts: true",
   );
 
   console.log(
@@ -270,7 +374,7 @@ async function main(): Promise<void> {
   );
 
   console.log(
-    "verified existing keyword orchestrator still uses the legacy summary assertion: true",
+    "verified keyword orchestrator performs no early staging summary assertion: true",
   );
 
   console.log(
