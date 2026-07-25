@@ -21,7 +21,7 @@ const COMBINED_BASE_RPC =
   "summarize_naver_searchads_combined_staging_base";
 
 const COMBINED_VALIDATION_BATCH_RPC =
-  "validate_naver_searchads_combined_staging_batch";
+  "validate_naver_searchads_combined_staging_batch_v3";
 
 function hash(
   value: string,

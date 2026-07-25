@@ -12,7 +12,7 @@ const SUMMARIZE_NAVER_SEARCH_ADS_COMBINED_STAGING_BASE_RPC =
   "summarize_naver_searchads_combined_staging_base";
 
 const VALIDATE_NAVER_SEARCH_ADS_COMBINED_STAGING_BATCH_RPC =
-  "validate_naver_searchads_combined_staging_batch";
+  "validate_naver_searchads_combined_staging_batch_v3";
 
 const NAVER_SEARCH_ADS_COMBINED_VALIDATION_BATCH_SIZE =
   2_000;
@@ -101,6 +101,34 @@ export type GetMediaSyncStagingSummaryInput = {
   expectedRows: number;
 };
 
+export type NaverSearchAdsCombinedStagingSummaryDependencies = {
+  invokeRpc: (
+    functionName: string,
+    args: {
+      p_payload: Record<string, unknown>;
+    },
+  ) => Promise<{
+    data: unknown;
+    error: unknown;
+  }>;
+};
+
+const defaultNaverSearchAdsCombinedStagingSummaryDependencies:
+  NaverSearchAdsCombinedStagingSummaryDependencies = {
+    invokeRpc: async (
+      functionName,
+      args,
+    ) => {
+      const supabase =
+        getSupabaseAdmin();
+
+      return supabase.rpc(
+        functionName,
+        args,
+      );
+    },
+  };
+
 type UnknownRecord =
   Record<string, unknown>;
 
@@ -146,7 +174,11 @@ type CombinedValidationBatchRpcRecord = {
   batch_size: unknown;
   batch_rows: unknown;
   batch_max_row_index: unknown;
+  scope_mismatch_rows: unknown;
+  blank_row_key_rows: unknown;
+  missing_fingerprint_rows: unknown;
   canonical_mismatch_rows: unknown;
+  date_window_summaries: unknown;
 };
 
 type MediaSyncStagingBaseSummary = {
@@ -177,7 +209,11 @@ type CombinedValidationBatchSummary = {
   batchSize: number;
   batchRows: number;
   batchMaxRowIndex: number | null;
+  scopeMismatchRows: number;
+  blankRowKeyRows: number;
+  missingFingerprintRows: number;
   canonicalMismatchRows: number;
+  dateWindowSummaries: MediaSyncStagingDateWindowSummary[];
 };
 
 function isPlainObject(
@@ -840,9 +876,38 @@ function parseCombinedBaseRpcResult(
     );
   }
 
-  validateSummaryAggregateConsistency(
-    summary,
-  );
+  if (
+    summary.distinctRowIndexes !==
+      summary.totalRows ||
+    summary.rowsInExpectedRange +
+      summary.outOfRangeRows !==
+      summary.totalRows ||
+    summary.missingExpectedRows !==
+      Math.max(
+        summary.expectedRows -
+          summary.rowsInExpectedRange,
+        0,
+      ) ||
+    summary.scopeMismatchRows !== 0 ||
+    summary.blankRowKeyRows !== 0 ||
+    summary.missingFingerprintRows !== 0 ||
+    summary.dateWindowCount !== 0 ||
+    summary.dateWindowSummaries.length !== 0 ||
+    (
+      summary.totalRows === 0
+        ? summary.minRowIndex !== null ||
+          summary.maxRowIndex !== null
+        : summary.minRowIndex === null ||
+          summary.maxRowIndex === null ||
+          summary.minRowIndex >
+            summary.maxRowIndex
+    )
+  ) {
+    throw new MediaSyncStagingSummaryError(
+      "INVALID_DATABASE_RESULT",
+      "The row-index-only combined staging base summary is inconsistent.",
+    );
+  }
 
   return summary;
 }
@@ -900,10 +965,33 @@ function parseCombinedValidationBatchRpcResult(
           "batch_max_row_index",
         ),
 
+      scopeMismatchRows:
+        requireResultInteger(
+          record.scope_mismatch_rows,
+          "scope_mismatch_rows",
+        ),
+
+      blankRowKeyRows:
+        requireResultInteger(
+          record.blank_row_key_rows,
+          "blank_row_key_rows",
+        ),
+
+      missingFingerprintRows:
+        requireResultInteger(
+          record.missing_fingerprint_rows,
+          "missing_fingerprint_rows",
+        ),
+
       canonicalMismatchRows:
         requireResultInteger(
           record.canonical_mismatch_rows,
           "canonical_mismatch_rows",
+        ),
+
+      dateWindowSummaries:
+        parseDateWindowSummaries(
+          record.date_window_summaries,
         ),
     };
 
@@ -917,6 +1005,12 @@ function parseCombinedValidationBatchRpcResult(
     batch.batchSize < 1 ||
     batch.batchRows >
       batch.batchSize ||
+    batch.scopeMismatchRows >
+      batch.batchRows ||
+    batch.blankRowKeyRows >
+      batch.batchRows ||
+    batch.missingFingerprintRows >
+      batch.batchRows ||
     batch.canonicalMismatchRows >
       batch.batchRows
   ) {
@@ -929,7 +1023,11 @@ function parseCombinedValidationBatchRpcResult(
   if (batch.batchRows === 0) {
     if (
       batch.batchMaxRowIndex !== null ||
-      batch.canonicalMismatchRows !== 0
+      batch.scopeMismatchRows !== 0 ||
+      batch.blankRowKeyRows !== 0 ||
+      batch.missingFingerprintRows !== 0 ||
+      batch.canonicalMismatchRows !== 0 ||
+      batch.dateWindowSummaries.length !== 0
     ) {
       throw new MediaSyncStagingSummaryError(
         "INVALID_DATABASE_RESULT",
@@ -938,6 +1036,27 @@ function parseCombinedValidationBatchRpcResult(
     }
 
     return batch;
+  }
+
+  const batchDateWindowRows =
+    batch.dateWindowSummaries.reduce(
+      (
+        sum,
+        windowSummary,
+      ) =>
+        sum +
+        windowSummary.rowCount,
+      0,
+    );
+
+  if (
+    batchDateWindowRows !==
+      batch.batchRows
+  ) {
+    throw new MediaSyncStagingSummaryError(
+      "INVALID_DATABASE_RESULT",
+      "The combined staging validation batch date-window rows are inconsistent.",
+    );
   }
 
   if (
@@ -955,6 +1074,56 @@ function parseCombinedValidationBatchRpcResult(
   }
 
   return batch;
+}
+
+function mergeDateWindowSummaries(
+  target:
+    Map<number, MediaSyncStagingDateWindowSummary>,
+  batchSummaries:
+    MediaSyncStagingDateWindowSummary[],
+): void {
+  for (const batchSummary of batchSummaries) {
+    const existing =
+      target.get(
+        batchSummary.dateWindowIndex,
+      );
+
+    if (!existing) {
+      target.set(
+        batchSummary.dateWindowIndex,
+        { ...batchSummary },
+      );
+
+      continue;
+    }
+
+    existing.rowCount +=
+      batchSummary.rowCount;
+
+    existing.minRowIndex =
+      Math.min(
+        existing.minRowIndex,
+        batchSummary.minRowIndex,
+      );
+
+    existing.maxRowIndex =
+      Math.max(
+        existing.maxRowIndex,
+        batchSummary.maxRowIndex,
+      );
+
+    existing.minDate =
+      existing.minDate <
+        batchSummary.minDate
+        ? existing.minDate
+        : batchSummary.minDate;
+
+    existing.maxDate =
+      existing.maxDate >
+        batchSummary.maxDate
+        ? existing.maxDate
+        : batchSummary.maxDate;
+  }
 }
 
 function combinedBaseSummariesEqual(
@@ -1374,6 +1543,9 @@ export async function assertMediaSyncStagingComplete(
  */
 export async function getNaverSearchAdsCombinedStagingSummary(
   input: GetMediaSyncStagingSummaryInput,
+  dependencies:
+    NaverSearchAdsCombinedStagingSummaryDependencies =
+      defaultNaverSearchAdsCombinedStagingSummaryDependencies,
 ): Promise<MediaSyncStagingSummary> {
   if (
     !input ||
@@ -1425,16 +1597,13 @@ export async function getNaverSearchAdsCombinedStagingSummary(
       expectedRows,
   };
 
-  const supabase =
-    getSupabaseAdmin();
-
   const loadBaseSummary =
     async (): Promise<MediaSyncStagingBaseSummary> => {
       let result;
 
       try {
         result =
-          await supabase.rpc(
+          await dependencies.invokeRpc(
             SUMMARIZE_NAVER_SEARCH_ADS_COMBINED_STAGING_BASE_RPC,
             {
               p_payload:
@@ -1477,8 +1646,23 @@ export async function getNaverSearchAdsCombinedStagingSummary(
   let validatedRows =
     0;
 
+  let scopeMismatchRows =
+    0;
+
+  let blankRowKeyRows =
+    0;
+
+  let missingFingerprintRows =
+    0;
+
   let canonicalMismatchRows =
     0;
+
+  const dateWindowSummaryMap =
+    new Map<
+      number,
+      MediaSyncStagingDateWindowSummary
+    >();
 
   let validationExhausted =
     false;
@@ -1509,7 +1693,7 @@ export async function getNaverSearchAdsCombinedStagingSummary(
 
     try {
       result =
-        await supabase.rpc(
+        await dependencies.invokeRpc(
           VALIDATE_NAVER_SEARCH_ADS_COMBINED_STAGING_BATCH_RPC,
           {
             p_payload:
@@ -1553,12 +1737,35 @@ export async function getNaverSearchAdsCombinedStagingSummary(
     validatedRows +=
       batch.batchRows;
 
+    scopeMismatchRows +=
+      batch.scopeMismatchRows;
+
+    blankRowKeyRows +=
+      batch.blankRowKeyRows;
+
+    missingFingerprintRows +=
+      batch.missingFingerprintRows;
+
     canonicalMismatchRows +=
       batch.canonicalMismatchRows;
+
+    mergeDateWindowSummaries(
+      dateWindowSummaryMap,
+      batch.dateWindowSummaries,
+    );
 
     if (
       !Number.isSafeInteger(
         validatedRows,
+      ) ||
+      !Number.isSafeInteger(
+        scopeMismatchRows,
+      ) ||
+      !Number.isSafeInteger(
+        blankRowKeyRows,
+      ) ||
+      !Number.isSafeInteger(
+        missingFingerprintRows,
       ) ||
       !Number.isSafeInteger(
         canonicalMismatchRows,
@@ -1610,15 +1817,37 @@ export async function getNaverSearchAdsCombinedStagingSummary(
     );
   }
 
+  const dateWindowSummaries =
+    Array.from(
+      dateWindowSummaryMap.values(),
+    ).sort(
+      (left, right) =>
+        left.dateWindowIndex -
+        right.dateWindowIndex,
+    );
+
+  const completedSummary = {
+    ...afterSummary,
+    scopeMismatchRows,
+    blankRowKeyRows,
+    missingFingerprintRows,
+    canonicalMismatchRows,
+    dateWindowCount:
+      dateWindowSummaries.length,
+    dateWindowSummaries,
+  };
+
+  validateSummaryAggregateConsistency(
+    completedSummary,
+  );
+
   const isComplete =
-    calculateSummaryIsComplete({
-      ...afterSummary,
-      canonicalMismatchRows,
-    });
+    calculateSummaryIsComplete(
+      completedSummary,
+    );
 
   return {
-    ...afterSummary,
-    canonicalMismatchRows,
+    ...completedSummary,
     isComplete,
   };
 }

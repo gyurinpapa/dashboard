@@ -201,68 +201,27 @@ begin
   end if;
 
   /*
-   * Fast whole-job summary.
+   * Row-index-only whole-job base summary.
    *
-   * The job_id predicate uses the existing staging job indexes. Expensive
-   * canonical JSON and SHA-256 verification is deliberately excluded here
-   * and performed below in bounded batches.
+   * This RPC intentionally reads only (job_id, row_index), allowing the
+   * media_sync_staging_rows_job_row_index_unique index to satisfy the scan.
+   * The unique constraint guarantees distinct row indexes equal total rows.
+   *
+   * Scope, row-key, fingerprint, canonical JSON, SHA-256, and date-window
+   * validation are accumulated by the independently bounded v2 batch RPC.
    */
   select
     count(*)::bigint,
-
     min(staging.row_index),
     max(staging.row_index),
-
-    count(
-      distinct staging.row_index
-    )::bigint,
-
+    count(*)::bigint,
     count(*) filter (
       where staging.row_index >= 0
-        and staging.row_index <
-          v_expected_rows
+        and staging.row_index < v_expected_rows
     )::bigint,
-
     count(*) filter (
       where staging.row_index < 0
-         or staging.row_index >=
-            v_expected_rows
-    )::bigint,
-
-    count(*) filter (
-      where staging.report_id <>
-              v_report_id
-         or staging.workspace_id <>
-              v_workspace_id
-         or staging.advertiser_id <>
-              v_advertiser_id
-         or staging.connection_id <>
-              v_connection_id
-         or staging.provider <>
-              v_provider
-         or staging.external_account_id <>
-              v_external_account_id
-         or staging.date_from <>
-              v_date_from
-         or staging.date_to <>
-              v_date_to
-         or staging.date <
-              v_date_from
-         or staging.date >
-              v_date_to
-    )::bigint,
-
-    count(*) filter (
-      where staging.row_key is null
-         or length(
-              btrim(staging.row_key)
-            ) = 0
-    )::bigint,
-
-    count(*) filter (
-      where staging.row_fingerprint is null
-         or staging.row_fingerprint !~
-              '^[0-9a-f]{64}$'
+         or staging.row_index >= v_expected_rows
     )::bigint
   into
     v_total_rows,
@@ -270,12 +229,8 @@ begin
     v_max_row_index,
     v_distinct_row_indexes,
     v_rows_in_expected_range,
-    v_out_of_range_rows,
-    v_scope_mismatch_rows,
-    v_blank_row_key_rows,
-    v_missing_fingerprint_rows
-  from public.media_sync_staging_rows
-    as staging
+    v_out_of_range_rows
+  from public.media_sync_staging_rows as staging
   where staging.job_id = v_job_id;
 
   v_missing_expected_rows :=
@@ -285,56 +240,15 @@ begin
       0
     );
 
-  select
-    count(*)::bigint,
-    coalesce(
-      jsonb_agg(
-        jsonb_build_object(
-          'date_window_index',
-            windows.date_window_index,
-          'row_count',
-            windows.row_count,
-          'min_row_index',
-            windows.min_row_index,
-          'max_row_index',
-            windows.max_row_index,
-          'min_date',
-            windows.min_date,
-          'max_date',
-            windows.max_date
-        )
-        order by
-          windows.date_window_index
-      ),
-      '[]'::jsonb
-    )
-  into
-    v_date_window_count,
-    v_date_window_summaries
-  from (
-    select
-      staging.date_window_index,
-
-      count(*)::bigint
-        as row_count,
-
-      min(staging.row_index)
-        as min_row_index,
-
-      max(staging.row_index)
-        as max_row_index,
-
-      min(staging.date)::text
-        as min_date,
-
-      max(staging.date)::text
-        as max_date
-    from public.media_sync_staging_rows
-      as staging
-    where staging.job_id = v_job_id
-    group by
-      staging.date_window_index
-  ) as windows;
+  /*
+   * These fields remain in the RPC return contract for compatibility. Their
+   * verified values are supplied by the bounded v2 batch accumulation.
+   */
+  v_scope_mismatch_rows := 0;
+  v_blank_row_key_rows := 0;
+  v_missing_fingerprint_rows := 0;
+  v_date_window_count := 0;
+  v_date_window_summaries := '[]'::jsonb;
 
   return query
   select
@@ -361,8 +275,8 @@ $function$;
  * One call validates at most 2,000 rows. The repository advances the
  * row_index cursor across independent PostgREST statements.
  */
-CREATE OR REPLACE FUNCTION public.validate_naver_searchads_combined_staging_batch(p_payload jsonb)
- RETURNS TABLE(job_id uuid, after_row_index bigint, batch_size bigint, batch_rows bigint, batch_max_row_index bigint, canonical_mismatch_rows bigint)
+CREATE OR REPLACE FUNCTION public.validate_naver_searchads_combined_staging_batch_v3(p_payload jsonb)
+ RETURNS TABLE(job_id uuid, after_row_index bigint, batch_size bigint, batch_rows bigint, batch_max_row_index bigint, scope_mismatch_rows bigint, blank_row_key_rows bigint, missing_fingerprint_rows bigint, canonical_mismatch_rows bigint, date_window_summaries jsonb)
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO 'pg_catalog', 'public', 'extensions'
@@ -388,7 +302,11 @@ declare
   v_validation_after_row_index bigint := null;
   v_validation_batch_rows bigint := 0;
   v_validation_batch_max_row_index bigint := null;
+  v_validation_batch_scope_mismatch_rows bigint := 0;
+  v_validation_batch_blank_row_key_rows bigint := 0;
+  v_validation_batch_missing_fingerprint_rows bigint := 0;
   v_validation_batch_canonical_mismatch_rows bigint := 0;
+  v_validation_batch_date_window_summaries jsonb := '[]'::jsonb;
 begin
   if p_payload is null
      or jsonb_typeof(p_payload) <> 'object'
@@ -558,7 +476,15 @@ begin
 
     with validation_batch as materialized (
       select
+        staging.date_window_index,
         staging.row_index,
+        staging.report_id,
+        staging.workspace_id,
+        staging.advertiser_id,
+        staging.connection_id,
+        staging.date_from,
+        staging.date_to,
+        staging.row_key,
         staging.date,
         staging.channel,
         staging.device,
@@ -581,6 +507,26 @@ begin
     select
       count(*)::bigint,
       max(staging.row_index),
+      count(*) filter (
+        where staging.report_id <> v_report_id
+           or staging.workspace_id <> v_workspace_id
+           or staging.advertiser_id <> v_advertiser_id
+           or staging.connection_id <> v_connection_id
+           or staging.provider <> v_provider
+           or staging.external_account_id <> v_external_account_id
+           or staging.date_from <> v_date_from
+           or staging.date_to <> v_date_to
+           or staging.date < v_date_from
+           or staging.date > v_date_to
+      )::bigint,
+      count(*) filter (
+        where staging.row_key is null
+           or length(btrim(staging.row_key)) = 0
+      )::bigint,
+      count(*) filter (
+        where staging.row_fingerprint is null
+           or staging.row_fingerprint !~ '^[0-9a-f]{64}$'
+      )::bigint,
       count(*) filter (
         where
           jsonb_typeof(staging.row) <>
@@ -911,11 +857,42 @@ begin
                      ),
                      'hex'
                    )
-      )::bigint
+      )::bigint,
+      coalesce(
+        (
+          select jsonb_agg(
+            jsonb_build_object(
+              'date_window_index', windows.date_window_index,
+              'row_count', windows.row_count,
+              'min_row_index', windows.min_row_index,
+              'max_row_index', windows.max_row_index,
+              'min_date', windows.min_date,
+              'max_date', windows.max_date
+            )
+            order by windows.date_window_index
+          )
+          from (
+            select
+              batch_rows.date_window_index,
+              count(*)::bigint as row_count,
+              min(batch_rows.row_index) as min_row_index,
+              max(batch_rows.row_index) as max_row_index,
+              min(batch_rows.date)::text as min_date,
+              max(batch_rows.date)::text as max_date
+            from validation_batch as batch_rows
+            group by batch_rows.date_window_index
+          ) as windows
+        ),
+        '[]'::jsonb
+      )
     into
       v_validation_batch_rows,
       v_validation_batch_max_row_index,
-      v_validation_batch_canonical_mismatch_rows
+      v_validation_batch_scope_mismatch_rows,
+      v_validation_batch_blank_row_key_rows,
+      v_validation_batch_missing_fingerprint_rows,
+      v_validation_batch_canonical_mismatch_rows,
+      v_validation_batch_date_window_summaries
     from validation_batch
       as staging;
 
@@ -926,7 +903,11 @@ begin
     v_validation_batch_size,
     v_validation_batch_rows,
     v_validation_batch_max_row_index,
-    v_validation_batch_canonical_mismatch_rows;
+    v_validation_batch_scope_mismatch_rows,
+    v_validation_batch_blank_row_key_rows,
+    v_validation_batch_missing_fingerprint_rows,
+    v_validation_batch_canonical_mismatch_rows,
+    v_validation_batch_date_window_summaries;
 end;
 $function$;
 
@@ -1736,6 +1717,26 @@ to service_role;
 comment on function public.summarize_naver_searchads_combined_staging_base(jsonb)
 is
   'Loads structural combined Naver Search Ads staging summary fields without canonical JSON or SHA-256 validation.';
+
+revoke all
+on function public.validate_naver_searchads_combined_staging_batch_v3(jsonb)
+from public;
+
+revoke all
+on function public.validate_naver_searchads_combined_staging_batch_v3(jsonb)
+from anon;
+
+revoke all
+on function public.validate_naver_searchads_combined_staging_batch_v3(jsonb)
+from authenticated;
+
+grant execute
+on function public.validate_naver_searchads_combined_staging_batch_v3(jsonb)
+to service_role;
+
+comment on function public.validate_naver_searchads_combined_staging_batch_v3(jsonb)
+is
+  'Validates at most 2,000 combined Naver Search Ads staging rows for scope, row-key, fingerprint format, canonical JSON, and SHA-256 consistency.';
 
 revoke all
 on function public.validate_naver_searchads_combined_staging_batch(jsonb)
