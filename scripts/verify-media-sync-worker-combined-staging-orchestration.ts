@@ -30,6 +30,16 @@ const PREVIOUS_INGESTION_ID =
 const PUBLISHED_INGESTION_ID =
   "99999999-9999-4999-8999-999999999999";
 
+const RAW_COMPLETED_ROWS =
+  14;
+
+const RECONCILED_ROWS =
+  12;
+
+const RECONCILED_EXCLUDED_ROWS =
+  RAW_COMPLETED_ROWS -
+  RECONCILED_ROWS;
+
 const credentials = {
   customerId:
     EXTERNAL_ACCOUNT_ID,
@@ -538,8 +548,10 @@ async function main(): Promise<void> {
     "src/lib/media-sync/media-sync-worker-orchestration-repository.ts",
     "src/lib/media-sync/media-sync-combined-processing-checkpoint-repository.ts",
     "src/lib/media-sync/media-sync-processing-checkpoint-repository.ts",
+    "src/lib/media-sync/naver-searchads-brand-search-cross-grain-reconciliation-repository.ts",
     "src/lib/media-sync/naver-searchads-staging-orchestrator.ts",
     "src/lib/media-sync/naver-searchads-authoritative-entity-staging-orchestrator.ts",
+    "scripts/sql/create-reconcile-naver-searchads-brand-search-cross-grain-staging.sql",
     "scripts/media-sync-worker.ts",
   ] as const;
 
@@ -591,8 +603,14 @@ async function main(): Promise<void> {
   let releaseCount =
     0;
 
+  let reconciliationCount =
+    0;
+
   let summaryCount =
     0;
+
+  const completedLifecycleOrder:
+    string[] = [];
 
   let materializationCount =
     0;
@@ -905,6 +923,206 @@ async function main(): Promise<void> {
         );
       },
 
+    reconcileStaging:
+      async (
+        input: {
+          job:
+            MediaSyncJobRecord;
+          expectedRows:
+            number;
+        },
+      ) => {
+        reconciliationCount +=
+          1;
+
+        completedLifecycleOrder.push(
+          "reconciliation",
+        );
+
+        assert.equal(
+          input.expectedRows,
+          RAW_COMPLETED_ROWS,
+        );
+
+        assert.equal(
+          input.job.inserted_rows,
+          RAW_COMPLETED_ROWS,
+        );
+
+        const errorDetail =
+          requireRecord(
+            input.job.error_detail,
+            "Completed job error_detail must be an object before reconciliation.",
+          );
+
+        const processingCheckpoint =
+          requireRecord(
+            errorDetail.processing_checkpoint,
+            "Completed processing checkpoint must be an object before reconciliation.",
+          );
+
+        const collector =
+          requireRecord(
+            processingCheckpoint.collector,
+            "Completed collector checkpoint must be an object before reconciliation.",
+          );
+
+        const reconciledCheckpoint = {
+          ...processingCheckpoint,
+          raw_rows:
+            RECONCILED_ROWS,
+          normalized_rows:
+            RECONCILED_ROWS,
+          inserted_rows:
+            RECONCILED_ROWS,
+          failed_rows:
+            0,
+          collector: {
+            ...collector,
+            next_row_index:
+              RECONCILED_ROWS,
+          },
+          reconciliation: {
+            kind:
+              "brand_search_cross_grain_dedup_v1",
+            version:
+              1,
+            source_rows:
+              RAW_COMPLETED_ROWS,
+            excluded_rows:
+              RECONCILED_EXCLUDED_ROWS,
+            retained_rows:
+              RECONCILED_ROWS,
+            mixed_campaign_count:
+              1,
+            matched_campaign_count:
+              1,
+            excluded_impressions:
+              10,
+            excluded_clicks:
+              2,
+            excluded_cost:
+              0,
+            excluded_conversions:
+              1,
+            excluded_revenue:
+              100,
+            applied_at:
+              "2026-07-14T00:09:00.000Z",
+          },
+        };
+
+        const reconciledJob =
+          cloneJob(
+            input.job,
+            {
+              raw_rows:
+                RECONCILED_ROWS,
+              normalized_rows:
+                RECONCILED_ROWS,
+              inserted_rows:
+                RECONCILED_ROWS,
+              failed_rows:
+                0,
+              error_detail: {
+                ...errorDetail,
+                processing_checkpoint:
+                  reconciledCheckpoint as never,
+              },
+              updated_at:
+                "2026-07-14T00:09:00.000Z",
+            },
+          );
+
+        activeCheckpointJob =
+          reconciledJob;
+
+        return {
+          kind:
+            "brand_search_cross_grain_dedup_v1" as const,
+          version:
+            1 as const,
+          changed:
+            true,
+          alreadyReconciled:
+            false,
+          sourceRows:
+            RAW_COMPLETED_ROWS,
+          excludedRows:
+            RECONCILED_EXCLUDED_ROWS,
+          retainedRows:
+            RECONCILED_ROWS,
+          mixedCampaignCount:
+            1,
+          matchedCampaignCount:
+            1,
+          remainingOverlapRows:
+            0,
+          excludedImpressions:
+            10,
+          excludedClicks:
+            2,
+          excludedCost:
+            0,
+          excludedConversions:
+            1,
+          excludedRevenue:
+            100,
+          job:
+            reconciledJob,
+          checkpoint: {
+            version:
+              1 as const,
+            phase:
+              "completed" as const,
+            dateWindowIndex:
+              0,
+            nextRowIndex:
+              RECONCILED_ROWS,
+            totalRows:
+              RECONCILED_ROWS,
+            failedRows:
+              0,
+            keyword: {
+              complete:
+                true,
+              cursor:
+                keywordCursor as never,
+              counts: {
+                discovered:
+                  2,
+                completed:
+                  2,
+                statsRequestsAttempted:
+                  2,
+                statsRequestsSucceeded:
+                  2,
+                retryCount:
+                  0,
+              },
+            },
+            authoritative: {
+              complete:
+                true,
+              cursor:
+                authoritativeCursor as never,
+              counts: {
+                discovered:
+                  5,
+                completed:
+                  5,
+                statsRequestsAttempted:
+                  5,
+                statsRequestsSucceeded:
+                  5,
+                retryCount:
+                  0,
+              },
+            },
+          },
+        };
+      },
+
     assertStagingComplete:
       async (
         input: {
@@ -917,19 +1135,29 @@ async function main(): Promise<void> {
         summaryCount +=
           1;
 
+        completedLifecycleOrder.push(
+          "summary",
+        );
+
+        assert.equal(
+          reconciliationCount,
+          1,
+          "Combined summary ran before reconciliation.",
+        );
+
         assert.equal(
           input.expectedRows,
-          14,
+          RECONCILED_ROWS,
         );
 
         assert.equal(
           input.job.inserted_rows,
-          14,
+          RECONCILED_ROWS,
         );
 
         return createCompleteSummary(
           input.job.id,
-          14,
+          RECONCILED_ROWS,
         );
       },
 
@@ -947,6 +1175,10 @@ async function main(): Promise<void> {
         materializationCount +=
           1;
 
+        completedLifecycleOrder.push(
+          "materialization",
+        );
+
         assert.equal(
           summaryCount,
           1,
@@ -955,7 +1187,7 @@ async function main(): Promise<void> {
 
         assert.equal(
           input.summary.totalRows,
-          14,
+          RECONCILED_ROWS,
         );
 
         return {
@@ -970,7 +1202,7 @@ async function main(): Promise<void> {
           snapshotIngestionId:
             SNAPSHOT_INGESTION_ID,
           rowCount:
-            14,
+            RECONCILED_ROWS,
           stagingFingerprint:
             "a".repeat(
               64,
@@ -996,6 +1228,10 @@ async function main(): Promise<void> {
         activationCount +=
           1;
 
+        completedLifecycleOrder.push(
+          "activation",
+        );
+
         assert.equal(
           materializationCount,
           1,
@@ -1003,7 +1239,7 @@ async function main(): Promise<void> {
 
         assert.equal(
           input.expectedRows,
-          14,
+          RECONCILED_ROWS,
         );
 
         currentIngestionId =
@@ -1021,7 +1257,7 @@ async function main(): Promise<void> {
           publishedIngestionId:
             publishedIngestionId,
           rowCount:
-            14,
+            RECONCILED_ROWS,
           stagingFingerprint:
             "a".repeat(
               64,
@@ -1047,9 +1283,18 @@ async function main(): Promise<void> {
         finalizationCount +=
           1;
 
+        completedLifecycleOrder.push(
+          "finalization",
+        );
+
         assert.equal(
           activationCount,
           1,
+        );
+
+        assert.equal(
+          input.expectedRows,
+          RECONCILED_ROWS,
         );
 
         assert.equal(
@@ -1081,7 +1326,7 @@ async function main(): Promise<void> {
           publishedIngestionId:
             publishedIngestionId,
           rowCount:
-            14,
+            RECONCILED_ROWS,
           stagingFingerprint:
             "a".repeat(
               64,
@@ -1149,6 +1394,11 @@ async function main(): Promise<void> {
   );
 
   assert.equal(
+    reconciliationCount,
+    0,
+  );
+
+  assert.equal(
     materializationCount,
     0,
   );
@@ -1209,6 +1459,12 @@ async function main(): Promise<void> {
   );
 
   assert.equal(
+    reconciliationCount,
+    0,
+    "Reconciliation ran before authoritative completion.",
+  );
+
+  assert.equal(
     materializationCount,
     0,
     "Materialization ran before authoritative completion.",
@@ -1253,6 +1509,11 @@ async function main(): Promise<void> {
   );
 
   assert.equal(
+    reconciliationCount,
+    1,
+  );
+
+  assert.equal(
     summaryCount,
     1,
   );
@@ -1274,17 +1535,49 @@ async function main(): Promise<void> {
 
   assert.equal(
     thirdResult.expectedRows,
-    14,
+    RECONCILED_ROWS,
   );
 
   assert.equal(
     thirdResult.staging.summary.totalRows,
-    14,
+    RECONCILED_ROWS,
   );
 
   assert.equal(
     thirdResult.staging.canonicalRowCount,
-    14,
+    RECONCILED_ROWS,
+  );
+
+  assert.equal(
+    thirdResult.status === "completed"
+      ? thirdResult.reconciliation.sourceRows
+      : null,
+    RAW_COMPLETED_ROWS,
+  );
+
+  assert.equal(
+    thirdResult.status === "completed"
+      ? thirdResult.reconciliation.excludedRows
+      : null,
+    RECONCILED_EXCLUDED_ROWS,
+  );
+
+  assert.equal(
+    thirdResult.status === "completed"
+      ? thirdResult.reconciliation.retainedRows
+      : null,
+    RECONCILED_ROWS,
+  );
+
+  assert.deepEqual(
+    completedLifecycleOrder,
+    [
+      "reconciliation",
+      "summary",
+      "materialization",
+      "activation",
+      "finalization",
+    ],
   );
 
   assert.equal(
@@ -1415,11 +1708,23 @@ async function main(): Promise<void> {
   );
 
   console.log(
-    "verified materialization calls before authoritative completion: 0",
+    "verified reconciliation and materialization calls before authoritative completion: 0 / 0",
   );
 
   console.log(
-    "verified materialization calls after combined completion: 1",
+    "verified reconciliation calls after raw combined completion: 1",
+  );
+
+  console.log(
+    "verified reconciliation rows: 14 raw / 2 excluded / 12 retained",
+  );
+
+  console.log(
+    "verified completed lifecycle order: reconciliation / summary / materialization / activation / finalization",
+  );
+
+  console.log(
+    "verified materialization calls after reconciled combined completion: 1",
   );
 
   console.log(
@@ -1439,7 +1744,11 @@ async function main(): Promise<void> {
   );
 
   console.log(
-    "verified combined completed staging rows: 14",
+    "verified raw completed checkpoint rows: 14",
+  );
+
+  console.log(
+    "verified reconciled combined staging rows: 12",
   );
 
   console.log(

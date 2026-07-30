@@ -45,6 +45,12 @@ import {
   type NaverSearchAdsCombinedStagingPhase,
 } from "./media-sync-combined-processing-checkpoint-repository";
 import {
+  reconcileNaverSearchAdsBrandSearchCrossGrainStaging,
+  NaverSearchAdsBrandSearchCrossGrainReconciliationError,
+  type NaverSearchAdsBrandSearchCrossGrainReconciliationDependencies,
+  type NaverSearchAdsBrandSearchCrossGrainReconciliationResult,
+} from "./naver-searchads-brand-search-cross-grain-reconciliation-repository";
+import {
   materializeMediaSyncSnapshot,
   MediaSyncSnapshotMaterializationError,
   type MediaSyncSnapshotMaterializationResult,
@@ -108,6 +114,7 @@ export type MediaSyncWorkerOrchestrationErrorCode =
   | "STAGING_FAILED"
   | "CHECKPOINT_FAILED"
   | "JOB_RELEASE_FAILED"
+  | "RECONCILIATION_FAILED"
   | "MATERIALIZATION_FAILED"
   | "ACTIVATION_FAILED"
   | "FINALIZATION_FAILED";
@@ -146,6 +153,9 @@ export type MediaSyncWorkerOrchestrationDependencies = {
 
   releaseForResume:
     typeof releaseNaverMediaSyncJobForResume;
+
+  reconcileStaging:
+    typeof reconcileNaverSearchAdsBrandSearchCrossGrainStaging;
 
   assertStagingComplete:
     typeof assertNaverSearchAdsCombinedStagingComplete;
@@ -196,6 +206,9 @@ export type ProcessNaverMediaSyncJobOptions = {
 
   combinedCheckpointDependencies?:
     MediaSyncCombinedProcessingCheckpointDependencies;
+
+  reconciliationDependencies?:
+    NaverSearchAdsBrandSearchCrossGrainReconciliationDependencies;
 
   orchestrationDependencies?: Partial<
     MediaSyncWorkerOrchestrationDependencies
@@ -300,6 +313,9 @@ export type ProcessNaverMediaSyncJobCompletedResult = {
     string;
   connectionId:
     string;
+
+  reconciliation:
+    NaverSearchAdsBrandSearchCrossGrainReconciliationResult;
 
   staging:
     NaverSearchAdsWorkerCombinedStagingResult & {
@@ -1319,6 +1335,10 @@ function resolveOrchestrationDependencies(
       overrides?.releaseForResume ??
       releaseNaverMediaSyncJobForResume,
 
+    reconcileStaging:
+      overrides?.reconcileStaging ??
+      reconcileNaverSearchAdsBrandSearchCrossGrainStaging,
+
     assertStagingComplete:
       overrides?.assertStagingComplete ??
       assertNaverSearchAdsCombinedStagingComplete,
@@ -2207,6 +2227,83 @@ export async function processClaimedNaverMediaSyncJob(
     );
   }
 
+  let reconciliation:
+    NaverSearchAdsBrandSearchCrossGrainReconciliationResult;
+
+  try {
+    logStage({
+      job:
+        checkpointJob,
+      stage:
+        "staging:reconciliation:start",
+      detail:
+        `rows=${checkpoint.totalRows}`,
+    });
+
+    reconciliation =
+      await dependencies
+        .reconcileStaging(
+          {
+            job:
+              checkpointJob,
+            expectedRows:
+              checkpoint.totalRows,
+          },
+          options.reconciliationDependencies,
+        );
+
+    checkpointJob =
+      reconciliation.job;
+
+    checkpoint =
+      readNaverSearchAdsCombinedProcessingCheckpoint(
+        checkpointJob,
+      );
+
+    if (
+      checkpoint.phase !== "completed" ||
+      checkpoint.totalRows !==
+        reconciliation.retainedRows ||
+      checkpoint.nextRowIndex !==
+        reconciliation.retainedRows
+    ) {
+      throw new MediaSyncWorkerOrchestrationError(
+        "RECONCILIATION_FAILED",
+        "The reconciled Naver checkpoint does not match the retained staging rows.",
+      );
+    }
+  } catch (error) {
+    if (
+      error instanceof
+      NaverSearchAdsBrandSearchCrossGrainReconciliationError ||
+      error instanceof
+      MediaSyncCombinedProcessingCheckpointError ||
+      error instanceof
+      MediaSyncWorkerOrchestrationError
+    ) {
+      throw wrapStageError(
+        "RECONCILIATION_FAILED",
+        "The Naver BRAND_SEARCH cross-grain staging reconciliation failed.",
+        error,
+      );
+    }
+
+    throw wrapStageError(
+      "RECONCILIATION_FAILED",
+      "The Naver BRAND_SEARCH cross-grain staging reconciliation failed unexpectedly.",
+      error,
+    );
+  }
+
+  logStage({
+    job:
+      checkpointJob,
+    stage:
+      "staging:reconciliation:done",
+    detail:
+      `sourceRows=${reconciliation.sourceRows} excludedRows=${reconciliation.excludedRows} retainedRows=${reconciliation.retainedRows} changed=${reconciliation.changed} alreadyReconciled=${reconciliation.alreadyReconciled}`,
+  });
+
   let summary:
     MediaSyncStagingSummary;
 
@@ -2426,6 +2523,7 @@ export async function processClaimedNaverMediaSyncJob(
       finalization.job.advertiser_id,
     connectionId:
       finalization.job.connection_id,
+    reconciliation,
     staging,
     checkpointJob,
     materialization,
