@@ -41,6 +41,7 @@ returns table(
 language plpgsql
 security definer
 set search_path to 'pg_catalog', 'public', 'extensions'
+set statement_timeout to '60s'
 as $function$
 declare
   v_kind constant text :=
