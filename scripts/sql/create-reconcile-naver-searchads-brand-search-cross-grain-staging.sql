@@ -97,6 +97,7 @@ declare
   v_excluded_revenue numeric := 0;
 
   v_reindex_offset bigint := 0;
+  v_reindex_required_rows bigint := 0;
   v_affected_rows bigint := 0;
   v_preservation_mismatch_rows bigint := 0;
 
@@ -778,6 +779,12 @@ begin
       where not row_map.excluded
     )::bigint,
 
+    count(*) filter (
+      where not row_map.excluded
+        and row_map.old_row_index is distinct from
+            row_map.new_row_index
+    )::bigint,
+
     count(distinct row_map.campaign_id) filter (
       where row_map.excluded
     )::bigint,
@@ -844,6 +851,7 @@ begin
   into
     v_excluded_rows,
     v_retained_rows,
+    v_reindex_required_rows,
     v_matched_campaign_count,
     v_excluded_impressions,
     v_excluded_clicks,
@@ -854,6 +862,9 @@ begin
 
   if v_excluded_rows < 0
      or v_retained_rows < 0
+     or v_reindex_required_rows < 0
+     or v_reindex_required_rows >
+        v_retained_rows
      or v_excluded_rows + v_retained_rows <>
         v_source_rows
      or v_matched_campaign_count >
@@ -875,11 +886,15 @@ begin
     update public.media_sync_staging_rows as staging
     set row_index =
       staging.row_index + v_reindex_offset
-    where staging.job_id = v_job_id;
+    from pg_temp.nsbgr_row_map as row_map
+    where staging.id = row_map.staging_id
+      and not row_map.excluded
+      and row_map.old_row_index is distinct from
+          row_map.new_row_index;
 
     get diagnostics v_affected_rows = row_count;
 
-    if v_affected_rows <> v_source_rows then
+    if v_affected_rows <> v_reindex_required_rows then
       raise exception using
         errcode = 'P0001',
         message = 'NSBGR_RECONCILIATION_CONFLICT';
@@ -903,11 +918,13 @@ begin
       row_map.new_row_index
     from pg_temp.nsbgr_row_map as row_map
     where staging.id = row_map.staging_id
-      and not row_map.excluded;
+      and not row_map.excluded
+      and row_map.old_row_index is distinct from
+          row_map.new_row_index;
 
     get diagnostics v_affected_rows = row_count;
 
-    if v_affected_rows <> v_retained_rows then
+    if v_affected_rows <> v_reindex_required_rows then
       raise exception using
         errcode = 'P0001',
         message = 'NSBGR_RECONCILIATION_CONFLICT';
