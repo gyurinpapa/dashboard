@@ -46,9 +46,10 @@ import {
 } from "./media-sync-combined-processing-checkpoint-repository";
 import {
   reconcileNaverSearchAdsBrandSearchCrossGrainStaging,
+  isNaverSearchAdsBrandSearchCrossGrainReconciliationPartialResult,
   NaverSearchAdsBrandSearchCrossGrainReconciliationError,
+  type NaverSearchAdsBrandSearchCrossGrainReconciliationCompletedResult,
   type NaverSearchAdsBrandSearchCrossGrainReconciliationDependencies,
-  type NaverSearchAdsBrandSearchCrossGrainReconciliationResult,
 } from "./naver-searchads-brand-search-cross-grain-reconciliation-repository";
 import {
   materializeMediaSyncSnapshot,
@@ -185,6 +186,7 @@ export type ProcessNaverMediaSyncJobOptions = {
   maxAuthoritativeStatsRequestsPerRun?: number;
   maxAuthoritativeDiscoveryPagesPerRun?: number;
 
+  reconciliationBatchSize?: number;
   materializationBatchSize?: number;
   jobTimeoutMs?: number;
   signal?: AbortSignal;
@@ -225,9 +227,13 @@ export type NaverSearchAdsWorkerCombinedAppendTotals = {
   lastRowIndex: number | null;
 };
 
+export type NaverSearchAdsWorkerPhase =
+  | NaverSearchAdsCombinedStagingPhase
+  | "reconciliation";
+
 export type NaverSearchAdsWorkerCombinedCollectorResult = {
   phase:
-    NaverSearchAdsCombinedStagingPhase;
+    NaverSearchAdsWorkerPhase;
 
   partialReason:
     string | null;
@@ -259,7 +265,7 @@ export type NaverSearchAdsWorkerCombinedStagingResult = {
     boolean;
 
   phase:
-    NaverSearchAdsCombinedStagingPhase;
+    NaverSearchAdsWorkerPhase;
 
   jobId:
     string;
@@ -315,7 +321,7 @@ export type ProcessNaverMediaSyncJobCompletedResult = {
     string;
 
   reconciliation:
-    NaverSearchAdsBrandSearchCrossGrainReconciliationResult;
+    NaverSearchAdsBrandSearchCrossGrainReconciliationCompletedResult;
 
   staging:
     NaverSearchAdsWorkerCombinedStagingResult & {
@@ -363,7 +369,8 @@ export type ProcessNaverMediaSyncJobPartialResult = {
 
   phase:
     "keyword" |
-    "authoritative";
+    "authoritative" |
+    "reconciliation";
 
   partialReason:
     string;
@@ -1554,6 +1561,9 @@ function createCombinedStagingResult(input: {
   partialReason:
     string | null;
 
+  phaseOverride?:
+    NaverSearchAdsWorkerPhase;
+
   keyword:
     NaverSearchAdsStagingOrchestratorCompletedResult |
     NaverSearchAdsStagingOrchestratorPartialResult |
@@ -1671,6 +1681,7 @@ function createCombinedStagingResult(input: {
     isComplete:
       false,
     phase:
+      input.phaseOverride ??
       input.checkpoint.phase,
     jobId:
       input.jobId,
@@ -1682,6 +1693,7 @@ function createCombinedStagingResult(input: {
     callbackCount,
     collector: {
       phase:
+        input.phaseOverride ??
         input.checkpoint.phase,
       partialReason:
         input.partialReason,
@@ -1727,6 +1739,9 @@ async function releaseCombinedPartial(input: {
   partialReason:
     string;
 
+  resultPhase?:
+    ProcessNaverMediaSyncJobPartialResult["phase"];
+
   keyword:
     NaverSearchAdsStagingOrchestratorCompletedResult |
     NaverSearchAdsStagingOrchestratorPartialResult |
@@ -1751,7 +1766,7 @@ async function releaseCombinedPartial(input: {
       stage:
         "resume-release:start",
       detail:
-        `phase=${input.checkpoint.phase} rows=${input.checkpoint.totalRows}`,
+        `phase=${input.resultPhase ?? input.checkpoint.phase} rows=${input.checkpoint.totalRows}`,
     });
 
     releasedJob =
@@ -1777,6 +1792,8 @@ async function releaseCombinedPartial(input: {
         "partial",
       partialReason:
         input.partialReason,
+      phaseOverride:
+        input.resultPhase,
       keyword:
         input.keyword,
       authoritative:
@@ -1789,7 +1806,7 @@ async function releaseCombinedPartial(input: {
     stage:
       "resume-release:done",
     detail:
-      `phase=${input.checkpoint.phase} rows=${input.checkpoint.totalRows} reason=${input.partialReason}`,
+      `phase=${input.resultPhase ?? input.checkpoint.phase} rows=${input.checkpoint.totalRows} reason=${input.partialReason}`,
   });
 
   return {
@@ -1806,10 +1823,13 @@ async function releaseCombinedPartial(input: {
     connectionId:
       releasedJob.connection_id,
     phase:
-      input.checkpoint.phase ===
-      "keyword"
-        ? "keyword"
-        : "authoritative",
+      input.resultPhase ??
+      (
+        input.checkpoint.phase ===
+        "keyword"
+          ? "keyword"
+          : "authoritative"
+      ),
     partialReason:
       input.partialReason,
     checkpointRows:
@@ -2228,7 +2248,7 @@ export async function processClaimedNaverMediaSyncJob(
   }
 
   let reconciliation:
-    NaverSearchAdsBrandSearchCrossGrainReconciliationResult;
+    NaverSearchAdsBrandSearchCrossGrainReconciliationCompletedResult;
 
   try {
     logStage({
@@ -2240,7 +2260,7 @@ export async function processClaimedNaverMediaSyncJob(
         `rows=${checkpoint.totalRows}`,
     });
 
-    reconciliation =
+    const reconciliationAttempt =
       await dependencies
         .reconcileStaging(
           {
@@ -2248,17 +2268,51 @@ export async function processClaimedNaverMediaSyncJob(
               checkpointJob,
             expectedRows:
               checkpoint.totalRows,
+            batchSize:
+              options.reconciliationBatchSize,
           },
           options.reconciliationDependencies,
         );
 
     checkpointJob =
-      reconciliation.job;
+      reconciliationAttempt.job;
 
     checkpoint =
       readNaverSearchAdsCombinedProcessingCheckpoint(
         checkpointJob,
       );
+
+    if (
+      isNaverSearchAdsBrandSearchCrossGrainReconciliationPartialResult(
+        reconciliationAttempt,
+      )
+    ) {
+      logStage({
+        job:
+          checkpointJob,
+        stage:
+          "staging:reconciliation:partial",
+        detail:
+          `phase=${reconciliationAttempt.progress.phase} cursor=${reconciliationAttempt.progress.cursor} validatedRows=${reconciliationAttempt.progress.validatedRows} sourceRows=${reconciliationAttempt.sourceRows} retainedRows=${reconciliationAttempt.retainedRows}`,
+      });
+
+      return releaseCombinedPartial({
+        job:
+          context.job,
+        checkpointJob,
+        checkpoint,
+        resultPhase:
+          "reconciliation",
+        partialReason:
+          `reconciliation_${reconciliationAttempt.progress.phase}`,
+        keyword,
+        authoritative,
+        dependencies,
+      });
+    }
+
+    reconciliation =
+      reconciliationAttempt;
 
     if (
       checkpoint.phase !== "completed" ||

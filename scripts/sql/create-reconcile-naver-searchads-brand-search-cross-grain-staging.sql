@@ -1,3 +1,6 @@
+-- QUERY NAME:
+-- create-reconcile-naver-searchads-brand-search-cross-grain-staging
+
 begin;
 
 /*
@@ -6,15 +9,17 @@ begin;
  *
  * Runtime boundary:
  *   completed keyword + authoritative checkpoint
- *   -> this reconciliation RPC
+ *   -> bounded reconciliation RPC calls
  *   -> combined staging summary
  *   -> materialization / activation / finalization
  *
- * The RPC mutates only:
- * - public.media_sync_staging_rows for the claimed processing job;
- * - the same public.media_sync_jobs row counters and processing checkpoint.
- *
- * It never calls a materialization, activation, finalization, or publish RPC.
+ * Safety contract:
+ * - every RPC call commits one bounded reconciliation step;
+ * - in-progress state is stored only in
+ *   media_sync_jobs.error_detail.processing_checkpoint.reconciliation_work;
+ * - source/retained row validation is bounded by p_payload.batch_size;
+ * - the existing final reconciliation audit contract remains unchanged;
+ * - materialization, activation, finalization, and publish are never called.
  */
 
 create or replace function public.reconcile_naver_searchads_brand_search_cross_grain_staging(
@@ -41,7 +46,7 @@ returns table(
 language plpgsql
 security definer
 set search_path to 'pg_catalog', 'public', 'extensions'
-set statement_timeout to '60s'
+set statement_timeout to '10min'
 as $function$
 declare
   v_kind constant text :=
@@ -49,6 +54,15 @@ declare
 
   v_version constant integer :=
     1;
+
+  v_default_batch_size constant integer :=
+    5000;
+
+  v_min_batch_size constant integer :=
+    100;
+
+  v_max_batch_size constant integer :=
+    10000;
 
   v_job public.media_sync_jobs%rowtype;
   v_updated_job public.media_sync_jobs%rowtype;
@@ -66,12 +80,19 @@ declare
   v_date_to date;
 
   v_expected_rows bigint;
+  v_batch_size integer;
 
   v_checkpoint jsonb;
   v_reconciliation jsonb;
+  v_work jsonb;
   v_error_detail jsonb;
   v_now timestamptz :=
     pg_catalog.clock_timestamp();
+
+  v_work_phase text;
+  v_work_started_at timestamptz;
+  v_cursor bigint := 0;
+  v_validated_rows bigint := 0;
 
   v_source_rows bigint := 0;
   v_min_row_index bigint := null;
@@ -82,6 +103,24 @@ declare
   v_blank_row_key_rows bigint := 0;
   v_invalid_fingerprint_rows bigint := 0;
   v_canonical_mismatch_rows bigint := 0;
+
+  v_source_scope_mismatch_rows bigint := 0;
+  v_source_blank_row_key_rows bigint := 0;
+  v_source_invalid_fingerprint_rows bigint := 0;
+  v_source_canonical_mismatch_rows bigint := 0;
+
+  v_retained_scope_mismatch_rows bigint := 0;
+  v_retained_blank_row_key_rows bigint := 0;
+  v_retained_invalid_fingerprint_rows bigint := 0;
+  v_retained_canonical_mismatch_rows bigint := 0;
+
+  v_batch_rows bigint := 0;
+  v_batch_min_row_index bigint := null;
+  v_batch_max_row_index bigint := null;
+  v_batch_scope_mismatch_rows bigint := 0;
+  v_batch_blank_row_key_rows bigint := 0;
+  v_batch_invalid_fingerprint_rows bigint := 0;
+  v_batch_canonical_mismatch_rows bigint := 0;
 
   v_excluded_rows bigint := 0;
   v_retained_rows bigint := 0;
@@ -179,6 +218,15 @@ begin
 
     v_expected_rows :=
       (p_payload ->> 'expected_rows')::bigint;
+
+    v_batch_size :=
+      coalesce(
+        nullif(
+          btrim(p_payload ->> 'batch_size'),
+          ''
+        )::integer,
+        v_default_batch_size
+      );
   exception
     when others then
       raise exception using
@@ -199,6 +247,8 @@ begin
      or v_expected_rows < 0
      or v_expected_rows > 9007199254740991
      or v_date_from > v_date_to
+     or v_batch_size < v_min_batch_size
+     or v_batch_size > v_max_batch_size
   then
     raise exception using
       errcode = 'P0001',
@@ -206,8 +256,8 @@ begin
   end if;
 
   /*
-   * Every append/checkpoint operation serializes through the same job row.
-   * FOR UPDATE therefore closes the staging writer boundary before any scan.
+   * Every append/checkpoint/reconciliation operation serializes through the
+   * same job row. The lock exists only for the current bounded RPC call.
    */
   select media_job.*
   into v_job
@@ -290,9 +340,9 @@ begin
     v_checkpoint -> 'reconciliation';
 
   /*
-   * Idempotent response after a committed first call whose client response was
-   * lost. The audit record is the source of the original/excluded counts;
-   * persisted staging and completed checkpoint are revalidated before return.
+   * Idempotent completed response. This path intentionally performs only
+   * bounded structural checks because the retained rows were already fully
+   * batch-validated before the audit was committed.
    */
   if v_reconciliation is not null
      and v_reconciliation <> 'null'::jsonb
@@ -311,31 +361,22 @@ begin
     begin
       v_existing_source_rows :=
         (v_reconciliation ->> 'source_rows')::bigint;
-
       v_existing_excluded_rows :=
         (v_reconciliation ->> 'excluded_rows')::bigint;
-
       v_existing_retained_rows :=
         (v_reconciliation ->> 'retained_rows')::bigint;
-
       v_existing_mixed_campaign_count :=
         (v_reconciliation ->> 'mixed_campaign_count')::bigint;
-
       v_existing_matched_campaign_count :=
         (v_reconciliation ->> 'matched_campaign_count')::bigint;
-
       v_existing_excluded_impressions :=
         (v_reconciliation ->> 'excluded_impressions')::numeric;
-
       v_existing_excluded_clicks :=
         (v_reconciliation ->> 'excluded_clicks')::numeric;
-
       v_existing_excluded_cost :=
         (v_reconciliation ->> 'excluded_cost')::numeric;
-
       v_existing_excluded_conversions :=
         (v_reconciliation ->> 'excluded_conversions')::numeric;
-
       v_existing_excluded_revenue :=
         (v_reconciliation ->> 'excluded_revenue')::numeric;
     exception
@@ -355,11 +396,6 @@ begin
        or v_existing_matched_campaign_count < 0
        or v_existing_matched_campaign_count >
           v_existing_mixed_campaign_count
-       or v_existing_excluded_impressions < 0
-       or v_existing_excluded_clicks < 0
-       or v_existing_excluded_cost < 0
-       or v_existing_excluded_conversions < 0
-       or v_existing_excluded_revenue < 0
        or v_expected_rows <> v_existing_retained_rows
        or v_job.raw_rows <> v_existing_retained_rows
        or v_job.normalized_rows <> v_existing_retained_rows
@@ -383,7 +419,6 @@ begin
       min(staging.row_index),
       max(staging.row_index),
       count(distinct staging.row_index)::bigint,
-
       count(staging.id) filter (
         where staging.report_id <> v_report_id
            or staging.workspace_id <> v_workspace_id
@@ -397,53 +432,8 @@ begin
            or staging.date < v_date_from
            or staging.date > v_date_to
       )::bigint,
-
       count(staging.id) filter (
         where btrim(staging.row_key) = ''
-      )::bigint,
-
-      count(staging.id) filter (
-        where staging.row_fingerprint is null
-           or staging.row_fingerprint !~ '^[0-9a-f]{64}$'
-           or staging.row_fingerprint is distinct from
-              encode(
-                extensions.digest(
-                  pg_catalog.convert_to(
-                    staging.row::text,
-                    'UTF8'
-                  ),
-                  'sha256'
-                ),
-                'hex'
-              )
-      )::bigint,
-
-      count(staging.id) filter (
-        where jsonb_typeof(staging.row) <> 'object'
-           or coalesce(staging.row ->> 'date', '') <>
-              staging.date::text
-           or coalesce(staging.row ->> 'report_date', '') <>
-              staging.date::text
-           or coalesce(staging.row ->> 'day', '') <>
-              staging.date::text
-           or coalesce(staging.row ->> 'ymd', '') <>
-              staging.date::text
-           or coalesce(staging.row ->> 'channel', '') <>
-              coalesce(staging.channel, '')
-           or coalesce(staging.row ->> 'device', '') <>
-              coalesce(staging.device, '')
-           or coalesce(staging.row ->> 'source', '') <>
-              coalesce(staging.source, '')
-           or coalesce(staging.row ->> 'provider', '') <>
-              'naver_searchad'
-           or coalesce(
-                staging.row ->> 'external_account_id',
-                ''
-              ) <> v_external_account_id
-           or coalesce(
-                staging.row ->> 'ingestion_source',
-                ''
-              ) <> 'api'
       )::bigint
     into
       v_source_rows,
@@ -451,9 +441,7 @@ begin
       v_max_row_index,
       v_distinct_row_indexes,
       v_scope_mismatch_rows,
-      v_blank_row_key_rows,
-      v_invalid_fingerprint_rows,
-      v_canonical_mismatch_rows
+      v_blank_row_key_rows
     from public.media_sync_staging_rows as staging
     where staging.job_id = v_job_id;
 
@@ -512,8 +500,6 @@ begin
        )
        or v_scope_mismatch_rows <> 0
        or v_blank_row_key_rows <> 0
-       or v_invalid_fingerprint_rows <> 0
-       or v_canonical_mismatch_rows <> 0
        or v_remaining_overlap_rows <> 0
     then
       raise exception using
@@ -560,699 +546,1447 @@ begin
       message = 'NSBGR_CHECKPOINT_NOT_COMPLETED';
   end if;
 
-  select
-    count(staging.id)::bigint,
-    min(staging.row_index),
-    max(staging.row_index),
-    count(distinct staging.row_index)::bigint,
+  v_work :=
+    v_checkpoint -> 'reconciliation_work';
 
-    count(staging.id) filter (
-      where staging.report_id <> v_report_id
-         or staging.workspace_id <> v_workspace_id
-         or staging.advertiser_id <> v_advertiser_id
-         or staging.connection_id <> v_connection_id
-         or staging.provider <> v_provider
-         or staging.external_account_id <>
-            v_external_account_id
-         or staging.date_from <> v_date_from
-         or staging.date_to <> v_date_to
-         or staging.date < v_date_from
-         or staging.date > v_date_to
-    )::bigint,
-
-    count(staging.id) filter (
-      where btrim(staging.row_key) = ''
-    )::bigint,
-
-    count(staging.id) filter (
-      where staging.row_fingerprint is null
-         or staging.row_fingerprint !~ '^[0-9a-f]{64}$'
-         or staging.row_fingerprint is distinct from
-            encode(
-              extensions.digest(
-                pg_catalog.convert_to(
-                  staging.row::text,
-                  'UTF8'
-                ),
-                'sha256'
-              ),
-              'hex'
-            )
-    )::bigint,
-
-    count(staging.id) filter (
-      where jsonb_typeof(staging.row) <> 'object'
-         or coalesce(staging.row ->> 'date', '') <>
-            staging.date::text
-         or coalesce(staging.row ->> 'report_date', '') <>
-            staging.date::text
-         or coalesce(staging.row ->> 'day', '') <>
-            staging.date::text
-         or coalesce(staging.row ->> 'ymd', '') <>
-            staging.date::text
-         or coalesce(staging.row ->> 'channel', '') <>
-            coalesce(staging.channel, '')
-         or coalesce(staging.row ->> 'device', '') <>
-            coalesce(staging.device, '')
-         or coalesce(staging.row ->> 'source', '') <>
-            coalesce(staging.source, '')
-         or coalesce(staging.row ->> 'provider', '') <>
-            'naver_searchad'
-         or coalesce(
-              staging.row ->> 'external_account_id',
-              ''
-            ) <> v_external_account_id
-         or coalesce(
-              staging.row ->> 'ingestion_source',
-              ''
-            ) <> 'api'
-    )::bigint
-  into
-    v_source_rows,
-    v_min_row_index,
-    v_max_row_index,
-    v_distinct_row_indexes,
-    v_scope_mismatch_rows,
-    v_blank_row_key_rows,
-    v_invalid_fingerprint_rows,
-    v_canonical_mismatch_rows
-  from public.media_sync_staging_rows as staging
-  where staging.job_id = v_job_id;
-
-  if v_source_rows <> v_expected_rows
-     or v_distinct_row_indexes <> v_expected_rows
-     or (
-       v_expected_rows = 0
-       and (
-         v_min_row_index is not null
-         or v_max_row_index is not null
-       )
-     )
-     or (
-       v_expected_rows > 0
-       and (
-         v_min_row_index <> 0
-         or v_max_row_index <> v_expected_rows - 1
-       )
-     )
-     or v_scope_mismatch_rows <> 0
-     or v_blank_row_key_rows <> 0
-     or v_invalid_fingerprint_rows <> 0
-     or v_canonical_mismatch_rows <> 0
+  if v_work is null
+     or v_work = 'null'::jsonb
   then
-    raise exception using
-      errcode = 'P0001',
-      message = 'NSBGR_STAGING_CHANGED';
+    v_work_started_at := v_now;
+    v_work_phase := 'source_validation';
+    v_cursor := 0;
+    v_validated_rows := 0;
+    v_source_rows := v_expected_rows;
+    v_retained_rows := v_expected_rows;
+
+    v_work :=
+      jsonb_build_object(
+        'kind', v_kind,
+        'version', v_version,
+        'phase', v_work_phase,
+        'source_rows', v_source_rows,
+        'excluded_rows', 0,
+        'retained_rows', v_retained_rows,
+        'mixed_campaign_count', 0,
+        'matched_campaign_count', 0,
+        'excluded_impressions', 0,
+        'excluded_clicks', 0,
+        'excluded_cost', 0,
+        'excluded_conversions', 0,
+        'excluded_revenue', 0,
+        'cursor', v_cursor,
+        'validated_rows', v_validated_rows,
+        'source_scope_mismatch_rows', 0,
+        'source_blank_row_key_rows', 0,
+        'source_invalid_fingerprint_rows', 0,
+        'source_canonical_mismatch_rows', 0,
+        'retained_scope_mismatch_rows', 0,
+        'retained_blank_row_key_rows', 0,
+        'retained_invalid_fingerprint_rows', 0,
+        'retained_canonical_mismatch_rows', 0,
+        'batch_size', v_batch_size,
+        'started_at', to_jsonb(v_work_started_at),
+        'updated_at', to_jsonb(v_now)
+      );
+  else
+    if jsonb_typeof(v_work) <> 'object'
+       or v_work ->> 'kind' is distinct from v_kind
+       or v_work ->> 'version' is distinct from v_version::text
+    then
+      raise exception using
+        errcode = 'P0001',
+        message = 'NSBGR_RECONCILIATION_CONFLICT';
+    end if;
+
+    begin
+      v_work_phase :=
+        v_work ->> 'phase';
+      v_work_started_at :=
+        (v_work ->> 'started_at')::timestamptz;
+      v_source_rows :=
+        (v_work ->> 'source_rows')::bigint;
+      v_excluded_rows :=
+        (v_work ->> 'excluded_rows')::bigint;
+      v_retained_rows :=
+        (v_work ->> 'retained_rows')::bigint;
+      v_mixed_campaign_count :=
+        (v_work ->> 'mixed_campaign_count')::bigint;
+      v_matched_campaign_count :=
+        (v_work ->> 'matched_campaign_count')::bigint;
+      v_excluded_impressions :=
+        (v_work ->> 'excluded_impressions')::numeric;
+      v_excluded_clicks :=
+        (v_work ->> 'excluded_clicks')::numeric;
+      v_excluded_cost :=
+        (v_work ->> 'excluded_cost')::numeric;
+      v_excluded_conversions :=
+        (v_work ->> 'excluded_conversions')::numeric;
+      v_excluded_revenue :=
+        (v_work ->> 'excluded_revenue')::numeric;
+      v_cursor :=
+        (v_work ->> 'cursor')::bigint;
+      v_validated_rows :=
+        (v_work ->> 'validated_rows')::bigint;
+      v_source_scope_mismatch_rows :=
+        (v_work ->> 'source_scope_mismatch_rows')::bigint;
+      v_source_blank_row_key_rows :=
+        (v_work ->> 'source_blank_row_key_rows')::bigint;
+      v_source_invalid_fingerprint_rows :=
+        (v_work ->> 'source_invalid_fingerprint_rows')::bigint;
+      v_source_canonical_mismatch_rows :=
+        (v_work ->> 'source_canonical_mismatch_rows')::bigint;
+      v_retained_scope_mismatch_rows :=
+        (v_work ->> 'retained_scope_mismatch_rows')::bigint;
+      v_retained_blank_row_key_rows :=
+        (v_work ->> 'retained_blank_row_key_rows')::bigint;
+      v_retained_invalid_fingerprint_rows :=
+        (v_work ->> 'retained_invalid_fingerprint_rows')::bigint;
+      v_retained_canonical_mismatch_rows :=
+        (v_work ->> 'retained_canonical_mismatch_rows')::bigint;
+    exception
+      when others then
+        raise exception using
+          errcode = 'P0001',
+          message = 'NSBGR_RECONCILIATION_CONFLICT';
+    end;
+
+    if v_work_phase not in (
+         'source_validation',
+         'mutation',
+         'retained_validation',
+         'finalization'
+       )
+       or v_work_started_at is null
+       or v_source_rows < 0
+       or v_excluded_rows < 0
+       or v_retained_rows < 0
+       or v_source_rows - v_excluded_rows <> v_retained_rows
+       or v_mixed_campaign_count < 0
+       or v_matched_campaign_count < 0
+       or v_matched_campaign_count > v_mixed_campaign_count
+       or v_cursor < 0
+       or v_validated_rows < 0
+       or v_cursor <> v_validated_rows
+    then
+      raise exception using
+        errcode = 'P0001',
+        message = 'NSBGR_RECONCILIATION_CONFLICT';
+    end if;
   end if;
 
-  drop table if exists pg_temp.nsbgr_mixed_campaigns;
-  drop table if exists pg_temp.nsbgr_row_map;
+  /*
+   * Phase 1: validate source rows in bounded row_index batches.
+   */
+  if v_work_phase = 'source_validation' then
+    if v_expected_rows <> v_source_rows
+       or v_retained_rows <> v_source_rows
+       or v_excluded_rows <> 0
+       or v_cursor > v_source_rows
+    then
+      raise exception using
+        errcode = 'P0001',
+        message = 'NSBGR_RECONCILIATION_CONFLICT';
+    end if;
 
-  create temporary table nsbgr_mixed_campaigns
-  on commit drop
-  as
-  select distinct
-    nullif(
-      btrim(
-        staging.row ->> 'external_campaign_id'
-      ),
-      ''
-    ) as campaign_id
-  from public.media_sync_staging_rows as staging
-  where staging.job_id = v_job_id
-    and staging.row ->> 'row_level' = 'mixed'
-    and staging.row ->> 'data_level' = 'mixed'
-    and staging.row ->> 'row_level_reason' =
-        'naver_searchad_brand_search_adgroup_daily_stats'
-    and staging.row #>> '{provider_meta,campaign_type}' =
-        'BRAND_SEARCH'
-    and staging.row #>> '{provider_meta,authoritative_grain}' =
-        'adgroup'
-    and nullif(
-          btrim(
-            staging.row ->> 'external_campaign_id'
-          ),
-          ''
-        ) is not null;
-
-  select count(*)::bigint
-  into v_mixed_campaign_count
-  from pg_temp.nsbgr_mixed_campaigns;
-
-  create temporary table nsbgr_row_map
-  on commit drop
-  as
-  with classified as (
+    with batch as materialized (
+      select staging.*
+      from public.media_sync_staging_rows as staging
+      where staging.job_id = v_job_id
+        and staging.row_index >= v_cursor
+      order by staging.row_index, staging.row_key, staging.id
+      limit v_batch_size
+    )
     select
-      staging.id as staging_id,
-      staging.row_index as old_row_index,
-      staging.row_key,
-      staging.row_fingerprint,
-      staging.date_window_index,
+      count(batch.id)::bigint,
+      min(batch.row_index),
+      max(batch.row_index),
+      count(batch.id) filter (
+        where batch.report_id <> v_report_id
+           or batch.workspace_id <> v_workspace_id
+           or batch.advertiser_id <> v_advertiser_id
+           or batch.connection_id <> v_connection_id
+           or batch.provider <> v_provider
+           or batch.external_account_id <>
+              v_external_account_id
+           or batch.date_from <> v_date_from
+           or batch.date_to <> v_date_to
+           or batch.date < v_date_from
+           or batch.date > v_date_to
+      )::bigint,
+      count(batch.id) filter (
+        where btrim(batch.row_key) = ''
+      )::bigint,
+      count(batch.id) filter (
+        where batch.row_fingerprint is null
+           or batch.row_fingerprint !~ '^[0-9a-f]{64}$'
+           or batch.row_fingerprint is distinct from
+              encode(
+                extensions.digest(
+                  pg_catalog.convert_to(
+                    batch.row::text,
+                    'UTF8'
+                  ),
+                  'sha256'
+                ),
+                'hex'
+              )
+      )::bigint,
+      count(batch.id) filter (
+        where jsonb_typeof(batch.row) <> 'object'
+           or coalesce(batch.row ->> 'date', '') <>
+              batch.date::text
+           or coalesce(batch.row ->> 'report_date', '') <>
+              batch.date::text
+           or coalesce(batch.row ->> 'day', '') <>
+              batch.date::text
+           or coalesce(batch.row ->> 'ymd', '') <>
+              batch.date::text
+           or coalesce(batch.row ->> 'channel', '') <>
+              coalesce(batch.channel, '')
+           or coalesce(batch.row ->> 'device', '') <>
+              coalesce(batch.device, '')
+           or coalesce(batch.row ->> 'source', '') <>
+              coalesce(batch.source, '')
+           or coalesce(batch.row ->> 'provider', '') <>
+              'naver_searchad'
+           or coalesce(
+                batch.row ->> 'external_account_id',
+                ''
+              ) <> v_external_account_id
+           or coalesce(
+                batch.row ->> 'ingestion_source',
+                ''
+              ) <> 'api'
+      )::bigint
+    into
+      v_batch_rows,
+      v_batch_min_row_index,
+      v_batch_max_row_index,
+      v_batch_scope_mismatch_rows,
+      v_batch_blank_row_key_rows,
+      v_batch_invalid_fingerprint_rows,
+      v_batch_canonical_mismatch_rows
+    from batch;
+
+    if v_batch_rows > 0
+       and (
+         v_batch_min_row_index <> v_cursor
+         or v_batch_max_row_index <>
+            v_cursor + v_batch_rows - 1
+       )
+    then
+      raise exception using
+        errcode = 'P0001',
+        message = 'NSBGR_STAGING_CHANGED';
+    end if;
+
+    v_cursor :=
+      v_cursor + v_batch_rows;
+    v_validated_rows :=
+      v_validated_rows + v_batch_rows;
+    v_source_scope_mismatch_rows :=
+      v_source_scope_mismatch_rows +
+      v_batch_scope_mismatch_rows;
+    v_source_blank_row_key_rows :=
+      v_source_blank_row_key_rows +
+      v_batch_blank_row_key_rows;
+    v_source_invalid_fingerprint_rows :=
+      v_source_invalid_fingerprint_rows +
+      v_batch_invalid_fingerprint_rows;
+    v_source_canonical_mismatch_rows :=
+      v_source_canonical_mismatch_rows +
+      v_batch_canonical_mismatch_rows;
+
+    if v_cursor > v_source_rows
+       or v_validated_rows <> v_cursor
+    then
+      raise exception using
+        errcode = 'P0001',
+        message = 'NSBGR_STAGING_CHANGED';
+    end if;
+
+    if v_cursor = v_source_rows then
+      select
+        count(staging.id)::bigint,
+        min(staging.row_index),
+        max(staging.row_index),
+        count(distinct staging.row_index)::bigint
+      into
+        v_source_rows,
+        v_min_row_index,
+        v_max_row_index,
+        v_distinct_row_indexes
+      from public.media_sync_staging_rows as staging
+      where staging.job_id = v_job_id;
+
+      if v_source_rows <> v_expected_rows
+         or v_distinct_row_indexes <> v_expected_rows
+         or (
+           v_expected_rows = 0
+           and (
+             v_min_row_index is not null
+             or v_max_row_index is not null
+           )
+         )
+         or (
+           v_expected_rows > 0
+           and (
+             v_min_row_index <> 0
+             or v_max_row_index <> v_expected_rows - 1
+           )
+         )
+         or v_source_scope_mismatch_rows <> 0
+         or v_source_blank_row_key_rows <> 0
+         or v_source_invalid_fingerprint_rows <> 0
+         or v_source_canonical_mismatch_rows <> 0
+      then
+        raise exception using
+          errcode = 'P0001',
+          message = 'NSBGR_STAGING_CHANGED';
+      end if;
+
+      v_work_phase :=
+        'mutation';
+      v_cursor := 0;
+      v_validated_rows := 0;
+    elsif v_batch_rows = 0 then
+      raise exception using
+        errcode = 'P0001',
+        message = 'NSBGR_STAGING_CHANGED';
+    end if;
+
+    v_work :=
+      jsonb_build_object(
+        'kind', v_kind,
+        'version', v_version,
+        'phase', v_work_phase,
+        'source_rows', v_source_rows,
+        'excluded_rows', 0,
+        'retained_rows', v_source_rows,
+        'mixed_campaign_count', 0,
+        'matched_campaign_count', 0,
+        'excluded_impressions', 0,
+        'excluded_clicks', 0,
+        'excluded_cost', 0,
+        'excluded_conversions', 0,
+        'excluded_revenue', 0,
+        'cursor', v_cursor,
+        'validated_rows', v_validated_rows,
+        'source_scope_mismatch_rows',
+          v_source_scope_mismatch_rows,
+        'source_blank_row_key_rows',
+          v_source_blank_row_key_rows,
+        'source_invalid_fingerprint_rows',
+          v_source_invalid_fingerprint_rows,
+        'source_canonical_mismatch_rows',
+          v_source_canonical_mismatch_rows,
+        'retained_scope_mismatch_rows', 0,
+        'retained_blank_row_key_rows', 0,
+        'retained_invalid_fingerprint_rows', 0,
+        'retained_canonical_mismatch_rows', 0,
+        'batch_size', v_batch_size,
+        'started_at', to_jsonb(v_work_started_at),
+        'updated_at', to_jsonb(v_now)
+      );
+
+    v_checkpoint :=
+      jsonb_set(
+        v_checkpoint,
+        '{saved_at}',
+        to_jsonb(v_now),
+        true
+      );
+
+    v_checkpoint :=
+      jsonb_set(
+        v_checkpoint,
+        '{reconciliation_work}',
+        v_work,
+        true
+      );
+
+    v_error_detail :=
+      jsonb_set(
+        v_job.error_detail,
+        '{processing_checkpoint}',
+        v_checkpoint,
+        true
+      );
+
+    update public.media_sync_jobs as media_job
+    set error_detail = v_error_detail,
+        updated_at = v_now
+    where media_job.id = v_job_id
+      and media_job.status = 'processing'
+      and media_job.updated_at = v_job.updated_at
+      and media_job.snapshot_ingestion_id is null
+      and media_job.finished_at is null;
+
+    get diagnostics v_affected_rows = row_count;
+
+    if v_affected_rows <> 1 then
+      raise exception using
+        errcode = '40001',
+        message = 'NSBGR_RECONCILIATION_CONFLICT';
+    end if;
+
+    select media_job.*
+    into v_updated_job
+    from public.media_sync_jobs as media_job
+    where media_job.id = v_job_id;
+
+    return query
+    select
+      to_jsonb(v_updated_job),
+      v_kind,
+      v_version,
+      false,
+      false,
+      v_source_rows,
+      0::bigint,
+      v_source_rows,
+      0::bigint,
+      0::bigint,
+      0::bigint,
+      0::numeric,
+      0::numeric,
+      0::numeric,
+      0::numeric,
+      0::numeric;
+
+    return;
+  end if;
+
+  /*
+   * Phase 2: perform the exact proven 45,844 -> 44,640 style mutation in one
+   * transaction after the expensive source validation has completed in batches.
+   */
+  if v_work_phase = 'mutation' then
+    if v_expected_rows <> v_source_rows
+       or v_cursor <> 0
+       or v_validated_rows <> 0
+       or v_source_scope_mismatch_rows <> 0
+       or v_source_blank_row_key_rows <> 0
+       or v_source_invalid_fingerprint_rows <> 0
+       or v_source_canonical_mismatch_rows <> 0
+    then
+      raise exception using
+        errcode = 'P0001',
+        message = 'NSBGR_RECONCILIATION_CONFLICT';
+    end if;
+
+    drop table if exists pg_temp.nsbgr_mixed_campaigns;
+    drop table if exists pg_temp.nsbgr_row_map;
+
+    create temporary table nsbgr_mixed_campaigns
+    on commit drop
+    as
+    select distinct
       nullif(
         btrim(
           staging.row ->> 'external_campaign_id'
         ),
         ''
-      ) as campaign_id,
-      staging.row,
-
-      (
-        staging.row ->> 'row_level' = 'keyword'
-        and staging.row ->> 'data_level' = 'keyword'
-        and staging.row ->> 'row_level_reason' =
-            'naver_searchad_registered_keyword_daily_stats'
-        and staging.row #>> '{provider_meta,campaign_type}' =
-            'BRAND_SEARCH'
-        and exists (
-          select 1
-          from pg_temp.nsbgr_mixed_campaigns as mixed_campaign
-          where mixed_campaign.campaign_id =
-            nullif(
-              btrim(
-                staging.row ->> 'external_campaign_id'
-              ),
-              ''
-            )
-        )
-      ) as excluded
+      ) as campaign_id
     from public.media_sync_staging_rows as staging
     where staging.job_id = v_job_id
-  ),
+      and staging.row ->> 'row_level' = 'mixed'
+      and staging.row ->> 'data_level' = 'mixed'
+      and staging.row ->> 'row_level_reason' =
+          'naver_searchad_brand_search_adgroup_daily_stats'
+      and staging.row #>> '{provider_meta,campaign_type}' =
+          'BRAND_SEARCH'
+      and staging.row #>> '{provider_meta,authoritative_grain}' =
+          'adgroup'
+      and nullif(
+            btrim(
+              staging.row ->> 'external_campaign_id'
+            ),
+            ''
+          ) is not null;
 
-  kept as (
+    select count(*)::bigint
+    into v_mixed_campaign_count
+    from pg_temp.nsbgr_mixed_campaigns;
+
+    create temporary table nsbgr_row_map
+    on commit drop
+    as
+    with classified as (
+      select
+        staging.id as staging_id,
+        staging.row_index as old_row_index,
+        staging.row_key,
+        staging.row_fingerprint,
+        staging.date_window_index,
+        nullif(
+          btrim(
+            staging.row ->> 'external_campaign_id'
+          ),
+          ''
+        ) as campaign_id,
+        staging.row,
+        (
+          staging.row ->> 'row_level' = 'keyword'
+          and staging.row ->> 'data_level' = 'keyword'
+          and staging.row ->> 'row_level_reason' =
+              'naver_searchad_registered_keyword_daily_stats'
+          and staging.row #>> '{provider_meta,campaign_type}' =
+              'BRAND_SEARCH'
+          and exists (
+            select 1
+            from pg_temp.nsbgr_mixed_campaigns as mixed_campaign
+            where mixed_campaign.campaign_id =
+              nullif(
+                btrim(
+                  staging.row ->> 'external_campaign_id'
+                ),
+                ''
+              )
+          )
+        ) as excluded
+      from public.media_sync_staging_rows as staging
+      where staging.job_id = v_job_id
+    ),
+    kept as (
+      select
+        classified.staging_id,
+        (
+          row_number() over (
+            order by
+              classified.old_row_index,
+              classified.row_key,
+              classified.staging_id
+          ) - 1
+        )::bigint as new_row_index
+      from classified
+      where not classified.excluded
+    )
     select
       classified.staging_id,
-      (
-        row_number() over (
-          order by
-            classified.old_row_index,
-            classified.row_key,
-            classified.staging_id
-        ) - 1
-      )::bigint as new_row_index
+      classified.old_row_index,
+      classified.row_key,
+      classified.row_fingerprint,
+      classified.date_window_index,
+      classified.campaign_id,
+      classified.row,
+      classified.excluded,
+      kept.new_row_index
     from classified
-    where not classified.excluded
-  )
+    left join kept
+      on kept.staging_id =
+         classified.staging_id;
 
-  select
-    classified.staging_id,
-    classified.old_row_index,
-    classified.row_key,
-    classified.row_fingerprint,
-    classified.date_window_index,
-    classified.campaign_id,
-    classified.row,
-    classified.excluded,
-    kept.new_row_index
-  from classified
-  left join kept
-    on kept.staging_id =
-       classified.staging_id;
+    select
+      count(*) filter (
+        where row_map.excluded
+      )::bigint,
+      count(*) filter (
+        where not row_map.excluded
+      )::bigint,
+      count(*) filter (
+        where not row_map.excluded
+          and row_map.old_row_index is distinct from
+              row_map.new_row_index
+      )::bigint,
+      count(distinct row_map.campaign_id) filter (
+        where row_map.excluded
+      )::bigint,
+      coalesce(
+        sum(
+          coalesce(
+            (row_map.row ->> 'impressions')::numeric,
+            0
+          )
+        ) filter (
+          where row_map.excluded
+        ),
+        0
+      ),
+      coalesce(
+        sum(
+          coalesce(
+            (row_map.row ->> 'clicks')::numeric,
+            0
+          )
+        ) filter (
+          where row_map.excluded
+        ),
+        0
+      ),
+      coalesce(
+        sum(
+          coalesce(
+            (row_map.row ->> 'cost')::numeric,
+            0
+          )
+        ) filter (
+          where row_map.excluded
+        ),
+        0
+      ),
+      coalesce(
+        sum(
+          coalesce(
+            (row_map.row ->> 'conversions')::numeric,
+            0
+          )
+        ) filter (
+          where row_map.excluded
+        ),
+        0
+      ),
+      coalesce(
+        sum(
+          coalesce(
+            (row_map.row ->> 'revenue')::numeric,
+            0
+          )
+        ) filter (
+          where row_map.excluded
+        ),
+        0
+      )
+    into
+      v_excluded_rows,
+      v_retained_rows,
+      v_reindex_required_rows,
+      v_matched_campaign_count,
+      v_excluded_impressions,
+      v_excluded_clicks,
+      v_excluded_cost,
+      v_excluded_conversions,
+      v_excluded_revenue
+    from pg_temp.nsbgr_row_map as row_map;
 
-  select
-    count(*) filter (
-      where row_map.excluded
-    )::bigint,
+    if v_excluded_rows < 0
+       or v_retained_rows < 0
+       or v_reindex_required_rows < 0
+       or v_reindex_required_rows >
+          v_retained_rows
+       or v_excluded_rows + v_retained_rows <>
+          v_source_rows
+       or v_matched_campaign_count >
+          v_mixed_campaign_count
+    then
+      raise exception using
+        errcode = 'P0001',
+        message = 'NSBGR_RECONCILIATION_CONFLICT';
+    end if;
 
-    count(*) filter (
-      where not row_map.excluded
-    )::bigint,
+    if v_excluded_rows > 0 then
+      v_reindex_offset :=
+        v_source_rows + 1;
 
-    count(*) filter (
-      where not row_map.excluded
+      update public.media_sync_staging_rows as staging
+      set row_index =
+        staging.row_index + v_reindex_offset
+      from pg_temp.nsbgr_row_map as row_map
+      where staging.id = row_map.staging_id
+        and not row_map.excluded
         and row_map.old_row_index is distinct from
-            row_map.new_row_index
-    )::bigint,
+            row_map.new_row_index;
 
-    count(distinct row_map.campaign_id) filter (
-      where row_map.excluded
-    )::bigint,
+      get diagnostics v_affected_rows = row_count;
 
-    coalesce(
-      sum(
-        coalesce(
-          (row_map.row ->> 'impressions')::numeric,
-          0
-        )
-      ) filter (
-        where row_map.excluded
-      ),
-      0
-    ),
+      if v_affected_rows <> v_reindex_required_rows then
+        raise exception using
+          errcode = 'P0001',
+          message = 'NSBGR_RECONCILIATION_CONFLICT';
+      end if;
 
-    coalesce(
-      sum(
-        coalesce(
-          (row_map.row ->> 'clicks')::numeric,
-          0
-        )
-      ) filter (
-        where row_map.excluded
-      ),
-      0
-    ),
+      delete from public.media_sync_staging_rows as staging
+      using pg_temp.nsbgr_row_map as row_map
+      where staging.id = row_map.staging_id
+        and row_map.excluded;
 
-    coalesce(
-      sum(
-        coalesce(
-          (row_map.row ->> 'cost')::numeric,
-          0
-        )
-      ) filter (
-        where row_map.excluded
-      ),
-      0
-    ),
+      get diagnostics v_affected_rows = row_count;
 
-    coalesce(
-      sum(
-        coalesce(
-          (row_map.row ->> 'conversions')::numeric,
-          0
-        )
-      ) filter (
-        where row_map.excluded
-      ),
-      0
-    ),
+      if v_affected_rows <> v_excluded_rows then
+        raise exception using
+          errcode = 'P0001',
+          message = 'NSBGR_RECONCILIATION_CONFLICT';
+      end if;
 
-    coalesce(
-      sum(
-        coalesce(
-          (row_map.row ->> 'revenue')::numeric,
-          0
-        )
-      ) filter (
-        where row_map.excluded
-      ),
-      0
-    )
-  into
-    v_excluded_rows,
-    v_retained_rows,
-    v_reindex_required_rows,
-    v_matched_campaign_count,
-    v_excluded_impressions,
-    v_excluded_clicks,
-    v_excluded_cost,
-    v_excluded_conversions,
-    v_excluded_revenue
-  from pg_temp.nsbgr_row_map as row_map;
-
-  if v_excluded_rows < 0
-     or v_retained_rows < 0
-     or v_reindex_required_rows < 0
-     or v_reindex_required_rows >
-        v_retained_rows
-     or v_excluded_rows + v_retained_rows <>
-        v_source_rows
-     or v_matched_campaign_count >
-        v_mixed_campaign_count
-  then
-    raise exception using
-      errcode = 'P0001',
-      message = 'NSBGR_RECONCILIATION_CONFLICT';
-  end if;
-
-  if v_excluded_rows > 0 then
-    /*
-     * Move persisted indexes into a disjoint range first. This avoids an
-     * immediate unique conflict on (job_id, row_index) while compacting.
-     */
-    v_reindex_offset :=
-      v_source_rows + 1;
-
-    update public.media_sync_staging_rows as staging
-    set row_index =
-      staging.row_index + v_reindex_offset
-    from pg_temp.nsbgr_row_map as row_map
-    where staging.id = row_map.staging_id
-      and not row_map.excluded
-      and row_map.old_row_index is distinct from
-          row_map.new_row_index;
-
-    get diagnostics v_affected_rows = row_count;
-
-    if v_affected_rows <> v_reindex_required_rows then
-      raise exception using
-        errcode = 'P0001',
-        message = 'NSBGR_RECONCILIATION_CONFLICT';
-    end if;
-
-    delete from public.media_sync_staging_rows as staging
-    using pg_temp.nsbgr_row_map as row_map
-    where staging.id = row_map.staging_id
-      and row_map.excluded;
-
-    get diagnostics v_affected_rows = row_count;
-
-    if v_affected_rows <> v_excluded_rows then
-      raise exception using
-        errcode = 'P0001',
-        message = 'NSBGR_RECONCILIATION_CONFLICT';
-    end if;
-
-    update public.media_sync_staging_rows as staging
-    set row_index =
-      row_map.new_row_index
-    from pg_temp.nsbgr_row_map as row_map
-    where staging.id = row_map.staging_id
-      and not row_map.excluded
-      and row_map.old_row_index is distinct from
-          row_map.new_row_index;
-
-    get diagnostics v_affected_rows = row_count;
-
-    if v_affected_rows <> v_reindex_required_rows then
-      raise exception using
-        errcode = 'P0001',
-        message = 'NSBGR_RECONCILIATION_CONFLICT';
-    end if;
-  end if;
-
-  select count(*)::bigint
-  into v_preservation_mismatch_rows
-  from public.media_sync_staging_rows as staging
-  join pg_temp.nsbgr_row_map as row_map
-    on row_map.staging_id = staging.id
-  where staging.job_id = v_job_id
-    and not row_map.excluded
-    and (
-      staging.row_key is distinct from
-        row_map.row_key
-      or staging.row_fingerprint is distinct from
-        row_map.row_fingerprint
-      or staging.date_window_index is distinct from
-        row_map.date_window_index
-      or staging.row is distinct from
-        row_map.row
-      or staging.row_index is distinct from
+      update public.media_sync_staging_rows as staging
+      set row_index =
         row_map.new_row_index
-    );
+      from pg_temp.nsbgr_row_map as row_map
+      where staging.id = row_map.staging_id
+        and not row_map.excluded
+        and row_map.old_row_index is distinct from
+            row_map.new_row_index;
 
-  select
-    count(staging.id)::bigint,
-    min(staging.row_index),
-    max(staging.row_index),
-    count(distinct staging.row_index)::bigint,
+      get diagnostics v_affected_rows = row_count;
 
-    count(staging.id) filter (
-      where staging.report_id <> v_report_id
-         or staging.workspace_id <> v_workspace_id
-         or staging.advertiser_id <> v_advertiser_id
-         or staging.connection_id <> v_connection_id
-         or staging.provider <> v_provider
-         or staging.external_account_id <>
-            v_external_account_id
-         or staging.date_from <> v_date_from
-         or staging.date_to <> v_date_to
-         or staging.date < v_date_from
-         or staging.date > v_date_to
-    )::bigint,
+      if v_affected_rows <> v_reindex_required_rows then
+        raise exception using
+          errcode = 'P0001',
+          message = 'NSBGR_RECONCILIATION_CONFLICT';
+      end if;
+    end if;
 
-    count(staging.id) filter (
-      where btrim(staging.row_key) = ''
-    )::bigint,
+    select count(*)::bigint
+    into v_preservation_mismatch_rows
+    from public.media_sync_staging_rows as staging
+    join pg_temp.nsbgr_row_map as row_map
+      on row_map.staging_id = staging.id
+    where staging.job_id = v_job_id
+      and not row_map.excluded
+      and (
+        staging.row_key is distinct from
+          row_map.row_key
+        or staging.row_fingerprint is distinct from
+          row_map.row_fingerprint
+        or staging.date_window_index is distinct from
+          row_map.date_window_index
+        or staging.row is distinct from
+          row_map.row
+        or staging.row_index is distinct from
+          row_map.new_row_index
+      );
 
-    count(staging.id) filter (
-      where staging.row_fingerprint is null
-         or staging.row_fingerprint !~ '^[0-9a-f]{64}$'
-         or staging.row_fingerprint is distinct from
-            encode(
-              extensions.digest(
-                pg_catalog.convert_to(
-                  staging.row::text,
-                  'UTF8'
+    select
+      count(staging.id)::bigint,
+      min(staging.row_index),
+      max(staging.row_index),
+      count(distinct staging.row_index)::bigint
+    into
+      v_source_rows,
+      v_min_row_index,
+      v_max_row_index,
+      v_distinct_row_indexes
+    from public.media_sync_staging_rows as staging
+    where staging.job_id = v_job_id;
+
+    select count(*)::bigint
+    into v_remaining_overlap_rows
+    from public.media_sync_staging_rows as keyword_row
+    where keyword_row.job_id = v_job_id
+      and keyword_row.row ->> 'row_level' = 'keyword'
+      and keyword_row.row ->> 'data_level' = 'keyword'
+      and keyword_row.row ->> 'row_level_reason' =
+          'naver_searchad_registered_keyword_daily_stats'
+      and keyword_row.row #>> '{provider_meta,campaign_type}' =
+          'BRAND_SEARCH'
+      and exists (
+        select 1
+        from public.media_sync_staging_rows as mixed_row
+        where mixed_row.job_id = v_job_id
+          and mixed_row.row ->> 'row_level' = 'mixed'
+          and mixed_row.row ->> 'data_level' = 'mixed'
+          and mixed_row.row ->> 'row_level_reason' =
+              'naver_searchad_brand_search_adgroup_daily_stats'
+          and mixed_row.row #>> '{provider_meta,campaign_type}' =
+              'BRAND_SEARCH'
+          and mixed_row.row #>> '{provider_meta,authoritative_grain}' =
+              'adgroup'
+          and nullif(
+                btrim(
+                  mixed_row.row ->> 'external_campaign_id'
                 ),
-                'sha256'
-              ),
-              'hex'
-            )
-    )::bigint,
+                ''
+              ) =
+              nullif(
+                btrim(
+                  keyword_row.row ->> 'external_campaign_id'
+                ),
+                ''
+              )
+      );
 
-    count(staging.id) filter (
-      where jsonb_typeof(staging.row) <> 'object'
-         or coalesce(staging.row ->> 'date', '') <>
-            staging.date::text
-         or coalesce(staging.row ->> 'report_date', '') <>
-            staging.date::text
-         or coalesce(staging.row ->> 'day', '') <>
-            staging.date::text
-         or coalesce(staging.row ->> 'ymd', '') <>
-            staging.date::text
-         or coalesce(staging.row ->> 'channel', '') <>
-            coalesce(staging.channel, '')
-         or coalesce(staging.row ->> 'device', '') <>
-            coalesce(staging.device, '')
-         or coalesce(staging.row ->> 'source', '') <>
-            coalesce(staging.source, '')
-         or coalesce(staging.row ->> 'provider', '') <>
-            'naver_searchad'
-         or coalesce(
-              staging.row ->> 'external_account_id',
-              ''
-            ) <> v_external_account_id
-         or coalesce(
-              staging.row ->> 'ingestion_source',
-              ''
-            ) <> 'api'
-    )::bigint
-  into
-    v_source_rows,
-    v_min_row_index,
-    v_max_row_index,
-    v_distinct_row_indexes,
-    v_scope_mismatch_rows,
-    v_blank_row_key_rows,
-    v_invalid_fingerprint_rows,
-    v_canonical_mismatch_rows
-  from public.media_sync_staging_rows as staging
-  where staging.job_id = v_job_id;
-
-  select count(*)::bigint
-  into v_remaining_overlap_rows
-  from public.media_sync_staging_rows as keyword_row
-  where keyword_row.job_id = v_job_id
-    and keyword_row.row ->> 'row_level' = 'keyword'
-    and keyword_row.row ->> 'data_level' = 'keyword'
-    and keyword_row.row ->> 'row_level_reason' =
-        'naver_searchad_registered_keyword_daily_stats'
-    and keyword_row.row #>> '{provider_meta,campaign_type}' =
-        'BRAND_SEARCH'
-    and exists (
-      select 1
-      from public.media_sync_staging_rows as mixed_row
-      where mixed_row.job_id = v_job_id
-        and mixed_row.row ->> 'row_level' = 'mixed'
-        and mixed_row.row ->> 'data_level' = 'mixed'
-        and mixed_row.row ->> 'row_level_reason' =
-            'naver_searchad_brand_search_adgroup_daily_stats'
-        and mixed_row.row #>> '{provider_meta,campaign_type}' =
-            'BRAND_SEARCH'
-        and mixed_row.row #>> '{provider_meta,authoritative_grain}' =
-            'adgroup'
-        and nullif(
-              btrim(
-                mixed_row.row ->> 'external_campaign_id'
-              ),
-              ''
-            ) =
-            nullif(
-              btrim(
-                keyword_row.row ->> 'external_campaign_id'
-              ),
-              ''
-            )
-    );
-
-  if v_preservation_mismatch_rows <> 0
-     or v_source_rows <> v_retained_rows
-     or v_distinct_row_indexes <> v_retained_rows
-     or (
-       v_retained_rows = 0
-       and (
-         v_min_row_index is not null
-         or v_max_row_index is not null
+    if v_preservation_mismatch_rows <> 0
+       or v_source_rows <> v_retained_rows
+       or v_distinct_row_indexes <> v_retained_rows
+       or (
+         v_retained_rows = 0
+         and (
+           v_min_row_index is not null
+           or v_max_row_index is not null
+         )
        )
-     )
-     or (
-       v_retained_rows > 0
-       and (
-         v_min_row_index <> 0
-         or v_max_row_index <> v_retained_rows - 1
+       or (
+         v_retained_rows > 0
+         and (
+           v_min_row_index <> 0
+           or v_max_row_index <> v_retained_rows - 1
+         )
        )
-     )
-     or v_scope_mismatch_rows <> 0
-     or v_blank_row_key_rows <> 0
-     or v_invalid_fingerprint_rows <> 0
-     or v_canonical_mismatch_rows <> 0
-     or v_remaining_overlap_rows <> 0
-  then
-    raise exception using
-      errcode = 'P0001',
-      message = 'NSBGR_POSTCONDITION_FAILED';
+       or v_remaining_overlap_rows <> 0
+    then
+      raise exception using
+        errcode = 'P0001',
+        message = 'NSBGR_POSTCONDITION_FAILED';
+    end if;
+
+    v_work_phase :=
+      'retained_validation';
+    v_cursor := 0;
+    v_validated_rows := 0;
+
+    v_work :=
+      jsonb_build_object(
+        'kind', v_kind,
+        'version', v_version,
+        'phase', v_work_phase,
+        'source_rows',
+          (v_work ->> 'source_rows')::bigint,
+        'excluded_rows', v_excluded_rows,
+        'retained_rows', v_retained_rows,
+        'mixed_campaign_count', v_mixed_campaign_count,
+        'matched_campaign_count', v_matched_campaign_count,
+        'excluded_impressions', v_excluded_impressions,
+        'excluded_clicks', v_excluded_clicks,
+        'excluded_cost', v_excluded_cost,
+        'excluded_conversions', v_excluded_conversions,
+        'excluded_revenue', v_excluded_revenue,
+        'cursor', v_cursor,
+        'validated_rows', v_validated_rows,
+        'source_scope_mismatch_rows',
+          v_source_scope_mismatch_rows,
+        'source_blank_row_key_rows',
+          v_source_blank_row_key_rows,
+        'source_invalid_fingerprint_rows',
+          v_source_invalid_fingerprint_rows,
+        'source_canonical_mismatch_rows',
+          v_source_canonical_mismatch_rows,
+        'retained_scope_mismatch_rows', 0,
+        'retained_blank_row_key_rows', 0,
+        'retained_invalid_fingerprint_rows', 0,
+        'retained_canonical_mismatch_rows', 0,
+        'batch_size', v_batch_size,
+        'started_at', to_jsonb(v_work_started_at),
+        'updated_at', to_jsonb(v_now)
+      );
+
+    v_checkpoint :=
+      jsonb_set(
+        v_checkpoint,
+        '{saved_at}',
+        to_jsonb(v_now),
+        true
+      );
+
+    v_checkpoint :=
+      jsonb_set(
+        v_checkpoint,
+        '{raw_rows}',
+        to_jsonb(v_retained_rows),
+        true
+      );
+
+    v_checkpoint :=
+      jsonb_set(
+        v_checkpoint,
+        '{normalized_rows}',
+        to_jsonb(v_retained_rows),
+        true
+      );
+
+    v_checkpoint :=
+      jsonb_set(
+        v_checkpoint,
+        '{inserted_rows}',
+        to_jsonb(v_retained_rows),
+        true
+      );
+
+    v_checkpoint :=
+      jsonb_set(
+        v_checkpoint,
+        '{failed_rows}',
+        to_jsonb(0),
+        true
+      );
+
+    v_checkpoint :=
+      jsonb_set(
+        v_checkpoint,
+        '{collector,next_row_index}',
+        to_jsonb(v_retained_rows),
+        true
+      );
+
+    v_checkpoint :=
+      jsonb_set(
+        v_checkpoint,
+        '{reconciliation_work}',
+        v_work,
+        true
+      );
+
+    v_error_detail :=
+      jsonb_set(
+        v_job.error_detail,
+        '{processing_checkpoint}',
+        v_checkpoint,
+        true
+      );
+
+    update public.media_sync_jobs as media_job
+    set raw_rows = v_retained_rows,
+        normalized_rows = v_retained_rows,
+        inserted_rows = v_retained_rows,
+        failed_rows = 0,
+        error_detail = v_error_detail,
+        updated_at = v_now
+    where media_job.id = v_job_id
+      and media_job.status = 'processing'
+      and media_job.updated_at = v_job.updated_at
+      and media_job.snapshot_ingestion_id is null
+      and media_job.finished_at is null;
+
+    get diagnostics v_affected_rows = row_count;
+
+    if v_affected_rows <> 1 then
+      raise exception using
+        errcode = '40001',
+        message = 'NSBGR_RECONCILIATION_CONFLICT';
+    end if;
+
+    select media_job.*
+    into v_updated_job
+    from public.media_sync_jobs as media_job
+    where media_job.id = v_job_id;
+
+    return query
+    select
+      to_jsonb(v_updated_job),
+      v_kind,
+      v_version,
+      v_excluded_rows > 0,
+      false,
+      (v_work ->> 'source_rows')::bigint,
+      v_excluded_rows,
+      v_retained_rows,
+      v_mixed_campaign_count,
+      v_matched_campaign_count,
+      v_remaining_overlap_rows,
+      v_excluded_impressions,
+      v_excluded_clicks,
+      v_excluded_cost,
+      v_excluded_conversions,
+      v_excluded_revenue;
+
+    return;
   end if;
 
-  v_reconciliation :=
-    jsonb_build_object(
-      'kind', v_kind,
-      'version', v_version,
-      'source_rows', v_expected_rows,
-      'excluded_rows', v_excluded_rows,
-      'retained_rows', v_retained_rows,
-      'mixed_campaign_count', v_mixed_campaign_count,
-      'matched_campaign_count', v_matched_campaign_count,
-      'excluded_impressions', v_excluded_impressions,
-      'excluded_clicks', v_excluded_clicks,
-      'excluded_cost', v_excluded_cost,
-      'excluded_conversions', v_excluded_conversions,
-      'excluded_revenue', v_excluded_revenue,
-      'applied_at', to_jsonb(v_now)
-    );
+  /*
+   * Phase 3: validate retained rows in bounded row_index batches.
+   */
+  if v_work_phase = 'retained_validation' then
+    if v_expected_rows <> v_retained_rows
+       or v_cursor > v_retained_rows
+    then
+      raise exception using
+        errcode = 'P0001',
+        message = 'NSBGR_RECONCILIATION_CONFLICT';
+    end if;
 
-  v_checkpoint :=
-    jsonb_set(
-      v_checkpoint,
-      '{saved_at}',
-      to_jsonb(v_now),
-      true
-    );
+    with batch as materialized (
+      select staging.*
+      from public.media_sync_staging_rows as staging
+      where staging.job_id = v_job_id
+        and staging.row_index >= v_cursor
+      order by staging.row_index, staging.row_key, staging.id
+      limit v_batch_size
+    )
+    select
+      count(batch.id)::bigint,
+      min(batch.row_index),
+      max(batch.row_index),
+      count(batch.id) filter (
+        where batch.report_id <> v_report_id
+           or batch.workspace_id <> v_workspace_id
+           or batch.advertiser_id <> v_advertiser_id
+           or batch.connection_id <> v_connection_id
+           or batch.provider <> v_provider
+           or batch.external_account_id <>
+              v_external_account_id
+           or batch.date_from <> v_date_from
+           or batch.date_to <> v_date_to
+           or batch.date < v_date_from
+           or batch.date > v_date_to
+      )::bigint,
+      count(batch.id) filter (
+        where btrim(batch.row_key) = ''
+      )::bigint,
+      count(batch.id) filter (
+        where batch.row_fingerprint is null
+           or batch.row_fingerprint !~ '^[0-9a-f]{64}$'
+           or batch.row_fingerprint is distinct from
+              encode(
+                extensions.digest(
+                  pg_catalog.convert_to(
+                    batch.row::text,
+                    'UTF8'
+                  ),
+                  'sha256'
+                ),
+                'hex'
+              )
+      )::bigint,
+      count(batch.id) filter (
+        where jsonb_typeof(batch.row) <> 'object'
+           or coalesce(batch.row ->> 'date', '') <>
+              batch.date::text
+           or coalesce(batch.row ->> 'report_date', '') <>
+              batch.date::text
+           or coalesce(batch.row ->> 'day', '') <>
+              batch.date::text
+           or coalesce(batch.row ->> 'ymd', '') <>
+              batch.date::text
+           or coalesce(batch.row ->> 'channel', '') <>
+              coalesce(batch.channel, '')
+           or coalesce(batch.row ->> 'device', '') <>
+              coalesce(batch.device, '')
+           or coalesce(batch.row ->> 'source', '') <>
+              coalesce(batch.source, '')
+           or coalesce(batch.row ->> 'provider', '') <>
+              'naver_searchad'
+           or coalesce(
+                batch.row ->> 'external_account_id',
+                ''
+              ) <> v_external_account_id
+           or coalesce(
+                batch.row ->> 'ingestion_source',
+                ''
+              ) <> 'api'
+      )::bigint
+    into
+      v_batch_rows,
+      v_batch_min_row_index,
+      v_batch_max_row_index,
+      v_batch_scope_mismatch_rows,
+      v_batch_blank_row_key_rows,
+      v_batch_invalid_fingerprint_rows,
+      v_batch_canonical_mismatch_rows
+    from batch;
 
-  v_checkpoint :=
-    jsonb_set(
-      v_checkpoint,
-      '{raw_rows}',
-      to_jsonb(v_retained_rows),
-      true
-    );
+    if v_batch_rows > 0
+       and (
+         v_batch_min_row_index <> v_cursor
+         or v_batch_max_row_index <>
+            v_cursor + v_batch_rows - 1
+       )
+    then
+      raise exception using
+        errcode = 'P0001',
+        message = 'NSBGR_POSTCONDITION_FAILED';
+    end if;
 
-  v_checkpoint :=
-    jsonb_set(
-      v_checkpoint,
-      '{normalized_rows}',
-      to_jsonb(v_retained_rows),
-      true
-    );
+    v_cursor :=
+      v_cursor + v_batch_rows;
+    v_validated_rows :=
+      v_validated_rows + v_batch_rows;
+    v_retained_scope_mismatch_rows :=
+      v_retained_scope_mismatch_rows +
+      v_batch_scope_mismatch_rows;
+    v_retained_blank_row_key_rows :=
+      v_retained_blank_row_key_rows +
+      v_batch_blank_row_key_rows;
+    v_retained_invalid_fingerprint_rows :=
+      v_retained_invalid_fingerprint_rows +
+      v_batch_invalid_fingerprint_rows;
+    v_retained_canonical_mismatch_rows :=
+      v_retained_canonical_mismatch_rows +
+      v_batch_canonical_mismatch_rows;
 
-  v_checkpoint :=
-    jsonb_set(
-      v_checkpoint,
-      '{inserted_rows}',
-      to_jsonb(v_retained_rows),
-      true
-    );
+    if v_cursor > v_retained_rows
+       or v_validated_rows <> v_cursor
+    then
+      raise exception using
+        errcode = 'P0001',
+        message = 'NSBGR_POSTCONDITION_FAILED';
+    end if;
 
-  v_checkpoint :=
-    jsonb_set(
-      v_checkpoint,
-      '{failed_rows}',
-      to_jsonb(0),
-      true
-    );
+    if v_cursor = v_retained_rows then
+      select
+        count(staging.id)::bigint,
+        min(staging.row_index),
+        max(staging.row_index),
+        count(distinct staging.row_index)::bigint
+      into
+        v_source_rows,
+        v_min_row_index,
+        v_max_row_index,
+        v_distinct_row_indexes
+      from public.media_sync_staging_rows as staging
+      where staging.job_id = v_job_id;
 
-  v_checkpoint :=
-    jsonb_set(
-      v_checkpoint,
-      '{collector,next_row_index}',
-      to_jsonb(v_retained_rows),
-      true
-    );
+      if v_source_rows <> v_retained_rows
+         or v_distinct_row_indexes <> v_retained_rows
+         or (
+           v_retained_rows = 0
+           and (
+             v_min_row_index is not null
+             or v_max_row_index is not null
+           )
+         )
+         or (
+           v_retained_rows > 0
+           and (
+             v_min_row_index <> 0
+             or v_max_row_index <> v_retained_rows - 1
+           )
+         )
+         or v_retained_scope_mismatch_rows <> 0
+         or v_retained_blank_row_key_rows <> 0
+         or v_retained_invalid_fingerprint_rows <> 0
+         or v_retained_canonical_mismatch_rows <> 0
+      then
+        raise exception using
+          errcode = 'P0001',
+          message = 'NSBGR_POSTCONDITION_FAILED';
+      end if;
 
-  v_checkpoint :=
-    jsonb_set(
-      v_checkpoint,
-      '{reconciliation}',
-      v_reconciliation,
-      true
-    );
+      v_work_phase :=
+        'finalization';
+      v_cursor := 0;
+      v_validated_rows := 0;
+    elsif v_batch_rows = 0 then
+      raise exception using
+        errcode = 'P0001',
+        message = 'NSBGR_POSTCONDITION_FAILED';
+    end if;
 
-  v_error_detail :=
-    jsonb_set(
-      v_job.error_detail,
-      '{processing_checkpoint}',
-      v_checkpoint,
-      true
-    );
+    v_work :=
+      jsonb_build_object(
+        'kind', v_kind,
+        'version', v_version,
+        'phase', v_work_phase,
+        'source_rows',
+          (v_work ->> 'source_rows')::bigint,
+        'excluded_rows', v_excluded_rows,
+        'retained_rows', v_retained_rows,
+        'mixed_campaign_count', v_mixed_campaign_count,
+        'matched_campaign_count', v_matched_campaign_count,
+        'excluded_impressions', v_excluded_impressions,
+        'excluded_clicks', v_excluded_clicks,
+        'excluded_cost', v_excluded_cost,
+        'excluded_conversions', v_excluded_conversions,
+        'excluded_revenue', v_excluded_revenue,
+        'cursor', v_cursor,
+        'validated_rows', v_validated_rows,
+        'source_scope_mismatch_rows',
+          v_source_scope_mismatch_rows,
+        'source_blank_row_key_rows',
+          v_source_blank_row_key_rows,
+        'source_invalid_fingerprint_rows',
+          v_source_invalid_fingerprint_rows,
+        'source_canonical_mismatch_rows',
+          v_source_canonical_mismatch_rows,
+        'retained_scope_mismatch_rows',
+          v_retained_scope_mismatch_rows,
+        'retained_blank_row_key_rows',
+          v_retained_blank_row_key_rows,
+        'retained_invalid_fingerprint_rows',
+          v_retained_invalid_fingerprint_rows,
+        'retained_canonical_mismatch_rows',
+          v_retained_canonical_mismatch_rows,
+        'batch_size', v_batch_size,
+        'started_at', to_jsonb(v_work_started_at),
+        'updated_at', to_jsonb(v_now)
+      );
 
-  update public.media_sync_jobs as media_job
-  set raw_rows = v_retained_rows,
-      normalized_rows = v_retained_rows,
-      inserted_rows = v_retained_rows,
-      failed_rows = 0,
-      error_detail = v_error_detail,
-      updated_at = v_now
-  where media_job.id = v_job_id
-    and media_job.status = 'processing'
-    and media_job.updated_at = v_job.updated_at
-    and media_job.snapshot_ingestion_id is null
-    and media_job.finished_at is null;
+    v_checkpoint :=
+      jsonb_set(
+        v_checkpoint,
+        '{saved_at}',
+        to_jsonb(v_now),
+        true
+      );
 
-  get diagnostics v_affected_rows = row_count;
+    v_checkpoint :=
+      jsonb_set(
+        v_checkpoint,
+        '{reconciliation_work}',
+        v_work,
+        true
+      );
 
-  if v_affected_rows <> 1 then
-    raise exception using
-      errcode = '40001',
-      message = 'NSBGR_RECONCILIATION_CONFLICT';
+    v_error_detail :=
+      jsonb_set(
+        v_job.error_detail,
+        '{processing_checkpoint}',
+        v_checkpoint,
+        true
+      );
+
+    update public.media_sync_jobs as media_job
+    set error_detail = v_error_detail,
+        updated_at = v_now
+    where media_job.id = v_job_id
+      and media_job.status = 'processing'
+      and media_job.updated_at = v_job.updated_at
+      and media_job.snapshot_ingestion_id is null
+      and media_job.finished_at is null;
+
+    get diagnostics v_affected_rows = row_count;
+
+    if v_affected_rows <> 1 then
+      raise exception using
+        errcode = '40001',
+        message = 'NSBGR_RECONCILIATION_CONFLICT';
+    end if;
+
+    select media_job.*
+    into v_updated_job
+    from public.media_sync_jobs as media_job
+    where media_job.id = v_job_id;
+
+    return query
+    select
+      to_jsonb(v_updated_job),
+      v_kind,
+      v_version,
+      v_excluded_rows > 0,
+      false,
+      (v_work ->> 'source_rows')::bigint,
+      v_excluded_rows,
+      v_retained_rows,
+      v_mixed_campaign_count,
+      v_matched_campaign_count,
+      0::bigint,
+      v_excluded_impressions,
+      v_excluded_clicks,
+      v_excluded_cost,
+      v_excluded_conversions,
+      v_excluded_revenue;
+
+    return;
   end if;
 
-  select media_job.*
-  into v_updated_job
-  from public.media_sync_jobs as media_job
-  where media_job.id = v_job_id;
+  /*
+   * Phase 4: commit the unchanged final reconciliation audit contract.
+   */
+  if v_work_phase = 'finalization' then
+    if v_expected_rows <> v_retained_rows
+       or v_cursor <> 0
+       or v_validated_rows <> 0
+       or v_source_scope_mismatch_rows <> 0
+       or v_source_blank_row_key_rows <> 0
+       or v_source_invalid_fingerprint_rows <> 0
+       or v_source_canonical_mismatch_rows <> 0
+       or v_retained_scope_mismatch_rows <> 0
+       or v_retained_blank_row_key_rows <> 0
+       or v_retained_invalid_fingerprint_rows <> 0
+       or v_retained_canonical_mismatch_rows <> 0
+    then
+      raise exception using
+        errcode = 'P0001',
+        message = 'NSBGR_POSTCONDITION_FAILED';
+    end if;
 
-  if not found
-     or v_updated_job.status <> 'processing'
-     or v_updated_job.snapshot_ingestion_id is not null
-     or v_updated_job.finished_at is not null
-     or v_updated_job.raw_rows <> v_retained_rows
-     or v_updated_job.normalized_rows <> v_retained_rows
-     or v_updated_job.inserted_rows <> v_retained_rows
-     or v_updated_job.failed_rows <> 0
-     or v_updated_job.error_detail
-          #>> '{processing_checkpoint,collector,phase}'
-          is distinct from 'completed'
-     or v_updated_job.error_detail
-          #>> '{processing_checkpoint,collector,next_row_index}'
-          is distinct from v_retained_rows::text
-     or v_updated_job.error_detail
-          #>> '{processing_checkpoint,collector,keyword,complete}'
-          is distinct from 'true'
-     or v_updated_job.error_detail
-          #>> '{processing_checkpoint,collector,authoritative,complete}'
-          is distinct from 'true'
-     or v_updated_job.error_detail
-          #>> '{processing_checkpoint,reconciliation,kind}'
-          is distinct from v_kind
-     or v_updated_job.error_detail
-          #>> '{processing_checkpoint,reconciliation,version}'
-          is distinct from v_version::text
-  then
-    raise exception using
-      errcode = 'P0001',
-      message = 'NSBGR_POSTCONDITION_FAILED';
+    select
+      count(staging.id)::bigint,
+      min(staging.row_index),
+      max(staging.row_index),
+      count(distinct staging.row_index)::bigint
+    into
+      v_source_rows,
+      v_min_row_index,
+      v_max_row_index,
+      v_distinct_row_indexes
+    from public.media_sync_staging_rows as staging
+    where staging.job_id = v_job_id;
+
+    select count(*)::bigint
+    into v_remaining_overlap_rows
+    from public.media_sync_staging_rows as keyword_row
+    where keyword_row.job_id = v_job_id
+      and keyword_row.row ->> 'row_level' = 'keyword'
+      and keyword_row.row ->> 'data_level' = 'keyword'
+      and keyword_row.row ->> 'row_level_reason' =
+          'naver_searchad_registered_keyword_daily_stats'
+      and keyword_row.row #>> '{provider_meta,campaign_type}' =
+          'BRAND_SEARCH'
+      and exists (
+        select 1
+        from public.media_sync_staging_rows as mixed_row
+        where mixed_row.job_id = v_job_id
+          and mixed_row.row ->> 'row_level' = 'mixed'
+          and mixed_row.row ->> 'data_level' = 'mixed'
+          and mixed_row.row ->> 'row_level_reason' =
+              'naver_searchad_brand_search_adgroup_daily_stats'
+          and mixed_row.row #>> '{provider_meta,campaign_type}' =
+              'BRAND_SEARCH'
+          and mixed_row.row #>> '{provider_meta,authoritative_grain}' =
+              'adgroup'
+          and nullif(
+                btrim(
+                  mixed_row.row ->> 'external_campaign_id'
+                ),
+                ''
+              ) =
+              nullif(
+                btrim(
+                  keyword_row.row ->> 'external_campaign_id'
+                ),
+                ''
+              )
+      );
+
+    if v_source_rows <> v_retained_rows
+       or v_distinct_row_indexes <> v_retained_rows
+       or (
+         v_retained_rows = 0
+         and (
+           v_min_row_index is not null
+           or v_max_row_index is not null
+         )
+       )
+       or (
+         v_retained_rows > 0
+         and (
+           v_min_row_index <> 0
+           or v_max_row_index <> v_retained_rows - 1
+         )
+       )
+       or v_remaining_overlap_rows <> 0
+    then
+      raise exception using
+        errcode = 'P0001',
+        message = 'NSBGR_POSTCONDITION_FAILED';
+    end if;
+
+    v_reconciliation :=
+      jsonb_build_object(
+        'kind', v_kind,
+        'version', v_version,
+        'source_rows',
+          (v_work ->> 'source_rows')::bigint,
+        'excluded_rows', v_excluded_rows,
+        'retained_rows', v_retained_rows,
+        'mixed_campaign_count', v_mixed_campaign_count,
+        'matched_campaign_count', v_matched_campaign_count,
+        'excluded_impressions', v_excluded_impressions,
+        'excluded_clicks', v_excluded_clicks,
+        'excluded_cost', v_excluded_cost,
+        'excluded_conversions', v_excluded_conversions,
+        'excluded_revenue', v_excluded_revenue,
+        'applied_at', to_jsonb(v_now)
+      );
+
+    v_checkpoint :=
+      v_checkpoint - 'reconciliation_work';
+
+    v_checkpoint :=
+      jsonb_set(
+        v_checkpoint,
+        '{saved_at}',
+        to_jsonb(v_now),
+        true
+      );
+
+    v_checkpoint :=
+      jsonb_set(
+        v_checkpoint,
+        '{reconciliation}',
+        v_reconciliation,
+        true
+      );
+
+    v_error_detail :=
+      jsonb_set(
+        v_job.error_detail,
+        '{processing_checkpoint}',
+        v_checkpoint,
+        true
+      );
+
+    update public.media_sync_jobs as media_job
+    set raw_rows = v_retained_rows,
+        normalized_rows = v_retained_rows,
+        inserted_rows = v_retained_rows,
+        failed_rows = 0,
+        error_detail = v_error_detail,
+        updated_at = v_now
+    where media_job.id = v_job_id
+      and media_job.status = 'processing'
+      and media_job.updated_at = v_job.updated_at
+      and media_job.snapshot_ingestion_id is null
+      and media_job.finished_at is null;
+
+    get diagnostics v_affected_rows = row_count;
+
+    if v_affected_rows <> 1 then
+      raise exception using
+        errcode = '40001',
+        message = 'NSBGR_RECONCILIATION_CONFLICT';
+    end if;
+
+    select media_job.*
+    into v_updated_job
+    from public.media_sync_jobs as media_job
+    where media_job.id = v_job_id;
+
+    if not found
+       or v_updated_job.status <> 'processing'
+       or v_updated_job.snapshot_ingestion_id is not null
+       or v_updated_job.finished_at is not null
+       or v_updated_job.raw_rows <> v_retained_rows
+       or v_updated_job.normalized_rows <> v_retained_rows
+       or v_updated_job.inserted_rows <> v_retained_rows
+       or v_updated_job.failed_rows <> 0
+       or v_updated_job.error_detail
+            #>> '{processing_checkpoint,collector,phase}'
+            is distinct from 'completed'
+       or v_updated_job.error_detail
+            #>> '{processing_checkpoint,collector,next_row_index}'
+            is distinct from v_retained_rows::text
+       or v_updated_job.error_detail
+            #>> '{processing_checkpoint,collector,keyword,complete}'
+            is distinct from 'true'
+       or v_updated_job.error_detail
+            #>> '{processing_checkpoint,collector,authoritative,complete}'
+            is distinct from 'true'
+       or v_updated_job.error_detail
+            #>> '{processing_checkpoint,reconciliation,kind}'
+            is distinct from v_kind
+       or v_updated_job.error_detail
+            #>> '{processing_checkpoint,reconciliation,version}'
+            is distinct from v_version::text
+       or v_updated_job.error_detail
+            #> '{processing_checkpoint,reconciliation_work}'
+            is not null
+    then
+      raise exception using
+        errcode = 'P0001',
+        message = 'NSBGR_POSTCONDITION_FAILED';
+    end if;
+
+    return query
+    select
+      to_jsonb(v_updated_job),
+      v_kind,
+      v_version,
+      v_excluded_rows > 0,
+      false,
+      (v_reconciliation ->> 'source_rows')::bigint,
+      v_excluded_rows,
+      v_retained_rows,
+      v_mixed_campaign_count,
+      v_matched_campaign_count,
+      v_remaining_overlap_rows,
+      v_excluded_impressions,
+      v_excluded_clicks,
+      v_excluded_cost,
+      v_excluded_conversions,
+      v_excluded_revenue;
+
+    return;
   end if;
 
-  return query
-  select
-    to_jsonb(v_updated_job),
-    v_kind,
-    v_version,
-    v_excluded_rows > 0,
-    false,
-    v_expected_rows,
-    v_excluded_rows,
-    v_retained_rows,
-    v_mixed_campaign_count,
-    v_matched_campaign_count,
-    v_remaining_overlap_rows,
-    v_excluded_impressions,
-    v_excluded_clicks,
-    v_excluded_cost,
-    v_excluded_conversions,
-    v_excluded_revenue;
+  raise exception using
+    errcode = 'P0001',
+    message = 'NSBGR_RECONCILIATION_CONFLICT';
 end;
 $function$;
+
+alter function
+  public.reconcile_naver_searchads_brand_search_cross_grain_staging(jsonb)
+owner to postgres;
 
 revoke all
 on function public.reconcile_naver_searchads_brand_search_cross_grain_staging(jsonb)

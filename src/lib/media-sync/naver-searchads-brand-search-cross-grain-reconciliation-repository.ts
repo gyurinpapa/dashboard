@@ -18,6 +18,15 @@ const NAVER_SEARCH_ADS_PROVIDER =
 const PROCESSING_STATUS =
   "processing" as const;
 
+const DEFAULT_RECONCILIATION_BATCH_SIZE =
+  5_000;
+
+const MIN_RECONCILIATION_BATCH_SIZE =
+  100;
+
+const MAX_RECONCILIATION_BATCH_SIZE =
+  10_000;
+
 export const NAVER_SEARCH_ADS_BRAND_SEARCH_CROSS_GRAIN_RECONCILIATION_KIND =
   "brand_search_cross_grain_dedup_v1" as const;
 
@@ -84,16 +93,51 @@ export type NaverSearchAdsBrandSearchCrossGrainReconciliationMetrics = {
   excludedRevenue: number;
 };
 
-export type NaverSearchAdsBrandSearchCrossGrainReconciliationResult =
+export type NaverSearchAdsBrandSearchCrossGrainReconciliationPhase =
+  | "source_validation"
+  | "mutation"
+  | "retained_validation"
+  | "finalization";
+
+export type NaverSearchAdsBrandSearchCrossGrainReconciliationProgress = {
+  phase:
+    NaverSearchAdsBrandSearchCrossGrainReconciliationPhase;
+  sourceRows: number;
+  excludedRows: number;
+  retainedRows: number;
+  cursor: number;
+  validatedRows: number;
+  batchSize: number;
+};
+
+export type NaverSearchAdsBrandSearchCrossGrainReconciliationCompletedResult =
   NaverSearchAdsBrandSearchCrossGrainReconciliationMetrics & {
     job: MediaSyncJobRecord;
     checkpoint:
       NaverSearchAdsCombinedProcessingCheckpoint;
   };
 
+export type NaverSearchAdsBrandSearchCrossGrainReconciliationPartialResult =
+  NaverSearchAdsBrandSearchCrossGrainReconciliationCompletedResult & {
+    progress:
+      NaverSearchAdsBrandSearchCrossGrainReconciliationProgress;
+  };
+
+export type NaverSearchAdsBrandSearchCrossGrainReconciliationResult =
+  | NaverSearchAdsBrandSearchCrossGrainReconciliationCompletedResult
+  | NaverSearchAdsBrandSearchCrossGrainReconciliationPartialResult;
+
+export function isNaverSearchAdsBrandSearchCrossGrainReconciliationPartialResult(
+  result:
+    NaverSearchAdsBrandSearchCrossGrainReconciliationResult,
+): result is NaverSearchAdsBrandSearchCrossGrainReconciliationPartialResult {
+  return "progress" in result;
+}
+
 export type ReconcileNaverSearchAdsBrandSearchCrossGrainStagingInput = {
   job: MediaSyncJobRecord;
   expectedRows: number;
+  batchSize?: number;
 };
 
 export type NaverSearchAdsBrandSearchCrossGrainReconciliationRpcResult = {
@@ -196,6 +240,37 @@ function requireNonNegativeSafeInteger(
     throw new NaverSearchAdsBrandSearchCrossGrainReconciliationError(
       errorCode,
       `${fieldName} must be a non-negative safe integer.`,
+    );
+  }
+
+  return numericValue;
+}
+
+function normalizeReconciliationBatchSize(
+  value: unknown,
+): number {
+  if (
+    value === undefined ||
+    value === null
+  ) {
+    return DEFAULT_RECONCILIATION_BATCH_SIZE;
+  }
+
+  const numericValue =
+    typeof value === "string" &&
+    value.trim()
+      ? Number(value)
+      : value;
+
+  if (
+    typeof numericValue !== "number" ||
+    !Number.isSafeInteger(numericValue) ||
+    numericValue < MIN_RECONCILIATION_BATCH_SIZE ||
+    numericValue > MAX_RECONCILIATION_BATCH_SIZE
+  ) {
+    throw new NaverSearchAdsBrandSearchCrossGrainReconciliationError(
+      "INVALID_INPUT",
+      `batchSize must be an integer between ${MIN_RECONCILIATION_BATCH_SIZE} and ${MAX_RECONCILIATION_BATCH_SIZE}.`,
     );
   }
 
@@ -352,6 +427,7 @@ function validateInputContract(
   checkpoint:
     NaverSearchAdsCombinedProcessingCheckpoint;
   expectedRows: number;
+  batchSize: number;
 } {
   if (
     !input ||
@@ -372,6 +448,11 @@ function validateInputContract(
       input.expectedRows,
       "expectedRows",
       "INVALID_INPUT",
+    );
+
+  const batchSize =
+    normalizeReconciliationBatchSize(
+      input.batchSize,
     );
 
   const checkpoint =
@@ -398,6 +479,7 @@ function validateInputContract(
       input.job,
     checkpoint,
     expectedRows,
+    batchSize,
   };
 }
 
@@ -564,6 +646,129 @@ function readReconciliationMetadata(
   }
 
   return reconciliation;
+}
+
+function readReconciliationWork(
+  job: MediaSyncJobRecord,
+): UnknownRecord | null {
+  if (!isPlainObject(job.error_detail)) {
+    return null;
+  }
+
+  const processingCheckpoint =
+    job.error_detail[
+      "processing_checkpoint"
+    ];
+
+  if (!isPlainObject(processingCheckpoint)) {
+    return null;
+  }
+
+  const reconciliationWork =
+    processingCheckpoint[
+      "reconciliation_work"
+    ];
+
+  return isPlainObject(reconciliationWork)
+    ? reconciliationWork
+    : null;
+}
+
+function parseReconciliationProgress(
+  job: MediaSyncJobRecord,
+): NaverSearchAdsBrandSearchCrossGrainReconciliationProgress | null {
+  const work =
+    readReconciliationWork(
+      job,
+    );
+
+  if (!work) {
+    return null;
+  }
+
+  const phase =
+    work.phase;
+
+  if (
+    phase !== "source_validation" &&
+    phase !== "mutation" &&
+    phase !== "retained_validation" &&
+    phase !== "finalization"
+  ) {
+    throw new NaverSearchAdsBrandSearchCrossGrainReconciliationError(
+      "INVALID_DATABASE_RESULT",
+      "The reconciliation RPC returned an invalid bounded progress phase.",
+    );
+  }
+
+  const progress:
+    NaverSearchAdsBrandSearchCrossGrainReconciliationProgress = {
+      phase,
+      sourceRows:
+        requireNonNegativeSafeInteger(
+          work.source_rows,
+          "reconciliation_work.source_rows",
+        ),
+      excludedRows:
+        requireNonNegativeSafeInteger(
+          work.excluded_rows,
+          "reconciliation_work.excluded_rows",
+        ),
+      retainedRows:
+        requireNonNegativeSafeInteger(
+          work.retained_rows,
+          "reconciliation_work.retained_rows",
+        ),
+      cursor:
+        requireNonNegativeSafeInteger(
+          work.cursor,
+          "reconciliation_work.cursor",
+        ),
+      validatedRows:
+        requireNonNegativeSafeInteger(
+          work.validated_rows,
+          "reconciliation_work.validated_rows",
+        ),
+      batchSize:
+        normalizeReconciliationBatchSize(
+          work.batch_size,
+        ),
+    };
+
+  if (
+    progress.sourceRows -
+      progress.excludedRows !==
+        progress.retainedRows ||
+    progress.cursor !==
+      progress.validatedRows ||
+    (
+      progress.phase === "source_validation" &&
+      progress.cursor >
+        progress.sourceRows
+    ) ||
+    (
+      progress.phase === "retained_validation" &&
+      progress.cursor >
+        progress.retainedRows
+    ) ||
+    (
+      (
+        progress.phase === "mutation" ||
+        progress.phase === "finalization"
+      ) &&
+      (
+        progress.cursor !== 0 ||
+        progress.validatedRows !== 0
+      )
+    )
+  ) {
+    throw new NaverSearchAdsBrandSearchCrossGrainReconciliationError(
+      "INVALID_DATABASE_RESULT",
+      "The reconciliation RPC returned inconsistent bounded progress values.",
+    );
+  }
+
+  return progress;
 }
 
 function parseMetrics(
@@ -844,6 +1049,88 @@ function validateReturnedJob(
   return checkpoint;
 }
 
+function validatePartialReturnedJob(
+  inputJob: MediaSyncJobRecord,
+  returnedJob: MediaSyncJobRecord,
+  metrics:
+    NaverSearchAdsBrandSearchCrossGrainReconciliationMetrics,
+  progress:
+    NaverSearchAdsBrandSearchCrossGrainReconciliationProgress,
+): NaverSearchAdsCombinedProcessingCheckpoint {
+  const immutableFields = [
+    "id",
+    "workspace_id",
+    "advertiser_id",
+    "report_id",
+    "connection_id",
+    "provider",
+    "external_account_id",
+    "date_from",
+    "date_to",
+    "data_level",
+    "mode",
+    "previous_ingestion_id",
+    "attempt_count",
+    "created_by",
+    "created_at",
+    "started_at",
+  ] as const;
+
+  for (
+    const field
+    of immutableFields
+  ) {
+    if (
+      returnedJob[field] !==
+        inputJob[field]
+    ) {
+      throw new NaverSearchAdsBrandSearchCrossGrainReconciliationError(
+        "INVALID_DATABASE_RESULT",
+        `The partial reconciliation changed immutable field ${field}.`,
+      );
+    }
+  }
+
+  if (
+    returnedJob.status !== PROCESSING_STATUS ||
+    returnedJob.snapshot_ingestion_id !== null ||
+    returnedJob.finished_at !== null ||
+    returnedJob.error !== inputJob.error ||
+    returnedJob.progress !== inputJob.progress ||
+    returnedJob.raw_rows !== metrics.retainedRows ||
+    returnedJob.normalized_rows !== metrics.retainedRows ||
+    returnedJob.inserted_rows !== metrics.retainedRows ||
+    returnedJob.failed_rows !== 0 ||
+    progress.sourceRows !== metrics.sourceRows ||
+    progress.excludedRows !== metrics.excludedRows ||
+    progress.retainedRows !== metrics.retainedRows
+  ) {
+    throw new NaverSearchAdsBrandSearchCrossGrainReconciliationError(
+      "INVALID_DATABASE_RESULT",
+      "The partial reconciliation returned unexpected job or metric values.",
+    );
+  }
+
+  const checkpoint =
+    readCompletedCheckpoint(
+      returnedJob,
+    );
+
+  if (
+    checkpoint.totalRows !==
+      metrics.retainedRows ||
+    checkpoint.nextRowIndex !==
+      metrics.retainedRows
+  ) {
+    throw new NaverSearchAdsBrandSearchCrossGrainReconciliationError(
+      "INVALID_DATABASE_RESULT",
+      "The partial reconciliation checkpoint does not match the current retained boundary.",
+    );
+  }
+
+  return checkpoint;
+}
+
 async function invokeDefaultRpc(
   functionName: string,
   args: {
@@ -910,6 +1197,8 @@ export async function reconcileNaverSearchAdsBrandSearchCrossGrainStaging(
       validated.job.date_to,
     expected_rows:
       validated.expectedRows,
+    batch_size:
+      validated.batchSize,
   };
 
   const invokeRpc =
@@ -962,29 +1251,6 @@ export async function reconcileNaverSearchAdsBrandSearchCrossGrainStaging(
       rpcResult.data[0],
     );
 
-  const metrics =
-    parseMetrics(
-      record,
-    );
-
-  if (
-    (
-      !metrics.alreadyReconciled &&
-      metrics.sourceRows !==
-        validated.expectedRows
-    ) ||
-    (
-      metrics.alreadyReconciled &&
-      metrics.retainedRows !==
-        validated.expectedRows
-    )
-  ) {
-    throw new NaverSearchAdsBrandSearchCrossGrainReconciliationError(
-      "INVALID_DATABASE_RESULT",
-      "The reconciliation RPC row counts do not match the requested boundary.",
-    );
-  }
-
   let returnedJob:
     MediaSyncJobRecord;
 
@@ -1001,6 +1267,52 @@ export async function reconcileNaverSearchAdsBrandSearchCrossGrainStaging(
         cause:
           error,
       },
+    );
+  }
+
+  const progress =
+    parseReconciliationProgress(
+      returnedJob,
+    );
+
+  const metrics =
+    parseMetrics(
+      record,
+    );
+
+  if (progress) {
+    const checkpoint =
+      validatePartialReturnedJob(
+        validated.job,
+        returnedJob,
+        metrics,
+        progress,
+      );
+
+    return {
+      ...metrics,
+      job:
+        returnedJob,
+      checkpoint,
+      progress,
+    };
+  }
+
+  if (
+    (
+      !metrics.alreadyReconciled &&
+      metrics.sourceRows !==
+        validated.expectedRows
+    ) ||
+    (
+      metrics.alreadyReconciled &&
+      metrics.retainedRows !==
+        validated.expectedRows
+    )
+  ) {
+    throw new NaverSearchAdsBrandSearchCrossGrainReconciliationError(
+      "INVALID_DATABASE_RESULT",
+      "The reconciliation RPC row counts do not match the requested boundary.",
     );
   }
 
