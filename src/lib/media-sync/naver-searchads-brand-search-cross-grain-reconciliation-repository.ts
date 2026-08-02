@@ -1176,6 +1176,11 @@ export async function reconcileNaverSearchAdsBrandSearchCrossGrainStaging(
       input,
     );
 
+  const inputProgress =
+    parseReconciliationProgress(
+      validated.job,
+    );
+
   const payload = {
     job_id:
       validated.job.id,
@@ -1298,21 +1303,33 @@ export async function reconcileNaverSearchAdsBrandSearchCrossGrainStaging(
     };
   }
 
-  if (
-    (
-      !metrics.alreadyReconciled &&
-      metrics.sourceRows !==
-        validated.expectedRows
-    ) ||
-    (
-      metrics.alreadyReconciled &&
+  if (metrics.alreadyReconciled) {
+    if (
+      inputProgress !== null ||
       metrics.retainedRows !==
         validated.expectedRows
-    )
+    ) {
+      throw new NaverSearchAdsBrandSearchCrossGrainReconciliationError(
+        "INVALID_DATABASE_RESULT",
+        "The idempotent reconciliation result does not match the retained boundary.",
+      );
+    }
+  } else if (
+    inputProgress === null ||
+    inputProgress.phase !==
+      "finalization" ||
+    metrics.sourceRows !==
+      inputProgress.sourceRows ||
+    metrics.excludedRows !==
+      inputProgress.excludedRows ||
+    metrics.retainedRows !==
+      inputProgress.retainedRows ||
+    metrics.retainedRows !==
+      validated.expectedRows
   ) {
     throw new NaverSearchAdsBrandSearchCrossGrainReconciliationError(
       "INVALID_DATABASE_RESULT",
-      "The reconciliation RPC row counts do not match the requested boundary.",
+      "The completed bounded reconciliation result does not match its persisted finalization boundary.",
     );
   }
 
