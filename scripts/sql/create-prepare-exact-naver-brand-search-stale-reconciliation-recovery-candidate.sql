@@ -18,9 +18,12 @@ begin;
  * - Revalidate the fixed failed source job and all 45,844 source staging rows.
  * - Recalculate the exact BRAND_SEARCH reconciliation preconditions without
  *   mutating the source.
- * - Create one isolated cancelled candidate and copy all 45,844 source rows in
- *   the same transaction.
- * - Seed a completed combined checkpoint immediately before reconciliation.
+ * - Create one isolated cancelled candidate without copying all source rows in
+ *   the initialization transaction.
+ * - Copy at most 500 rows per resumable call and persist the copy checkpoint in
+ *   the same transaction as each batch.
+ * - Finalize the completed combined checkpoint only after an exact full-copy
+ *   identity proof succeeds.
  *
  * Safety boundary:
  * - Never updates the source job.
@@ -28,7 +31,8 @@ begin;
  * - Never changes reports pointers or report_rows.
  * - Never calls claim, reconciliation, materialization, activation,
  *   finalization, or publish RPCs.
- * - Any failed assertion rolls back both the candidate job and copied rows.
+ * - Any failed assertion rolls back only the current initialization, copy batch,
+ *   or finalization transaction. Previously committed batches remain resumable.
  */
 
 -- PostgreSQL identifiers are limited to 63 bytes.
@@ -85,7 +89,8 @@ as $function$
 declare
   v_preparation_kind constant text :=
     'exact_naver_brand_search_stale_reconciliation_recovery_v1';
-  v_preparation_version constant integer := 1;
+  v_preparation_version constant integer := 2;
+  v_copy_batch_size constant bigint := 500;
   v_identity_algorithm constant text :=
     'chunked_sha256_v1:block_size=10000';
   v_identity_block_size constant bigint := 10000;
@@ -164,8 +169,23 @@ declare
 
   v_active_job_id uuid;
   v_existing_candidate_id uuid;
+  v_existing_candidate_count bigint := 0;
   v_candidate_id uuid;
   v_now timestamptz;
+
+  v_candidate_phase text;
+  v_candidate_next_row_index bigint := 0;
+  v_candidate_copy_batches_completed bigint := 0;
+  v_batch_start bigint := 0;
+  v_batch_end bigint := 0;
+  v_batch_expected_rows bigint := 0;
+  v_inserted_batch_rows bigint := 0;
+  v_source_batch_rows bigint := 0;
+  v_source_batch_min_row_index bigint;
+  v_source_batch_max_row_index bigint;
+  v_source_batch_invalid_rows bigint := 0;
+  v_candidate_batch_mismatch_rows bigint := 0;
+  v_next_preparation_phase text;
 
   v_source_rows bigint := 0;
   v_source_min_row_index bigint;
@@ -214,6 +234,13 @@ declare
   v_candidate_distinct_window_row_keys bigint := 0;
   v_candidate_exact_mismatch_rows bigint := 0;
   v_candidate_identity_digest text;
+  v_final_source_rows bigint := 0;
+  v_final_source_min_row_index bigint;
+  v_final_source_max_row_index bigint;
+  v_final_candidate_rows bigint := 0;
+  v_final_candidate_min_row_index bigint;
+  v_final_candidate_max_row_index bigint;
+  v_final_exact_mismatch_rows bigint := 0;
 
   v_recovery jsonb;
   v_processing_checkpoint jsonb;
@@ -446,8 +473,17 @@ begin
       message = 'ENBGSR_ACTIVE_JOB_EXISTS';
   end if;
 
-  select candidate.id
-  into v_existing_candidate_id
+  select
+    count(*)::bigint,
+    (
+      array_agg(
+        candidate.id
+        order by candidate.created_at, candidate.id
+      )
+    )[1]
+  into
+    v_existing_candidate_count,
+    v_existing_candidate_id
   from public.media_sync_jobs as candidate
   where candidate.report_id = v_expected_report_id
     and candidate.error_detail #>>
@@ -455,14 +491,1025 @@ begin
         v_preparation_kind
     and candidate.error_detail #>>
         '{processing_checkpoint,recovery,source_job_id}' =
-        v_expected_source_job_id::text
-  order by candidate.created_at, candidate.id
-  limit 1;
+        v_expected_source_job_id::text;
 
-  if v_existing_candidate_id is not null then
+  if v_existing_candidate_count > 1 then
     raise exception using
       errcode = 'P0001',
-      message = 'ENBGSR_CANDIDATE_ALREADY_EXISTS';
+      message = 'ENBGSR_MULTIPLE_CANDIDATES_FOUND';
+  end if;
+
+  if v_existing_candidate_count = 1 then
+    select candidate.*
+    into v_candidate_job
+    from public.media_sync_jobs as candidate
+    where candidate.id = v_existing_candidate_id
+    for update;
+
+    if not found then
+      raise exception using
+        errcode = 'P0001',
+        message = 'ENBGSR_CANDIDATE_NOT_FOUND_AFTER_DISCOVERY';
+    end if;
+
+    if v_candidate_job.report_id is distinct from v_expected_report_id
+       or v_candidate_job.workspace_id is distinct from v_expected_workspace_id
+       or v_candidate_job.advertiser_id is distinct from v_expected_advertiser_id
+       or v_candidate_job.connection_id is distinct from v_expected_connection_id
+       or v_candidate_job.provider is distinct from 'naver_searchad'
+       or v_candidate_job.external_account_id is distinct from
+          v_expected_external_account_id
+       or v_candidate_job.date_from is distinct from v_expected_date_from
+       or v_candidate_job.date_to is distinct from v_expected_date_to
+       or v_candidate_job.data_level is distinct from v_source_job.data_level
+       or v_candidate_job.mode is distinct from 'snapshot_replace'
+       or v_candidate_job.status is distinct from 'cancelled'
+       or v_candidate_job.progress is distinct from 99
+       or v_candidate_job.previous_ingestion_id is distinct from
+          v_expected_current_ingestion_id
+       or v_candidate_job.snapshot_ingestion_id is not null
+       or v_candidate_job.attempt_count is distinct from 0
+       or v_candidate_job.error is not null
+       or v_candidate_job.started_at is not null
+       or v_candidate_job.finished_at is not null
+       or v_candidate_job.created_by is distinct from v_source_job.created_by
+       or v_candidate_job.error_detail is null
+       or jsonb_typeof(v_candidate_job.error_detail) <> 'object'
+       or (
+         select count(*)
+         from jsonb_object_keys(v_candidate_job.error_detail)
+       ) <> 1
+       or not (v_candidate_job.error_detail ? 'processing_checkpoint')
+    then
+      raise exception using
+        errcode = 'P0001',
+        message = 'ENBGSR_CANDIDATE_BASE_CONTRACT_MISMATCH';
+    end if;
+
+    v_processing_checkpoint :=
+      v_candidate_job.error_detail -> 'processing_checkpoint';
+    v_recovery :=
+      v_processing_checkpoint -> 'recovery';
+
+    if jsonb_typeof(v_processing_checkpoint) <> 'object'
+       or jsonb_typeof(v_recovery) <> 'object'
+       or v_recovery ->> 'contract_version' is distinct from '2'
+       or v_recovery ->> 'preparation_kind' is distinct from
+          v_preparation_kind
+       or v_recovery ->> 'preparation_version' is distinct from
+          v_preparation_version::text
+       or v_recovery ->> 'source_job_id' is distinct from
+          v_expected_source_job_id::text
+       or v_recovery ->> 'source_identity_digest' is distinct from
+          v_expected_source_identity_digest
+       or v_recovery ->> 'source_error_detail_digest' is distinct from
+          v_expected_source_error_detail_digest
+       or v_recovery ->> 'confirmation_token' is distinct from
+          v_expected_confirmation_token
+       or v_recovery ->> 'copy_batch_size' is distinct from
+          v_copy_batch_size::text
+       or v_recovery ->> 'isolated' is distinct from 'true'
+       or v_processing_checkpoint #>>
+          '{collector,keyword,complete}' is distinct from 'true'
+       or v_processing_checkpoint #>>
+          '{collector,authoritative,complete}' is distinct from 'true'
+    then
+      raise exception using
+        errcode = 'P0001',
+        message = 'ENBGSR_CANDIDATE_RECOVERY_CONTRACT_MISMATCH';
+    end if;
+
+    begin
+      v_candidate_phase :=
+        v_recovery ->> 'preparation_phase';
+      v_candidate_next_row_index :=
+        (v_processing_checkpoint #>>
+          '{collector,next_row_index}')::bigint;
+      v_candidate_copy_batches_completed :=
+        coalesce(
+          (v_recovery ->> 'copy_batches_completed')::bigint,
+          0
+        );
+    exception
+      when others then
+        raise exception using
+          errcode = 'P0001',
+          message = 'ENBGSR_CANDIDATE_CHECKPOINT_INVALID';
+    end;
+
+    if v_candidate_phase is null
+       or v_candidate_phase not in ('copying', 'finalizing', 'completed')
+       or v_candidate_next_row_index < 0
+       or v_candidate_next_row_index > v_expected_source_rows
+       or v_candidate_job.raw_rows is distinct from
+          v_candidate_next_row_index
+       or v_candidate_job.normalized_rows is distinct from
+          v_candidate_next_row_index
+       or v_candidate_job.inserted_rows is distinct from
+          v_candidate_next_row_index
+       or v_candidate_job.failed_rows is distinct from 0
+       or v_processing_checkpoint ->> 'raw_rows' is distinct from
+          v_candidate_next_row_index::text
+       or v_processing_checkpoint ->> 'normalized_rows' is distinct from
+          v_candidate_next_row_index::text
+       or v_processing_checkpoint ->> 'inserted_rows' is distinct from
+          v_candidate_next_row_index::text
+       or v_processing_checkpoint ->> 'failed_rows' is distinct from '0'
+       or v_recovery ->> 'copied_rows' is distinct from
+          v_candidate_next_row_index::text
+       or v_candidate_copy_batches_completed < 0
+       or v_candidate_copy_batches_completed is distinct from
+          case
+            when v_candidate_next_row_index = 0
+            then 0
+            else (
+              v_candidate_next_row_index + v_copy_batch_size - 1
+            ) / v_copy_batch_size
+          end
+       or (
+         v_candidate_phase in ('copying', 'finalizing')
+         and (
+           v_recovery ->> 'candidate_identity_digest' is not null
+           or v_recovery ->> 'prepared_at' is not null
+           or v_processing_checkpoint #>>
+              '{collector,phase}' is distinct from
+              'preparing_recovery_candidate'
+         )
+       )
+       or (
+         v_candidate_phase = 'completed'
+         and (
+           v_recovery ->> 'candidate_identity_digest' is distinct from
+              v_expected_source_identity_digest
+           or v_recovery ->> 'prepared_at' is null
+           or v_processing_checkpoint #>>
+              '{collector,phase}' is distinct from 'completed'
+         )
+       )
+    then
+      raise exception using
+        errcode = 'P0001',
+        message = 'ENBGSR_CANDIDATE_CHECKPOINT_COUNTER_MISMATCH';
+    end if;
+
+    select
+      count(*)::bigint,
+      min(candidate_row.row_index)::bigint,
+      max(candidate_row.row_index)::bigint
+    into
+      v_candidate_rows,
+      v_candidate_min_row_index,
+      v_candidate_max_row_index
+    from public.media_sync_staging_rows as candidate_row
+    where candidate_row.job_id = v_candidate_job.id;
+
+    if v_candidate_rows <> v_candidate_next_row_index
+       or (
+         v_candidate_next_row_index = 0
+         and (
+           v_candidate_min_row_index is not null
+           or v_candidate_max_row_index is not null
+         )
+       )
+       or (
+         v_candidate_next_row_index > 0
+         and (
+           v_candidate_min_row_index <> 0
+           or v_candidate_max_row_index <>
+              v_candidate_next_row_index - 1
+         )
+       )
+       or exists (
+         select 1
+         from public.media_sync_staging_rows as candidate_row
+         where candidate_row.job_id = v_candidate_job.id
+           and (
+             candidate_row.row_index < 0
+             or candidate_row.row_index >=
+                v_candidate_next_row_index
+           )
+       )
+    then
+      raise exception using
+        errcode = 'P0001',
+        message = 'ENBGSR_CANDIDATE_PREFIX_CONTRACT_MISMATCH';
+    end if;
+
+    if v_candidate_phase = 'completed' then
+      if v_candidate_next_row_index <> v_expected_source_rows
+         or v_candidate_rows <> v_expected_source_rows
+         or v_recovery ->> 'candidate_identity_digest' is distinct from
+            v_expected_source_identity_digest
+         or v_processing_checkpoint #>>
+            '{collector,phase}' is distinct from 'completed'
+      then
+        raise exception using
+          errcode = 'P0001',
+          message = 'ENBGSR_COMPLETED_CANDIDATE_CONTRACT_MISMATCH';
+      end if;
+
+      return query
+      select
+        v_source_job.id,
+        v_candidate_job.id,
+        v_candidate_job.status,
+        v_candidate_job.report_id,
+        v_candidate_job.workspace_id,
+        v_candidate_job.advertiser_id,
+        v_candidate_job.connection_id,
+        v_expected_source_rows,
+        v_candidate_rows,
+        v_expected_excluded_rows,
+        v_expected_retained_rows,
+        v_expected_reindex_required_rows,
+        v_expected_mixed_campaign_count,
+        v_expected_matched_campaign_count,
+        v_expected_source_identity_digest,
+        v_expected_source_identity_digest,
+        v_expected_confirmation_token,
+        v_report.current_ingestion_id,
+        v_report.published_ingestion_id,
+        'completed'::text,
+        v_expected_source_rows,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false;
+      return;
+    end if;
+
+    if v_candidate_phase = 'copying' then
+      if v_candidate_next_row_index >= v_expected_source_rows then
+        raise exception using
+          errcode = 'P0001',
+          message = 'ENBGSR_COPY_PHASE_ALREADY_EXHAUSTED';
+      end if;
+
+      v_batch_start := v_candidate_next_row_index;
+      v_batch_end := least(
+        v_batch_start + v_copy_batch_size,
+        v_expected_source_rows
+      );
+      v_batch_expected_rows := v_batch_end - v_batch_start;
+
+      perform 1
+      from public.media_sync_staging_rows as source_row
+      where source_row.job_id = v_expected_source_job_id
+        and source_row.row_index >= v_batch_start
+        and source_row.row_index < v_batch_end
+      order by source_row.row_index, source_row.row_key, source_row.id
+      for share;
+
+      select
+        count(*)::bigint,
+        min(source_row.row_index)::bigint,
+        max(source_row.row_index)::bigint,
+        count(*) filter (
+          where source_row.row_fingerprint is null
+             or source_row.row_fingerprint !~ '^[0-9a-f]{64}$'
+             or source_row.row_fingerprint is distinct from
+                encode(
+                  extensions.digest(
+                    pg_catalog.convert_to(
+                      source_row.row::text,
+                      'UTF8'
+                    ),
+                    'sha256'
+                  ),
+                  'hex'
+                )
+             or source_row.report_id is distinct from
+                v_expected_report_id
+             or source_row.workspace_id is distinct from
+                v_expected_workspace_id
+             or source_row.advertiser_id is distinct from
+                v_expected_advertiser_id
+             or source_row.connection_id is distinct from
+                v_expected_connection_id
+             or source_row.provider is distinct from 'naver_searchad'
+             or source_row.external_account_id is distinct from
+                v_expected_external_account_id
+             or source_row.date_from is distinct from
+                v_expected_date_from
+             or source_row.date_to is distinct from
+                v_expected_date_to
+             or source_row.date < v_expected_date_from
+             or source_row.date > v_expected_date_to
+             or jsonb_typeof(source_row.row) <> 'object'
+             or coalesce(source_row.row ->> 'date', '') <>
+                source_row.date::text
+             or coalesce(source_row.row ->> 'report_date', '') <>
+                source_row.date::text
+             or coalesce(source_row.row ->> 'day', '') <>
+                source_row.date::text
+             or coalesce(source_row.row ->> 'ymd', '') <>
+                source_row.date::text
+             or coalesce(source_row.row ->> 'provider', '') <>
+                'naver_searchad'
+             or coalesce(
+                  source_row.row ->> 'external_account_id',
+                  ''
+                ) <> v_expected_external_account_id
+             or coalesce(
+                  source_row.row ->> 'ingestion_source',
+                  ''
+                ) <> 'api'
+        )::bigint
+      into
+        v_source_batch_rows,
+        v_source_batch_min_row_index,
+        v_source_batch_max_row_index,
+        v_source_batch_invalid_rows
+      from public.media_sync_staging_rows as source_row
+      where source_row.job_id = v_expected_source_job_id
+        and source_row.row_index >= v_batch_start
+        and source_row.row_index < v_batch_end;
+
+      if v_source_batch_rows <> v_batch_expected_rows
+         or v_source_batch_min_row_index <> v_batch_start
+         or v_source_batch_max_row_index <> v_batch_end - 1
+         or v_source_batch_invalid_rows <> 0
+      then
+        raise exception using
+          errcode = 'P0001',
+          message = 'ENBGSR_SOURCE_BATCH_CONTRACT_MISMATCH';
+      end if;
+
+      insert into public.media_sync_staging_rows (
+        job_id,
+        report_id,
+        workspace_id,
+        advertiser_id,
+        connection_id,
+        provider,
+        external_account_id,
+        date_window_index,
+        date_from,
+        date_to,
+        row_index,
+        row_key,
+        date,
+        channel,
+        device,
+        source,
+        row
+      )
+      select
+        v_candidate_job.id,
+        source_row.report_id,
+        source_row.workspace_id,
+        source_row.advertiser_id,
+        source_row.connection_id,
+        source_row.provider,
+        source_row.external_account_id,
+        source_row.date_window_index,
+        source_row.date_from,
+        source_row.date_to,
+        source_row.row_index,
+        source_row.row_key,
+        source_row.date,
+        source_row.channel,
+        source_row.device,
+        source_row.source,
+        source_row.row
+      from public.media_sync_staging_rows as source_row
+      where source_row.job_id = v_expected_source_job_id
+        and source_row.row_index >= v_batch_start
+        and source_row.row_index < v_batch_end
+      order by source_row.row_index, source_row.row_key, source_row.id;
+
+      get diagnostics v_inserted_batch_rows = row_count;
+
+      if v_inserted_batch_rows <> v_batch_expected_rows then
+        raise exception using
+          errcode = 'P0001',
+          message = 'ENBGSR_CANDIDATE_BATCH_INSERT_COUNT_MISMATCH';
+      end if;
+
+      select count(*)::bigint
+      into v_candidate_batch_mismatch_rows
+      from (
+        select
+          source_row.row_index,
+          source_row.report_id,
+          source_row.workspace_id,
+          source_row.advertiser_id,
+          source_row.connection_id,
+          source_row.provider,
+          source_row.external_account_id,
+          source_row.date_window_index,
+          source_row.date_from,
+          source_row.date_to,
+          source_row.row_key,
+          source_row.date,
+          source_row.channel,
+          source_row.device,
+          source_row.source,
+          source_row.row,
+          source_row.row_fingerprint
+        from public.media_sync_staging_rows as source_row
+        where source_row.job_id = v_expected_source_job_id
+          and source_row.row_index >= v_batch_start
+          and source_row.row_index < v_batch_end
+      ) as source_row
+      full outer join (
+        select
+          candidate_row.row_index,
+          candidate_row.report_id,
+          candidate_row.workspace_id,
+          candidate_row.advertiser_id,
+          candidate_row.connection_id,
+          candidate_row.provider,
+          candidate_row.external_account_id,
+          candidate_row.date_window_index,
+          candidate_row.date_from,
+          candidate_row.date_to,
+          candidate_row.row_key,
+          candidate_row.date,
+          candidate_row.channel,
+          candidate_row.device,
+          candidate_row.source,
+          candidate_row.row,
+          candidate_row.row_fingerprint
+        from public.media_sync_staging_rows as candidate_row
+        where candidate_row.job_id = v_candidate_job.id
+          and candidate_row.row_index >= v_batch_start
+          and candidate_row.row_index < v_batch_end
+      ) as candidate_row
+        on candidate_row.row_index = source_row.row_index
+      where source_row.row_index is null
+         or candidate_row.row_index is null
+         or candidate_row.report_id is distinct from source_row.report_id
+         or candidate_row.workspace_id is distinct from source_row.workspace_id
+         or candidate_row.advertiser_id is distinct from source_row.advertiser_id
+         or candidate_row.connection_id is distinct from source_row.connection_id
+         or candidate_row.provider is distinct from source_row.provider
+         or candidate_row.external_account_id is distinct from
+            source_row.external_account_id
+         or candidate_row.date_window_index is distinct from
+            source_row.date_window_index
+         or candidate_row.date_from is distinct from source_row.date_from
+         or candidate_row.date_to is distinct from source_row.date_to
+         or candidate_row.row_key is distinct from source_row.row_key
+         or candidate_row.date is distinct from source_row.date
+         or candidate_row.channel is distinct from source_row.channel
+         or candidate_row.device is distinct from source_row.device
+         or candidate_row.source is distinct from source_row.source
+         or candidate_row.row is distinct from source_row.row
+         or candidate_row.row_fingerprint is distinct from
+            source_row.row_fingerprint;
+
+      if v_candidate_batch_mismatch_rows <> 0 then
+        raise exception using
+          errcode = 'P0001',
+          message = 'ENBGSR_CANDIDATE_BATCH_COPY_MISMATCH';
+      end if;
+
+      select
+        count(*)::bigint,
+        min(candidate_row.row_index)::bigint,
+        max(candidate_row.row_index)::bigint
+      into
+        v_candidate_rows,
+        v_candidate_min_row_index,
+        v_candidate_max_row_index
+      from public.media_sync_staging_rows as candidate_row
+      where candidate_row.job_id = v_candidate_job.id;
+
+      if v_candidate_rows <> v_batch_end
+         or v_candidate_min_row_index <> 0
+         or v_candidate_max_row_index <> v_batch_end - 1
+      then
+        raise exception using
+          errcode = 'P0001',
+          message = 'ENBGSR_CANDIDATE_PREFIX_POSTCOPY_MISMATCH';
+      end if;
+
+      v_now := pg_catalog.statement_timestamp();
+      v_next_preparation_phase :=
+        case
+          when v_batch_end = v_expected_source_rows
+          then 'finalizing'
+          else 'copying'
+        end;
+
+      v_recovery := jsonb_set(
+        v_recovery,
+        '{preparation_phase}',
+        to_jsonb(v_next_preparation_phase)
+      );
+      v_recovery := jsonb_set(
+        v_recovery,
+        '{copied_rows}',
+        to_jsonb(v_batch_end)
+      );
+      v_recovery := jsonb_set(
+        v_recovery,
+        '{copy_batches_completed}',
+        to_jsonb(v_candidate_copy_batches_completed + 1)
+      );
+      v_recovery := jsonb_set(
+        v_recovery,
+        '{last_batch_start_row_index}',
+        to_jsonb(v_batch_start)
+      );
+      v_recovery := jsonb_set(
+        v_recovery,
+        '{last_batch_end_row_index_exclusive}',
+        to_jsonb(v_batch_end)
+      );
+      v_recovery := jsonb_set(
+        v_recovery,
+        '{last_batch_saved_at}',
+        to_jsonb(v_now)
+      );
+
+      v_processing_checkpoint := jsonb_set(
+        v_processing_checkpoint,
+        '{saved_at}',
+        to_jsonb(v_now)
+      );
+      v_processing_checkpoint := jsonb_set(
+        v_processing_checkpoint,
+        '{raw_rows}',
+        to_jsonb(v_batch_end)
+      );
+      v_processing_checkpoint := jsonb_set(
+        v_processing_checkpoint,
+        '{normalized_rows}',
+        to_jsonb(v_batch_end)
+      );
+      v_processing_checkpoint := jsonb_set(
+        v_processing_checkpoint,
+        '{inserted_rows}',
+        to_jsonb(v_batch_end)
+      );
+      v_processing_checkpoint := jsonb_set(
+        v_processing_checkpoint,
+        '{failed_rows}',
+        '0'::jsonb
+      );
+      v_processing_checkpoint := jsonb_set(
+        v_processing_checkpoint,
+        '{collector,phase}',
+        to_jsonb('preparing_recovery_candidate'::text)
+      );
+      v_processing_checkpoint := jsonb_set(
+        v_processing_checkpoint,
+        '{collector,next_row_index}',
+        to_jsonb(v_batch_end)
+      );
+      v_processing_checkpoint := jsonb_set(
+        v_processing_checkpoint,
+        '{recovery}',
+        v_recovery
+      );
+
+      update public.media_sync_jobs as candidate
+      set
+        raw_rows = v_batch_end,
+        normalized_rows = v_batch_end,
+        inserted_rows = v_batch_end,
+        failed_rows = 0,
+        error_detail = jsonb_build_object(
+          'processing_checkpoint',
+          v_processing_checkpoint
+        ),
+        updated_at = v_now
+      where candidate.id = v_candidate_job.id
+        and candidate.status = 'cancelled'
+        and candidate.attempt_count = 0
+      returning candidate.*
+      into v_candidate_job_after;
+
+      if not found then
+        raise exception using
+          errcode = 'P0001',
+          message = 'ENBGSR_CANDIDATE_BATCH_CHECKPOINT_UPDATE_FAILED';
+      end if;
+
+      return query
+      select
+        v_source_job.id,
+        v_candidate_job_after.id,
+        v_candidate_job_after.status,
+        v_candidate_job_after.report_id,
+        v_candidate_job_after.workspace_id,
+        v_candidate_job_after.advertiser_id,
+        v_candidate_job_after.connection_id,
+        v_expected_source_rows,
+        v_candidate_rows,
+        v_expected_excluded_rows,
+        v_expected_retained_rows,
+        v_expected_reindex_required_rows,
+        v_expected_mixed_campaign_count,
+        v_expected_matched_campaign_count,
+        v_expected_source_identity_digest,
+        null::text,
+        v_expected_confirmation_token,
+        v_report.current_ingestion_id,
+        v_report.published_ingestion_id,
+        v_next_preparation_phase,
+        v_batch_end,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false;
+      return;
+    end if;
+
+    if v_candidate_phase = 'finalizing' then
+      if v_candidate_next_row_index <> v_expected_source_rows
+         or v_candidate_rows <> v_expected_source_rows
+      then
+        raise exception using
+          errcode = 'P0001',
+          message = 'ENBGSR_FINALIZATION_PREFIX_INCOMPLETE';
+      end if;
+
+      perform 1
+      from public.media_sync_staging_rows as source_row
+      where source_row.job_id = v_expected_source_job_id
+      order by source_row.row_index, source_row.row_key, source_row.id
+      for share;
+
+      perform 1
+      from public.media_sync_staging_rows as candidate_row
+      where candidate_row.job_id = v_candidate_job.id
+      order by candidate_row.row_index, candidate_row.row_key, candidate_row.id
+      for share;
+
+      with source_identity_blocks as (
+        select
+          (
+            source_row.row_index / v_identity_block_size
+          )::bigint as block_index,
+          count(*)::bigint as block_rows,
+          min(source_row.row_index)::bigint as block_min_row_index,
+          max(source_row.row_index)::bigint as block_max_row_index,
+          encode(
+            extensions.digest(
+              pg_catalog.convert_to(
+                coalesce(
+                  string_agg(
+                    '[' ||
+                    source_row.row_index::text || ',' ||
+                    source_row.date_window_index::text || ',' ||
+                    to_json(source_row.date::text)::text || ',' ||
+                    to_json(source_row.row_key)::text || ',' ||
+                    to_json(source_row.row_fingerprint)::text ||
+                    E']\n',
+                    '' order by
+                      source_row.row_index,
+                      source_row.row_key,
+                      source_row.id
+                  ),
+                  ''
+                ),
+                'UTF8'
+              ),
+              'sha256'
+            ),
+            'hex'
+          ) as block_digest
+        from public.media_sync_staging_rows as source_row
+        where source_row.job_id = v_expected_source_job_id
+        group by (
+          source_row.row_index / v_identity_block_size
+        )::bigint
+      ),
+      source_identity as (
+        select
+          coalesce(sum(block_rows), 0)::bigint as rows,
+          min(block_min_row_index)::bigint as min_row_index,
+          max(block_max_row_index)::bigint as max_row_index,
+          encode(
+            extensions.digest(
+              pg_catalog.convert_to(
+                v_identity_algorithm || E'\n' ||
+                coalesce(
+                  string_agg(
+                    block_index::text || ':' ||
+                    block_rows::text || ':' ||
+                    block_min_row_index::text || ':' ||
+                    block_max_row_index::text || ':' ||
+                    block_digest,
+                    E'\n' order by block_index
+                  ),
+                  ''
+                ),
+                'UTF8'
+              ),
+              'sha256'
+            ),
+            'hex'
+          ) as digest
+        from source_identity_blocks
+      ),
+      candidate_identity_blocks as (
+        select
+          (
+            candidate_row.row_index / v_identity_block_size
+          )::bigint as block_index,
+          count(*)::bigint as block_rows,
+          min(candidate_row.row_index)::bigint as block_min_row_index,
+          max(candidate_row.row_index)::bigint as block_max_row_index,
+          encode(
+            extensions.digest(
+              pg_catalog.convert_to(
+                coalesce(
+                  string_agg(
+                    '[' ||
+                    candidate_row.row_index::text || ',' ||
+                    candidate_row.date_window_index::text || ',' ||
+                    to_json(candidate_row.date::text)::text || ',' ||
+                    to_json(candidate_row.row_key)::text || ',' ||
+                    to_json(candidate_row.row_fingerprint)::text ||
+                    E']\n',
+                    '' order by
+                      candidate_row.row_index,
+                      candidate_row.row_key,
+                      candidate_row.id
+                  ),
+                  ''
+                ),
+                'UTF8'
+              ),
+              'sha256'
+            ),
+            'hex'
+          ) as block_digest
+        from public.media_sync_staging_rows as candidate_row
+        where candidate_row.job_id = v_candidate_job.id
+        group by (
+          candidate_row.row_index / v_identity_block_size
+        )::bigint
+      ),
+      candidate_identity as (
+        select
+          coalesce(sum(block_rows), 0)::bigint as rows,
+          min(block_min_row_index)::bigint as min_row_index,
+          max(block_max_row_index)::bigint as max_row_index,
+          encode(
+            extensions.digest(
+              pg_catalog.convert_to(
+                v_identity_algorithm || E'\n' ||
+                coalesce(
+                  string_agg(
+                    block_index::text || ':' ||
+                    block_rows::text || ':' ||
+                    block_min_row_index::text || ':' ||
+                    block_max_row_index::text || ':' ||
+                    block_digest,
+                    E'\n' order by block_index
+                  ),
+                  ''
+                ),
+                'UTF8'
+              ),
+              'sha256'
+            ),
+            'hex'
+          ) as digest
+        from candidate_identity_blocks
+      )
+      select
+        source_identity.rows,
+        source_identity.min_row_index,
+        source_identity.max_row_index,
+        source_identity.digest,
+        candidate_identity.rows,
+        candidate_identity.min_row_index,
+        candidate_identity.max_row_index,
+        candidate_identity.digest
+      into
+        v_final_source_rows,
+        v_final_source_min_row_index,
+        v_final_source_max_row_index,
+        v_source_post_identity_digest,
+        v_final_candidate_rows,
+        v_final_candidate_min_row_index,
+        v_final_candidate_max_row_index,
+        v_candidate_identity_digest
+      from source_identity
+      cross join candidate_identity;
+
+      select count(*)::bigint
+      into v_final_exact_mismatch_rows
+      from (
+        select
+          source_row.row_index,
+          source_row.report_id,
+          source_row.workspace_id,
+          source_row.advertiser_id,
+          source_row.connection_id,
+          source_row.provider,
+          source_row.external_account_id,
+          source_row.date_window_index,
+          source_row.date_from,
+          source_row.date_to,
+          source_row.row_key,
+          source_row.date,
+          source_row.channel,
+          source_row.device,
+          source_row.source,
+          source_row.row,
+          source_row.row_fingerprint
+        from public.media_sync_staging_rows as source_row
+        where source_row.job_id = v_expected_source_job_id
+      ) as source_row
+      full outer join (
+        select
+          candidate_row.row_index,
+          candidate_row.report_id,
+          candidate_row.workspace_id,
+          candidate_row.advertiser_id,
+          candidate_row.connection_id,
+          candidate_row.provider,
+          candidate_row.external_account_id,
+          candidate_row.date_window_index,
+          candidate_row.date_from,
+          candidate_row.date_to,
+          candidate_row.row_key,
+          candidate_row.date,
+          candidate_row.channel,
+          candidate_row.device,
+          candidate_row.source,
+          candidate_row.row,
+          candidate_row.row_fingerprint
+        from public.media_sync_staging_rows as candidate_row
+        where candidate_row.job_id = v_candidate_job.id
+      ) as candidate_row
+        on candidate_row.row_index = source_row.row_index
+      where source_row.row_index is null
+         or candidate_row.row_index is null
+         or candidate_row.report_id is distinct from source_row.report_id
+         or candidate_row.workspace_id is distinct from source_row.workspace_id
+         or candidate_row.advertiser_id is distinct from source_row.advertiser_id
+         or candidate_row.connection_id is distinct from source_row.connection_id
+         or candidate_row.provider is distinct from source_row.provider
+         or candidate_row.external_account_id is distinct from
+            source_row.external_account_id
+         or candidate_row.date_window_index is distinct from
+            source_row.date_window_index
+         or candidate_row.date_from is distinct from source_row.date_from
+         or candidate_row.date_to is distinct from source_row.date_to
+         or candidate_row.row_key is distinct from source_row.row_key
+         or candidate_row.date is distinct from source_row.date
+         or candidate_row.channel is distinct from source_row.channel
+         or candidate_row.device is distinct from source_row.device
+         or candidate_row.source is distinct from source_row.source
+         or candidate_row.row is distinct from source_row.row
+         or candidate_row.row_fingerprint is distinct from
+            source_row.row_fingerprint;
+
+      if v_final_source_rows <> v_expected_source_rows
+         or v_final_source_min_row_index <> 0
+         or v_final_source_max_row_index <> v_expected_source_rows - 1
+         or v_source_post_identity_digest is distinct from
+            v_expected_source_identity_digest
+         or v_final_candidate_rows <> v_expected_source_rows
+         or v_final_candidate_min_row_index <> 0
+         or v_final_candidate_max_row_index <> v_expected_source_rows - 1
+         or v_candidate_identity_digest is distinct from
+            v_expected_source_identity_digest
+         or v_final_exact_mismatch_rows <> 0
+      then
+        raise exception using
+          errcode = 'P0001',
+          message = 'ENBGSR_FINAL_COPY_IDENTITY_MISMATCH';
+      end if;
+
+      v_now := pg_catalog.statement_timestamp();
+      v_recovery := jsonb_set(
+        v_recovery,
+        '{preparation_phase}',
+        to_jsonb('completed'::text)
+      );
+      v_recovery := jsonb_set(
+        v_recovery,
+        '{candidate_identity_digest}',
+        to_jsonb(v_candidate_identity_digest)
+      );
+      v_recovery := jsonb_set(
+        v_recovery,
+        '{prepared_at}',
+        to_jsonb(v_now)
+      );
+      v_recovery := jsonb_set(
+        v_recovery,
+        '{copied_rows}',
+        to_jsonb(v_expected_source_rows)
+      );
+
+      v_processing_checkpoint := jsonb_set(
+        v_processing_checkpoint,
+        '{saved_at}',
+        to_jsonb(v_now)
+      );
+      v_processing_checkpoint := jsonb_set(
+        v_processing_checkpoint,
+        '{raw_rows}',
+        to_jsonb(v_expected_source_rows)
+      );
+      v_processing_checkpoint := jsonb_set(
+        v_processing_checkpoint,
+        '{normalized_rows}',
+        to_jsonb(v_expected_source_rows)
+      );
+      v_processing_checkpoint := jsonb_set(
+        v_processing_checkpoint,
+        '{inserted_rows}',
+        to_jsonb(v_expected_source_rows)
+      );
+      v_processing_checkpoint := jsonb_set(
+        v_processing_checkpoint,
+        '{failed_rows}',
+        '0'::jsonb
+      );
+      v_processing_checkpoint := jsonb_set(
+        v_processing_checkpoint,
+        '{collector,phase}',
+        to_jsonb('completed'::text)
+      );
+      v_processing_checkpoint := jsonb_set(
+        v_processing_checkpoint,
+        '{collector,next_row_index}',
+        to_jsonb(v_expected_source_rows)
+      );
+      v_processing_checkpoint := jsonb_set(
+        v_processing_checkpoint,
+        '{recovery}',
+        v_recovery
+      );
+
+      update public.media_sync_jobs as candidate
+      set
+        raw_rows = v_expected_source_rows,
+        normalized_rows = v_expected_source_rows,
+        inserted_rows = v_expected_source_rows,
+        failed_rows = 0,
+        error_detail = jsonb_build_object(
+          'processing_checkpoint',
+          v_processing_checkpoint
+        ),
+        updated_at = v_now
+      where candidate.id = v_candidate_job.id
+        and candidate.status = 'cancelled'
+        and candidate.attempt_count = 0
+      returning candidate.*
+      into v_candidate_job_after;
+
+      if not found then
+        raise exception using
+          errcode = 'P0001',
+          message = 'ENBGSR_CANDIDATE_FINALIZATION_UPDATE_FAILED';
+      end if;
+
+      return query
+      select
+        v_source_job.id,
+        v_candidate_job_after.id,
+        v_candidate_job_after.status,
+        v_candidate_job_after.report_id,
+        v_candidate_job_after.workspace_id,
+        v_candidate_job_after.advertiser_id,
+        v_candidate_job_after.connection_id,
+        v_expected_source_rows,
+        v_final_candidate_rows,
+        v_expected_excluded_rows,
+        v_expected_retained_rows,
+        v_expected_reindex_required_rows,
+        v_expected_mixed_campaign_count,
+        v_expected_matched_campaign_count,
+        v_expected_source_identity_digest,
+        v_candidate_identity_digest,
+        v_expected_confirmation_token,
+        v_report.current_ingestion_id,
+        v_report.published_ingestion_id,
+        'completed'::text,
+        v_expected_source_rows,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false;
+      return;
+    end if;
   end if;
 
   perform 1
@@ -1083,9 +2130,10 @@ begin
 
   v_recovery :=
     jsonb_build_object(
-      'contract_version', 1,
+      'contract_version', 2,
       'preparation_kind', v_preparation_kind,
       'preparation_version', v_preparation_version,
+      'preparation_phase', 'copying',
       'source_job_id', v_source_job.id,
       'source_job_created_at', to_jsonb(v_source_job.created_at),
       'source_job_started_at', to_jsonb(v_source_job.started_at),
@@ -1103,7 +2151,7 @@ begin
       'source_min_row_index', 0,
       'source_max_row_index', v_expected_source_rows - 1,
       'source_identity_digest', v_source_identity_digest,
-      'candidate_identity_digest', v_source_identity_digest,
+      'candidate_identity_digest', null,
       'identity_algorithm', v_identity_algorithm,
       'source_current_ingestion_id',
         v_expected_current_ingestion_id,
@@ -1129,8 +2177,12 @@ begin
       'collector_counts_derived_from_staging', true,
       'request_counts_reconstructed', false,
       'confirmation_token', v_recalculated_confirmation_token,
-      'isolated', true,
-      'prepared_at', to_jsonb(v_now)
+      'copy_batch_size', v_copy_batch_size,
+      'copy_batches_completed', 0,
+      'copied_rows', 0,
+      'initialized_at', to_jsonb(v_now),
+      'prepared_at', null,
+      'isolated', true
     );
 
   v_processing_checkpoint :=
@@ -1138,9 +2190,9 @@ begin
       'version', 1,
       'saved_at', to_jsonb(v_now),
       'date_window_index', v_source_date_window_index,
-      'raw_rows', v_expected_source_rows,
-      'normalized_rows', v_expected_source_rows,
-      'inserted_rows', v_expected_source_rows,
+      'raw_rows', 0,
+      'normalized_rows', 0,
+      'inserted_rows', 0,
       'failed_rows', 0,
       'collector',
         jsonb_build_object(
@@ -1152,8 +2204,8 @@ begin
           'date_window_index', v_source_date_window_index,
           'cursor', jsonb_build_object(),
           'combined_version', 1,
-          'phase', 'completed',
-          'next_row_index', v_expected_source_rows,
+          'phase', 'preparing_recovery_candidate',
+          'next_row_index', 0,
           'keyword',
             jsonb_build_object(
               'complete', true,
@@ -1227,9 +2279,9 @@ begin
     v_source_job.mode,
     'cancelled',
     99,
-    v_expected_source_rows,
-    v_expected_source_rows,
-    v_expected_source_rows,
+    0,
+    0,
+    0,
     0,
     v_report.current_ingestion_id,
     null,
@@ -1245,439 +2297,34 @@ begin
     v_now
   )
   returning *
-  into v_candidate_job;
-
-  insert into public.media_sync_staging_rows (
-    job_id,
-    report_id,
-    workspace_id,
-    advertiser_id,
-    connection_id,
-    provider,
-    external_account_id,
-    date_window_index,
-    date_from,
-    date_to,
-    row_index,
-    row_key,
-    date,
-    channel,
-    device,
-    source,
-    row
-  )
-  select
-    v_candidate_id,
-    source_row.report_id,
-    source_row.workspace_id,
-    source_row.advertiser_id,
-    source_row.connection_id,
-    source_row.provider,
-    source_row.external_account_id,
-    source_row.date_window_index,
-    source_row.date_from,
-    source_row.date_to,
-    source_row.row_index,
-    source_row.row_key,
-    source_row.date,
-    source_row.channel,
-    source_row.device,
-    source_row.source,
-    source_row.row
-  from public.media_sync_staging_rows as source_row
-  where source_row.job_id = v_expected_source_job_id
-  order by
-    source_row.row_index,
-    source_row.row_key,
-    source_row.id;
-
-  select
-    count(*)::bigint,
-    min(candidate_row.row_index)::bigint,
-    max(candidate_row.row_index)::bigint,
-    count(distinct candidate_row.row_index)::bigint,
-    count(
-      distinct (
-        candidate_row.date_window_index,
-        candidate_row.row_key
-      )
-    )::bigint
-  into
-    v_candidate_rows,
-    v_candidate_min_row_index,
-    v_candidate_max_row_index,
-    v_candidate_distinct_row_indexes,
-    v_candidate_distinct_window_row_keys
-  from public.media_sync_staging_rows as candidate_row
-  where candidate_row.job_id = v_candidate_id;
-
-  select count(*)::bigint
-  into v_candidate_exact_mismatch_rows
-  from (
-    select
-      source_row.row_index,
-      source_row.report_id,
-      source_row.workspace_id,
-      source_row.advertiser_id,
-      source_row.connection_id,
-      source_row.provider,
-      source_row.external_account_id,
-      source_row.date_window_index,
-      source_row.date_from,
-      source_row.date_to,
-      source_row.row_key,
-      source_row.date,
-      source_row.channel,
-      source_row.device,
-      source_row.source,
-      source_row.row,
-      source_row.row_fingerprint
-    from public.media_sync_staging_rows as source_row
-    where source_row.job_id = v_expected_source_job_id
-  ) as source_row
-  full outer join (
-    select
-      candidate_row.row_index,
-      candidate_row.report_id,
-      candidate_row.workspace_id,
-      candidate_row.advertiser_id,
-      candidate_row.connection_id,
-      candidate_row.provider,
-      candidate_row.external_account_id,
-      candidate_row.date_window_index,
-      candidate_row.date_from,
-      candidate_row.date_to,
-      candidate_row.row_key,
-      candidate_row.date,
-      candidate_row.channel,
-      candidate_row.device,
-      candidate_row.source,
-      candidate_row.row,
-      candidate_row.row_fingerprint
-    from public.media_sync_staging_rows as candidate_row
-    where candidate_row.job_id = v_candidate_id
-  ) as candidate_row
-    on candidate_row.row_index = source_row.row_index
-  where source_row.row_index is null
-     or candidate_row.row_index is null
-     or candidate_row.report_id is distinct from source_row.report_id
-     or candidate_row.workspace_id is distinct from source_row.workspace_id
-     or candidate_row.advertiser_id is distinct from source_row.advertiser_id
-     or candidate_row.connection_id is distinct from source_row.connection_id
-     or candidate_row.provider is distinct from source_row.provider
-     or candidate_row.external_account_id is distinct from
-        source_row.external_account_id
-     or candidate_row.date_window_index is distinct from
-        source_row.date_window_index
-     or candidate_row.date_from is distinct from source_row.date_from
-     or candidate_row.date_to is distinct from source_row.date_to
-     or candidate_row.row_key is distinct from source_row.row_key
-     or candidate_row.date is distinct from source_row.date
-     or candidate_row.channel is distinct from source_row.channel
-     or candidate_row.device is distinct from source_row.device
-     or candidate_row.source is distinct from source_row.source
-     or candidate_row.row is distinct from source_row.row
-     or candidate_row.row_fingerprint is distinct from
-        source_row.row_fingerprint;
-
-  if v_candidate_rows <> v_expected_source_rows
-     or v_candidate_min_row_index <> 0
-     or v_candidate_max_row_index <> v_expected_source_rows - 1
-     or v_candidate_distinct_row_indexes <> v_expected_source_rows
-     or v_candidate_distinct_window_row_keys <>
-        v_expected_source_rows
-     or v_candidate_exact_mismatch_rows <> 0
-  then
-    raise exception using
-      errcode = 'P0001',
-      message = 'ENBGSR_CANDIDATE_COPY_MISMATCH';
-  end if;
-
-  with identity_blocks as (
-    select
-      (
-        candidate_row.row_index / v_identity_block_size
-      )::bigint as block_index,
-      count(*)::bigint as block_rows,
-      min(candidate_row.row_index)::bigint as block_min_row_index,
-      max(candidate_row.row_index)::bigint as block_max_row_index,
-      encode(
-        extensions.digest(
-          pg_catalog.convert_to(
-            coalesce(
-              string_agg(
-                '[' ||
-                candidate_row.row_index::text || ',' ||
-                candidate_row.date_window_index::text || ',' ||
-                to_json(candidate_row.date::text)::text || ',' ||
-                to_json(candidate_row.row_key)::text || ',' ||
-                to_json(candidate_row.row_fingerprint)::text ||
-                E']\n',
-                '' order by
-                  candidate_row.row_index,
-                  candidate_row.row_key,
-                  candidate_row.id
-              ),
-              ''
-            ),
-            'UTF8'
-          ),
-          'sha256'
-        ),
-        'hex'
-      ) as block_digest
-    from public.media_sync_staging_rows as candidate_row
-    where candidate_row.job_id = v_candidate_id
-    group by (
-      candidate_row.row_index / v_identity_block_size
-    )::bigint
-  )
-  select encode(
-    extensions.digest(
-      pg_catalog.convert_to(
-        v_identity_algorithm || E'\n' ||
-        coalesce(
-          string_agg(
-            identity_blocks.block_index::text || ':' ||
-            identity_blocks.block_rows::text || ':' ||
-            identity_blocks.block_min_row_index::text || ':' ||
-            identity_blocks.block_max_row_index::text || ':' ||
-            identity_blocks.block_digest,
-            E'\n' order by identity_blocks.block_index
-          ),
-          ''
-        ),
-        'UTF8'
-      ),
-      'sha256'
-    ),
-    'hex'
-  )
-  into v_candidate_identity_digest
-  from identity_blocks;
-
-  if v_candidate_identity_digest is distinct from
-       v_source_identity_digest
-  then
-    raise exception using
-      errcode = 'P0001',
-      message = 'ENBGSR_CANDIDATE_IDENTITY_DIGEST_MISMATCH';
-  end if;
-
-  with identity_blocks as (
-    select
-      (
-        source_row.row_index / v_identity_block_size
-      )::bigint as block_index,
-      count(*)::bigint as block_rows,
-      min(source_row.row_index)::bigint as block_min_row_index,
-      max(source_row.row_index)::bigint as block_max_row_index,
-      encode(
-        extensions.digest(
-          pg_catalog.convert_to(
-            coalesce(
-              string_agg(
-                '[' ||
-                source_row.row_index::text || ',' ||
-                source_row.date_window_index::text || ',' ||
-                to_json(source_row.date::text)::text || ',' ||
-                to_json(source_row.row_key)::text || ',' ||
-                to_json(source_row.row_fingerprint)::text ||
-                E']\n',
-                '' order by
-                  source_row.row_index,
-                  source_row.row_key,
-                  source_row.id
-              ),
-              ''
-            ),
-            'UTF8'
-          ),
-          'sha256'
-        ),
-        'hex'
-      ) as block_digest
-    from public.media_sync_staging_rows as source_row
-    where source_row.job_id = v_expected_source_job_id
-    group by (
-      source_row.row_index / v_identity_block_size
-    )::bigint
-  ),
-  identity_summary as (
-    select
-      coalesce(sum(identity_blocks.block_rows), 0)::bigint as rows,
-      encode(
-        extensions.digest(
-          pg_catalog.convert_to(
-            v_identity_algorithm || E'\n' ||
-            coalesce(
-              string_agg(
-                identity_blocks.block_index::text || ':' ||
-                identity_blocks.block_rows::text || ':' ||
-                identity_blocks.block_min_row_index::text || ':' ||
-                identity_blocks.block_max_row_index::text || ':' ||
-                identity_blocks.block_digest,
-                E'\n' order by identity_blocks.block_index
-              ),
-              ''
-            ),
-            'UTF8'
-          ),
-          'sha256'
-        ),
-        'hex'
-      ) as digest
-    from identity_blocks
-  )
-  select
-    identity_summary.rows,
-    identity_summary.digest
-  into
-    v_source_post_rows,
-    v_source_post_identity_digest
-  from identity_summary;
-
-  select job.*
-  into v_source_job_after
-  from public.media_sync_jobs as job
-  where job.id = v_expected_source_job_id;
-
-  select report.*
-  into v_report_after
-  from public.reports as report
-  where report.id = v_expected_report_id;
-
-  select job.*
-  into v_candidate_job_after
-  from public.media_sync_jobs as job
-  where job.id = v_candidate_id;
-
-  if v_source_job_after.id is null
-     or to_jsonb(v_source_job_after) is distinct from
-        to_jsonb(v_source_job)
-     or v_source_post_rows <> v_source_rows
-     or v_source_post_identity_digest is distinct from
-        v_source_identity_digest
-  then
-    raise exception using
-      errcode = 'P0001',
-      message = 'ENBGSR_SOURCE_CHANGED_DURING_PREPARATION';
-  end if;
-
-  if v_report_after.id is null
-     or v_report_after.current_ingestion_id is distinct from
-        v_report.current_ingestion_id
-     or v_report_after.published_ingestion_id is distinct from
-        v_report.published_ingestion_id
-     or v_report_after.updated_at is distinct from
-        v_report.updated_at
-  then
-    raise exception using
-      errcode = 'P0001',
-      message = 'ENBGSR_REPORT_CHANGED_DURING_PREPARATION';
-  end if;
-
-  if v_candidate_job_after.id is null
-     or v_candidate_job_after.status is distinct from 'cancelled'
-     or v_candidate_job_after.progress is distinct from 99
-     or v_candidate_job_after.raw_rows is distinct from
-        v_expected_source_rows
-     or v_candidate_job_after.normalized_rows is distinct from
-        v_expected_source_rows
-     or v_candidate_job_after.inserted_rows is distinct from
-        v_expected_source_rows
-     or v_candidate_job_after.failed_rows is distinct from 0
-     or v_candidate_job_after.previous_ingestion_id is distinct from
-        v_expected_current_ingestion_id
-     or v_candidate_job_after.snapshot_ingestion_id is not null
-     or v_candidate_job_after.attempt_count is distinct from 0
-     or v_candidate_job_after.error is not null
-     or v_candidate_job_after.started_at is not null
-     or v_candidate_job_after.finished_at is not null
-     or jsonb_typeof(v_candidate_job_after.error_detail) <> 'object'
-     or (
-       select count(*)
-       from jsonb_object_keys(v_candidate_job_after.error_detail)
-     ) <> 1
-     or not (
-       v_candidate_job_after.error_detail ? 'processing_checkpoint'
-     )
-     or v_candidate_job_after.error_detail #>>
-        '{processing_checkpoint,collector,phase}' is distinct from
-        'completed'
-     or v_candidate_job_after.error_detail #>>
-        '{processing_checkpoint,collector,keyword,complete}' is distinct from
-        'true'
-     or v_candidate_job_after.error_detail #>>
-        '{processing_checkpoint,collector,authoritative,complete}' is distinct from
-        'true'
-     or v_candidate_job_after.error_detail #>>
-        '{processing_checkpoint,collector,next_row_index}' is distinct from
-        v_expected_source_rows::text
-     or v_candidate_job_after.error_detail #>>
-        '{processing_checkpoint,raw_rows}' is distinct from
-        v_expected_source_rows::text
-     or v_candidate_job_after.error_detail #>>
-        '{processing_checkpoint,normalized_rows}' is distinct from
-        v_expected_source_rows::text
-     or v_candidate_job_after.error_detail #>>
-        '{processing_checkpoint,inserted_rows}' is distinct from
-        v_expected_source_rows::text
-     or v_candidate_job_after.error_detail #>>
-        '{processing_checkpoint,failed_rows}' is distinct from '0'
-     or v_candidate_job_after.error_detail #>>
-        '{processing_checkpoint,recovery,source_job_id}' is distinct from
-        v_expected_source_job_id::text
-     or v_candidate_job_after.error_detail #>>
-        '{processing_checkpoint,recovery,source_identity_digest}' is distinct from
-        v_source_identity_digest
-     or v_candidate_job_after.error_detail #>>
-        '{processing_checkpoint,recovery,candidate_identity_digest}' is distinct from
-        v_candidate_identity_digest
-     or v_candidate_job_after.error_detail #>>
-        '{processing_checkpoint,recovery,confirmation_token}' is distinct from
-        v_recalculated_confirmation_token
-     or v_candidate_job_after.error_detail #>>
-        '{processing_checkpoint,recovery,isolated}' is distinct from
-        'true'
-  then
-    raise exception using
-      errcode = 'P0001',
-      message = 'ENBGSR_CANDIDATE_JOB_CONTRACT_MISMATCH';
-  end if;
+  into v_candidate_job_after;
 
   return query
   select
     v_source_job.id,
     v_candidate_job_after.id,
     v_candidate_job_after.status,
-
     v_candidate_job_after.report_id,
     v_candidate_job_after.workspace_id,
     v_candidate_job_after.advertiser_id,
     v_candidate_job_after.connection_id,
-
     v_source_rows,
-    v_candidate_rows,
+    0::bigint,
     v_excluded_rows,
     v_retained_rows,
     v_reindex_required_rows,
     v_mixed_campaign_count,
     v_matched_campaign_count,
-
     v_source_identity_digest,
-    v_candidate_identity_digest,
+    null::text,
     v_recalculated_confirmation_token,
-
     v_report.current_ingestion_id,
     v_report.published_ingestion_id,
-
-    'completed'::text,
-    v_expected_source_rows,
-
+    'copying'::text,
+    0::bigint,
     true,
     true,
-    true,
+    false,
     false,
     false,
     false,
@@ -1708,7 +2355,7 @@ to service_role;
 
 comment on function public.prepare_exact_naver_brand_search_stale_recovery_candidate(jsonb)
 is
-  'Atomically prepares one exact isolated cancelled Naver BRAND_SEARCH stale-reconciliation recovery candidate from source job 7ef7b4ee-7786-4695-af1c-abb0f75fd553 without mutating the source, report pointers, report_rows, or invoking any downstream lifecycle RPC.';
+  'Initializes and resumably copies at most 500 rows per call into one exact isolated cancelled Naver BRAND_SEARCH stale-reconciliation recovery candidate from source job 7ef7b4ee-7786-4695-af1c-abb0f75fd553; final readiness is set only after full source/candidate identity equality, without invoking downstream lifecycle RPCs.';
 
 notify pgrst, 'reload schema';
 

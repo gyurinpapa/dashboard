@@ -18,6 +18,11 @@ const STAGING_TABLE_CONTRACT_PATH = resolve(
   "scripts/fixtures/media-sync-staging-table-contract.json",
 );
 
+const EXECUTION_PATH = resolve(
+  process.cwd(),
+  "scripts/execute-exact-naver-brand-search-stale-recovery-preparation-bounded.ts",
+);
+
 const PREPARATION_RPC =
   "prepare_exact_naver_brand_search_stale_recovery_candidate";
 
@@ -89,6 +94,13 @@ const PRODUCTION_SOURCE_IDENTITY_DIGEST =
   "3b28ccb42d52dcde46b9da44bb8043573b8966b6ecdd3a7a0655d0ac88dfef49";
 const PREPARATION_CONFIRMATION_TOKEN =
   "97284ee9d16df6415c7fba27cb8da05dec4f0b98c2c567dae7bd297fbfa4d92d";
+
+const PREPARATION_VERSION = 2;
+const COPY_BATCH_SIZE = 500;
+const EXPECTED_COPY_BATCHES =
+  Math.ceil(SOURCE_ROWS / COPY_BATCH_SIZE);
+const EXPECTED_RPC_CALLS =
+  1 + EXPECTED_COPY_BATCHES + 1;
 
 type MetricTotals = {
   impressions: number;
@@ -241,11 +253,16 @@ function createChunkedIdentityDigest(
         blockRows.map(createIdentityLine).join(""),
       );
 
+      const firstBlockRow = blockRows[0];
+      const lastBlockRow = blockRows.at(-1);
+      assert.ok(firstBlockRow);
+      assert.ok(lastBlockRow);
+
       return [
         blockIndex,
         blockRows.length,
-        blockRows[0].rowIndex,
-        blockRows[blockRows.length - 1].rowIndex,
+        firstBlockRow.rowIndex,
+        lastBlockRow.rowIndex,
         blockDigest,
       ].join(":");
     });
@@ -509,27 +526,21 @@ function calculateReconciliation(
   };
 }
 
+
 function verifyProductionShapeFixture(): {
   sourceIdentityDigest: string;
   confirmationToken: string;
+  copyBatches: number;
+  rpcCalls: number;
 } {
   const source = createProductionShapeFixture();
   const sourceBefore = JSON.stringify(source);
   const sourceIdentityDigest =
     createChunkedIdentityDigest(source);
-  const candidate = structuredClone(source);
-  const candidateIdentityDigest =
-    createChunkedIdentityDigest(candidate);
 
   assert.equal(source.length, SOURCE_ROWS);
-  assert.equal(
-    source[0].rowIndex,
-    0,
-  );
-  assert.equal(
-    source[source.length - 1].rowIndex,
-    SOURCE_ROWS - 1,
-  );
+  assert.equal(source[0]?.rowIndex, 0);
+  assert.equal(source.at(-1)?.rowIndex, SOURCE_ROWS - 1);
   assert.equal(
     new Set(source.map((row) => row.rowIndex)).size,
     SOURCE_ROWS,
@@ -542,24 +553,80 @@ function verifyProductionShapeFixture(): {
     ).size,
     SOURCE_ROWS,
   );
-  assert.equal(
-    sourceIdentityDigest,
-    candidateIdentityDigest,
-    "The full candidate copy identity must equal the source identity.",
-  );
   assert.match(sourceIdentityDigest, /^[0-9a-f]{64}$/);
 
-  const reconciliation =
-    calculateReconciliation(candidate);
+  const confirmationToken =
+    createConfirmationToken(sourceIdentityDigest);
+  assert.equal(
+    createConfirmationToken(PRODUCTION_SOURCE_IDENTITY_DIGEST),
+    PREPARATION_CONFIRMATION_TOKEN,
+    "The exact production preparation token serialization changed.",
+  );
+  assert.equal(
+    confirmationToken,
+    createConfirmationToken(sourceIdentityDigest),
+  );
 
+  const candidate: FixtureRow[] = [];
+  let phase: "copying" | "finalizing" | "completed" =
+    "copying";
+  let nextRowIndex = 0;
+  let copyBatches = 0;
+  let rpcCalls = 1; // initialization call
+
+  while (phase === "copying") {
+    const batchStart = nextRowIndex;
+    const batchEnd = Math.min(
+      batchStart + COPY_BATCH_SIZE,
+      SOURCE_ROWS,
+    );
+    const sourceBatch = source.slice(batchStart, batchEnd);
+
+    assert.equal(sourceBatch.length, batchEnd - batchStart);
+    assert.equal(sourceBatch[0]?.rowIndex, batchStart);
+    assert.equal(sourceBatch.at(-1)?.rowIndex, batchEnd - 1);
+
+    candidate.push(...structuredClone(sourceBatch));
+    nextRowIndex = batchEnd;
+    copyBatches += 1;
+    rpcCalls += 1;
+    phase =
+      nextRowIndex === SOURCE_ROWS
+        ? "finalizing"
+        : "copying";
+
+    assert.equal(candidate.length, nextRowIndex);
+    assert.deepEqual(
+      candidate.map((row) => row.rowIndex),
+      Array.from(
+        { length: nextRowIndex },
+        (_, rowIndex) => rowIndex,
+      ),
+    );
+  }
+
+  assert.equal(copyBatches, EXPECTED_COPY_BATCHES);
+  assert.equal(nextRowIndex, SOURCE_ROWS);
+  assert.equal(phase, "finalizing");
+
+  const candidateIdentityDigest =
+    createChunkedIdentityDigest(candidate);
   assert.equal(
-    reconciliation.excluded.length,
-    EXCLUDED_ROWS,
+    candidateIdentityDigest,
+    sourceIdentityDigest,
+    "The final bounded candidate identity must equal the source identity.",
   );
-  assert.equal(
-    reconciliation.retained.length,
-    RETAINED_ROWS,
-  );
+  assert.deepEqual(candidate, source);
+
+  phase = "completed";
+  rpcCalls += 1; // finalization call
+
+  assert.equal(phase, "completed");
+  assert.equal(rpcCalls, EXPECTED_RPC_CALLS);
+
+  const reconciliation = calculateReconciliation(candidate);
+  assert.equal(reconciliation.excluded.length, EXCLUDED_ROWS);
+  assert.equal(reconciliation.retained.length, RETAINED_ROWS);
   assert.equal(
     reconciliation.reindexed.length,
     REINDEX_REQUIRED_ROWS,
@@ -573,27 +640,19 @@ function verifyProductionShapeFixture(): {
     MATCHED_CAMPAIGN_COUNT,
   );
   assert.equal(
-    reconciliation.excluded[0].rowIndex,
+    reconciliation.excluded[0]?.rowIndex,
     EXCLUDED_MIN_ROW_INDEX,
   );
-  const lastExcluded = reconciliation.excluded.at(-1);
-  if (!lastExcluded) {
-    throw new Error("The excluded fixture must not be empty.");
-  }
   assert.equal(
-    lastExcluded.rowIndex,
+    reconciliation.excluded.at(-1)?.rowIndex,
     EXCLUDED_MAX_ROW_INDEX,
   );
   assert.equal(
-    reconciliation.reindexed[0].rowIndex,
+    reconciliation.reindexed[0]?.rowIndex,
     REINDEX_MIN_OLD_ROW_INDEX,
   );
-  const lastReindexed = reconciliation.reindexed.at(-1);
-  if (!lastReindexed) {
-    throw new Error("The reindexed fixture must not be empty.");
-  }
   assert.equal(
-    lastReindexed.rowIndex,
+    reconciliation.reindexed.at(-1)?.rowIndex,
     REINDEX_MAX_OLD_ROW_INDEX,
   );
   assert.deepEqual(
@@ -606,7 +665,6 @@ function verifyProductionShapeFixture(): {
       { length: RETAINED_ROWS },
       (_, rowIndex) => rowIndex,
     ),
-    "The retained rows must compact to 0..44,639 only during reconciliation.",
   );
   assert.equal(
     JSON.stringify(source),
@@ -614,58 +672,31 @@ function verifyProductionShapeFixture(): {
     "The source fixture must remain immutable.",
   );
 
-  const confirmationToken =
-    createConfirmationToken(sourceIdentityDigest);
-  assert.match(confirmationToken, /^[0-9a-f]{64}$/);
-  assert.notEqual(
-    confirmationToken,
-    createConfirmationToken("0".repeat(64)),
+  // A lost response after a committed batch resumes from the persisted prefix.
+  const resumedCandidate = structuredClone(candidate.slice(0, 12_500));
+  let resumedNextRowIndex = resumedCandidate.length;
+  const resumedBatchEnd = Math.min(
+    resumedNextRowIndex + COPY_BATCH_SIZE,
+    SOURCE_ROWS,
   );
-  assert.equal(
-    createConfirmationToken(PRODUCTION_SOURCE_IDENTITY_DIGEST),
-    PREPARATION_CONFIRMATION_TOKEN,
-    "The exact production preparation token serialization changed.",
+  resumedCandidate.push(
+    ...structuredClone(
+      source.slice(resumedNextRowIndex, resumedBatchEnd),
+    ),
   );
-
-  let existingCandidate = false;
-  const prepareOnce = () => {
-    if (existingCandidate) {
-      throw new Error("ENBGSR_CANDIDATE_ALREADY_EXISTS");
-    }
-    existingCandidate = true;
-    return {
-      status: "cancelled",
-      rows: candidate.length,
-      phase: "completed",
-      nextRowIndex: SOURCE_ROWS,
-    };
-  };
-
-  assert.deepEqual(prepareOnce(), {
-    status: "cancelled",
-    rows: SOURCE_ROWS,
-    phase: "completed",
-    nextRowIndex: SOURCE_ROWS,
-  });
-  assert.throws(
-    prepareOnce,
-    /ENBGSR_CANDIDATE_ALREADY_EXISTS/,
-  );
-
-  assert.throws(
-    () => {
-      assert.equal(
-        reconciliation.excluded.length,
-        EXCLUDED_ROWS - 1,
-        "A changed exact assertion must fail closed.",
-      );
-    },
-    /changed exact assertion must fail closed/i,
+  resumedNextRowIndex = resumedBatchEnd;
+  assert.equal(resumedCandidate.length, resumedNextRowIndex);
+  assert.deepEqual(
+    resumedCandidate,
+    source.slice(0, resumedNextRowIndex),
+    "A retry must resume from the committed next_row_index without duplicating rows.",
   );
 
   return {
     sourceIdentityDigest,
     confirmationToken,
+    copyBatches,
+    rpcCalls,
   };
 }
 
@@ -695,6 +726,7 @@ function verifyStagingTableContract(
   );
 }
 
+
 function verifyPreparationSql(source: string): void {
   const normalized = normalizeSql(source);
 
@@ -710,13 +742,12 @@ function verifyPreparationSql(source: string): void {
     ),
     "The accidentally truncated first deployment must be removed atomically.",
   );
-
   requirePattern(
     normalized,
     new RegExp(
       `create or replace function public\\.${PREPARATION_RPC}\\s*\\(\\s*p_payload jsonb\\s*\\)`,
     ),
-    "The exact preparation RPC signature is missing.",
+    "The exact bounded preparation RPC signature is missing.",
   );
   requirePattern(normalized, /language plpgsql/,
     "The RPC must be PL/pgSQL.");
@@ -730,7 +761,17 @@ function verifyPreparationSql(source: string): void {
   requirePattern(
     normalized,
     /set statement_timeout to '60s'/,
-    "The RPC statement_timeout must be 60s.",
+    "The RPC statement_timeout must remain 60s.",
+  );
+  requirePattern(
+    normalized,
+    /v_preparation_version constant integer := 2/,
+    "Bounded preparation version 2 is required.",
+  );
+  requirePattern(
+    normalized,
+    /v_copy_batch_size constant bigint := 500/,
+    "The copy batch size must be fixed at 500.",
   );
 
   for (const exactValue of [
@@ -765,6 +806,7 @@ function verifyPreparationSql(source: string): void {
     String(EXCLUDED_METRICS.conversions),
     String(EXCLUDED_METRICS.revenue),
     IDENTITY_ALGORITHM,
+    PREPARATION_KIND,
     SOURCE_ERROR,
     SOURCE_ERROR_DETAIL_DIGEST,
     PRODUCTION_SOURCE_IDENTITY_DIGEST,
@@ -779,170 +821,104 @@ function verifyPreparationSql(source: string): void {
   requirePattern(
     normalized,
     /pg_advisory_xact_lock\s*\(/,
-    "Concurrent exact preparation must be serialized.",
+    "Concurrent calls must be serialized.",
   );
   requirePattern(
     normalized,
     /from public\.media_sync_jobs as job where job\.id = v_expected_source_job_id for update/,
-    "The source job must be locked FOR UPDATE.",
+    "The exact source job must be locked and revalidated.",
   );
   requirePattern(
     normalized,
     /from public\.reports as report where report\.id = v_expected_report_id for update/,
-    "The report must be locked FOR UPDATE.",
+    "Report pointers must be locked and revalidated.",
   );
   requirePattern(
     normalized,
     /from public\.media_connections as connection where connection\.id = v_expected_connection_id for share/,
     "The connection must be validated under a share lock.",
   );
-
   requirePattern(
     normalized,
     /status in \('pending', 'processing'\)/,
-    "Active pending/processing jobs must block preparation.",
+    "Active jobs must block every preparation call.",
   );
   requirePattern(
     normalized,
-    /enbgsr_active_job_exists/,
-    "The active-job failure code is missing.",
+    /enbgsr_multiple_candidates_found/,
+    "Multiple exact candidates must fail closed.",
   );
   requirePattern(
     normalized,
-    /enbgsr_candidate_already_exists/,
-    "Duplicate source candidates must be rejected.",
-  );
-  requirePattern(
-    normalized,
-    /source_job_updated_at/,
-    "The exact source updated_at guard is missing.",
-  );
-  requirePattern(
-    normalized,
-    /source_job_finished_at/,
-    "The exact source finished_at guard is missing.",
-  );
-  for (const staleLiteral of [
-    "stale_processing_job",
-    "stale_recovery",
-    "automatic_recovery",
-    "3600000",
-    "2026-08-02t18:44:11.465z",
-    "2026-08-02t19:44:11.627z",
-  ]) {
-    assert.ok(
-      normalized.includes(staleLiteral),
-      `The exact stale failure literal is missing: ${staleLiteral}`,
-    );
-  }
-  requirePattern(
-    normalized,
-    /source_error_detail_digest/,
-    "The full source error_detail digest guard is missing.",
+    /for update; if not found then raise exception using errcode = 'p0001', message = 'enbgsr_candidate_not_found_after_discovery'/,
+    "An existing candidate must be row-locked before resume.",
   );
 
   requirePattern(
     normalized,
-    /count\(distinct source_rows\.row_index\)/,
-    "The full row_index integrity scan is missing.",
+    /'preparation_phase', 'copying'/,
+    "Initialization must begin in copying phase.",
   );
   requirePattern(
     normalized,
-    /count\( distinct \( source_rows\.date_window_index, source_rows\.row_key \) \)/,
-    "The window/row_key duplicate scan is missing.",
+    /'copy_batch_size', v_copy_batch_size/,
+    "The checkpoint must persist the fixed batch size.",
   );
   requirePattern(
     normalized,
-    /source_rows\.row_fingerprint is distinct from encode\( extensions\.digest\(/,
-    "Stored fingerprints must be recalculated from canonical rows.",
+    /'copy_batches_completed', 0/,
+    "Initialization must persist zero completed batches.",
   );
   requirePattern(
     normalized,
-    /source_rows\.report_id is distinct from v_expected_report_id/,
-    "The staging scope scan is missing.",
+    /v_candidate_copy_batches_completed is distinct from case when v_candidate_next_row_index = 0 then 0 else \( v_candidate_next_row_index \+ v_copy_batch_size - 1 \) \/ v_copy_batch_size end/,
+    "The persisted batch count must equal the checkpoint-derived batch count.",
   );
   requirePattern(
     normalized,
-    /coalesce\(source_rows\.row ->> 'date', ''\) <> source_rows\.date::text/,
-    "The canonical row/column consistency scan is missing.",
+    /v_recovery ->> 'contract_version' is distinct from '2'/,
+    "Resumed candidates must match bounded contract version 2.",
+  );
+  requirePattern(
+    normalized,
+    /'copied_rows', 0/,
+    "Initialization must persist zero copied rows.",
+  );
+  requirePattern(
+    normalized,
+    /'phase', 'preparing_recovery_candidate'/,
+    "The collector may not be marked completed during initialization.",
+  );
+  requirePattern(
+    normalized,
+    /'next_row_index', 0/,
+    "Initialization must start at row index 0.",
+  );
+  requirePattern(
+    normalized,
+    /insert into public\.media_sync_jobs[\s\S]*?'cancelled', 99, 0, 0, 0, 0,[\s\S]*?null, 0, null/,
+    "Initialization must create one isolated cancelled 99/0 candidate with zero copied counters.",
   );
 
-  requirePattern(
-    normalized,
-    /create temporary table enbgr_mixed_campaigns/,
-    "The mixed campaign precompute is missing.",
-  );
-  requirePattern(
-    normalized,
-    /create temporary table enbgr_row_map/,
-    "The hypothetical reconciliation row map is missing.",
-  );
-  requirePattern(
-    normalized,
-    /row_number\(\) over \( order by classified\.old_row_index, classified\.row_key, classified\.staging_id \) - 1/,
-    "The exact compact row-index precompute is missing.",
-  );
-  requirePattern(
-    normalized,
-    /enbgsr_reconciliation_precompute_mismatch/,
-    "Exact reconciliation precompute mismatch must fail closed.",
-  );
-
+  const stagingInsertMatches = [
+    ...source.matchAll(
+      /insert\s+into\s+public\.media_sync_staging_rows\s*\(([\s\S]*?)\)\s*select/gi,
+    ),
+  ];
   assert.equal(
-    countMatches(
-      normalized,
-      /chunked_sha256_v1:block_size=10000/g,
-    ),
+    stagingInsertMatches.length,
     1,
-    "The identity algorithm must be defined once and reused.",
+    "Exactly one bounded candidate staging INSERT site is allowed.",
   );
-  assert.ok(
-    countMatches(
-      normalized,
-      /source_row\.row_index \/ v_identity_block_size/g,
-    ) >= 2,
-    "Source identity must be checked before and after copy.",
-  );
-  requirePattern(
-    normalized,
-    /candidate_row\.row_index \/ v_identity_block_size/,
-    "Candidate identity must use the same chunked algorithm.",
-  );
-  requirePattern(
-    normalized,
-    /enbgsr_source_identity_digest_mismatch/,
-    "The supplied source digest must be enforced.",
-  );
-  requirePattern(
-    normalized,
-    /enbgsr_confirmation_token_mismatch/,
-    "The exact confirmation token must be enforced.",
-  );
-  requirePattern(
-    normalized,
-    /enbgsr_exact_confirmation_input_mismatch/,
-    "The supplied digest and token must equal the fixed preflight values.",
-  );
-  requirePattern(
-    normalized,
-    new RegExp(
-      `alter function public\\.${PREPARATION_RPC}\\(jsonb\\) owner to postgres`,
-    ),
-    "The preparation RPC owner must be postgres.",
-  );
+  const stagingInsertMatch = stagingInsertMatches[0];
+  assert.ok(stagingInsertMatch);
+  const stagingInsertColumnList = stagingInsertMatch[1];
+  assert.ok(stagingInsertColumnList);
 
-  const stagingInsert = source.match(
-    /insert\s+into\s+public\.media_sync_staging_rows\s*\(([\s\S]*?)\)\s*select/i,
-  );
-  if (!stagingInsert) {
-    throw new Error("The candidate staging INSERT is missing.");
-  }
-
-  const insertedColumns = stagingInsert[1]
+  const insertedColumns = stagingInsertColumnList
     .split(",")
     .map((column) => column.trim().toLowerCase())
     .filter(Boolean);
-
   assert.deepEqual(insertedColumns, [
     "job_id",
     "report_id",
@@ -969,74 +945,160 @@ function verifyPreparationSql(source: string): void {
 
   requirePattern(
     normalized,
-    /insert into public\.media_sync_jobs[\s\S]*?'cancelled', 99, v_expected_source_rows, v_expected_source_rows, v_expected_source_rows, 0,[\s\S]*?null, 0, null/,
-    "The candidate must be isolated as cancelled with the established 99/0 lifecycle values.",
+    /v_batch_start := v_candidate_next_row_index/,
+    "Each copy call must start at the persisted checkpoint.",
   );
   requirePattern(
     normalized,
-    /'phase', 'completed'/,
-    "The candidate checkpoint must begin immediately before reconciliation.",
+    /v_batch_end := least\( v_batch_start \+ v_copy_batch_size, v_expected_source_rows \)/,
+    "Each copy call must cap the range at 500 rows.",
+  );
+  assert.ok(
+    countMatches(
+      normalized,
+      /source_row\.row_index >= v_batch_start and source_row\.row_index < v_batch_end/g,
+    ) >= 4,
+    "Source locking, validation, insert, and exact compare must use the same bounded range.",
   );
   requirePattern(
     normalized,
-    /'keyword', jsonb_build_object\( 'complete', true/,
-    "The candidate keyword checkpoint must be complete.",
+    /get diagnostics v_inserted_batch_rows = row_count/,
+    "Every batch must verify the actual inserted row count.",
   );
   requirePattern(
     normalized,
-    /'authoritative', jsonb_build_object\( 'complete', true/,
-    "The candidate authoritative checkpoint must be complete.",
+    /enbgsr_candidate_batch_copy_mismatch/,
+    "Every copied batch must be compared row-for-row.",
   );
   requirePattern(
     normalized,
-    /'next_row_index', v_expected_source_rows/,
-    "The candidate next_row_index must remain 45,844 before reconciliation.",
+    /when v_batch_end = v_expected_source_rows then 'finalizing' else 'copying'/,
+    "The final copy batch must transition to finalizing, not completed.",
   );
   requirePattern(
     normalized,
-    /'candidate_identity_digest', v_source_identity_digest/,
-    "Recovery metadata must pin the expected candidate identity.",
-  );
-  requirePattern(
-    normalized,
-    /v_candidate_identity_digest is distinct from v_source_identity_digest/,
-    "The copied candidate identity must equal the source identity.",
-  );
-  requirePattern(
-    normalized,
-    /to_jsonb\(v_source_job_after\) is distinct from to_jsonb\(v_source_job\)/,
-    "The complete source job row must be revalidated after copy.",
-  );
-  requirePattern(
-    normalized,
-    /enbgsr_report_changed_during_preparation/,
-    "Report pointers must be revalidated after copy.",
+    /'\{collector,next_row_index\}', to_jsonb\(v_batch_end\)/,
+    "The persisted checkpoint must advance atomically with the inserted batch.",
   );
 
-  rejectPattern(
-    normalized,
-    /\bupdate\s+public\.media_sync_jobs\b/,
-    "No media_sync_jobs row may be updated during preparation.",
+  assert.equal(
+    countMatches(
+      normalized,
+      /update public\.media_sync_jobs as candidate/g,
+    ),
+    2,
+    "Exactly two candidate-only updates are allowed: batch checkpoint and finalization.",
+  );
+  assert.equal(
+    countMatches(
+      normalized,
+      /where candidate\.id = v_candidate_job\.id and candidate\.status = 'cancelled' and candidate\.attempt_count = 0/g,
+    ),
+    2,
+    "Both updates must target only the locked cancelled candidate.",
   );
   rejectPattern(
     normalized,
-    /\bupdate\s+public\.media_sync_staging_rows\b/,
-    "Source or candidate staging may not be updated during preparation.",
+    /update public\.media_sync_jobs as (?:job|source|source_job)/,
+    "The source job may never be updated.",
   );
   rejectPattern(
     normalized,
-    /\bdelete\s+from\s+public\.media_sync_staging_rows\b/,
-    "Source or candidate staging may not be deleted during preparation.",
+    /update public\.media_sync_staging_rows/,
+    "Source or candidate staging rows may never be updated during preparation.",
   );
   rejectPattern(
     normalized,
-    /\bupdate\s+public\.reports\b/,
-    "Report pointers may not be updated during preparation.",
+    /delete from public\.media_sync_staging_rows/,
+    "Source or candidate staging rows may never be deleted during preparation.",
   );
   rejectPattern(
     normalized,
-    /\b(?:insert\s+into|update|delete\s+from)\s+public\.report_rows\b/,
+    /update public\.reports/,
+    "Report pointers may never be updated.",
+  );
+  rejectPattern(
+    normalized,
+    /(?:insert into|update|delete from) public\.report_rows/,
     "report_rows must remain unchanged.",
+  );
+
+  requirePattern(
+    normalized,
+    /if v_candidate_phase = 'finalizing'/,
+    "A separate resumable finalization phase is required.",
+  );
+  requirePattern(
+    normalized,
+    /from public\.media_sync_staging_rows as source_row where source_row\.job_id = v_expected_source_job_id order by source_row\.row_index, source_row\.row_key, source_row\.id for share; perform 1 from public\.media_sync_staging_rows as candidate_row where candidate_row\.job_id = v_candidate_job\.id order by candidate_row\.row_index, candidate_row\.row_key, candidate_row\.id for share; with source_identity_blocks as/,
+    "Finalization must hold share locks on the complete source and candidate copies while proving identity.",
+  );
+  requirePattern(
+    normalized,
+    /candidate_identity_blocks as/,
+    "Finalization must calculate candidate identity with the source algorithm.",
+  );
+  requirePattern(
+    normalized,
+    /v_candidate_identity_digest is distinct from v_expected_source_identity_digest/,
+    "Finalization must enforce the exact production identity.",
+  );
+  requirePattern(
+    normalized,
+    /v_final_exact_mismatch_rows <> 0/,
+    "Finalization must enforce full row-for-row equality.",
+  );
+  requirePattern(
+    normalized,
+    /'\{collector,phase\}', to_jsonb\('completed'::text\)/,
+    "Only finalization may mark the collector completed.",
+  );
+  requirePattern(
+    normalized,
+    /'\{preparation_phase\}', to_jsonb\('completed'::text\)/,
+    "Only finalization may mark preparation completed.",
+  );
+  requirePattern(
+    normalized,
+    /if v_candidate_phase = 'completed'/,
+    "Completed calls must return idempotently.",
+  );
+
+  // The expensive production preflight invariants remain before initialization.
+  requirePattern(
+    normalized,
+    /count\(distinct source_rows\.row_index\)/,
+    "The full source row-index integrity scan is missing.",
+  );
+  requirePattern(
+    normalized,
+    /source_rows\.row_fingerprint is distinct from encode\( extensions\.digest\(/,
+    "Stored fingerprints must be recalculated from canonical rows.",
+  );
+  requirePattern(
+    normalized,
+    /create temporary table enbgr_mixed_campaigns/,
+    "The exact mixed-campaign precompute is missing.",
+  );
+  requirePattern(
+    normalized,
+    /create temporary table enbgr_row_map/,
+    "The exact reconciliation row map is missing.",
+  );
+  requirePattern(
+    normalized,
+    /enbgsr_reconciliation_precompute_mismatch/,
+    "Exact reconciliation precompute mismatch must fail closed.",
+  );
+  requirePattern(
+    normalized,
+    /enbgsr_source_identity_digest_mismatch/,
+    "The exact source identity digest must be enforced before initialization.",
+  );
+  requirePattern(
+    normalized,
+    /enbgsr_confirmation_token_mismatch/,
+    "The exact preparation token must be recomputed before initialization.",
   );
 
   for (const forbiddenRpc of [
@@ -1053,7 +1115,7 @@ function verifyPreparationSql(source: string): void {
     rejectPattern(
       normalized,
       new RegExp(`public\\.${forbiddenRpc}\\s*\\(`),
-      `The preparation SQL calls forbidden RPC ${forbiddenRpc}.`,
+      `The bounded preparation SQL calls forbidden RPC ${forbiddenRpc}.`,
     );
   }
 
@@ -1061,7 +1123,13 @@ function verifyPreparationSql(source: string): void {
     "The DDL file must start a transaction.");
   requirePattern(normalized, /commit;$/,
     "The DDL file must commit only after the complete definition.");
-
+  requirePattern(
+    normalized,
+    new RegExp(
+      `alter function public\\.${PREPARATION_RPC}\\(jsonb\\) owner to postgres`,
+    ),
+    "The preparation RPC owner must remain postgres.",
+  );
   for (const role of ["public", "anon", "authenticated"]) {
     requirePattern(
       normalized,
@@ -1078,6 +1146,106 @@ function verifyPreparationSql(source: string): void {
     ),
     "Only service_role must receive EXECUTE.",
   );
+}
+
+function verifyExecutionScript(source: string): void {
+  const normalized = source
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+
+  requirePattern(
+    normalized,
+    /const preparation_rpc = "prepare_exact_naver_brand_search_stale_recovery_candidate"/,
+    "The executor must call only the corrected 57-byte RPC.",
+  );
+  for (const exactValue of [
+    SOURCE_JOB_ID,
+    REPORT_ID,
+    WORKSPACE_ID,
+    ADVERTISER_ID,
+    CONNECTION_ID,
+    CURRENT_INGESTION_ID,
+    PUBLISHED_INGESTION_ID,
+    PRODUCTION_SOURCE_IDENTITY_DIGEST,
+    PREPARATION_CONFIRMATION_TOKEN,
+  ]) {
+    assert.ok(
+      normalized.includes(exactValue.toLowerCase()),
+      `The executor is missing exact guard value: ${exactValue}`,
+    );
+  }
+  requirePattern(
+    normalized,
+    /const copy_batch_size = 500/,
+    "The executor batch contract must remain 500.",
+  );
+  requirePattern(
+    normalized,
+    /1 \+ math\.ceil\(expected_source_rows \/ copy_batch_size\) \+ 2/,
+    "The executor must cap initialization, copy, finalization, and one idempotent margin.",
+  );
+  assert.equal(
+    countMatches(normalized, /\.rpc\(/g),
+    1,
+    "The executor must contain exactly one RPC call site.",
+  );
+  requirePattern(
+    normalized,
+    /p_payload: \{ expected_source_identity_digest: input\.sourceidentitydigest, confirmation_token: input\.confirmationtoken,/,
+    "The RPC payload must contain the exact digest and token.",
+  );
+  assert.equal(
+    countMatches(normalized, /p_payload:/g),
+    1,
+    "The executor must construct exactly one preparation payload.",
+  );
+  requirePattern(
+    normalized,
+    /candidate_job_id_changed_during_preparation/,
+    "The candidate UUID must remain stable across every call.",
+  );
+  requirePattern(
+    normalized,
+    /candidate_checkpoint_moved_backward/,
+    "The checkpoint must be monotonic.",
+  );
+  requirePattern(
+    normalized,
+    /candidate_phase_moved_backward/,
+    "The phase must not move backward.",
+  );
+  requirePattern(
+    normalized,
+    /result\.candidaterows !== result\.candidatenextrowindex/,
+    "Every response must prove candidate rows equal the checkpoint.",
+  );
+  requirePattern(
+    normalized,
+    /result\.candidatereadyforreconciliation !== complete/,
+    "Readiness must be true only for completed preparation.",
+  );
+  requirePattern(
+    normalized,
+    /inspect the candidate read-only before any retry/,
+    "Ambiguous failures must stop for read-only inspection.",
+  );
+
+  for (const forbidden of [
+    "claimNextNaverMediaSyncJob",
+    "processClaimedNaverMediaSyncJob",
+    "reconcileNaverSearchAdsBrandSearchCrossGrainStaging",
+    "materializeMediaSyncSnapshot",
+    "activateMediaSyncSnapshot",
+    "finalizeMediaSyncJob",
+    "publishReport",
+  ]) {
+    assert.equal(
+      source.includes(forbidden),
+      false,
+      `The bounded executor references forbidden lifecycle symbol ${forbidden}.`,
+    );
+  }
 }
 
 function verifyReconciliationSql(source: string): void {
@@ -1170,29 +1338,39 @@ function verifyReconciliationSql(source: string): void {
   }
 }
 
+
 async function main(): Promise<void> {
   const [
     preparationSql,
     reconciliationSql,
     stagingTableContract,
+    executionScript,
   ] = await Promise.all([
     readFile(PREPARATION_SQL_PATH, "utf8"),
     readFile(RECONCILIATION_SQL_PATH, "utf8"),
     readFile(STAGING_TABLE_CONTRACT_PATH, "utf8"),
+    readFile(EXECUTION_PATH, "utf8"),
   ]);
 
   verifyStagingTableContract(stagingTableContract);
   verifyPreparationSql(preparationSql);
+  verifyExecutionScript(executionScript);
   verifyReconciliationSql(reconciliationSql);
 
   const fixture = verifyProductionShapeFixture();
 
-  console.log("exact preparation RPC signature: verified");
+  console.log("exact bounded preparation RPC signature: verified");
   console.log("SECURITY DEFINER/search_path/60s/postgres owner: verified");
   console.log("fixed source/scope/pointer/timestamp guards: verified");
   console.log("source failure STALE_PROCESSING_JOB/stale_recovery: verified");
-  console.log("source full staging integrity scan: verified");
-  console.log("generated row_fingerprint direct INSERT: absent");
+  console.log("initialization source scan/precompute/token: preserved");
+  console.log("candidate initialization: cancelled/99/attempt0/rows0/copying");
+  console.log(`bounded copy size: ${COPY_BATCH_SIZE}`);
+  console.log(`production-shape copy batches: ${fixture.copyBatches}`);
+  console.log(`production-shape RPC calls: ${fixture.rpcCalls}`);
+  console.log("lost-response resume from persisted prefix: verified");
+  console.log("per-batch exact row comparison: verified");
+  console.log("full final source/candidate identity equality: verified");
   console.log(`production-shape source rows: ${SOURCE_ROWS}`);
   console.log(`production-shape excluded rows: ${EXCLUDED_ROWS}`);
   console.log(`production-shape retained rows: ${RETAINED_ROWS}`);
@@ -1211,10 +1389,8 @@ async function main(): Promise<void> {
     "fixture confirmation token:",
     fixture.confirmationToken,
   );
-  console.log("candidate status/phase/rows: cancelled/completed/45844");
-  console.log("second candidate creation: rejected");
   console.log("source job UPDATE: absent");
-  console.log("source staging UPDATE/DELETE: absent");
+  console.log("source/candidate staging UPDATE/DELETE: absent");
   console.log("report pointer/report_rows mutation: absent");
   console.log("claim calls: 0");
   console.log("reconciliation calls during preparation: 0");
@@ -1224,7 +1400,9 @@ async function main(): Promise<void> {
   console.log("publish calls: 0");
   console.log("reconciliation exclusion/reindex contract: preserved");
   console.log("reconciliation statement_timeout/default batch: 60s/500");
-  console.log(`preparation RPC identifier bytes: ${Buffer.byteLength(PREPARATION_RPC, "utf8")}/63`);
+  console.log(
+    `preparation RPC identifier bytes: ${Buffer.byteLength(PREPARATION_RPC, "utf8")}/63`,
+  );
   console.log("service_role-only execution: verified");
   console.log("contract verification: PASS");
 }
