@@ -871,8 +871,13 @@ function verifyPreparationSql(source: string): void {
   );
   requirePattern(
     normalized,
-    /v_candidate_copy_batches_completed is distinct from case when v_candidate_next_row_index = 0 then 0 else \( v_candidate_next_row_index \+ v_copy_batch_size - 1 \) \/ v_copy_batch_size end/,
+    /v_candidate_copy_batches_completed is distinct from \( v_candidate_next_row_index \+ v_copy_batch_size - 1 \) \/ v_copy_batch_size/,
     "The persisted batch count must equal the checkpoint-derived batch count.",
+  );
+  rejectPattern(
+    normalized,
+    /v_candidate_copy_batches_completed is distinct from case/,
+    "The PL/pgSQL IF expression must not embed an unparenthesized CASE before its terminating THEN.",
   );
   requirePattern(
     normalized,

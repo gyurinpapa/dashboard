@@ -619,13 +619,9 @@ begin
           v_candidate_next_row_index::text
        or v_candidate_copy_batches_completed < 0
        or v_candidate_copy_batches_completed is distinct from
-          case
-            when v_candidate_next_row_index = 0
-            then 0
-            else (
-              v_candidate_next_row_index + v_copy_batch_size - 1
-            ) / v_copy_batch_size
-          end
+          (
+            v_candidate_next_row_index + v_copy_batch_size - 1
+          ) / v_copy_batch_size
        or (
          v_candidate_phase in ('copying', 'finalizing')
          and (
