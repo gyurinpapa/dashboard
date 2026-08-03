@@ -1008,6 +1008,21 @@ function getSafeFailureDetail(
   };
 }
 
+function logSafeFailureContext(input: {
+  job: MediaSyncJobRecord;
+  label: "processing_failure" | "mark_failed_failure";
+  error: unknown;
+}): void {
+  const detail =
+    getSafeFailureDetail(
+      input.error,
+    );
+
+  console.error(
+    `[media-sync-worker] job ${input.job.id} ${input.label}: ${JSON.stringify(detail)}`,
+  );
+}
+
 function logStage(input: {
   job: MediaSyncJobRecord;
   stage: string;
@@ -2648,10 +2663,30 @@ export async function processNextNaverMediaSyncJob(
       ),
     });
   } catch (error) {
-    await markProcessingMediaSyncJobFailed({
-      job: claimedJob,
+    logSafeFailureContext({
+      job:
+        claimedJob,
+      label:
+        "processing_failure",
       error,
     });
+
+    try {
+      await markProcessingMediaSyncJobFailed({
+        job:
+          claimedJob,
+        error,
+      });
+    } catch (markFailedError) {
+      logSafeFailureContext({
+        job:
+          claimedJob,
+        label:
+          "mark_failed_failure",
+        error:
+          markFailedError,
+      });
+    }
 
     throw error;
   }

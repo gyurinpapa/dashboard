@@ -1,0 +1,139 @@
+// scripts/verify-naver-reconciliation-runtime-containment.ts
+
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+const projectRoot =
+  resolve(
+    process.argv[2] ??
+      process.cwd(),
+  );
+
+function readProjectFile(
+  relativePath: string,
+): string {
+  return readFileSync(
+    resolve(
+      projectRoot,
+      relativePath,
+    ),
+    "utf8",
+  );
+}
+
+const repositoryPath =
+  "src/lib/media-sync/naver-searchads-brand-search-cross-grain-reconciliation-repository.ts";
+
+const orchestrationPath =
+  "src/lib/media-sync/media-sync-worker-orchestration-repository.ts";
+
+const reconciliationSqlPath =
+  "scripts/sql/create-reconcile-naver-searchads-brand-search-cross-grain-staging.sql";
+
+const repository =
+  readProjectFile(
+    repositoryPath,
+  );
+
+const orchestration =
+  readProjectFile(
+    orchestrationPath,
+  );
+
+const reconciliationSql =
+  readProjectFile(
+    reconciliationSqlPath,
+  );
+
+assert.match(
+  repository,
+  /const\s+DEFAULT_RECONCILIATION_BATCH_SIZE\s*=\s*500\s*;/,
+  "The TypeScript reconciliation default batch must be 500 rows.",
+);
+
+assert.doesNotMatch(
+  repository,
+  /const\s+DEFAULT_RECONCILIATION_BATCH_SIZE\s*=\s*5_000\s*;/,
+  "The old 5,000-row TypeScript default batch is still present.",
+);
+
+assert.match(
+  reconciliationSql,
+  /set\s+statement_timeout\s+to\s+'60s'/i,
+  "The reconciliation SQL statement timeout must be 60 seconds.",
+);
+
+assert.doesNotMatch(
+  reconciliationSql,
+  /set\s+statement_timeout\s+to\s+'10min'/i,
+  "The old 10-minute reconciliation statement timeout is still present.",
+);
+
+assert.match(
+  reconciliationSql,
+  /v_default_batch_size\s+constant\s+integer\s*:=\s*500\s*;/i,
+  "The SQL reconciliation default batch must be 500 rows.",
+);
+
+assert.match(
+  reconciliationSql,
+  /set\s+search_path\s+to\s+'pg_catalog',\s*'public',\s*'extensions'/i,
+  "The protected reconciliation search_path changed.",
+);
+
+assert.match(
+  reconciliationSql,
+  /owner\s+to\s+postgres/i,
+  "The reconciliation function owner contract changed.",
+);
+
+assert.match(
+  reconciliationSql,
+  /grant\s+execute[\s\S]*to\s+service_role/i,
+  "The service-role execution grant is missing.",
+);
+
+assert.doesNotMatch(
+  reconciliationSql,
+  /\b(?:materialize_media_sync_snapshot|activate_media_sync_snapshot|finalize_media_sync_job|publish_report|publish_media_sync_snapshot)\s*\(/i,
+  "The reconciliation SQL must not call a lifecycle or publish function.",
+);
+
+assert.match(
+  orchestration,
+  /label:\s*"processing_failure"/,
+  "The original processing failure is not logged before mark-failed.",
+);
+
+assert.match(
+  orchestration,
+  /catch\s*\(markFailedError\)/,
+  "A mark-failed error can still replace the original processing error.",
+);
+
+assert.match(
+  orchestration,
+  /label:\s*"mark_failed_failure"/,
+  "The mark-failed failure is not logged separately.",
+);
+
+assert.match(
+  orchestration,
+  /JSON\.stringify\(detail\)/,
+  "The sanitized nested PostgreSQL cause detail is not emitted to Railway logs.",
+);
+
+const catchBoundary =
+  orchestration.match(
+    /catch\s*\(error\)\s*\{[\s\S]*?label:\s*"processing_failure"[\s\S]*?catch\s*\(markFailedError\)[\s\S]*?label:\s*"mark_failed_failure"[\s\S]*?throw\s+error\s*;/,
+  );
+
+assert.ok(
+  catchBoundary,
+  "The original processing error is not preserved after a mark-failed error.",
+);
+
+console.log(
+  "PASS: Naver reconciliation runtime containment contract",
+);

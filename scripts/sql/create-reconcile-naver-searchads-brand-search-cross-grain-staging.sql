@@ -15,6 +15,8 @@ begin;
  *
  * Safety contract:
  * - every RPC call commits one bounded reconciliation step;
+ * - the default step is 500 rows and the database statement must end
+ *   within 60 seconds, before the upstream request boundary;
  * - in-progress state is stored only in
  *   media_sync_jobs.error_detail.processing_checkpoint.reconciliation_work;
  * - source/retained row validation is bounded by p_payload.batch_size;
@@ -46,7 +48,7 @@ returns table(
 language plpgsql
 security definer
 set search_path to 'pg_catalog', 'public', 'extensions'
-set statement_timeout to '10min'
+set statement_timeout to '60s'
 as $function$
 declare
   v_kind constant text :=
@@ -56,7 +58,7 @@ declare
     1;
 
   v_default_batch_size constant integer :=
-    5000;
+    500;
 
   v_min_batch_size constant integer :=
     100;
