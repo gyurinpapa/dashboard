@@ -96,6 +96,12 @@ export type NaverSearchAdsBrandSearchCrossGrainReconciliationMetrics = {
 export type NaverSearchAdsBrandSearchCrossGrainReconciliationPhase =
   | "source_validation"
   | "mutation"
+  | "mutation_discover"
+  | "mutation_classify"
+  | "mutation_shift"
+  | "mutation_delete"
+  | "mutation_reindex"
+  | "mutation_verify"
   | "retained_validation"
   | "finalization";
 
@@ -692,6 +698,12 @@ function parseReconciliationProgress(
   if (
     phase !== "source_validation" &&
     phase !== "mutation" &&
+    phase !== "mutation_discover" &&
+    phase !== "mutation_classify" &&
+    phase !== "mutation_shift" &&
+    phase !== "mutation_delete" &&
+    phase !== "mutation_reindex" &&
+    phase !== "mutation_verify" &&
     phase !== "retained_validation" &&
     phase !== "finalization"
   ) {
@@ -742,9 +754,24 @@ function parseReconciliationProgress(
     progress.cursor !==
       progress.validatedRows ||
     (
-      progress.phase === "source_validation" &&
+      (
+        progress.phase === "source_validation" ||
+        progress.phase === "mutation_discover" ||
+        progress.phase === "mutation_classify" ||
+        progress.phase === "mutation_shift"
+      ) &&
       progress.cursor >
         progress.sourceRows
+    ) ||
+    (
+      progress.phase === "mutation_delete" &&
+      progress.cursor >
+        progress.excludedRows
+    ) ||
+    (
+      progress.phase === "mutation_reindex" &&
+      progress.cursor >
+        progress.retainedRows
     ) ||
     (
       progress.phase === "retained_validation" &&
@@ -754,12 +781,30 @@ function parseReconciliationProgress(
     (
       (
         progress.phase === "mutation" ||
+        progress.phase === "mutation_verify" ||
         progress.phase === "finalization"
       ) &&
       (
         progress.cursor !== 0 ||
         progress.validatedRows !== 0
       )
+    ) ||
+    (
+      (
+        progress.phase === "source_validation" ||
+        progress.phase === "mutation" ||
+        progress.phase === "mutation_discover"
+      ) &&
+      progress.excludedRows !== 0
+    ) ||
+    (
+      (
+        progress.phase === "mutation_shift" ||
+        progress.phase === "mutation_delete" ||
+        progress.phase === "mutation_reindex" ||
+        progress.phase === "mutation_verify"
+      ) &&
+      progress.excludedRows === 0
     )
   ) {
     throw new NaverSearchAdsBrandSearchCrossGrainReconciliationError(
@@ -773,6 +818,8 @@ function parseReconciliationProgress(
 
 function parseMetrics(
   record: ReconciliationRpcRecord,
+  progress:
+    NaverSearchAdsBrandSearchCrossGrainReconciliationProgress | null,
 ): NaverSearchAdsBrandSearchCrossGrainReconciliationMetrics {
   if (
     record.reconciliation_kind !==
@@ -855,11 +902,31 @@ function parseMetrics(
         ),
     };
 
+  const partialAllowsUnappliedExclusions =
+    progress !== null &&
+    (
+      progress.phase === "mutation_classify" ||
+      progress.phase === "mutation_shift" ||
+      progress.phase === "mutation_delete"
+    );
+
+  const partialRemainingOverlapIsValid =
+    progress === null
+      ? metrics.remainingOverlapRows === 0
+      : progress.phase === "mutation_classify" ||
+          progress.phase === "mutation_shift"
+        ? metrics.remainingOverlapRows ===
+            metrics.excludedRows
+        : progress.phase === "mutation_delete"
+          ? metrics.remainingOverlapRows <=
+              metrics.excludedRows
+          : metrics.remainingOverlapRows === 0;
+
   if (
     metrics.sourceRows -
       metrics.excludedRows !==
         metrics.retainedRows ||
-    metrics.remainingOverlapRows !== 0 ||
+    !partialRemainingOverlapIsValid ||
     metrics.matchedCampaignCount >
       metrics.mixedCampaignCount ||
     (
@@ -874,9 +941,14 @@ function parseMetrics(
       metrics.changed
     ) ||
     (
+      progress !== null &&
+      metrics.alreadyReconciled
+    ) ||
+    (
       !metrics.changed &&
       !metrics.alreadyReconciled &&
-      metrics.excludedRows !== 0
+      metrics.excludedRows !== 0 &&
+      !partialAllowsUnappliedExclusions
     )
   ) {
     throw new NaverSearchAdsBrandSearchCrossGrainReconciliationError(
@@ -1091,15 +1163,21 @@ function validatePartialReturnedJob(
     }
   }
 
+  const expectedPartialBoundary =
+    progress.phase === "retained_validation" ||
+    progress.phase === "finalization"
+      ? progress.retainedRows
+      : progress.sourceRows;
+
   if (
     returnedJob.status !== PROCESSING_STATUS ||
     returnedJob.snapshot_ingestion_id !== null ||
     returnedJob.finished_at !== null ||
     returnedJob.error !== inputJob.error ||
     returnedJob.progress !== inputJob.progress ||
-    returnedJob.raw_rows !== metrics.retainedRows ||
-    returnedJob.normalized_rows !== metrics.retainedRows ||
-    returnedJob.inserted_rows !== metrics.retainedRows ||
+    returnedJob.raw_rows !== expectedPartialBoundary ||
+    returnedJob.normalized_rows !== expectedPartialBoundary ||
+    returnedJob.inserted_rows !== expectedPartialBoundary ||
     returnedJob.failed_rows !== 0 ||
     progress.sourceRows !== metrics.sourceRows ||
     progress.excludedRows !== metrics.excludedRows ||
@@ -1118,13 +1196,13 @@ function validatePartialReturnedJob(
 
   if (
     checkpoint.totalRows !==
-      metrics.retainedRows ||
+      expectedPartialBoundary ||
     checkpoint.nextRowIndex !==
-      metrics.retainedRows
+      expectedPartialBoundary
   ) {
     throw new NaverSearchAdsBrandSearchCrossGrainReconciliationError(
       "INVALID_DATABASE_RESULT",
-      "The partial reconciliation checkpoint does not match the current retained boundary.",
+      "The partial reconciliation checkpoint does not match the current reconciliation boundary.",
     );
   }
 
@@ -1278,6 +1356,7 @@ export async function reconcileNaverSearchAdsBrandSearchCrossGrainStaging(
   const metrics =
     parseMetrics(
       record,
+      progress,
     );
 
   if (progress) {
