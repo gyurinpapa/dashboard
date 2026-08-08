@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 
 const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
 const ALL_WORKSPACES = "__all__";
+const REPORTS_PAGE_MODE = "reports_page";
 
 function jsonError(status: number, message: string, extra?: Record<string, any>) {
   return NextResponse.json(
@@ -186,6 +187,7 @@ export async function GET(req: Request) {
 
     const url = new URL(req.url);
     const workspace_id = asString(url.searchParams.get("workspace_id"));
+    const mode = asString(url.searchParams.get("mode"));
 
     if (!workspace_id) {
       return jsonError(400, "workspace_id is required");
@@ -237,6 +239,76 @@ export async function GET(req: Request) {
         is_true_master: true,
         platform_role: actorIsPlatformOwner ? "platform_owner" : null,
         access_scope: "all_workspaces",
+        advertisers,
+      });
+    }
+
+    /**
+     * /reports 전용 광고주 label 조회.
+     * - 기존 advertiser list 기본 계약과 완전히 분리한다.
+     * - true master는 기존과 동일하게 membership 없이 조회 가능.
+     * - 일반 사용자는 반드시 해당 workspace member여야 한다.
+     * - role/created_by에 따른 advertiser 축소는 적용하지 않는다.
+     * - 현재 /reports Browser 직접 SELECT와 동일하게
+     *   해당 workspace의 advertiser label 전체를 반환한다.
+     * - 필요한 필드(id, name, workspace_id)만 노출한다.
+     */
+    if (mode === REPORTS_PAGE_MODE) {
+      let actorRole = "";
+
+      if (!actorIsTrueMaster) {
+        const membershipResult = await getMembershipForWorkspace(
+          actorUserId,
+          workspace_id,
+        );
+
+        if (membershipResult.error) {
+          return jsonError(500, "FAILED_TO_RESOLVE_WORKSPACE_MEMBERSHIP", {
+            detail: membershipResult.error.message,
+          });
+        }
+
+        if (!membershipResult.data) {
+          return jsonError(403, "WORKSPACE_ACCESS_DENIED");
+        }
+
+        actorRole = normalizeRole(membershipResult.data?.role);
+      } else {
+        actorRole = "master";
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from("advertisers")
+        .select("id, name, workspace_id")
+        .eq("workspace_id", workspace_id)
+        .order("name", { ascending: true });
+
+      if (error) {
+        return jsonError(500, "FAILED_TO_FETCH_ADVERTISERS", {
+          detail: error.message,
+        });
+      }
+
+      const advertisers = (data ?? [])
+        .filter(
+          (row: any) =>
+            asString(row?.id) &&
+            asString(row?.workspace_id) === workspace_id,
+        )
+        .map((row: any) => ({
+          id: asString(row?.id),
+          name: row?.name == null ? null : String(row.name),
+          workspace_id: asString(row?.workspace_id),
+        }));
+
+      return NextResponse.json({
+        ok: true,
+        workspace_id,
+        is_all_workspaces: false,
+        is_true_master: actorIsTrueMaster,
+        platform_role: actorIsPlatformOwner ? "platform_owner" : null,
+        role: actorRole || null,
+        access_scope: "reports_page_workspace",
         advertisers,
       });
     }
