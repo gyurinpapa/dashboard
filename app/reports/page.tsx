@@ -211,22 +211,31 @@ export default function ReportsHomePage() {
         return;
       }
 
-      const { data: prof, error: profErr } = await supabase
-        .from("profiles")
-        .select("id, workspace_id, current_workspace_id")
-        .eq("id", uid)
-        .maybeSingle();
+      const wsRes = await authFetch("/api/workspaces/list");
+      const wsJson = await safeJson(wsRes);
 
-      if (profErr) throw new Error(profErr.message);
+      if (!wsRes.ok || !wsJson?.ok) {
+        throw new Error(
+          wsJson?.error || `Workspace list failed (${wsRes.status})`
+        );
+      }
 
-      const ws =
-        String((prof as any)?.current_workspace_id || "").trim() ||
-        String((prof as any)?.workspace_id || "").trim();
+      const workspaceRows = Array.isArray(wsJson?.workspaces)
+        ? wsJson.workspaces
+        : [];
+
+      const resolvedWorkspace =
+        workspaceRows.find(
+          (row: any) =>
+            String(row?.workspace_name ?? "").trim() === "Einvention"
+        ) ??
+        workspaceRows[0] ??
+        null;
+
+      const ws = String(resolvedWorkspace?.workspace_id ?? "").trim();
 
       if (!ws) {
-        throw new Error(
-          "WORKSPACE_ID_NOT_FOUND (profiles.current_workspace_id/workspace_id 확인 필요)"
-        );
+        throw new Error("WORKSPACE_ID_NOT_FOUND");
       }
       setWorkspaceId(ws);
 
