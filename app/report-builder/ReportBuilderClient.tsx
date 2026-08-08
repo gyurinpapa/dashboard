@@ -904,12 +904,32 @@ export default function ReportBuilderPage() {
     }
 
     (async () => {
-      const { data } = await supabase
-        .from("report_types")
-        .select("id,key,name")
-        .order("name");
+      const token = await getAccessToken();
 
-      setTypes((data ?? []) as ReportType[]);
+      if (!token) {
+        setTypes([]);
+        return;
+      }
+
+      const res = await fetch("/api/report-types/list", {
+        method: "GET",
+        credentials: "include",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const json = await safeReadJson(res);
+
+      if (!res.ok || !(json as any)?.ok) {
+        console.warn("[report-types/list] failed", res.status, json);
+        setTypes([]);
+        return;
+      }
+
+      setTypes(
+        (((json as any)?.report_types ?? []) as ReportType[])
+      );
     })();
   }, [userId]);
 
