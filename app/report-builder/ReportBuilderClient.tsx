@@ -1304,22 +1304,41 @@ export default function ReportBuilderPage() {
         return;
       }
 
-      const { data, error } = await supabase
-        .from("advertisers")
-        .insert({
-          workspace_id: workspaceId,
-          name,
-          created_by: userId,
-        })
-        .select("id,name,workspace_id,public_slug,created_by")
-        .single();
-
-      if (error) {
-        console.warn("[advertisers/create] failed", error);
-        setLocalMsg(error.message || "광고주 생성 실패");
+      const token = await getAccessToken();
+      if (!token) {
+        setLocalMsg("로그인 세션이 없습니다.");
         setCreatingAdvertiser(false);
         return;
       }
+
+      const res = await fetch("/api/advertisers/create", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          workspace_id: workspaceId,
+          name,
+        }),
+      });
+
+      const json = await safeReadJson(res);
+
+      if (!res.ok || !(json as any)?.ok) {
+        console.warn("[advertisers/create] failed", res.status, json);
+        setLocalMsg(
+          (json as any)?.message ||
+            (json as any)?.detail ||
+            (json as any)?.error ||
+            "광고주 생성 실패"
+        );
+        setCreatingAdvertiser(false);
+        return;
+      }
+
+      const data = (json as any)?.advertiser;
 
       const created: AdvertiserRow = {
         id: String((data as any)?.id),
