@@ -1041,36 +1041,6 @@ function buildClientSharePathFromSlug(slug: string) {
   return `/client/${safeSlug}`;
 }
 
-function pickAdvertiserIdFromReport(report: ReportDetail | null | undefined) {
-  const meta =
-    report?.meta && typeof report.meta === "object" ? report.meta : {};
-
-  return (
-    asStr((report as any)?.advertiser_id) ||
-    asStr(meta?.advertiser_id) ||
-    asStr(meta?.advertiserId) ||
-    ""
-  );
-}
-
-async function fetchAdvertiserPublicSlug(advertiserId: string) {
-  const id = asStr(advertiserId);
-  if (!id) return "";
-
-  const { data, error } = await supabase
-    .from("advertisers")
-    .select("public_slug")
-    .eq("id", id)
-    .maybeSingle();
-
-  if (error) {
-    console.warn("[advertiser public_slug fetch failed]", error);
-    return "";
-  }
-
-  return normalizePublicSlug((data as any)?.public_slug);
-}
-
 function uniqCount(values: string[]) {
   const s = new Set<string>();
   for (const v of values) if (v) s.add(v);
@@ -1750,33 +1720,11 @@ export default function ReportDetailPage() {
   }, [brandSearchMonthKeys, report]);
 
   useEffect(() => {
-    let alive = true;
-
-    const advertiserId = pickAdvertiserIdFromReport(report);
-
-    if (!advertiserId) {
-      setAdvertiserPublicSlug("");
-      return;
-    }
-
     const fromReport = normalizePublicSlug(
       (report as any)?.advertiser_public_slug,
     );
-    if (fromReport) {
-      setAdvertiserPublicSlug(fromReport);
-      return;
-    }
 
-    setAdvertiserPublicSlug("");
-
-    void fetchAdvertiserPublicSlug(advertiserId).then((slug) => {
-      if (!alive) return;
-      setAdvertiserPublicSlug(slug);
-    });
-
-    return () => {
-      alive = false;
-    };
+    setAdvertiserPublicSlug(fromReport);
   }, [report]);
 
   useEffect(() => {
