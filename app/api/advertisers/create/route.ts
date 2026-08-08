@@ -6,15 +6,9 @@ import { sbAuth } from "@/src/lib/supabase/auth-server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
-
 function asString(v: any) {
   if (v == null) return "";
   return String(v).trim();
-}
-
-function normalizeEmail(v: any) {
-  return asString(v).toLowerCase();
 }
 
 function jsonError(status: number, message: string, extra?: any) {
@@ -28,14 +22,11 @@ function getBearerToken(req: Request) {
   return m?.[1]?.trim() || null;
 }
 
-function canCreateAdvertiser(role: any, email: any) {
+function canCreateAdvertiser(role: any) {
   const normalizedRole = asString(role).toLowerCase();
 
-  if (normalizedRole === "master") {
-    return normalizeEmail(email) === ONLY_MASTER_EMAIL;
-  }
-
   return (
+    normalizedRole === "master" ||
     normalizedRole === "director" ||
     normalizedRole === "admin" ||
     normalizedRole === "staff"
@@ -98,7 +89,7 @@ export async function POST(req: Request) {
       return jsonError(403, "FORBIDDEN");
     }
 
-    if (!canCreateAdvertiser(mem.role, user.email)) {
+    if (!canCreateAdvertiser(mem.role)) {
       return jsonError(403, "FORBIDDEN_CREATE_ADVERTISER_PERMISSION");
     }
 
@@ -106,23 +97,6 @@ export async function POST(req: Request) {
 
     if (!resolvedWorkspaceId || resolvedWorkspaceId !== workspace_id) {
       return jsonError(403, "FORBIDDEN_WORKSPACE_MISMATCH");
-    }
-
-    const { data: dup, error: dupErr } = await admin
-      .from("advertisers")
-      .select("id, name")
-      .eq("workspace_id", resolvedWorkspaceId)
-      .ilike("name", name)
-      .limit(1);
-
-    if (dupErr) {
-      return jsonError(500, "DUP_CHECK_FAILED", { detail: dupErr.message });
-    }
-
-    if ((dup?.length ?? 0) > 0) {
-      return jsonError(409, "NAME_ALREADY_EXISTS", {
-        advertiser_id: dup?.[0]?.id ?? null,
-      });
     }
 
     const { data: created, error: insErr } = await admin
