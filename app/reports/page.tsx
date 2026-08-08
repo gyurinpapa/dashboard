@@ -230,14 +230,23 @@ export default function ReportsHomePage() {
       }
       setWorkspaceId(ws);
 
-      const { data: advs, error: advErr } = await supabase
-        .from("advertisers")
-        .select("id, name, workspace_id")
-        .eq("workspace_id", ws)
-        .order("name", { ascending: true });
+      const advRes = await authFetch(
+        `/api/advertisers/list?workspace_id=${encodeURIComponent(
+          ws
+        )}&mode=reports_page`
+      );
 
-      if (advErr) throw new Error(advErr.message);
-      const advRows = (advs ?? []) as AdvertiserRow[];
+      const advJson = await safeJson(advRes);
+
+      if (!advRes.ok || !advJson?.ok) {
+        throw new Error(
+          advJson?.error || `Advertiser list failed (${advRes.status})`
+        );
+      }
+
+      const advRows = (
+        Array.isArray(advJson?.advertisers) ? advJson.advertisers : []
+      ) as AdvertiserRow[];
       setAdvertisers(advRows);
 
       const { data: reps, error: repErr } = await supabase
