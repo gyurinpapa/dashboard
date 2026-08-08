@@ -217,7 +217,12 @@ async function enrichReportWithAdvertiserName(report: any) {
     asString(meta?.advertiserName) ||
     asString(meta?.advertiser);
 
-  if (existingAdvertiserName) {
+  const advertiserId = asString(report?.advertiser_id);
+  if (!advertiserId) {
+    if (!existingAdvertiserName) {
+      return report;
+    }
+
     return {
       ...report,
       advertiser_name: existingAdvertiserName,
@@ -225,30 +230,36 @@ async function enrichReportWithAdvertiserName(report: any) {
     };
   }
 
-  const advertiserId = asString(report?.advertiser_id);
-  if (!advertiserId) {
-    return report;
-  }
-
   const { data: advertiser, error: advErr } = await supabaseAdmin
     .from("advertisers")
-    .select("id, name")
+    .select("id, name, public_slug")
     .eq("id", advertiserId)
     .maybeSingle();
 
   if (advErr) {
-    return report;
+    if (!existingAdvertiserName) {
+      return report;
+    }
+
+    return {
+      ...report,
+      advertiser_name: existingAdvertiserName,
+      advertiserName: existingAdvertiserName,
+    };
   }
 
-  const advertiserName = asString(advertiser?.name);
-  if (!advertiserName) {
-    return report;
-  }
+  const advertiserName = existingAdvertiserName || asString(advertiser?.name);
+  const advertiserPublicSlug = asString(advertiser?.public_slug) ?? null;
 
   return {
     ...report,
-    advertiser_name: advertiserName,
-    advertiserName: advertiserName,
+    ...(advertiserName
+      ? {
+          advertiser_name: advertiserName,
+          advertiserName: advertiserName,
+        }
+      : {}),
+    advertiser_public_slug: advertiserPublicSlug,
   };
 }
 
