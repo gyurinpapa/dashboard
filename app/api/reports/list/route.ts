@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 
 const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
 const ALL_WORKSPACES = "__all__";
+const REPORTS_PAGE_MODE = "reports_page";
 
 const REPORT_LIST_SELECT = [
   "id",
@@ -28,6 +29,15 @@ const REPORT_LIST_SELECT = [
   "published_period_end",
   "published_at",
   "meta",
+].join(", ");
+
+const REPORTS_PAGE_SELECT = [
+  "id",
+  "title",
+  "status",
+  "created_at",
+  "workspace_id",
+  "advertiser_id",
 ].join(", ");
 
 function jsonError(status: number, message: string, extra?: Record<string, any>) {
@@ -310,6 +320,7 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
 
     const workspace_id = asString(url.searchParams.get("workspace_id"));
+    const mode = asString(url.searchParams.get("mode"));
     const limit = asLimit(url.searchParams.get("limit"), 50);
     const offset = asOffset(url.searchParams.get("offset"), 0);
 
@@ -388,6 +399,86 @@ export async function GET(req: Request) {
         is_true_master: true,
         platform_role: actorIsPlatformOwner ? "platform_owner" : null,
         access_scope: "all_workspaces",
+        count: reports.length,
+        limit,
+        offset,
+        has_more,
+        next_offset,
+        reports,
+      });
+    }
+
+    /**
+     * ✅ /reports 전용 additive 조회
+     * - 기존 Browser direct SELECT의 결과 범위를 보존한다.
+     * - true master는 membership 없이 특정 workspace 전체 조회 가능
+     * - 그 외 사용자는 정확한 workspace membership 존재 여부만 확인한다.
+     * - role별 created_by/status 축소를 적용하지 않는다.
+     * - 기존 default /api/reports/list 계약은 변경하지 않는다.
+     */
+    if (mode === REPORTS_PAGE_MODE) {
+      let actorRole = "";
+
+      if (!actorIsTrueMaster) {
+        const membershipResult = await getWorkspaceMembership(
+          userId,
+          workspace_id
+        );
+
+        if (membershipResult.error) {
+          return jsonError(500, "FAILED_TO_RESOLVE_WORKSPACE_MEMBERSHIP", {
+            detail: membershipResult.error.message,
+          });
+        }
+
+        if (!membershipResult.data?.workspace_id) {
+          return jsonError(403, "WORKSPACE_ACCESS_DENIED");
+        }
+
+        actorRole = normalizeRole(membershipResult.data?.role);
+      } else {
+        actorRole = "master";
+      }
+
+      const from = offset;
+      const to = offset + limit - 1;
+
+      const { data, error } = await supabaseAdmin
+        .from("reports")
+        .select(REPORTS_PAGE_SELECT)
+        .eq("workspace_id", workspace_id)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(from, to);
+
+      if (error) {
+        return jsonError(500, error.message);
+      }
+
+      const rows = Array.isArray(data) ? data : [];
+
+      const reports = rows
+        .filter((r: any) => asString(r?.workspace_id) === workspace_id)
+        .map((r: any) => ({
+          id: r?.id ?? null,
+          title: r?.title ?? "",
+          status: r?.status ?? "",
+          created_at: r?.created_at ?? null,
+          workspace_id: asString(r?.workspace_id) || workspace_id,
+          advertiser_id: asNullableString(r?.advertiser_id),
+        }));
+
+      const has_more = rows.length >= limit;
+      const next_offset = offset + rows.length;
+
+      return NextResponse.json({
+        ok: true,
+        workspace_id,
+        is_all_workspaces: false,
+        is_true_master: actorIsTrueMaster,
+        platform_role: actorIsPlatformOwner ? "platform_owner" : null,
+        role: actorRole || null,
+        access_scope: "reports_page_workspace",
         count: reports.length,
         limit,
         offset,
