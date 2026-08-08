@@ -1377,18 +1377,16 @@ export async function reconcileNaverSearchAdsBrandSearchCrossGrainStaging(
     };
   }
 
-  if (
-    (
-      !metrics.alreadyReconciled &&
-      metrics.sourceRows !==
-        validated.expectedRows
-    ) ||
-    (
-      metrics.alreadyReconciled &&
-      metrics.retainedRows !==
-        validated.expectedRows
-    )
-  ) {
+  const finalBoundaryMatchesRequest =
+    metrics.alreadyReconciled
+      ? metrics.retainedRows ===
+          validated.expectedRows
+      : metrics.sourceRows ===
+          validated.expectedRows ||
+        metrics.retainedRows ===
+          validated.expectedRows;
+
+  if (!finalBoundaryMatchesRequest) {
     throw new NaverSearchAdsBrandSearchCrossGrainReconciliationError(
       "INVALID_DATABASE_RESULT",
       "The reconciliation RPC row counts do not match the requested boundary.",

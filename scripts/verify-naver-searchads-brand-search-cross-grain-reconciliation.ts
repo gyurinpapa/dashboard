@@ -1148,6 +1148,14 @@ async function main(): Promise<void> {
         "2026-07-30T00:00:00.000Z",
     });
 
+  const retainedBoundaryResumeJob =
+    createJob({
+      rows:
+        RETAINED_ROWS,
+      updatedAt:
+        "2026-07-30T00:09:00.000Z",
+    });
+
   const reconciledJob =
     createJob({
       rows:
@@ -1281,6 +1289,112 @@ async function main(): Promise<void> {
 
   assert.equal(
     repositoryResult.checkpoint.totalRows,
+    RETAINED_ROWS,
+  );
+
+  let boundedResumedFinalRpcCalls =
+    0;
+
+  const boundedResumedFinalResult =
+    await reconcileNaverSearchAdsBrandSearchCrossGrainStaging(
+      {
+        job:
+          retainedBoundaryResumeJob,
+        expectedRows:
+          RETAINED_ROWS,
+      },
+      {
+        invokeRpc:
+          async (
+            functionName: string,
+            args: {
+              p_payload: unknown;
+            },
+          ) => {
+            boundedResumedFinalRpcCalls +=
+              1;
+
+            assert.equal(
+              functionName,
+              "reconcile_naver_searchads_brand_search_cross_grain_staging",
+            );
+
+            const payload =
+              requireRecord(
+                args.p_payload,
+                "Bounded resumed reconciliation payload must be an object.",
+              );
+
+            assert.equal(
+              payload.expected_rows,
+              RETAINED_ROWS,
+            );
+
+            return {
+              data: [
+                createRpcRow({
+                  job:
+                    reconciledJob,
+                  changed:
+                    true,
+                  alreadyReconciled:
+                    false,
+                  sourceRows:
+                    SOURCE_ROWS,
+                  excludedRows:
+                    EXCLUDED_ROWS,
+                  retainedRows:
+                    RETAINED_ROWS,
+                  mixedCampaignCount:
+                    5,
+                  matchedCampaignCount:
+                    3,
+                  excludedImpressions:
+                    EXCLUDED_IMPRESSIONS,
+                  excludedClicks:
+                    EXCLUDED_CLICKS,
+                  excludedCost:
+                    EXCLUDED_COST,
+                  excludedConversions:
+                    EXCLUDED_CONVERSIONS,
+                  excludedRevenue:
+                    EXCLUDED_REVENUE,
+                }),
+              ],
+              error:
+                null,
+            };
+          },
+      },
+    );
+
+  assert.equal(
+    boundedResumedFinalRpcCalls,
+    1,
+  );
+
+  assert.equal(
+    boundedResumedFinalResult.changed,
+    true,
+  );
+
+  assert.equal(
+    boundedResumedFinalResult.alreadyReconciled,
+    false,
+  );
+
+  assert.equal(
+    boundedResumedFinalResult.sourceRows,
+    SOURCE_ROWS,
+  );
+
+  assert.equal(
+    boundedResumedFinalResult.retainedRows,
+    RETAINED_ROWS,
+  );
+
+  assert.equal(
+    boundedResumedFinalResult.checkpoint.totalRows,
     RETAINED_ROWS,
   );
 
@@ -1556,6 +1670,10 @@ async function main(): Promise<void> {
 
   console.log(
     "verified repository RPC payload and result parsing: true",
+  );
+
+  console.log(
+    "verified bounded resumed final boundary parsing: true",
   );
 
   console.log(
