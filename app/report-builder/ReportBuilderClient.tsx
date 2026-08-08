@@ -650,42 +650,6 @@ export default function ReportBuilderPage() {
     })) as ReportRow[];
   }, []);
 
-  const hydrateMissingAdvertiserNames = useCallback(async (rows: ReportRow[]) => {
-    let nextReports = rows;
-
-    const missingNameIds = Array.from(
-      new Set(
-        nextReports
-          .filter((r) => r.advertiser_id && !r.advertiser_name)
-          .map((r) => r.advertiser_id as string)
-      )
-    );
-
-    if (!missingNameIds.length) return nextReports;
-
-    const { data: advs, error } = await supabase
-      .from("advertisers")
-      .select("id,name")
-      .in("id", missingNameIds);
-
-    if (error || !advs?.length) return nextReports;
-
-    const map = new Map<string, string>();
-    for (const a of advs as any[]) {
-      map.set(String(a.id), String(a.name ?? ""));
-    }
-
-    nextReports = nextReports.map((r) => {
-      if (r.advertiser_id && !r.advertiser_name) {
-        const nm = map.get(r.advertiser_id) ?? null;
-        return { ...r, advertiser_name: nm };
-      }
-      return r;
-    });
-
-    return nextReports;
-  }, []);
-
   const mergeUniqueReports = useCallback((prev: ReportRow[], incoming: ReportRow[]) => {
     if (!incoming.length) return prev;
 
@@ -763,22 +727,21 @@ export default function ReportBuilderPage() {
 
         const list = ((json as any)?.reports ?? []) as any[];
         const normalized = normalizeReportList(list);
-        const hydrated = await hydrateMissingAdvertiserNames(normalized);
 
         if (requestSeq !== reportsRequestSeqRef.current) return;
 
         const parsedNextOffset = Number((json as any)?.next_offset);
         const safeNextOffset = Number.isFinite(parsedNextOffset)
           ? parsedNextOffset
-          : currentOffset + hydrated.length;
+          : currentOffset + normalized.length;
 
         const safeHasMore =
           typeof (json as any)?.has_more === "boolean"
             ? Boolean((json as any)?.has_more)
-            : hydrated.length >= REPORTS_PAGE_SIZE;
+            : normalized.length >= REPORTS_PAGE_SIZE;
 
         setReports((prev) => {
-          return reset ? hydrated : mergeUniqueReports(prev, hydrated);
+          return reset ? normalized : mergeUniqueReports(prev, normalized);
         });
 
         nextOffsetRef.current = safeNextOffset;
@@ -802,7 +765,6 @@ export default function ReportBuilderPage() {
       workspaceId,
       REPORTS_PAGE_SIZE,
       normalizeReportList,
-      hydrateMissingAdvertiserNames,
       mergeUniqueReports,
     ]
   );
