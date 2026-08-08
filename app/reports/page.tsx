@@ -258,14 +258,42 @@ export default function ReportsHomePage() {
       ) as AdvertiserRow[];
       setAdvertisers(advRows);
 
-      const { data: reps, error: repErr } = await supabase
-        .from("reports")
-        .select("id, title, status, created_at, workspace_id, advertiser_id")
-        .eq("workspace_id", ws)
-        .order("created_at", { ascending: false });
+      const reps: ReportRow[] = [];
+      const reportPageLimit = 200;
+      let reportOffset = 0;
 
-      if (repErr) throw new Error(repErr.message);
-      setReports((reps ?? []) as ReportRow[]);
+      while (true) {
+        const repRes = await authFetch(
+          `/api/reports/list?workspace_id=${encodeURIComponent(
+            ws
+          )}&mode=reports_page&limit=${reportPageLimit}&offset=${reportOffset}`
+        );
+
+        const repJson = await safeJson(repRes);
+
+        if (!repRes.ok || !repJson?.ok) {
+          throw new Error(
+            repJson?.error || `Report list failed (${repRes.status})`
+          );
+        }
+
+        const pageRows = (
+          Array.isArray(repJson?.reports) ? repJson.reports : []
+        ) as ReportRow[];
+
+        reps.push(...pageRows);
+
+        if (!repJson?.has_more) break;
+
+        const nextOffset = Number(repJson?.next_offset);
+        if (!Number.isFinite(nextOffset) || nextOffset <= reportOffset) {
+          throw new Error("INVALID_REPORT_LIST_NEXT_OFFSET");
+        }
+
+        reportOffset = nextOffset;
+      }
+
+      setReports(reps);
 
       setOpenMap((prev) => {
         const next = { ...prev };
