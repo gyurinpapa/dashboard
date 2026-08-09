@@ -100,6 +100,48 @@ async function removeFolderFiles(
 }
 
 /**
+ * ✅ published batch가 존재할 때는 이전 draft creative의 storage만 제거
+ * - published creative storage path는 절대 삭제하지 않는다
+ * - 기존 removeFolderFiles()와 동일하게 storage 정리는 best-effort
+ */
+async function removeStorageFilesByRows(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  rows: any[]
+) {
+  let removed = 0;
+
+  const pathsByBucket = new Map<string, Set<string>>();
+
+  for (const row of rows ?? []) {
+    const bucket = asString(row?.storage_bucket) || BUCKET;
+    const path = asString(row?.storage_path);
+
+    if (!bucket || !path) continue;
+
+    const existing = pathsByBucket.get(bucket) ?? new Set<string>();
+    existing.add(path);
+    pathsByBucket.set(bucket, existing);
+  }
+
+  for (const [bucket, pathSet] of pathsByBucket.entries()) {
+    const paths = Array.from(pathSet);
+
+    for (let i = 0; i < paths.length; i += 100) {
+      const chunk = paths.slice(i, i + 100);
+      if (!chunk.length) continue;
+
+      const { error } = await supabase.storage.from(bucket).remove(chunk);
+
+      if (!error) {
+        removed += chunk.length;
+      }
+    }
+  }
+
+  return { removed };
+}
+
+/**
  * ✅ Bearer 우선 + 쿠키(session) fallback
  * - 프론트에서 Authorization: Bearer ... 를 보내면 이걸 먼저 검증
  * - 없으면 sbAuth() 쿠키 세션으로 user 확인
@@ -216,7 +258,9 @@ export async function POST(req: Request, ctx: Ctx) {
     // 3) report 조회
     const { data: report, error: repErr } = await supabase
       .from("reports")
-      .select("id, workspace_id, advertiser_id, created_by")
+      .select(
+        "id, workspace_id, advertiser_id, created_by, published_creatives_batch_id"
+      )
       .eq("id", reportId)
       .maybeSingle();
 
@@ -226,6 +270,9 @@ export async function POST(req: Request, ctx: Ctx) {
     const workspaceId = asString((report as any).workspace_id);
     const advertiserIdRaw = (report as any).advertiser_id;
     const advertiserId = advertiserIdRaw ? asString(advertiserIdRaw) : null;
+    const publishedCreativesBatchId = asString(
+      (report as any).published_creatives_batch_id
+    );
 
     if (!workspaceId) return jsonError(500, "REPORT_WORKSPACE_ID_MISSING");
 
@@ -267,27 +314,88 @@ export async function POST(req: Request, ctx: Ctx) {
       ? deleteStorage === "1" || deleteStorage.toLowerCase() === "true"
       : true;
 
-    // ✅ (핵심) batch_id 재사용: 클라가 보내면 이어붙이고, 없으면 "첫 배치"로 새로 생성
+    // ✅ batch_id 재사용: 클라가 보내면 이어붙이고, 없으면 새 업로드 batch 생성
     const batchFromClient = asString(form.get("batch_id") as any);
     const isFirstBatch = !batchFromClient;
     const batchId = batchFromClient || randomUUID();
 
-    // 6) REPLACE: 첫 배치에서만 DB 먼저 삭제
-    if (isFirstBatch) {
-      const { error: delErr } = await supabase.from("report_creatives").delete().eq("report_id", reportId);
-      if (delErr) return jsonError(500, "DB_DELETE_FAILED", { detail: delErr.message });
-    }
-
-    // 7) REPLACE: 첫 배치에서만 Storage 폴더 삭제(옵션)
     const folder = `reports/${reportId}/creatives`;
     let storageRemoved = 0;
 
-    if (isFirstBatch && shouldDeleteStorage) {
-      const { removed } = await removeFolderFiles(supabase, BUCKET, folder);
-      storageRemoved = removed;
+    /**
+     * 6) REPLACE
+     *
+     * published batch가 없으면:
+     * - 기존 동작 그대로 report creative 전체 replace
+     *
+     * published batch가 있으면:
+     * - published batch는 DB/Storage 모두 보존
+     * - 이전 unpublished/draft batch만 제거
+     *
+     * 이렇게 해야 공개 리포트의 published creative snapshot을
+     * 새 draft 업로드가 파괴하지 않는다.
+     */
+    if (isFirstBatch) {
+      if (publishedCreativesBatchId) {
+        const nonPublishedBatchFilter =
+          `batch_id.is.null,batch_id.neq.${publishedCreativesBatchId}`;
+
+        const { data: replaceRows, error: replaceRowsErr } = await supabase
+          .from("report_creatives")
+          .select("storage_bucket, storage_path, batch_id")
+          .eq("report_id", reportId)
+          .or(nonPublishedBatchFilter);
+
+        if (replaceRowsErr) {
+          return jsonError(500, "DB_REPLACE_SELECT_FAILED", {
+            detail: replaceRowsErr.message,
+          });
+        }
+
+        const { error: delErr } = await supabase
+          .from("report_creatives")
+          .delete()
+          .eq("report_id", reportId)
+          .or(nonPublishedBatchFilter);
+
+        if (delErr) {
+          return jsonError(500, "DB_DELETE_FAILED", {
+            detail: delErr.message,
+          });
+        }
+
+        if (shouldDeleteStorage && (replaceRows ?? []).length > 0) {
+          const { removed } = await removeStorageFilesByRows(
+            supabase,
+            replaceRows ?? []
+          );
+          storageRemoved = removed;
+        }
+      } else {
+        const { error: delErr } = await supabase
+          .from("report_creatives")
+          .delete()
+          .eq("report_id", reportId);
+
+        if (delErr) {
+          return jsonError(500, "DB_DELETE_FAILED", {
+            detail: delErr.message,
+          });
+        }
+
+        // published snapshot이 없는 기존 report는 기존 storage replace 동작 유지
+        if (shouldDeleteStorage) {
+          const { removed } = await removeFolderFiles(
+            supabase,
+            BUCKET,
+            folder
+          );
+          storageRemoved = removed;
+        }
+      }
     }
 
-    // 8) 업로드 + insert
+    // 7) 업로드 + insert
     const inserted: any[] = [];
     const uploaded: any[] = [];
     const itemsResult: any[] = [];
@@ -369,7 +477,7 @@ export async function POST(req: Request, ctx: Ctx) {
 
     if (insErr) return jsonError(500, "DB_INSERT_FAILED", { detail: insErr.message });
 
-    // 9) reports.current_creatives_batch_id 갱신 (배치 업로드 중에도 동일 batchId 유지)
+    // 8) reports.current_creatives_batch_id 갱신 (배치 업로드 중에도 동일 batchId 유지)
     const { error: upRepErr } = await supabase
       .from("reports")
       .update({ current_creatives_batch_id: batchId, updated_at: nowIso() })

@@ -621,14 +621,26 @@ export async function GET(req: Request, ctx: Ctx) {
 
   const mm = includeRows ? minMaxDate(rows) : { min_date: null, max_date: null };
 
-  let creativeQuery = sb
-    .from("report_creatives")
-    .select("creative_key, file_name, storage_bucket, storage_path, mime_type, bytes")
-    .eq("report_id", reportId);
+  /**
+   * 공개 creative는 published_creatives_batch_id 기준만 허용
+   * - current/draft/old creative fallback 금지
+   * - published_creatives_batch_id가 없으면 creative를 조회하지 않는다
+   */
+  let creatives: any[] = [];
 
-  const { data: creatives, error: creErr } = await creativeQuery;
+  if (publishedCreativesBatchId) {
+    const { data, error: creErr } = await sb
+      .from("report_creatives")
+      .select("creative_key, file_name, storage_bucket, storage_path, mime_type, bytes")
+      .eq("report_id", reportId)
+      .eq("batch_id", publishedCreativesBatchId);
 
-  if (creErr) return jsonError(500, creErr.message || "Creatives DB error");
+    if (creErr) {
+      return jsonError(500, creErr.message || "Creatives DB error");
+    }
+
+    creatives = data ?? [];
+  }
 
   const creativeErrors: any[] = [];
 
