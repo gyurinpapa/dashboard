@@ -4,6 +4,8 @@ import { createClient } from "@supabase/supabase-js";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
+
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -19,6 +21,14 @@ function getBearerToken(req: Request) {
   return m?.[1] ?? null;
 }
 
+function normalizeEmail(v: any) {
+  return String(v ?? "").trim().toLowerCase();
+}
+
+function isOnlyMasterEmail(email: any) {
+  return normalizeEmail(email) === ONLY_MASTER_EMAIL;
+}
+
 export async function POST(req: Request) {
   try {
     const token = getBearerToken(req);
@@ -28,6 +38,7 @@ export async function POST(req: Request) {
     const { data: userRes, error: uErr } = await supabaseAdmin.auth.getUser(token);
     if (uErr) return jsonError(401, "Not authenticated");
     const userId = userRes.user?.id;
+    const userEmail = userRes.user?.email;
     if (!userId) return jsonError(401, "Not authenticated");
 
     const body = await req.json().catch(() => null);
@@ -56,7 +67,10 @@ export async function POST(req: Request) {
     if (wErr) return jsonError(500, wErr.message);
 
     const role = wm?.role;
-    const canPublish = role === "admin" || role === "director" || role === "master";
+    const canPublish =
+      role === "admin" ||
+      role === "director" ||
+      (role === "master" && isOnlyMasterEmail(userEmail));
     if (!canPublish) return jsonError(403, "No permission to publish");
 
     const nowIso = new Date().toISOString();
