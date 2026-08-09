@@ -51,6 +51,83 @@ function asStr(v: any) {
   return s;
 }
 
+function buildPublicMeta(metaValue: any) {
+  const meta =
+    metaValue && typeof metaValue === "object" && !Array.isArray(metaValue)
+      ? metaValue
+      : {};
+
+  const out: Record<string, any> = {};
+
+  const copyKeys = [
+    "advertiser_name",
+    "advertiserName",
+    "report_type_name",
+    "reportTypeName",
+    "report_type_key",
+    "reportTypeKey",
+  ] as const;
+
+  for (const key of copyKeys) {
+    if (Object.prototype.hasOwnProperty.call(meta, key)) {
+      out[key] = meta[key];
+    }
+  }
+
+  if (
+    meta?.month_goal &&
+    typeof meta.month_goal === "object" &&
+    !Array.isArray(meta.month_goal)
+  ) {
+    const publicMonthGoal: Record<string, any> = {};
+
+    for (const key of [
+      "revenue",
+      "cost",
+      "roas",
+      "conversions",
+      "clicks",
+      "ctr",
+      "cvr",
+    ] as const) {
+      if (Object.prototype.hasOwnProperty.call(meta.month_goal, key)) {
+        publicMonthGoal[key] = meta.month_goal[key];
+      }
+    }
+
+    out.month_goal = publicMonthGoal;
+  }
+
+  if (
+    meta?.brand_search_contracts &&
+    typeof meta.brand_search_contracts === "object" &&
+    !Array.isArray(meta.brand_search_contracts)
+  ) {
+    const publicContracts: Record<string, Record<string, any>> = {};
+
+    for (const [month, value] of Object.entries(meta.brand_search_contracts)) {
+      if (!/^\d{4}-\d{2}$/.test(month)) continue;
+      if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+
+      const publicValue: Record<string, any> = {};
+
+      for (const key of ["pc", "mobile"] as const) {
+        if (Object.prototype.hasOwnProperty.call(value, key)) {
+          publicValue[key] = (value as any)[key];
+        }
+      }
+
+      publicContracts[month] = publicValue;
+    }
+
+    if (Object.keys(publicContracts).length > 0) {
+      out.brand_search_contracts = publicContracts;
+    }
+  }
+
+  return out;
+}
+
 function buildPublicStorageUrl(
   sb: any,
   bucketValue: any,
@@ -170,32 +247,6 @@ async function fetchAllReportRows(
   }
 
   return all;
-}
-
-function pickDateStr(r: any) {
-  const v =
-    r?.date ??
-    r?.ymd ??
-    r?.day ??
-    r?.dt ??
-    r?.report_date ??
-    r?.segment_date ??
-    r?.stat_date;
-
-  if (v == null) return "";
-  return String(v).slice(0, 10);
-}
-
-function minMaxDate(rows: any[]) {
-  let min = "";
-  let max = "";
-  for (const r of rows) {
-    const d = pickDateStr(r);
-    if (!d) continue;
-    if (!min || d < min) min = d;
-    if (!max || d > max) max = d;
-  }
-  return { min_date: min || null, max_date: max || null };
 }
 
 /** ===== key normalize helpers ===== */
@@ -487,7 +538,6 @@ export async function GET(req: Request, ctx: Ctx) {
   if (!shareToken) return jsonError(400, "Missing share token");
 
   const url = new URL(req.url);
-  const debugOn = url.searchParams.get("debug") === "1";
   const expiresIn = asInt(
     url.searchParams.get("expiresIn"),
     CREATIVE_SIGNED_URL_EXPIRES_IN
@@ -505,20 +555,15 @@ export async function GET(req: Request, ctx: Ctx) {
         "id",
         "title",
         "status",
-        "created_at",
-        "updated_at",
         "workspace_id",
-        "created_by",
         "report_type_id",
         "meta",
         "period_start",
         "period_end",
         "published_period_start",
         "published_period_end",
-        "published_at",
         "published_ingestion_id",
         "published_creatives_batch_id",
-        "share_token",
         "advertiser_id",
       ].join(",")
     )
@@ -559,7 +604,12 @@ export async function GET(req: Request, ctx: Ctx) {
     );
 
   const reportForResponse = {
-    ...(report as any),
+    title: (report as any)?.title ?? null,
+    meta: buildPublicMeta((report as any)?.meta),
+    period_start: (report as any)?.period_start ?? null,
+    period_end: (report as any)?.period_end ?? null,
+    published_period_start: (report as any)?.published_period_start ?? null,
+    published_period_end: (report as any)?.published_period_end ?? null,
     advertiser_name: names.advertiser_name || null,
     report_type_name: names.report_type_name || null,
     report_type_key: names.report_type_key || null,
@@ -582,23 +632,19 @@ export async function GET(req: Request, ctx: Ctx) {
 
     if (!lastCsvUploadedAt) {
       return jsonError(409, "SHARE_BLOCKED_NO_CSV_META", {
-        hint: "reports.meta.last_csv_uploaded_at missing",
-        ...(debugOn ? { meta } : {}),
+        hint: "공유 리포트의 업로드 메타데이터가 없습니다.",
       });
     }
 
     if (!lastIngestedAt) {
       return jsonError(409, "SHARE_BLOCKED_NO_INGESTION_META", {
-        hint: "reports.meta.last_ingested_at missing",
-        ...(debugOn ? { meta } : {}),
+        hint: "공유 리포트의 반영 메타데이터가 없습니다.",
       });
     }
 
     if (Date.parse(lastIngestedAt) < Date.parse(lastCsvUploadedAt)) {
       return jsonError(409, "SHARE_BLOCKED_INGESTION_OUTDATED", {
-        lastCsvUploadedAt,
-        lastIngestedAt,
-        ...(debugOn ? { meta } : {}),
+        hint: "발행 데이터가 최신 업로드 상태와 일치하지 않습니다.",
       });
     }
   }
@@ -618,8 +664,6 @@ export async function GET(req: Request, ctx: Ctx) {
         .map((r: any) => extractRowObject(r))
         .filter((r: any) => r && typeof r === "object")
     : [];
-
-  const mm = includeRows ? minMaxDate(rows) : { min_date: null, max_date: null };
 
   /**
    * 공개 creative는 published_creatives_batch_id 기준만 허용
@@ -642,8 +686,6 @@ export async function GET(req: Request, ctx: Ctx) {
     creatives = data ?? [];
   }
 
-  const creativeErrors: any[] = [];
-
   const signedCreativeEntries = await mapWithConcurrency(
     creatives ?? [],
     6,
@@ -653,15 +695,6 @@ export async function GET(req: Request, ctx: Ctx) {
       const path = String((c as any).storage_path ?? "").trim();
 
       if (!bucket || !path) {
-        if (debugOn) {
-          creativeErrors.push({
-            reason: "MISSING_STORAGE",
-            creative_key: String((c as any).creative_key ?? ""),
-            file_name: String((c as any).file_name ?? ""),
-            storage_bucket: bucket,
-            storage_path: path,
-          });
-        }
         return null;
       }
 
@@ -670,16 +703,6 @@ export async function GET(req: Request, ctx: Ctx) {
         .createSignedUrl(path, expiresIn);
 
       if (signErr || !signed?.signedUrl) {
-        if (debugOn) {
-          creativeErrors.push({
-            reason: "SIGNED_URL_FAILED",
-            creative_key: String((c as any).creative_key ?? ""),
-            file_name: String((c as any).file_name ?? ""),
-            storage_bucket: bucket,
-            storage_path: path,
-            signErr: signErr ? String((signErr as any).message ?? signErr) : "NO_URL",
-          });
-        }
         return null;
       }
 
@@ -751,47 +774,12 @@ export async function GET(req: Request, ctx: Ctx) {
     });
   }
 
-  const debugRowSample =
-    debugOn && includeRows
-      ? (rows.slice(0, 10) as any[]).map((r) => ({
-          creative: r?.creative,
-          creative_file: r?.creative_file,
-          imagepath: r?.imagepath,
-          imagePath: r?.imagePath,
-          imagepath_raw: r?.imagepath_raw,
-          __matchedKey: r?.__matchedKey ?? null,
-          keys: Object.keys(r || {}).slice(0, 40),
-        }))
-      : undefined;
-
   return NextResponse.json(
     {
       ok: true,
       report: reportForResponse,
       rows,
       creativesMap: creativesUrlMap,
-      creativesMapNormalized,
-      debug: {
-        includeRows,
-        rows_cnt: rows.length,
-        creatives_raw_cnt: (creatives ?? []).length,
-        creatives_cnt: Object.keys(creativesUrlMap).length,
-        creatives_norm_cnt: Object.keys(creativesMapNormalized).length,
-        min_date: mm.min_date,
-        max_date: mm.max_date,
-        strict,
-        published_ingestion_id: publishedIngestionId,
-        published_creatives_batch_id: publishedCreativesBatchId,
-        ...(debugOn
-          ? {
-              creativeErrors,
-              rowSample: debugRowSample,
-              advertiser_name: reportForResponse.advertiser_name,
-              report_type_name: reportForResponse.report_type_name,
-              report_type_key: reportForResponse.report_type_key,
-            }
-          : {}),
-      },
     },
     { status: 200 }
   );
