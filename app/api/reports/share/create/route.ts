@@ -4,6 +4,8 @@ import { createClient } from "@supabase/supabase-js";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
+
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -17,6 +19,14 @@ function getBearerToken(req: Request) {
   const h = req.headers.get("authorization") || "";
   const m = h.match(/^Bearer\s+(.+)$/i);
   return m?.[1] ?? null;
+}
+
+function normalizeEmail(v: any) {
+  return String(v ?? "").trim().toLowerCase();
+}
+
+function isOnlyMasterEmail(email: any) {
+  return normalizeEmail(email) === ONLY_MASTER_EMAIL;
 }
 
 function makeToken(len = 24) {
@@ -35,6 +45,7 @@ export async function POST(req: Request) {
     const { data: userRes, error: uErr } = await supabaseAdmin.auth.getUser(token);
     if (uErr || !userRes.user?.id) return jsonError(401, "Not authenticated");
     const userId = userRes.user.id;
+    const userEmail = userRes.user.email;
 
     const body = await req.json().catch(() => null);
     if (!body) return jsonError(400, "Invalid JSON");
@@ -67,7 +78,10 @@ export async function POST(req: Request) {
     if (wErr) return jsonError(500, wErr.message);
 
     const role = wm?.role;
-    const canShare = role === "admin" || role === "director" || role === "master";
+    const canShare =
+      role === "admin" ||
+      role === "director" ||
+      (role === "master" && isOnlyMasterEmail(userEmail));
     if (!canShare) return jsonError(403, "No permission to create share link");
 
     // 이미 share_token 있으면 재사용
