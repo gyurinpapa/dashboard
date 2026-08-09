@@ -45,13 +45,24 @@ function getRole(member: any) {
   return String(member?.role ?? "").trim().toLowerCase();
 }
 
-function canPublishReport(member: any, userEmail: any) {
+function canPublishReport(
+  member: any,
+  userEmail: any,
+  reportCreatedBy: any,
+  userId: any
+) {
   const role = getRole(member);
 
   if (role === "master") return isOnlyMasterEmail(userEmail);
   if (role === "director") return true;
   if (role === "admin") return true;
-  if (role === "staff") return true;
+
+  if (role === "staff") {
+    const createdBy = asString(reportCreatedBy);
+    const actorUserId = asString(userId);
+
+    return !!createdBy && !!actorUserId && createdBy === actorUserId;
+  }
 
   return false;
 }
@@ -123,6 +134,7 @@ export async function POST(req: Request, ctx: Ctx) {
       [
         "id",
         "workspace_id",
+        "created_by",
         "share_token",
         "status",
         "meta",
@@ -156,7 +168,14 @@ export async function POST(req: Request, ctx: Ctx) {
 
   if (!wm) return jsonError(403, "FORBIDDEN");
 
-  if (!canPublishReport(wm, userEmail)) {
+  if (
+    !canPublishReport(
+      wm,
+      userEmail,
+      (report as any).created_by,
+      userId
+    )
+  ) {
     return jsonError(403, "FORBIDDEN_PUBLISH_PERMISSION");
   }
 
