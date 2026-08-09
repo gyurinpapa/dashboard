@@ -41,13 +41,24 @@ function isTrueMaster(member: any, userEmail: any) {
   );
 }
 
-function canPatchReport(member: any, userEmail: any) {
+function canPatchReport(
+  member: any,
+  userEmail: any,
+  reportCreatedBy: any,
+  userId: any
+) {
   const role = getRoleFromWorkspaceMember(member);
 
   if (role === "master") return isTrueMaster(member, userEmail);
   if (role === "director") return true;
   if (role === "admin") return true;
-  if (role === "staff") return true;
+
+  if (role === "staff") {
+    const createdBy = asString(reportCreatedBy);
+    const actorUserId = asString(userId);
+
+    return !!createdBy && !!actorUserId && createdBy === actorUserId;
+  }
 
   return false;
 }
@@ -446,7 +457,14 @@ export async function PATCH(req: Request, ctx: Ctx) {
       return jsonError(403, "Forbidden: you are not a member of this workspace");
     }
 
-    if (!canPatchReport(wm, user.email)) {
+    if (
+      !canPatchReport(
+        wm,
+        user.email,
+        report.created_by,
+        user.id
+      )
+    ) {
       return jsonError(
         403,
         "Forbidden: you do not have permission to update this report"
