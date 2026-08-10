@@ -287,6 +287,27 @@ async function handleFinalizeMode(params: {
     return jsonError(500, "Access check failed", { detail: e?.message });
   }
 
+  const workspaceId = asNonEmpty(report?.workspace_id);
+  if (!workspaceId) {
+    return jsonError(400, "Report workspace_id missing");
+  }
+
+  const expectedPathPrefix =
+    `workspaces/${workspaceId}/reports/${reportId}/csv/`;
+
+  const objectName = item.path.startsWith(expectedPathPrefix)
+    ? item.path.slice(expectedPathPrefix.length)
+    : "";
+
+  if (
+    asString(item.bucket) !== BUCKET ||
+    !objectName ||
+    objectName.includes("/") ||
+    objectName.includes("\\")
+  ) {
+    return jsonError(403, "CSV finalize item is outside report scope");
+  }
+
   const nextMeta = buildNextMetaWithCsvItem(report?.meta, item);
 
   const { error: updErr } = await supabaseAdmin
