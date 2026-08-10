@@ -130,6 +130,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "OPENAI_API_KEY missing" }, { status: 500 });
     }
 
+    // 현재 로그인 사용자 확인
+    const auth = await sbAuth();
+    const user = (auth as any)?.user ?? null;
+    const authErr = (auth as any)?.error ?? null;
+
+    if (authErr || !user) {
+      return NextResponse.json(
+        { ok: false, error: "Unauthorized (no session). Please sign in." },
+        { status: 401 }
+      );
+    }
+
     const sb = supabaseAdmin;
 
     // 1) report 읽기
@@ -143,6 +155,28 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { ok: false, error: `report not found: ${rErr?.message ?? ""}` },
         { status: 404 }
+      );
+    }
+
+    // service_role은 RLS를 우회하므로 report workspace membership 직접 확인
+    const { data: membership, error: membershipErr } = await sb
+      .from("workspace_members")
+      .select("workspace_id")
+      .eq("workspace_id", report.workspace_id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (membershipErr) {
+      return NextResponse.json(
+        { ok: false, error: membershipErr.message },
+        { status: 500 }
+      );
+    }
+
+    if (!membership) {
+      return NextResponse.json(
+        { ok: false, error: "Forbidden: you are not a member of this workspace" },
+        { status: 403 }
       );
     }
 
