@@ -194,7 +194,7 @@ export async function POST(req: Request) {
 
     const title = asString(body.title);
 
-    const status = asString(body.status) || "draft";
+    const status = "draft";
 
     const meta = normalizeReportMeta(body.meta);
     const dataSourceKind = normalizeDataSourceKind(meta?.data_source?.kind);
@@ -294,11 +294,12 @@ export async function POST(req: Request) {
     }
 
     // ✅ 3-1) advertiser_id가 들어오면 같은 workspace 소속 광고주인지 최종 재검증
+    // - staff는 report-builder 목록 계약과 동일하게 본인이 생성한 광고주만 허용
     if (advertiser_id) {
       const { data: adv, error: advErr } =
         await supabaseAdmin
           .from("advertisers")
-          .select("id, workspace_id")
+          .select("id, workspace_id, created_by")
           .eq("id", advertiser_id)
           .eq("workspace_id", resolved_workspace_id)
           .maybeSingle();
@@ -307,7 +308,16 @@ export async function POST(req: Request) {
         return jsonError(500, advErr.message);
       }
 
-      if (!adv) {
+      const normalizedWorkspaceRole =
+        asString(wm.role).toLowerCase();
+
+      if (
+        !adv ||
+        (
+          normalizedWorkspaceRole === "staff" &&
+          asString(adv.created_by) !== created_by
+        )
+      ) {
         return jsonError(
           400,
           "Invalid advertiser_id for this workspace",
