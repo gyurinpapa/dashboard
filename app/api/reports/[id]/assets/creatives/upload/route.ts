@@ -259,7 +259,7 @@ export async function POST(req: Request, ctx: Ctx) {
     const { data: report, error: repErr } = await supabase
       .from("reports")
       .select(
-        "id, workspace_id, advertiser_id, created_by, published_creatives_batch_id"
+        "id, workspace_id, advertiser_id, created_by, current_creatives_batch_id, published_creatives_batch_id"
       )
       .eq("id", reportId)
       .maybeSingle();
@@ -270,6 +270,9 @@ export async function POST(req: Request, ctx: Ctx) {
     const workspaceId = asString((report as any).workspace_id);
     const advertiserIdRaw = (report as any).advertiser_id;
     const advertiserId = advertiserIdRaw ? asString(advertiserIdRaw) : null;
+    const currentCreativesBatchId = asString(
+      (report as any).current_creatives_batch_id
+    );
     const publishedCreativesBatchId = asString(
       (report as any).published_creatives_batch_id
     );
@@ -316,6 +319,18 @@ export async function POST(req: Request, ctx: Ctx) {
 
     // ✅ batch_id 재사용: 클라가 보내면 이어붙이고, 없으면 새 업로드 batch 생성
     const batchFromClient = asString(form.get("batch_id") as any);
+
+    if (
+      batchFromClient &&
+      (
+        !currentCreativesBatchId ||
+        batchFromClient !== currentCreativesBatchId ||
+        batchFromClient === publishedCreativesBatchId
+      )
+    ) {
+      return jsonError(409, "CREATIVE_BATCH_MISMATCH");
+    }
+
     const isFirstBatch = !batchFromClient;
     const batchId = batchFromClient || randomUUID();
 
