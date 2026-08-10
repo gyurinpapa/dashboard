@@ -218,7 +218,7 @@ export async function GET(req: Request, ctx: Ctx) {
     // 1️⃣ report 조회
     const { data: report, error: rErr } = await admin
       .from("reports")
-      .select("id, workspace_id")
+      .select("id, workspace_id, current_creatives_batch_id")
       .eq("id", reportId)
       .maybeSingle();
 
@@ -231,6 +231,9 @@ export async function GET(req: Request, ctx: Ctx) {
     }
 
     const workspaceId = asStr((report as any)?.workspace_id);
+    const currentCreativesBatchId = asStr(
+      (report as any)?.current_creatives_batch_id
+    );
 
     if (!workspaceId) {
       return jsonError(500, "REPORT_WORKSPACE_MISSING");
@@ -251,12 +254,18 @@ export async function GET(req: Request, ctx: Ctx) {
     }
 
     // 3️⃣ report_creatives 조회
-    const { data: rows, error: cErr } = await admin
+    const creativesQuery = admin
       .from("report_creatives")
       .select(
         "creative_key, file_name, storage_path, created_at"
       )
-      .eq("report_id", reportId)
+      .eq("report_id", reportId);
+
+    const scopedCreativesQuery = currentCreativesBatchId
+      ? creativesQuery.eq("batch_id", currentCreativesBatchId)
+      : creativesQuery;
+
+    const { data: rows, error: cErr } = await scopedCreativesQuery
       .order("created_at", { ascending: false });
 
     if (cErr) {
