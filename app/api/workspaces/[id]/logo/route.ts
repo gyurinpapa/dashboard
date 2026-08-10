@@ -186,6 +186,30 @@ function canManageWorkspaceLogo(
   );
 }
 
+function isOwnedWorkspaceLogoObject(
+  workspaceId: string,
+  bucket: string,
+  path: string
+) {
+  if (bucket !== LOGO_BUCKET) {
+    return false;
+  }
+
+  const prefix =
+    `workspaces/${workspaceId}/branding/logo/`;
+
+  if (!path.startsWith(prefix)) {
+    return false;
+  }
+
+  const objectName = path.slice(prefix.length);
+
+  return (
+    !!objectName &&
+    !objectName.includes("/")
+  );
+}
+
 function buildPublicUrl(
   bucket: string,
   path: string
@@ -543,6 +567,11 @@ export async function POST(
     if (
       previousBucket &&
       previousPath &&
+      isOwnedWorkspaceLogoObject(
+        workspaceId,
+        previousBucket,
+        previousPath
+      ) &&
       !(
         previousBucket ===
           LOGO_BUCKET &&
@@ -756,7 +785,12 @@ export async function DELETE(
 
     if (
       previousBucket &&
-      previousPath
+      previousPath &&
+      isOwnedWorkspaceLogoObject(
+        workspaceId,
+        previousBucket,
+        previousPath
+      )
     ) {
       const {
         error: removeError,
