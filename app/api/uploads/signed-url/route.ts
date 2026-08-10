@@ -5,6 +5,9 @@ import { createClient } from "@supabase/supabase-js";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const BUCKET = "report_uploads";
+const SIGNED_URL_EXPIRES_IN = 60 * 10;
+
 function jsonError(status: number, message: string) {
   return NextResponse.json({ ok: false, error: message }, { status });
 }
@@ -39,12 +42,37 @@ async function safeJson(req: Request) {
   }
 }
 
+async function findRegisteredCreative(params: {
+  sb: ReturnType<typeof sbAdmin>;
+  reportId: string;
+  path: string;
+  batchId?: string;
+}) {
+  const { sb, reportId, path, batchId } = params;
+
+  let query = sb
+    .from("report_creatives")
+    .select("storage_bucket")
+    .eq("report_id", reportId)
+    .eq("storage_path", path);
+
+  if (batchId) {
+    query = query.eq("batch_id", batchId);
+  }
+
+  return query.limit(1).maybeSingle();
+}
+
+function isAllowedCreativeBucket(creative: any) {
+  const bucket = asString(creative?.storage_bucket) || BUCKET;
+  return bucket === BUCKET;
+}
+
 export async function POST(req: Request) {
   try {
     const body = await safeJson(req);
     if (!body) return jsonError(400, "Invalid JSON body");
 
-    const bucket = "report_uploads";
     const path = normalizePath(asString(body.path));
     const shareToken = asString(body.shareToken);
 
@@ -55,12 +83,14 @@ export async function POST(req: Request) {
     // =========================================================
     // 1) 공유 모드
     // - 기존 공개 report 계약 유지
-    // - shareToken이 가리키는 ready report의 path만 허용
+    // - published creative snapshot에 실제 등록된 path만 허용
     // =========================================================
     if (shareToken) {
       const { data: report, error } = await sb
         .from("reports")
-        .select("id,status,share_token")
+        .select(
+          "id,status,published_ingestion_id,published_creatives_batch_id"
+        )
         .eq("share_token", shareToken)
         .maybeSingle();
 
@@ -72,18 +102,48 @@ export async function POST(req: Request) {
       }
 
       const reportId = String(report.id);
+      const publishedIngestionId = asString(
+        report.published_ingestion_id
+      );
+      const publishedCreativesBatchId = asString(
+        report.published_creatives_batch_id
+      );
+
+      if (!publishedIngestionId || !publishedCreativesBatchId) {
+        return jsonError(403, "Path not allowed");
+      }
+
       const allowedPrefix = `reports/${reportId}/`;
 
       if (!path.startsWith(allowedPrefix)) {
-        return jsonError(
-          403,
-          `Invalid path (must start with ${allowedPrefix})`
-        );
+        return jsonError(403, "Path not allowed");
+      }
+
+      // published creative batch에 exact storage_path로 등록된 파일만 허용
+      const {
+        data: publishedCreative,
+        error: creativeErr,
+      } = await findRegisteredCreative({
+        sb,
+        reportId,
+        path,
+        batchId: publishedCreativesBatchId,
+      });
+
+      if (creativeErr) {
+        return jsonError(500, creativeErr.message);
+      }
+
+      if (
+        !publishedCreative ||
+        !isAllowedCreativeBucket(publishedCreative)
+      ) {
+        return jsonError(403, "Path not allowed");
       }
 
       const { data, error: signErr } = await sb.storage
-        .from(bucket)
-        .createSignedUrl(path, 60 * 10);
+        .from(BUCKET)
+        .createSignedUrl(path, SIGNED_URL_EXPIRES_IN);
 
       if (signErr) return jsonError(500, signErr.message);
 
@@ -138,6 +198,12 @@ export async function POST(req: Request) {
       return jsonError(403, "Invalid path");
     }
 
+    const allowedPrefix = `reports/${reportId}/`;
+
+    if (!path.startsWith(allowedPrefix)) {
+      return jsonError(403, "Invalid path");
+    }
+
     // ---------------------------------------------------------
     // 2-C) path가 귀속된 report의 workspace 확인
     //
@@ -180,12 +246,38 @@ export async function POST(req: Request) {
     }
 
     // ---------------------------------------------------------
-    // 2-E) 인증 + report ownership + workspace membership
-    // 검증을 모두 통과한 경우에만 signed URL 생성
+    // 2-E) 해당 report에 실제 등록된 creative path인지 확인
+    //
+    // 기존 workspace member 범위는 유지하되,
+    // reports/{reportId}/ 아래 임의 path signing은 허용하지 않는다.
+    // ---------------------------------------------------------
+    const {
+      data: registeredCreative,
+      error: creativeErr,
+    } = await findRegisteredCreative({
+      sb,
+      reportId,
+      path,
+    });
+
+    if (creativeErr) {
+      return jsonError(500, creativeErr.message);
+    }
+
+    if (
+      !registeredCreative ||
+      !isAllowedCreativeBucket(registeredCreative)
+    ) {
+      return jsonError(403, "Path not allowed");
+    }
+
+    // ---------------------------------------------------------
+    // 2-F) 인증 + report ownership + workspace membership
+    // + exact creative path 검증을 모두 통과한 경우에만 signed URL 생성
     // ---------------------------------------------------------
     const { data, error: signErr } = await sb.storage
-      .from(bucket)
-      .createSignedUrl(path, 60 * 10);
+      .from(BUCKET)
+      .createSignedUrl(path, SIGNED_URL_EXPIRES_IN);
 
     if (signErr) {
       return jsonError(500, signErr.message);
