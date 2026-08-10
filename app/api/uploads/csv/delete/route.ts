@@ -1,156 +1,40 @@
 // app/api/uploads/csv/delete/route.ts
 import { NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { sbAuth } from "@/src/lib/supabase/auth-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function jsonError(status: number, message: string, extra?: any) {
-  return NextResponse.json({ ok: false, error: message, ...extra }, { status });
-}
-
-function asString(v: any) {
-  if (v == null) return "";
-  return String(v).trim();
-}
-
-function safeObj(v: any) {
-  return v && typeof v === "object" ? v : {};
-}
-
-function nowIso() {
-  return new Date().toISOString();
-}
-
-// Bearer 우선, 없으면 쿠키(session) fallback
-async function getUserId(req: Request, supabaseAdmin: ReturnType<typeof getSupabaseAdmin>) {
-  const authz = req.headers.get("authorization") || req.headers.get("Authorization") || "";
-  const m = authz.match(/^Bearer\s+(.+)$/i);
-  const bearer = m?.[1]?.trim();
-
-  // 1) Bearer 토큰이 있으면 admin으로 검증
-  if (bearer) {
-    const { data, error } = await supabaseAdmin.auth.getUser(bearer);
-    if (error || !data?.user?.id) {
-      return { ok: false as const, status: 401, message: "Unauthorized (invalid bearer token)" };
-    }
-    return { ok: true as const, userId: data.user.id };
-  }
-
-  // 2) 없으면 쿠키 기반 서버 세션으로 user 확인 (✅ sbAuth 결과객체 방식)
-  const auth = await sbAuth();
-  const user = (auth as any)?.user ?? null;
-  const authErr = (auth as any)?.error ?? null;
-
-  if (authErr || !user?.id) {
-    return { ok: false as const, status: 401, message: "Unauthorized (no session)" };
-  }
-
-  return { ok: true as const, userId: user.id };
-}
-
-async function assertCanAccessReport(params: {
-  supabaseAdmin: ReturnType<typeof getSupabaseAdmin>;
-  reportId: string;
-  userId: string;
-}) {
-  const { supabaseAdmin, reportId, userId } = params;
-
-  const { data: report, error: repErr } = await supabaseAdmin
-    .from("reports")
-    .select("id, workspace_id, created_by, meta")
-    .eq("id", reportId)
-    .maybeSingle();
-
-  if (repErr) throw new Error(`reports read error: ${repErr.message}`);
-  if (!report) return { ok: false as const, status: 404, message: "Report not found" };
-
-  if (report.created_by === userId) return { ok: true as const, report };
-
-  const { data: wm, error: wmErr } = await supabaseAdmin
-    .from("workspace_members")
-    .select("role")
-    .eq("workspace_id", report.workspace_id)
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (wmErr) throw new Error(`workspace_members read error: ${wmErr.message}`);
-
-  const role = wm?.role;
-  const canWrite = role === "admin" || role === "director" || role === "master";
-  if (!canWrite) return { ok: false as const, status: 403, message: "Forbidden" };
-
-  return { ok: true as const, report };
-}
-
-export async function POST(req: Request) {
-  const supabaseAdmin = getSupabaseAdmin();
-
-  // auth
-  const uid = await getUserId(req, supabaseAdmin);
-  if (!uid.ok) return jsonError(uid.status, uid.message);
-
-  // body
-  let body: any = null;
-  try {
-    body = await req.json();
-  } catch {
-    return jsonError(400, "Invalid JSON");
-  }
-
-  const reportId = asString(body?.reportId);
-  const bucket = asString(body?.bucket) || "report_uploads";
-  const path = asString(body?.path);
-
-  if (!reportId) return jsonError(400, "Missing reportId");
-  if (!path) return jsonError(400, "Missing path");
-
-  // access + read meta
-  let report: any;
-  try {
-    const access = await assertCanAccessReport({ supabaseAdmin, reportId, userId: uid.userId });
-    if (!access.ok) return jsonError(access.status, access.message);
-    report = access.report;
-  } catch (e: any) {
-    return jsonError(500, "Access check failed", { detail: e?.message });
-  }
-
-  // ✅ meta.upload.csv 배열/객체 모두 지원
-  const meta = safeObj(report.meta);
-  const upload = safeObj((meta as any).upload);
-
-  const csvAny = (upload as any).csv;
-  const csvList: any[] = Array.isArray(csvAny) ? csvAny : csvAny ? [csvAny] : [];
-
-  // path가 meta.upload.csv 안에 없으면 차단
-  const exists = csvList.some((it) => String(it?.path || "") === path);
-  if (!exists) return jsonError(403, "Path not allowed");
-
-  // 1) storage remove
-  const { error: rmErr } = await supabaseAdmin.storage.from(bucket).remove([path]);
-  if (rmErr) return jsonError(500, "Storage remove failed", { detail: rmErr.message, bucket, path });
-
-  // 2) meta에서 제거
-  const nextCsv = csvList.filter((it) => String(it?.path || "") !== path);
-
-  const nextMeta = {
-    ...meta,
-    upload: {
-      ...upload,
-      csv: nextCsv, // ✅ 표준: 배열 유지
+function jsonError(status: number, message: string) {
+  return NextResponse.json(
+    {
+      ok: false,
+      error: message,
     },
-  };
+    { status }
+  );
+}
 
-  const { error: updErr } = await supabaseAdmin
-    .from("reports")
-    .update({ meta: nextMeta, updated_at: nowIso() })
-    .eq("id", reportId);
-
-  if (updErr) {
-    // 여기서 롤백은 어려움(이미 스토리지 삭제됨). 대신 명확히 에러 리턴.
-    return jsonError(500, "Failed to update report meta", { detail: updErr.message });
-  }
-
-  return NextResponse.json({ ok: true, removed: { bucket, path }, csv: nextCsv });
+/**
+ * Legacy CSV single-delete endpoint.
+ *
+ * 현재 애플리케이션에는 이 route를 호출하는 tracked caller가 없으며,
+ * CSV 업로드/metadata의 현재 계약은 /api/uploads/csv에서 관리한다.
+ *
+ * 과거 구현은 public request의 bucket/path를 받아 service-role Storage
+ * mutation을 수행하고 meta.upload.csv만 갱신했기 때문에:
+ *
+ * - caller-controlled bucket mutation
+ * - meta.csv_uploads와 meta.upload.csv 간 불일치
+ * - Storage delete 성공 후 DB update 실패 시 rollback 불가
+ *
+ * 위험이 존재했다.
+ *
+ * 현재 UI 동작에 영향을 주지 않으면서 해당 legacy mutation surface를
+ * 완전히 폐쇄하기 위해 fail-closed 응답만 반환한다.
+ */
+export async function POST(_req: Request) {
+  return jsonError(
+    410,
+    "CSV_DELETE_LEGACY_ENDPOINT_DISABLED"
+  );
 }
