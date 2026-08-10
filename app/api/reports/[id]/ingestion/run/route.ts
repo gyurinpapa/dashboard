@@ -1057,6 +1057,10 @@ export async function POST(req: Request, ctx: Ctx) {
     const body = await req.json().catch(() => ({}));
     const mode = asString(body?.mode) || "replace";
 
+    if (mode !== "queue" && mode !== "replace") {
+      return jsonError(400, "Unsupported ingestion mode");
+    }
+
     const { data: report, error: reportErr } = await sb
       .from("reports")
       .select("id, workspace_id, advertiser_id, meta, current_ingestion_id")
