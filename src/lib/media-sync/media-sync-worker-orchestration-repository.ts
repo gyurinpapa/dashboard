@@ -66,6 +66,13 @@ import {
   MediaSyncFinalizationError,
   type MediaSyncFinalizationResult,
 } from "./media-sync-finalization-repository";
+import {
+  loadMediaSyncReportFanoutTargets,
+  loadMediaSyncReportProjectionAuthority,
+  MediaSyncReportFanoutError,
+  type MediaSyncReportFanoutTarget,
+  type MediaSyncReportProjectionAuthority,
+} from "./media-sync-report-fanout-repository";
 import type {
   MediaSyncJobRecord,
 } from "./types";
@@ -161,6 +168,12 @@ export type MediaSyncWorkerOrchestrationDependencies = {
   assertStagingComplete:
     typeof assertNaverSearchAdsCombinedStagingComplete;
 
+  loadFanoutTargets?:
+    typeof loadMediaSyncReportFanoutTargets;
+
+  loadProjectionAuthority?:
+    typeof loadMediaSyncReportProjectionAuthority;
+
   materialize:
     typeof materializeMediaSyncSnapshot;
 
@@ -170,6 +183,19 @@ export type MediaSyncWorkerOrchestrationDependencies = {
   finalize:
     typeof finalizeMediaSyncJob;
 };
+
+type ResolvedMediaSyncWorkerOrchestrationDependencies =
+  Omit<
+    MediaSyncWorkerOrchestrationDependencies,
+    "loadFanoutTargets" |
+    "loadProjectionAuthority"
+  > & {
+    loadFanoutTargets:
+      typeof loadMediaSyncReportFanoutTargets;
+
+    loadProjectionAuthority:
+      typeof loadMediaSyncReportProjectionAuthority;
+  };
 
 export type ProcessNaverMediaSyncJobOptions = {
   dateWindowIndex?: number;
@@ -305,6 +331,20 @@ export type NaverSearchAdsWorkerCombinedStagingResult = {
     null;
 };
 
+export type MediaSyncReportFanoutProjectionResult = {
+  reportId:
+    string;
+
+  primary:
+    boolean;
+
+  materialization:
+    MediaSyncSnapshotMaterializationResult;
+
+  activation:
+    MediaSyncSnapshotActivationResult;
+};
+
 export type ProcessNaverMediaSyncJobCompletedResult = {
   status:
     "completed";
@@ -341,6 +381,15 @@ export type ProcessNaverMediaSyncJobCompletedResult = {
 
   activation:
     MediaSyncSnapshotActivationResult;
+
+  /**
+   * Additive full-fanout result.
+   *
+   * The legacy top-level materialization / activation fields remain
+   * the primary projection result.
+   */
+  fanout?:
+    MediaSyncReportFanoutProjectionResult[];
 
   finalization:
     MediaSyncFinalizationResult;
@@ -1039,6 +1088,58 @@ function logStage(input: {
   );
 }
 
+function assertFanoutTargetsUnchanged(input: {
+  expected:
+    readonly MediaSyncReportFanoutTarget[];
+
+  actual:
+    readonly MediaSyncReportFanoutTarget[];
+
+  stageCode:
+    "ACTIVATION_FAILED" |
+    "FINALIZATION_FAILED";
+
+  phase:
+    string;
+}): void {
+  if (
+    input.expected.length !==
+    input.actual.length
+  ) {
+    throw new MediaSyncWorkerOrchestrationError(
+      input.stageCode,
+      `The report fanout target set changed ${input.phase}.`,
+    );
+  }
+
+  for (
+    let index = 0;
+    index <
+      input.expected.length;
+    index += 1
+  ) {
+    const expected =
+      input.expected[index];
+
+    const actual =
+      input.actual[index];
+
+    if (
+      !expected ||
+      !actual ||
+      expected.reportId !==
+        actual.reportId ||
+      expected.primary !==
+        actual.primary
+    ) {
+      throw new MediaSyncWorkerOrchestrationError(
+        input.stageCode,
+        `The report fanout target set changed ${input.phase}.`,
+      );
+    }
+  }
+}
+
 function shouldLogCollectorProgress(
   event: NaverKeywordStatsCollectorProgressEvent,
 ): boolean {
@@ -1335,7 +1436,7 @@ function resolveOrchestrationDependencies(
   overrides:
     Partial<MediaSyncWorkerOrchestrationDependencies> |
     undefined,
-): MediaSyncWorkerOrchestrationDependencies {
+): ResolvedMediaSyncWorkerOrchestrationDependencies {
   return {
     loadContext:
       overrides?.loadContext ??
@@ -1364,6 +1465,14 @@ function resolveOrchestrationDependencies(
     assertStagingComplete:
       overrides?.assertStagingComplete ??
       assertNaverSearchAdsCombinedStagingComplete,
+
+    loadFanoutTargets:
+      overrides?.loadFanoutTargets ??
+      loadMediaSyncReportFanoutTargets,
+
+    loadProjectionAuthority:
+      overrides?.loadProjectionAuthority ??
+      loadMediaSyncReportProjectionAuthority,
 
     materialize:
       overrides?.materialize ??
@@ -2436,102 +2545,413 @@ export async function processClaimedNaverMediaSyncJob(
       `rows=${staging.canonicalRowCount}`,
   });
 
-  let materialization:
-    MediaSyncSnapshotMaterializationResult;
+  let fanoutTargets:
+    MediaSyncReportFanoutTarget[];
 
   try {
     logStage({
       job:
         checkpointJob,
       stage:
-        "materialization:start",
+        "fanout-targets:start",
     });
 
-    materialization =
-      await dependencies.materialize({
-        job:
+    fanoutTargets =
+      await dependencies
+        .loadFanoutTargets(
           checkpointJob,
-        summary:
-          staging.summary,
-        batchSize:
-          options.materializationBatchSize,
-      });
+        );
   } catch (error) {
     if (
       error instanceof
-      MediaSyncSnapshotMaterializationError
+      MediaSyncReportFanoutError
     ) {
       throw wrapStageError(
         "MATERIALIZATION_FAILED",
-        "The Naver media sync snapshot could not be materialized.",
+        "The Naver media sync report fanout targets could not be loaded.",
         error,
       );
     }
 
     throw wrapStageError(
       "MATERIALIZATION_FAILED",
-      "The Naver media sync snapshot materialization failed unexpectedly.",
+      "The Naver media sync report fanout target lookup failed unexpectedly.",
       error,
     );
   }
 
   logStage({
     job:
-      materialization.job,
+      checkpointJob,
     stage:
-      "materialization:done",
+      "fanout-targets:done",
     detail:
-      `rows=${materialization.rowCount} batchSize=${
-        options.materializationBatchSize ??
-        2_000
-      }`,
+      `reports=${fanoutTargets.length}`,
   });
 
-  let activation:
-    MediaSyncSnapshotActivationResult;
+  let fanoutJob =
+    checkpointJob;
 
-  try {
-    logStage({
-      job:
-        materialization.job,
-      stage:
-        "activation:start",
+  const materializedFanout:
+    {
+      target:
+        MediaSyncReportFanoutTarget;
+
+      materialization:
+        MediaSyncSnapshotMaterializationResult;
+    }[] =
+      [];
+
+  for (
+    const target
+    of fanoutTargets
+  ) {
+    let targetMaterialization:
+      MediaSyncSnapshotMaterializationResult;
+
+    try {
+      logStage({
+        job:
+          fanoutJob,
+        stage:
+          "materialization:start",
+        detail:
+          `targetReport=${target.reportId} primary=${target.primary}`,
+      });
+
+      targetMaterialization =
+        await dependencies.materialize({
+          job:
+            fanoutJob,
+          summary:
+            staging.summary,
+          targetReportId:
+            target.reportId,
+          batchSize:
+            options.materializationBatchSize,
+        });
+    } catch (error) {
+      if (
+        error instanceof
+        MediaSyncSnapshotMaterializationError
+      ) {
+        throw wrapStageError(
+          "MATERIALIZATION_FAILED",
+          "The Naver media sync snapshot could not be materialized.",
+          error,
+        );
+      }
+
+      throw wrapStageError(
+        "MATERIALIZATION_FAILED",
+        "The Naver media sync snapshot materialization failed unexpectedly.",
+        error,
+      );
+    }
+
+    fanoutJob =
+      targetMaterialization.job;
+
+    materializedFanout.push({
+      target,
+      materialization:
+        targetMaterialization,
     });
 
-    activation =
-      await dependencies.activate({
-        job:
-          materialization.job,
-        expectedRows:
-          materialization.rowCount,
-      });
+    logStage({
+      job:
+        targetMaterialization.job,
+      stage:
+        "materialization:done",
+      detail:
+        `targetReport=${target.reportId} primary=${target.primary} rows=${targetMaterialization.rowCount} batchSize=${
+          options.materializationBatchSize ??
+          2_000
+        }`,
+    });
+  }
+
+  const primaryMaterializationEntry =
+    materializedFanout.find(
+      (
+        entry,
+      ) =>
+        entry.target.primary,
+    );
+
+  if (!primaryMaterializationEntry) {
+    throw new MediaSyncWorkerOrchestrationError(
+      "MATERIALIZATION_FAILED",
+      "The primary report projection was not materialized.",
+    );
+  }
+
+  const materialization =
+    primaryMaterializationEntry
+      .materialization;
+
+  let preActivationTargets:
+    MediaSyncReportFanoutTarget[];
+
+  try {
+    preActivationTargets =
+      await dependencies
+        .loadFanoutTargets(
+          fanoutJob,
+        );
   } catch (error) {
     if (
       error instanceof
-      MediaSyncSnapshotActivationError
+      MediaSyncReportFanoutError
     ) {
       throw wrapStageError(
         "ACTIVATION_FAILED",
-        "The Naver media sync snapshot could not be activated.",
+        "The report fanout targets could not be revalidated before activation.",
         error,
       );
     }
 
     throw wrapStageError(
       "ACTIVATION_FAILED",
-      "The Naver media sync snapshot activation failed unexpectedly.",
+      "The report fanout target revalidation failed unexpectedly before activation.",
       error,
     );
   }
 
-  logStage({
-    job:
-      activation.job,
-    stage:
-      "activation:done",
-    detail:
-      `rows=${activation.rowCount}`,
+  assertFanoutTargetsUnchanged({
+    expected:
+      fanoutTargets,
+    actual:
+      preActivationTargets,
+    stageCode:
+      "ACTIVATION_FAILED",
+    phase:
+      "before activation",
   });
+
+  const projectionAuthorityByReportId =
+    new Map<
+      string,
+      MediaSyncReportProjectionAuthority
+    >();
+
+  for (
+    const entry
+    of materializedFanout
+  ) {
+    let projectionAuthority:
+      MediaSyncReportProjectionAuthority;
+
+    try {
+      projectionAuthority =
+        await dependencies
+          .loadProjectionAuthority({
+            job:
+              fanoutJob,
+            reportId:
+              entry.target.reportId,
+            snapshotIngestionId:
+              entry.materialization
+                .snapshotIngestionId,
+          });
+    } catch (error) {
+      if (
+        error instanceof
+        MediaSyncReportFanoutError
+      ) {
+        throw wrapStageError(
+          "ACTIVATION_FAILED",
+          "The materialized report projection authority could not be loaded.",
+          error,
+        );
+      }
+
+      throw wrapStageError(
+        "ACTIVATION_FAILED",
+        "The report projection authority lookup failed unexpectedly.",
+        error,
+      );
+    }
+
+    projectionAuthorityByReportId.set(
+      entry.target.reportId,
+      projectionAuthority,
+    );
+  }
+
+  const activationOrder = [
+    ...materializedFanout.filter(
+      (
+        entry,
+      ) =>
+        !entry.target.primary,
+    ),
+    primaryMaterializationEntry,
+  ];
+
+  const activationByReportId =
+    new Map<
+      string,
+      MediaSyncSnapshotActivationResult
+    >();
+
+  for (
+    const entry
+    of activationOrder
+  ) {
+    const projectionAuthority =
+      projectionAuthorityByReportId.get(
+        entry.target.reportId,
+      );
+
+    if (!projectionAuthority) {
+      throw new MediaSyncWorkerOrchestrationError(
+        "ACTIVATION_FAILED",
+        "The exact report projection authority is missing before activation.",
+      );
+    }
+
+    let targetActivation:
+      MediaSyncSnapshotActivationResult;
+
+    try {
+      logStage({
+        job:
+          fanoutJob,
+        stage:
+          "activation:start",
+        detail:
+          `targetReport=${entry.target.reportId} primary=${entry.target.primary}`,
+      });
+
+      targetActivation =
+        await dependencies.activate({
+          job:
+            fanoutJob,
+          expectedRows:
+            entry.materialization
+              .rowCount,
+          projection:
+            projectionAuthority,
+        });
+    } catch (error) {
+      if (
+        error instanceof
+        MediaSyncSnapshotActivationError
+      ) {
+        throw wrapStageError(
+          "ACTIVATION_FAILED",
+          "The Naver media sync snapshot could not be activated.",
+          error,
+        );
+      }
+
+      throw wrapStageError(
+        "ACTIVATION_FAILED",
+        "The Naver media sync snapshot activation failed unexpectedly.",
+        error,
+      );
+    }
+
+    fanoutJob =
+      targetActivation.job;
+
+    activationByReportId.set(
+      entry.target.reportId,
+      targetActivation,
+    );
+
+    logStage({
+      job:
+        targetActivation.job,
+      stage:
+        "activation:done",
+      detail:
+        `targetReport=${entry.target.reportId} primary=${entry.target.primary} rows=${targetActivation.rowCount}`,
+    });
+  }
+
+  const activation =
+    activationByReportId.get(
+      primaryMaterializationEntry
+        .target.reportId,
+    );
+
+  if (!activation) {
+    throw new MediaSyncWorkerOrchestrationError(
+      "ACTIVATION_FAILED",
+      "The primary report projection was not activated.",
+    );
+  }
+
+  let preFinalizationTargets:
+    MediaSyncReportFanoutTarget[];
+
+  try {
+    preFinalizationTargets =
+      await dependencies
+        .loadFanoutTargets(
+          activation.job,
+        );
+  } catch (error) {
+    if (
+      error instanceof
+      MediaSyncReportFanoutError
+    ) {
+      throw wrapStageError(
+        "FINALIZATION_FAILED",
+        "The report fanout targets could not be revalidated before execution finalization.",
+        error,
+      );
+    }
+
+    throw wrapStageError(
+      "FINALIZATION_FAILED",
+      "The report fanout target revalidation failed unexpectedly before execution finalization.",
+      error,
+    );
+  }
+
+  assertFanoutTargetsUnchanged({
+    expected:
+      fanoutTargets,
+    actual:
+      preFinalizationTargets,
+    stageCode:
+      "FINALIZATION_FAILED",
+    phase:
+      "before execution finalization",
+  });
+
+  const fanout =
+    materializedFanout.map(
+      (
+        entry,
+      ): MediaSyncReportFanoutProjectionResult => {
+        const targetActivation =
+          activationByReportId.get(
+            entry.target.reportId,
+          );
+
+        if (!targetActivation) {
+          throw new MediaSyncWorkerOrchestrationError(
+            "FINALIZATION_FAILED",
+            "A materialized report projection is missing its activation result.",
+          );
+        }
+
+        return {
+          reportId:
+            entry.target.reportId,
+          primary:
+            entry.target.primary,
+          materialization:
+            entry.materialization,
+          activation:
+            targetActivation,
+        };
+      },
+    );
 
   let finalization:
     MediaSyncFinalizationResult;
@@ -2542,6 +2962,8 @@ export async function processClaimedNaverMediaSyncJob(
         activation.job,
       stage:
         "finalization:start",
+      detail:
+        `fanoutReports=${fanout.length}`,
     });
 
     finalization =
@@ -2576,7 +2998,7 @@ export async function processClaimedNaverMediaSyncJob(
     stage:
       "finalization:done",
     detail:
-      `snapshot=${finalization.snapshotIngestionId} rows=${finalization.rowCount}`,
+      `snapshot=${finalization.snapshotIngestionId} rows=${finalization.rowCount} fanoutReports=${fanout.length}`,
   });
 
   return {
@@ -2597,6 +3019,7 @@ export async function processClaimedNaverMediaSyncJob(
     checkpointJob,
     materialization,
     activation,
+    fanout,
     finalization,
     snapshotIngestionId:
       finalization.snapshotIngestionId,

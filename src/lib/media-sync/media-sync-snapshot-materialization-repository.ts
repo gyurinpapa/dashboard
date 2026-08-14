@@ -77,6 +77,17 @@ export type MaterializeMediaSyncSnapshotInput = {
   summary: MediaSyncStagingSummary;
 
   /**
+   * Projection target report.
+   *
+   * Omitted:
+   * - legacy / primary behavior remains job.report_id.
+   *
+   * Provided:
+   * - the same canonical job can materialize an additional report projection.
+   */
+  targetReportId?: string;
+
+  /**
    * 한 RPC가 처리하는 report_rows 최대 개수.
    *
    * 기본값: 2,000
@@ -477,7 +488,11 @@ function buildMaterializationScope(
       input.job.id,
 
     reportId:
-      input.job.report_id,
+      normalizeUuid(
+        input.targetReportId ??
+          input.job.report_id,
+        "targetReportId",
+      ),
 
     workspaceId:
       input.job.workspace_id,
@@ -667,9 +682,25 @@ function parseJob(
 function validateReturnedJobScope(
   updatedJob: MediaSyncJobRecord,
   inputJob: MediaSyncJobRecord,
+  targetReportId: string,
   snapshotIngestionId: string,
   operationName: string,
 ): void {
+  const isPrimaryProjection =
+    targetReportId ===
+    inputJob.report_id;
+
+  const compatibilityMirrorChanged =
+    isPrimaryProjection
+      ? updatedJob.snapshot_ingestion_id !==
+        snapshotIngestionId
+      : (
+        updatedJob.previous_ingestion_id !==
+          inputJob.previous_ingestion_id ||
+        updatedJob.snapshot_ingestion_id !==
+          inputJob.snapshot_ingestion_id
+      );
+
   if (
     updatedJob.id !== inputJob.id ||
     updatedJob.report_id !==
@@ -704,8 +735,7 @@ function validateReturnedJobScope(
       JSON.stringify(
         inputJob.error_detail,
       ) ||
-    updatedJob.snapshot_ingestion_id !==
-      snapshotIngestionId
+    compatibilityMirrorChanged
   ) {
     throw new MediaSyncSnapshotMaterializationError(
       "INVALID_DATABASE_RESULT",
@@ -717,6 +747,7 @@ function validateReturnedJobScope(
 function parsePrepareResult(
   value: unknown,
   input: MaterializeMediaSyncSnapshotInput,
+  scope: MaterializationScope,
 ): PrepareMaterializationResult {
   const record =
     parseSingleRpcRecord(
@@ -757,6 +788,7 @@ function parsePrepareResult(
   validateReturnedJobScope(
     updatedJob,
     input.job,
+    scope.reportId,
     snapshotIngestionId,
     "snapshot materialization preparation",
   );
@@ -791,6 +823,7 @@ function parseBatchResult(
   value: unknown,
   input: {
     originalJob: MediaSyncJobRecord;
+    targetReportId: string;
     snapshotIngestionId: string;
     expectedRows: number;
     requestedBatchStart: number;
@@ -866,6 +899,7 @@ function parseBatchResult(
   validateReturnedJobScope(
     updatedJob,
     input.originalJob,
+    input.targetReportId,
     snapshotIngestionId,
     "snapshot materialization batch",
   );
@@ -945,6 +979,7 @@ function parseBatchResult(
 function parseCompleteResult(
   value: unknown,
   input: MaterializeMediaSyncSnapshotInput,
+  scope: MaterializationScope,
   snapshotIngestionId: string,
 ): MediaSyncSnapshotMaterializationResult {
   const record =
@@ -1008,6 +1043,7 @@ function parseCompleteResult(
   validateReturnedJobScope(
     updatedJob,
     input.job,
+    scope.reportId,
     returnedSnapshotIngestionId,
     "snapshot materialization completion",
   );
@@ -1100,6 +1136,7 @@ async function prepareMaterialization(
   return parsePrepareResult(
     data,
     input,
+    scope,
   );
 }
 
@@ -1149,6 +1186,9 @@ async function materializeBatch(
       originalJob:
         input.originalInput.job,
 
+      targetReportId:
+        input.scope.reportId,
+
       snapshotIngestionId:
         input.snapshotIngestionId,
 
@@ -1188,6 +1228,7 @@ async function completeMaterialization(
   return parseCompleteResult(
     data,
     input,
+    scope,
     snapshotIngestionId,
   );
 }

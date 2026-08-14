@@ -54,9 +54,27 @@ export class MediaSyncSnapshotActivationError
   }
 }
 
+export type MediaSyncSnapshotActivationProjectionAuthority = {
+  reportId: string;
+  previousIngestionId: string | null;
+  snapshotIngestionId: string;
+};
+
 export type ActivateMediaSyncSnapshotInput = {
   job: MediaSyncJobRecord;
   expectedRows: number;
+
+  /**
+   * Projection-local pointer authority.
+   *
+   * Omitted:
+   * - legacy / primary behavior remains job mirror based.
+   *
+   * Provided:
+   * - report / previous / snapshot are sent from the exact projection.
+   */
+  projection?:
+    MediaSyncSnapshotActivationProjectionAuthority;
 };
 
 export type MediaSyncSnapshotActivationResult = {
@@ -319,6 +337,64 @@ function validateExpectedRows(
   return value;
 }
 
+function resolveProjectionAuthority(
+  input: ActivateMediaSyncSnapshotInput,
+): MediaSyncSnapshotActivationProjectionAuthority {
+  if (!input.projection) {
+    return {
+      reportId:
+        input.job.report_id,
+      previousIngestionId:
+        input.job.previous_ingestion_id,
+      snapshotIngestionId:
+        normalizeUuid(
+          input.job.snapshot_ingestion_id,
+          "job.snapshot_ingestion_id",
+        ),
+    };
+  }
+
+  const reportId =
+    normalizeUuid(
+      input.projection.reportId,
+      "projection.reportId",
+    );
+
+  const previousIngestionId =
+    normalizeNullableUuid(
+      input.projection.previousIngestionId,
+      "projection.previousIngestionId",
+    );
+
+  const snapshotIngestionId =
+    normalizeUuid(
+      input.projection.snapshotIngestionId,
+      "projection.snapshotIngestionId",
+    );
+
+  if (
+    reportId ===
+      input.job.report_id &&
+    (
+      previousIngestionId !==
+        input.job.previous_ingestion_id ||
+      snapshotIngestionId !==
+        input.job.snapshot_ingestion_id
+    )
+  ) {
+    throw new MediaSyncSnapshotActivationError(
+      "INVALID_INPUT",
+      "The primary projection authority does not match the media sync job compatibility mirrors.",
+    );
+  }
+
+  return {
+    reportId,
+    previousIngestionId,
+    snapshotIngestionId,
+  };
+}
+
 function mapRpcError(
   error: unknown,
 ): MediaSyncSnapshotActivationError {
@@ -408,6 +484,8 @@ function mapRpcError(
 function parseRpcResult(
   value: unknown,
   input: ActivateMediaSyncSnapshotInput,
+  projection:
+    MediaSyncSnapshotActivationProjectionAuthority,
 ): MediaSyncSnapshotActivationResult {
   if (
     !Array.isArray(value) ||
@@ -514,11 +592,16 @@ function parseRpcResult(
     updatedJob.error !== input.job.error ||
     JSON.stringify(updatedJob.error_detail) !==
       JSON.stringify(input.job.error_detail) ||
-    updatedJob.previous_ingestion_id !== previousIngestionId ||
-    updatedJob.snapshot_ingestion_id !== snapshotIngestionId ||
-    previousIngestionId !== input.job.previous_ingestion_id ||
-    snapshotIngestionId !== input.job.snapshot_ingestion_id ||
-    currentIngestionId !== snapshotIngestionId ||
+    updatedJob.previous_ingestion_id !==
+      input.job.previous_ingestion_id ||
+    updatedJob.snapshot_ingestion_id !==
+      input.job.snapshot_ingestion_id ||
+    previousIngestionId !==
+      projection.previousIngestionId ||
+    snapshotIngestionId !==
+      projection.snapshotIngestionId ||
+    currentIngestionId !==
+      projection.snapshotIngestionId ||
     rowCount !== input.expectedRows ||
     stagingFingerprint !== materializedFingerprint
   ) {
@@ -559,9 +642,15 @@ export async function activateMediaSyncSnapshot(
       input.expectedRows,
     );
 
+  const projection =
+    resolveProjectionAuthority(
+      input,
+    );
+
   const payload = {
     job_id: input.job.id,
-    report_id: input.job.report_id,
+    report_id:
+      projection.reportId,
     workspace_id: input.job.workspace_id,
     advertiser_id: input.job.advertiser_id,
     connection_id: input.job.connection_id,
@@ -571,9 +660,9 @@ export async function activateMediaSyncSnapshot(
     date_from: input.job.date_from,
     date_to: input.job.date_to,
     previous_ingestion_id:
-      input.job.previous_ingestion_id,
+      projection.previousIngestionId,
     snapshot_ingestion_id:
-      input.job.snapshot_ingestion_id,
+      projection.snapshotIngestionId,
     expected_rows: expectedRows,
   };
 
@@ -608,5 +697,6 @@ export async function activateMediaSyncSnapshot(
   return parseRpcResult(
     data,
     input,
+    projection,
   );
 }
