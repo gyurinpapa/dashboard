@@ -2,6 +2,10 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/src/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
+import {
+  commitReportPublishSnapshot,
+  ReportPublishSnapshotError,
+} from "@/src/lib/report/publish-snapshot";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,16 +16,6 @@ const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
 
 function jsonError(status: number, message: string, extra?: any) {
   return NextResponse.json({ ok: false, error: message, ...extra }, { status });
-}
-
-function randToken(len = 32) {
-  const chars =
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  let s = "";
-  for (let i = 0; i < len; i++) {
-    s += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return s;
 }
 
 function asString(v: any) {
@@ -65,10 +59,6 @@ function canPublishReport(
   }
 
   return false;
-}
-
-function safeMeta(v: any) {
-  return v && typeof v === "object" && !Array.isArray(v) ? v : {};
 }
 
 /**
@@ -136,11 +126,12 @@ export async function POST(req: Request, ctx: Ctx) {
         "workspace_id",
         "created_by",
         "share_token",
-        "meta",
         "current_ingestion_id",
         "current_creatives_batch_id",
         "draft_period_start",
         "draft_period_end",
+        "period_start",
+        "period_end",
       ].join(", ")
     )
     .eq("id", reportId)
@@ -203,39 +194,54 @@ export async function POST(req: Request, ctx: Ctx) {
     });
   }
 
-  const token = asString((report as any).share_token) || randToken(32);
-  const now = new Date().toISOString();
+  const sourceShareToken =
+    typeof (report as any).share_token === "string"
+      ? (report as any).share_token
+      : null;
 
   const currentCreativesBatchId =
     asString((report as any).current_creatives_batch_id) || null;
 
   const draftPeriodStart = asString((report as any).draft_period_start) || null;
   const draftPeriodEnd = asString((report as any).draft_period_end) || null;
-  const existingMeta = safeMeta((report as any).meta);
+  const periodStart = asString((report as any).period_start) || null;
+  const periodEnd = asString((report as any).period_end) || null;
 
-  const { error: upErr } = await sb
-    .from("reports")
-    .update({
-      share_token: token,
-      status: "ready",
-      updated_at: now,
+  let publishResult;
 
-      // 발행 시 기존 meta.month_goal 포함 reports.meta 전체 보존
-      meta: existingMeta,
+  try {
+    publishResult = await commitReportPublishSnapshot({
+      snapshot: {
+        reportId,
+        sourceShareToken,
+        currentIngestionId,
+        currentCreativesBatchId,
+        draftPeriodStart,
+        draftPeriodEnd,
+        periodStart,
+        periodEnd,
+      },
+      includePublishedAt: false,
+    });
+  } catch (error) {
+    if (
+      error instanceof ReportPublishSnapshotError &&
+      error.code === "PUBLISH_CONFLICT"
+    ) {
+      return jsonError(409, "PUBLISH_CONFLICT", {
+        hint: "발행 중 현재 snapshot 또는 발행 원본이 변경되었습니다. 최신 상태에서 다시 발행하세요.",
+      });
+    }
 
-      published_ingestion_id: currentIngestionId,
-      published_creatives_batch_id: currentCreativesBatchId,
+    const message =
+      error instanceof Error && error.message
+        ? error.message
+        : "PUBLISH_FAILED";
 
-      published_period_start: draftPeriodStart,
-      published_period_end: draftPeriodEnd,
+    return jsonError(500, message);
+  }
 
-      // legacy 호환
-      period_start: draftPeriodStart,
-      period_end: draftPeriodEnd,
-    })
-    .eq("id", reportId);
-
-  if (upErr) return jsonError(500, upErr.message || "PUBLISH_FAILED");
+  const token = publishResult.shareToken;
 
   return NextResponse.json(
     {
