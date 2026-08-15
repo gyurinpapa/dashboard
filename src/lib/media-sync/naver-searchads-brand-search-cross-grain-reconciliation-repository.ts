@@ -1257,8 +1257,6 @@ export async function reconcileNaverSearchAdsBrandSearchCrossGrainStaging(
   const payload = {
     job_id:
       validated.job.id,
-    report_id:
-      validated.job.report_id,
     workspace_id:
       validated.job.workspace_id,
     advertiser_id:

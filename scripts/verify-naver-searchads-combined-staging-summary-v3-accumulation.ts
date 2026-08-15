@@ -231,6 +231,31 @@ async function main(): Promise<void> {
       .every((call) => call.payload.batch_size === 2000),
   );
 
+  assert.ok(
+    calls
+      .filter((call) => call.functionName === BASE_RPC)
+      .every(
+        (call) =>
+          !Object.prototype.hasOwnProperty.call(
+            call.payload,
+            "report_id",
+          ),
+      ),
+    "The combined base RPC payload must not include report_id.",
+  );
+  assert.ok(
+    calls
+      .filter((call) => call.functionName === BATCH_RPC)
+      .every(
+        (call) =>
+          !Object.prototype.hasOwnProperty.call(
+            call.payload,
+            "report_id",
+          ),
+      ),
+    "The combined batch RPC payload must not include report_id.",
+  );
+
   assert.deepEqual(
     completeSummary.dateWindowSummaries,
     [

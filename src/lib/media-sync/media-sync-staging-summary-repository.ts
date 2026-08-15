@@ -1569,9 +1569,6 @@ export async function getNaverSearchAdsCombinedStagingSummary(
     job_id:
       input.job.id,
 
-    report_id:
-      input.job.report_id,
-
     workspace_id:
       input.job.workspace_id,
 

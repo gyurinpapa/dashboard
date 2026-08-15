@@ -1205,8 +1205,12 @@ async function main(): Promise<void> {
             );
 
             assert.equal(
-              payload.report_id,
-              REPORT_ID,
+              Object.prototype.hasOwnProperty.call(
+                payload,
+                "report_id",
+              ),
+              false,
+              "Reconciliation RPC payload must not send report_id; the locked job is report authority.",
             );
 
             assert.equal(
@@ -1324,6 +1328,15 @@ async function main(): Promise<void> {
                 args.p_payload,
                 "Bounded resumed reconciliation payload must be an object.",
               );
+
+            assert.equal(
+              Object.prototype.hasOwnProperty.call(
+                payload,
+                "report_id",
+              ),
+              false,
+              "Bounded resumed reconciliation RPC payload must not send report_id; the locked job is report authority.",
+            );
 
             assert.equal(
               payload.expected_rows,

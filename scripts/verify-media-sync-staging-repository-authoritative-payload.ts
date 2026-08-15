@@ -530,12 +530,19 @@ async function main(): Promise<void> {
       "RPC p_payload must be an object.",
     );
 
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(
+      payload,
+      "report_id",
+    ),
+    false,
+    "RPC payload must not send report_id; the locked job is report authority.",
+  );
+
   assert.deepEqual(
     {
       job_id:
         payload.job_id,
-      report_id:
-        payload.report_id,
       workspace_id:
         payload.workspace_id,
       advertiser_id:
@@ -556,8 +563,6 @@ async function main(): Promise<void> {
     {
       job_id:
         JOB_FIXTURE.id,
-      report_id:
-        JOB_FIXTURE.report_id,
       workspace_id:
         JOB_FIXTURE.workspace_id,
       advertiser_id:
