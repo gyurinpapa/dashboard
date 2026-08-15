@@ -1,6 +1,16 @@
 // scripts/ingestion-worker.ts
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
+function getRequiredSupabaseAdmin() {
+  const supabase = getSupabaseAdmin();
+
+  if (!supabase) {
+    throw new Error("SUPABASE_ADMIN_CLIENT_NOT_AVAILABLE");
+  }
+
+  return supabase;
+}
+
 type ReportRowLevel = "keyword" | "creative" | "mixed" | "unknown";
 
 type IngestionJob = {
@@ -14,9 +24,12 @@ type IngestionJob = {
   status: string;
   mode: string;
   created_by: string | null;
+  previous_ingestion_id: string | null;
 };
 
 const DEFAULT_BUCKET = "report_uploads";
+const ACTIVATE_CSV_INGESTION_SNAPSHOT_RPC =
+  "activate_csv_ingestion_snapshot";
 
 function asString(v: any) {
   if (v == null) return "";
@@ -685,7 +698,7 @@ async function updateReportIngestionMeta(params: {
   patch: Record<string, any>;
 }) {
   const { reportId, patch } = params;
-  const sb = getSupabaseAdmin();
+  const sb = getRequiredSupabaseAdmin();
 
   const { data: report, error: readErr } = await sb
     .from("reports")
@@ -728,7 +741,7 @@ async function updateJob(params: {
   patch: Record<string, any>;
 }) {
   const { jobId, patch } = params;
-  const sb = getSupabaseAdmin();
+  const sb = getRequiredSupabaseAdmin();
 
   const { error } = await sb
     .from("ingestion_jobs")
@@ -744,7 +757,7 @@ async function updateJob(params: {
 }
 
 async function claimPendingJob() {
-  const sb = getSupabaseAdmin();
+  const sb = getRequiredSupabaseAdmin();
 
   const { data: candidate, error: selectErr } = await sb
     .from("ingestion_jobs")
@@ -800,7 +813,7 @@ function isLikelyStatementTimeout(error: any) {
 }
 
 async function insertRowsOnce(rows: any[]) {
-  const sb = getSupabaseAdmin();
+  const sb = getRequiredSupabaseAdmin();
   const { error } = await sb.from("report_rows").insert(rows);
 
   if (error) {
@@ -849,8 +862,138 @@ async function insertBatchWithRetry(rows: any[], maxRetries = 2) {
   );
 }
 
+async function getReportIngestionPointers(reportId: string) {
+  const sb = getRequiredSupabaseAdmin();
+  const { data, error } = await sb
+    .from("reports")
+    .select("current_ingestion_id, published_ingestion_id")
+    .eq("id", reportId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`REPORT_POINTER_READ_FAILED:${error.message}`);
+  }
+
+  if (!data) {
+    throw new Error("REPORT_POINTER_READ_FAILED:report not found");
+  }
+
+  return {
+    currentIngestionId: asNullableString((data as any).current_ingestion_id),
+    publishedIngestionId: asNullableString(
+      (data as any).published_ingestion_id
+    ),
+  };
+}
+
+async function cleanupCsvCandidateRowsIfUnreferenced(params: {
+  reportId: string;
+  candidateIngestionId: string;
+}) {
+  const { reportId, candidateIngestionId } = params;
+  const candidateId = asString(candidateIngestionId);
+
+  if (!candidateId) return false;
+
+  const pointers = await getReportIngestionPointers(reportId);
+
+  if (
+    pointers.currentIngestionId === candidateId ||
+    pointers.publishedIngestionId === candidateId
+  ) {
+    return false;
+  }
+
+  const sb = getRequiredSupabaseAdmin();
+  const { error } = await sb
+    .from("report_rows")
+    .delete()
+    .eq("report_id", reportId)
+    .eq("ingestion_id", candidateId);
+
+  if (error) {
+    throw new Error(`CSV_CANDIDATE_CLEANUP_FAILED:${error.message}`);
+  }
+
+  return true;
+}
+
+async function activateCsvIngestionSnapshot(params: {
+  jobId: string;
+  reportId: string;
+  workspaceId: string;
+  previousIngestionId: string | null;
+  candidateIngestionId: string;
+  expectedRows: number;
+}) {
+  const {
+    jobId,
+    reportId,
+    workspaceId,
+    previousIngestionId,
+    candidateIngestionId,
+    expectedRows,
+  } = params;
+  const sb = getRequiredSupabaseAdmin();
+
+  const payload = {
+    job_id: jobId,
+    report_id: reportId,
+    workspace_id: workspaceId,
+    previous_ingestion_id: previousIngestionId,
+    candidate_ingestion_id: candidateIngestionId,
+    expected_rows: expectedRows,
+  };
+
+  const { data, error } = await sb.rpc(ACTIVATE_CSV_INGESTION_SNAPSHOT_RPC, {
+    p_payload: payload,
+  });
+
+  if (error) {
+    throw new Error(`CSV_ACTIVATION_FAILED:${error.message}`);
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+
+  if (!row || typeof row !== "object") {
+    throw new Error("CSV_ACTIVATION_INVALID_RESULT:missing activation row");
+  }
+
+  const actualPreviousIngestionId = asNullableString(
+    (row as any).previous_ingestion_id
+  );
+  const actualCandidateIngestionId = asString(
+    (row as any).candidate_ingestion_id
+  );
+  const actualCurrentIngestionId = asString(
+    (row as any).current_ingestion_id
+  );
+  const actualRowCount = Number((row as any).row_count ?? -1);
+  const actualMinRowIndex = Number((row as any).min_row_index ?? -1);
+  const actualMaxRowIndex = Number((row as any).max_row_index ?? -1);
+  const actualDistinctRowIndexes = Number(
+    (row as any).distinct_row_indexes ?? -1
+  );
+
+  if (
+    actualPreviousIngestionId !== previousIngestionId ||
+    actualCandidateIngestionId !== candidateIngestionId ||
+    actualCurrentIngestionId !== candidateIngestionId ||
+    actualRowCount !== expectedRows ||
+    actualMinRowIndex !== 0 ||
+    actualMaxRowIndex !== expectedRows - 1 ||
+    actualDistinctRowIndexes !== expectedRows
+  ) {
+    throw new Error(
+      "CSV_ACTIVATION_INVALID_RESULT:activation result violates the CSV snapshot contract"
+    );
+  }
+
+  return row;
+}
+
 async function processJob(job: IngestionJob) {
-  const sb = getSupabaseAdmin();
+  const sb = getRequiredSupabaseAdmin();
 
   const jobId = job.id;
   const reportId = job.report_id;
@@ -859,6 +1002,7 @@ async function processJob(job: IngestionJob) {
   const csvBucket = asString(job.csv_bucket) || DEFAULT_BUCKET;
   const csvPath = asString(job.csv_path);
   const csvName = asString(job.csv_name);
+  const previousIngestionId = asNullableString(job.previous_ingestion_id);
 
   if (!reportId || !workspaceId || !csvPath) {
     throw new Error("JOB_REQUIRED_FIELD_MISSING");
@@ -918,17 +1062,6 @@ async function processJob(job: IngestionJob) {
       bytes_processed: 0,
     },
   });
-
-  if ((job.mode || "replace") === "replace") {
-    const { error: delErr } = await sb
-      .from("report_rows")
-      .delete()
-      .eq("report_id", reportId);
-
-    if (delErr) {
-      throw new Error(`REPORT_ROWS_DELETE_FAILED:${delErr.message}`);
-    }
-  }
 
   let headerRaw: string[] = [];
   let headers: string[] = [];
@@ -1242,7 +1375,7 @@ async function processJob(job: IngestionJob) {
 
     onChunkProgress: async (processedBytes) => {
       lastBytesProcessed = processedBytes || 0;
-      },
+    },
   });
 
   if (!headerRaw.length || !headers.length || !headerMap) {
@@ -1256,6 +1389,23 @@ async function processJob(job: IngestionJob) {
   if (!validRowCount) {
     throw new Error("NO_VALID_ROWS_AFTER_PARSING_DATE_MISSING");
   }
+
+  await flushProgress(true);
+
+  if (insertedCount <= 0 || insertedCount !== validRowCount) {
+    throw new Error(
+      `CSV_CANDIDATE_INVALID:inserted=${insertedCount}:valid=${validRowCount}`
+    );
+  }
+
+  await activateCsvIngestionSnapshot({
+    jobId,
+    reportId,
+    workspaceId,
+    previousIngestionId,
+    candidateIngestionId: jobId,
+    expectedRows: insertedCount,
+  });
 
   const donePatch = {
     status: "done",
@@ -1339,15 +1489,65 @@ async function processJob(job: IngestionJob) {
 }
 
 async function failJob(job: IngestionJob, error: any) {
-  const sb = getSupabaseAdmin();
-
-  await sb
-    .from("report_rows")
-    .delete()
-    .eq("report_id", job.report_id)
-    .eq("ingestion_id", job.id);
-    
   const message = String(error?.message ?? error);
+
+  let candidateReferenced = false;
+  let candidateIsCurrent = false;
+
+  try {
+    const pointers = await getReportIngestionPointers(job.report_id);
+    candidateIsCurrent = pointers.currentIngestionId === job.id;
+    candidateReferenced =
+      candidateIsCurrent || pointers.publishedIngestionId === job.id;
+  } catch (pointerError) {
+    console.error(
+      "[worker] failed to read report pointers during failure handling",
+      pointerError
+    );
+  }
+
+  if (candidateReferenced) {
+    await updateJob({
+      jobId: job.id,
+      patch: {
+        status: "done",
+        progress: 100,
+        error: null,
+        error_detail: null,
+        finished_at: nowIso(),
+      },
+    });
+
+    if (candidateIsCurrent) {
+      await updateReportIngestionMeta({
+        reportId: job.report_id,
+        patch: {
+          status: "done",
+          progress: 100,
+          error: null,
+          finished_at: nowIso(),
+          in_flight_inserts: 0,
+        },
+      });
+    }
+
+    console.error("[worker] post-activation finalization recovered", {
+      jobId: job.id,
+      reportId: job.report_id,
+      originalError: message,
+    });
+    return;
+  }
+
+  try {
+    await cleanupCsvCandidateRowsIfUnreferenced({
+      reportId: job.report_id,
+      candidateIngestionId: job.id,
+    });
+  } catch (cleanupError) {
+    console.error("[worker] failed to cleanup CSV candidate rows", cleanupError);
+  }
+
   const detail = {
     message,
     stack: String(error?.stack ?? ""),
