@@ -8,7 +8,6 @@ import {
 import {
   createPendingMediaSyncJob,
   listRecentMediaSyncJobsForReport,
-  recoverStaleProcessingMediaSyncJobsForReport,
   MediaSyncJobsRepositoryError,
 } from "@/src/lib/media-sync/media-sync-jobs-repository";
 import {
@@ -34,9 +33,6 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MAX_MEDIA_SYNC_DATE_WINDOW_DAYS = 31;
-
-const STALE_PROCESSING_JOB_MS =
-  60 * 60 * 1_000;
 
 type RouteContext = {
   params: Promise<{
@@ -196,6 +192,7 @@ function mediaSyncSettingMismatchResponse() {
  * - run_sync 권한이 있는 사용자만 조회한다.
  * - credential, credential ciphertext, provider 원본 응답은 반환하지 않는다.
  * - report_rows 또는 staging rows 같은 대량 데이터는 조회하지 않는다.
+ * - GET은 job 상태를 절대 변경하지 않는다. stale recovery는 worker만 수행한다.
  */
 export async function GET(
   request: Request,
@@ -210,13 +207,6 @@ export async function GET(
         reportId: id,
         action: "run_sync",
       });
-
-    await recoverStaleProcessingMediaSyncJobsForReport({
-      reportId: access.reportId,
-      workspaceId: access.workspaceId,
-      advertiserId: access.advertiserId,
-      staleMs: STALE_PROCESSING_JOB_MS,
-    });
 
     const jobs =
       await listRecentMediaSyncJobsForReport({
@@ -301,6 +291,7 @@ export async function GET(
  *   access resolver 결과만 사용한다.
  * - run_sync 권한이 있는 사용자만 허용한다.
  * - pending job 생성까지만 수행한다.
+ * - 기존 processing job의 stale recovery는 수행하지 않는다. worker만 수행한다.
  * - provider API 호출, worker 실행, ingestion 생성,
  *   report_rows 저장, report pointer 전환은 수행하지 않는다.
  */
@@ -373,13 +364,6 @@ export async function POST(
         accessContext,
         parsedRequest,
       );
-
-    await recoverStaleProcessingMediaSyncJobsForReport({
-      reportId: access.reportId,
-      workspaceId: access.workspaceId,
-      advertiserId: access.advertiserId,
-      staleMs: STALE_PROCESSING_JOB_MS,
-    });
 
     const job =
       await createPendingMediaSyncJob(

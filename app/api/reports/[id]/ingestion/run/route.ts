@@ -1215,9 +1215,12 @@ export async function POST(req: Request, ctx: Ctx) {
     if (!reportId) return jsonError(400, "Missing report id");
 
     const body = await req.json().catch(() => ({}));
-    const mode = asString(body?.mode) || "replace";
+    const mode = asString(body?.mode) || "queue";
 
-    if (mode !== "queue" && mode !== "replace") {
+    // Stage 8 / Macro 3: queued ingestion is the only Production execution authority.
+    // The legacy synchronous replace path remains unreachable and must not bypass
+    // ingestion_jobs + Railway worker ownership.
+    if (mode !== "queue") {
       return jsonError(400, "Unsupported ingestion mode");
     }
 

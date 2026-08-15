@@ -959,12 +959,9 @@ export async function createPendingMediaSyncJob(
     );
   }
 
-  await recoverStaleProcessingMediaSyncJobsForReport({
-    reportId,
-    workspaceId,
-    advertiserId,
-  });
-
+  // Stage 8 / Macro 3: request-driven job creation never mutates an existing
+  // processing job. Stale processing recovery is owned exclusively by the
+  // Railway media sync worker before it claims the next pending job.
   const insertRecord = {
     workspace_id: workspaceId,
     advertiser_id: advertiserId,
