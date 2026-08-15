@@ -263,7 +263,7 @@ export async function GET(req: Request, ctx: Ctx) {
 
     const scopedCreativesQuery = currentCreativesBatchId
       ? creativesQuery.eq("batch_id", currentCreativesBatchId)
-      : creativesQuery;
+      : creativesQuery.is("batch_id", null);
 
     const { data: rows, error: cErr } = await scopedCreativesQuery
       .order("created_at", { ascending: false });

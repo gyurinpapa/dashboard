@@ -270,20 +270,14 @@ export async function POST(req: Request, ctx: Ctx) {
     const workspaceId = asString((report as any).workspace_id);
     const advertiserIdRaw = (report as any).advertiser_id;
     const advertiserId = advertiserIdRaw ? asString(advertiserIdRaw) : null;
-    const currentCreativesBatchId = asString(
-      (report as any).current_creatives_batch_id
-    );
-    const publishedCreativesBatchId = asString(
-      (report as any).published_creatives_batch_id
-    );
+    const currentCreativesBatchId =
+      asString((report as any).current_creatives_batch_id) || null;
+    const publishedCreativesBatchId =
+      asString((report as any).published_creatives_batch_id) || null;
 
     if (!workspaceId) return jsonError(500, "REPORT_WORKSPACE_ID_MISSING");
 
     // 4) 권한 체크: staff/admin/director/true master만 허용
-    // - created_by 단독 허용 제거
-    // - client 차단
-    // - 일반 master 문자열 단독 신뢰 금지
-    // - platform_owner 단독 우회 없음
     const role = await getWorkspaceRole(userId, workspaceId);
     const isTrueMaster = await isTrueMasterUser(userId, workspaceId);
 
@@ -294,7 +288,7 @@ export async function POST(req: Request, ctx: Ctx) {
       });
     }
 
-    // 5) form-data (파싱 실패를 명확하게)
+    // 5) form-data
     let form: FormData;
     try {
       form = await req.formData();
@@ -307,148 +301,128 @@ export async function POST(req: Request, ctx: Ctx) {
       });
     }
 
-    // ✅ files는 여기서 딱 1번만 선언
-    const files = form.getAll("files");
-    if (!files?.length) return jsonError(400, "NO_FILES");
+    const rawFiles = form.getAll("files");
+    const files = rawFiles.filter((item): item is File => item instanceof File);
 
-    // 옵션: storage까지 지울지 (기본 true)
-    const deleteStorage = asString(form.get("deleteStorage") as any);
-    const shouldDeleteStorage = deleteStorage
-      ? deleteStorage === "1" || deleteStorage.toLowerCase() === "true"
-      : true;
+    if (!files.length) return jsonError(400, "NO_FILES");
 
-    // ✅ batch_id 재사용: 클라가 보내면 이어붙이고, 없으면 새 업로드 batch 생성
-    const batchFromClient = asString(form.get("batch_id") as any);
-
-    if (
-      batchFromClient &&
-      (
-        !currentCreativesBatchId ||
-        batchFromClient !== currentCreativesBatchId ||
-        batchFromClient === publishedCreativesBatchId
-      )
-    ) {
-      return jsonError(409, "CREATIVE_BATCH_MISMATCH");
-    }
-
-    const isFirstBatch = !batchFromClient;
-    const batchId = batchFromClient || randomUUID();
-
-    const folder = `reports/${reportId}/creatives`;
-    let storageRemoved = 0;
-
-    /**
-     * 6) REPLACE
-     *
-     * published batch가 없으면:
-     * - 기존 동작 그대로 report creative 전체 replace
-     *
-     * published batch가 있으면:
-     * - published batch는 DB/Storage 모두 보존
-     * - 이전 unpublished/draft batch만 제거
-     *
-     * 이렇게 해야 공개 리포트의 published creative snapshot을
-     * 새 draft 업로드가 파괴하지 않는다.
-     */
-    if (isFirstBatch) {
-      if (publishedCreativesBatchId) {
-        const nonPublishedBatchFilter =
-          `batch_id.is.null,batch_id.neq.${publishedCreativesBatchId}`;
-
-        const { data: replaceRows, error: replaceRowsErr } = await supabase
-          .from("report_creatives")
-          .select("storage_bucket, storage_path, batch_id")
-          .eq("report_id", reportId)
-          .or(nonPublishedBatchFilter);
-
-        if (replaceRowsErr) {
-          return jsonError(500, "DB_REPLACE_SELECT_FAILED", {
-            detail: replaceRowsErr.message,
-          });
-        }
-
-        const { error: delErr } = await supabase
-          .from("report_creatives")
-          .delete()
-          .eq("report_id", reportId)
-          .or(nonPublishedBatchFilter);
-
-        if (delErr) {
-          return jsonError(500, "DB_DELETE_FAILED", {
-            detail: delErr.message,
-          });
-        }
-
-        if (shouldDeleteStorage && (replaceRows ?? []).length > 0) {
-          const { removed } = await removeStorageFilesByRows(
-            supabase,
-            replaceRows ?? []
-          );
-          storageRemoved = removed;
-        }
-      } else {
-        const { error: delErr } = await supabase
-          .from("report_creatives")
-          .delete()
-          .eq("report_id", reportId);
-
-        if (delErr) {
-          return jsonError(500, "DB_DELETE_FAILED", {
-            detail: delErr.message,
-          });
-        }
-
-        // published snapshot이 없는 기존 report는 기존 storage replace 동작 유지
-        if (shouldDeleteStorage) {
-          const { removed } = await removeFolderFiles(
-            supabase,
-            BUCKET,
-            folder
-          );
-          storageRemoved = removed;
-        }
-      }
-    }
-
-    // 7) 업로드 + insert
-    const inserted: any[] = [];
-    const uploaded: any[] = [];
-    const itemsResult: any[] = [];
-
+    // 어떤 DB/storage mutation보다 먼저 현재 chunk 전체를 검증한다.
     for (const item of files) {
-      if (!(item instanceof File)) continue;
-
       if (item.size > MAX_BYTES) {
         return jsonError(400, "FILE_TOO_LARGE", {
-          name: (item as any).name,
+          name: item.name,
           size: item.size,
           max: MAX_BYTES,
         });
       }
+    }
 
+    const batchFromClient = asString(form.get("batch_id") as any);
+    const finalizeRaw = asString(form.get("finalize") as any).toLowerCase();
+    const finalizeRequested = finalizeRaw
+      ? finalizeRaw === "1" || finalizeRaw === "true" || finalizeRaw === "yes"
+      : true;
+
+    const EXPECTED_NULL_BATCH = "__NULL__";
+    const expectedFieldName = "expected_current_creatives_batch_id";
+
+    let expectedCurrentCreativesBatchId: string | null;
+    let batchId: string;
+
+    if (batchFromClient) {
+      if (!form.has(expectedFieldName)) {
+        return jsonError(400, "MISSING_EXPECTED_CURRENT_CREATIVE_BATCH");
+      }
+
+      const expectedRaw = asString(form.get(expectedFieldName) as any);
+      if (!expectedRaw) {
+        return jsonError(400, "INVALID_EXPECTED_CURRENT_CREATIVE_BATCH");
+      }
+
+      expectedCurrentCreativesBatchId =
+        expectedRaw === EXPECTED_NULL_BATCH ? null : expectedRaw;
+      batchId = batchFromClient;
+
+      if (currentCreativesBatchId !== expectedCurrentCreativesBatchId) {
+        return jsonError(409, "CREATIVE_CURRENT_CHANGED", {
+          expected_current_creatives_batch_id: expectedCurrentCreativesBatchId,
+          actual_current_creatives_batch_id: currentCreativesBatchId,
+        });
+      }
+
+      if (
+        batchId === currentCreativesBatchId ||
+        batchId === publishedCreativesBatchId
+      ) {
+        return jsonError(409, "CREATIVE_CANDIDATE_NOT_ISOLATED");
+      }
+
+      const { count: candidateCount, error: candidateCountErr } = await supabase
+        .from("report_creatives")
+        .select("id", { count: "exact", head: true })
+        .eq("report_id", reportId)
+        .eq("workspace_id", workspaceId)
+        .eq("batch_id", batchId);
+
+      if (candidateCountErr) {
+        return jsonError(500, "CREATIVE_CANDIDATE_SELECT_FAILED", {
+          detail: candidateCountErr.message,
+        });
+      }
+
+      if (Number(candidateCount ?? 0) <= 0) {
+        return jsonError(409, "CREATIVE_CANDIDATE_NOT_FOUND");
+      }
+    } else {
+      expectedCurrentCreativesBatchId = currentCreativesBatchId;
+      batchId = randomUUID();
+    }
+
+    const folder = `reports/${reportId}/creatives`;
+
+    // 6) candidate storage upload
+    // - current / published rows는 절대 선삭제하지 않는다.
+    // - 같은 candidate batch에만 chunk를 이어붙인다.
+    const inserted: any[] = [];
+    const uploaded: any[] = [];
+    const uploadedStorageRows: any[] = [];
+    const itemsResult: any[] = [];
+
+    for (const item of files) {
       const originalName = normalizeOriginalFileName(item.name || "creative");
       const ext = pickExt(originalName);
       const storedFileName = ext ? `${randId()}.${ext}` : randId();
 
-      const creativeKey = originalName; // ✅ 매칭 키는 원본 파일명
+      const creativeKey = originalName;
       const storagePath = `${folder}/${storedFileName}`;
 
       const arrayBuffer = await item.arrayBuffer();
       const contentType = item.type || "application/octet-stream";
 
-      const { error: upErr } = await supabase.storage.from(BUCKET).upload(storagePath, arrayBuffer, {
-        contentType,
-        upsert: true,
-        cacheControl: "3600",
-      });
+      const { error: upErr } = await supabase.storage
+        .from(BUCKET)
+        .upload(storagePath, arrayBuffer, {
+          contentType,
+          upsert: true,
+          cacheControl: "3600",
+        });
 
       if (upErr) {
+        if (uploadedStorageRows.length > 0) {
+          await removeStorageFilesByRows(supabase, uploadedStorageRows);
+        }
+
         return jsonError(500, "STORAGE_UPLOAD_FAILED", {
           detail: upErr.message,
           name: originalName,
           path: storagePath,
         });
       }
+
+      uploadedStorageRows.push({
+        storage_bucket: BUCKET,
+        storage_path: storagePath,
+      });
 
       uploaded.push({
         name: originalName,
@@ -463,7 +437,6 @@ export async function POST(req: Request, ctx: Ctx) {
         workspace_id: workspaceId,
         advertiser_id: advertiserId,
         batch_id: batchId,
-
         creative_key: creativeKey,
         file_name: originalName,
         storage_bucket: BUCKET,
@@ -481,7 +454,12 @@ export async function POST(req: Request, ctx: Ctx) {
       });
     }
 
-    if (!inserted.length) return jsonError(400, "NO_VALID_FILES");
+    if (!inserted.length) {
+      if (uploadedStorageRows.length > 0) {
+        await removeStorageFilesByRows(supabase, uploadedStorageRows);
+      }
+      return jsonError(400, "NO_VALID_FILES");
+    }
 
     const { data: insData, error: insErr } = await supabase
       .from("report_creatives")
@@ -490,29 +468,91 @@ export async function POST(req: Request, ctx: Ctx) {
         "report_id, workspace_id, advertiser_id, batch_id, creative_key, file_name, storage_bucket, storage_path, mime_type, bytes, created_at"
       );
 
-    if (insErr) return jsonError(500, "DB_INSERT_FAILED", { detail: insErr.message });
+    if (insErr) {
+      await removeStorageFilesByRows(supabase, uploadedStorageRows);
+      return jsonError(500, "DB_INSERT_FAILED", { detail: insErr.message });
+    }
 
-    // 8) reports.current_creatives_batch_id 갱신 (배치 업로드 중에도 동일 batchId 유지)
-    const { error: upRepErr } = await supabase
+    // 중간 chunk는 candidate에만 존재하며 current/published에는 노출하지 않는다.
+    if (!finalizeRequested) {
+      return NextResponse.json({
+        ok: true,
+        mode: batchFromClient ? "append" : "replace",
+        finalized: false,
+        report_id: reportId,
+        workspace_id: workspaceId,
+        advertiser_id: advertiserId,
+        batch_id: batchId,
+        expected_current_creatives_batch_id: expectedCurrentCreativesBatchId,
+        current_creatives_batch_id: currentCreativesBatchId,
+        deleteStorage: false,
+        storage_folder: folder,
+        storage_removed_count: 0,
+        uploaded_count: uploaded.length,
+        inserted_count: insData?.length ?? 0,
+        items: itemsResult,
+        uploaded,
+        rows: insData ?? [],
+        ms: Date.now() - t0,
+      });
+    }
+
+    // 7) 마지막 chunk에서만 current pointer를 CAS 전환한다.
+    let activationQuery = supabase
       .from("reports")
-      .update({ current_creatives_batch_id: batchId, updated_at: nowIso() })
-      .eq("id", reportId);
+      .update({
+        current_creatives_batch_id: batchId,
+        updated_at: nowIso(),
+      })
+      .eq("id", reportId)
+      .eq("workspace_id", workspaceId);
 
-    if (upRepErr) return jsonError(500, "REPORT_UPDATE_FAILED", { detail: upRepErr.message });
+    activationQuery = expectedCurrentCreativesBatchId
+      ? activationQuery.eq(
+          "current_creatives_batch_id",
+          expectedCurrentCreativesBatchId
+        )
+      : activationQuery.is("current_creatives_batch_id", null);
+
+    const { data: activationRows, error: activationErr } = await activationQuery
+      .select("id, current_creatives_batch_id")
+      .limit(1);
+
+    if (activationErr) {
+      return jsonError(500, "CREATIVE_ACTIVATION_FAILED", {
+        detail: activationErr.message,
+        candidate_batch_id: batchId,
+      });
+    }
+
+    if (!activationRows?.length) {
+      return jsonError(409, "CREATIVE_ACTIVATION_CONFLICT", {
+        expected_current_creatives_batch_id: expectedCurrentCreativesBatchId,
+        candidate_batch_id: batchId,
+      });
+    }
+
+    // 8) 이전 current/published snapshot은 여기서 삭제하지 않는다.
+    // cleanup은 pointer와 dataset을 원자적으로 보호할 수 있는 별도 authority에서만 수행한다.
+    // upload request 내부의 read-then-delete는 concurrent publish와 경쟁할 수 있으므로 금지한다.
+    const storageRemoved = 0;
+    const rowsRemoved = 0;
 
     return NextResponse.json({
       ok: true,
-      mode: isFirstBatch ? "replace" : "append",
+      mode: batchFromClient ? "append" : "replace",
+      finalized: true,
       report_id: reportId,
       workspace_id: workspaceId,
       advertiser_id: advertiserId,
       batch_id: batchId,
-
-      // 첫 배치에서만 의미가 있는 값들
-      deleteStorage: isFirstBatch ? shouldDeleteStorage : false,
+      expected_current_creatives_batch_id: expectedCurrentCreativesBatchId,
+      current_creatives_batch_id: batchId,
+      deleteStorage: false,
       storage_folder: folder,
       storage_removed_count: storageRemoved,
-
+      rows_removed_count: rowsRemoved,
+      cleanup_warning: null,
       uploaded_count: uploaded.length,
       inserted_count: insData?.length ?? 0,
       items: itemsResult,

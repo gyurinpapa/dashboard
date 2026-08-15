@@ -915,18 +915,33 @@ async function uploadCreatives(reportId: string, files: File[]) {
   if (!files?.length) throw new Error("No files");
 
   const BATCH_SIZE = 4;
+  const EXPECTED_NULL_BATCH = "__NULL__";
 
   let batchId: string | undefined;
+  let expectedCurrentCreativesBatchId: string | null | undefined;
   const allItems: any[] = [];
 
   for (let i = 0; i < files.length; i += BATCH_SIZE) {
     const chunk = files.slice(i, i + BATCH_SIZE);
+    const isFinalChunk = i + BATCH_SIZE >= files.length;
 
     const fd = new FormData();
     for (const f of chunk) fd.append("files", f);
 
     fd.set("expiresIn", "3600");
-    if (batchId) fd.set("batch_id", batchId);
+    fd.set("finalize", isFinalChunk ? "1" : "0");
+
+    if (batchId) {
+      if (expectedCurrentCreativesBatchId === undefined) {
+        throw new Error("Missing creative upload snapshot authority");
+      }
+
+      fd.set("batch_id", batchId);
+      fd.set(
+        "expected_current_creatives_batch_id",
+        expectedCurrentCreativesBatchId ?? EXPECTED_NULL_BATCH,
+      );
+    }
 
     const res = await authFetch(
       `/api/reports/${reportId}/assets/creatives/upload`,
@@ -942,7 +957,34 @@ async function uploadCreatives(reportId: string, files: File[]) {
       throw new Error(json?.error || `Creatives upload failed (${res.status})`);
     }
 
-    if (!batchId && json?.batch_id) batchId = json.batch_id;
+    if (!batchId && json?.batch_id) {
+      batchId = String(json.batch_id);
+    }
+
+    if (
+      expectedCurrentCreativesBatchId === undefined &&
+      Object.prototype.hasOwnProperty.call(
+        json ?? {},
+        "expected_current_creatives_batch_id",
+      )
+    ) {
+      const rawExpected = json?.expected_current_creatives_batch_id;
+      expectedCurrentCreativesBatchId = rawExpected
+        ? String(rawExpected)
+        : null;
+    }
+
+    if (!isFinalChunk) {
+      if (!batchId || expectedCurrentCreativesBatchId === undefined) {
+        throw new Error("Creative upload candidate authority was not returned");
+      }
+
+      if (json?.finalized !== false) {
+        throw new Error("Creative upload candidate finalized too early");
+      }
+    } else if (json?.finalized !== true) {
+      throw new Error("Creative upload candidate was not finalized");
+    }
 
     const items = json?.items ?? [];
     if (Array.isArray(items) && items.length) allItems.push(...items);
