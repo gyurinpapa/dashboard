@@ -352,6 +352,8 @@ type RowsMetaResult = {
   ingestionIdUsed: string;
   fallbackUsed: boolean;
   metaOnly: boolean;
+  minDate: string;
+  maxDate: string;
 };
 
 function buildEmptyMonthGoal(): MonthGoalDraft {
@@ -752,6 +754,8 @@ async function fetchRowsMeta(reportId: string): Promise<RowsMetaResult> {
     ingestionIdUsed: asStr(json?.ingestion_id_used),
     fallbackUsed: !!json?.fallback_used,
     metaOnly: !!json?.meta_only,
+    minDate: asStr(json?.min_date),
+    maxDate: asStr(json?.max_date),
   };
 }
 
@@ -1434,6 +1438,8 @@ export default function ReportDetailPage() {
   const rowsMetaFetchPromiseRef = useRef<Promise<RowsMetaResult> | null>(null);
   const [rowsMetaCount, setRowsMetaCount] = useState(0);
   const [rowsMetaLoaded, setRowsMetaLoaded] = useState(false);
+  const [rowsMetaMinDate, setRowsMetaMinDate] = useState("");
+  const [rowsMetaMaxDate, setRowsMetaMaxDate] = useState("");
   const [loadingRows, setLoadingRows] = useState(true);
   const [msg, setMsg] = useState<string>("");
 
@@ -1571,8 +1577,18 @@ export default function ReportDetailPage() {
   }, [displayCreativesMap]);
 
   const rowsRange = useMemo(() => {
-    return getRowsDateRange(displayRows as any[]);
-  }, [displayRows]);
+    const loadedRange = getRowsDateRange(displayRows as any[]);
+    if (loadedRange) return loadedRange;
+
+    if (rowsMetaMinDate && rowsMetaMaxDate) {
+      return {
+        startDate: rowsMetaMinDate,
+        endDate: rowsMetaMaxDate,
+      };
+    }
+
+    return null;
+  }, [displayRows, rowsMetaMaxDate, rowsMetaMinDate]);
 
   const brandSearchMonthKeys = useMemo(() => {
     return buildRecentBrandSearchMonthKeys(
@@ -1669,19 +1685,22 @@ export default function ReportDetailPage() {
   }, [isApiReport, mediaSyncSettings]);
 
   useEffect(() => {
-    const initial = buildInitialReportPeriod({
-      report,
-      reportId,
-      rowsRange: rowsRange?.startDate && rowsRange?.endDate ? rowsRange : null,
-    });
+    if (!report) return;
+    if (isCsvReport && !rowsMetaLoaded) return;
 
-    if (!initial) return;
+    const initial =
+      buildInitialReportPeriod({
+        report,
+        reportId,
+        rowsRange: rowsRange?.startDate && rowsRange?.endDate ? rowsRange : null,
+      }) ?? resolvePresetPeriod();
+
     if (didInitReportPeriodFromSourceRef.current) return;
 
     setReportPeriod(initial);
     didInitReportPeriodFromSourceRef.current = true;
     lastSavedReportPeriodKeyRef.current = reportPeriodToStableKey(initial);
-  }, [report, reportId, rowsRange]);
+  }, [isCsvReport, report, reportId, rowsMetaLoaded, rowsRange]);
 
   useEffect(() => {
     const nextGoal = extractMonthGoalFromReport(report);
@@ -1729,6 +1748,8 @@ export default function ReportDetailPage() {
 
   useEffect(() => {
     if (!reportId || typeof window === "undefined") return;
+    if (!didInitReportPeriodFromSourceRef.current) return;
+
     const key = getReportPeriodStorageKey(reportId);
     window.localStorage.setItem(key, JSON.stringify(reportPeriod));
   }, [reportId, reportPeriod]);
@@ -2082,10 +2103,14 @@ export default function ReportDetailPage() {
     if (rowsMetaResult.status === "fulfilled") {
       const meta = rowsMetaResult.value;
       setRowsMetaCount(meta.rowsCount);
+      setRowsMetaMinDate(meta.minDate);
+      setRowsMetaMaxDate(meta.maxDate);
       setRowsMetaLoaded(true);
     } else {
       console.error("[refreshReportShell] rows meta failed", rowsMetaResult.reason);
       setRowsMetaCount(0);
+      setRowsMetaMinDate("");
+      setRowsMetaMaxDate("");
       setRowsMetaLoaded(false);
     }
 
@@ -2155,7 +2180,37 @@ export default function ReportDetailPage() {
 
           if (hasInsertedRows) {
             setRowsMetaCount(savedRowsCount);
-            setRowsMetaLoaded(true);
+
+            try {
+              const meta = await fetchRowsMeta(targetReportId);
+
+              setRowsMetaCount(meta.rowsCount);
+              setRowsMetaMinDate(meta.minDate);
+              setRowsMetaMaxDate(meta.maxDate);
+              setRowsMetaLoaded(true);
+
+              const initial = buildInitialReportPeriod({
+                report: detail,
+                reportId: targetReportId,
+                rowsRange:
+                  meta.minDate && meta.maxDate
+                    ? {
+                        startDate: meta.minDate,
+                        endDate: meta.maxDate,
+                      }
+                    : null,
+              });
+
+              if (initial) {
+                setReportPeriod(initial);
+                didInitReportPeriodFromSourceRef.current = true;
+                lastSavedReportPeriodKeyRef.current =
+                  reportPeriodToStableKey(initial);
+              }
+            } catch (e) {
+              console.error("[polling ingestion] rows meta refresh failed", e);
+              setRowsMetaLoaded(true);
+            }
           }
 
           setSessionIngested(hasInsertedRows);
@@ -2239,6 +2294,8 @@ export default function ReportDetailPage() {
 
     setRowsMetaCount(0);
     setRowsMetaLoaded(false);
+    setRowsMetaMinDate("");
+    setRowsMetaMaxDate("");
 
     setRows([]);
     setCreativesMap({});
@@ -2478,6 +2535,8 @@ export default function ReportDetailPage() {
     rowsMetaFetchPromiseRef.current = null;
     setRowsMetaCount(0);
     setRowsMetaLoaded(false);
+    setRowsMetaMinDate("");
+    setRowsMetaMaxDate("");
     setRows([]);
 
     try {
@@ -2765,16 +2824,22 @@ export default function ReportDetailPage() {
         ingestionIdUsed: "",
         fallbackUsed: false,
         metaOnly: true,
+        minDate: "",
+        maxDate: "",
       };
     }
 
     const currentRows = latestRowsRef.current;
     if (rowsLoadedRef.current && currentRows.length > 0) {
+      const currentRange = getRowsDateRange(currentRows);
+
       return {
         rowsCount: currentRows.length,
         ingestionIdUsed: "",
         fallbackUsed: false,
         metaOnly: false,
+        minDate: currentRange?.startDate || "",
+        maxDate: currentRange?.endDate || "",
       };
     }
 
@@ -2785,12 +2850,16 @@ export default function ReportDetailPage() {
     const task = fetchRowsMeta(reportId)
       .then((meta) => {
         setRowsMetaCount(meta.rowsCount);
+        setRowsMetaMinDate(meta.minDate);
+        setRowsMetaMaxDate(meta.maxDate);
         setRowsMetaLoaded(true);
         return meta;
       })
       .catch((e) => {
         console.error("[refreshRowsMeta] failed", e);
         setRowsMetaCount(0);
+        setRowsMetaMinDate("");
+        setRowsMetaMaxDate("");
         setRowsMetaLoaded(false);
         throw e;
       })

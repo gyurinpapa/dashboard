@@ -184,6 +184,39 @@ async function countRowsByIngestion(
   return count ?? 0;
 }
 
+async function fetchDateRangeByIngestion(
+  admin: ReturnType<typeof getSupabaseAdmin>,
+  reportId: string,
+  ingestionId: string
+) {
+  const [minResult, maxResult] = await Promise.all([
+    admin
+      .from("report_rows")
+      .select("date")
+      .eq("report_id", reportId)
+      .eq("ingestion_id", ingestionId)
+      .not("date", "is", null)
+      .order("date", { ascending: true })
+      .limit(1),
+    admin
+      .from("report_rows")
+      .select("date")
+      .eq("report_id", reportId)
+      .eq("ingestion_id", ingestionId)
+      .not("date", "is", null)
+      .order("date", { ascending: false })
+      .limit(1),
+  ]);
+
+  if (minResult.error) throw new Error(minResult.error.message);
+  if (maxResult.error) throw new Error(maxResult.error.message);
+
+  return {
+    minDate: asStr(minResult.data?.[0]?.date),
+    maxDate: asStr(maxResult.data?.[0]?.date),
+  };
+}
+
 async function findBestIngestionIdByRows(
   admin: ReturnType<typeof getSupabaseAdmin>,
   reportId: string
@@ -358,6 +391,8 @@ export async function GET(req: Request, ctx: Ctx) {
         ingestion_id_used: null,
         fallback_used: false,
         rows_count: 0,
+        min_date: null,
+        max_date: null,
         ingestion_ranked: debug ? [] : [],
         meta_only: metaOnly,
       });
@@ -370,12 +405,20 @@ export async function GET(req: Request, ctx: Ctx) {
         ingestion_id_used: ingestionIdUsed || null,
         fallback_used: fallbackUsed,
         rows_count: 0,
+        min_date: null,
+        max_date: null,
         ingestion_ranked: debug ? ranked : [],
         meta_only: metaOnly,
       });
     }
 
     if (metaOnly) {
+      const { minDate, maxDate } = await fetchDateRangeByIngestion(
+        admin,
+        reportId,
+        ingestionIdUsed
+      );
+
       if (debug) {
         console.log("[rows:route:meta]", {
           reportId,
@@ -384,6 +427,8 @@ export async function GET(req: Request, ctx: Ctx) {
           fallbackUsed,
           ranked: ranked.slice(0, 10),
           rowsCount,
+          minDate,
+          maxDate,
           metaOnly,
         });
       }
@@ -394,6 +439,8 @@ export async function GET(req: Request, ctx: Ctx) {
         ingestion_id_used: ingestionIdUsed || null,
         fallback_used: fallbackUsed,
         rows_count: rowsCount,
+        min_date: minDate || null,
+        max_date: maxDate || null,
         ingestion_ranked: debug ? ranked : [],
         meta_only: true,
       });
