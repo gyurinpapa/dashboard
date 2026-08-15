@@ -10,6 +10,8 @@ export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
 
 const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
+const ACTIVATE_CSV_INGESTION_SNAPSHOT_RPC =
+  "activate_csv_ingestion_snapshot";
 
 function jsonError(status: number, message: string, extra?: any) {
   return NextResponse.json({ ok: false, error: message, ...extra }, { status });
@@ -727,6 +729,136 @@ async function updateReportIngestionMeta(
   return nextMeta;
 }
 
+async function getReportIngestionPointers(
+  sb: ReturnType<typeof getSupabaseAdmin>,
+  reportId: string
+) {
+  const { data, error } = await sb
+    .from("reports")
+    .select("current_ingestion_id, published_ingestion_id")
+    .eq("id", reportId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`REPORT_POINTER_READ_FAILED:${error.message}`);
+  }
+
+  if (!data) {
+    throw new Error("REPORT_POINTER_READ_FAILED:report not found");
+  }
+
+  return {
+    currentIngestionId: asNullableString((data as any).current_ingestion_id),
+    publishedIngestionId: asNullableString(
+      (data as any).published_ingestion_id
+    ),
+  };
+}
+
+async function cleanupCsvCandidateRowsIfUnreferenced(params: {
+  sb: ReturnType<typeof getSupabaseAdmin>;
+  reportId: string;
+  candidateIngestionId: string;
+}) {
+  const { sb, reportId, candidateIngestionId } = params;
+  const candidateId = asString(candidateIngestionId);
+
+  if (!candidateId) return false;
+
+  const pointers = await getReportIngestionPointers(sb, reportId);
+
+  if (
+    pointers.currentIngestionId === candidateId ||
+    pointers.publishedIngestionId === candidateId
+  ) {
+    return false;
+  }
+
+  const { error } = await sb
+    .from("report_rows")
+    .delete()
+    .eq("report_id", reportId)
+    .eq("ingestion_id", candidateId);
+
+  if (error) {
+    throw new Error(`CSV_CANDIDATE_CLEANUP_FAILED:${error.message}`);
+  }
+
+  return true;
+}
+
+async function activateCsvIngestionSnapshot(params: {
+  sb: ReturnType<typeof getSupabaseAdmin>;
+  reportId: string;
+  workspaceId: string;
+  previousIngestionId: string | null;
+  candidateIngestionId: string;
+  expectedRows: number;
+}) {
+  const {
+    sb,
+    reportId,
+    workspaceId,
+    previousIngestionId,
+    candidateIngestionId,
+    expectedRows,
+  } = params;
+
+  const payload = {
+    report_id: reportId,
+    workspace_id: workspaceId,
+    previous_ingestion_id: previousIngestionId,
+    candidate_ingestion_id: candidateIngestionId,
+    expected_rows: expectedRows,
+  };
+
+  const { data, error } = await sb.rpc(ACTIVATE_CSV_INGESTION_SNAPSHOT_RPC, {
+    p_payload: payload,
+  });
+
+  if (error) {
+    throw new Error(`CSV_ACTIVATION_FAILED:${error.message}`);
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+
+  if (!row || typeof row !== "object") {
+    throw new Error("CSV_ACTIVATION_INVALID_RESULT:missing activation row");
+  }
+
+  const actualPreviousIngestionId = asNullableString(
+    (row as any).previous_ingestion_id
+  );
+  const actualCandidateIngestionId = asString(
+    (row as any).candidate_ingestion_id
+  );
+  const actualCurrentIngestionId = asString(
+    (row as any).current_ingestion_id
+  );
+  const actualRowCount = Number((row as any).row_count ?? -1);
+  const actualMinRowIndex = Number((row as any).min_row_index ?? -1);
+  const actualMaxRowIndex = Number((row as any).max_row_index ?? -1);
+  const actualDistinctRowIndexes = Number(
+    (row as any).distinct_row_indexes ?? -1
+  );
+
+  if (
+    actualPreviousIngestionId !== previousIngestionId ||
+    actualCandidateIngestionId !== candidateIngestionId ||
+    actualCurrentIngestionId !== candidateIngestionId ||
+    actualRowCount !== expectedRows ||
+    actualMinRowIndex !== 0 ||
+    actualMaxRowIndex !== expectedRows - 1 ||
+    actualDistinctRowIndexes !== expectedRows
+  ) {
+    throw new Error(
+      "CSV_ACTIVATION_INVALID_RESULT:activation result violates the CSV snapshot contract"
+    );
+  }
+
+  return row;
+}
+
 async function queueIngestionJob(params: {
   sb: ReturnType<typeof getSupabaseAdmin>;
   reportId: string;
@@ -736,6 +868,7 @@ async function queueIngestionJob(params: {
   baseMeta: any;
   latestCsv: any;
   mode: string;
+  previousIngestionId: string | null;
 }) {
   const {
     sb,
@@ -746,6 +879,7 @@ async function queueIngestionJob(params: {
     baseMeta,
     latestCsv,
     mode,
+    previousIngestionId,
   } = params;
 
   const csvBucket = asString(latestCsv?.bucket) || "report_uploads";
@@ -754,6 +888,29 @@ async function queueIngestionJob(params: {
 
   if (!csvPath) {
     throw new Error("QUEUE_CSV_PATH_MISSING");
+  }
+
+  const { data: activeJob, error: activeJobErr } = await sb
+    .from("ingestion_jobs")
+    .select("id, status, created_at")
+    .eq("report_id", reportId)
+    .in("status", ["pending", "processing"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (activeJobErr) {
+    throw new Error(
+      `INGESTION_ACTIVE_JOB_CHECK_FAILED:${activeJobErr.message}`
+    );
+  }
+
+  if (activeJob) {
+    throw new Error(
+      `INGESTION_ACTIVE_JOB_EXISTS:${asString((activeJob as any).id)}:${asString(
+        (activeJob as any).status
+      )}`
+    );
   }
 
   const { data: job, error: jobErr } = await sb
@@ -781,13 +938,18 @@ async function queueIngestionJob(params: {
       error_detail: null,
       mode,
       created_by: userId,
+      previous_ingestion_id: previousIngestionId,
     })
     .select(
-      "id, report_id, workspace_id, advertiser_id, csv_bucket, csv_path, csv_name, status, progress, mode, created_at"
+      "id, report_id, workspace_id, advertiser_id, csv_bucket, csv_path, csv_name, status, progress, mode, created_at, previous_ingestion_id"
     )
     .single();
 
   if (jobErr || !job) {
+    if ((jobErr as any)?.code === "23505") {
+      throw new Error("INGESTION_ACTIVE_JOB_EXISTS:race:pending");
+    }
+
     throw new Error(
       `INGESTION_JOB_CREATE_FAILED:${jobErr?.message || "unknown"}`
     );
@@ -836,9 +998,6 @@ async function queueIngestionJob(params: {
         path: csvPath,
         name: csvName,
       },
-    },
-    {
-      current_ingestion_id: jobId,
     }
   );
 
@@ -1043,6 +1202,7 @@ export async function POST(req: Request, ctx: Ctx) {
   let sb: ReturnType<typeof getSupabaseAdmin> | null = null;
   let reportId = "";
   let reportMetaForError: any = null;
+  let candidateIngestionId = "";
 
   try {
     const user = await getUserId(req);
@@ -1073,6 +1233,9 @@ export async function POST(req: Request, ctx: Ctx) {
 
     const workspace_id = asNullableString(report.workspace_id);
     const advertiser_id = asNullableString(report.advertiser_id);
+    const previousIngestionId = asNullableString(
+      (report as any).current_ingestion_id
+    );
 
     if (!workspace_id) {
       return jsonError(400, "Report workspace_id missing");
@@ -1113,6 +1276,7 @@ export async function POST(req: Request, ctx: Ctx) {
           baseMeta,
           latestCsv,
           mode,
+          previousIngestionId,
         });
 
         return NextResponse.json({
@@ -1137,6 +1301,21 @@ export async function POST(req: Request, ctx: Ctx) {
         });
       } catch (queueError: any) {
         const msg = String(queueError?.message ?? queueError);
+
+        if (msg.startsWith("INGESTION_ACTIVE_JOB_EXISTS:")) {
+          const [, activeJobId = "", activeStatus = ""] = msg.split(":");
+
+          return jsonError(409, "INGESTION_ACTIVE_JOB_EXISTS", {
+            active_job_id: activeJobId || null,
+            active_status: activeStatus || null,
+          });
+        }
+
+        if (msg.startsWith("INGESTION_ACTIVE_JOB_CHECK_FAILED:")) {
+          return jsonError(500, "INGESTION_ACTIVE_JOB_CHECK_FAILED", {
+            detail: msg.replace("INGESTION_ACTIVE_JOB_CHECK_FAILED:", ""),
+          });
+        }
 
         if (msg.startsWith("INGESTION_JOB_CREATE_FAILED:")) {
           return jsonError(500, "INGESTION_JOB_CREATE_FAILED", {
@@ -1170,6 +1349,7 @@ export async function POST(req: Request, ctx: Ctx) {
     const blobSize = typeof blob.size === "number" ? blob.size : 0;
 
     const ingestionId = randomUUID();
+    candidateIngestionId = ingestionId;
     const startedAt = new Date().toISOString();
 
     reportMetaForError = await updateReportIngestionMeta(
@@ -1202,22 +1382,8 @@ export async function POST(req: Request, ctx: Ctx) {
         max_parallel_inserts: 2,
         last_csv: { bucket, path, name: asString(latestCsv?.name) },
         mode,
-      },
-      {
-        current_ingestion_id: ingestionId,
       }
     );
-
-    if (mode === "replace") {
-      const { error: delErr } = await sb
-        .from("report_rows")
-        .delete()
-        .eq("report_id", reportId);
-
-      if (delErr) {
-        throw new Error(delErr.message || "Failed to delete previous report rows");
-      }
-    }
 
     const batchSize = getSafeBatchSize(0, blobSize);
     const updateEveryBatches = getMetaUpdateEveryBatches(0, blobSize);
@@ -1621,45 +1787,67 @@ export async function POST(req: Request, ctx: Ctx) {
     }
 
     await drainAllInserts(true);
+    await flushProgressMeta(true);
 
-    reportMetaForError = await updateReportIngestionMeta(
+    if (insertedCount <= 0 || insertedCount !== validRowCount) {
+      throw new Error(
+        `CSV_CANDIDATE_INVALID:inserted=${insertedCount}:valid=${validRowCount}`
+      );
+    }
+
+    await activateCsvIngestionSnapshot({
       sb,
       reportId,
-      reportMetaForError,
-      {
-        status: "done",
-        last_run_at: new Date().toISOString(),
-        last_csv: { bucket, path, name: asString(latestCsv?.name) },
-        mode,
-        inserted: insertedCount,
-        valid_rows: validRowCount,
-        keyword_rows: keywordRowCount,
-        creative_rows: creativeRowCount,
-        mixed_rows: mixedRowCount,
-        unknown_rows: unknownRowCount,
-        representative_summary_level:
-          keywordRowCount + mixedRowCount > 0
-            ? "keyword"
-            : creativeRowCount > 0
-              ? "creative"
-              : "unknown",
-        parsed_lines: parsedLines,
-        total_lines: totalLines,
-        progress: 100,
-        ingestion_id: ingestionId,
-        batch_size: batchSize,
-        committed_batches: committedBatchCount,
-        min_date: min_date || null,
-        max_date: max_date || null,
-        bytes_total: blobSize || 0,
-        bytes_processed: blobSize || 0,
-        in_flight_inserts: 0,
-        max_parallel_inserts: MAX_PARALLEL_INSERTS,
-        finished_at: new Date().toISOString(),
-        error: null,
-      },
-      { current_ingestion_id: ingestionId }
-    );
+      workspaceId: workspace_id,
+      previousIngestionId,
+      candidateIngestionId: ingestionId,
+      expectedRows: insertedCount,
+    });
+
+    try {
+      reportMetaForError = await updateReportIngestionMeta(
+        sb,
+        reportId,
+        reportMetaForError,
+        {
+          status: "done",
+          last_run_at: new Date().toISOString(),
+          last_csv: { bucket, path, name: asString(latestCsv?.name) },
+          mode,
+          inserted: insertedCount,
+          valid_rows: validRowCount,
+          keyword_rows: keywordRowCount,
+          creative_rows: creativeRowCount,
+          mixed_rows: mixedRowCount,
+          unknown_rows: unknownRowCount,
+          representative_summary_level:
+            keywordRowCount + mixedRowCount > 0
+              ? "keyword"
+              : creativeRowCount > 0
+                ? "creative"
+                : "unknown",
+          parsed_lines: parsedLines,
+          total_lines: totalLines,
+          progress: 100,
+          ingestion_id: ingestionId,
+          batch_size: batchSize,
+          committed_batches: committedBatchCount,
+          min_date: min_date || null,
+          max_date: max_date || null,
+          bytes_total: blobSize || 0,
+          bytes_processed: blobSize || 0,
+          in_flight_inserts: 0,
+          max_parallel_inserts: MAX_PARALLEL_INSERTS,
+          finished_at: new Date().toISOString(),
+          error: null,
+        }
+      );
+    } catch (metaError) {
+      console.error(
+        "[ingestion/run] CSV snapshot activated but final meta update failed:",
+        metaError
+      );
+    }
 
     return NextResponse.json(
       {
@@ -1691,7 +1879,25 @@ export async function POST(req: Request, ctx: Ctx) {
   } catch (error: any) {
     console.error("[ingestion/run] fatal error:", error);
 
-    if (sb && reportId) {
+    let candidateReferenced = false;
+
+    if (sb && reportId && candidateIngestionId) {
+      try {
+        const deleted = await cleanupCsvCandidateRowsIfUnreferenced({
+          sb,
+          reportId,
+          candidateIngestionId,
+        });
+        candidateReferenced = !deleted;
+      } catch (cleanupError) {
+        console.error(
+          "[ingestion/run] failed to cleanup CSV candidate rows:",
+          cleanupError
+        );
+      }
+    }
+
+    if (sb && reportId && !candidateReferenced) {
       try {
         await updateReportIngestionMeta(sb, reportId, reportMetaForError, {
           status: "failed",
