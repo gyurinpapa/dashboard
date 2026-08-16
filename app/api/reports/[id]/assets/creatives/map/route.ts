@@ -204,6 +204,11 @@ export async function GET(req: Request, ctx: Ctx) {
       url.searchParams.get("mode") || "strict"
     ).toLowerCase();
 
+    const hasKnownBatchId = url.searchParams.has("knownBatchId");
+    const rawKnownBatchId = url.searchParams.get("knownBatchId");
+    const knownCreativesBatchId =
+      rawKnownBatchId === "__NULL__" ? null : asStr(rawKnownBatchId) || null;
+
     const admin = getSupabaseAdmin();
 
     // ✅ auth 통일 (Bearer 우선 + 쿠키 fallback)
@@ -251,6 +256,27 @@ export async function GET(req: Request, ctx: Ctx) {
       if (!wm) {
         return jsonError(403, "FORBIDDEN");
       }
+    }
+
+    const normalizedCurrentCreativesBatchId = currentCreativesBatchId || null;
+
+    if (
+      hasKnownBatchId &&
+      knownCreativesBatchId === normalizedCurrentCreativesBatchId
+    ) {
+      return NextResponse.json({
+        ok: true,
+        notModified: true,
+        creativesMap: {},
+        meta: {
+          mode,
+          currentCreativesBatchId: normalizedCurrentCreativesBatchId,
+          strictCount: 0,
+          signedCount: 0,
+          expandedCount: 0,
+          expiresIn,
+        },
+      });
     }
 
     // 3️⃣ report_creatives 조회
@@ -314,6 +340,7 @@ export async function GET(req: Request, ctx: Ctx) {
     const creativesMap: Record<string, string> = {};
 
     const strictCount = uniqPath.size;
+    let signedCount = 0;
 
     for (const e of uniqPath.values()) {
       const { data: signed, error: sErr } =
@@ -326,6 +353,7 @@ export async function GET(req: Request, ctx: Ctx) {
       }
 
       creativesMap[e.key] = signed.signedUrl;
+      signedCount += 1;
 
       if (shouldExpand(mode)) {
         const k2 = stripExt(e.key);
@@ -338,10 +366,13 @@ export async function GET(req: Request, ctx: Ctx) {
 
     return NextResponse.json({
       ok: true,
+      notModified: false,
       creativesMap,
       meta: {
         mode,
+        currentCreativesBatchId: normalizedCurrentCreativesBatchId,
         strictCount,
+        signedCount,
         expandedCount: Object.keys(creativesMap).length,
         expiresIn,
       },

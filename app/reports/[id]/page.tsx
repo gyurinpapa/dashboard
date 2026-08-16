@@ -759,11 +759,36 @@ async function fetchRowsMeta(reportId: string): Promise<RowsMetaResult> {
   };
 }
 
+type CreativesMapResult = {
+  creativesMap: Record<string, string>;
+  currentCreativesBatchId: string | null;
+  strictCount: number;
+  signedCount: number;
+  notModified: boolean;
+  expiresIn: number;
+};
+
+const CREATIVE_MAP_REUSE_MAX_AGE_MS = 45 * 60 * 1000;
+const NULL_CREATIVE_BATCH_SENTINEL = "__NULL__";
+
 async function fetchCreativesMap(
   reportId: string,
-): Promise<Record<string, string>> {
+  knownBatchId?: string | null,
+): Promise<CreativesMapResult> {
+  const params = new URLSearchParams({
+    expiresIn: "3600",
+    mode: "expanded",
+  });
+
+  if (knownBatchId !== undefined) {
+    params.set(
+      "knownBatchId",
+      knownBatchId ?? NULL_CREATIVE_BATCH_SENTINEL,
+    );
+  }
+
   const res = await authFetch(
-    `/api/reports/${reportId}/assets/creatives/map?expiresIn=3600&mode=expanded`,
+    `/api/reports/${reportId}/assets/creatives/map?${params.toString()}`,
   );
   const json = await safeJson(res);
   if (!res.ok || !json?.ok) {
@@ -771,7 +796,24 @@ async function fetchCreativesMap(
       json?.error || `Failed to fetch creativesMap (${res.status})`,
     );
   }
-  return json.creativesMap ?? {};
+
+  const currentCreativesBatchId =
+    json?.meta?.currentCreativesBatchId == null ||
+    String(json.meta.currentCreativesBatchId).trim() === ""
+      ? null
+      : String(json.meta.currentCreativesBatchId).trim();
+
+  return {
+    creativesMap:
+      json?.creativesMap && typeof json.creativesMap === "object"
+        ? json.creativesMap
+        : {},
+    currentCreativesBatchId,
+    strictCount: Math.max(0, asNum(json?.meta?.strictCount)),
+    signedCount: Math.max(0, asNum(json?.meta?.signedCount)),
+    notModified: json?.notModified === true,
+    expiresIn: Math.max(0, asNum(json?.meta?.expiresIn)),
+  };
 }
 
 async function runIngestion(reportId: string) {
@@ -1537,6 +1579,9 @@ export default function ReportDetailPage() {
   const lastLoadedMediaSyncSettingsKeyRef = useRef<string>("");
 
   const [creativesMap, setCreativesMap] = useState<Record<string, string>>({});
+  const creativesBatchIdRef = useRef<string | null | undefined>(undefined);
+  const creativesMapLoadedAtRef = useRef(0);
+  const creativesMapCompleteRef = useRef(false);
   const [headerInfo, setHeaderInfo] = useState<ReportHeaderInfo>({
     advertiserName: "",
     reportTypeName: "",
@@ -2022,9 +2067,20 @@ export default function ReportDetailPage() {
 
         setLoadingRows(false);
 
+        const canReuseCreativesMap =
+          creativesBatchIdRef.current !== undefined &&
+          creativesMapCompleteRef.current &&
+          creativesMapLoadedAtRef.current > 0 &&
+          Date.now() - creativesMapLoadedAtRef.current <
+            CREATIVE_MAP_REUSE_MAX_AGE_MS;
+
+        const knownCreativesBatchId = canReuseCreativesMap
+          ? creativesBatchIdRef.current
+          : undefined;
+
         const [detailResult, creativesResult] = await Promise.allSettled([
           fetchReportDetail(reportId),
-          fetchCreativesMap(reportId),
+          fetchCreativesMap(reportId, knownCreativesBatchId),
         ]);
 
         if (detailResult.status === "fulfilled") {
@@ -2053,18 +2109,33 @@ export default function ReportDetailPage() {
         }
 
         if (creativesResult.status === "fulfilled") {
-          const nextCreativesMap = { ...(creativesResult.value ?? {}) };
-          setCreativesMap(nextCreativesMap);
+          const result = creativesResult.value;
 
-          console.log("[refreshRows] creativesMap ok", {
-            keyCount: Object.keys(nextCreativesMap).length,
-          });
+          if (result.notModified) {
+            creativesBatchIdRef.current = result.currentCreativesBatchId;
+
+            console.log("[refreshRows] creativesMap reused");
+          } else {
+            const nextCreativesMap = { ...(result.creativesMap ?? {}) };
+            setCreativesMap(nextCreativesMap);
+            creativesBatchIdRef.current = result.currentCreativesBatchId;
+            creativesMapLoadedAtRef.current = Date.now();
+            creativesMapCompleteRef.current =
+              result.signedCount === result.strictCount;
+
+            console.log("[refreshRows] creativesMap ok", {
+              keyCount: Object.keys(nextCreativesMap).length,
+            });
+          }
         } else {
           console.error(
             "[refreshRows] creativesMap failed",
             creativesResult.reason,
           );
           setCreativesMap({});
+          creativesBatchIdRef.current = undefined;
+          creativesMapLoadedAtRef.current = 0;
+          creativesMapCompleteRef.current = false;
           nextMsg += `creativesMap 조회 실패: ${
             (creativesResult.reason as any)?.message || "unknown"
           }\n`;
@@ -2125,8 +2196,12 @@ export default function ReportDetailPage() {
     }
 
     if (creativesResult.status === "fulfilled") {
-      const nextCreativesMap = { ...(creativesResult.value ?? {}) };
+      const result = creativesResult.value;
+      const nextCreativesMap = { ...(result.creativesMap ?? {}) };
       setCreativesMap(nextCreativesMap);
+      creativesBatchIdRef.current = result.currentCreativesBatchId;
+      creativesMapLoadedAtRef.current = Date.now();
+      creativesMapCompleteRef.current = result.signedCount === result.strictCount;
 
       console.log("[refreshReportShell] creativesMap ok", {
         keyCount: Object.keys(nextCreativesMap).length,
@@ -2137,6 +2212,9 @@ export default function ReportDetailPage() {
         creativesResult.reason,
       );
       setCreativesMap({});
+      creativesBatchIdRef.current = undefined;
+      creativesMapLoadedAtRef.current = 0;
+      creativesMapCompleteRef.current = false;
       nextMsg += `creativesMap 조회 실패: ${
         (creativesResult.reason as any)?.message || "unknown"
       }\n`;
@@ -2341,6 +2419,9 @@ export default function ReportDetailPage() {
 
     setRows([]);
     setCreativesMap({});
+    creativesBatchIdRef.current = undefined;
+    creativesMapLoadedAtRef.current = 0;
+    creativesMapCompleteRef.current = false;
     setHeaderInfo({
       advertiserName: "",
       reportTypeName: "",
@@ -2761,8 +2842,13 @@ export default function ReportDetailPage() {
       setCreativeFiles([]);
       if (creativesInputRef.current) creativesInputRef.current.value = "";
 
-      const nextCreativesMap = await fetchCreativesMap(reportId);
-      setCreativesMap({ ...(nextCreativesMap ?? {}) });
+      const nextCreativesResult = await fetchCreativesMap(reportId);
+      setCreativesMap({ ...(nextCreativesResult.creativesMap ?? {}) });
+      creativesBatchIdRef.current =
+        nextCreativesResult.currentCreativesBatchId;
+      creativesMapLoadedAtRef.current = Date.now();
+      creativesMapCompleteRef.current =
+        nextCreativesResult.signedCount === nextCreativesResult.strictCount;
 
       setMsg(`소재 업로드 완료: ${filesCount}개`);
     } catch (e: any) {
