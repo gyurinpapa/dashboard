@@ -1,6 +1,6 @@
 // app/api/reports/share/[token]/route.ts
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,17 +9,8 @@ function jsonError(status: number, message: string) {
   return NextResponse.json({ ok: false, error: message }, { status });
 }
 
-function mustEnv(name: string) {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing env: ${name}`);
-  return v;
-}
-
 function sbAdmin() {
-  return createClient(
-    mustEnv("NEXT_PUBLIC_SUPABASE_URL"),
-    mustEnv("SUPABASE_SERVICE_ROLE_KEY")
-  );
+  return getSupabaseAdmin();
 }
 
 function buildPublicMeta(metaValue: any) {
