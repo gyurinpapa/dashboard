@@ -390,7 +390,7 @@ export default function ClientSlugReportPage() {
         }
 
         const lightShareRes = await fetch(
-          `/api/share/${encodeURIComponent(shareToken)}?includeRows=0`,
+          `/api/share/${encodeURIComponent(shareToken)}?includeRows=0&includeCreatives=0`,
           {
             cache: "no-store",
           }

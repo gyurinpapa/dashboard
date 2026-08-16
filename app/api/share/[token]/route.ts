@@ -545,6 +545,7 @@ export async function GET(req: Request, ctx: Ctx) {
   const attachImagePath = url.searchParams.get("attachImagePath") === "1";
   const strict = asBool(url.searchParams.get("strict"));
   const includeRows = !asFalseLike(url.searchParams.get("includeRows"));
+  const includeCreatives = !asFalseLike(url.searchParams.get("includeCreatives"));
 
   const sb = getSupabaseAdmin();
 
@@ -672,7 +673,7 @@ export async function GET(req: Request, ctx: Ctx) {
    */
   let creatives: any[] = [];
 
-  if (publishedCreativesBatchId) {
+  if (includeCreatives && publishedCreativesBatchId) {
     const { data, error: creErr } = await sb
       .from("report_creatives")
       .select("creative_key, file_name, storage_bucket, storage_path, mime_type, bytes")

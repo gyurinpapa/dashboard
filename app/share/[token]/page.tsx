@@ -364,7 +364,7 @@ export default function ShareReportPage() {
 
     (async () => {
       try {
-        const lightRes = await fetch(`/api/share/${token}?includeRows=0`, {
+        const lightRes = await fetch(`/api/share/${token}?includeRows=0&includeCreatives=0`, {
           cache: "no-store",
         });
 
