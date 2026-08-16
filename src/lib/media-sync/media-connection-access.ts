@@ -508,11 +508,11 @@ function assertRequestedAction(
 }
 
 async function buildAdvertiserAccessContext(input: {
-  request: Request;
+  user: User;
   advertiser: AdvertiserAccessRecord;
   action: MediaConnectionAccessAction;
 }): Promise<MediaConnectionAccessContext> {
-  const user = await getAuthenticatedUser(input.request);
+  const user = input.user;
 
   const userId = normalizeRequiredString(
     user.id,
@@ -590,6 +590,8 @@ async function buildAdvertiserAccessContext(input: {
 export async function resolveAdvertiserMediaConnectionAccess(
   input: ResolveAdvertiserMediaAccessInput,
 ): Promise<MediaConnectionAccessContext> {
+  const user = await getAuthenticatedUser(input.request);
+
   const advertiserId = normalizeRequiredString(
     input.advertiserId,
     "advertiserId",
@@ -599,7 +601,7 @@ export async function resolveAdvertiserMediaConnectionAccess(
     await getAdvertiserRecord(advertiserId);
 
   return buildAdvertiserAccessContext({
-    request: input.request,
+    user,
     advertiser,
     action: input.action,
   });
@@ -608,6 +610,8 @@ export async function resolveAdvertiserMediaConnectionAccess(
 export async function resolveReportMediaConnectionAccess(
   input: ResolveReportMediaAccessInput,
 ): Promise<MediaConnectionReportAccessContext> {
+  const user = await getAuthenticatedUser(input.request);
+
   const reportId = normalizeRequiredString(
     input.reportId,
     "reportId",
@@ -652,7 +656,7 @@ export async function resolveReportMediaConnectionAccess(
 
   const accessContext =
     await buildAdvertiserAccessContext({
-      request: input.request,
+      user,
       advertiser,
       action: input.action,
     });

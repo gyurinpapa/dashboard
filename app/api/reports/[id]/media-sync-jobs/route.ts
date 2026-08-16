@@ -189,7 +189,7 @@ function mediaSyncSettingMismatchResponse() {
  * 안전 원칙:
  * - reportId는 URL params에서만 사용한다.
  * - workspaceId, advertiserId는 access resolver 결과만 사용한다.
- * - run_sync 권한이 있는 사용자만 조회한다.
+ * - 인증을 먼저 완료한 뒤 report/advertiser scope와 run_sync 권한을 확인한다.
  * - credential, credential ciphertext, provider 원본 응답은 반환하지 않는다.
  * - report_rows 또는 staging rows 같은 대량 데이터는 조회하지 않는다.
  * - GET은 job 상태를 절대 변경하지 않는다. stale recovery는 worker만 수행한다.
@@ -289,7 +289,7 @@ export async function GET(
  *   userId, createdBy, provider, status 등은 신뢰하지 않는다.
  * - workspaceId, advertiserId, userId는
  *   access resolver 결과만 사용한다.
- * - run_sync 권한이 있는 사용자만 허용한다.
+ * - 인증 및 run_sync 권한 확인을 body 파싱/검증보다 먼저 수행한다.
  * - pending job 생성까지만 수행한다.
  * - 기존 processing job의 stale recovery는 수행하지 않는다. worker만 수행한다.
  * - provider API 호출, worker 실행, ingestion 생성,
@@ -303,6 +303,13 @@ export async function POST(
     const { id } =
       await context.params;
 
+    const access =
+      await resolveReportMediaConnectionAccess({
+        request,
+        reportId: id,
+        action: "run_sync",
+      });
+
     let body: unknown;
 
     try {
@@ -315,16 +322,8 @@ export async function POST(
 
     const parsedRequest =
       parseCreateMediaSyncJobRequest({
-        reportId: id,
+        reportId: access.reportId,
         body,
-      });
-
-    const access =
-      await resolveReportMediaConnectionAccess({
-        request,
-        reportId:
-          parsedRequest.reportId,
-        action: "run_sync",
       });
 
     const accessContext = {
