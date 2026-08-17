@@ -299,6 +299,17 @@ export function mapMediaSyncJobsRepositoryRouteError(
 
   if (
     code ===
+    "REPORT_CONNECTION_NOT_MAPPED"
+  ) {
+    return {
+      status: 409,
+      error:
+        "REPORT_CONNECTION_NOT_MAPPED",
+    };
+  }
+
+  if (
+    code ===
     "ACTIVE_JOB_ALREADY_EXISTS"
   ) {
     return {

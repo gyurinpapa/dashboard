@@ -21,6 +21,8 @@ import {
 
 const MEDIA_SYNC_JOBS_TABLE = "media_sync_jobs";
 const REPORTS_TABLE = "reports";
+const REPORT_MEDIA_CONNECTIONS_TABLE =
+  "report_media_connections";
 
 const MEDIA_SYNC_JOB_PENDING_STATUS =
   "pending" as const;
@@ -59,6 +61,7 @@ export type MediaSyncJobsRepositoryErrorCode =
   | "CONNECTION_NOT_FOUND"
   | "CONNECTION_SCOPE_MISMATCH"
   | "CONNECTION_NOT_ACTIVE"
+  | "REPORT_CONNECTION_NOT_MAPPED"
   | "ACTIVE_JOB_ALREADY_EXISTS"
   | "DATABASE_ERROR";
 
@@ -561,6 +564,82 @@ async function requireScopedReport(input: {
 }
 
 
+async function requireExactReportConnectionMapping(input: {
+  reportId: string;
+  connectionId: string;
+  workspaceId: string;
+  advertiserId: string;
+}): Promise<void> {
+  const supabase = getSupabaseAdmin();
+
+  const { data, error } = await supabase
+    .from(REPORT_MEDIA_CONNECTIONS_TABLE)
+    .select(
+      "workspace_id, advertiser_id, report_id, connection_id",
+    )
+    .eq("report_id", input.reportId)
+    .eq("connection_id", input.connectionId)
+    .eq("workspace_id", input.workspaceId)
+    .eq("advertiser_id", input.advertiserId)
+    .limit(2);
+
+  if (error) {
+    throw wrapDatabaseError(
+      "Report media connection mapping could not be loaded.",
+      error,
+    );
+  }
+
+  if (!Array.isArray(data)) {
+    throw new MediaSyncJobsRepositoryError(
+      "INVALID_RECORD",
+      "Report media connection mapping query returned an invalid result.",
+    );
+  }
+
+  if (data.length === 0) {
+    throw new MediaSyncJobsRepositoryError(
+      "REPORT_CONNECTION_NOT_MAPPED",
+      "The report is not mapped to the requested media connection.",
+    );
+  }
+
+  if (data.length !== 1) {
+    throw new MediaSyncJobsRepositoryError(
+      "INVALID_RECORD",
+      "Report media connection mapping query returned duplicate rows.",
+    );
+  }
+
+  const row = data[0];
+
+  if (
+    !isPlainObject(row) ||
+    requireString(
+      row.report_id,
+      "mapping.report_id",
+    ) !== input.reportId ||
+    requireString(
+      row.connection_id,
+      "mapping.connection_id",
+    ) !== input.connectionId ||
+    requireString(
+      row.workspace_id,
+      "mapping.workspace_id",
+    ) !== input.workspaceId ||
+    requireString(
+      row.advertiser_id,
+      "mapping.advertiser_id",
+    ) !== input.advertiserId
+  ) {
+    throw new MediaSyncJobsRepositoryError(
+      "INVALID_RECORD",
+      "Report media connection mapping does not match the requested scope.",
+    );
+  }
+}
+
+
 function normalizeStaleProcessingJobMs(
   value: unknown,
 ): number {
@@ -962,6 +1041,13 @@ export async function createPendingMediaSyncJob(
       "Media connection is not active.",
     );
   }
+
+  await requireExactReportConnectionMapping({
+    reportId: report.id,
+    connectionId: connection.id,
+    workspaceId,
+    advertiserId,
+  });
 
   // Stage 8 / Macro 3: request-driven job creation never mutates an existing
   // processing job. Stale processing recovery is owned exclusively by the

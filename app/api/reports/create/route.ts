@@ -13,6 +13,7 @@ type ReportDataSourceKind = "csv" | "api";
 type CreateBody = {
   workspace_id?: string;
   advertiser_id?: string | null;
+  connection_id?: string | null;
   report_type_id?: string;
   title?: string;
   status?: string;
@@ -90,12 +91,17 @@ function normalizeReportMeta(input: any) {
   const kind = normalizeDataSourceKind(existingDataSource.kind);
 
   if (kind === "api") {
+    const normalizedDataSource = {
+      ...existingDataSource,
+    };
+
+    delete normalizedDataSource.provider;
+
     return {
       ...meta,
       data_source: {
-        ...existingDataSource,
+        ...normalizedDataSource,
         kind: "api" as const,
-        provider: asString(existingDataSource.provider) || "naver_searchad",
         data_level: asString(existingDataSource.data_level) || "keyword",
         mode: asString(existingDataSource.mode) || "snapshot_replace",
       },
@@ -108,6 +114,115 @@ function normalizeReportMeta(input: any) {
       ...existingDataSource,
       kind: "csv" as const,
     },
+  };
+}
+
+
+function mapAtomicApiReportRpcError(error: any) {
+  const message = asString(error?.message);
+  const code = asString(error?.code);
+
+  if (message.startsWith("API_REPORT_INVALID_INPUT:")) {
+    return jsonError(400, "INVALID_INPUT");
+  }
+
+  if (
+    message.startsWith("API_REPORT_CONNECTION_NOT_FOUND:")
+  ) {
+    return jsonError(404, "CONNECTION_NOT_FOUND");
+  }
+
+  if (
+    message.startsWith("API_REPORT_CONNECTION_SCOPE_INVALID:") ||
+    message.startsWith("API_REPORT_SCOPE_INVALID:")
+  ) {
+    return jsonError(403, "CONNECTION_SCOPE_MISMATCH");
+  }
+
+  if (
+    message.startsWith("API_REPORT_CONNECTION_NOT_ACTIVE:")
+  ) {
+    return jsonError(409, "CONNECTION_NOT_ACTIVE");
+  }
+
+  if (
+    message.startsWith(
+      "API_REPORT_CONNECTION_CREDENTIALS_MISSING:",
+    )
+  ) {
+    return jsonError(
+      409,
+      "CONNECTION_CREDENTIALS_MISSING",
+    );
+  }
+
+  if (
+    code === "23505" ||
+    code === "23503" ||
+    code === "23514"
+  ) {
+    return jsonError(
+      409,
+      "API_REPORT_ATOMIC_CREATION_CONFLICT",
+    );
+  }
+
+  return jsonError(
+    500,
+    "API_REPORT_ATOMIC_CREATION_FAILED",
+  );
+}
+
+function buildSafeAtomicApiReportResponse(
+  value: any,
+  expected: {
+    workspaceId: string;
+    advertiserId: string;
+    connectionId: string;
+    reportTypeId: string;
+  },
+) {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const id = asString(value.id);
+  const workspaceId = asString(value.workspace_id);
+  const advertiserId = asString(value.advertiser_id);
+  const connectionId = asString(value.connection_id);
+  const reportTypeId = asString(value.report_type_id);
+  const provider = asString(value.provider);
+  const status = asString(value.status);
+  const meta = safeObj(value.meta);
+  const dataSource = isPlainObject(meta.data_source)
+    ? meta.data_source
+    : {};
+  const metaProvider = asString(dataSource.provider);
+
+  if (
+    !id ||
+    workspaceId !== expected.workspaceId ||
+    advertiserId !== expected.advertiserId ||
+    connectionId !== expected.connectionId ||
+    reportTypeId !== expected.reportTypeId ||
+    !provider ||
+    metaProvider !== provider ||
+    status !== "draft"
+  ) {
+    return null;
+  }
+
+  return {
+    id,
+    workspace_id: workspaceId,
+    advertiser_id: advertiserId,
+    report_type_id: reportTypeId,
+    title: asString(value.title),
+    status,
+    period_start: value.period_start ?? null,
+    period_end: value.period_end ?? null,
+    created_at: value.created_at ?? null,
+    meta,
   };
 }
 
@@ -190,6 +305,8 @@ export async function POST(req: Request) {
 
     const advertiser_id = advertiser_id_raw || null;
 
+    const connection_id = asString(body.connection_id);
+
     const report_type_id = asString(body.report_type_id);
 
     const title = asString(body.title);
@@ -203,6 +320,13 @@ export async function POST(req: Request) {
       return jsonError(
         400,
         "API linked reports require advertiser_id",
+      );
+    }
+
+    if (dataSourceKind === "api" && !connection_id) {
+      return jsonError(
+        400,
+        "API linked reports require connection_id",
       );
     }
 
@@ -366,7 +490,59 @@ export async function POST(req: Request) {
       }
     }
 
-    // ✅ 5) reports insert
+    // ✅ 5-A) API report는 report + connection mapping을 하나의 DB transaction으로 생성
+    if (dataSourceKind === "api") {
+      if (!advertiser_id || !connection_id) {
+        return jsonError(
+          400,
+          "API linked reports require advertiser_id and connection_id",
+        );
+      }
+
+      const { data, error } = await supabaseAdmin.rpc(
+        "create_api_report_with_media_connection_v1",
+        {
+          p_workspace_id: resolved_workspace_id,
+          p_advertiser_id: advertiser_id,
+          p_connection_id: connection_id,
+          p_report_type_id: report_type_id,
+          p_title: title || "New Report - Draft",
+          p_period_start: period_start,
+          p_period_end: period_end,
+          p_created_by: created_by,
+          p_meta: meta,
+        },
+      );
+
+      if (error) {
+        return mapAtomicApiReportRpcError(error);
+      }
+
+      const safeReport =
+        buildSafeAtomicApiReportResponse(
+          data,
+          {
+            workspaceId: resolved_workspace_id,
+            advertiserId: advertiser_id,
+            connectionId: connection_id,
+            reportTypeId: report_type_id,
+          },
+        );
+
+      if (!safeReport) {
+        return jsonError(
+          500,
+          "API_REPORT_ATOMIC_CREATION_INVALID_RESULT",
+        );
+      }
+
+      return NextResponse.json({
+        ok: true,
+        report: safeReport,
+      });
+    }
+
+    // ✅ 5-B) CSV report 생성 계약은 기존 direct insert를 그대로 유지
     const { data, error } = await supabaseAdmin
       .from("reports")
       .insert({
