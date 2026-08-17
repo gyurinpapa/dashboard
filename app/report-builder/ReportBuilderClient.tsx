@@ -87,6 +87,8 @@ type WorkspaceMemberRow = {
 
 type MediaProvider = "naver_searchad" | "google_ads" | "meta_ads";
 type MediaConnectionStatus = "active" | "disconnected" | "error";
+type MediaConnectionAccessScope = "true_master" | "workspace" | "own_created";
+type NaverMediaConnectionFormMode = "create" | "replace";
 type MediaSyncJobStatus =
   | "pending"
   | "processing"
@@ -515,6 +517,41 @@ export default function ReportBuilderPage() {
   const [savingPublicSlug, setSavingPublicSlug] = useState(false);
   const [localMsg, setLocalMsg] = useState("");
 
+  const [selectedAdvertiserMediaConnections, setSelectedAdvertiserMediaConnections] =
+    useState<SafeMediaConnection[]>([]);
+  const [selectedAdvertiserMediaAccessScope, setSelectedAdvertiserMediaAccessScope] =
+    useState<MediaConnectionAccessScope | null>(null);
+  const [loadingSelectedAdvertiserMediaConnections, setLoadingSelectedAdvertiserMediaConnections] =
+    useState(false);
+  const [selectedAdvertiserMediaConnectionsError, setSelectedAdvertiserMediaConnectionsError] =
+    useState("");
+  const [resolvedAdvertiserMediaConnectionScopeKey, setResolvedAdvertiserMediaConnectionScopeKey] =
+    useState("");
+  const [mediaConnectionsRefreshVersion, setMediaConnectionsRefreshVersion] =
+    useState(0);
+
+  const [naverMediaConnectionFormMode, setNaverMediaConnectionFormMode] =
+    useState<NaverMediaConnectionFormMode | null>(null);
+  const [naverMediaConnectionTargetId, setNaverMediaConnectionTargetId] =
+    useState("");
+  const [naverExternalAccountIdInput, setNaverExternalAccountIdInput] =
+    useState("");
+  const [naverExternalAccountNameInput, setNaverExternalAccountNameInput] =
+    useState("");
+  const [naverCustomerIdInput, setNaverCustomerIdInput] = useState("");
+  const [naverAccessLicenseInput, setNaverAccessLicenseInput] = useState("");
+  const [naverSecretKeyInput, setNaverSecretKeyInput] = useState("");
+  const [naverCustomerIdUnlocked, setNaverCustomerIdUnlocked] =
+    useState(false);
+  const [naverAccessLicenseUnlocked, setNaverAccessLicenseUnlocked] =
+    useState(false);
+  const [naverSecretKeyUnlocked, setNaverSecretKeyUnlocked] =
+    useState(false);
+  const [savingNaverMediaConnection, setSavingNaverMediaConnection] =
+    useState(false);
+  const [naverMediaConnectionFormError, setNaverMediaConnectionFormError] =
+    useState("");
+
   const [selectedAdvertiserIds, setSelectedAdvertiserIds] = useState<string[]>([]);
   const [deletingAdvertisers, setDeletingAdvertisers] = useState(false);
   const [selectedReportIds, setSelectedReportIds] = useState<string[]>([]);
@@ -539,6 +576,8 @@ export default function ReportBuilderPage() {
   const [listViewportHeight, setListViewportHeight] = useState(LIST_VIEWPORT_HEIGHT);
 
   const reportsRequestSeqRef = useRef(0);
+  const mediaConnectionsRequestSeqRef = useRef(0);
+  const mediaConnectionScopeKeyRef = useRef("");
   const nextOffsetRef = useRef(0);
   const hasMoreRef = useRef(false);
   const loadingReportsRef = useRef(false);
@@ -1033,6 +1072,194 @@ export default function ReportBuilderPage() {
   }, [advertisers, selectedAdvertiserId]);
 
   useEffect(() => {
+    const advertiserId = selectedAdvertiserId.trim();
+    const currentWorkspaceId = String(workspaceId ?? "").trim();
+    const scopeKey =
+      advertiserId && currentWorkspaceId && currentWorkspaceId !== ALL_WORKSPACES
+        ? `${currentWorkspaceId}:${advertiserId}`
+        : "";
+    const requestSeq = ++mediaConnectionsRequestSeqRef.current;
+    let cancelled = false;
+
+    mediaConnectionScopeKeyRef.current = scopeKey;
+
+    setSelectedAdvertiserMediaConnections([]);
+    setSelectedAdvertiserMediaAccessScope(null);
+    setSelectedAdvertiserMediaConnectionsError("");
+    setResolvedAdvertiserMediaConnectionScopeKey("");
+    setNaverMediaConnectionFormMode(null);
+    setNaverMediaConnectionTargetId("");
+    setNaverExternalAccountIdInput("");
+    setNaverExternalAccountNameInput("");
+    setNaverCustomerIdInput("");
+    setNaverAccessLicenseInput("");
+    setNaverSecretKeyInput("");
+    setNaverCustomerIdUnlocked(false);
+    setNaverAccessLicenseUnlocked(false);
+    setNaverSecretKeyUnlocked(false);
+    setNaverMediaConnectionFormError("");
+
+    if (!userId || !scopeKey) {
+      setLoadingSelectedAdvertiserMediaConnections(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setLoadingSelectedAdvertiserMediaConnections(true);
+
+    (async () => {
+      try {
+        const token = await getAccessToken();
+
+        if (
+          cancelled ||
+          requestSeq !== mediaConnectionsRequestSeqRef.current
+        ) {
+          return;
+        }
+
+        if (!token) {
+          setSelectedAdvertiserMediaConnectionsError(
+            "로그인 세션이 없어 매체 연결 상태를 확인할 수 없습니다."
+          );
+          setResolvedAdvertiserMediaConnectionScopeKey(scopeKey);
+          return;
+        }
+
+        const res = await fetch(
+          `/api/advertisers/${encodeURIComponent(advertiserId)}/media-connections`,
+          {
+            method: "GET",
+            credentials: "include",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        const json = await safeReadJson(res);
+
+        if (
+          cancelled ||
+          requestSeq !== mediaConnectionsRequestSeqRef.current
+        ) {
+          return;
+        }
+
+        if (!res.ok || !(json as any)?.ok) {
+          console.warn(
+            "[advertiser-media-connections:get] failed",
+            res.status,
+            json
+          );
+
+          setSelectedAdvertiserMediaConnectionsError(
+            res.status === 403
+              ? "이 광고주의 매체 연결 조회 권한이 없습니다."
+              : "매체 연결 상태를 불러오지 못했습니다."
+          );
+          setResolvedAdvertiserMediaConnectionScopeKey(scopeKey);
+          return;
+        }
+
+        const responseAdvertiserId = String(
+          (json as any)?.advertiser_id ?? ""
+        ).trim();
+        const responseWorkspaceId = String(
+          (json as any)?.workspace_id ?? ""
+        ).trim();
+
+        if (
+          responseAdvertiserId !== advertiserId ||
+          responseWorkspaceId !== currentWorkspaceId
+        ) {
+          console.warn(
+            "[advertiser-media-connections:get] scope mismatch",
+            {
+              requestedAdvertiserId: advertiserId,
+              responseAdvertiserId,
+              requestedWorkspaceId: currentWorkspaceId,
+              responseWorkspaceId,
+            }
+          );
+          setSelectedAdvertiserMediaConnectionsError(
+            "매체 연결 범위를 안전하게 확인할 수 없습니다."
+          );
+          setResolvedAdvertiserMediaConnectionScopeKey(scopeKey);
+          return;
+        }
+
+        const rawConnections = Array.isArray((json as any)?.connections)
+          ? ((json as any).connections as SafeMediaConnection[])
+          : [];
+
+        const scopedConnections = rawConnections.filter((connection) => {
+          return (
+            String(connection?.advertiser_id ?? "") === advertiserId &&
+            String(connection?.workspace_id ?? "") === currentWorkspaceId
+          );
+        });
+
+        if (scopedConnections.length !== rawConnections.length) {
+          console.warn(
+            "[advertiser-media-connections:get] connection scope mismatch"
+          );
+          setSelectedAdvertiserMediaConnectionsError(
+            "매체 연결 범위를 안전하게 확인할 수 없습니다."
+          );
+          setResolvedAdvertiserMediaConnectionScopeKey(scopeKey);
+          return;
+        }
+
+        const accessScope = String((json as any)?.access_scope ?? "");
+
+        setSelectedAdvertiserMediaConnections(scopedConnections);
+        setSelectedAdvertiserMediaAccessScope(
+          accessScope === "true_master" ||
+            accessScope === "workspace" ||
+            accessScope === "own_created"
+            ? accessScope
+            : null
+        );
+        setResolvedAdvertiserMediaConnectionScopeKey(scopeKey);
+      } catch (error) {
+        if (
+          cancelled ||
+          requestSeq !== mediaConnectionsRequestSeqRef.current
+        ) {
+          return;
+        }
+
+        console.warn(
+          "[advertiser-media-connections:get] exception",
+          error
+        );
+        setSelectedAdvertiserMediaConnectionsError(
+          "매체 연결 상태를 불러오지 못했습니다."
+        );
+        setResolvedAdvertiserMediaConnectionScopeKey(scopeKey);
+      } finally {
+        if (
+          !cancelled &&
+          requestSeq === mediaConnectionsRequestSeqRef.current
+        ) {
+          setLoadingSelectedAdvertiserMediaConnections(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    userId,
+    workspaceId,
+    selectedAdvertiserId,
+    mediaConnectionsRefreshVersion,
+  ]);
+
+  useEffect(() => {
     setSelectedAdvertiserIds((prev) => {
       const allowed = new Set(advertisers.map((a) => a.id));
       return prev.filter((id) => allowed.has(id));
@@ -1112,6 +1339,321 @@ export default function ReportBuilderPage() {
     setSelectedReportIds([]);
     setSelectedAdvertiserIds([]);
     setDeletingAdvertisers(false);
+    setNaverMediaConnectionFormMode(null);
+    setNaverMediaConnectionTargetId("");
+    setNaverExternalAccountIdInput("");
+    setNaverExternalAccountNameInput("");
+    setNaverCustomerIdInput("");
+    setNaverAccessLicenseInput("");
+    setNaverSecretKeyInput("");
+    setNaverCustomerIdUnlocked(false);
+    setNaverAccessLicenseUnlocked(false);
+    setNaverSecretKeyUnlocked(false);
+    setNaverMediaConnectionFormError("");
+    setSavingNaverMediaConnection(false);
+  }
+
+  function closeNaverMediaConnectionForm() {
+    setNaverMediaConnectionFormMode(null);
+    setNaverMediaConnectionTargetId("");
+    setNaverExternalAccountIdInput("");
+    setNaverExternalAccountNameInput("");
+    setNaverCustomerIdInput("");
+    setNaverAccessLicenseInput("");
+    setNaverSecretKeyInput("");
+    setNaverCustomerIdUnlocked(false);
+    setNaverAccessLicenseUnlocked(false);
+    setNaverSecretKeyUnlocked(false);
+    setNaverMediaConnectionFormError("");
+  }
+
+  function openCreateNaverMediaConnectionForm() {
+    if (savingNaverMediaConnection) return;
+
+    setNaverMediaConnectionFormMode("create");
+    setNaverMediaConnectionTargetId("");
+    setNaverExternalAccountIdInput("");
+    setNaverExternalAccountNameInput("");
+    setNaverCustomerIdInput("");
+    setNaverAccessLicenseInput("");
+    setNaverSecretKeyInput("");
+    setNaverCustomerIdUnlocked(false);
+    setNaverAccessLicenseUnlocked(false);
+    setNaverSecretKeyUnlocked(false);
+    setNaverMediaConnectionFormError("");
+  }
+
+  function openReplaceNaverMediaConnectionForm(connection: SafeMediaConnection) {
+    if (savingNaverMediaConnection) return;
+
+    setNaverMediaConnectionFormMode("replace");
+    setNaverMediaConnectionTargetId(connection.id);
+    setNaverExternalAccountIdInput("");
+    setNaverExternalAccountNameInput("");
+    setNaverCustomerIdInput("");
+    setNaverAccessLicenseInput("");
+    setNaverSecretKeyInput("");
+    setNaverCustomerIdUnlocked(false);
+    setNaverAccessLicenseUnlocked(false);
+    setNaverSecretKeyUnlocked(false);
+    setNaverMediaConnectionFormError("");
+  }
+
+  async function submitNaverMediaConnectionForm() {
+    if (savingNaverMediaConnection || !naverMediaConnectionFormMode) return;
+
+    const advertiserId = selectedAdvertiserId.trim();
+    const currentWorkspaceId = String(workspaceId ?? "").trim();
+    const scopeKey =
+      advertiserId && currentWorkspaceId && currentWorkspaceId !== ALL_WORKSPACES
+        ? `${currentWorkspaceId}:${advertiserId}`
+        : "";
+
+    if (
+      !scopeKey ||
+      resolvedAdvertiserMediaConnectionScopeKey !== scopeKey ||
+      mediaConnectionScopeKeyRef.current !== scopeKey ||
+      selectedAdvertiserMediaConnectionsError
+    ) {
+      setNaverMediaConnectionFormError(
+        "현재 광고주의 매체 연결 범위를 안전하게 확인할 수 없습니다."
+      );
+      return;
+    }
+
+    if (
+      selectedAdvertiserMediaAccessScope !== "true_master" &&
+      selectedAdvertiserMediaAccessScope !== "workspace"
+    ) {
+      setNaverMediaConnectionFormError(
+        "이 광고주의 매체 연결을 관리할 권한이 없습니다."
+      );
+      return;
+    }
+
+    const scopedNaverConnections = selectedAdvertiserMediaConnections.filter(
+      (connection) =>
+        connection.workspace_id === currentWorkspaceId &&
+        connection.advertiser_id === advertiserId &&
+        connection.provider === "naver_searchad"
+    );
+
+    const customerId = naverCustomerIdInput.trim();
+    const accessLicense = naverAccessLicenseInput.trim();
+    const secretKey = naverSecretKeyInput.trim();
+
+    if (!customerId || !accessLicense || !secretKey) {
+      setNaverMediaConnectionFormError(
+        "Customer ID, Access License, Secret Key를 모두 입력하세요."
+      );
+      return;
+    }
+
+    if (
+      customerId.length > 200 ||
+      accessLicense.length > 500 ||
+      secretKey.length > 1000
+    ) {
+      setNaverMediaConnectionFormError(
+        "입력값 길이가 허용 범위를 초과했습니다."
+      );
+      return;
+    }
+
+    let requestUrl =
+      `/api/advertisers/${encodeURIComponent(advertiserId)}/media-connections`;
+    let method: "POST" | "PATCH" = "POST";
+    let requestBody: Record<string, unknown>;
+
+    if (naverMediaConnectionFormMode === "create") {
+      if (scopedNaverConnections.length !== 0) {
+        setNaverMediaConnectionFormError(
+          "기존 Naver Search Ads 연결 기록이 있어 새 연결을 자동 생성하지 않습니다."
+        );
+        return;
+      }
+
+      const externalAccountId = naverExternalAccountIdInput.trim();
+      const externalAccountName = naverExternalAccountNameInput.trim();
+
+      if (!externalAccountId) {
+        setNaverMediaConnectionFormError("외부 광고계정 ID를 입력하세요.");
+        return;
+      }
+
+      if (externalAccountId.length > 300 || externalAccountName.length > 500) {
+        setNaverMediaConnectionFormError(
+          "광고계정 식별값 길이가 허용 범위를 초과했습니다."
+        );
+        return;
+      }
+
+      requestBody = {
+        provider: "naver_searchad",
+        externalAccountId,
+        externalAccountName: externalAccountName || null,
+        credentials: {
+          customerId,
+          accessLicense,
+          secretKey,
+        },
+      };
+    } else {
+      if (scopedNaverConnections.length !== 1) {
+        setNaverMediaConnectionFormError(
+          "Naver Search Ads 연결이 하나로 확정되지 않아 자격증명을 변경하지 않습니다."
+        );
+        return;
+      }
+
+      const targetConnection = scopedNaverConnections[0];
+
+      if (
+        !naverMediaConnectionTargetId ||
+        targetConnection.id !== naverMediaConnectionTargetId ||
+        targetConnection.status === "disconnected"
+      ) {
+        setNaverMediaConnectionFormError(
+          "자격증명을 변경할 연결을 안전하게 확정할 수 없습니다."
+        );
+        return;
+      }
+
+      method = "PATCH";
+      requestUrl =
+        `/api/advertisers/${encodeURIComponent(advertiserId)}` +
+        `/media-connections/${encodeURIComponent(targetConnection.id)}/credentials`;
+      requestBody = {
+        provider: "naver_searchad",
+        credentials: {
+          customerId,
+          accessLicense,
+          secretKey,
+        },
+      };
+    }
+
+    setSavingNaverMediaConnection(true);
+    setNaverMediaConnectionFormError("");
+
+    try {
+      const token = await getAccessToken();
+
+      if (!token) {
+        setNaverMediaConnectionFormError("로그인 세션이 없습니다.");
+        return;
+      }
+
+      if (mediaConnectionScopeKeyRef.current !== scopeKey) {
+        return;
+      }
+
+      const res = await fetch(requestUrl, {
+        method,
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      const json = await safeReadJson(res);
+
+      if (mediaConnectionScopeKeyRef.current !== scopeKey) {
+        return;
+      }
+
+      if (!res.ok || !(json as any)?.ok) {
+        const errorCode = String((json as any)?.error ?? "").trim();
+
+        if (errorCode === "CONNECTION_ALREADY_EXISTS") {
+          setNaverMediaConnectionFormError(
+            "이미 등록된 매체 계정 연결입니다. 현재 연결 상태를 다시 확인하세요."
+          );
+        } else if (
+          errorCode === "CONNECTION_MANAGE_ACCESS_DENIED" ||
+          errorCode === "MEDIA_CONNECTION_MANAGEMENT_FORBIDDEN"
+        ) {
+          setNaverMediaConnectionFormError(
+            "이 광고주의 매체 연결을 관리할 권한이 없습니다."
+          );
+        } else if (errorCode === "CONNECTION_NOT_FOUND") {
+          setNaverMediaConnectionFormError(
+            "대상 연결을 찾을 수 없습니다. 연결 상태를 다시 불러오세요."
+          );
+        } else if (errorCode === "INVALID_INPUT") {
+          setNaverMediaConnectionFormError(
+            "입력값을 확인하세요. 저장되지 않았습니다."
+          );
+        } else if (errorCode === "ENCRYPTION_ERROR") {
+          setNaverMediaConnectionFormError(
+            "자격증명을 안전하게 암호화하지 못해 저장하지 않았습니다."
+          );
+        } else {
+          setNaverMediaConnectionFormError(
+            naverMediaConnectionFormMode === "create"
+              ? "Naver Search Ads 연결을 저장하지 못했습니다."
+              : "Naver Search Ads 자격증명을 변경하지 못했습니다."
+          );
+        }
+        return;
+      }
+
+      const responseAdvertiserId = String(
+        (json as any)?.advertiser_id ?? ""
+      ).trim();
+      const responseWorkspaceId = String(
+        (json as any)?.workspace_id ?? ""
+      ).trim();
+      const responseConnection = (json as any)?.connection as
+        | SafeMediaConnection
+        | undefined;
+
+      if (
+        responseAdvertiserId !== advertiserId ||
+        responseWorkspaceId !== currentWorkspaceId ||
+        !responseConnection ||
+        responseConnection.advertiser_id !== advertiserId ||
+        responseConnection.workspace_id !== currentWorkspaceId ||
+        responseConnection.provider !== "naver_searchad" ||
+        (naverMediaConnectionFormMode === "replace" &&
+          responseConnection.id !== naverMediaConnectionTargetId)
+      ) {
+        console.warn(
+          "[advertiser-media-connections:mutation] response scope mismatch"
+        );
+        setNaverMediaConnectionFormError(
+          "저장 결과의 광고주 범위를 안전하게 확인할 수 없습니다."
+        );
+        return;
+      }
+
+      const completedMode = naverMediaConnectionFormMode;
+
+      closeNaverMediaConnectionForm();
+      setMediaConnectionsRefreshVersion((prev) => prev + 1);
+      setLocalMsg(
+        completedMode === "create"
+          ? "Naver Search Ads 연결 정보를 안전하게 저장했습니다."
+          : "Naver Search Ads 자격증명을 안전하게 교체했습니다."
+      );
+    } catch (error) {
+      console.warn(
+        "[advertiser-media-connections:mutation] exception",
+        error
+      );
+
+      if (mediaConnectionScopeKeyRef.current === scopeKey) {
+        setNaverMediaConnectionFormError(
+          naverMediaConnectionFormMode === "create"
+            ? "Naver Search Ads 연결을 저장하지 못했습니다."
+            : "Naver Search Ads 자격증명을 변경하지 못했습니다."
+        );
+      }
+    } finally {
+      setSavingNaverMediaConnection(false);
+    }
   }
 
   async function createAdvertiser() {
@@ -1953,6 +2495,78 @@ export default function ReportBuilderPage() {
   const selectedAdvertiserName = useMemo(() => {
     return selectedAdvertiser ? formatAdvertiserLabel(selectedAdvertiser) : "";
   }, [selectedAdvertiser]);
+
+  const currentAdvertiserMediaConnectionScopeKey =
+    workspaceId &&
+    workspaceId !== ALL_WORKSPACES &&
+    selectedAdvertiserId
+      ? `${workspaceId}:${selectedAdvertiserId}`
+      : "";
+
+  const hasCurrentAdvertiserMediaConnectionSnapshot =
+    Boolean(currentAdvertiserMediaConnectionScopeKey) &&
+    resolvedAdvertiserMediaConnectionScopeKey ===
+      currentAdvertiserMediaConnectionScopeKey;
+
+  const currentAdvertiserMediaConnections =
+    hasCurrentAdvertiserMediaConnectionSnapshot
+      ? selectedAdvertiserMediaConnections.filter((connection) => {
+          return (
+            connection.workspace_id === workspaceId &&
+            connection.advertiser_id === selectedAdvertiserId
+          );
+        })
+      : [];
+
+  const selectedAdvertiserNaverConnections =
+    currentAdvertiserMediaConnections.filter(
+      (connection) => connection.provider === "naver_searchad"
+    );
+  const selectedAdvertiserGoogleConnections =
+    currentAdvertiserMediaConnections.filter(
+      (connection) => connection.provider === "google_ads"
+    );
+  const selectedAdvertiserMetaConnections =
+    currentAdvertiserMediaConnections.filter(
+      (connection) => connection.provider === "meta_ads"
+    );
+
+  const usableNaverConnections = selectedAdvertiserNaverConnections.filter(
+    (connection) =>
+      connection.status === "active" && connection.has_credentials
+  );
+  const naverConnectionWithoutCredentials =
+    selectedAdvertiserNaverConnections.find(
+      (connection) =>
+        connection.status === "active" && !connection.has_credentials
+    ) ?? null;
+  const naverErrorConnection =
+    selectedAdvertiserNaverConnections.find(
+      (connection) => connection.status === "error"
+    ) ?? null;
+  const primaryNaverConnection =
+    usableNaverConnections.length === 1 ? usableNaverConnections[0] : null;
+  const singleNaverConnection =
+    selectedAdvertiserNaverConnections.length === 1
+      ? selectedAdvertiserNaverConnections[0]
+      : null;
+  const canManageSelectedAdvertiserMediaConnections =
+    hasCurrentAdvertiserMediaConnectionSnapshot &&
+    !selectedAdvertiserMediaConnectionsError &&
+    (selectedAdvertiserMediaAccessScope === "true_master" ||
+      selectedAdvertiserMediaAccessScope === "workspace");
+  const canCreateNaverConnection =
+    canManageSelectedAdvertiserMediaConnections &&
+    selectedAdvertiserNaverConnections.length === 0;
+  const canReplaceNaverCredentials =
+    canManageSelectedAdvertiserMediaConnections &&
+    Boolean(singleNaverConnection) &&
+    singleNaverConnection?.status !== "disconnected";
+  const naverFormTargetConnection =
+    naverMediaConnectionFormMode === "replace" &&
+    singleNaverConnection?.id === naverMediaConnectionTargetId
+      ? singleNaverConnection
+      : null;
 
   const selectedAdvertiserPublicSlug = selectedAdvertiser?.public_slug ?? "";
 
@@ -2969,6 +3583,723 @@ export default function ReportBuilderPage() {
                   </div>
                 </div>
               </div>
+
+              {selectedAdvertiserId ? (
+                <div
+                  style={{
+                    marginTop: 18,
+                    paddingTop: 18,
+                    borderTop: "1px solid rgba(255, 255, 255, 0.13)",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      justifyContent: "space-between",
+                      gap: 12,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 900,
+                          color: "#f7f7ff",
+                        }}
+                      >
+                        매체 API 연동
+                      </div>
+                      <div
+                        style={{
+                          marginTop: 3,
+                          fontSize: 12,
+                          lineHeight: 1.5,
+                          color: "#d7d5ec",
+                        }}
+                      >
+                        선택한 광고주의 실제 media connection 상태를 확인합니다.
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        border: "1px solid rgba(255, 255, 255, 0.12)",
+                        borderRadius: 999,
+                        background: "rgba(42, 33, 87, 0.86)",
+                        padding: "6px 10px",
+                        fontSize: 11,
+                        fontWeight: 800,
+                        color: "#c9c6df",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {loadingSelectedAdvertiserMediaConnections ||
+                      !hasCurrentAdvertiserMediaConnectionSnapshot
+                        ? "연결 상태 확인 중"
+                        : selectedAdvertiserMediaConnectionsError
+                        ? "연결 상태 확인 불가"
+                        : selectedAdvertiserMediaAccessScope === "own_created"
+                        ? "조회 전용"
+                        : selectedAdvertiserMediaAccessScope === "true_master" ||
+                          selectedAdvertiserMediaAccessScope === "workspace"
+                        ? "연결 관리 가능"
+                        : "권한 확인 필요"}
+                    </div>
+                  </div>
+
+                  {hasCurrentAdvertiserMediaConnectionSnapshot &&
+                  selectedAdvertiserMediaConnectionsError ? (
+                    <div
+                      style={{
+                        marginTop: 12,
+                        border: "1px solid rgba(255, 99, 124, 0.24)",
+                        borderRadius: 12,
+                        background: "rgba(255, 99, 124, 0.08)",
+                        padding: "10px 12px",
+                        fontSize: 12,
+                        lineHeight: 1.5,
+                        color: "#ffb0bd",
+                      }}
+                    >
+                      {selectedAdvertiserMediaConnectionsError}
+                    </div>
+                  ) : null}
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gap: 10,
+                      marginTop: 12,
+                    }}
+                  >
+                    <div
+                      style={{
+                        border: "1px solid rgba(33, 223, 243, 0.18)",
+                        borderRadius: 14,
+                        background: "rgba(42, 33, 87, 0.82)",
+                        padding: 14,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 8,
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 900,
+                            color: "#f7f7ff",
+                          }}
+                        >
+                          NAVER SEARCH ADS
+                        </div>
+                        <span
+                          style={{
+                            borderRadius: 999,
+                            border:
+                              primaryNaverConnection &&
+                              hasCurrentAdvertiserMediaConnectionSnapshot
+                                ? "1px solid rgba(110, 231, 183, 0.28)"
+                                : "1px solid rgba(255, 255, 255, 0.12)",
+                            background:
+                              primaryNaverConnection &&
+                              hasCurrentAdvertiserMediaConnectionSnapshot
+                                ? "rgba(110, 231, 183, 0.10)"
+                                : "rgba(255, 255, 255, 0.05)",
+                            padding: "4px 8px",
+                            fontSize: 10,
+                            fontWeight: 900,
+                            color:
+                              primaryNaverConnection &&
+                              hasCurrentAdvertiserMediaConnectionSnapshot
+                                ? "#a7f3d0"
+                                : "#bbb8d4",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {loadingSelectedAdvertiserMediaConnections ||
+                          !hasCurrentAdvertiserMediaConnectionSnapshot
+                            ? "조회 중"
+                            : selectedAdvertiserMediaConnectionsError
+                            ? "확인 불가"
+                            : usableNaverConnections.length > 1
+                            ? "확인 필요"
+                            : primaryNaverConnection
+                            ? "● 연결됨"
+                            : naverConnectionWithoutCredentials
+                            ? "자격증명 필요"
+                            : naverErrorConnection
+                            ? "오류"
+                            : "○ 미연결"}
+                        </span>
+                      </div>
+
+                      <div
+                        style={{
+                          marginTop: 10,
+                          fontSize: 11,
+                          lineHeight: 1.6,
+                          color: "#bbb8d4",
+                          minHeight: 70,
+                        }}
+                      >
+                        {loadingSelectedAdvertiserMediaConnections ||
+                        !hasCurrentAdvertiserMediaConnectionSnapshot ? (
+                          <>실제 연결 정보를 확인하고 있습니다.</>
+                        ) : selectedAdvertiserMediaConnectionsError ? (
+                          <>연결 정보를 표시할 수 없습니다.</>
+                        ) : usableNaverConnections.length > 1 ? (
+                          <>
+                            활성 연결이 {usableNaverConnections.length}개입니다.
+                            <br />
+                            안전을 위해 자동 선택하지 않습니다.
+                          </>
+                        ) : primaryNaverConnection ? (
+                          <>
+                            계정: {primaryNaverConnection.external_account_name || "-"}
+                            <br />
+                            ID: {primaryNaverConnection.external_account_id}
+                            <br />
+                            최근 동기화: {primaryNaverConnection.last_sync_at
+                              ? fmtDate(primaryNaverConnection.last_sync_at)
+                              : "-"}
+                          </>
+                        ) : naverConnectionWithoutCredentials ? (
+                          <>활성 연결은 있지만 저장된 자격증명이 없습니다.</>
+                        ) : naverErrorConnection ? (
+                          <>
+                            연결 상태가 오류입니다.
+                            {naverErrorConnection.last_error
+                              ? ` ${naverErrorConnection.last_error}`
+                              : ""}
+                          </>
+                        ) : (
+                          <>등록된 활성 Naver Search Ads 연결이 없습니다.</>
+                        )}
+                      </div>
+
+                      <div
+                        style={{
+                          marginTop: 12,
+                          display: "flex",
+                          gap: 8,
+                          alignItems: "center",
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        {canCreateNaverConnection ? (
+                          <button
+                            type="button"
+                            className="subBtn"
+                            onClick={openCreateNaverMediaConnectionForm}
+                            disabled={savingNaverMediaConnection}
+                            style={{ padding: "8px 10px", fontSize: 11 }}
+                          >
+                            네이버 계정 연결
+                          </button>
+                        ) : canReplaceNaverCredentials ? (
+                          <button
+                            type="button"
+                            className="subBtn"
+                            onClick={() =>
+                              singleNaverConnection &&
+                              openReplaceNaverMediaConnectionForm(
+                                singleNaverConnection
+                              )
+                            }
+                            disabled={savingNaverMediaConnection}
+                            style={{ padding: "8px 10px", fontSize: 11 }}
+                          >
+                            {singleNaverConnection?.has_credentials
+                              ? "자격증명 변경"
+                              : "자격증명 등록"}
+                          </button>
+                        ) : null}
+
+                        <span
+                          style={{
+                            fontSize: 10,
+                            lineHeight: 1.5,
+                            color: "#8f8bad",
+                          }}
+                        >
+                          {loadingSelectedAdvertiserMediaConnections ||
+                          !hasCurrentAdvertiserMediaConnectionSnapshot
+                            ? "연결 상태 확인 후 관리할 수 있습니다."
+                            : selectedAdvertiserMediaConnectionsError
+                            ? "연결 상태 확인이 필요합니다."
+                            : selectedAdvertiserMediaAccessScope === "own_created"
+                            ? "조회 권한만 있습니다."
+                            : selectedAdvertiserNaverConnections.length > 1
+                            ? "Naver 연결이 여러 개라 자동 관리하지 않습니다."
+                            : singleNaverConnection?.status === "disconnected"
+                            ? "연결 해제 기록의 재연결은 후속 안전 route에서 지원합니다."
+                            : "저장된 Secret Key와 Access License는 다시 표시하지 않습니다."}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        border: "1px solid rgba(124, 92, 255, 0.18)",
+                        borderRadius: 14,
+                        background: "rgba(42, 33, 87, 0.82)",
+                        padding: 14,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 8,
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 900,
+                            color: "#f7f7ff",
+                          }}
+                        >
+                          GOOGLE ADS
+                        </div>
+                        <span
+                          style={{
+                            borderRadius: 999,
+                            border: "1px solid rgba(255, 255, 255, 0.12)",
+                            background: "rgba(255, 255, 255, 0.05)",
+                            padding: "4px 8px",
+                            fontSize: 10,
+                            fontWeight: 900,
+                            color: "#bbb8d4",
+                          }}
+                        >
+                          준비 중
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          marginTop: 10,
+                          fontSize: 11,
+                          lineHeight: 1.6,
+                          color: "#bbb8d4",
+                          minHeight: 70,
+                        }}
+                      >
+                        Google Ads 연동 기능은 아직 활성화하지 않았습니다.
+                        {hasCurrentAdvertiserMediaConnectionSnapshot &&
+                        !selectedAdvertiserMediaConnectionsError &&
+                        selectedAdvertiserGoogleConnections.length > 0 ? (
+                          <>
+                            <br />
+                            DB 연결 기록: {selectedAdvertiserGoogleConnections.length}개
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        border: "1px solid rgba(124, 92, 255, 0.18)",
+                        borderRadius: 14,
+                        background: "rgba(42, 33, 87, 0.82)",
+                        padding: 14,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 8,
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 900,
+                            color: "#f7f7ff",
+                          }}
+                        >
+                          META ADS
+                        </div>
+                        <span
+                          style={{
+                            borderRadius: 999,
+                            border: "1px solid rgba(255, 255, 255, 0.12)",
+                            background: "rgba(255, 255, 255, 0.05)",
+                            padding: "4px 8px",
+                            fontSize: 10,
+                            fontWeight: 900,
+                            color: "#bbb8d4",
+                          }}
+                        >
+                          준비 중
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          marginTop: 10,
+                          fontSize: 11,
+                          lineHeight: 1.6,
+                          color: "#bbb8d4",
+                          minHeight: 70,
+                        }}
+                      >
+                        Meta Ads 연동 기능은 아직 활성화하지 않았습니다.
+                        {hasCurrentAdvertiserMediaConnectionSnapshot &&
+                        !selectedAdvertiserMediaConnectionsError &&
+                        selectedAdvertiserMetaConnections.length > 0 ? (
+                          <>
+                            <br />
+                            DB 연결 기록: {selectedAdvertiserMetaConnections.length}개
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+
+                  {naverMediaConnectionFormMode ? (
+                    <div
+                      style={{
+                        marginTop: 12,
+                        border: "1px solid rgba(33, 223, 243, 0.22)",
+                        borderRadius: 14,
+                        background: "rgba(33, 26, 72, 0.90)",
+                        padding: 16,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          justifyContent: "space-between",
+                          gap: 12,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <div>
+                          <div
+                            style={{
+                              fontSize: 13,
+                              fontWeight: 900,
+                              color: "#f7f7ff",
+                            }}
+                          >
+                            {naverMediaConnectionFormMode === "create"
+                              ? "Naver Search Ads 연결"
+                              : "Naver Search Ads 자격증명 변경"}
+                          </div>
+                          <div
+                            style={{
+                              marginTop: 4,
+                              fontSize: 11,
+                              lineHeight: 1.55,
+                              color: "#bbb8d4",
+                            }}
+                          >
+                            {naverMediaConnectionFormMode === "create"
+                              ? "선택한 광고주에 새 Naver Search Ads connection을 저장합니다."
+                              : "기존 secret은 표시하지 않습니다. 새 자격증명 3개를 모두 다시 입력합니다."}
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          className="subBtn"
+                          onClick={closeNaverMediaConnectionForm}
+                          disabled={savingNaverMediaConnection}
+                          style={{ padding: "7px 10px", fontSize: 11 }}
+                        >
+                          닫기
+                        </button>
+                      </div>
+
+                      {naverMediaConnectionFormMode === "replace" &&
+                      naverFormTargetConnection ? (
+                        <div
+                          style={{
+                            marginTop: 12,
+                            border: "1px solid rgba(255, 255, 255, 0.10)",
+                            borderRadius: 10,
+                            background: "rgba(42, 33, 87, 0.72)",
+                            padding: "9px 11px",
+                            fontSize: 11,
+                            lineHeight: 1.55,
+                            color: "#c9c6df",
+                          }}
+                        >
+                          대상 계정: {naverFormTargetConnection.external_account_name || "-"}
+                          <br />
+                          외부 광고계정 ID: {naverFormTargetConnection.external_account_id}
+                        </div>
+                      ) : null}
+
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                          gap: 10,
+                          marginTop: 12,
+                        }}
+                      >
+                        {naverMediaConnectionFormMode === "create" ? (
+                          <>
+                            <label style={{ minWidth: 0 }}>
+                              <div
+                                style={{
+                                  marginBottom: 6,
+                                  fontSize: 11,
+                                  fontWeight: 800,
+                                  color: "#d7d5ec",
+                                }}
+                              >
+                                외부 광고계정 ID *
+                              </div>
+                              <input
+                                value={naverExternalAccountIdInput}
+                                onChange={(event) =>
+                                  setNaverExternalAccountIdInput(event.target.value)
+                                }
+                                maxLength={300}
+                                autoComplete="off"
+                                disabled={savingNaverMediaConnection}
+                                placeholder="Naver 외부 광고계정 ID"
+                                style={{
+                                  width: "100%",
+                                  padding: 10,
+                                  borderRadius: 10,
+                                  border: "1px solid rgba(255, 255, 255, 0.13)",
+                                  background: "rgba(42, 33, 87, 0.90)",
+                                  color: "#f7f7ff",
+                                  fontSize: 12,
+                                }}
+                              />
+                            </label>
+
+                            <label style={{ minWidth: 0 }}>
+                              <div
+                                style={{
+                                  marginBottom: 6,
+                                  fontSize: 11,
+                                  fontWeight: 800,
+                                  color: "#d7d5ec",
+                                }}
+                              >
+                                계정 표시명 (선택)
+                              </div>
+                              <input
+                                value={naverExternalAccountNameInput}
+                                onChange={(event) =>
+                                  setNaverExternalAccountNameInput(event.target.value)
+                                }
+                                maxLength={500}
+                                autoComplete="off"
+                                disabled={savingNaverMediaConnection}
+                                placeholder="예: 네이버 검색광고"
+                                style={{
+                                  width: "100%",
+                                  padding: 10,
+                                  borderRadius: 10,
+                                  border: "1px solid rgba(255, 255, 255, 0.13)",
+                                  background: "rgba(42, 33, 87, 0.90)",
+                                  color: "#f7f7ff",
+                                  fontSize: 12,
+                                }}
+                              />
+                            </label>
+                          </>
+                        ) : null}
+
+                        <label style={{ minWidth: 0 }}>
+                          <div
+                            style={{
+                              marginBottom: 6,
+                              fontSize: 11,
+                              fontWeight: 800,
+                              color: "#d7d5ec",
+                            }}
+                          >
+                            Customer ID *
+                          </div>
+                          <input
+                            value={naverCustomerIdInput}
+                            onChange={(event) =>
+                              setNaverCustomerIdInput(event.target.value)
+                            }
+                            maxLength={200}
+                            name={`naver-searchads-customer-id-${selectedAdvertiserId || "none"}`}
+                            autoComplete="off"
+                            autoCapitalize="none"
+                            spellCheck={false}
+                            readOnly={!naverCustomerIdUnlocked}
+                            onFocus={() => setNaverCustomerIdUnlocked(true)}
+                            disabled={savingNaverMediaConnection}
+                            placeholder="Naver Customer ID"
+                            style={{
+                              width: "100%",
+                              padding: 10,
+                              borderRadius: 10,
+                              border: "1px solid rgba(255, 255, 255, 0.13)",
+                              background: "rgba(42, 33, 87, 0.90)",
+                              color: "#f7f7ff",
+                              fontSize: 12,
+                            }}
+                          />
+                        </label>
+
+                        <label style={{ minWidth: 0 }}>
+                          <div
+                            style={{
+                              marginBottom: 6,
+                              fontSize: 11,
+                              fontWeight: 800,
+                              color: "#d7d5ec",
+                            }}
+                          >
+                            Access License *
+                          </div>
+                          <input
+                            type="password"
+                            value={naverAccessLicenseInput}
+                            onChange={(event) =>
+                              setNaverAccessLicenseInput(event.target.value)
+                            }
+                            maxLength={500}
+                            name={`naver-searchads-access-license-${selectedAdvertiserId || "none"}`}
+                            autoComplete="new-password"
+                            autoCapitalize="none"
+                            spellCheck={false}
+                            readOnly={!naverAccessLicenseUnlocked}
+                            onFocus={() => setNaverAccessLicenseUnlocked(true)}
+                            data-lpignore="true"
+                            data-1p-ignore="true"
+                            disabled={savingNaverMediaConnection}
+                            placeholder="Access License"
+                            style={{
+                              width: "100%",
+                              padding: 10,
+                              borderRadius: 10,
+                              border: "1px solid rgba(255, 255, 255, 0.13)",
+                              background: "rgba(42, 33, 87, 0.90)",
+                              color: "#f7f7ff",
+                              fontSize: 12,
+                            }}
+                          />
+                        </label>
+
+                        <label style={{ minWidth: 0 }}>
+                          <div
+                            style={{
+                              marginBottom: 6,
+                              fontSize: 11,
+                              fontWeight: 800,
+                              color: "#d7d5ec",
+                            }}
+                          >
+                            Secret Key *
+                          </div>
+                          <input
+                            type="password"
+                            value={naverSecretKeyInput}
+                            onChange={(event) =>
+                              setNaverSecretKeyInput(event.target.value)
+                            }
+                            maxLength={1000}
+                            name={`naver-searchads-secret-key-${selectedAdvertiserId || "none"}`}
+                            autoComplete="new-password"
+                            autoCapitalize="none"
+                            spellCheck={false}
+                            readOnly={!naverSecretKeyUnlocked}
+                            onFocus={() => setNaverSecretKeyUnlocked(true)}
+                            data-lpignore="true"
+                            data-1p-ignore="true"
+                            disabled={savingNaverMediaConnection}
+                            placeholder="Secret Key"
+                            style={{
+                              width: "100%",
+                              padding: 10,
+                              borderRadius: 10,
+                              border: "1px solid rgba(255, 255, 255, 0.13)",
+                              background: "rgba(42, 33, 87, 0.90)",
+                              color: "#f7f7ff",
+                              fontSize: 12,
+                            }}
+                          />
+                        </label>
+                      </div>
+
+                      <div
+                        style={{
+                          marginTop: 10,
+                          fontSize: 10,
+                          lineHeight: 1.55,
+                          color: "#8f8bad",
+                        }}
+                      >
+                        Secret Key와 Access License는 저장 후 다시 표시하지 않습니다.
+                        입력값은 Server API에서 다시 검증한 뒤 암호화 저장됩니다.
+                      </div>
+
+                      {naverMediaConnectionFormError ? (
+                        <div
+                          style={{
+                            marginTop: 10,
+                            border: "1px solid rgba(255, 99, 124, 0.24)",
+                            borderRadius: 10,
+                            background: "rgba(255, 99, 124, 0.08)",
+                            padding: "9px 11px",
+                            fontSize: 11,
+                            lineHeight: 1.5,
+                            color: "#ffb0bd",
+                          }}
+                        >
+                          {naverMediaConnectionFormError}
+                        </div>
+                      ) : null}
+
+                      <div
+                        style={{
+                          marginTop: 12,
+                          display: "flex",
+                          justifyContent: "flex-end",
+                          gap: 8,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          className="subBtn"
+                          onClick={closeNaverMediaConnectionForm}
+                          disabled={savingNaverMediaConnection}
+                        >
+                          취소
+                        </button>
+                        <button
+                          type="button"
+                          className="primaryBtn"
+                          onClick={submitNaverMediaConnectionForm}
+                          disabled={savingNaverMediaConnection}
+                        >
+                          {savingNaverMediaConnection
+                            ? "저장 중..."
+                            : naverMediaConnectionFormMode === "create"
+                            ? "안전하게 연결"
+                            : "자격증명 교체"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
 
               {selectedAdvertiserId ? (
                 <div

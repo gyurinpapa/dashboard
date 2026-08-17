@@ -4,16 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/src/lib/supabase/client";
 
-type ProviderKey = "naver" | "google" | "meta";
-
-type ProviderState = {
-  key: ProviderKey;
-  label: string;
-  status: "disconnected" | "connected";
-  connectedAt?: string;
-  accountName?: string;
-};
-
 type MemberRole =
   | "master"
   | "director"
@@ -41,27 +31,7 @@ type WorkspaceRow = {
   logo_updated_at: string | null;
 };
 
-const LS_KEY = "report-system:integrations:v1";
 const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
-
-function loadStates(): Record<ProviderKey, ProviderState> | null {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function saveStates(states: Record<ProviderKey, ProviderState>) {
-  localStorage.setItem(LS_KEY, JSON.stringify(states));
-}
-
-function isoNow() {
-  return new Date().toISOString();
-}
 
 function formatKST(iso?: string | null) {
   if (!iso) return "-";
@@ -160,23 +130,6 @@ async function safeReadJson(res: Response) {
 }
 
 export default function SettingsPage() {
-  const defaultStates = useMemo<Record<ProviderKey, ProviderState>>(
-    () => ({
-      naver: { key: "naver", label: "네이버", status: "disconnected" },
-      google: { key: "google", label: "Google Ads", status: "disconnected" },
-      meta: { key: "meta", label: "Meta Ads", status: "disconnected" },
-    }),
-    [],
-  );
-
-  const [states, setStates] =
-    useState<Record<ProviderKey, ProviderState>>(defaultStates);
-
-  const [modal, setModal] = useState<{
-    open: boolean;
-    provider?: ProviderKey;
-  }>({ open: false });
-
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [workspaces, setWorkspaces] = useState<WorkspaceRow[]>([]);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState("");
@@ -186,15 +139,6 @@ export default function SettingsPage() {
   const [deletingBranding, setDeletingBranding] = useState(false);
   const [brandingMsg, setBrandingMsg] = useState("");
   const brandingInputRef = useRef<HTMLInputElement | null>(null);
-
-  useEffect(() => {
-    const loaded = loadStates();
-    if (loaded) setStates({ ...defaultStates, ...loaded });
-  }, [defaultStates]);
-
-  useEffect(() => {
-    saveStates(states);
-  }, [states]);
 
   useEffect(() => {
     let cancelled = false;
@@ -511,39 +455,6 @@ export default function SettingsPage() {
     }
   }
 
-  const openConnect = (provider: ProviderKey) =>
-    setModal({ open: true, provider });
-  const closeModal = () => setModal({ open: false });
-
-  const devMarkConnected = (provider: ProviderKey) => {
-    setStates((prev) => ({
-      ...prev,
-      [provider]: {
-        ...prev[provider],
-        status: "connected",
-        connectedAt: isoNow(),
-        accountName:
-          provider === "naver"
-            ? "Naver SearchAd (예시)"
-            : provider === "google"
-              ? "Google Ads Account (예시)"
-              : "Meta Business (예시)",
-      },
-    }));
-  };
-
-  const disconnect = (provider: ProviderKey) => {
-    setStates((prev) => ({
-      ...prev,
-      [provider]: {
-        ...prev[provider],
-        status: "disconnected",
-        connectedAt: undefined,
-        accountName: undefined,
-      },
-    }));
-  };
-
   return (
     <main
       className="min-h-screen text-[#f7f7ff]"
@@ -563,7 +474,7 @@ export default function SettingsPage() {
               설정
             </h1>
             <p className="mt-2 text-sm leading-6 text-[#d7d5ec]">
-              workspace 설정과 광고 계정 연동 상태를 관리합니다.
+              workspace와 리포트 브랜딩 설정을 관리합니다.
             </p>
           </div>
 
@@ -773,111 +684,6 @@ export default function SettingsPage() {
             )}
           </section>
         ) : null}
-
-        <section className="mt-8">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-black tracking-[-0.02em] text-[#f7f7ff]">
-                광고 플랫폼 연동
-              </h2>
-              <p className="mt-1.5 text-sm leading-6 text-[#d7d5ec]">
-                지금은 UI/구조만 먼저 만들고, 다음 단계에서 OAuth + API 수집을
-                붙입니다.
-              </p>
-            </div>
-
-            <span className="text-xs leading-5 text-[#aaa6c9]">
-              *개발 중이므로 “연동됨”은 시뮬레이션 버튼으로 표시됩니다.
-            </span>
-          </div>
-
-          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
-            <IntegrationCard
-              state={states.naver}
-              onConnect={() => openConnect("naver")}
-              onDisconnect={() => disconnect("naver")}
-              onDevMarkConnected={() => devMarkConnected("naver")}
-            />
-            <IntegrationCard
-              state={states.google}
-              onConnect={() => openConnect("google")}
-              onDisconnect={() => disconnect("google")}
-              onDevMarkConnected={() => devMarkConnected("google")}
-            />
-            <IntegrationCard
-              state={states.meta}
-              onConnect={() => openConnect("meta")}
-              onDisconnect={() => disconnect("meta")}
-              onDevMarkConnected={() => devMarkConnected("meta")}
-            />
-          </div>
-        </section>
-
-        <section className="mt-10 rounded-[20px] border border-white/[0.11] bg-[#352867]/70 p-5 shadow-[0_18px_44px_rgba(8,5,29,0.18)]">
-          <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-[#21dff3] shadow-[0_0_14px_rgba(33,223,243,0.55)]" />
-            <h3 className="text-base font-black text-[#f7f7ff]">
-              다음 단계(로드맵)
-            </h3>
-          </div>
-
-          <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-sm leading-6 text-[#d7d5ec] marker:text-[#9ef5ff]">
-            <li>
-              <b className="text-[#f7f7ff]">OAuth 콜백 URL</b>을 만들고,
-              “연동하기” 버튼이 해당 인증 페이지로 이동하도록 연결
-            </li>
-            <li>
-              인증 성공 시 발급되는{" "}
-              <b className="text-[#f7f7ff]">토큰/계정 정보</b>를 DB에 저장
-            </li>
-            <li>
-              크론(스케줄러)로{" "}
-              <b className="text-[#f7f7ff]">일 단위 성과</b>를 수집해 DB에
-              적재
-            </li>
-            <li>
-              대시보드가 CSV 대신{" "}
-              <b className="text-[#f7f7ff]">DB 데이터를 읽어 렌더링</b>
-              하도록 교체
-            </li>
-          </ol>
-        </section>
-
-        {modal.open && (
-          <Modal onClose={closeModal}>
-            <h4 className="text-lg font-black tracking-[-0.02em] text-[#f7f7ff]">
-              {modal.provider === "naver"
-                ? "네이버 연동"
-                : modal.provider === "google"
-                  ? "Google Ads 연동"
-                  : "Meta Ads 연동"}
-            </h4>
-
-            <div className="mt-3 space-y-2 text-sm leading-6 text-[#d7d5ec]">
-              <p>
-                지금은 “연동 UI 자리”만 만든 상태야. 다음 단계에서 실제로는{" "}
-                <b className="text-[#f7f7ff]">OAuth 인증 흐름</b>을 붙여서,
-                광고 계정 접근 권한을 받고 토큰을 저장해야 해.
-              </p>
-              <p className="rounded-xl border border-white/[0.10] bg-[#211b44]/70 p-3 text-xs leading-5 text-[#bbb8d4]">
-                ✅ 앞으로 붙일 것: <br />
-                - /api/integrations/{`{provider}`}/start (인증 시작) <br />
-                - /api/integrations/{`{provider}`}/callback (인증 콜백) <br />
-                - DB: integrations 테이블(토큰/계정/연동자) <br />
-                - 스케줄러: 일/주 단위 성과 수집
-              </p>
-            </div>
-
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                onClick={closeModal}
-                className="inline-flex items-center justify-center rounded-xl border border-white/[0.13] bg-[#352867]/90 px-4 py-2.5 text-sm font-extrabold text-[#f7f7ff] transition-all duration-150 hover:-translate-y-0.5 hover:border-[#21dff3]/40 hover:bg-[#403184] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#21dff3]/50"
-              >
-                닫기
-              </button>
-            </div>
-          </Modal>
-        )}
       </div>
 
       <style jsx global>{`
@@ -902,118 +708,5 @@ export default function SettingsPage() {
         }
       `}</style>
     </main>
-  );
-}
-
-function IntegrationCard(props: {
-  state: ProviderState;
-  onConnect: () => void;
-  onDisconnect: () => void;
-  onDevMarkConnected: () => void;
-}) {
-  const { state, onConnect, onDisconnect, onDevMarkConnected } = props;
-
-  const badge =
-    state.status === "connected" ? (
-      <span className="inline-flex items-center rounded-full border border-emerald-300/25 bg-emerald-300/10 px-2.5 py-1 text-xs font-extrabold text-emerald-200">
-        ● 연동됨
-      </span>
-    ) : (
-      <span className="inline-flex items-center rounded-full border border-white/[0.11] bg-white/[0.055] px-2.5 py-1 text-xs font-extrabold text-[#c9c6df]">
-        ● 미연동
-      </span>
-    );
-
-  return (
-    <div className="group relative overflow-hidden rounded-[18px] border border-white/[0.12] bg-[#392b70]/88 p-5 shadow-[0_16px_34px_rgba(8,5,29,0.18)] transition-all duration-150 hover:-translate-y-0.5 hover:border-[#21dff3]/25 hover:bg-[#3e2f7a] hover:shadow-[0_20px_40px_rgba(8,5,29,0.24)]">
-      <div
-        className="absolute left-0 top-0 h-[2px] w-24 opacity-70"
-        style={{
-          background: "linear-gradient(90deg, #21dff3 0%, #7c5cff 100%)",
-        }}
-      />
-
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-base font-black text-[#f7f7ff]">
-            {state.label}
-          </div>
-          <div className="mt-1.5 text-xs leading-5 text-[#bbb8d4]">
-            연결 계정: {state.accountName ?? "-"}
-          </div>
-          <div className="text-xs leading-5 text-[#bbb8d4]">
-            연결 시각: {formatKST(state.connectedAt)}
-          </div>
-        </div>
-        {badge}
-      </div>
-
-      <div className="mt-4 flex flex-wrap gap-2">
-        <button
-          onClick={onConnect}
-          className="inline-flex items-center justify-center rounded-xl border border-[#75e3ff]/25 px-4 py-2.5 text-sm font-black text-white shadow-[0_10px_24px_rgba(70,77,217,0.24)] transition-all duration-150 hover:-translate-y-0.5 hover:brightness-105 hover:saturate-110 hover:shadow-[0_14px_28px_rgba(70,77,217,0.30)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#21dff3]/50"
-          style={{
-            background:
-              "linear-gradient(135deg, #21dff3 0%, #5f72ff 52%, #7c5cff 100%)",
-          }}
-        >
-          연동하기
-        </button>
-
-        {state.status === "connected" ? (
-          <button
-            onClick={onDisconnect}
-            className="inline-flex items-center justify-center rounded-xl border border-white/[0.13] bg-[#352867]/90 px-3.5 py-2.5 text-sm font-extrabold text-[#f7f7ff] transition-all duration-150 hover:-translate-y-0.5 hover:border-[#21dff3]/40 hover:bg-[#403184] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#21dff3]/50"
-          >
-            연동 해제
-          </button>
-        ) : (
-          <button
-            onClick={onDevMarkConnected}
-            className="inline-flex items-center justify-center rounded-xl border border-white/[0.13] bg-[#352867]/90 px-3.5 py-2.5 text-sm font-extrabold text-[#f7f7ff] transition-all duration-150 hover:-translate-y-0.5 hover:border-[#21dff3]/40 hover:bg-[#403184] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#21dff3]/50"
-            title="개발 중 테스트용 버튼(나중에 삭제)"
-          >
-            (개발용) 연동됨 표시
-          </button>
-        )}
-      </div>
-
-      <div className="mt-4 rounded-xl border border-white/[0.09] bg-[#211b44]/58 p-3 text-xs leading-5 text-[#bbb8d4]">
-        <b className="text-[#f7f7ff]">설명</b>
-        <div className="mt-1">
-          “연동하기”는 나중에 OAuth 인증으로 이어질 버튼이야. 지금은 안내
-          모달만 띄웁니다.
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Modal(props: { onClose: () => void; children: React.ReactNode }) {
-  const { onClose, children } = props;
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0b0820]/70 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-lg rounded-[20px] border border-white/[0.13] bg-[#392b70]/95 p-5 text-[#f7f7ff] shadow-[0_28px_70px_rgba(8,5,29,0.42)]">
-        <div className="flex justify-end">
-          <button
-            onClick={onClose}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-transparent text-sm font-black text-[#c9c6df] transition-all duration-150 hover:-translate-y-0.5 hover:border-[#21dff3]/30 hover:bg-[#403184] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#21dff3]/50"
-            aria-label="close"
-          >
-            ✕
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
   );
 }
