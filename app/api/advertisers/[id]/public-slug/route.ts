@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
+import { isTrueMasterUser } from "@/src/lib/true-master-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
 
 function jsonError(status: number, message: string, extra?: any) {
   return NextResponse.json(
@@ -44,23 +44,6 @@ async function getActor(req: Request) {
   return { user };
 }
 
-async function getProfileEmailByUserId(userId: string) {
-  const id = asString(userId);
-  if (!id) return "";
-
-  const { data, error } = await supabaseAdmin
-    .from("profiles")
-    .select("email")
-    .eq("id", id)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(`PROFILE_EMAIL_FETCH_FAILED:${error.message}`);
-  }
-
-  return normalizeEmail(data?.email);
-}
-
 async function getWorkspaceRole(userId: string, workspaceId: string) {
   const id = asString(userId);
   const wid = asString(workspaceId);
@@ -79,23 +62,6 @@ async function getWorkspaceRole(userId: string, workspaceId: string) {
   }
 
   return asString(data?.role).toLowerCase();
-}
-
-async function isTrueMasterUser(userId: string, workspaceId: string) {
-  const id = asString(userId);
-  const wid = asString(workspaceId);
-
-  if (!id || !wid) return false;
-
-  const email = await getProfileEmailByUserId(id);
-
-  if (email !== ONLY_MASTER_EMAIL) {
-    return false;
-  }
-
-  const role = await getWorkspaceRole(id, wid);
-
-  return role === "master";
 }
 
 function normalizePublicSlug(v: any) {
@@ -185,7 +151,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
     }
 
     const role = await getWorkspaceRole(user.id, workspaceId);
-    const isTrueMaster = await isTrueMasterUser(user.id, workspaceId);
+    const isTrueMaster = await isTrueMasterUser(user.id);
 
     if (!canUpdatePublicSlug(role, isTrueMaster)) {
       return jsonError(403, "FORBIDDEN_PUBLIC_SLUG_PERMISSION");
@@ -249,9 +215,15 @@ export async function PATCH(req: Request, ctx: Ctx) {
   } catch (e: any) {
     const msg = e?.message ?? "";
 
-    if (String(msg).startsWith("PROFILE_EMAIL_FETCH_FAILED:")) {
-      return jsonError(500, "PROFILE_EMAIL_FETCH_FAILED", {
-        detail: String(msg).replace("PROFILE_EMAIL_FETCH_FAILED:", ""),
+    if (String(msg).startsWith("TRUE_MASTER_PROFILE_LOOKUP_FAILED:")) {
+      return jsonError(500, "TRUE_MASTER_PROFILE_LOOKUP_FAILED", {
+        detail: String(msg).replace("TRUE_MASTER_PROFILE_LOOKUP_FAILED:", ""),
+      });
+    }
+
+    if (String(msg).startsWith("TRUE_MASTER_MEMBERSHIP_LOOKUP_FAILED:")) {
+      return jsonError(500, "TRUE_MASTER_MEMBERSHIP_LOOKUP_FAILED", {
+        detail: String(msg).replace("TRUE_MASTER_MEMBERSHIP_LOOKUP_FAILED:", ""),
       });
     }
 
