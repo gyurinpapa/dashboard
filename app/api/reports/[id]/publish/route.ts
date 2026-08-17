@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/src/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
+import { isTrueMasterUser } from "@/src/lib/true-master-access";
 import {
   commitReportPublishSnapshot,
   ReportPublishSnapshotError,
@@ -146,18 +147,28 @@ export async function POST(req: Request, ctx: Ctx) {
     return jsonError(500, "REPORT_WORKSPACE_MISSING");
   }
 
-  const { data: wm, error: wmErr } = await sb
-    .from("workspace_members")
-    .select("role")
-    .eq("workspace_id", workspaceId)
-    .eq("user_id", userId)
-    .maybeSingle();
+  const actorIsTrueMaster = await isTrueMasterUser(userId);
 
-  if (wmErr) {
-    return jsonError(500, wmErr.message || "WORKSPACE_MEMBER_CHECK_FAILED");
+  let wm: any = null;
+
+  if (actorIsTrueMaster) {
+    wm = { role: "master" };
+  } else {
+    const { data, error: wmErr } = await sb
+      .from("workspace_members")
+      .select("role")
+      .eq("workspace_id", workspaceId)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (wmErr) {
+      return jsonError(500, wmErr.message || "WORKSPACE_MEMBER_CHECK_FAILED");
+    }
+
+    if (!data) return jsonError(403, "FORBIDDEN");
+
+    wm = data;
   }
-
-  if (!wm) return jsonError(403, "FORBIDDEN");
 
   if (
     !canPublishReport(

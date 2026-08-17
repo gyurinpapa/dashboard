@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
+import { isTrueMasterUser } from "@/src/lib/true-master-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,7 +12,6 @@ type Ctx = { params: Promise<{ id: string }> };
 
 const BUCKET = "report_uploads";
 const MAX_BYTES = 20 * 1024 * 1024; // 20MB per file
-const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
 
 function jsonError(status: number, message: string, extra?: any) {
   return NextResponse.json({ ok: false, error: message, ...(extra ?? {}) }, { status });
@@ -20,10 +20,6 @@ function jsonError(status: number, message: string, extra?: any) {
 function asString(v: any) {
   if (v == null) return "";
   return String(v).trim();
-}
-
-function normalizeEmail(v: any) {
-  return asString(v).toLowerCase();
 }
 
 function nowIso() {
@@ -176,25 +172,6 @@ async function getUserId(req: Request) {
   return { ok: true as const, userId: user.id as string };
 }
 
-async function getProfileEmailByUserId(userId: string) {
-  const id = asString(userId);
-  if (!id) return "";
-
-  const supabase = getSupabaseAdmin();
-
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("email")
-    .eq("id", id)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(`PROFILE_EMAIL_FETCH_FAILED:${error.message}`);
-  }
-
-  return normalizeEmail((data as any)?.email);
-}
-
 async function getWorkspaceRole(userId: string, workspaceId: string) {
   const id = asString(userId);
   const wid = asString(workspaceId);
@@ -215,23 +192,6 @@ async function getWorkspaceRole(userId: string, workspaceId: string) {
   }
 
   return asString((data as any)?.role).toLowerCase();
-}
-
-async function isTrueMasterUser(userId: string, workspaceId: string) {
-  const id = asString(userId);
-  const wid = asString(workspaceId);
-
-  if (!id || !wid) return false;
-
-  const email = await getProfileEmailByUserId(id);
-
-  if (email !== ONLY_MASTER_EMAIL) {
-    return false;
-  }
-
-  const role = await getWorkspaceRole(id, wid);
-
-  return role === "master";
 }
 
 function canUploadCreatives(role: string, isTrueMaster: boolean) {
@@ -279,7 +239,7 @@ export async function POST(req: Request, ctx: Ctx) {
 
     // 4) 권한 체크: staff/admin/director/true master만 허용
     const role = await getWorkspaceRole(userId, workspaceId);
-    const isTrueMaster = await isTrueMasterUser(userId, workspaceId);
+    const isTrueMaster = await isTrueMasterUser(userId);
 
     if (!canUploadCreatives(role, isTrueMaster)) {
       return jsonError(403, "FORBIDDEN_CREATIVE_UPLOAD_PERMISSION", {

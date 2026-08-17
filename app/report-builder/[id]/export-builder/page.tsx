@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import ExportBuilderClient from "@/app/components/export-builder/ExportBuilderClient";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
+import { isTrueMasterUser } from "@/src/lib/true-master-access";
 import type { ExportPeriodPreset } from "@/src/lib/export-builder/period";
 import {
   buildExportPeriodLabel,
@@ -225,19 +226,23 @@ export default async function ReportExportBuilderPage({
     );
   }
 
-  const { data: membership, error: membershipError } = await admin
-    .from("workspace_members")
-    .select("role")
-    .eq("workspace_id", workspaceId)
-    .eq("user_id", userId)
-    .maybeSingle();
+  const actorIsTrueMaster = await isTrueMasterUser(userId);
 
-  if (membershipError) {
-    throw new Error(membershipError.message);
-  }
+  if (!actorIsTrueMaster) {
+    const { data: membership, error: membershipError } = await admin
+      .from("workspace_members")
+      .select("role")
+      .eq("workspace_id", workspaceId)
+      .eq("user_id", userId)
+      .maybeSingle();
 
-  if (!membership) {
-    redirect("/report-builder");
+    if (membershipError) {
+      throw new Error(membershipError.message);
+    }
+
+    if (!membership) {
+      redirect("/report-builder");
+    }
   }
 
   const currentIngestionId = asString(report.current_ingestion_id);

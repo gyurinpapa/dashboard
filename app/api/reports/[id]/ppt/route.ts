@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
 import { isPlatformOwner } from "@/src/lib/supabase/platform-role";
+import { isTrueMasterUser } from "@/src/lib/true-master-access";
 
 import {
   buildPptExportReportData,
@@ -27,7 +28,6 @@ export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
 const REPORT_ROWS_PAGE_SIZE = 1000;
 const MAX_REPORT_ROWS_FOR_PPT = 150000;
 const MAX_PPT_BUILD_ROWS = 12000;
@@ -46,10 +46,6 @@ function asString(v: any) {
   if (s.toLowerCase() === "null") return "";
   if (s.toLowerCase() === "undefined") return "";
   return s;
-}
-
-function normalizeEmail(v: any) {
-  return asString(v).toLowerCase();
 }
 
 function getBearerToken(req: Request) {
@@ -81,23 +77,6 @@ async function getActor(req: Request) {
   };
 }
 
-async function getProfileEmailByUserId(userId: string) {
-  const id = asString(userId);
-  if (!id) return "";
-
-  const { data, error } = await supabaseAdmin
-    .from("profiles")
-    .select("email")
-    .eq("id", id)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(`PROFILE_EMAIL_FETCH_FAILED:${error.message}`);
-  }
-
-  return normalizeEmail(data?.email);
-}
-
 async function getWorkspaceRole(userId: string, workspaceId: string) {
   const id = asString(userId);
   const wid = asString(workspaceId);
@@ -116,42 +95,6 @@ async function getWorkspaceRole(userId: string, workspaceId: string) {
   }
 
   return asString((data as any)?.role).toLowerCase();
-}
-
-async function hasMasterMembership(userId: string) {
-  const id = asString(userId);
-  if (!id) return false;
-
-  const { data, error } = await supabaseAdmin
-    .from("workspace_members")
-    .select("workspace_id")
-    .eq("user_id", id)
-    .eq("role", "master")
-    .limit(1);
-
-  if (error) {
-    throw new Error(`MASTER_MEMBERSHIP_CHECK_FAILED:${error.message}`);
-  }
-
-  return Array.isArray(data) && data.length > 0;
-}
-
-async function isTrueMasterUser(userId: string, workspaceId?: string) {
-  const id = asString(userId);
-  if (!id) return false;
-
-  const email = await getProfileEmailByUserId(id);
-
-  if (email !== ONLY_MASTER_EMAIL) {
-    return false;
-  }
-
-  if (workspaceId) {
-    const role = await getWorkspaceRole(id, workspaceId);
-    return role === "master";
-  }
-
-  return await hasMasterMembership(id);
 }
 
 function canReadReport(role: string) {
@@ -741,7 +684,7 @@ async function assertReportAccess(args: {
   }
 
   const actorIsPlatformOwner = await isPlatformOwner(userId);
-  const actorIsTrueMaster = await isTrueMasterUser(userId, workspaceId);
+  const actorIsTrueMaster = await isTrueMasterUser(userId);
 
   /**
    * platform_owner 단독으로는 우회하지 않는다.
