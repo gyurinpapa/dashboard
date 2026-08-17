@@ -3,13 +3,13 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
+import { isTrueMasterUser } from "@/src/lib/true-master-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
 const ACTIVATE_CSV_INGESTION_SNAPSHOT_RPC =
   "activate_csv_ingestion_snapshot";
 
@@ -25,10 +25,6 @@ function asString(v: any) {
 function asNullableString(v: any) {
   const s = asString(v);
   return s ? s : null;
-}
-
-function normalizeEmail(v: any) {
-  return asString(v).toLowerCase();
 }
 
 function toNumber(v: any) {
@@ -443,26 +439,6 @@ async function getUserId(req: Request) {
   return { ok: true as const, userId: auth.user.id };
 }
 
-async function getProfileEmailByUserId(
-  sb: ReturnType<typeof getSupabaseAdmin>,
-  userId: string
-) {
-  const id = asString(userId);
-  if (!id) return "";
-
-  const { data, error } = await sb
-    .from("profiles")
-    .select("email")
-    .eq("id", id)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(`PROFILE_EMAIL_FETCH_FAILED:${error.message}`);
-  }
-
-  return normalizeEmail(data?.email);
-}
-
 async function canRunIngestion(params: {
   sb: ReturnType<typeof getSupabaseAdmin>;
   userId: string;
@@ -475,6 +451,10 @@ async function canRunIngestion(params: {
 
   if (!uid || !wid) {
     return false;
+  }
+
+  if (await isTrueMasterUser(uid)) {
+    return true;
   }
 
   const { data: member, error } = await sb
@@ -494,12 +474,7 @@ async function canRunIngestion(params: {
     return true;
   }
 
-  if (role !== "master") {
-    return false;
-  }
-
-  const email = await getProfileEmailByUserId(sb, uid);
-  return email === ONLY_MASTER_EMAIL;
+  return false;
 }
 
 function getSafeBatchSize(totalRows: number, fileSizeBytes = 0) {

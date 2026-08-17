@@ -2,13 +2,13 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
+import { isTrueMasterUser } from "@/src/lib/true-master-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const BUCKET = "report_uploads";
 const MAX_BYTES = 20 * 1024 * 1024;
-const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
 
 type CsvItem = {
   id: string;
@@ -40,10 +40,6 @@ function nowIso() {
 
 function safeObj(v: any) {
   return v && typeof v === "object" ? v : {};
-}
-
-function normalizeEmail(v: any) {
-  return asString(v).toLowerCase();
 }
 
 function getBearerToken(req: Request) {
@@ -85,28 +81,6 @@ async function getUserId(req: Request) {
   return { ok: true as const, userId: user.id };
 }
 
-async function getProfileEmailByUserId(params: {
-  supabaseAdmin: ReturnType<typeof getSupabaseAdmin>;
-  userId: string;
-}) {
-  const { supabaseAdmin, userId } = params;
-
-  const id = asString(userId);
-  if (!id) return "";
-
-  const { data, error } = await supabaseAdmin
-    .from("profiles")
-    .select("email")
-    .eq("id", id)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(`PROFILE_EMAIL_FETCH_FAILED:${error.message}`);
-  }
-
-  return normalizeEmail(data?.email);
-}
-
 async function assertCanAccessReport(params: {
   supabaseAdmin: ReturnType<typeof getSupabaseAdmin>;
   reportId: string;
@@ -129,6 +103,10 @@ async function assertCanAccessReport(params: {
     return { ok: true as const, report };
   }
 
+  if (await isTrueMasterUser(userId)) {
+    return { ok: true as const, report };
+  }
+
   const { data: wm, error: wmErr } = await supabaseAdmin
     .from("workspace_members")
     .select("role")
@@ -140,19 +118,10 @@ async function assertCanAccessReport(params: {
 
   const role = (wm as any)?.role ?? null;
 
-  let canWrite =
+  const canWrite =
     role === "staff" ||
     role === "admin" ||
     role === "director";
-
-  if (role === "master") {
-    const email = await getProfileEmailByUserId({
-      supabaseAdmin,
-      userId,
-    });
-
-    canWrite = email === ONLY_MASTER_EMAIL;
-  }
 
   if (!canWrite) {
     return { ok: false as const, status: 403, message: "Forbidden" };

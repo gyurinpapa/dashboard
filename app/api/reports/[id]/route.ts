@@ -1,20 +1,16 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
+import { isTrueMasterUser } from "@/src/lib/true-master-access";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
 const MAX_MEDIA_SYNC_DATE_WINDOW_DAYS = 31;
 
 function asString(v: any) {
   if (v == null) return undefined;
   const s = String(v).trim();
   return s ? s : undefined;
-}
-
-function normalizeEmail(v: any) {
-  return String(v ?? "").trim().toLowerCase();
 }
 
 function jsonError(status: number, message: string, extra?: any) {
@@ -30,26 +26,16 @@ function getRoleFromWorkspaceMember(member: any): string {
   return String(member?.role ?? "").trim().toLowerCase();
 }
 
-function isOnlyMasterEmail(email: any) {
-  return normalizeEmail(email) === ONLY_MASTER_EMAIL;
-}
-
-function isTrueMaster(member: any, userEmail: any) {
-  return (
-    getRoleFromWorkspaceMember(member) === "master" &&
-    isOnlyMasterEmail(userEmail)
-  );
-}
-
 function canPatchReport(
   member: any,
-  userEmail: any,
+  actorIsTrueMaster: boolean,
   reportCreatedBy: any,
   userId: any
 ) {
+  if (actorIsTrueMaster) return true;
+
   const role = getRoleFromWorkspaceMember(member);
 
-  if (role === "master") return isTrueMaster(member, userEmail);
   if (role === "director") return true;
   if (role === "admin") return true;
 
@@ -397,16 +383,20 @@ export async function GET(_req: Request, ctx: Ctx) {
       return jsonError(500, "Report workspace_id is missing");
     }
 
-    const { data: wm, error: wmErr } = await supabaseAdmin
-      .from("workspace_members")
-      .select("workspace_id, role")
-      .eq("workspace_id", workspaceId)
-      .eq("user_id", user.id)
-      .maybeSingle();
+    const actorIsTrueMaster = await isTrueMasterUser(user.id);
 
-    if (wmErr) return jsonError(500, wmErr.message);
-    if (!wm) {
-      return jsonError(403, "Forbidden: you are not a member of this workspace");
+    if (!actorIsTrueMaster) {
+      const { data: wm, error: wmErr } = await supabaseAdmin
+        .from("workspace_members")
+        .select("workspace_id")
+        .eq("workspace_id", workspaceId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (wmErr) return jsonError(500, wmErr.message);
+      if (!wm) {
+        return jsonError(403, "Forbidden: you are not a member of this workspace");
+      }
     }
 
     const enrichedReport = await enrichReport(report);
@@ -445,22 +435,30 @@ export async function PATCH(req: Request, ctx: Ctx) {
       return jsonError(500, "Report workspace_id is missing");
     }
 
-    const { data: wm, error: wmErr } = await supabaseAdmin
-      .from("workspace_members")
-      .select("workspace_id, role")
-      .eq("workspace_id", workspaceId)
-      .eq("user_id", user.id)
-      .maybeSingle();
+    const actorIsTrueMaster = await isTrueMasterUser(user.id);
 
-    if (wmErr) return jsonError(500, wmErr.message);
-    if (!wm) {
-      return jsonError(403, "Forbidden: you are not a member of this workspace");
+    let wm: any = null;
+
+    if (!actorIsTrueMaster) {
+      const { data, error: wmErr } = await supabaseAdmin
+        .from("workspace_members")
+        .select("workspace_id, role")
+        .eq("workspace_id", workspaceId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (wmErr) return jsonError(500, wmErr.message);
+      if (!data) {
+        return jsonError(403, "Forbidden: you are not a member of this workspace");
+      }
+
+      wm = data;
     }
 
     if (
       !canPatchReport(
         wm,
-        user.email,
+        actorIsTrueMaster,
         report.created_by,
         user.id
       )

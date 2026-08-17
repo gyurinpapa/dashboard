@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
+import { isTrueMasterUser } from "@/src/lib/true-master-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -327,15 +328,19 @@ export async function GET(req: Request, ctx: Ctx) {
       return jsonError(500, "REPORT_WORKSPACE_MISSING");
     }
 
-    const { data: wm, error: wmErr } = await admin
-      .from("workspace_members")
-      .select("role")
-      .eq("workspace_id", workspaceId)
-      .eq("user_id", userId)
-      .maybeSingle();
+    const actorIsTrueMaster = await isTrueMasterUser(userId);
 
-    if (wmErr) return jsonError(500, wmErr.message);
-    if (!wm) return jsonError(403, "FORBIDDEN");
+    if (!actorIsTrueMaster) {
+      const { data: wm, error: wmErr } = await admin
+        .from("workspace_members")
+        .select("workspace_id")
+        .eq("workspace_id", workspaceId)
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (wmErr) return jsonError(500, wmErr.message);
+      if (!wm) return jsonError(403, "FORBIDDEN");
+    }
 
     const currentIngestionId = asStr((report as any).current_ingestion_id);
 
