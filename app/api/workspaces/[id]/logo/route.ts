@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
+import { resolveAgencyBrandingTarget } from "@/src/lib/workspace-branding";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -186,6 +187,26 @@ function canManageWorkspaceLogo(
   );
 }
 
+function brandingTargetError(reason: string) {
+  if (reason === "WORKSPACE_NOT_FOUND") {
+    return jsonError(404, "WORKSPACE_NOT_FOUND");
+  }
+
+  if (reason === "AGENCY_BRANDING_NOT_AVAILABLE") {
+    return jsonError(403, "AGENCY_BRANDING_NOT_AVAILABLE");
+  }
+
+  if (reason === "AGENCY_BRANDING_TENANT_INACTIVE") {
+    return jsonError(409, "AGENCY_BRANDING_TENANT_INACTIVE");
+  }
+
+  if (reason === "AGENCY_BRANDING_WORKSPACE_AMBIGUOUS") {
+    return jsonError(409, "AGENCY_BRANDING_WORKSPACE_AMBIGUOUS");
+  }
+
+  return jsonError(409, "AGENCY_BRANDING_TENANT_NOT_FOUND");
+}
+
 function isOwnedWorkspaceLogoObject(
   workspaceId: string,
   bucket: string,
@@ -246,28 +267,6 @@ function sanitizeExtension(
   }
 
   return fallbackExtension;
-}
-
-async function getWorkspaceLogoRow(
-  workspaceId: string
-): Promise<WorkspaceLogoRow | null> {
-  const { data, error } = await supabaseAdmin
-    .from("workspaces")
-    .select("*")
-    .eq("id", workspaceId)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(
-      `FAILED_TO_FETCH_WORKSPACE:${error.message}`
-    );
-  }
-
-  if (!data) {
-    return null;
-  }
-
-  return data as unknown as WorkspaceLogoRow;
 }
 
 async function authorizeLogoMutation(
@@ -372,17 +371,31 @@ export async function POST(
       return authorization.response;
     }
 
-    const workspace =
-      await getWorkspaceLogoRow(
+    const brandingTarget =
+      await resolveAgencyBrandingTarget(
+        supabaseAdmin,
         workspaceId
       );
 
-    if (!workspace) {
-      return jsonError(
-        404,
-        "WORKSPACE_NOT_FOUND"
+    if (!brandingTarget.ok) {
+      return brandingTargetError(
+        brandingTarget.reason
       );
     }
+
+    const brandingWorkspaceId =
+      brandingTarget.brandingWorkspace.id;
+
+    const workspace: WorkspaceLogoRow = {
+      id: brandingWorkspaceId,
+      name: brandingTarget.brandingWorkspace.name,
+      logo_storage_bucket:
+        brandingTarget.brandingWorkspace.logoStorageBucket,
+      logo_storage_path:
+        brandingTarget.brandingWorkspace.logoStoragePath,
+      logo_updated_at:
+        brandingTarget.brandingWorkspace.logoUpdatedAt,
+    };
 
     const formData =
       await req.formData();
@@ -468,7 +481,7 @@ export async function POST(
 
     uploadedPath = [
       "workspaces",
-      workspaceId,
+      brandingWorkspaceId,
       "branding",
       "logo",
       `${Date.now()}_${randomUUID()}.${extension}`,
@@ -525,8 +538,10 @@ export async function POST(
         logo_updated_at:
           updatedAt,
       } as any)
-      .eq("id", workspaceId)
-      .select("*")
+      .eq("id", brandingWorkspaceId)
+      .select(
+        "id, name, logo_storage_bucket, logo_storage_path, logo_updated_at"
+      )
       .single();
 
     if (updateError) {
@@ -568,7 +583,7 @@ export async function POST(
       previousBucket &&
       previousPath &&
       isOwnedWorkspaceLogoObject(
-        workspaceId,
+        brandingWorkspaceId,
         previousBucket,
         previousPath
       ) &&
@@ -603,10 +618,18 @@ export async function POST(
       ok: true,
       workspace: {
         workspace_id:
-          asString(
-            updatedWorkspace.id
-          ),
+          workspaceId,
         workspace_name:
+          brandingTarget.workspace.workspaceName,
+        tenant_id:
+          brandingTarget.tenant.id,
+        tenant_type:
+          brandingTarget.tenant.tenantType,
+        agency_branding_enabled:
+          true,
+        branding_workspace_id:
+          brandingWorkspaceId,
+        branding_workspace_name:
           asString(
             updatedWorkspace.name
           ) || null,
@@ -699,6 +722,40 @@ export async function POST(
       );
     }
 
+    if (
+      message.startsWith(
+        "FAILED_TO_FETCH_TENANT:"
+      )
+    ) {
+      return jsonError(
+        500,
+        "FAILED_TO_FETCH_TENANT",
+        {
+          detail: message.replace(
+            "FAILED_TO_FETCH_TENANT:",
+            ""
+          ),
+        }
+      );
+    }
+
+    if (
+      message.startsWith(
+        "FAILED_TO_FETCH_AGENCY_BRANDING_WORKSPACE:"
+      )
+    ) {
+      return jsonError(
+        500,
+        "FAILED_TO_FETCH_AGENCY_BRANDING_WORKSPACE",
+        {
+          detail: message.replace(
+            "FAILED_TO_FETCH_AGENCY_BRANDING_WORKSPACE:",
+            ""
+          ),
+        }
+      );
+    }
+
     return jsonError(
       500,
       "INTERNAL_SERVER_ERROR",
@@ -735,17 +792,31 @@ export async function DELETE(
       return authorization.response;
     }
 
-    const workspace =
-      await getWorkspaceLogoRow(
+    const brandingTarget =
+      await resolveAgencyBrandingTarget(
+        supabaseAdmin,
         workspaceId
       );
 
-    if (!workspace) {
-      return jsonError(
-        404,
-        "WORKSPACE_NOT_FOUND"
+    if (!brandingTarget.ok) {
+      return brandingTargetError(
+        brandingTarget.reason
       );
     }
+
+    const brandingWorkspaceId =
+      brandingTarget.brandingWorkspace.id;
+
+    const workspace: WorkspaceLogoRow = {
+      id: brandingWorkspaceId,
+      name: brandingTarget.brandingWorkspace.name,
+      logo_storage_bucket:
+        brandingTarget.brandingWorkspace.logoStorageBucket,
+      logo_storage_path:
+        brandingTarget.brandingWorkspace.logoStoragePath,
+      logo_updated_at:
+        brandingTarget.brandingWorkspace.logoUpdatedAt,
+    };
 
     const previousBucket =
       asString(
@@ -770,7 +841,7 @@ export async function DELETE(
         logo_updated_at:
           deletedAt,
       } as any)
-      .eq("id", workspaceId);
+      .eq("id", brandingWorkspaceId);
 
     if (updateError) {
       return jsonError(
@@ -787,7 +858,7 @@ export async function DELETE(
       previousBucket &&
       previousPath &&
       isOwnedWorkspaceLogoObject(
-        workspaceId,
+        brandingWorkspaceId,
         previousBucket,
         previousPath
       )
@@ -818,6 +889,16 @@ export async function DELETE(
         workspace_id:
           workspaceId,
         workspace_name:
+          brandingTarget.workspace.workspaceName,
+        tenant_id:
+          brandingTarget.tenant.id,
+        tenant_type:
+          brandingTarget.tenant.tenantType,
+        agency_branding_enabled:
+          true,
+        branding_workspace_id:
+          brandingWorkspaceId,
+        branding_workspace_name:
           asString(
             workspace.name
           ) || null,
@@ -880,6 +961,40 @@ export async function DELETE(
         {
           detail: message.replace(
             "FAILED_TO_FETCH_WORKSPACE:",
+            ""
+          ),
+        }
+      );
+    }
+
+    if (
+      message.startsWith(
+        "FAILED_TO_FETCH_TENANT:"
+      )
+    ) {
+      return jsonError(
+        500,
+        "FAILED_TO_FETCH_TENANT",
+        {
+          detail: message.replace(
+            "FAILED_TO_FETCH_TENANT:",
+            ""
+          ),
+        }
+      );
+    }
+
+    if (
+      message.startsWith(
+        "FAILED_TO_FETCH_AGENCY_BRANDING_WORKSPACE:"
+      )
+    ) {
+      return jsonError(
+        500,
+        "FAILED_TO_FETCH_AGENCY_BRANDING_WORKSPACE",
+        {
+          detail: message.replace(
+            "FAILED_TO_FETCH_AGENCY_BRANDING_WORKSPACE:",
             ""
           ),
         }

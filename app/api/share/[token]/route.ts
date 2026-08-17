@@ -1,6 +1,7 @@
 // app/api/share/[token]/route.ts
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { loadWorkspaceBrandingInfo } from "@/src/lib/workspace-branding";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -128,25 +129,6 @@ function buildPublicMeta(metaValue: any) {
   return out;
 }
 
-function buildPublicStorageUrl(
-  sb: any,
-  bucketValue: any,
-  pathValue: any
-) {
-  const bucket = asStr(bucketValue);
-  const path = asStr(pathValue);
-
-  if (!bucket || !path) {
-    return null;
-  }
-
-  const { data } = sb.storage
-    .from(bucket)
-    .getPublicUrl(path);
-
-  return asStr(data?.publicUrl) || null;
-}
-
 async function fetchWorkspaceLogoUrl(
   sb: any,
   workspaceId: string
@@ -157,21 +139,13 @@ async function fetchWorkspaceLogoUrl(
     return null;
   }
 
-  const { data, error } = await sb
-    .from("workspaces")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
+  const branding =
+    await loadWorkspaceBrandingInfo(
+      sb,
+      id
+    );
 
-  if (error || !data) {
-    return null;
-  }
-
-  return buildPublicStorageUrl(
-    sb,
-    (data as any)?.logo_storage_bucket,
-    (data as any)?.logo_storage_path
-  );
+  return branding?.workspaceLogoUrl ?? null;
 }
 
 /** ===== row extractor ===== */
