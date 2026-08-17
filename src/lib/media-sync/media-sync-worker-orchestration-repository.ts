@@ -1401,35 +1401,45 @@ async function markProcessingMediaSyncJobFailed(input: {
   );
 }
 
-function withJobTimeout<T>(input: {
+async function withJobTimeout<T>(input: {
   job: MediaSyncJobRecord;
   timeoutMs: number;
   abortController: AbortController | null;
   promise: Promise<T>;
 }): Promise<T> {
+  if (!input.abortController) {
+    return input.promise;
+  }
+
   let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
 
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutHandle = setTimeout(() => {
-      input.abortController?.abort();
+  timeoutHandle = setTimeout(() => {
+    console.warn(
+      `[media-sync-worker] job ${input.job.id} interruptible timeout reached after ${input.timeoutMs}ms; abort requested`,
+    );
 
-      reject(
-        new MediaSyncWorkerOrchestrationError(
-          "JOB_TIMEOUT",
-          `The Naver media sync job exceeded the ${input.timeoutMs}ms timeout.`,
-        ),
-      );
-    }, input.timeoutMs);
-  });
+    input.abortController?.abort();
+  }, input.timeoutMs);
 
-  return Promise.race([
-    input.promise,
-    timeoutPromise,
-  ]).finally(() => {
+  try {
+    return await input.promise;
+  } finally {
     if (timeoutHandle) {
       clearTimeout(timeoutHandle);
     }
-  });
+  }
+}
+
+function shouldDeferAutomaticFailureMark(
+  error: unknown,
+): boolean {
+  return (
+    error instanceof MediaSyncWorkerOrchestrationError &&
+    (
+      error.code === "ACTIVATION_FAILED" ||
+      error.code === "FINALIZATION_FAILED"
+    )
+  );
 }
 
 function resolveOrchestrationDependencies(
@@ -3093,6 +3103,18 @@ export async function processNextNaverMediaSyncJob(
         "processing_failure",
       error,
     });
+
+    if (
+      shouldDeferAutomaticFailureMark(
+        error,
+      )
+    ) {
+      console.error(
+        `[media-sync-worker] job ${claimedJob.id} remains processing for operator diagnosis because the failure occurred at or after snapshot activation authority`,
+      );
+
+      throw error;
+    }
 
     try {
       await markProcessingMediaSyncJobFailed({

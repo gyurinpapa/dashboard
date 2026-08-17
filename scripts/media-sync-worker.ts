@@ -58,9 +58,6 @@ const MATERIALIZATION_BATCH_SIZE_ENV =
 const MAX_KEYWORD_DISCOVERY_PAGES_PER_RUN_ENV =
   "MEDIA_SYNC_WORKER_MAX_KEYWORD_DISCOVERY_PAGES_PER_RUN";
 
-const DEFAULT_MAX_JOBS =
-  1;
-
 const DEFAULT_POLL_INTERVAL_MS =
   15_000;
 
@@ -124,7 +121,7 @@ const MATERIALIZATION_BATCH_SIZE_UPPER_BOUND =
 type WorkerRuntimeOptions = {
   enabled: boolean;
   loop: boolean;
-  maxJobs: number;
+  maxJobs?: number;
   pollIntervalMs: number;
   exitWhenIdle: boolean;
   jobTimeoutMs: number;
@@ -245,15 +242,9 @@ function readRuntimeOptions():
     readBooleanEnv(LOOP_ENV);
 
   const maxJobs =
-    readPositiveIntegerEnv({
+    readOptionalPositiveIntegerEnv({
       name:
         MAX_JOBS_ENV,
-
-      fallback:
-        DEFAULT_MAX_JOBS,
-
-      min:
-        1,
 
       max:
         MAX_JOBS_UPPER_BOUND,
@@ -510,7 +501,11 @@ function logWorkerStart(
   );
 
   console.log(
-    `[${WORKER_NAME}] max jobs: ${options.maxJobs}`,
+    `[${WORKER_NAME}] max jobs: ${
+      typeof options.maxJobs === "number"
+        ? options.maxJobs
+        : "unbounded"
+    }`,
   );
 
   console.log(
@@ -908,6 +903,7 @@ async function runLoopMode(
     0;
 
   while (
+    options.maxJobs === undefined ||
     processedJobs < options.maxJobs
   ) {
     const processed =

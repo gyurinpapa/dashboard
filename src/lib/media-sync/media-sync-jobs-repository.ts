@@ -626,7 +626,7 @@ function buildStaleProcessingErrorDetail(input: {
   return {
     code: "STALE_PROCESSING_JOB",
     message:
-      "Media sync processing job exceeded the stale processing threshold and was recovered automatically.",
+      "Pre-materialization media sync processing job exceeded the stale processing threshold and was recovered automatically.",
     stage: "stale_recovery",
     source: "automatic_recovery",
     stale_ms: input.staleMs,
@@ -664,6 +664,8 @@ async function recoverStaleProcessingJobsByIds(input: {
     })
     .in("id", input.ids)
     .eq("status", MEDIA_SYNC_JOB_PROCESSING_STATUS)
+    .is("snapshot_ingestion_id", null)
+    .lt("updated_at", input.cutoff)
     .select("*");
 
   if (error) {
@@ -730,6 +732,7 @@ export async function recoverStaleProcessingMediaSyncJobsForReport(
     .eq("workspace_id", workspaceId)
     .eq("advertiser_id", advertiserId)
     .eq("status", MEDIA_SYNC_JOB_PROCESSING_STATUS)
+    .is("snapshot_ingestion_id", null)
     .lt("updated_at", cutoff)
     .order("updated_at", { ascending: true })
     .limit(limit);
@@ -784,6 +787,7 @@ export async function recoverStaleProcessingNaverMediaSyncJobs(
     .select("id")
     .eq("provider", NAVER_SEARCH_ADS_PROVIDER)
     .eq("status", MEDIA_SYNC_JOB_PROCESSING_STATUS)
+    .is("snapshot_ingestion_id", null)
     .lt("updated_at", cutoff)
     .order("updated_at", { ascending: true })
     .limit(limit);
