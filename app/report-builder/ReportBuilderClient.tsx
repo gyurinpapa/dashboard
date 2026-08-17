@@ -330,16 +330,16 @@ function getReportDataSourceLabel(kind?: ReportDataSourceKind | null) {
 function getReportDataSourceBadgeStyle(kind?: ReportDataSourceKind | null): React.CSSProperties {
   if (kind === "api") {
     return {
-      border: "1px solid #93c5fd",
-      background: "#eff6ff",
-      color: "#1d4ed8",
+      border: "1px solid rgba(33, 223, 243, 0.30)",
+      background: "rgba(33, 223, 243, 0.10)",
+      color: "#78f0ff",
     };
   }
 
   return {
-    border: "1px solid #d1d5db",
-    background: "#f9fafb",
-    color: "#374151",
+    border: "1px solid rgba(124, 92, 255, 0.28)",
+    background: "rgba(124, 92, 255, 0.10)",
+    color: "#c5bbff",
   };
 }
 
@@ -1960,19 +1960,6 @@ export default function ReportBuilderPage() {
     ? `${PUBLIC_CLIENT_URL_PREFIX}${selectedAdvertiserPublicSlug}`
     : "";
 
-  const memberInfoText = useMemo(() => {
-    if (!userId || !memberRole) return "";
-    return [
-      `role: ${memberRole}`,
-      workspaceName ? `workspace: ${workspaceName}` : "",
-      memberDivision ? `본부: ${memberDivision}` : "",
-      memberDepartment ? `부서: ${memberDepartment}` : "",
-      memberTeam ? `팀: ${memberTeam}` : "",
-    ]
-      .filter(Boolean)
-      .join(" / ");
-  }, [userId, memberRole, workspaceName, memberDivision, memberDepartment, memberTeam]);
-
   const filteredReports = useMemo(() => {
     const s = norm(search);
 
@@ -2306,6 +2293,7 @@ export default function ReportBuilderPage() {
   }
 
   const containerStyle: React.CSSProperties = {
+    position: "relative",
     width: "100%",
     maxWidth: 1200,
     padding: 24,
@@ -2323,18 +2311,100 @@ export default function ReportBuilderPage() {
       style={{
         display: "flex",
         justifyContent: "center",
-        background: "#f3f4f6",
+        background:
+          "radial-gradient(circle at 18% 0%, rgba(33, 223, 243, 0.10), transparent 30%), radial-gradient(circle at 82% 12%, rgba(124, 92, 255, 0.18), transparent 34%), linear-gradient(135deg, #251b4d 0%, #2c2061 48%, #211a46 100%)",
+        backgroundAttachment: "fixed",
+        color: "#f7f7ff",
         minHeight: "100vh",
       }}
     >
       <div style={containerStyle}>
+        {!userId ? (
+          <div className="loginCornerLogo" aria-label="Etrylue">
+            <img
+              src="/branding/etrylue-logo.png"
+              alt="Etrylue"
+              className="loginCornerLogoImage"
+            />
+          </div>
+        ) : null}
+
+        {userId ? (
+          <div className="builderCornerLogo" aria-label="Etrylue">
+            <img
+              src="/branding/etrylue-logo.png"
+              alt="Etrylue"
+              className="builderCornerLogoImage"
+            />
+          </div>
+        ) : null}
+
+        {!userId ? (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              margin: "4px 0 12px",
+              textAlign: "center",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "clamp(42px, 5vw, 60px)",
+                lineHeight: 1,
+                fontWeight: 950,
+                letterSpacing: "-0.055em",
+                color: "transparent",
+                background:
+                  "linear-gradient(90deg, #21dff3 0%, #82efff 34%, #bdb4ff 68%, #8f6cff 100%)",
+                WebkitBackgroundClip: "text",
+                backgroundClip: "text",
+                filter: "drop-shadow(0 8px 24px rgba(69, 87, 230, 0.20))",
+              }}
+            >
+              Etrylue
+            </div>
+
+            <div
+              style={{
+                marginTop: 8,
+                fontSize: 10,
+                lineHeight: 1,
+                fontWeight: 850,
+                letterSpacing: "0.34em",
+                textTransform: "uppercase",
+                color: "#bbb8d4",
+              }}
+            >
+              Performance
+            </div>
+
+            <div
+              aria-hidden="true"
+              style={{
+                width: 88,
+                height: 3,
+                marginTop: 12,
+                borderRadius: 999,
+                background: "linear-gradient(90deg, #21dff3 0%, #7c5cff 100%)",
+                boxShadow: "0 0 18px rgba(33, 223, 243, 0.20)",
+              }}
+            />
+          </div>
+        ) : null}
+
         <h1
           style={{
-            fontSize: 36,
+            fontSize: userId ? 36 : "clamp(22px, 2.4vw, 30px)",
             fontWeight: 900,
             textAlign: "center",
-            marginBottom: 20,
-            color: "#111827",
+            marginBottom: userId ? 20 : 18,
+            color: "transparent",
+            background: "linear-gradient(90deg, #f7f7ff 0%, #d9faff 54%, #bdb4ff 100%)",
+            WebkitBackgroundClip: "text",
+            backgroundClip: "text",
             letterSpacing: "-0.02em",
           }}
         >
@@ -2343,16 +2413,19 @@ export default function ReportBuilderPage() {
 
         <div
           style={{
-            background: "#e5e7eb",
-            border: "1px solid #cfd4dc",
-            borderRadius: 24,
-            padding: 40,
+            background: userId
+              ? "linear-gradient(160deg, rgba(57, 43, 112, 0.94), rgba(47, 35, 96, 0.92))"
+              : "linear-gradient(160deg, rgba(57, 43, 112, 0.86), rgba(47, 35, 96, 0.84))",
+            border: "1px solid rgba(255, 255, 255, 0.13)",
+            borderRadius: userId ? 18 : 24,
+            padding: userId ? "18px 20px" : 40,
             display: "flex",
             flexDirection: "column",
-            alignItems: "center",
-            gap: 16,
-            boxShadow:
-              "18px 18px 36px rgba(55, 65, 81, 0.14), -12px -12px 24px rgba(255, 255, 255, 0.82)",
+            alignItems: userId ? "stretch" : "center",
+            gap: userId ? 14 : 16,
+            boxShadow: userId
+              ? "0 20px 52px rgba(8, 5, 29, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06)"
+              : "0 24px 60px rgba(8, 5, 29, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.06)",
           }}
         >
           {!userId ? (
@@ -2373,7 +2446,7 @@ export default function ReportBuilderPage() {
                     fontSize: 34,
                     lineHeight: 1.2,
                     fontWeight: 900,
-                    color: "#111827",
+                    color: "#f7f7ff",
                     letterSpacing: "-0.02em",
                   }}
                 >
@@ -2385,7 +2458,7 @@ export default function ReportBuilderPage() {
                     maxWidth: 680,
                     fontSize: 16,
                     lineHeight: 1.7,
-                    color: "#4b5563",
+                    color: "#e2e1f3",
                   }}
                 >
                   광고 성과 데이터를 업로드하고, KPI 요약과 시각화를 거쳐
@@ -2444,287 +2517,514 @@ export default function ReportBuilderPage() {
             </>
           ) : (
             <>
-              <div style={{ fontSize: 22, fontWeight: 800, color: "#111827" }}>
-                {userEmail ?? "사용자"}님 반갑습니다 👋
+              <div
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 16,
+                  flexWrap: "wrap",
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: 16,
+                      fontWeight: 900,
+                      color: "#f7f7ff",
+                      lineHeight: 1.35,
+                      wordBreak: "break-word",
+                    }}
+                  >
+                    {userEmail ?? "사용자"}
+                  </div>
+
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  {canManageMembers ? (
+                    <button
+                      className="subBtn"
+                      onClick={openMemberManagement}
+                      disabled={!workspaceId}
+                      title={!workspaceId ? "workspace_id가 필요합니다." : "멤버 관리"}
+                      style={{ padding: "9px 12px" }}
+                    >
+                      멤버 관리
+                    </button>
+                  ) : null}
+
+                  <button
+                    className="subBtn"
+                    onClick={signOut}
+                    style={{ padding: "9px 12px" }}
+                  >
+                    로그아웃
+                  </button>
+                </div>
               </div>
 
-              {memberInfoText ? (
+              <div
+                style={{
+                  width: "100%",
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+                  gap: 12,
+                  alignItems: "stretch",
+                }}
+              >
+                {workspaceMemberships.length > 0 ? (
+                  <div
+                    style={{
+                      border: "1px solid rgba(255, 255, 255, 0.13)",
+                      borderRadius: 14,
+                      background: "rgba(42, 33, 87, 0.86)",
+                      padding: 14,
+                      minWidth: 0,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        marginBottom: 8,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: "#d7d5ec",
+                          fontWeight: 800,
+                        }}
+                      >
+                        현재 workspace
+                      </div>
+
+                      {currentWorkspaceMembership?.tenant_type ? (
+                        <span
+                          style={{
+                            border: "1px solid rgba(255, 255, 255, 0.13)",
+                            borderRadius: 999,
+                            background: "rgba(53, 40, 103, 0.90)",
+                            padding: "4px 8px",
+                            fontSize: 11,
+                            fontWeight: 800,
+                            color: "#e2e1f3",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {currentWorkspaceMembership.tenant_type === "agency"
+                            ? "대행사"
+                            : "광고주"}
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <select
+                      value={workspaceId ?? ""}
+                      onChange={(e) => changeWorkspace(e.target.value)}
+                      disabled={!workspaceMemberships.length}
+                      className="neoField interactiveSelect"
+                      style={{ fontSize: 15 }}
+                    >
+                      {canViewAllWorkspaces ? (
+                        <option value={ALL_WORKSPACES}>전체 workspace (master)</option>
+                      ) : null}
+
+                      {workspaceMemberships.map((wm) => (
+                        <option key={wm.workspace_id} value={wm.workspace_id}>
+                          {wm.workspace_name || wm.workspace_id}
+                          {wm.role ? ` (${wm.role})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
+
+                {workspaceId && !isAllWorkspaceMode && isAgencyWorkspace ? (
+                  <div
+                    style={{
+                      border: "1px solid rgba(255, 255, 255, 0.13)",
+                      borderRadius: 14,
+                      background: "rgba(42, 33, 87, 0.86)",
+                      padding: 14,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 12,
+                      minWidth: 0,
+                    }}
+                  >
+                    <div
+                      style={{
+                        minWidth: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 12,
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: 104,
+                          height: 44,
+                          flex: "0 0 auto",
+                          border: "1px solid rgba(255, 255, 255, 0.13)",
+                          borderRadius: 10,
+                          background: "rgba(53, 40, 103, 0.90)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          padding: 7,
+                        }}
+                      >
+                        {!agencyBrandingAvailable ? (
+                          <span
+                            style={{
+                              fontSize: 10,
+                              lineHeight: 1.3,
+                              textAlign: "center",
+                              color: "#ffca70",
+                            }}
+                          >
+                            브랜딩 확인 필요
+                          </span>
+                        ) : workspaceLogoUrl ? (
+                          <img
+                            src={workspaceLogoUrl}
+                            alt={`${
+                              currentWorkspaceMembership?.tenant_name ||
+                              workspaceName ||
+                              "대행사"
+                            } 기업 로고`}
+                            style={{
+                              width: "100%",
+                              height: 30,
+                              objectFit: "contain",
+                            }}
+                          />
+                        ) : (
+                          <span
+                            style={{
+                              fontSize: 10,
+                              color: "#bbb8d4",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            로고 미등록
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{ minWidth: 0 }}>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 900,
+                            color: "#f7f7ff",
+                          }}
+                        >
+                          리포트 브랜딩
+                        </div>
+                        <div
+                          style={{
+                            marginTop: 3,
+                            fontSize: 11,
+                            lineHeight: 1.4,
+                            color: agencyBrandingAvailable ? "#d7d5ec" : "#ffca70",
+                          }}
+                        >
+                          {agencyBrandingAvailable
+                            ? "대행사 공통 로고"
+                            : "기준 workspace를 확인할 수 없습니다."}
+                        </div>
+                      </div>
+                    </div>
+
+                    {agencyBrandingAvailable && canManageAgencyBranding ? (
+                      <Link
+                        href={`/settings?workspace_id=${encodeURIComponent(workspaceId)}`}
+                        style={{
+                          flex: "0 0 auto",
+                          textDecoration: "none",
+                        }}
+                      >
+                        <span
+                          className="subBtn"
+                          style={{
+                            minWidth: 58,
+                            padding: "8px 12px",
+                            fontSize: 12,
+                          }}
+                        >
+                          설정
+                        </span>
+                      </Link>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            </>
+          )}
+        </div>
+
+        {canManageAdvertisers ? (
+          <section style={{ marginTop: 28 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "flex-end",
+                justifyContent: "space-between",
+                gap: 16,
+                flexWrap: "wrap",
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                    marginBottom: 6,
+                  }}
+                >
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      minWidth: 48,
+                      height: 24,
+                      borderRadius: 999,
+                      background: "linear-gradient(135deg, #21dff3 0%, #7c5cff 100%)",
+                      color: "#ffffff",
+                      fontSize: 11,
+                      fontWeight: 900,
+                      letterSpacing: "0.02em",
+                    }}
+                  >
+                    STEP 1
+                  </span>
+                  <h2
+                    style={{
+                      margin: 0,
+                      fontSize: 20,
+                      fontWeight: 900,
+                      color: "#f7f7ff",
+                    }}
+                  >
+                    광고주 선택
+                  </h2>
+                </div>
                 <div
                   style={{
                     fontSize: 13,
-                    opacity: 0.92,
-                    textAlign: "center",
-                    lineHeight: 1.6,
-                    color: "#4b5563",
+                    lineHeight: 1.55,
+                    color: "#d7d5ec",
                   }}
                 >
-                  {memberInfoText}
+                  보고서를 만들 광고주를 선택하세요. 목록에 없으면 바로 새 광고주를 추가할 수 있습니다.
                 </div>
-              ) : null}
+              </div>
 
-              {workspaceMemberships.length > 0 ? (
+              {selectedAdvertiserId ? (
                 <div
                   style={{
-                    width: "100%",
-                    maxWidth: 520,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 6,
+                    border: "1px solid rgba(255, 255, 255, 0.12)",
+                    borderRadius: 999,
+                    background: "rgba(53, 40, 103, 0.90)",
+                    padding: "7px 11px",
+                    fontSize: 12,
+                    color: "#d9d7ee",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  선택됨 · <b style={{ color: "#f7f7ff" }}>{selectedAdvertiserName}</b>
+                </div>
+              ) : null}
+            </div>
+
+            <div
+              className="panelCard"
+              style={{
+                marginTop: 14,
+                padding: 20,
+              }}
+            >
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                  gap: 18,
+                  alignItems: "start",
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 900,
+                      color: "#f7f7ff",
+                      marginBottom: 8,
+                    }}
+                  >
+                    기존 광고주
+                  </div>
+
+                  <div className="advertiserSelectWrap">
+                    <select
+                      value={selectedAdvertiserId}
+                      onChange={(e) => setSelectedAdvertiserId(e.target.value)}
+                      disabled={!userId || !workspaceId}
+                      className="advertiserSelect"
+                    >
+                      <option value="">광고주를 지정하지 않음</option>
+                      {advertisers.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {formatAdvertiserLabel(a)}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="advertiserSelectArrow" aria-hidden="true">
+                      ⌄
+                    </span>
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 8,
+                      fontSize: 12,
+                      lineHeight: 1.5,
+                      color: "#d7d5ec",
+                    }}
+                  >
+                    {selectedAdvertiserId
+                      ? `${selectedAdvertiserName} 기준으로 새 리포트를 준비합니다.`
+                      : "광고주 없이 리포트를 만들 수도 있습니다."}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    minWidth: 0,
+                    borderLeft: "1px solid rgba(255, 255, 255, 0.13)",
+                    paddingLeft: 18,
                   }}
                 >
                   <div
                     style={{
                       fontSize: 13,
-                      textAlign: "left",
-                      color: "#374151",
-                      fontWeight: 700,
+                      fontWeight: 900,
+                      color: "#f7f7ff",
                     }}
                   >
-                    현재 workspace 선택
+                    새 광고주 추가
                   </div>
-                  <select
-                    value={workspaceId ?? ""}
-                    onChange={(e) => changeWorkspace(e.target.value)}
-                    disabled={!workspaceMemberships.length}
-                    className="neoField"
-                    style={{ fontSize: 15 }}
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      alignItems: "center",
+                      flexWrap: "wrap",
+                      marginTop: 10,
+                    }}
                   >
-                    {canViewAllWorkspaces ? (
-                      <option value={ALL_WORKSPACES}>전체 workspace (master)</option>
-                    ) : null}
-
-                    {workspaceMemberships.map((wm) => (
-                      <option key={wm.workspace_id} value={wm.workspace_id}>
-                        {wm.workspace_name || wm.workspace_id}
-                        {wm.role ? ` (${wm.role})` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ) : null}
-
-              {workspaceId && !isAllWorkspaceMode && isAgencyWorkspace ? (
-                <div
-                  style={{
-                    width: "100%",
-                    maxWidth: 520,
-                    border: "1px solid #cfd4dc",
-                    borderRadius: 18,
-                    background: "rgba(255, 255, 255, 0.58)",
-                    padding: 16,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 12,
-                  }}
-                >
-                  <div>
-                    <div
+                    <input
+                      value={newAdvertiserName}
+                      onChange={(e) => setNewAdvertiserName(e.target.value)}
+                      placeholder="예: 네이처컬렉션"
+                      disabled={!userId || !workspaceId || creatingAdvertiser}
                       style={{
+                        flex: 1,
+                        minWidth: 180,
+                        padding: 12,
+                        borderRadius: 11,
+                        border: "1px solid rgba(255, 255, 255, 0.13)",
+                        background: "rgba(53, 40, 103, 0.90)",
                         fontSize: 14,
-                        fontWeight: 900,
-                        color: "#111827",
                       }}
+                    />
+
+                    <button
+                      className="subBtn"
+                      onClick={createAdvertiser}
+                      disabled={!userId || !workspaceId || creatingAdvertiser}
+                      style={{ padding: "11px 14px" }}
                     >
-                      대행사 리포트 브랜딩
-                    </div>
-                    <div
-                      style={{
-                        marginTop: 4,
-                        fontSize: 12,
-                        lineHeight: 1.5,
-                        color: "#6b7280",
-                      }}
-                    >
-                      같은 대행사 소속 workspace의 리포트·공유·PPT에 공통 적용되는 기업 로고입니다.
-                    </div>
+                      {creatingAdvertiser ? "추가 중..." : "추가"}
+                    </button>
                   </div>
 
-                  {!agencyBrandingAvailable ? (
-                    <div
-                      style={{
-                        minHeight: 76,
-                        border: "1px solid #fde68a",
-                        borderRadius: 14,
-                        background: "#fffbeb",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        padding: 14,
-                        textAlign: "center",
-                        fontSize: 12,
-                        lineHeight: 1.5,
-                        color: "#92400e",
-                      }}
-                    >
-                      대행사 브랜딩 기준 workspace를 안전하게 확정할 수 없습니다.
-                    </div>
-                  ) : workspaceLogoUrl ? (
-                    <div
-                      style={{
-                        width: "100%",
-                        minHeight: 92,
-                        border: "1px solid #e5e7eb",
-                        borderRadius: 14,
-                        background: "#ffffff",
-                        padding: 14,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <img
-                        src={workspaceLogoUrl}
-                        alt={`${currentWorkspaceMembership?.tenant_name || workspaceName || "대행사"} 기업 로고`}
-                        style={{
-                          width: "100%",
-                          maxWidth: 240,
-                          height: 64,
-                          objectFit: "contain",
-                        }}
-                      />
-                    </div>
-                  ) : (
-                    <div
-                      style={{
-                        minHeight: 76,
-                        border: "1px dashed #cbd5e1",
-                        borderRadius: 14,
-                        background: "#f8fafc",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        padding: 14,
-                        textAlign: "center",
-                        fontSize: 12,
-                        lineHeight: 1.5,
-                        color: "#64748b",
-                      }}
-                    >
-                      등록된 대행사 기업 로고가 없습니다.
-                    </div>
-                  )}
-
-                  {agencyBrandingAvailable && canManageAgencyBranding ? (
-                    <Link
-                      href={`/settings?workspace_id=${encodeURIComponent(workspaceId)}`}
-                      className="subBtn"
-                      style={{
-                        alignSelf: "center",
-                        textDecoration: "none",
-                      }}
-                    >
-                      리포트 브랜딩 설정
-                    </Link>
-                  ) : (
-                    <div
-                      style={{
-                        fontSize: 11,
-                        lineHeight: 1.5,
-                        textAlign: "center",
-                        color: "#6b7280",
-                      }}
-                    >
-                      브랜딩 변경은 true master 또는 director만 가능합니다.
-                    </div>
-                  )}
+                  <div style={{ marginTop: 7, fontSize: 11, color: "#bbb8d4" }}>
+                    필요한 광고주가 목록에 없다면 이름만 입력해 추가하세요. 추가하면 해당 광고주가 자동으로 선택됩니다.
+                  </div>
                 </div>
-              ) : null}
-
-              <div
-                style={{
-                  display: "flex",
-                  gap: 10,
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                  justifyContent: "center",
-                }}
-              >
-                {canManageMembers ? (
-                  <button
-                    className="subBtn"
-                    onClick={openMemberManagement}
-                    disabled={!workspaceId}
-                    title={!workspaceId ? "workspace_id가 필요합니다." : "멤버 관리"}
-                  >
-                    멤버 관리
-                  </button>
-                ) : null}
-
-                <button className="subBtn" onClick={signOut}>
-                  로그아웃
-                </button>
               </div>
-            </>
-          )}
 
-          <div
-            style={{
-              fontSize: 13,
-              color: "#6b7280",
-            }}
-          >
-            workspace_id: {workspaceId ?? "(없음)"}
-            {workspaceName ? ` / ${workspaceName}` : ""}
-          </div>
-        </div>
-
-        {canManageAdvertisers ? (
-          <section style={{ marginTop: 32 }}>
-            <h2 style={{ fontSize: 20, fontWeight: 800 }}>광고주 선택 / 생성</h2>
-
-            <div
-              style={{
-                marginTop: 16,
-                display: "grid",
-                gridTemplateColumns: "minmax(280px, 1.1fr) minmax(280px, 1fr)",
-                gap: 16,
-              }}
-            >
-              <div className="panelCard">
-                <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 10 }}>
-                  기존 광고주 선택
-                </div>
-
-                <select
-                  value={selectedAdvertiserId}
-                  onChange={(e) => setSelectedAdvertiserId(e.target.value)}
-                  disabled={!userId || !workspaceId}
-                  style={{
-                    width: "100%",
-                    padding: 14,
-                    borderRadius: 12,
-                    border: "1px solid #ddd",
-                    background: "white",
-                    fontSize: 15,
-                  }}
-                >
-                  <option value="">광고주 미지정으로 생성</option>
-                  {advertisers.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {formatAdvertiserLabel(a)}
-                    </option>
-                  ))}
-                </select>
-
-                <div style={{ marginTop: 10, fontSize: 12, opacity: 0.65 }}>
-                  현재 선택: {selectedAdvertiserName || "광고주 미지정"}
-                </div>
-
+              {selectedAdvertiserId ? (
                 <div
                   style={{
-                    marginTop: 14,
-                    border: "1px solid #e5e7eb",
-                    borderRadius: 14,
-                    background: "#f9fafb",
-                    padding: 12,
+                    marginTop: 18,
+                    paddingTop: 18,
+                    borderTop: "1px solid rgba(255, 255, 255, 0.13)",
                   }}
                 >
-                  <div style={{ fontSize: 13, fontWeight: 900, color: "#111827" }}>
-                    공개 URL
-                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 12,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 900,
+                          color: "#f7f7ff",
+                        }}
+                      >
+                        공개 URL
+                      </div>
+                      <div
+                        style={{
+                          marginTop: 3,
+                          fontSize: 12,
+                          lineHeight: 1.5,
+                          color: "#d7d5ec",
+                        }}
+                      >
+                        발행된 최신 리포트를 고객에게 공유할 광고주 전용 주소입니다.
+                      </div>
+                    </div>
 
-                  <div style={{ marginTop: 6, fontSize: 12, color: "#6b7280", lineHeight: 1.5 }}>
-                    고객에게 공유할 광고주별 고정 URL입니다. 발행된 최신 리포트가 이 주소로 연결됩니다.
+                    {selectedAdvertiserPublicUrl ? (
+                      <a
+                        href={selectedAdvertiserPublicUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="interactiveLink"
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 800,
+                          color: "#78f0ff",
+                          textDecoration: "none",
+                        }}
+                      >
+                        현재 공개 URL 열기 ↗
+                      </a>
+                    ) : null}
                   </div>
 
                   <div
@@ -2739,11 +3039,11 @@ export default function ReportBuilderPage() {
                     <span
                       style={{
                         fontSize: 13,
-                        color: "#4b5563",
-                        background: "white",
-                        border: "1px solid #e5e7eb",
+                        color: "#c9c6df",
+                        background: "rgba(42, 33, 87, 0.86)",
+                        border: "1px solid rgba(255, 255, 255, 0.13)",
                         borderRadius: 10,
-                        padding: "10px 10px",
+                        padding: "10px",
                         whiteSpace: "nowrap",
                       }}
                     >
@@ -2755,21 +3055,20 @@ export default function ReportBuilderPage() {
                       onChange={(e) => setPublicSlugInput(norm(e.target.value))}
                       placeholder="예: gna"
                       disabled={
-                        !selectedAdvertiserId ||
                         !canUpdatePublicSlug ||
                         savingPublicSlug ||
                         isAllWorkspaceMode
                       }
                       style={{
                         flex: 1,
-                        minWidth: 120,
+                        minWidth: 160,
                         padding: 11,
                         borderRadius: 10,
-                        border: "1px solid #ddd",
+                        border: "1px solid rgba(255, 255, 255, 0.13)",
                         background:
-                          !selectedAdvertiserId || !canUpdatePublicSlug || isAllWorkspaceMode
-                            ? "#f3f4f6"
-                            : "white",
+                          !canUpdatePublicSlug || isAllWorkspaceMode
+                            ? "rgba(29, 23, 61, 0.72)"
+                            : "rgba(33, 26, 72, 0.92)",
                         fontSize: 14,
                       }}
                     />
@@ -2778,15 +3077,12 @@ export default function ReportBuilderPage() {
                       className="subBtn"
                       onClick={savePublicSlug}
                       disabled={
-                        !selectedAdvertiserId ||
                         !canUpdatePublicSlug ||
                         savingPublicSlug ||
                         isAllWorkspaceMode
                       }
                       title={
-                        !selectedAdvertiserId
-                          ? "광고주를 먼저 선택하세요"
-                          : !canUpdatePublicSlug
+                        !canUpdatePublicSlug
                           ? "master/director/admin/staff만 수정할 수 있습니다"
                           : isAllWorkspaceMode
                           ? "전체 workspace 보기에서는 수정할 수 없습니다"
@@ -2797,59 +3093,65 @@ export default function ReportBuilderPage() {
                     </button>
                   </div>
 
-                  <div style={{ marginTop: 8, fontSize: 12, color: "#4b5563", lineHeight: 1.5 }}>
-                    {selectedAdvertiserId ? (
-                      selectedAdvertiserPublicUrl ? (
-                        <>
-                          현재 공개 URL: {" "}
-                          <a
-                            href={selectedAdvertiserPublicUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            style={{ color: "#2563eb", fontWeight: 800 }}
-                          >
-                            {selectedAdvertiserPublicUrl}
-                          </a>
-                        </>
-                      ) : (
-                        "아직 공개 URL이 없습니다."
-                      )
-                    ) : (
-                      "광고주를 선택하면 공개 URL을 설정할 수 있습니다."
-                    )}
-                  </div>
-
-                  <div style={{ marginTop: 4, fontSize: 11, color: "#9ca3af", lineHeight: 1.5 }}>
-                    소문자 영어, 숫자, 하이픈만 사용할 수 있습니다. 입력값을 비우고 저장하면 공개 URL이 제거됩니다.
+                  <div
+                    style={{
+                      marginTop: 7,
+                      fontSize: 11,
+                      lineHeight: 1.5,
+                      color: "#bbb8d4",
+                    }}
+                  >
+                    소문자 영어, 숫자, 하이픈만 사용할 수 있습니다. 비우고 저장하면 공개 URL이 제거됩니다.
                   </div>
                 </div>
+              ) : null}
 
-                {canDeleteAdvertisers ? (
-                  <div style={{ marginTop: 14 }}>
+              {canDeleteAdvertisers ? (
+                <details
+                  style={{
+                    marginTop: 16,
+                    paddingTop: 14,
+                    borderTop: "1px solid rgba(255, 255, 255, 0.13)",
+                  }}
+                >
+                  <summary
+                    className="interactiveSummary"
+                    style={{
+                      cursor: "pointer",
+                      fontSize: 12,
+                      fontWeight: 800,
+                      color: "#d7d5ec",
+                      userSelect: "none",
+                    }}
+                  >
+                    광고주 관리
+                  </summary>
+
+                  <div style={{ marginTop: 12 }}>
                     <div
                       style={{
                         fontSize: 12,
-                        fontWeight: 800,
+                        lineHeight: 1.5,
+                        color: "#d7d5ec",
                         marginBottom: 8,
-                        opacity: 0.8,
                       }}
                     >
-                      삭제할 광고주 선택
+                      삭제할 광고주를 선택하세요. 삭제 작업은 신중하게 진행해 주세요.
                     </div>
 
                     <div
                       style={{
-                        border: "1px solid #eee",
+                        border: "1px solid rgba(255, 255, 255, 0.13)",
                         borderRadius: 12,
-                        background: "white",
+                        background: "rgba(53, 40, 103, 0.90)",
                         padding: 10,
                         maxHeight: 180,
                         overflowY: "auto",
                       }}
                     >
                       {advertisers.length === 0 ? (
-                        <div style={{ fontSize: 12, opacity: 0.6 }}>
-                          삭제할 광고주가 없습니다.
+                        <div style={{ fontSize: 12, color: "#bbb8d4" }}>
+                          관리할 광고주가 없습니다.
                         </div>
                       ) : (
                         advertisers.map((a) => {
@@ -2899,52 +3201,8 @@ export default function ReportBuilderPage() {
                           }`}
                     </button>
                   </div>
-                ) : null}
-              </div>
-
-              <div className="panelCard">
-                <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 10 }}>
-                  새 광고주 생성
-                </div>
-
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 10,
-                    alignItems: "center",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <input
-                    value={newAdvertiserName}
-                    onChange={(e) => setNewAdvertiserName(e.target.value)}
-                    placeholder="예: 네이처컬렉션"
-                    disabled={!userId || !workspaceId || creatingAdvertiser}
-                    style={{
-                      flex: 1,
-                      minWidth: 220,
-                      padding: 14,
-                      borderRadius: 12,
-                      border: "1px solid #ddd",
-                      background: "white",
-                      fontSize: 15,
-                    }}
-                  />
-
-                  <button
-                    className="subBtn"
-                    onClick={createAdvertiser}
-                    disabled={!userId || !workspaceId || creatingAdvertiser}
-                    style={{ padding: "12px 16px" }}
-                  >
-                    {creatingAdvertiser ? "생성 중..." : "광고주 생성"}
-                  </button>
-                </div>
-
-                <div style={{ marginTop: 10, fontSize: 12, opacity: 0.65 }}>
-                  생성 후 자동으로 해당 광고주가 선택됩니다.
-                </div>
-              </div>
+                </details>
+              ) : null}
             </div>
 
             {localMsg ? (
@@ -2954,32 +3212,98 @@ export default function ReportBuilderPage() {
             ) : null}
           </section>
         ) : localMsg ? (
-          <div className="infoMsg" style={{ marginTop: 32 }}>
+          <div className="infoMsg" style={{ marginTop: 28 }}>
             {localMsg}
           </div>
         ) : null}
 
         {canCreateReport ? (
-          <section style={{ marginTop: 32 }}>
-            <h2 style={{ fontSize: 20, fontWeight: 800 }}>보고서 유형 선택</h2>
+          <section style={{ marginTop: 28 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "flex-end",
+                justifyContent: "space-between",
+                gap: 16,
+                flexWrap: "wrap",
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                    marginBottom: 6,
+                  }}
+                >
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      minWidth: 48,
+                      height: 24,
+                      borderRadius: 999,
+                      background: "linear-gradient(135deg, #21dff3 0%, #7c5cff 100%)",
+                      color: "#ffffff",
+                      fontSize: 11,
+                      fontWeight: 900,
+                      letterSpacing: "0.02em",
+                    }}
+                  >
+                    STEP 2
+                  </span>
+                  <h2
+                    style={{
+                      margin: 0,
+                      fontSize: 20,
+                      fontWeight: 900,
+                      color: "#f7f7ff",
+                    }}
+                  >
+                    보고서 유형 선택
+                  </h2>
+                </div>
+                <div
+                  style={{
+                    fontSize: 13,
+                    lineHeight: 1.55,
+                    color: "#d7d5ec",
+                  }}
+                >
+                  데이터 입력 방식과 보고서 목적에 맞는 유형을 선택하세요.
+                </div>
+              </div>
 
-            <div style={{ marginTop: 10, fontSize: 13, opacity: 0.7 }}>
-              선택된 광고주: <b>{selectedAdvertiserName || "광고주 미지정"}</b>
+              <div
+                style={{
+                  border: "1px solid rgba(255, 255, 255, 0.12)",
+                  borderRadius: 999,
+                  background: "rgba(53, 40, 103, 0.90)",
+                  padding: "7px 11px",
+                  fontSize: 12,
+                  color: "#d9d7ee",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                광고주 · <b style={{ color: "#f7f7ff" }}>{selectedAdvertiserName || "미지정"}</b>
+              </div>
             </div>
 
             <div
               style={{
                 marginTop: 14,
-                border: "1px solid #e5e7eb",
+                border: "1px solid rgba(255, 255, 255, 0.13)",
                 borderRadius: 16,
-                background: "#ffffff",
+                background: "rgba(53, 40, 103, 0.90)",
                 padding: 14,
               }}
             >
-              <div style={{ fontSize: 14, fontWeight: 900, color: "#111827" }}>
+              <div style={{ fontSize: 14, fontWeight: 900, color: "#f7f7ff" }}>
                 데이터 입력 방식
               </div>
-              <div style={{ marginTop: 4, fontSize: 12, color: "#6b7280", lineHeight: 1.5 }}>
+              <div style={{ marginTop: 4, fontSize: 12, color: "#d7d5ec", lineHeight: 1.5 }}>
                 새 리포트를 CSV 업로드형으로 만들지, 매체 API 연동형으로 만들지 먼저 선택합니다.
               </div>
 
@@ -2999,14 +3323,13 @@ export default function ReportBuilderPage() {
                     <button
                       key={kind}
                       type="button"
-                      className="subBtn"
+                      className="subBtn dataSourceBtn"
                       onClick={() => setSelectedReportDataSourceKind(kind)}
                       disabled={disabled || creating}
                       style={{
-                        textAlign: "left",
-                        borderColor: active ? "#111827" : "#d1d5db",
-                        background: active ? "#111827" : "#ffffff",
-                        color: active ? "#ffffff" : "#111827",
+                        borderColor: active ? "#21dff3" : "rgba(255, 255, 255, 0.13)",
+                        background: active ? "linear-gradient(135deg, #21dff3 0%, #7c5cff 100%)" : "rgba(53, 40, 103, 0.90)",
+                        color: active ? "#ffffff" : "#f7f7ff",
                       }}
                       title={
                         disabled
@@ -3014,10 +3337,10 @@ export default function ReportBuilderPage() {
                           : undefined
                       }
                     >
-                      <div style={{ fontWeight: 900 }}>
+                      <div className="dataSourceTitle">
                         {kind === "api" ? "API 연동" : "CSV 업로드"}
                       </div>
-                      <div style={{ marginTop: 4, fontSize: 11, opacity: 0.76, lineHeight: 1.45 }}>
+                      <div className="dataSourceDescription">
                         {kind === "api"
                           ? "기간을 설정한 뒤 매체 API로 데이터를 가져옵니다."
                           : "CSV 파일을 업로드해 데이터 기간을 자동 산정합니다."}
@@ -3044,14 +3367,6 @@ export default function ReportBuilderPage() {
                   className="typeCard"
                 >
                   <div style={{ fontWeight: 800, fontSize: 16 }}>{t.name}</div>
-                  <div style={{ marginTop: 6, opacity: 0.7 }}>key: {t.key}</div>
-                  <div style={{ marginTop: 10, fontSize: 12, opacity: 0.6 }}>
-                    클릭하면{" "}
-                    {selectedAdvertiserName
-                      ? `"${selectedAdvertiserName}" 광고주로 `
-                      : ""}
-                    draft report 생성({getReportDataSourceLabel(selectedReportDataSourceKind)})
-                  </div>
                 </button>
               ))}
             </div>
@@ -3127,8 +3442,8 @@ export default function ReportBuilderPage() {
                     maxWidth: "100%",
                     padding: "10px 12px",
                     borderRadius: 12,
-                    border: "1px solid #ddd",
-                    background: "white",
+                    border: "1px solid rgba(255, 255, 255, 0.12)",
+                    background: "rgba(53, 40, 103, 0.90)",
                     fontSize: 14,
                   }}
                   disabled={!userId}
@@ -3201,7 +3516,7 @@ export default function ReportBuilderPage() {
               style={{
                 marginTop: 10,
                 fontSize: 12,
-                color: "#6b7280",
+                color: "#d7d5ec",
                 display: "flex",
                 alignItems: "center",
                 gap: 10,
@@ -3330,7 +3645,7 @@ export default function ReportBuilderPage() {
                             borderBottom:
                               item.idx === item.listLength - 1
                                 ? "none"
-                                : "1px solid #eee",
+                                : "1px solid rgba(255, 255, 255, 0.08)",
                           }}
                         >
                           {canDeleteReports ? (
@@ -3352,7 +3667,9 @@ export default function ReportBuilderPage() {
                               checked ? "reportItemSelected" : ""
                             }`}
                             style={{
-                              width: "100%",
+                              flex: 1,
+                              minWidth: 0,
+                              width: "auto",
                             }}
                           >
                             <div style={{ fontWeight: 700 }}>
@@ -3389,19 +3706,10 @@ export default function ReportBuilderPage() {
                             if (dataSourceKind !== "api") {
                               return (
                                 <div
-                                  style={{
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    alignItems: "flex-end",
-                                    gap: 4,
-                                    paddingRight: 8,
-                                    minWidth: 128,
-                                  }}
+                                  className="reportActionRail"
                                   onClick={(event) => event.stopPropagation()}
                                 >
-                                  <div style={{ fontSize: 11, color: "#6b7280", whiteSpace: "nowrap" }}>
-                                    CSV 업로드형
-                                  </div>
+                                  <div className="reportModePill">CSV 업로드형</div>
                                 </div>
                               );
                             }
@@ -3426,19 +3734,12 @@ export default function ReportBuilderPage() {
 
                             return (
                               <div
-                                style={{
-                                  display: "flex",
-                                  flexDirection: "column",
-                                  alignItems: "flex-end",
-                                  gap: 4,
-                                  paddingRight: 8,
-                                  minWidth: 128,
-                                }}
+                                className="reportActionRail"
                                 onClick={(event) => event.stopPropagation()}
                               >
                                 <button
                                   type="button"
-                                  className="subBtn"
+                                  className="subBtn reportSyncBtn"
                                   onClick={() => requestMediaSyncForReport(r)}
                                   disabled={isSyncDisabled}
                                   style={{
@@ -3467,9 +3768,10 @@ export default function ReportBuilderPage() {
                                       fontSize: 11,
                                       color:
                                         currentSyncJob.status === "failed"
-                                          ? "#b91c1c"
-                                          : "#6b7280",
+                                          ? "#ff9bad"
+                                          : "#d7d5ec",
                                       whiteSpace: "nowrap",
+                                      textAlign: "center",
                                     }}
                                   >
                                     API {currentSyncJob.status}
@@ -3491,7 +3793,7 @@ export default function ReportBuilderPage() {
                 marginTop: 8,
                 padding: "8px 4px",
                 fontSize: 12,
-                color: "#6b7280",
+                color: "#d7d5ec",
                 textAlign: "center",
               }}
             >
@@ -3522,242 +3824,435 @@ export default function ReportBuilderPage() {
         ) : null}
 
         <style jsx>{`
+          :global(body) {
+            background: #211a46;
+          }
+
+          :global(::selection) {
+            background: rgba(33, 223, 243, 0.28);
+            color: #ffffff;
+          }
+
+          :global(button) {
+            transition: transform 0.15s ease, filter 0.15s ease, border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+          }
+
+          :global(button:hover:not(:disabled)) {
+            filter: brightness(1.06) saturate(1.03);
+          }
+
+          :global(button:active:not(:disabled)) {
+            transform: translateY(0) scale(0.99);
+          }
+
           .fieldLabel {
             margin-bottom: 8px;
             font-size: 14px;
             font-weight: 800;
-            color: #1f2937;
+            color: #f7f7ff;
             letter-spacing: 0.01em;
           }
 
           .authCard {
-            border: 1px solid #c7cdd6;
+            border: 1px solid rgba(255, 255, 255, 0.13);
             border-radius: 20px;
-            background: linear-gradient(145deg, #eef1f4, #dde2e8);
+            background: linear-gradient(160deg, rgba(57, 43, 112, 0.96), rgba(44, 33, 90, 0.94));
             padding: 20px;
-            box-shadow:
-              10px 10px 20px rgba(107, 114, 128, 0.14),
-              -8px -8px 16px rgba(255, 255, 255, 0.88);
+            box-shadow: 0 22px 54px rgba(8, 5, 29, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.06);
           }
 
           .neoField {
             width: 100%;
             padding: 14px;
             border-radius: 14px;
-            border: 1px solid #bfc6cf;
+            border: 1px solid rgba(255, 255, 255, 0.14);
             outline: none;
-            background: linear-gradient(145deg, #f8fafc, #d9dde3);
-            color: #111827;
+            background: rgba(33, 27, 68, 0.82);
+            color: #f7f7ff;
             font-size: 16px;
             font-weight: 600;
-            box-shadow:
-              inset 1px 1px 0 rgba(255, 255, 255, 0.95),
-              inset -1px -1px 0 rgba(148, 163, 184, 0.28),
-              8px 8px 16px rgba(107, 114, 128, 0.14),
-              -6px -6px 12px rgba(255, 255, 255, 0.9);
-            transition: box-shadow 0.15s ease, transform 0.15s ease,
-              border-color 0.15s ease;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+            transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
             appearance: none;
             -webkit-appearance: none;
           }
 
           .neoField::placeholder {
-            color: #6b7280;
+            color: #bbb8d4;
             font-weight: 500;
           }
 
+          .interactiveSelect {
+            cursor: pointer;
+          }
+
+          .interactiveSelect:hover:not(:disabled),
+          .neoField:hover:not(:disabled) {
+            border-color: rgba(33, 223, 243, 0.34);
+            background: rgba(42, 33, 87, 0.96);
+          }
+
           .neoField:focus {
-            border-color: #6b7280;
-            box-shadow:
-              inset 1px 1px 0 rgba(255, 255, 255, 0.98),
-              inset -1px -1px 0 rgba(148, 163, 184, 0.24),
-              0 0 0 2px rgba(55, 65, 81, 0.12),
-              8px 8px 16px rgba(107, 114, 128, 0.16),
-              -6px -6px 12px rgba(255, 255, 255, 0.92);
+            border-color: rgba(33, 223, 243, 0.78);
+            background: rgba(37, 30, 80, 0.96);
+            box-shadow: 0 0 0 3px rgba(33, 223, 243, 0.10);
+          }
+
+          .neoField option {
+            background: #241b4b;
+            color: #f7f7ff;
+          }
+
+          .advertiserSelectWrap {
+            position: relative;
+            width: 100%;
+          }
+
+          .advertiserSelect {
+            width: 100%;
+            min-height: 50px;
+            padding: 13px 64px 13px 14px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            outline: none;
+            appearance: none;
+            -webkit-appearance: none;
+            background: rgba(53, 40, 103, 0.90);
+            color: #f7f7ff;
+            font-size: 15px;
+            font-weight: 650;
+            cursor: pointer;
+            transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+          }
+
+          .advertiserSelect:hover:not(:disabled) {
+            border-color: rgba(33, 223, 243, 0.42);
+            background: rgba(64, 49, 132, 0.96);
+          }
+
+          .advertiserSelect:focus {
+            border-color: rgba(33, 223, 243, 0.78);
+            box-shadow: 0 0 0 3px rgba(33, 223, 243, 0.10);
+          }
+
+          .advertiserSelect:disabled {
+            cursor: not-allowed;
+            opacity: 0.48;
+          }
+
+          .advertiserSelect option {
+            background: #241b4b;
+            color: #f7f7ff;
+          }
+
+          .advertiserSelectArrow {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            width: 44px;
+            height: 40px;
+            border-radius: 10px;
+            border: 1px solid rgba(117, 227, 255, 0.22);
+            background: linear-gradient(135deg, rgba(33, 223, 243, 0.18), rgba(124, 92, 255, 0.24));
+            color: #9ef5ff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            font-weight: 900;
+            line-height: 1;
+            pointer-events: none;
+            transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+          }
+
+          .advertiserSelectWrap:hover .advertiserSelectArrow,
+          .advertiserSelectWrap:focus-within .advertiserSelectArrow {
+            transform: translateY(-1px);
+            border-color: rgba(33, 223, 243, 0.55);
+            background: linear-gradient(135deg, rgba(33, 223, 243, 0.30), rgba(124, 92, 255, 0.36));
+            color: #ffffff;
+          }
+
+          .dataSourceBtn {
+            min-height: 66px;
+            padding: 11px 16px;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            text-align: center;
+          }
+
+          .dataSourceTitle {
+            font-size: 16px;
+            font-weight: 900;
+            line-height: 1.15;
+          }
+
+          .dataSourceDescription {
+            font-size: 11px;
+            line-height: 1.35;
+            color: #d7d5ec;
+            opacity: 0.92;
           }
 
           .mainBtn {
             width: 100%;
             max-width: 520px;
             padding: 14px;
-            border-radius: 16px;
-            border: 1px solid #374151;
-            background: linear-gradient(145deg, #374151, #111827);
-            color: #f9fafb;
+            border-radius: 14px;
+            border: 1px solid rgba(117, 227, 255, 0.28);
+            background: linear-gradient(135deg, #21dff3 0%, #5f72ff 52%, #7c5cff 100%);
+            color: #ffffff;
             font-weight: 900;
             font-size: 16px;
             cursor: pointer;
-            box-shadow:
-              10px 10px 20px rgba(75, 85, 99, 0.22),
-              -6px -6px 12px rgba(255, 255, 255, 0.38);
-            transition: 0.15s ease;
+            box-shadow: 0 12px 26px rgba(70, 77, 217, 0.28);
+            transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
             text-align: center;
             letter-spacing: 0.01em;
           }
 
           .mainBtn:hover {
             transform: translateY(-1px);
-            box-shadow:
-              12px 12px 22px rgba(75, 85, 99, 0.24),
-              -6px -6px 12px rgba(255, 255, 255, 0.4);
+            filter: saturate(1.08) brightness(1.03);
+            box-shadow: 0 16px 32px rgba(70, 77, 217, 0.34);
           }
 
           .signupBtn {
             min-width: 180px;
             padding: 12px 18px;
-            border-radius: 16px;
-            border: 1px solid #c2c8d0;
-            background: linear-gradient(145deg, #f8fafc, #dde2e8);
-            color: #111827;
+            border-radius: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            background: rgba(53, 40, 103, 0.88);
+            color: #f7f7ff;
             font-weight: 800;
             font-size: 15px;
             cursor: pointer;
-            transition: 0.15s ease;
+            transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
             text-align: center;
             text-decoration: none;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            box-shadow:
-              8px 8px 18px rgba(107, 114, 128, 0.14),
-              -6px -6px 14px rgba(255, 255, 255, 0.88);
+            box-shadow: 0 10px 24px rgba(8, 5, 29, 0.20);
           }
 
           .signupBtn:hover {
             transform: translateY(-1px);
+            border-color: rgba(33, 223, 243, 0.34);
+            background: rgba(62, 47, 122, 0.96);
           }
 
           .subBtn {
             padding: 10px 18px;
             border-radius: 12px;
-            border: 1px solid #d1d5db;
-            background: linear-gradient(145deg, #ffffff, #eceff3);
+            border: 1px solid rgba(255, 255, 255, 0.13);
+            background: rgba(53, 40, 103, 0.90);
             cursor: pointer;
             font-weight: 800;
-            transition: 0.15s;
+            transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            box-shadow:
-              6px 6px 14px rgba(107, 114, 128, 0.12),
-              -4px -4px 10px rgba(255, 255, 255, 0.88);
-            color: #111827;
+            box-shadow: 0 9px 20px rgba(8, 5, 29, 0.18);
+            color: #f7f7ff;
           }
 
           .subBtn:hover:not(:disabled) {
             transform: translateY(-1px);
-            box-shadow:
-              8px 8px 16px rgba(107, 114, 128, 0.14),
-              -4px -4px 10px rgba(255, 255, 255, 0.9);
+            border-color: rgba(33, 223, 243, 0.38);
+            background: rgba(64, 49, 132, 0.96);
+            box-shadow: 0 12px 24px rgba(8, 5, 29, 0.24);
           }
 
           .subBtn:disabled {
             cursor: not-allowed;
-            opacity: 0.55;
+            opacity: 0.48;
           }
 
           .deleteBtn {
-            border-color: #f0cfcf;
-            background: linear-gradient(145deg, #fff7f7, #fbecec);
-            color: #b42318;
+            border-color: rgba(255, 99, 124, 0.24);
+            background: rgba(255, 99, 124, 0.08);
+            color: #ff9bad;
           }
 
           .deleteBtn:hover:not(:disabled) {
-            box-shadow: 0 10px 18px rgba(180, 35, 24, 0.08);
+            border-color: rgba(255, 99, 124, 0.42);
+            background: rgba(255, 99, 124, 0.13);
+            box-shadow: 0 12px 24px rgba(133, 24, 59, 0.14);
           }
 
           .filterBtn {
             padding: 10px 14px;
             border-radius: 12px;
-            border: 1px solid #d1d5db;
-            background: linear-gradient(145deg, #ffffff, #eceff3);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(53, 40, 103, 0.88);
             cursor: pointer;
             font-weight: 800;
-            transition: 0.15s;
-            color: #111827;
-            box-shadow:
-              6px 6px 14px rgba(107, 114, 128, 0.1),
-              -4px -4px 10px rgba(255, 255, 255, 0.86);
+            transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+            color: #e2e1f3;
+            box-shadow: 0 8px 18px rgba(8, 5, 29, 0.16);
           }
 
           .filterBtn:hover {
             transform: translateY(-1px);
-            box-shadow:
-              8px 8px 16px rgba(107, 114, 128, 0.12),
-              -4px -4px 10px rgba(255, 255, 255, 0.88);
+            border-color: rgba(33, 223, 243, 0.30);
+            background: rgba(62, 47, 122, 0.96);
           }
 
           .filterBtnActive {
-            background: linear-gradient(145deg, #374151, #111827);
-            color: white;
-            border-color: #374151;
-            box-shadow:
-              8px 8px 18px rgba(75, 85, 99, 0.22),
-              -4px -4px 10px rgba(255, 255, 255, 0.2);
+            background: linear-gradient(135deg, #21dff3 0%, #7c5cff 100%);
+            color: #ffffff;
+            border-color: rgba(117, 227, 255, 0.28);
+            box-shadow: 0 12px 26px rgba(70, 77, 217, 0.25);
+          }
+
+          .interactiveSummary {
+            border-radius: 10px;
+            transition: color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+          }
+
+          .interactiveSummary:hover {
+            color: #ffffff;
+            background: rgba(33, 223, 243, 0.07);
+            transform: translateX(2px);
+          }
+
+          .interactiveLink {
+            transition: color 0.15s ease, filter 0.15s ease, transform 0.15s ease;
+          }
+
+          .interactiveLink:hover {
+            color: #ffffff !important;
+            filter: brightness(1.10);
+            transform: translateY(-1px);
+          }
+
+          .loginCornerLogo {
+            position: absolute;
+            top: 34px;
+            right: 28px;
+            width: clamp(126px, 9.5vw, 148px);
+            padding: 0;
+            border: 0;
+            background: transparent;
+            box-shadow: none;
+            pointer-events: none;
+            z-index: 2;
+          }
+
+          .loginCornerLogoImage {
+            display: block;
+            width: 100%;
+            height: auto;
+            object-fit: contain;
+            filter:
+              drop-shadow(0 14px 32px rgba(8, 5, 29, 0.34))
+              drop-shadow(0 0 24px rgba(33, 223, 243, 0.14));
+          }
+
+          .builderCornerLogo {
+            position: absolute;
+            top: 28px;
+            right: 28px;
+            width: clamp(72px, 5vw, 84px);
+            padding: 0;
+            border: 0;
+            background: transparent;
+            box-shadow: none;
+            pointer-events: none;
+            z-index: 2;
+          }
+
+          .builderCornerLogoImage {
+            display: block;
+            width: 100%;
+            height: auto;
+            object-fit: contain;
+            filter:
+              drop-shadow(0 12px 28px rgba(8, 5, 29, 0.28))
+              drop-shadow(0 0 18px rgba(33, 223, 243, 0.12));
+          }
+
+          @media (max-width: 980px) {
+            .loginCornerLogo,
+            .builderCornerLogo {
+              display: none;
+            }
           }
 
           .panelCard {
             border-radius: 16px;
-            border: 1px solid rgba(0, 0, 0, 0.1);
-            background: white;
+            border: 1px solid rgba(255, 255, 255, 0.13);
+            background: linear-gradient(160deg, rgba(57, 43, 112, 0.94), rgba(47, 35, 96, 0.92));
             padding: 18px;
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.05);
+            box-shadow: 0 16px 34px rgba(8, 5, 29, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.045);
           }
 
           .infoMsg {
             padding: 12px 14px;
             border-radius: 12px;
-            border: 1px solid #eee;
-            background: white;
+            border: 1px solid rgba(33, 223, 243, 0.16);
+            background: rgba(33, 223, 243, 0.07);
+            color: #d9faff;
             font-size: 14px;
           }
 
           .selectionBar {
             padding: 12px 14px;
             border-radius: 14px;
-            border: 1px solid #eee;
-            background: white;
+            border: 1px solid rgba(255, 255, 255, 0.13);
+            background: rgba(53, 40, 103, 0.90);
             display: flex;
             align-items: center;
             justify-content: space-between;
             gap: 12px;
             flex-wrap: wrap;
+            box-shadow: 0 12px 26px rgba(8, 5, 29, 0.16);
           }
 
           .typeCard {
             position: relative;
             text-align: left;
-            padding: 18px;
-            border-radius: 16px;
-            border: 1px solid rgba(0, 0, 0, 0.1);
-            background: white;
+            padding: 12px 15px;
+            min-height: 52px;
+            display: flex;
+            align-items: center;
+            border-radius: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.13);
+            background: linear-gradient(160deg, rgba(57, 43, 112, 0.94), rgba(47, 35, 96, 0.92));
             cursor: pointer;
-            transition: all 0.15s ease;
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.05);
+            transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+            box-shadow: 0 14px 30px rgba(8, 5, 29, 0.18);
             overflow: hidden;
+            color: #f7f7ff;
           }
 
           .typeCard::before {
             content: "";
             position: absolute;
             left: 0;
+            right: 0;
             top: 0;
-            bottom: 0;
-            width: 4px;
-            background: #ff8800;
-            transform: scaleY(0);
-            transform-origin: center;
-            transition: transform 0.15s ease;
+            height: 2px;
+            background: linear-gradient(90deg, #21dff3 0%, #7c5cff 100%);
+            transform: scaleX(0.28);
+            transform-origin: left center;
+            opacity: 0.58;
+            transition: transform 0.18s ease, opacity 0.18s ease;
           }
 
           .typeCard:hover::before {
-            transform: scaleY(1);
+            transform: scaleX(1);
+            opacity: 1;
           }
 
           .typeCard:hover:not(:disabled) {
-            transform: translateY(-4px);
-            box-shadow: 0 18px 30px rgba(0, 0, 0, 0.1);
-            border-color: rgba(0, 0, 0, 0.18);
+            transform: translateY(-3px);
+            box-shadow: 0 20px 38px rgba(8, 5, 29, 0.26);
+            border-color: rgba(33, 223, 243, 0.26);
+            background: linear-gradient(160deg, rgba(61, 45, 124, 0.96), rgba(47, 34, 99, 0.94));
           }
 
           .typeCard:active:not(:disabled) {
@@ -3766,16 +4261,52 @@ export default function ReportBuilderPage() {
 
           .typeCard:focus-visible {
             outline: none;
-            box-shadow: 0 0 0 4px rgba(255, 136, 0, 0.3),
-              0 18px 30px rgba(0, 0, 0, 0.1);
-            border-color: rgba(255, 136, 0, 0.65);
+            box-shadow: 0 0 0 3px rgba(33, 223, 243, 0.11), 0 20px 38px rgba(8, 5, 29, 0.26);
+            border-color: rgba(33, 223, 243, 0.54);
           }
 
           .reportRow {
             display: flex;
             align-items: stretch;
             gap: 0;
-            background: white;
+            background: rgba(53, 40, 103, 0.88);
+          }
+
+          .reportActionRail {
+            width: 156px;
+            min-width: 156px;
+            padding: 10px 12px;
+            border-left: 1px solid rgba(255, 255, 255, 0.09);
+            background: rgba(46, 35, 94, 0.72);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            text-align: center;
+          }
+
+          .reportModePill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 32px;
+            padding: 7px 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(124, 92, 255, 0.34);
+            background: rgba(124, 92, 255, 0.12);
+            color: #e4e1ff;
+            font-size: 12px;
+            font-weight: 850;
+            white-space: nowrap;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+          }
+
+          .reportSyncBtn {
+            min-width: 116px;
+            padding: 8px 10px;
+            font-size: 12px;
+            white-space: nowrap;
           }
 
           .reportCheckWrap {
@@ -3784,40 +4315,50 @@ export default function ReportBuilderPage() {
             display: flex;
             align-items: center;
             justify-content: center;
-            border-right: 1px solid #f1f1f1;
-            background: white;
+            border-right: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(46, 35, 94, 0.92);
             cursor: pointer;
+          }
+
+          .reportCheckWrap:hover {
+            background: rgba(68, 52, 140, 0.82);
           }
 
           .reportCheckWrap input {
             width: 16px;
             height: 16px;
             cursor: pointer;
+            accent-color: #21dff3;
           }
 
           .reportItem {
             text-align: left;
             padding: 14px;
             border: none;
-            background: white;
+            background: rgba(53, 40, 103, 0.88);
+            color: #f7f7ff;
             cursor: pointer;
-            transition: 0.15s;
-            width: 100%;
+            transition: background 0.15s ease, transform 0.15s ease;
+            flex: 1;
+            min-width: 0;
+            width: auto;
           }
 
           .reportItemMain:hover {
-            background: #fafafa;
+            background: rgba(68, 52, 140, 0.84);
+            transform: translateX(2px);
           }
 
           .reportItemSelected {
-            background: #fff8ef;
+            background: rgba(33, 223, 243, 0.10);
           }
 
           .folderBox {
             border-radius: 14px;
-            border: 1px solid #eee;
-            background: white;
+            border: 1px solid rgba(255, 255, 255, 0.13);
+            background: rgba(53, 40, 103, 0.88);
             overflow: hidden;
+            box-shadow: 0 12px 28px rgba(8, 5, 29, 0.16);
           }
 
           .folderHeader {
@@ -3825,41 +4366,27 @@ export default function ReportBuilderPage() {
             text-align: left;
             padding: 14px;
             cursor: pointer;
-            background: white;
+            background: rgba(53, 40, 103, 0.88);
+            color: #f7f7ff;
             border: none;
             display: flex;
             align-items: center;
             justify-content: space-between;
             gap: 12px;
-            transition: 0.15s;
+            transition: background 0.15s ease;
           }
 
           .folderHeader:hover {
-            background: #fafafa;
+            background: rgba(68, 52, 140, 0.78);
           }
 
           .folderBody {
-            border-top: 1px solid #eee;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
           }
 
           .virtualSpacer {
             position: relative;
             width: 100%;
-          }
-
-          @media (max-width: 860px) {
-            .panelCard {
-              padding: 16px;
-            }
-
-            .reportCheckWrap {
-              width: 46px;
-              min-width: 46px;
-            }
-
-            .selectionBar {
-              align-items: flex-start;
-            }
           }
         `}</style>
       </div>

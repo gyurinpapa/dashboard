@@ -1440,33 +1440,35 @@ const DownloadPanel = memo(function DownloadPanel({
   onOpenExportBuilder: () => void;
 }) {
   return (
-    <section className="rounded-2xl border bg-white p-5 shadow-sm">
+    <section className="rounded-[20px] border border-white/[0.13] bg-[#392b70]/90 p-5 shadow-[0_22px_54px_rgba(8,5,29,0.22)]">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <div className="text-base font-semibold text-gray-900">
+          <div className="text-base font-black text-[#f7f7ff]">
             다운로드 / 발행
           </div>
-          <div className="mt-1 text-sm text-gray-500">
+          <div className="mt-1 text-sm text-[#d7d5ec]">
             미리보기 렌더링 없이 필요한 파일 다운로드와 발행만 진행합니다.
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <ReportDownloadButtons
-            onDownloadPdf={onDownloadPdf}
-            onDownloadPng={onDownloadPng}
-            onDownloadCsv={onDownloadCsv}
-            onDownloadPpt={onDownloadPpt}
-            pdfLoading={pdfLoading}
-            pngLoading={pngLoading}
-            csvLoading={csvLoading}
-            pptLoading={pptLoading}
-          />
+          <div className="etrylue-download-actions">
+            <ReportDownloadButtons
+              onDownloadPdf={onDownloadPdf}
+              onDownloadPng={onDownloadPng}
+              onDownloadCsv={onDownloadCsv}
+              onDownloadPpt={onDownloadPpt}
+              pdfLoading={pdfLoading}
+              pngLoading={pngLoading}
+              csvLoading={csvLoading}
+              pptLoading={pptLoading}
+            />
+          </div>
 
           {canOpenExportBuilder ? (
             <button
               type="button"
-              className="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-gray-50"
+              className="etrylue-secondary-button rounded-xl px-4 py-2.5 text-sm font-extrabold"
               onClick={onOpenExportBuilder}
             >
               Export Builder 열기
@@ -1475,11 +1477,7 @@ const DownloadPanel = memo(function DownloadPanel({
 
           <button
             type="button"
-            className={`rounded-lg px-4 py-2 text-sm font-medium text-white ${
-              canPublish
-                ? "bg-black hover:opacity-90"
-                : "cursor-not-allowed bg-gray-300"
-            }`}
+            className="etrylue-primary-button rounded-xl px-4 py-2.5 text-sm font-black"
             onClick={onPublish}
             disabled={!canPublish}
           >
@@ -3232,42 +3230,60 @@ export default function ReportDetailPage() {
   }, [advertiserNameForDownload, reportId, reportTitleForDownload]);
 
   return (
-    <div className="mx-auto max-w-[1600px] px-6 py-6">
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+    <>
+      <main
+        className="min-h-screen"
+        style={{
+          background:
+            "radial-gradient(circle at 18% 0%, rgba(33, 223, 243, 0.10), transparent 30%), radial-gradient(circle at 82% 12%, rgba(124, 92, 255, 0.18), transparent 34%), linear-gradient(135deg, #251b4d 0%, #2c2061 48%, #211a46 100%)",
+          backgroundAttachment: "fixed",
+        }}
+      >
+        <div className="etrylue-report-edit relative mx-auto max-w-[1600px] px-6 py-8 text-[#f7f7ff]">
+
+          <div className="pointer-events-none absolute right-8 top-7 z-10 hidden w-[78px] xl:block">
+            <img
+              src="/branding/etrylue-logo.png"
+              alt="Etrylue"
+              className="block h-auto w-full object-contain drop-shadow-[0_12px_28px_rgba(8,5,29,0.28)]"
+            />
+          </div>
+
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3 pr-24">
         <div>
-          <div className="text-2xl font-bold tracking-tight">리포트 편집</div>
-          <div className="mt-1 text-sm text-gray-500">
+          <div className="text-3xl font-black tracking-[-0.03em] text-[#f7f7ff]">리포트 편집</div>
+          <div className="mt-1.5 text-sm leading-6 text-[#d7d5ec]">
             업로드/파싱/소재 매칭/다운로드/발행까지 한 화면에서 진행합니다.
           </div>
         </div>
       </div>
 
-      <section className="mb-5 rounded-2xl border bg-white p-5 shadow-sm">
+      <section className="mb-5 rounded-[20px] border border-white/[0.13] bg-[#392b70]/90 p-5 shadow-[0_22px_54px_rgba(8,5,29,0.22)]">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <div className="text-sm font-semibold text-gray-500">
+            <div className="text-sm font-extrabold text-[#bbb8d4]">
               리포트 데이터 방식
             </div>
-            <div className="mt-1 text-xl font-bold text-gray-900">
+            <div className="mt-1 text-xl font-black text-[#f7f7ff]">
               {getReportDataSourceLabel(reportDataSourceKind)}
             </div>
-            <div className="mt-2 text-sm leading-6 text-gray-500">
+            <div className="mt-2 text-sm leading-6 text-[#d7d5ec]">
               {getReportDataSourceDescription(reportDataSourceKind)}
             </div>
           </div>
 
           <div
-            className={`rounded-full border px-4 py-2 text-sm font-bold ${
+            className={`rounded-full border px-4 py-2 text-sm font-black ${
               isApiReport
-                ? "border-blue-200 bg-blue-50 text-blue-700"
-                : "border-gray-200 bg-gray-50 text-gray-700"
+                ? "border-[#21dff3]/30 bg-[#21dff3]/10 text-[#9ef5ff]"
+                : "border-[#7c5cff]/30 bg-[#7c5cff]/15 text-[#cfc7ff]"
             }`}
           >
             {isApiReport ? "API 연동형" : "CSV 업로드형"}
           </div>
         </div>
 
-        <div className="mt-4 rounded-xl border border-gray-100 bg-gray-50 p-4 text-sm leading-6 text-gray-600">
+        <div className="mt-4 rounded-xl border border-white/[0.10] bg-[#2a2157]/72 p-4 text-sm leading-6 text-[#d7d5ec]">
           {isApiReport ? (
             <div className="space-y-4">
               <div>
@@ -3277,7 +3293,7 @@ export default function ReportDetailPage() {
 
               <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(160px,0.6fr)_auto] md:items-end">
                 <label className="block">
-                  <span className="text-xs font-semibold text-gray-500">API 동기화 시작일</span>
+                  <span className="text-xs font-extrabold text-[#bbb8d4]">API 동기화 시작일</span>
                   <input
                     type="date"
                     value={mediaSyncSettings.dateFrom}
@@ -3287,12 +3303,12 @@ export default function ReportDetailPage() {
                         dateFrom: event.target.value,
                       }))
                     }
-                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                    className="etrylue-field mt-1 w-full rounded-xl px-3.5 py-2.5 text-sm"
                   />
                 </label>
 
                 <label className="block">
-                  <span className="text-xs font-semibold text-gray-500">API 동기화 종료일</span>
+                  <span className="text-xs font-extrabold text-[#bbb8d4]">API 동기화 종료일</span>
                   <input
                     type="date"
                     value={mediaSyncSettings.dateTo}
@@ -3302,12 +3318,12 @@ export default function ReportDetailPage() {
                         dateTo: event.target.value,
                       }))
                     }
-                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                    className="etrylue-field mt-1 w-full rounded-xl px-3.5 py-2.5 text-sm"
                   />
                 </label>
 
                 <label className="block">
-                  <span className="text-xs font-semibold text-gray-500">데이터 레벨</span>
+                  <span className="text-xs font-extrabold text-[#bbb8d4]">데이터 레벨</span>
                   <select
                     value={mediaSyncSettings.dataLevel}
                     onChange={(event) =>
@@ -3316,7 +3332,7 @@ export default function ReportDetailPage() {
                         dataLevel: normalizeMediaSyncDataLevel(event.target.value),
                       }))
                     }
-                    className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
+                    className="etrylue-field mt-1 w-full rounded-xl px-3.5 py-2.5 text-sm"
                   >
                     <option value="keyword">키워드</option>
                     <option value="creative">소재</option>
@@ -3333,25 +3349,19 @@ export default function ReportDetailPage() {
                     !mediaSyncSettingsDirty ||
                     !isValidMediaSyncSettingsDraft(mediaSyncSettings)
                   }
-                  className={`rounded-lg px-4 py-2 text-sm font-bold ${
-                    savingMediaSyncSettings ||
-                    !mediaSyncSettingsDirty ||
-                    !isValidMediaSyncSettingsDraft(mediaSyncSettings)
-                      ? "cursor-not-allowed bg-gray-200 text-gray-500"
-                      : "bg-black text-white"
-                  }`}
+                  className="etrylue-primary-button rounded-xl px-4 py-2.5 text-sm font-black"
                 >
                   {savingMediaSyncSettings ? "저장 중..." : "기간 저장"}
                 </button>
               </div>
 
-              <div className="text-xs text-gray-500">
+              <div className="text-xs text-[#bbb8d4]">
                 {mediaSyncSettingsSavedText ? (
-                  <span className="font-semibold text-green-700">{mediaSyncSettingsSavedText}</span>
+                  <span className="font-extrabold text-emerald-200">{mediaSyncSettingsSavedText}</span>
                 ) : mediaSyncSettingsDirty ? (
-                  <span className="font-semibold text-amber-700">저장되지 않은 API 동기화 기간이 있습니다.</span>
+                  <span className="font-extrabold text-amber-100">저장되지 않은 API 동기화 기간이 있습니다.</span>
                 ) : mediaSyncSettingsError ? (
-                  <span className="font-semibold text-red-700">{mediaSyncSettingsError}</span>
+                  <span className="font-extrabold text-[#ffb2c0]">{mediaSyncSettingsError}</span>
                 ) : (
                   <span>저장된 기간으로만 pending job을 생성합니다.</span>
                 )}
@@ -3366,35 +3376,35 @@ export default function ReportDetailPage() {
         </div>
       </section>
 
-      <div className="mb-5 grid gap-3 rounded-2xl border bg-white p-4 shadow-sm lg:grid-cols-4">
-        <div className="rounded-xl border p-3">
-          <div className="text-xs text-gray-500">Report ID</div>
+      <div className="mb-5 grid gap-3 rounded-[20px] border border-white/[0.13] bg-[#392b70]/90 p-4 shadow-[0_22px_54px_rgba(8,5,29,0.22)] lg:grid-cols-4">
+        <div className="rounded-xl border border-white/[0.10] bg-[#2a2157]/72 p-3">
+          <div className="text-xs text-[#bbb8d4]">Report ID</div>
           <div className="mt-1 break-all font-mono text-sm">
             {reportId || "-"}
           </div>
         </div>
 
-        <div className="rounded-xl border p-3">
-          <div className="text-xs text-gray-500">세션 시작</div>
-          <div className="mt-1 text-sm font-medium">{sessionStartedText}</div>
+        <div className="rounded-xl border border-white/[0.10] bg-[#2a2157]/72 p-3">
+          <div className="text-xs text-[#bbb8d4]">세션 시작</div>
+          <div className="mt-1 text-sm text-[#f7f7ff] font-semibold text-[#f7f7ff]">{sessionStartedText}</div>
         </div>
 
-        <div className="rounded-xl border p-3">
-          <div className="text-xs text-gray-500">CSV 파싱 상태</div>
-          <div className="mt-1 text-sm font-medium">{ingestionStatusLabel}</div>
+        <div className="rounded-xl border border-white/[0.10] bg-[#2a2157]/72 p-3">
+          <div className="text-xs text-[#bbb8d4]">CSV 파싱 상태</div>
+          <div className="mt-1 text-sm text-[#f7f7ff] font-semibold text-[#f7f7ff]">{ingestionStatusLabel}</div>
 
-          <div className="mt-1 text-xs leading-5 text-gray-500">
+          <div className="mt-1 text-xs leading-5 text-[#bbb8d4]">
             {ingestionStatusDescription}
           </div>
 
-          <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-gray-100">
+          <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-[#211b44]/80">
             <div
               className={`h-full rounded-full transition-all ${
                 ingestionStatus === "failed"
-                  ? "bg-red-500"
+                  ? "bg-[#ff637c]"
                   : ingestionStatus === "done"
-                    ? "bg-green-500"
-                    : "bg-black"
+                    ? "bg-[#37e7a1]"
+                    : "bg-[linear-gradient(90deg,#21dff3_0%,#5f72ff_55%,#7c5cff_100%)]"
               }`}
               style={{
                 width: `${Math.max(
@@ -3404,14 +3414,14 @@ export default function ReportDetailPage() {
               }}
             />
           </div>
-          <div className="mt-2 text-xs text-gray-500">
+          <div className="mt-2 text-xs text-[#bbb8d4]">
             진행률 {formatInt(ingestionInfo.progress)}%{" "}
-            <span className="text-gray-300">·</span> parsed{" "}
+            <span className="text-white/20">·</span> parsed{" "}
             {formatInt(ingestionInfo.parsedLines)} /{" "}
             {formatInt(ingestionInfo.totalLines)}{" "}
-            <span className="text-gray-300">·</span> inserted{" "}
+            <span className="text-white/20">·</span> inserted{" "}
             {formatInt(ingestionInfo.inserted)}{" "}
-            <span className="text-gray-300">·</span> 저장 rows{" "}
+            <span className="text-white/20">·</span> 저장 rows{" "}
             {rowsMetaLoaded ? formatInt(rowsMetaCount) : "-"}
           </div>
 
@@ -3419,8 +3429,8 @@ export default function ReportDetailPage() {
             <div
               className={`mt-3 rounded-lg border px-3 py-2 text-xs leading-5 ${
                 ingestionStatus === "failed"
-                  ? "border-red-100 bg-red-50 text-red-700"
-                  : "border-amber-100 bg-amber-50 text-amber-800"
+                  ? "border-[#ff637c]/30 bg-[#ff637c]/10 text-[#ffb2c0]"
+                  : "border-amber-300/25 bg-amber-300/10 text-amber-100"
               }`}
             >
               {ingestionInfo.error}
@@ -3428,15 +3438,15 @@ export default function ReportDetailPage() {
           ) : null}
         </div>
 
-        <div className="rounded-xl border p-3">
-          <div className="text-xs text-gray-500">공유 URL</div>
-          <div className="mt-1 text-sm">
+        <div className="rounded-xl border border-white/[0.10] bg-[#2a2157]/72 p-3">
+          <div className="text-xs text-[#bbb8d4]">공유 URL</div>
+          <div className="mt-1 text-sm text-[#f7f7ff]">
             {displaySharePath ? (
               <a
                 href={fullUrl(displaySharePath)}
                 target="_blank"
                 rel="noreferrer"
-                className="break-all text-blue-600 underline"
+                className="break-all font-semibold text-[#7defff] underline decoration-[#7defff]/50 underline-offset-2 hover:text-white"
               >
                 {fullUrl(displaySharePath)}
               </a>
@@ -3446,7 +3456,7 @@ export default function ReportDetailPage() {
           </div>
 
           {advertiserPublicSlug ? (
-            <div className="mt-2 text-[11px] text-gray-500">
+            <div className="mt-2 text-[11px] text-[#aaa6c9]">
               광고주 고정 URL 사용 중
             </div>
           ) : null}
@@ -3454,18 +3464,18 @@ export default function ReportDetailPage() {
       </div>
 
       {msg ? (
-        <div className="mb-5 rounded-xl border bg-gray-50 px-4 py-3 text-sm whitespace-pre-wrap">
+        <div className="mb-5 rounded-xl border border-white/[0.10] bg-[#2a2157]/78 px-4 py-3 text-sm text-[#d7d5ec] whitespace-pre-wrap">
           {msg}
         </div>
       ) : null}
 
-      <section className="mb-5 rounded-2xl border bg-white p-5 shadow-sm">
+      <section className="mb-5 rounded-[20px] border border-white/[0.13] bg-[#392b70]/90 p-5 shadow-[0_22px_54px_rgba(8,5,29,0.22)]">
         <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <div className="text-base font-semibold text-gray-900">
+            <div className="text-base font-black text-[#f7f7ff]">
               월 목표값 사전 입력
             </div>
-            <div className="mt-1 text-sm text-gray-500">
+            <div className="mt-1.5 text-sm leading-6 text-[#d7d5ec]">
               저장된 값은 reports.meta.month_goal에 보관되며, 발행 후 공유
               리포트에서도 사라지지 않도록 사용합니다.
             </div>
@@ -3473,26 +3483,22 @@ export default function ReportDetailPage() {
 
           <div className="flex items-center gap-2">
             {monthGoalSavedText ? (
-              <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-medium text-green-700">
+              <span className="rounded-full border border-emerald-300/25 bg-emerald-300/10 px-3 py-1 text-xs font-extrabold text-emerald-200">
                 {monthGoalSavedText}
               </span>
             ) : monthGoalDirty ? (
-              <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
+              <span className="rounded-full border border-amber-300/25 bg-amber-300/10 px-3 py-1 text-xs font-extrabold text-amber-100">
                 저장 필요
               </span>
             ) : (
-              <span className="rounded-full bg-gray-50 px-3 py-1 text-xs font-medium text-gray-500">
+              <span className="rounded-full border border-white/[0.11] bg-white/[0.055] px-3 py-1 text-xs font-extrabold text-[#c9c6df]">
                 저장됨
               </span>
             )}
 
             <button
               type="button"
-              className={`rounded-lg px-4 py-2 text-sm font-medium text-white ${
-                savingMonthGoal
-                  ? "cursor-not-allowed bg-gray-400"
-                  : "bg-black hover:opacity-90"
-              }`}
+              className="etrylue-primary-button rounded-xl px-4 py-2.5 text-sm font-black"
               onClick={handleSaveMonthGoal}
               disabled={savingMonthGoal}
             >
@@ -3513,7 +3519,7 @@ export default function ReportDetailPage() {
           {isCommerce ? (
             <>
               <label className="block">
-                <span className="text-xs font-medium text-gray-600">
+                <span className="text-xs font-semibold text-[#d7d5ec]">
                   매출 목표
                 </span>
                 <input
@@ -3521,12 +3527,12 @@ export default function ReportDetailPage() {
                   value={buildCommerceComputedRevenue(monthGoal)}
                   readOnly
                   placeholder="비용 × ROAS 자동 계산"
-                  className="mt-1 w-full rounded-lg border bg-gray-50 px-3 py-2 text-sm text-gray-600 outline-none"
+                  className="etrylue-field mt-1 w-full rounded-xl px-3.5 py-2.5 text-sm text-[#bbb8d4] opacity-80"
                 />
               </label>
 
               <label className="block">
-                <span className="text-xs font-medium text-gray-600">
+                <span className="text-xs font-semibold text-[#d7d5ec]">
                   비용 목표
                 </span>
                 <input
@@ -3536,12 +3542,12 @@ export default function ReportDetailPage() {
                     handleChangeMonthGoal("cost", e.target.value)
                   }
                   placeholder="예: 5000000"
-                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-black"
+                  className="etrylue-field mt-1 w-full rounded-xl px-3.5 py-2.5 text-sm"
                 />
               </label>
 
               <label className="block">
-                <span className="text-xs font-medium text-gray-600">
+                <span className="text-xs font-semibold text-[#d7d5ec]">
                   ROAS 목표
                 </span>
                 <input
@@ -3551,12 +3557,12 @@ export default function ReportDetailPage() {
                     handleChangeMonthGoal("roas", e.target.value)
                   }
                   placeholder="예: 600"
-                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-black"
+                  className="etrylue-field mt-1 w-full rounded-xl px-3.5 py-2.5 text-sm"
                 />
               </label>
 
               <label className="block">
-                <span className="text-xs font-medium text-gray-600">
+                <span className="text-xs font-semibold text-[#d7d5ec]">
                   전환 목표
                 </span>
                 <input
@@ -3566,14 +3572,14 @@ export default function ReportDetailPage() {
                     handleChangeMonthGoal("conversions", e.target.value)
                   }
                   placeholder="예: 120"
-                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-black"
+                  className="etrylue-field mt-1 w-full rounded-xl px-3.5 py-2.5 text-sm"
                 />
               </label>
             </>
           ) : isTraffic ? (
             <>
               <label className="block">
-                <span className="text-xs font-medium text-gray-600">
+                <span className="text-xs font-semibold text-[#d7d5ec]">
                   클릭 목표
                 </span>
                 <input
@@ -3583,12 +3589,12 @@ export default function ReportDetailPage() {
                     handleChangeMonthGoal("clicks", e.target.value)
                   }
                   placeholder="예: 10000"
-                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-black"
+                  className="etrylue-field mt-1 w-full rounded-xl px-3.5 py-2.5 text-sm"
                 />
               </label>
 
               <label className="block">
-                <span className="text-xs font-medium text-gray-600">
+                <span className="text-xs font-semibold text-[#d7d5ec]">
                   CTR 목표
                 </span>
                 <input
@@ -3596,12 +3602,12 @@ export default function ReportDetailPage() {
                   value={monthGoal.ctr}
                   onChange={(e) => handleChangeMonthGoal("ctr", e.target.value)}
                   placeholder="예: 1.5"
-                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-black"
+                  className="etrylue-field mt-1 w-full rounded-xl px-3.5 py-2.5 text-sm"
                 />
               </label>
 
               <label className="block">
-                <span className="text-xs font-medium text-gray-600">
+                <span className="text-xs font-semibold text-[#d7d5ec]">
                   비용 목표
                 </span>
                 <input
@@ -3611,14 +3617,14 @@ export default function ReportDetailPage() {
                     handleChangeMonthGoal("cost", e.target.value)
                   }
                   placeholder="예: 5000000"
-                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-black"
+                  className="etrylue-field mt-1 w-full rounded-xl px-3.5 py-2.5 text-sm"
                 />
               </label>
             </>
           ) : (
             <>
               <label className="block">
-                <span className="text-xs font-medium text-gray-600">
+                <span className="text-xs font-semibold text-[#d7d5ec]">
                   전환 목표
                 </span>
                 <input
@@ -3628,12 +3634,12 @@ export default function ReportDetailPage() {
                     handleChangeMonthGoal("conversions", e.target.value)
                   }
                   placeholder="예: 120"
-                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-black"
+                  className="etrylue-field mt-1 w-full rounded-xl px-3.5 py-2.5 text-sm"
                 />
               </label>
 
               <label className="block">
-                <span className="text-xs font-medium text-gray-600">
+                <span className="text-xs font-semibold text-[#d7d5ec]">
                   CVR 목표
                 </span>
                 <input
@@ -3641,12 +3647,12 @@ export default function ReportDetailPage() {
                   value={monthGoal.cvr}
                   onChange={(e) => handleChangeMonthGoal("cvr", e.target.value)}
                   placeholder="예: 2.0"
-                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-black"
+                  className="etrylue-field mt-1 w-full rounded-xl px-3.5 py-2.5 text-sm"
                 />
               </label>
 
               <label className="block">
-                <span className="text-xs font-medium text-gray-600">
+                <span className="text-xs font-semibold text-[#d7d5ec]">
                   비용 목표
                 </span>
                 <input
@@ -3656,12 +3662,12 @@ export default function ReportDetailPage() {
                     handleChangeMonthGoal("cost", e.target.value)
                   }
                   placeholder="예: 5000000"
-                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-black"
+                  className="etrylue-field mt-1 w-full rounded-xl px-3.5 py-2.5 text-sm"
                 />
               </label>
 
               <label className="block">
-                <span className="text-xs font-medium text-gray-600">
+                <span className="text-xs font-semibold text-[#d7d5ec]">
                   CPA 목표
                 </span>
                 <input
@@ -3675,26 +3681,26 @@ export default function ReportDetailPage() {
                   ).toString()}
                   readOnly
                   placeholder="자동 계산"
-                  className="mt-1 w-full rounded-lg border bg-gray-50 px-3 py-2 text-sm text-gray-600 outline-none"
+                  className="etrylue-field mt-1 w-full rounded-xl px-3.5 py-2.5 text-sm text-[#bbb8d4] opacity-80"
                 />
               </label>
             </>
           )}
         </div>
 
-        <div className="mt-3 text-xs text-gray-500">
+        <div className="mt-3 text-xs leading-5 text-[#bbb8d4]">
           숫자 형식은 그대로 저장합니다. 표시/계산 방식은 기존 리포트 로직을
           변경하지 않습니다.
         </div>
       </section>
 
-      <section className="mb-5 rounded-2xl border bg-white p-5 shadow-sm">
+      <section className="mb-5 rounded-[20px] border border-white/[0.13] bg-[#392b70]/90 p-5 shadow-[0_22px_54px_rgba(8,5,29,0.22)]">
         <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <div className="text-base font-semibold text-gray-900">
+            <div className="text-base font-black text-[#f7f7ff]">
               브랜드검색 계약 금액
             </div>
-            <div className="mt-1 text-sm text-gray-500">
+            <div className="mt-1.5 text-sm leading-6 text-[#d7d5ec]">
               네이버 브랜드검색처럼 월 단위로 구매한 광고비를 PC/모바일별로
               입력합니다. 저장된 값은 reports.meta.brand_search_contracts에
               보관하고, 리포트 화면에서 월·기기별 일별 rows에 자동 배분하는 데
@@ -3704,26 +3710,22 @@ export default function ReportDetailPage() {
 
           <div className="flex items-center gap-2">
             {brandSearchContractsSavedText ? (
-              <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-medium text-green-700">
+              <span className="rounded-full border border-emerald-300/25 bg-emerald-300/10 px-3 py-1 text-xs font-extrabold text-emerald-200">
                 {brandSearchContractsSavedText}
               </span>
             ) : brandSearchContractsDirty ? (
-              <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
+              <span className="rounded-full border border-amber-300/25 bg-amber-300/10 px-3 py-1 text-xs font-extrabold text-amber-100">
                 저장 필요
               </span>
             ) : (
-              <span className="rounded-full bg-gray-50 px-3 py-1 text-xs font-medium text-gray-500">
+              <span className="rounded-full border border-white/[0.11] bg-white/[0.055] px-3 py-1 text-xs font-extrabold text-[#c9c6df]">
                 저장됨
               </span>
             )}
 
             <button
               type="button"
-              className={`rounded-lg px-4 py-2 text-sm font-medium text-white ${
-                savingBrandSearchContracts
-                  ? "cursor-not-allowed bg-gray-400"
-                  : "bg-black hover:opacity-90"
-              }`}
+              className="etrylue-primary-button rounded-xl px-4 py-2.5 text-sm font-black"
               onClick={handleSaveBrandSearchContracts}
               disabled={savingBrandSearchContracts}
             >
@@ -3736,18 +3738,18 @@ export default function ReportDetailPage() {
           {brandSearchContracts.map((item) => (
             <div
               key={item.month}
-              className="rounded-2xl border border-gray-100 bg-gray-50 p-4"
+              className="rounded-2xl border border-white/[0.10] bg-[#2a2157]/72 p-4"
             >
-              <div className="text-sm font-semibold text-gray-900">
+              <div className="text-sm font-black text-[#f7f7ff]">
                 {item.month}
               </div>
-              <div className="mt-1 text-xs text-gray-500">
+              <div className="mt-1 text-xs text-[#bbb8d4]">
                 해당 월의 브랜드검색 계약 금액
               </div>
 
               <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1">
                 <label className="block">
-                  <span className="text-xs font-medium text-gray-600">
+                  <span className="text-xs font-semibold text-[#d7d5ec]">
                     PC 계약금액
                   </span>
                   <input
@@ -3761,12 +3763,12 @@ export default function ReportDetailPage() {
                       )
                     }
                     placeholder="예: 3000000"
-                    className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-black"
+                    className="etrylue-field mt-1 w-full rounded-xl px-3.5 py-2.5 text-sm"
                   />
                 </label>
 
                 <label className="block">
-                  <span className="text-xs font-medium text-gray-600">
+                  <span className="text-xs font-semibold text-[#d7d5ec]">
                     모바일 계약금액
                   </span>
                   <input
@@ -3780,7 +3782,7 @@ export default function ReportDetailPage() {
                       )
                     }
                     placeholder="예: 5000000"
-                    className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-black"
+                    className="etrylue-field mt-1 w-full rounded-xl px-3.5 py-2.5 text-sm"
                   />
                 </label>
               </div>
@@ -3788,7 +3790,7 @@ export default function ReportDetailPage() {
           ))}
         </div>
 
-        <div className="mt-3 text-xs leading-5 text-gray-500">
+        <div className="mt-3 text-xs leading-5 text-[#bbb8d4]">
           이번 단계에서는 계약 금액 입력/저장 UI만 추가합니다. 다음 단계에서
           ReportTemplate에 전달한 뒤 입력 월의 PC/모바일 브랜드검색 rows 수를
           기준으로 일별 비용을 자동 배분합니다.
@@ -3796,11 +3798,11 @@ export default function ReportDetailPage() {
       </section>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <section className="rounded-2xl border bg-white p-5 shadow-sm">
-          <div className="mb-1 text-base font-semibold text-gray-900">
+        <section className="rounded-[20px] border border-white/[0.13] bg-[#392b70]/90 p-5 shadow-[0_22px_54px_rgba(8,5,29,0.22)]">
+          <div className="mb-1 text-base font-black text-[#f7f7ff]">
             CSV 업로드
           </div>
-          <div className="mb-4 text-sm text-gray-500">
+          <div className="mb-4 text-sm leading-6 text-[#d7d5ec]">
             {isCsvReport
               ? "브라우저에서 Storage로 직접 업로드 후 finalize 합니다."
               : "API 연동형 리포트에서는 CSV 업로드를 사용할 수 없습니다."}
@@ -3816,14 +3818,14 @@ export default function ReportDetailPage() {
                 setCsvFile(next);
               }}
               disabled={!isCsvReport}
-              className="block w-full text-sm"
+              className="etrylue-file-input block w-full text-sm text-[#d7d5ec]"
             />
 
-            <div className="text-sm text-gray-600">
+            <div className="text-sm text-[#d7d5ec]">
               {csvFile ? (
                 <>
                   선택됨: <span className="font-medium">{csvFile.name}</span>{" "}
-                  <span className="text-gray-400">·</span>{" "}
+                  <span className="text-[#aaa6c9]">·</span>{" "}
                   {humanSize(csvFile.size)}
                 </>
               ) : lastUploadedCsvName ? (
@@ -3838,14 +3840,7 @@ export default function ReportDetailPage() {
 
             <button
               type="button"
-              className={`rounded-lg px-4 py-2 text-sm font-medium text-white ${
-                !isCsvReport ||
-                csvUploading ||
-                ingestionStatus === "queued" ||
-                ingestionStatus === "processing"
-                  ? "cursor-not-allowed bg-gray-400"
-                  : "bg-black hover:opacity-90"
-              }`}
+              className="etrylue-primary-button rounded-xl px-4 py-2.5 text-sm font-black"
               onClick={handleUploadCsv}
               disabled={
                 !isCsvReport ||
@@ -3857,28 +3852,28 @@ export default function ReportDetailPage() {
               {isCsvReport ? csvUploadButtonText : "API 연동형 리포트"}
             </button>
 
-            <div className="rounded-xl border bg-gray-50 p-3">
+            <div className="rounded-xl border border-white/[0.10] bg-[#2a2157]/72 p-3">
               <div className="flex items-center justify-between gap-3 text-xs">
-                <span className="font-medium text-gray-700">
+                <span className="font-semibold text-[#d7d5ec]">
                   {ingestionStatusLabel}
                 </span>
-                <span className="text-gray-500">
+                <span className="text-[#bbb8d4]">
                   {formatInt(ingestionInfo.progress)}%
                 </span>
               </div>
 
-              <div className="mt-1 text-xs leading-5 text-gray-500">
+              <div className="mt-1 text-xs leading-5 text-[#bbb8d4]">
                 {ingestionStatusDescription}
               </div>
 
-              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-gray-200">
+              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-[#211b44]/80">
                 <div
                   className={`h-full rounded-full transition-all ${
                     ingestionStatus === "failed"
-                      ? "bg-red-500"
+                      ? "bg-[#ff637c]"
                       : ingestionStatus === "done"
-                        ? "bg-green-500"
-                        : "bg-black"
+                        ? "bg-[#37e7a1]"
+                        : "bg-[linear-gradient(90deg,#21dff3_0%,#5f72ff_55%,#7c5cff_100%)]"
                   }`}
                   style={{
                     width: `${Math.max(
@@ -3889,40 +3884,40 @@ export default function ReportDetailPage() {
                 />
               </div>
 
-              <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-600">
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-[#bbb8d4]">
                 <div>
                   parsed:{" "}
-                  <span className="font-medium text-gray-800">
+                  <span className="font-semibold text-[#f7f7ff]">
                     {formatInt(ingestionInfo.parsedLines)}
                   </span>
                 </div>
                 <div>
                   total:{" "}
-                  <span className="font-medium text-gray-800">
+                  <span className="font-semibold text-[#f7f7ff]">
                     {formatInt(ingestionInfo.totalLines)}
                   </span>
                 </div>
                 <div>
                   inserted:{" "}
-                  <span className="font-medium text-gray-800">
+                  <span className="font-semibold text-[#f7f7ff]">
                     {formatInt(ingestionInfo.inserted)}
                   </span>
                 </div>
                 <div>
                   valid:{" "}
-                  <span className="font-medium text-gray-800">
+                  <span className="font-semibold text-[#f7f7ff]">
                     {formatInt(ingestionInfo.validRows)}
                   </span>
                 </div>
                 <div>
                   batch size:{" "}
-                  <span className="font-medium text-gray-800">
+                  <span className="font-semibold text-[#f7f7ff]">
                     {formatInt(ingestionInfo.batchSize)}
                   </span>
                 </div>
                 <div>
                   batches:{" "}
-                  <span className="font-medium text-gray-800">
+                  <span className="font-semibold text-[#f7f7ff]">
                     {formatInt(ingestionInfo.committedBatches)}
                   </span>
                 </div>
@@ -3932,8 +3927,8 @@ export default function ReportDetailPage() {
                 <div
                   className={`mt-3 rounded-lg border px-3 py-2 text-xs leading-5 ${
                     ingestionStatus === "failed"
-                      ? "border-red-100 bg-red-50 text-red-700"
-                      : "border-amber-100 bg-amber-50 text-amber-800"
+                      ? "border-[#ff637c]/30 bg-[#ff637c]/10 text-[#ffb2c0]"
+                      : "border-amber-300/25 bg-amber-300/10 text-amber-100"
                   }`}
                 >
                   {ingestionInfo.error}
@@ -3941,18 +3936,18 @@ export default function ReportDetailPage() {
               ) : null}
             </div>
 
-            <div className="text-xs text-gray-500">
+            <div className="text-xs text-[#bbb8d4]">
               업로드 완료 후 WORKER가 켜져 있으면 서버 처리 상태와 진행률이
               자동으로 갱신됩니다.
             </div>
           </div>
         </section>
 
-        <section className="rounded-2xl border bg-white p-5 shadow-sm">
-          <div className="mb-1 text-base font-semibold text-gray-900">
+        <section className="rounded-[20px] border border-white/[0.13] bg-[#392b70]/90 p-5 shadow-[0_22px_54px_rgba(8,5,29,0.22)]">
+          <div className="mb-1 text-base font-black text-[#f7f7ff]">
             소재 업로드
           </div>
-          <div className="mb-4 text-sm text-gray-500">
+          <div className="mb-4 text-sm leading-6 text-[#d7d5ec]">
             소재 이미지를 업로드하면 creative key 기준으로 매칭됩니다.
           </div>
 
@@ -3966,10 +3961,10 @@ export default function ReportDetailPage() {
                 const list = Array.from(e.target.files || []);
                 setCreativeFiles(list);
               }}
-              className="block w-full text-sm"
+              className="etrylue-file-input block w-full text-sm text-[#d7d5ec]"
             />
 
-            <div className="text-sm text-gray-600">
+            <div className="text-sm text-[#d7d5ec]">
               {creativeFiles.length > 0 ? (
                 <>
                   선택됨:{" "}
@@ -3990,18 +3985,14 @@ export default function ReportDetailPage() {
 
             <button
               type="button"
-              className={`rounded-lg px-4 py-2 text-sm font-medium text-white ${
-                uploadingCreatives
-                  ? "cursor-not-allowed bg-gray-400"
-                  : "bg-black hover:opacity-90"
-              }`}
+              className="etrylue-primary-button rounded-xl px-4 py-2.5 text-sm font-black"
               onClick={handleUploadCreatives}
               disabled={uploadingCreatives}
             >
               {uploadingCreatives ? "업로드 중..." : "소재 업로드"}
             </button>
 
-            <div className="text-xs text-gray-600">
+            <div className="text-xs leading-5 text-[#bbb8d4]">
               {creativeFiles.length > 0
                 ? "업로드 준비 완료"
                 : lastUploadedCreativeCount > 0
@@ -4010,44 +4001,44 @@ export default function ReportDetailPage() {
             </div>
           </div>
 
-          <div className="mt-5 rounded-xl border bg-gray-50 p-4">
-            <div className="mb-1 text-sm font-semibold text-gray-900">
+          <div className="mt-5 rounded-xl border border-white/[0.10] bg-[#2a2157]/72 p-4">
+            <div className="mb-1 text-sm font-black text-[#f7f7ff]">
               매칭된 소재
             </div>
 
-            <div className="text-sm text-gray-700">
+            <div className="text-sm text-[#d7d5ec]">
               고유 URL: <b>{creativesUrlCount}</b>개{" "}
-              <span className="text-gray-400">·</span> 키 후보:{" "}
+              <span className="text-[#aaa6c9]">·</span> 키 후보:{" "}
               <b>{creativesKeyCount}</b>개
             </div>
 
             {!sessionCreativesUploaded ? (
-              <div className="mt-2 text-xs text-gray-600">
+              <div className="mt-2 text-xs leading-5 text-[#bbb8d4]">
                 현재는 서버에 저장된 기존 매칭 결과를 표시 중입니다. 이번
                 세션에서 새 이미지를 업로드하면 즉시 갱신됩니다.
               </div>
             ) : null}
 
-            <div className="mt-2 text-xs text-gray-500">
+            <div className="mt-2 text-xs text-[#bbb8d4]">
               ※ 키 후보 수는 매칭 성공률을 올리기 위한 확장 키가 포함되어 커질
               수 있습니다. 실제 이미지 파일 수 감은 고유 URL이 더 정확합니다.
             </div>
           </div>
 
           {creativeUploadLog.length > 0 ? (
-            <div className="mt-4 rounded-xl border bg-white p-3">
-              <div className="mb-2 text-xs font-semibold">
+            <div className="mt-4 rounded-xl border border-white/[0.10] bg-[#211b44]/62 p-3">
+              <div className="mb-2 text-xs font-extrabold text-[#f7f7ff]">
                 업로드 결과(이번 세션)
               </div>
               <div className="max-h-40 space-y-1 overflow-auto">
                 {creativeUploadLog.map((it, idx) => (
-                  <div key={idx} className="text-xs text-gray-700">
+                  <div key={idx} className="text-xs text-[#d7d5ec]">
                     {it.ok ? "✅" : "❌"}{" "}
                     <span className="font-medium">{it.file}</span>{" "}
-                    <span className="text-gray-500">→ key:</span>{" "}
+                    <span className="text-[#bbb8d4]">→ key:</span>{" "}
                     <span className="font-mono">{it.creative_key}</span>
                     {!it.ok && it.error ? (
-                      <span className="text-red-600"> ({it.error})</span>
+                      <span className="text-[#ff9bad]"> ({it.error})</span>
                     ) : null}
                   </div>
                 ))}
@@ -4075,18 +4066,22 @@ export default function ReportDetailPage() {
         />
       </div>
 
-      <div className="mt-3 text-xs text-gray-500">
+      <div className="mt-3 text-xs leading-5 text-[#bbb8d4]">
         서버 rows(실제):{" "}
         {rowsMetaLoaded ? formatInt(rowsMetaCount) : "-"}개{" "}
-        <span className="text-gray-400">·</span> 현재 표시 rows:{" "}
-        {displayRows.length}개 <span className="text-gray-400">·</span> 광고주:{" "}
+        <span className="text-[#aaa6c9]">·</span> 현재 표시 rows:{" "}
+        {displayRows.length}개 <span className="text-[#aaa6c9]">·</span> 광고주:{" "}
         {effectivePreviewAdvertiserName || "-"}{" "}
-        <span className="text-gray-400">·</span> 유형:{" "}
+        <span className="text-[#aaa6c9]">·</span> 유형:{" "}
         {effectivePreviewReportTypeName || "-"}{" "}
-        <span className="text-gray-400">·</span> 기준 기간:{" "}
-        {previewPeriodLabel || "-"} <span className="text-gray-400">·</span> 데이터 방식:{" "}
+        <span className="text-[#aaa6c9]">·</span> 기준 기간:{" "}
+        {previewPeriodLabel || "-"} <span className="text-[#aaa6c9]">·</span> 데이터 방식:{" "}
         {getReportDataSourceLabel(reportDataSourceKind)}
       </div>
+
+
+        </div>
+      </main>
 
       {exportRenderActive ? (
         <div
@@ -4114,6 +4109,157 @@ export default function ReportDetailPage() {
         </div>
       ) : null}
 
-    </div>
+      <style jsx global>{`
+        body {
+          background: #211a46;
+        }
+
+        ::selection {
+          background: rgba(33, 223, 243, 0.28);
+          color: #ffffff;
+        }
+
+        .etrylue-report-edit input,
+        .etrylue-report-edit select,
+        .etrylue-report-edit button,
+        .etrylue-report-edit a {
+          -webkit-tap-highlight-color: transparent;
+        }
+
+        .etrylue-report-edit .etrylue-field {
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          background: rgba(33, 27, 68, 0.82);
+          color: #f7f7ff;
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+          outline: none;
+          transition:
+            transform 150ms ease,
+            border-color 150ms ease,
+            background 150ms ease,
+            box-shadow 150ms ease;
+        }
+
+        .etrylue-report-edit .etrylue-field::placeholder {
+          color: #8f8aa9;
+        }
+
+        .etrylue-report-edit .etrylue-field:hover {
+          border-color: rgba(33, 223, 243, 0.35);
+          background: rgba(42, 33, 87, 0.94);
+        }
+
+        .etrylue-report-edit .etrylue-field:focus {
+          border-color: rgba(33, 223, 243, 0.8);
+          background: rgba(37, 30, 80, 0.96);
+          box-shadow: 0 0 0 4px rgba(33, 223, 243, 0.1);
+        }
+
+        .etrylue-report-edit select.etrylue-field option {
+          background: #241b4b;
+          color: #f7f7ff;
+        }
+
+        .etrylue-report-edit .etrylue-primary-button {
+          border: 1px solid rgba(117, 227, 255, 0.24);
+          background: linear-gradient(135deg, #21dff3 0%, #5f72ff 52%, #7c5cff 100%);
+          color: #ffffff;
+          box-shadow: 0 12px 26px rgba(70, 77, 217, 0.25);
+          transition:
+            transform 150ms ease,
+            filter 150ms ease,
+            box-shadow 150ms ease,
+            opacity 150ms ease;
+        }
+
+        .etrylue-report-edit .etrylue-primary-button:not(:disabled):hover {
+          transform: translateY(-2px);
+          filter: brightness(1.05) saturate(1.08);
+          box-shadow: 0 16px 32px rgba(70, 77, 217, 0.34);
+        }
+
+        .etrylue-report-edit .etrylue-primary-button:focus-visible {
+          outline: none;
+          box-shadow:
+            0 0 0 3px rgba(33, 223, 243, 0.26),
+            0 16px 32px rgba(70, 77, 217, 0.34);
+        }
+
+        .etrylue-report-edit .etrylue-primary-button:disabled {
+          cursor: not-allowed;
+          border-color: rgba(255, 255, 255, 0.08);
+          background: #4a416c;
+          color: #aaa6c9;
+          box-shadow: none;
+          opacity: 0.58;
+        }
+
+        .etrylue-report-edit .etrylue-secondary-button {
+          border: 1px solid rgba(255, 255, 255, 0.13);
+          background: rgba(53, 40, 103, 0.92);
+          color: #f7f7ff;
+          box-shadow: 0 9px 20px rgba(8, 5, 29, 0.16);
+          transition:
+            transform 150ms ease,
+            border-color 150ms ease,
+            background 150ms ease,
+            box-shadow 150ms ease;
+        }
+
+        .etrylue-report-edit .etrylue-secondary-button:not(:disabled):hover {
+          transform: translateY(-2px);
+          border-color: rgba(33, 223, 243, 0.4);
+          background: #403184;
+          box-shadow: 0 12px 24px rgba(8, 5, 29, 0.24);
+        }
+
+        .etrylue-report-edit .etrylue-download-actions button {
+          border: 1px solid rgba(255, 255, 255, 0.13) !important;
+          background: rgba(53, 40, 103, 0.92) !important;
+          color: #f7f7ff !important;
+          box-shadow: 0 9px 20px rgba(8, 5, 29, 0.14) !important;
+          transition:
+            transform 150ms ease,
+            border-color 150ms ease,
+            background 150ms ease,
+            box-shadow 150ms ease !important;
+        }
+
+        .etrylue-report-edit .etrylue-download-actions button:not(:disabled):hover {
+          transform: translateY(-2px);
+          border-color: rgba(33, 223, 243, 0.4) !important;
+          background: #403184 !important;
+          box-shadow: 0 12px 24px rgba(8, 5, 29, 0.24) !important;
+        }
+
+        .etrylue-report-edit .etrylue-download-actions button:disabled {
+          cursor: not-allowed;
+          opacity: 0.45;
+        }
+
+        .etrylue-report-edit .etrylue-file-input {
+          color: #d7d5ec;
+        }
+
+        .etrylue-report-edit .etrylue-file-input::file-selector-button {
+          margin-right: 12px;
+          border: 1px solid rgba(255, 255, 255, 0.13);
+          border-radius: 10px;
+          background: rgba(53, 40, 103, 0.92);
+          color: #f7f7ff;
+          padding: 9px 14px;
+          font-weight: 800;
+          cursor: pointer;
+          transition:
+            transform 150ms ease,
+            border-color 150ms ease,
+            background 150ms ease;
+        }
+
+        .etrylue-report-edit .etrylue-file-input:hover::file-selector-button {
+          border-color: rgba(33, 223, 243, 0.4);
+          background: #403184;
+        }
+      `}</style>
+    </>
   );
 }
