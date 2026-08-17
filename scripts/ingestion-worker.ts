@@ -31,6 +31,27 @@ const DEFAULT_BUCKET = "report_uploads";
 const ACTIVATE_CSV_INGESTION_SNAPSHOT_RPC =
   "activate_csv_ingestion_snapshot";
 
+const RECOVER_STALE_CSV_INGESTION_JOB_RPC =
+  "recover_stale_csv_ingestion_job";
+
+const STALE_PROCESSING_MS_ENV =
+  "INGESTION_WORKER_STALE_PROCESSING_MS";
+
+const DEFAULT_STALE_PROCESSING_MS =
+  60 * 60 * 1_000;
+
+const MIN_STALE_PROCESSING_MS =
+  5 * 60 * 1_000;
+
+const MAX_STALE_PROCESSING_MS =
+  24 * 60 * 60 * 1_000;
+
+const STALE_RECOVERY_SCAN_INTERVAL_MS =
+  60_000;
+
+const STALE_RECOVERY_LIMIT =
+  20;
+
 function asString(v: any) {
   if (v == null) return "";
   return String(v).trim();
@@ -43,6 +64,33 @@ function asNullableString(v: any) {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function readBoundedPositiveIntegerEnv(params: {
+  name: string;
+  fallback: number;
+  min: number;
+  max: number;
+}) {
+  const rawValue = String(process.env[params.name] ?? "").trim();
+
+  if (!rawValue) {
+    return params.fallback;
+  }
+
+  const numericValue = Number(rawValue);
+
+  if (
+    !Number.isSafeInteger(numericValue) ||
+    numericValue < params.min ||
+    numericValue > params.max
+  ) {
+    throw new Error(
+      `${params.name} must be an integer between ${params.min} and ${params.max}.`,
+    );
+  }
+
+  return numericValue;
 }
 
 function toNumber(v: any) {
@@ -1583,6 +1631,80 @@ async function failJob(job: IngestionJob, error: any) {
   });
 }
 
+async function recoverStaleProcessingJobs(staleProcessingMs: number) {
+  const sb = getRequiredSupabaseAdmin();
+  const cutoff = new Date(Date.now() - staleProcessingMs).toISOString();
+
+  const { data, error } = await sb
+    .from("ingestion_jobs")
+    .select("id")
+    .eq("status", "processing")
+    .lt("updated_at", cutoff)
+    .order("updated_at", { ascending: true })
+    .limit(STALE_RECOVERY_LIMIT);
+
+  if (error) {
+    throw new Error(`STALE_JOB_SELECT_FAILED:${error.message}`);
+  }
+
+  let recoveredCount = 0;
+
+  for (const rawJob of data ?? []) {
+    const jobId = asString((rawJob as any)?.id);
+
+    if (!jobId) {
+      continue;
+    }
+
+    const { data: recoveryData, error: recoveryError } = await sb.rpc(
+      RECOVER_STALE_CSV_INGESTION_JOB_RPC,
+      {
+        p_job_id: jobId,
+        p_cutoff: cutoff,
+      },
+    );
+
+    if (recoveryError) {
+      throw new Error(
+        `STALE_JOB_RECOVERY_FAILED:${jobId}:${recoveryError.message}`,
+      );
+    }
+
+    const recoveryRow = Array.isArray(recoveryData)
+      ? recoveryData[0]
+      : recoveryData;
+
+    if (!recoveryRow || typeof recoveryRow !== "object") {
+      throw new Error(
+        `STALE_JOB_RECOVERY_INVALID_RESULT:${jobId}`,
+      );
+    }
+
+    if ((recoveryRow as any).recovered !== true) {
+      continue;
+    }
+
+    recoveredCount += 1;
+
+    console.warn("[worker] stale processing job recovered", {
+      jobId,
+      reportId: asString((recoveryRow as any).report_id),
+      finalStatus: asString((recoveryRow as any).final_status),
+      candidateReferenced: Boolean(
+        (recoveryRow as any).candidate_referenced,
+      ),
+      candidateIsCurrent: Boolean(
+        (recoveryRow as any).candidate_is_current,
+      ),
+      deletedCandidateRows: Number(
+        (recoveryRow as any).deleted_candidate_rows ?? 0,
+      ),
+    });
+  }
+
+  return recoveredCount;
+}
+
 async function processOnePendingJob() {
   const job = await claimPendingJob();
 
@@ -1603,18 +1725,34 @@ async function processOnePendingJob() {
 async function main() {
   const loop = process.env.INGESTION_WORKER_LOOP === "1";
   const intervalMs = Number(process.env.INGESTION_WORKER_INTERVAL_MS || 3000);
+  const staleProcessingMs = readBoundedPositiveIntegerEnv({
+    name: STALE_PROCESSING_MS_ENV,
+    fallback: DEFAULT_STALE_PROCESSING_MS,
+    min: MIN_STALE_PROCESSING_MS,
+    max: MAX_STALE_PROCESSING_MS,
+  });
 
   console.log("[worker] started", {
     loop,
     intervalMs,
+    staleProcessingMs,
   });
+
+  await recoverStaleProcessingJobs(staleProcessingMs);
 
   if (!loop) {
     await processOnePendingJob();
     return;
   }
 
+  let lastStaleRecoveryAt = Date.now();
+
   while (true) {
+    if (Date.now() - lastStaleRecoveryAt >= STALE_RECOVERY_SCAN_INTERVAL_MS) {
+      await recoverStaleProcessingJobs(staleProcessingMs);
+      lastStaleRecoveryAt = Date.now();
+    }
+
     await processOnePendingJob();
     await sleep(Number.isFinite(intervalMs) && intervalMs > 0 ? intervalMs : 3000);
   }
