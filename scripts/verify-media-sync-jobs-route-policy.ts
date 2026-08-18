@@ -578,6 +578,16 @@ function main(): void {
             "CONNECTION_NOT_ACTIVE",
           );
 
+        const syncDisabled =
+          mapMediaSyncJobsRepositoryRouteError(
+            "PROVIDER_SYNC_NOT_ENABLED",
+          );
+
+        const dataLevelUnsupported =
+          mapMediaSyncJobsRepositoryRouteError(
+            "PROVIDER_DATA_LEVEL_NOT_SUPPORTED",
+          );
+
         const database =
           mapMediaSyncJobsRepositoryRouteError(
             "DATABASE_ERROR",
@@ -590,6 +600,13 @@ function main(): void {
             inactive.status === 409 &&
             inactive.error ===
               "CONNECTION_NOT_ACTIVE" &&
+            syncDisabled.status === 409 &&
+            syncDisabled.error ===
+              "PROVIDER_SYNC_NOT_ENABLED" &&
+            dataLevelUnsupported.status ===
+              409 &&
+            dataLevelUnsupported.error ===
+              "PROVIDER_DATA_LEVEL_NOT_SUPPORTED" &&
             database.status === 500 &&
             database.error ===
               "MEDIA_SYNC_JOB_DATABASE_ERROR",

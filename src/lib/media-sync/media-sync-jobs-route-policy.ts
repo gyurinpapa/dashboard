@@ -309,6 +309,17 @@ export function mapMediaSyncJobsRepositoryRouteError(
   }
 
   if (
+    code === "PROVIDER_SYNC_NOT_ENABLED" ||
+    code ===
+      "PROVIDER_DATA_LEVEL_NOT_SUPPORTED"
+  ) {
+    return {
+      status: 409,
+      error: code,
+    };
+  }
+
+  if (
     code ===
     "ACTIVE_JOB_ALREADY_EXISTS"
   ) {

@@ -4,6 +4,9 @@ import {
   MediaConnectionsRepositoryError,
 } from "./media-connections-repository";
 import {
+  getMediaProviderSyncCapability,
+} from "./media-provider-sync-capabilities";
+import {
   isMediaProvider,
   isMediaSyncDataLevel,
   isMediaSyncJobStatus,
@@ -62,6 +65,8 @@ export type MediaSyncJobsRepositoryErrorCode =
   | "CONNECTION_SCOPE_MISMATCH"
   | "CONNECTION_NOT_ACTIVE"
   | "REPORT_CONNECTION_NOT_MAPPED"
+  | "PROVIDER_SYNC_NOT_ENABLED"
+  | "PROVIDER_DATA_LEVEL_NOT_SUPPORTED"
   | "ACTIVE_JOB_ALREADY_EXISTS"
   | "DATABASE_ERROR";
 
@@ -1048,6 +1053,29 @@ export async function createPendingMediaSyncJob(
     workspaceId,
     advertiserId,
   });
+
+  const providerCapability =
+    getMediaProviderSyncCapability(
+      connection.provider,
+    );
+
+  if (!providerCapability.syncRuntimeEnabled) {
+    throw new MediaSyncJobsRepositoryError(
+      "PROVIDER_SYNC_NOT_ENABLED",
+      "Media synchronization runtime is not enabled for the connection provider.",
+    );
+  }
+
+  if (
+    !providerCapability.allowedDataLevels.includes(
+      input.dataLevel,
+    )
+  ) {
+    throw new MediaSyncJobsRepositoryError(
+      "PROVIDER_DATA_LEVEL_NOT_SUPPORTED",
+      "The requested media sync data level is not supported by the connection provider.",
+    );
+  }
 
   // Stage 8 / Macro 3: request-driven job creation never mutates an existing
   // processing job. Stale processing recovery is owned exclusively by the
