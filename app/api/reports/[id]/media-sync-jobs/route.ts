@@ -283,10 +283,10 @@ export async function GET(
  *
  * 안전 원칙:
  * - reportId는 URL params에서만 사용한다.
- * - body에서는 connectionId, 날짜 범위,
- *   dataLevel, mode만 읽는다.
- * - body의 workspaceId, advertiserId, reportId,
- *   userId, createdBy, provider, status 등은 신뢰하지 않는다.
+ * - body에서는 날짜 범위, dataLevel, mode만 읽는다.
+ * - body의 connectionId, workspaceId, advertiserId, reportId,
+ *   userId, createdBy, provider, status 등 scope/authority 값은 신뢰하지 않는다.
+ * - connectionId는 report_media_connections의 단일 mapping에서만 확정한다.
  * - workspaceId, advertiserId, userId는
  *   access resolver 결과만 사용한다.
  * - 인증 및 run_sync 권한 확인을 body 파싱/검증보다 먼저 수행한다.

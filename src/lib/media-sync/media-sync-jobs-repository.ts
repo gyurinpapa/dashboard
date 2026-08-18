@@ -87,7 +87,12 @@ export class MediaSyncJobsRepositoryError extends Error {
 
 export type CreatePendingMediaSyncJobInput = {
   reportId: string;
-  connectionId: string;
+
+  /**
+   * @deprecated Assertion-only compatibility field for direct internal callers.
+   * The report mapping is authoritative; this value never selects a connection.
+   */
+  connectionId?: string;
 
   workspaceId: string;
   advertiserId: string;
@@ -569,12 +574,11 @@ async function requireScopedReport(input: {
 }
 
 
-async function requireExactReportConnectionMapping(input: {
+async function resolveReportConnectionId(input: {
   reportId: string;
-  connectionId: string;
   workspaceId: string;
   advertiserId: string;
-}): Promise<void> {
+}): Promise<string> {
   const supabase = getSupabaseAdmin();
 
   const { data, error } = await supabase
@@ -583,7 +587,6 @@ async function requireExactReportConnectionMapping(input: {
       "workspace_id, advertiser_id, report_id, connection_id",
     )
     .eq("report_id", input.reportId)
-    .eq("connection_id", input.connectionId)
     .eq("workspace_id", input.workspaceId)
     .eq("advertiser_id", input.advertiserId)
     .limit(2);
@@ -605,7 +608,7 @@ async function requireExactReportConnectionMapping(input: {
   if (data.length === 0) {
     throw new MediaSyncJobsRepositoryError(
       "REPORT_CONNECTION_NOT_MAPPED",
-      "The report is not mapped to the requested media connection.",
+      "The report does not have a media connection mapping.",
     );
   }
 
@@ -625,10 +628,6 @@ async function requireExactReportConnectionMapping(input: {
       "mapping.report_id",
     ) !== input.reportId ||
     requireString(
-      row.connection_id,
-      "mapping.connection_id",
-    ) !== input.connectionId ||
-    requireString(
       row.workspace_id,
       "mapping.workspace_id",
     ) !== input.workspaceId ||
@@ -642,6 +641,11 @@ async function requireExactReportConnectionMapping(input: {
       "Report media connection mapping does not match the requested scope.",
     );
   }
+
+  return requireString(
+    row.connection_id,
+    "mapping.connection_id",
+  );
 }
 
 
@@ -912,12 +916,15 @@ export async function createPendingMediaSyncJob(
     200,
   );
 
-  const connectionId =
-    normalizeRequiredString(
-      input.connectionId,
-      "connectionId",
-      200,
-    );
+  const expectedConnectionId =
+    input.connectionId === undefined ||
+    input.connectionId === null
+      ? null
+      : normalizeRequiredString(
+          input.connectionId,
+          "connectionId",
+          200,
+        );
 
   const workspaceId =
     normalizeRequiredString(
@@ -994,6 +1001,23 @@ export async function createPendingMediaSyncJob(
     advertiserId,
   });
 
+  const connectionId =
+    await resolveReportConnectionId({
+      reportId: report.id,
+      workspaceId,
+      advertiserId,
+    });
+
+  if (
+    expectedConnectionId !== null &&
+    expectedConnectionId !== connectionId
+  ) {
+    throw new MediaSyncJobsRepositoryError(
+      "REPORT_CONNECTION_NOT_MAPPED",
+      "The direct caller connection assertion does not match the report media connection mapping.",
+    );
+  }
+
   let connection;
 
   try {
@@ -1046,13 +1070,6 @@ export async function createPendingMediaSyncJob(
       "Media connection is not active.",
     );
   }
-
-  await requireExactReportConnectionMapping({
-    reportId: report.id,
-    connectionId: connection.id,
-    workspaceId,
-    advertiserId,
-  });
 
   const providerCapability =
     getMediaProviderSyncCapability(

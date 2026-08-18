@@ -2171,57 +2171,6 @@ export default function ReportBuilderPage() {
         return;
       }
 
-      const connectionsRes = await fetch(
-        `/api/advertisers/${encodeURIComponent(
-          report.advertiser_id
-        )}/media-connections`,
-        {
-          method: "GET",
-          credentials: "include",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      const connectionsJson = await safeReadJson(connectionsRes);
-
-      if (!connectionsRes.ok || !(connectionsJson as any)?.ok) {
-        console.warn(
-          "[media-connections:get] failed",
-          connectionsRes.status,
-          connectionsJson
-        );
-        setLocalMsg(
-          (connectionsJson as any)?.error || "매체 연결 조회 실패"
-        );
-        return;
-      }
-
-      const activeNaverConnections =
-        (((connectionsJson as any)?.connections ?? []) as SafeMediaConnection[])
-          .filter((connection) => {
-            return (
-              connection.provider === "naver_searchad" &&
-              connection.status === "active" &&
-              connection.has_credentials
-            );
-          });
-
-      if (activeNaverConnections.length === 0) {
-        setLocalMsg("활성화된 네이버 검색광고 연결이 없습니다.");
-        return;
-      }
-
-      if (activeNaverConnections.length > 1) {
-        setLocalMsg(
-          "활성화된 네이버 연결이 2개 이상입니다. 안전을 위해 자동 선택하지 않습니다."
-        );
-        return;
-      }
-
-      const connection = activeNaverConnections[0];
-
       const res = await fetch(
         `/api/reports/${encodeURIComponent(reportId)}/media-sync-jobs`,
         {
@@ -2232,7 +2181,6 @@ export default function ReportBuilderPage() {
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
-            connectionId: connection.id,
             dateFrom: dateRange.dateFrom,
             dateTo: dateRange.dateTo,
             dataLevel: report.media_sync_data_level ?? "keyword",
@@ -2246,13 +2194,39 @@ export default function ReportBuilderPage() {
       if (!res.ok || !(json as any)?.ok) {
         console.warn("[media-sync-jobs:post] failed", res.status, json);
 
-        if ((json as any)?.error === "ACTIVE_JOB_ALREADY_EXISTS") {
+        const syncError = String((json as any)?.error ?? "").trim();
+
+        if (syncError === "ACTIVE_JOB_ALREADY_EXISTS") {
           await fetchLatestMediaSyncJobForReport(reportId, true);
           setLocalMsg("이미 대기 또는 처리 중인 API 동기화 job이 있습니다.");
           return;
         }
 
-        setLocalMsg((json as any)?.error || "API 동기화 요청 실패");
+        if (syncError === "REPORT_CONNECTION_NOT_MAPPED") {
+          setLocalMsg("리포트에 연결된 API 매체 연결을 찾을 수 없습니다.");
+          return;
+        }
+
+        if (
+          syncError === "CONNECTION_NOT_FOUND" ||
+          syncError === "CONNECTION_SCOPE_MISMATCH" ||
+          syncError === "CONNECTION_NOT_ACTIVE"
+        ) {
+          setLocalMsg("리포트에 연결된 API 매체 연결 상태를 확인해 주세요.");
+          return;
+        }
+
+        if (syncError === "PROVIDER_SYNC_NOT_ENABLED") {
+          setLocalMsg("해당 매체의 API 동기화 기능은 아직 활성화되지 않았습니다.");
+          return;
+        }
+
+        if (syncError === "PROVIDER_DATA_LEVEL_NOT_SUPPORTED") {
+          setLocalMsg("현재 리포트 데이터 수준은 해당 매체 동기화에서 지원되지 않습니다.");
+          return;
+        }
+
+        setLocalMsg(syncError || "API 동기화 요청 실패");
         return;
       }
 

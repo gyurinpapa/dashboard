@@ -154,8 +154,6 @@ export function buildCreatePendingMediaSyncJobRepositoryInput(
 
   return {
     reportId: access.reportId,
-    connectionId:
-      request.connectionId,
 
     workspaceId:
       access.workspaceId,
@@ -188,8 +186,6 @@ export function buildCreateMediaSyncJobSuccessResponse(
       access.workspaceId ||
     job.advertiser_id !==
       access.advertiserId ||
-    job.connection_id !==
-      request.connectionId ||
     job.created_by !==
       access.userId
   ) {

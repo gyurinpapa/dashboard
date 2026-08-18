@@ -8,7 +8,6 @@ import {
 } from "./types";
 
 const MAX_REPORT_ID_LENGTH = 200;
-const MAX_CONNECTION_ID_LENGTH = 200;
 const MEDIA_SYNC_JOB_MODE =
   "snapshot_replace" as const;
 
@@ -51,7 +50,6 @@ export class MediaSyncJobRequestError extends Error {
 
 export type CreateMediaSyncJobRequest = {
   reportId: string;
-  connectionId: string;
   dateFrom: string;
   dateTo: string;
   dataLevel: MediaSyncDataLevel;
@@ -258,16 +256,6 @@ export function normalizeMediaSyncJobReportId(
   );
 }
 
-export function normalizeMediaSyncJobConnectionId(
-  value: unknown,
-): string {
-  return normalizeRequiredString(
-    value,
-    "connectionId",
-    MAX_CONNECTION_ID_LENGTH,
-  );
-}
-
 export function parseCreateMediaSyncJobRequest(
   input: {
     reportId: unknown;
@@ -282,11 +270,6 @@ export function parseCreateMediaSyncJobRequest(
   const reportId =
     normalizeMediaSyncJobReportId(
       input.reportId,
-    );
-
-  const connectionId =
-    normalizeMediaSyncJobConnectionId(
-      body.connectionId,
     );
 
   const dateFrom =
@@ -317,7 +300,6 @@ export function parseCreateMediaSyncJobRequest(
 
   return {
     reportId,
-    connectionId,
     dateFrom,
     dateTo,
     dataLevel: normalizeDataLevel(

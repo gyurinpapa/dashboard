@@ -170,8 +170,6 @@ function main(): void {
           parseCreateMediaSyncJobRequest({
             reportId: REPORT_ID,
             body: {
-              connectionId:
-                CONNECTION_ID,
               dateFrom:
                 "2026-06-01",
               dateTo:
@@ -185,8 +183,7 @@ function main(): void {
         assertTrue(
           parsed.reportId ===
             REPORT_ID &&
-            parsed.connectionId ===
-              CONNECTION_ID &&
+            !("connectionId" in parsed) &&
             parsed.dateFrom ===
               "2026-06-01" &&
             parsed.dateTo ===
@@ -202,14 +199,14 @@ function main(): void {
 
   results.push(
     runFixture(
-      "body scope fields are ignored",
+      "body scope and legacy connectionId fields are ignored",
       () => {
         const parsed =
           parseCreateMediaSyncJobRequest({
             reportId: REPORT_ID,
             body: {
               connectionId:
-                CONNECTION_ID,
+                "attacker-connection",
               dateFrom:
                 "2026-06-01",
               dateTo:
@@ -234,6 +231,7 @@ function main(): void {
         assertTrue(
           parsed.reportId ===
             REPORT_ID &&
+            !("connectionId" in parsed) &&
             !(
               "workspaceId" in
               parsed
@@ -347,8 +345,6 @@ function main(): void {
           parseCreateMediaSyncJobRequest({
             reportId: REPORT_ID,
             body: {
-              connectionId:
-                CONNECTION_ID,
               dateFrom:
                 "2026-06-01",
               dateTo:
@@ -374,8 +370,7 @@ function main(): void {
               ADVERTISER_ID &&
             repositoryInput.createdBy ===
               USER_ID &&
-            repositoryInput.connectionId ===
-              CONNECTION_ID,
+            !("connectionId" in repositoryInput),
         );
       },
     ),
@@ -389,8 +384,6 @@ function main(): void {
           parseCreateMediaSyncJobRequest({
             reportId: REPORT_ID,
             body: {
-              connectionId:
-                CONNECTION_ID,
               dateFrom:
                 "2026-06-01",
               dateTo:
@@ -426,8 +419,6 @@ function main(): void {
           parseCreateMediaSyncJobRequest({
             reportId: REPORT_ID,
             body: {
-              connectionId:
-                CONNECTION_ID,
               dateFrom:
                 "2026-06-01",
               dateTo:
@@ -462,8 +453,6 @@ function main(): void {
           parseCreateMediaSyncJobRequest({
             reportId: REPORT_ID,
             body: {
-              connectionId:
-                CONNECTION_ID,
               dateFrom:
                 "2026-06-01",
               dateTo:
@@ -478,7 +467,10 @@ function main(): void {
           buildCreateMediaSyncJobSuccessResponse(
             getAccessContext(),
             parsed,
-            createSafeJob(),
+            createSafeJob({
+              connection_id:
+                "server-resolved-connection",
+            }),
           );
 
         assertTrue(
@@ -505,8 +497,6 @@ function main(): void {
           parseCreateMediaSyncJobRequest({
             reportId: REPORT_ID,
             body: {
-              connectionId:
-                CONNECTION_ID,
               dateFrom:
                 "2026-06-01",
               dateTo:
