@@ -1,6 +1,19 @@
+
 import { randomUUID } from "node:crypto";
 
 import { getSupabaseAdmin } from "../supabase/admin";
+import {
+  encryptGoogleAdsCredentials,
+  GOOGLE_ADS_CREDENTIAL_VERSION,
+  type GoogleAdsCredentialContext,
+} from "./google-ads-credentials";
+import {
+  GOOGLE_ADS_PROVIDER,
+} from "./google-ads-oauth-config";
+import {
+  prepareVerifiedGoogleAdsConnectionPersistence,
+  type CreateVerifiedGoogleAdsConnectionInput,
+} from "./google-ads-connection-persistence";
 import {
   decryptNaverSearchAdsCredentials,
   encryptNaverSearchAdsCredentials,
@@ -114,6 +127,15 @@ export type ListMediaConnectionsInput = {
 export type DecryptedNaverSearchAdsConnection = {
   connection: MediaConnectionRecord;
   credentials: NaverSearchAdsCredentials;
+};
+
+type CreateVerifiedGoogleAdsConnectionDependencies = {
+  insertRecord?: (
+    record: MediaConnectionRecord,
+  ) => Promise<{
+    data: unknown;
+    error: unknown;
+  }>;
 };
 
 type UnknownRecord = Record<string, unknown>;
@@ -615,6 +637,117 @@ export async function requireMediaConnectionRecord(
   }
 
   return record;
+}
+
+export async function createVerifiedGoogleAdsConnection(
+  input: CreateVerifiedGoogleAdsConnectionInput,
+  dependencies: CreateVerifiedGoogleAdsConnectionDependencies = {},
+): Promise<SafeMediaConnection> {
+  const prepared =
+    prepareVerifiedGoogleAdsConnectionPersistence(
+      input,
+    );
+  const id = randomUUID();
+  const meta = normalizeSafeMeta(prepared.meta);
+  const now = new Date().toISOString();
+
+  const credentialContext: GoogleAdsCredentialContext = {
+    connectionId: id,
+    workspaceId: prepared.workspaceId,
+    advertiserId: prepared.advertiserId,
+    provider: GOOGLE_ADS_PROVIDER,
+    externalAccountId: prepared.externalAccountId,
+  };
+
+  let credentialCiphertext: string;
+
+  try {
+    credentialCiphertext =
+      encryptGoogleAdsCredentials(
+        prepared.credentials,
+        credentialContext,
+      );
+  } catch (error) {
+    throw new MediaConnectionsRepositoryError(
+      "ENCRYPTION_ERROR",
+      "Google Ads connection credentials could not be encrypted.",
+      { cause: error },
+    );
+  }
+
+  const insertRecord: MediaConnectionRecord = {
+    id,
+    workspace_id: prepared.workspaceId,
+    advertiser_id: prepared.advertiserId,
+
+    provider: GOOGLE_ADS_PROVIDER,
+    external_account_id:
+      prepared.externalAccountId,
+    external_account_name:
+      prepared.externalAccountName,
+
+    credential_ciphertext:
+      credentialCiphertext,
+    credential_version:
+      GOOGLE_ADS_CREDENTIAL_VERSION,
+
+    status: "active",
+
+    connected_at: now,
+    last_verified_at:
+      prepared.verification.verified_at,
+    last_sync_at: null,
+    last_error: null,
+
+    meta,
+
+    created_by: prepared.createdBy,
+    created_at: now,
+    updated_at: now,
+  };
+
+  let data: unknown;
+  let error: unknown;
+
+  try {
+    if (dependencies.insertRecord) {
+      ({ data, error } =
+        await dependencies.insertRecord(
+          insertRecord,
+        ));
+    } else {
+      const supabase = getSupabaseAdmin();
+      const result = await supabase
+        .from(MEDIA_CONNECTIONS_TABLE)
+        .insert(insertRecord)
+        .select("*")
+        .single();
+
+      data = result.data;
+      error = result.error;
+    }
+  } finally {
+    credentialCiphertext = "";
+  }
+
+  if (error) {
+    if (isUniqueViolation(error)) {
+      throw new MediaConnectionsRepositoryError(
+        "CONNECTION_ALREADY_EXISTS",
+        "A media connection already exists for this advertiser, provider, and account.",
+        { cause: error },
+      );
+    }
+
+    throw wrapDatabaseError(
+      "Google Ads media connection could not be created.",
+      error,
+    );
+  }
+
+  return toSafeMediaConnection(
+    parseMediaConnectionRecord(data),
+  );
 }
 
 export async function createNaverSearchAdsConnection(
