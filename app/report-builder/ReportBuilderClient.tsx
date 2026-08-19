@@ -504,6 +504,24 @@ export default function ReportBuilderPage() {
   const [selectedApiMediaConnectionId, setSelectedApiMediaConnectionId] =
     useState("");
 
+  const [googleAdsTargetCustomerIdInput, setGoogleAdsTargetCustomerIdInput] =
+    useState("");
+  const [googleAdsLoginCustomerIdInput, setGoogleAdsLoginCustomerIdInput] =
+    useState("");
+  const [startingGoogleAdsOAuth, setStartingGoogleAdsOAuth] = useState(false);
+  const [googleAdsOAuthStartError, setGoogleAdsOAuthStartError] = useState("");
+  const [googleAdsOAuthReturnNotice, setGoogleAdsOAuthReturnNotice] =
+    useState<{
+      kind: "pending" | "success" | "error";
+      message: string;
+    } | null>(null);
+  const [pendingGoogleAdsOAuthReturn, setPendingGoogleAdsOAuthReturn] =
+    useState<{
+      workspaceId: string;
+      advertiserId: string;
+      connectionId: string;
+    } | null>(null);
+
   const [advertisers, setAdvertisers] = useState<AdvertiserRow[]>([]);
   const [search, setSearch] = useState("");
   const [openMap, setOpenMap] = useState<Record<string, boolean>>({
@@ -580,6 +598,7 @@ export default function ReportBuilderPage() {
   const reportsRequestSeqRef = useRef(0);
   const mediaConnectionsRequestSeqRef = useRef(0);
   const mediaConnectionScopeKeyRef = useRef("");
+  const googleAdsOAuthReturnHandledRef = useRef("");
   const nextOffsetRef = useRef(0);
   const hasMoreRef = useRef(false);
   const loadingReportsRef = useRef(false);
@@ -1074,6 +1093,46 @@ export default function ReportBuilderPage() {
   }, [advertisers, selectedAdvertiserId]);
 
   useEffect(() => {
+    setGoogleAdsTargetCustomerIdInput("");
+    setGoogleAdsLoginCustomerIdInput("");
+    setGoogleAdsOAuthStartError("");
+    setStartingGoogleAdsOAuth(false);
+  }, [workspaceId, selectedAdvertiserId]);
+
+  useEffect(() => {
+    // Google OAuth return notice belongs only to the
+    // workspace / advertiser scope in which it was resolved.
+    //
+    // Intentionally keyed only to scope changes. During a valid
+    // callback return, selectedAdvertiserId and the pending return
+    // are updated together, so that transition must not clear the
+    // in-flight verification notice.
+    const pending = pendingGoogleAdsOAuthReturn;
+
+    if (pending) {
+      const workspaceChanged =
+        Boolean(workspaceId) &&
+        workspaceId !== pending.workspaceId;
+
+      const advertiserChanged =
+        Boolean(selectedAdvertiserId) &&
+        selectedAdvertiserId !== pending.advertiserId;
+
+      if (workspaceChanged || advertiserChanged) {
+        setPendingGoogleAdsOAuthReturn(null);
+        setGoogleAdsOAuthReturnNotice(null);
+      }
+
+      return;
+    }
+
+    setGoogleAdsOAuthReturnNotice(null);
+    // pendingGoogleAdsOAuthReturn is intentionally excluded:
+    // completing verification must not erase the success notice.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId, selectedAdvertiserId]);
+
+  useEffect(() => {
     const advertiserId = selectedAdvertiserId.trim();
     const currentWorkspaceId = String(workspaceId ?? "").trim();
     const scopeKey =
@@ -1260,6 +1319,329 @@ export default function ReportBuilderPage() {
     workspaceId,
     selectedAdvertiserId,
     mediaConnectionsRefreshVersion,
+  ]);
+
+  useEffect(() => {
+    const outcome =
+      searchParams.get("google_ads_oauth")?.trim() || "";
+
+    if (outcome !== "success" && outcome !== "error") {
+      return;
+    }
+
+    if (!userId) {
+      return;
+    }
+
+    const callbackKey = searchParams.toString();
+
+    if (
+      !callbackKey ||
+      googleAdsOAuthReturnHandledRef.current === callbackKey
+    ) {
+      return;
+    }
+
+    const cleanupGoogleAdsOAuthQuery = () => {
+      const nextParams = new URLSearchParams(
+        searchParams.toString(),
+      );
+
+      nextParams.delete("google_ads_oauth");
+      nextParams.delete("advertiser_id");
+      nextParams.delete("connection_id");
+      nextParams.delete("error");
+
+      const nextQuery = nextParams.toString();
+
+      router.replace(
+        nextQuery
+          ? `/report-builder?${nextQuery}`
+          : "/report-builder",
+        { scroll: false },
+      );
+    };
+
+    if (outcome === "error") {
+      googleAdsOAuthReturnHandledRef.current = callbackKey;
+
+      setSelectedReportDataSourceKind("api");
+      setPendingGoogleAdsOAuthReturn(null);
+      setGoogleAdsOAuthReturnNotice({
+        kind: "error",
+        message:
+          "Google Ads 연결이 완료되지 않았습니다. 다시 시도해 주세요.",
+      });
+
+      cleanupGoogleAdsOAuthQuery();
+      return;
+    }
+
+    const callbackWorkspaceId =
+      searchParams.get("workspace_id")?.trim() || "";
+    const callbackAdvertiserId =
+      searchParams.get("advertiser_id")?.trim() || "";
+    const callbackConnectionId =
+      searchParams.get("connection_id")?.trim() || "";
+
+    if (!workspaceId) {
+      return;
+    }
+
+    if (
+      !callbackWorkspaceId ||
+      !callbackAdvertiserId ||
+      !callbackConnectionId ||
+      workspaceId === ALL_WORKSPACES ||
+      workspaceId !== callbackWorkspaceId
+    ) {
+      googleAdsOAuthReturnHandledRef.current = callbackKey;
+
+      setSelectedReportDataSourceKind("api");
+      setPendingGoogleAdsOAuthReturn(null);
+      setGoogleAdsOAuthReturnNotice({
+        kind: "error",
+        message:
+          "Google Ads 연결 결과를 현재 작업공간에서 확인할 수 없습니다.",
+      });
+
+      cleanupGoogleAdsOAuthQuery();
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const token = await getAccessToken();
+
+        if (cancelled) {
+          return;
+        }
+
+        if (!token) {
+          googleAdsOAuthReturnHandledRef.current =
+            callbackKey;
+
+          setSelectedReportDataSourceKind("api");
+          setPendingGoogleAdsOAuthReturn(null);
+          setGoogleAdsOAuthReturnNotice({
+            kind: "error",
+            message:
+              "Google Ads 연결 결과를 확인할 로그인 세션이 없습니다.",
+          });
+
+          cleanupGoogleAdsOAuthQuery();
+          return;
+        }
+
+        const res = await fetch(
+          `/api/advertisers/list?workspace_id=${encodeURIComponent(
+            callbackWorkspaceId,
+          )}`,
+          {
+            method: "GET",
+            credentials: "include",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          },
+        );
+
+        const json = await safeReadJson(res);
+
+        if (cancelled) {
+          return;
+        }
+
+        if (!res.ok || !(json as any)?.ok) {
+          googleAdsOAuthReturnHandledRef.current =
+            callbackKey;
+
+          setSelectedReportDataSourceKind("api");
+          setPendingGoogleAdsOAuthReturn(null);
+          setGoogleAdsOAuthReturnNotice({
+            kind: "error",
+            message:
+              "Google Ads 연결 결과를 서버에서 다시 확인하지 못했습니다.",
+          });
+
+          cleanupGoogleAdsOAuthQuery();
+          return;
+        }
+
+        const rows = Array.isArray(
+          (json as any)?.advertisers,
+        )
+          ? ((json as any).advertisers as any[])
+          : [];
+
+        const exactAdvertiser = rows.find(
+          (row) =>
+            String(row?.id ?? "").trim() ===
+              callbackAdvertiserId &&
+            String(row?.workspace_id ?? "").trim() ===
+              callbackWorkspaceId,
+        );
+
+        if (!exactAdvertiser) {
+          googleAdsOAuthReturnHandledRef.current =
+            callbackKey;
+
+          setSelectedReportDataSourceKind("api");
+          setPendingGoogleAdsOAuthReturn(null);
+          setGoogleAdsOAuthReturnNotice({
+            kind: "error",
+            message:
+              "Google Ads 연결 결과의 광고주 범위를 확인할 수 없습니다.",
+          });
+
+          cleanupGoogleAdsOAuthQuery();
+          return;
+        }
+
+        googleAdsOAuthReturnHandledRef.current =
+          callbackKey;
+
+        setSelectedReportDataSourceKind("api");
+        setSelectedAdvertiserId(callbackAdvertiserId);
+        setGoogleAdsOAuthStartError("");
+        setGoogleAdsOAuthReturnNotice({
+          kind: "pending",
+          message:
+            "Google Ads 연결 결과를 서버에서 확인하고 있습니다.",
+        });
+
+        setPendingGoogleAdsOAuthReturn({
+          workspaceId: callbackWorkspaceId,
+          advertiserId: callbackAdvertiserId,
+          connectionId: callbackConnectionId,
+        });
+
+        setMediaConnectionsRefreshVersion(
+          (prev) => prev + 1,
+        );
+
+        cleanupGoogleAdsOAuthQuery();
+      } catch {
+        if (cancelled) {
+          return;
+        }
+
+        googleAdsOAuthReturnHandledRef.current =
+          callbackKey;
+
+        setSelectedReportDataSourceKind("api");
+        setPendingGoogleAdsOAuthReturn(null);
+        setGoogleAdsOAuthReturnNotice({
+          kind: "error",
+          message:
+            "Google Ads 연결 결과를 서버에서 다시 확인하지 못했습니다.",
+        });
+
+        cleanupGoogleAdsOAuthQuery();
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    router,
+    searchParams,
+    userId,
+    workspaceId,
+  ]);
+
+  useEffect(() => {
+    const pending = pendingGoogleAdsOAuthReturn;
+
+    if (!pending) {
+      return;
+    }
+
+    if (
+      !workspaceId ||
+      workspaceId !== pending.workspaceId
+    ) {
+      setPendingGoogleAdsOAuthReturn(null);
+      setGoogleAdsOAuthReturnNotice({
+        kind: "error",
+        message:
+          "Google Ads 연결 결과의 작업공간 범위가 변경되었습니다.",
+      });
+      return;
+    }
+
+    if (
+      selectedAdvertiserId !== pending.advertiserId
+    ) {
+      return;
+    }
+
+    const expectedScopeKey =
+      `${pending.workspaceId}:${pending.advertiserId}`;
+
+    if (
+      loadingSelectedAdvertiserMediaConnections ||
+      resolvedAdvertiserMediaConnectionScopeKey !==
+        expectedScopeKey
+    ) {
+      return;
+    }
+
+    if (selectedAdvertiserMediaConnectionsError) {
+      setPendingGoogleAdsOAuthReturn(null);
+      setGoogleAdsOAuthReturnNotice({
+        kind: "error",
+        message:
+          "Google Ads 연결 상태를 다시 확인하지 못했습니다.",
+      });
+      return;
+    }
+
+    const exactConnection =
+      selectedAdvertiserMediaConnections.find(
+        (connection) =>
+          connection.id === pending.connectionId &&
+          connection.workspace_id === pending.workspaceId &&
+          connection.advertiser_id ===
+            pending.advertiserId &&
+          connection.provider === "google_ads",
+      ) ?? null;
+
+    if (
+      !exactConnection ||
+      exactConnection.status !== "active" ||
+      !exactConnection.has_credentials
+    ) {
+      setPendingGoogleAdsOAuthReturn(null);
+      setGoogleAdsOAuthReturnNotice({
+        kind: "error",
+        message:
+          "Google Ads 연결은 반환되었지만 사용 가능한 연결 상태를 확인하지 못했습니다.",
+      });
+      return;
+    }
+
+    const accountLabel =
+      exactConnection.external_account_name ||
+      exactConnection.external_account_id;
+
+    setPendingGoogleAdsOAuthReturn(null);
+    setGoogleAdsOAuthReturnNotice({
+      kind: "success",
+      message:
+        `Google Ads 연결이 완료되었습니다. ${accountLabel}`,
+    });
+  }, [
+    pendingGoogleAdsOAuthReturn,
+    workspaceId,
+    selectedAdvertiserId,
+    loadingSelectedAdvertiserMediaConnections,
+    resolvedAdvertiserMediaConnectionScopeKey,
+    selectedAdvertiserMediaConnectionsError,
+    selectedAdvertiserMediaConnections,
   ]);
 
   useEffect(() => {
@@ -2592,6 +2974,83 @@ export default function ReportBuilderPage() {
     !selectedAdvertiserMediaConnectionsError &&
     (selectedAdvertiserMediaAccessScope === "true_master" ||
       selectedAdvertiserMediaAccessScope === "workspace");
+
+  async function startGoogleAdsOAuth() {
+    if (startingGoogleAdsOAuth) return;
+
+    const advertiserId = selectedAdvertiserId.trim();
+    const targetCustomerId = googleAdsTargetCustomerIdInput.trim();
+    const loginCustomerId = googleAdsLoginCustomerIdInput.trim();
+
+    if (!advertiserId || !canManageSelectedAdvertiserMediaConnections) {
+      setGoogleAdsOAuthStartError(
+        "현재 광고주의 매체 연결을 관리할 권한이 없습니다.",
+      );
+      return;
+    }
+
+    if (!targetCustomerId) {
+      setGoogleAdsOAuthStartError(
+        "Google Ads 고객 ID를 입력해 주세요.",
+      );
+      return;
+    }
+
+    setStartingGoogleAdsOAuth(true);
+    setGoogleAdsOAuthStartError("");
+
+    try {
+      const res = await fetch(
+        "/api/media-connections/google-ads/oauth/start",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            advertiserId,
+            targetCustomerId,
+            loginCustomerId: loginCustomerId || null,
+          }),
+        },
+      );
+
+      const data = await safeReadJson(res);
+
+      if (!res.ok) {
+        const message =
+          res.status === 403
+            ? "Google Ads 연결을 시작할 권한이 없습니다."
+            : res.status === 400
+              ? "Google Ads 고객 ID 입력값을 확인해 주세요."
+              : "Google Ads 연결을 시작하지 못했습니다.";
+
+        setGoogleAdsOAuthStartError(message);
+        return;
+      }
+
+      const authorizationUrl =
+        typeof data?.authorization_url === "string"
+          ? data.authorization_url.trim()
+          : "";
+
+      if (!authorizationUrl) {
+        setGoogleAdsOAuthStartError(
+          "Google 인증 주소를 확인하지 못했습니다.",
+        );
+        return;
+      }
+
+      window.location.assign(authorizationUrl);
+    } catch {
+      setGoogleAdsOAuthStartError(
+        "Google Ads 연결을 시작하지 못했습니다.",
+      );
+    } finally {
+      setStartingGoogleAdsOAuth(false);
+    }
+  }
+
   const canCreateNaverConnection =
     canManageSelectedAdvertiserMediaConnections &&
     selectedAdvertiserNaverConnections.length === 0;
@@ -4813,84 +5272,552 @@ export default function ReportBuilderPage() {
                   </div>
                 ) : (
                   <>
-                    <div className="advertiserSelectWrap" style={{ marginTop: 12 }}>
-                      <select
-                        value={selectedApiMediaConnectionId}
-                        onChange={(e) =>
-                          setSelectedApiMediaConnectionId(e.target.value)
-                        }
-                        disabled={creating || usableNaverConnections.length === 0}
-                        className="advertiserSelect"
+                    <div
+                      style={{
+                        marginTop: 14,
+                        display: "grid",
+                        gridTemplateColumns:
+                          "repeat(auto-fit, minmax(220px, 1fr))",
+                        gap: 12,
+                      }}
+                    >
+                      <div
+                        style={{
+                          position: "relative",
+                          overflow: "hidden",
+                          border: "1px solid rgba(255, 255, 255, 0.12)",
+                          borderRadius: 18,
+                          background: "rgba(57, 43, 112, 0.88)",
+                          padding: 16,
+                          minHeight: 278,
+                        }}
                       >
-                        <option value="">Naver Search Ads 연결을 선택하세요</option>
-                        {selectedAdvertiserNaverConnections.map((connection) => {
-                          const selectable =
-                            connection.status === "active" &&
-                            connection.has_credentials;
-                          const statusLabel =
-                            connection.status === "disconnected"
-                              ? "연결 해제"
-                              : connection.status === "error"
-                              ? "오류"
-                              : !connection.has_credentials
-                              ? "자격증명 필요"
-                              : "사용 가능";
+                        <div
+                          style={{
+                            position: "absolute",
+                            top: 0,
+                            left: 0,
+                            width: 96,
+                            height: 2,
+                            background:
+                              "linear-gradient(90deg, #21dff3 0%, #7c5cff 100%)",
+                            opacity: 0.72,
+                          }}
+                        />
 
-                          return (
-                            <option
-                              key={connection.id}
-                              value={connection.id}
-                              disabled={!selectable}
-                            >
-                              {connection.external_account_name ||
-                                connection.external_account_id}{" "}
-                              · {connection.external_account_id} · {statusLabel}
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "flex-start",
+                            justifyContent: "space-between",
+                            gap: 10,
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 14,
+                              fontWeight: 900,
+                              color: "#f7f7ff",
+                            }}
+                          >
+                            NAVER SEARCH ADS
+                          </div>
+
+                          <span
+                            style={{
+                              flexShrink: 0,
+                              borderRadius: 999,
+                              border: selectedApiReportConnection
+                                ? "1px solid rgba(110, 231, 183, 0.28)"
+                                : "1px solid rgba(255, 255, 255, 0.12)",
+                              background: selectedApiReportConnection
+                                ? "rgba(110, 231, 183, 0.10)"
+                                : "rgba(255, 255, 255, 0.05)",
+                              padding: "4px 8px",
+                              fontSize: 10,
+                              fontWeight: 900,
+                              color: selectedApiReportConnection
+                                ? "#a7f3d0"
+                                : "#bbb8d4",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {selectedApiReportConnection
+                              ? "● 선택됨"
+                              : usableNaverConnections.length > 0
+                                ? "선택 가능"
+                                : "연결 필요"}
+                          </span>
+                        </div>
+
+                        <div
+                          style={{
+                            marginTop: 14,
+                            fontSize: 11,
+                            lineHeight: 1.55,
+                            color: "#bbb8d4",
+                          }}
+                        >
+                          리포트 생성에 사용할 Naver Search Ads 연결을
+                          선택합니다.
+                        </div>
+
+                        <div
+                          className="advertiserSelectWrap"
+                          style={{ marginTop: 12 }}
+                        >
+                          <select
+                            value={selectedApiMediaConnectionId}
+                            onChange={(e) =>
+                              setSelectedApiMediaConnectionId(e.target.value)
+                            }
+                            disabled={
+                              creating || usableNaverConnections.length === 0
+                            }
+                            className="advertiserSelect"
+                          >
+                            <option value="">
+                              Naver Search Ads 연결을 선택하세요
                             </option>
-                          );
-                        })}
-                      </select>
-                      <span className="advertiserSelectArrow" aria-hidden="true">
-                        ⌄
-                      </span>
-                    </div>
 
-                    <div
-                      style={{
-                        marginTop: 8,
-                        fontSize: 11,
-                        lineHeight: 1.55,
-                        color: selectedApiReportConnection ? "#a7f3d0" : "#bbb8d4",
-                      }}
-                    >
-                      {selectedApiReportConnection
-                        ? `선택됨 · ${
-                            selectedApiReportConnection.external_account_name ||
-                            selectedApiReportConnection.external_account_id
-                          } · ${selectedApiReportConnection.external_account_id}`
-                        : usableNaverConnections.length === 0
-                        ? "현재 API 리포트에 사용할 수 있는 Naver Search Ads 연결이 없습니다. STEP 1에서 연결 상태를 확인하세요."
-                        : "사용할 Naver Search Ads 연결을 선택하세요."}
-                    </div>
+                            {selectedAdvertiserNaverConnections.map(
+                              (connection) => {
+                                const selectable =
+                                  connection.status === "active" &&
+                                  connection.has_credentials;
 
-                    <div
-                      style={{
-                        marginTop: 8,
-                        fontSize: 10,
-                        lineHeight: 1.5,
-                        color: "#8f8bad",
-                      }}
-                    >
-                      Google Ads · 준비 중
-                      {selectedAdvertiserGoogleConnections.length > 0
-                        ? ` (${selectedAdvertiserGoogleConnections.length}개 연결 기록)`
-                        : ""}
-                      {" · "}
-                      Meta Ads · 준비 중
-                      {selectedAdvertiserMetaConnections.length > 0
-                        ? ` (${selectedAdvertiserMetaConnections.length}개 연결 기록)`
-                        : ""}
-                      <br />
-                      실제 provider는 선택한 connection 기준으로 서버에서 확정됩니다.
+                                const statusLabel =
+                                  connection.status === "disconnected"
+                                    ? "연결 해제"
+                                    : connection.status === "error"
+                                      ? "오류"
+                                      : !connection.has_credentials
+                                        ? "자격증명 필요"
+                                        : "사용 가능";
+
+                                return (
+                                  <option
+                                    key={connection.id}
+                                    value={connection.id}
+                                    disabled={!selectable}
+                                  >
+                                    {connection.external_account_name ||
+                                      connection.external_account_id}{" "}
+                                    · {connection.external_account_id} ·{" "}
+                                    {statusLabel}
+                                  </option>
+                                );
+                              },
+                            )}
+                          </select>
+
+                          <span
+                            className="advertiserSelectArrow"
+                            aria-hidden="true"
+                          >
+                            ⌄
+                          </span>
+                        </div>
+
+                        <div
+                          style={{
+                            marginTop: 10,
+                            fontSize: 11,
+                            lineHeight: 1.55,
+                            color: selectedApiReportConnection
+                              ? "#a7f3d0"
+                              : "#bbb8d4",
+                          }}
+                        >
+                          {selectedApiReportConnection
+                            ? `선택됨 · ${
+                                selectedApiReportConnection.external_account_name ||
+                                selectedApiReportConnection.external_account_id
+                              } · ${
+                                selectedApiReportConnection.external_account_id
+                              }`
+                            : usableNaverConnections.length === 0
+                              ? "현재 사용할 수 있는 Naver Search Ads 연결이 없습니다."
+                              : "사용할 연결을 선택하세요."}
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          position: "relative",
+                          overflow: "hidden",
+                          border: "1px solid rgba(255, 255, 255, 0.12)",
+                          borderRadius: 18,
+                          background: "rgba(57, 43, 112, 0.88)",
+                          padding: 16,
+                          minHeight: 278,
+                        }}
+                      >
+                        <div
+                          style={{
+                            position: "absolute",
+                            top: 0,
+                            left: 0,
+                            width: 96,
+                            height: 2,
+                            background:
+                              "linear-gradient(90deg, #21dff3 0%, #7c5cff 100%)",
+                            opacity: 0.72,
+                          }}
+                        />
+
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "flex-start",
+                            justifyContent: "space-between",
+                            gap: 10,
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 14,
+                              fontWeight: 900,
+                              color: "#f7f7ff",
+                            }}
+                          >
+                            GOOGLE ADS
+                          </div>
+
+                          <span
+                            style={{
+                              flexShrink: 0,
+                              borderRadius: 999,
+                              border:
+                                selectedAdvertiserGoogleConnections.length > 0
+                                  ? "1px solid rgba(110, 231, 183, 0.28)"
+                                  : "1px solid rgba(255, 255, 255, 0.12)",
+                              background:
+                                selectedAdvertiserGoogleConnections.length > 0
+                                  ? "rgba(110, 231, 183, 0.10)"
+                                  : "rgba(255, 255, 255, 0.05)",
+                              padding: "4px 8px",
+                              fontSize: 10,
+                              fontWeight: 900,
+                              color:
+                                selectedAdvertiserGoogleConnections.length > 0
+                                  ? "#a7f3d0"
+                                  : "#bbb8d4",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {selectedAdvertiserGoogleConnections.length > 0
+                              ? `${selectedAdvertiserGoogleConnections.length}개 연결`
+                              : "연결 가능"}
+                          </span>
+                        </div>
+
+                        {googleAdsOAuthReturnNotice ? (
+                          <div
+                            style={{
+                              marginTop: 12,
+                              border:
+                                googleAdsOAuthReturnNotice.kind ===
+                                "success"
+                                  ? "1px solid rgba(110, 231, 183, 0.28)"
+                                  : googleAdsOAuthReturnNotice.kind ===
+                                      "error"
+                                    ? "1px solid rgba(255, 99, 124, 0.26)"
+                                    : "1px solid rgba(33, 223, 243, 0.24)",
+                              borderRadius: 10,
+                              background:
+                                googleAdsOAuthReturnNotice.kind ===
+                                "success"
+                                  ? "rgba(110, 231, 183, 0.09)"
+                                  : googleAdsOAuthReturnNotice.kind ===
+                                      "error"
+                                    ? "rgba(255, 99, 124, 0.08)"
+                                    : "rgba(33, 223, 243, 0.08)",
+                              padding: "9px 10px",
+                              fontSize: 10,
+                              lineHeight: 1.55,
+                              color:
+                                googleAdsOAuthReturnNotice.kind ===
+                                "success"
+                                  ? "#a7f3d0"
+                                  : googleAdsOAuthReturnNotice.kind ===
+                                      "error"
+                                    ? "#ffb0bd"
+                                    : "#9beef8",
+                            }}
+                          >
+                            {googleAdsOAuthReturnNotice.message}
+                          </div>
+                        ) : null}
+
+                        {selectedAdvertiserGoogleConnections.length > 0 ? (
+                          <div
+                            style={{
+                              marginTop: 12,
+                              display: "grid",
+                              gap: 6,
+                            }}
+                          >
+                            {selectedAdvertiserGoogleConnections.map(
+                              (connection) => (
+                                <div
+                                  key={connection.id}
+                                  style={{
+                                    border:
+                                      "1px solid rgba(255, 255, 255, 0.09)",
+                                    borderRadius: 10,
+                                    background: "rgba(33, 27, 68, 0.58)",
+                                    padding: "8px 9px",
+                                    fontSize: 10,
+                                    lineHeight: 1.5,
+                                    color: "#d7d5ec",
+                                  }}
+                                >
+                                  {connection.external_account_name ||
+                                    connection.external_account_id}
+                                  <br />
+                                  {connection.external_account_id}
+                                </div>
+                              ),
+                            )}
+                          </div>
+                        ) : null}
+
+                        {canManageSelectedAdvertiserMediaConnections ? (
+                          <>
+                            <label
+                              style={{
+                                display: "block",
+                                marginTop: 12,
+                                fontSize: 10,
+                                fontWeight: 800,
+                                color: "#bbb8d4",
+                              }}
+                            >
+                              Google Ads 고객 ID
+                            </label>
+
+                            <input
+                              value={googleAdsTargetCustomerIdInput}
+                              onChange={(e) =>
+                                setGoogleAdsTargetCustomerIdInput(
+                                  e.target.value,
+                                )
+                              }
+                              placeholder="예: 123-456-7890"
+                              disabled={startingGoogleAdsOAuth}
+                              style={{
+                                width: "100%",
+                                marginTop: 6,
+                                border:
+                                  "1px solid rgba(255, 255, 255, 0.13)",
+                                borderRadius: 11,
+                                background: "rgba(33, 27, 68, 0.70)",
+                                padding: "10px 11px",
+                                fontSize: 12,
+                                color: "#f7f7ff",
+                                outline: "none",
+                              }}
+                            />
+
+                            <label
+                              style={{
+                                display: "block",
+                                marginTop: 10,
+                                fontSize: 10,
+                                fontWeight: 800,
+                                color: "#bbb8d4",
+                              }}
+                            >
+                              MCC / Login Customer ID · 선택
+                            </label>
+
+                            <input
+                              value={googleAdsLoginCustomerIdInput}
+                              onChange={(e) =>
+                                setGoogleAdsLoginCustomerIdInput(
+                                  e.target.value,
+                                )
+                              }
+                              placeholder="필요한 경우에만 입력"
+                              disabled={startingGoogleAdsOAuth}
+                              style={{
+                                width: "100%",
+                                marginTop: 6,
+                                border:
+                                  "1px solid rgba(255, 255, 255, 0.13)",
+                                borderRadius: 11,
+                                background: "rgba(33, 27, 68, 0.70)",
+                                padding: "10px 11px",
+                                fontSize: 12,
+                                color: "#f7f7ff",
+                                outline: "none",
+                              }}
+                            />
+
+                            <button
+                              type="button"
+                              onClick={startGoogleAdsOAuth}
+                              disabled={startingGoogleAdsOAuth}
+                              style={{
+                                width: "100%",
+                                marginTop: 12,
+                                border:
+                                  "1px solid rgba(117, 227, 255, 0.25)",
+                                borderRadius: 11,
+                                background:
+                                  "linear-gradient(135deg, #21dff3 0%, #5f72ff 52%, #7c5cff 100%)",
+                                padding: "10px 12px",
+                                fontSize: 12,
+                                fontWeight: 900,
+                                color: "#ffffff",
+                                cursor: startingGoogleAdsOAuth
+                                  ? "wait"
+                                  : "pointer",
+                                opacity: startingGoogleAdsOAuth ? 0.72 : 1,
+                              }}
+                            >
+                              {startingGoogleAdsOAuth
+                                ? "Google 연결 준비 중..."
+                                : "Google Ads 연결"}
+                            </button>
+
+                            {googleAdsOAuthStartError ? (
+                              <div
+                                style={{
+                                  marginTop: 9,
+                                  fontSize: 10,
+                                  lineHeight: 1.5,
+                                  color: "#ffb0bd",
+                                }}
+                              >
+                                {googleAdsOAuthStartError}
+                              </div>
+                            ) : null}
+
+                            <div
+                              style={{
+                                marginTop: 9,
+                                fontSize: 9,
+                                lineHeight: 1.5,
+                                color: "#8f8bad",
+                              }}
+                            >
+                              비밀번호나 OAuth 토큰은 이 화면에 입력하지
+                              않습니다.
+                            </div>
+                          </>
+                        ) : (
+                          <div
+                            style={{
+                              marginTop: 14,
+                              border:
+                                "1px solid rgba(255, 255, 255, 0.09)",
+                              borderRadius: 10,
+                              background: "rgba(33, 27, 68, 0.58)",
+                              padding: "10px 11px",
+                              fontSize: 10,
+                              lineHeight: 1.5,
+                              color: "#bbb8d4",
+                            }}
+                          >
+                            현재 계정은 매체 연결 상태를 조회할 수 있지만
+                            Google Ads 연결을 변경할 권한은 없습니다.
+                          </div>
+                        )}
+                      </div>
+
+                      <div
+                        style={{
+                          position: "relative",
+                          overflow: "hidden",
+                          border: "1px solid rgba(255, 255, 255, 0.12)",
+                          borderRadius: 18,
+                          background: "rgba(57, 43, 112, 0.88)",
+                          padding: 16,
+                          minHeight: 278,
+                        }}
+                      >
+                        <div
+                          style={{
+                            position: "absolute",
+                            top: 0,
+                            left: 0,
+                            width: 96,
+                            height: 2,
+                            background:
+                              "linear-gradient(90deg, #21dff3 0%, #7c5cff 100%)",
+                            opacity: 0.72,
+                          }}
+                        />
+
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "flex-start",
+                            justifyContent: "space-between",
+                            gap: 10,
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 14,
+                              fontWeight: 900,
+                              color: "#f7f7ff",
+                            }}
+                          >
+                            META ADS
+                          </div>
+
+                          <span
+                            style={{
+                              flexShrink: 0,
+                              borderRadius: 999,
+                              border:
+                                "1px solid rgba(255, 255, 255, 0.12)",
+                              background: "rgba(255, 255, 255, 0.05)",
+                              padding: "4px 8px",
+                              fontSize: 10,
+                              fontWeight: 900,
+                              color: "#bbb8d4",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            준비 중
+                          </span>
+                        </div>
+
+                        <div
+                          style={{
+                            marginTop: 14,
+                            fontSize: 11,
+                            lineHeight: 1.65,
+                            color: "#bbb8d4",
+                          }}
+                        >
+                          Meta Ads 연결은 다음 provider 단계에서
+                          활성화합니다.
+                        </div>
+
+                        {selectedAdvertiserMetaConnections.length > 0 ? (
+                          <div
+                            style={{
+                              marginTop: 12,
+                              border:
+                                "1px solid rgba(255, 255, 255, 0.09)",
+                              borderRadius: 10,
+                              background: "rgba(33, 27, 68, 0.58)",
+                              padding: "10px 11px",
+                              fontSize: 10,
+                              lineHeight: 1.5,
+                              color: "#bbb8d4",
+                            }}
+                          >
+                            DB 연결 기록:{" "}
+                            {selectedAdvertiserMetaConnections.length}개
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
                   </>
                 )}
