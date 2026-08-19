@@ -204,6 +204,7 @@ export function buildGoogleAdsOAuthCallbackReturnUrl(
   input:
     | Readonly<{
         outcome: "success";
+        workspaceId: string;
         advertiserId: string;
         connectionId: string;
       }>
@@ -218,6 +219,13 @@ export function buildGoogleAdsOAuthCallbackReturnUrl(
     url.searchParams.set(
       "google_ads_oauth",
       "success",
+    );
+    url.searchParams.set(
+      "workspace_id",
+      normalizeRequiredContextString(
+        input.workspaceId,
+        "workspaceId",
+      ),
     );
     url.searchParams.set(
       "advertiser_id",

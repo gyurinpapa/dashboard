@@ -208,6 +208,8 @@ export async function GET(
         request.url,
         {
           outcome: "success",
+          workspaceId:
+            access.workspaceId,
           advertiserId:
             completed.advertiserId,
           connectionId:

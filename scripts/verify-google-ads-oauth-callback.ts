@@ -684,6 +684,8 @@ async function main() {
             "https://etrylue.com/api/media-connections/google-ads/oauth/callback?code=secret-code",
             {
               outcome: "success",
+              workspaceId:
+                "workspace-return-1",
               advertiserId:
                 "advertiser-1",
               connectionId:
@@ -705,6 +707,12 @@ async function main() {
           "google_ads_oauth",
         ),
         "success",
+      );
+      assert.equal(
+        success.searchParams.get(
+          "workspace_id",
+        ),
+        "workspace-return-1",
       );
       assert.equal(
         success.searchParams.get(
@@ -750,6 +758,12 @@ async function main() {
           "google_ads_oauth",
         ),
         "error",
+      );
+      assert.equal(
+        failure.searchParams.get(
+          "workspace_id",
+        ),
+        null,
       );
       assert.equal(
         failure.searchParams.get(
