@@ -6,6 +6,9 @@ import {
 const NAVER_SEARCH_ADS_PROVIDER =
   "naver_searchad" as const;
 
+const GOOGLE_ADS_PROVIDER =
+  "google_ads" as const;
+
 const NAVER_AUTHORITATIVE_ROW_KEY_NAMESPACE =
   "naver_searchad_authoritative_v1" as const;
 
@@ -138,17 +141,31 @@ export function buildMediaSyncStagingRowKey(
 
   if (
     provider !==
-    NAVER_SEARCH_ADS_PROVIDER
+      NAVER_SEARCH_ADS_PROVIDER &&
+    provider !==
+      GOOGLE_ADS_PROVIDER
   ) {
     throw new MediaSyncStagingRowIdentityError(
       "UNSUPPORTED_PROVIDER",
-      "Only Naver Search Ads staging row identity is supported at this stage.",
+      "Only Naver Search Ads and Google Ads staging row identity is supported at this stage.",
     );
   }
 
   assertMatchingDataLevel(
     row,
   );
+
+  if (
+    provider ===
+      GOOGLE_ADS_PROVIDER &&
+    row.row_level !==
+      "keyword"
+  ) {
+    throw new MediaSyncStagingRowIdentityError(
+      "UNSUPPORTED_ROW_LEVEL",
+      "Only Google Ads keyword rows can create staging identity at this stage.",
+    );
+  }
 
   const externalAccountId =
     normalizeRequiredString(

@@ -16,6 +16,12 @@ const APPEND_MEDIA_SYNC_STAGING_BATCH_RPC =
 const NAVER_SEARCH_ADS_PROVIDER =
   "naver_searchad" as const;
 
+const GOOGLE_ADS_PROVIDER =
+  "google_ads" as const;
+
+const GOOGLE_ADS_KEYWORD_ROW_LEVEL_REASON =
+  "google_ads_keyword_daily_stats" as const;
+
 const PROCESSING_STATUS =
   "processing" as const;
 
@@ -482,11 +488,13 @@ function validateJob(
 
   if (
     value.provider !==
-    NAVER_SEARCH_ADS_PROVIDER
+      NAVER_SEARCH_ADS_PROVIDER &&
+    value.provider !==
+      GOOGLE_ADS_PROVIDER
   ) {
     throw new MediaSyncStagingRepositoryError(
       "UNSUPPORTED_PROVIDER",
-      "Only Naver Search Ads staging rows are supported at this stage.",
+      "Only Naver Search Ads and Google Ads staging rows are supported at this stage.",
     );
   }
 
@@ -648,6 +656,22 @@ function validateCanonicalRow(input: {
     throw new MediaSyncStagingRepositoryError(
       "INVALID_INPUT",
       `${rowPath} row_level and data_level must match.`,
+    );
+  }
+
+  if (
+    typedRow.provider ===
+      GOOGLE_ADS_PROVIDER &&
+    (
+      typedRow.row_level !==
+        "keyword" ||
+      typedRow.row_level_reason !==
+        GOOGLE_ADS_KEYWORD_ROW_LEVEL_REASON
+    )
+  ) {
+    throw new MediaSyncStagingRepositoryError(
+      "INVALID_INPUT",
+      `${rowPath} must use the Google Ads keyword-only staging contract.`,
     );
   }
 

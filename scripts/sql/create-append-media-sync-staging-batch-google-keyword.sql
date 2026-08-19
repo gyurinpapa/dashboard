@@ -1,4 +1,12 @@
--- READ-ONLY SNAPSHOT FROM pg_get_functiondef. DO NOT EXECUTE.
+-- Etrylue Performance
+-- Google Ads H-4O corrective v2: restore grain-neutral append staging RPC
+-- Production baseline pg_get_functiondef MD5: d90ce68348f56334be61a3c943501ceb
+-- Expected post-mutation pg_get_functiondef MD5: 1e863518f6a472a6cd940fd8df998e38
+-- Keep provider allowlist: naver_searchad + google_ads.
+-- Keep Google keyword-only enforcement in the TypeScript staging boundary.
+-- IMPORTANT: Production mutation SQL. Execute only after a fresh read-only drift gate.
+
+begin;
 
 CREATE OR REPLACE FUNCTION public.append_media_sync_staging_batch(p_payload jsonb)
  RETURNS TABLE(submitted_rows bigint, inserted_rows bigint, duplicate_rows bigint, first_row_index bigint, last_row_index bigint)
@@ -744,4 +752,11 @@ exception
       errcode = 'P0001',
       message = 'MSS_INVALID_INPUT';
 end;
-$function$
+$function$;
+
+revoke all on function public.append_media_sync_staging_batch(jsonb) from public;
+revoke all on function public.append_media_sync_staging_batch(jsonb) from anon;
+revoke all on function public.append_media_sync_staging_batch(jsonb) from authenticated;
+grant execute on function public.append_media_sync_staging_batch(jsonb) to service_role;
+
+commit;
