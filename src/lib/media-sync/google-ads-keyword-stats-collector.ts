@@ -1255,6 +1255,390 @@ function toCanonicalRows(
   return canonicalRows;
 }
 
+export const GOOGLE_ADS_KEYWORD_STATS_PAGE_SIZE =
+  10_000;
+
+export type GoogleAdsKeywordStatsPageCursor =
+  Readonly<{
+    version: 1;
+    pageIndex: number;
+    page: string;
+  }>;
+
+export type GoogleAdsKeywordStatsPageCollectorInput =
+  GoogleAdsKeywordStatsCollectorInput &
+    Readonly<{
+      cursor?: unknown;
+    }>;
+
+export type GoogleAdsKeywordStatsPageCollectionResult =
+  Readonly<{
+    rows:
+      readonly EtrylueNormalizedMediaRow[];
+    status:
+      | "partial"
+      | "completed";
+    isComplete: boolean;
+    cursor:
+      GoogleAdsKeywordStatsPageCursor |
+      null;
+    pageCount: 1;
+    completedPageCount: number;
+    requestCount: number;
+    retryCount: number;
+  }>;
+
+type NormalizedGoogleAdsKeywordStatsPageCursor = {
+  pageIndex: number;
+  page: string | null;
+};
+
+function normalizeGoogleAdsKeywordStatsPageCursor(
+  value: unknown,
+): NormalizedGoogleAdsKeywordStatsPageCursor {
+  if (
+    value === undefined ||
+    value === null
+  ) {
+    return {
+      pageIndex: 0,
+      page: null,
+    };
+  }
+
+  if (!isPlainObject(value)) {
+    throw new GoogleAdsKeywordStatsCollectorError(
+      "INVALID_INPUT",
+      "Google Ads keyword page cursor must be an object.",
+    );
+  }
+
+  if (value.version !== 1) {
+    throw new GoogleAdsKeywordStatsCollectorError(
+      "INVALID_INPUT",
+      "Google Ads keyword page cursor version is invalid.",
+    );
+  }
+
+  if (
+    typeof value.pageIndex !== "number" ||
+    !Number.isSafeInteger(
+      value.pageIndex,
+    ) ||
+    value.pageIndex < 1
+  ) {
+    throw new GoogleAdsKeywordStatsCollectorError(
+      "INVALID_INPUT",
+      "Google Ads keyword page cursor index is invalid.",
+    );
+  }
+
+  const page =
+    normalizeRequiredString(
+      value.page,
+      "cursor.page",
+      MAX_PAGE_TOKEN_LENGTH,
+    );
+
+  return {
+    pageIndex:
+      value.pageIndex,
+    page,
+  };
+}
+
+/**
+ * Executes exactly one GoogleAdsService.Search page.
+ *
+ * This is additive to the existing full-pagination collector.
+ * collectGoogleAdsKeywordStats() keeps its established behavior.
+ *
+ * The returned cursor is an opaque resume boundary for the next page.
+ * The cursor intentionally uses the key `page` rather than persisting
+ * OAuth/developer credential material.
+ */
+export async function collectGoogleAdsKeywordStatsPage(
+  input:
+    GoogleAdsKeywordStatsPageCollectorInput,
+  dependencies:
+    GoogleAdsKeywordStatsCollectorDependencies = {},
+  options:
+    GoogleAdsKeywordStatsCollectorOptions = {},
+): Promise<
+  GoogleAdsKeywordStatsPageCollectionResult
+> {
+  if (
+    !input ||
+    typeof input !== "object"
+  ) {
+    throw new GoogleAdsKeywordStatsCollectorError(
+      "INVALID_INPUT",
+      "Google Ads keyword page collector input is required.",
+    );
+  }
+
+  const {
+    targetCustomerId,
+  } =
+    normalizeGoogleCustomerIds(
+      input,
+    );
+
+  /*
+   * Preserve the existing request validation contract before any fetch.
+   */
+  buildGoogleAdsKeywordStatsSearchRequest(
+    input,
+  );
+
+  const requestTimeoutMs =
+    normalizeBoundedInteger(
+      options.requestTimeoutMs ??
+        GOOGLE_ADS_KEYWORD_STATS_REQUEST_TIMEOUT_MS,
+      "requestTimeoutMs",
+      1,
+      60_000,
+    );
+
+  const maxRetries =
+    normalizeBoundedInteger(
+      options.maxRetries ??
+        GOOGLE_ADS_KEYWORD_STATS_MAX_RETRIES,
+      "maxRetries",
+      0,
+      10,
+    );
+
+  const maxPages =
+    normalizeBoundedInteger(
+      options.maxPages ??
+        GOOGLE_ADS_KEYWORD_STATS_MAX_PAGES,
+      "maxPages",
+      1,
+      10_000,
+    );
+
+  const cursorState =
+    normalizeGoogleAdsKeywordStatsPageCursor(
+      input.cursor,
+    );
+
+  if (
+    cursorState.pageIndex >=
+    maxPages
+  ) {
+    throw new GoogleAdsKeywordStatsCollectorError(
+      "PAGE_LIMIT_EXCEEDED",
+      "Google Ads keyword search exceeded the bounded page limit.",
+    );
+  }
+
+  const fetchImpl =
+    dependencies.fetchImpl ??
+    fetch;
+
+  const sleepImpl =
+    dependencies.sleepImpl ??
+    defaultSleep;
+
+  const randomImpl =
+    dependencies.randomImpl ??
+    Math.random;
+
+  const request =
+    buildGoogleAdsKeywordStatsSearchRequest(
+      {
+        accessToken:
+          input.accessToken,
+        developerToken:
+          input.developerToken,
+        targetCustomerId:
+          input.targetCustomerId,
+        loginCustomerId:
+          input.loginCustomerId,
+        startDate:
+          input.startDate,
+        endDate:
+          input.endDate,
+        pageToken:
+          cursorState.page,
+      },
+    );
+
+  let page:
+    ParsedSearchResponse |
+    null = null;
+
+  let requestCount =
+    0;
+
+  let retryCount =
+    0;
+
+  let pageRetryCount =
+    0;
+
+  for (;;) {
+    requestCount += 1;
+
+    try {
+      page =
+        await executeSearchPage(
+          request,
+          fetchImpl,
+          requestTimeoutMs,
+        );
+
+      break;
+    } catch (error) {
+      if (
+        !(
+          error instanceof
+          GoogleAdsKeywordStatsCollectorError
+        )
+      ) {
+        throw error;
+      }
+
+      if (
+        !isRetryableFailure(
+          error,
+        )
+      ) {
+        throw error;
+      }
+
+      if (
+        pageRetryCount >=
+        maxRetries
+      ) {
+        throw new GoogleAdsKeywordStatsCollectorError(
+          "RETRY_EXHAUSTED",
+          "Google Ads keyword search retry limit was reached.",
+          {
+            status:
+              error.status,
+            requestId:
+              error.requestId,
+            googleStatus:
+              error.googleStatus,
+            retryCount,
+          },
+        );
+      }
+
+      const delayMs =
+        calculateRetryDelayMs(
+          pageRetryCount,
+          null,
+          randomImpl,
+        );
+
+      pageRetryCount +=
+        1;
+
+      retryCount +=
+        1;
+
+      try {
+        await sleepImpl(
+          delayMs,
+        );
+      } catch {
+        throw new GoogleAdsKeywordStatsCollectorError(
+          "REQUEST_FAILED",
+          "Google Ads keyword search retry delay failed.",
+          {
+            retryCount,
+          },
+        );
+      }
+    }
+  }
+
+  if (!page) {
+    throw new GoogleAdsKeywordStatsCollectorError(
+      "INVALID_RESPONSE",
+      "Google Ads keyword search page was not produced.",
+    );
+  }
+
+  const completedPageCount =
+    cursorState.pageIndex +
+    1;
+
+  if (
+    page.nextPageToken &&
+    page.nextPageToken ===
+      cursorState.page
+  ) {
+    throw new GoogleAdsKeywordStatsCollectorError(
+      "PAGINATION_LOOP",
+      "Google Ads keyword search repeated the current page token.",
+    );
+  }
+
+  if (
+    page.nextPageToken &&
+    completedPageCount >=
+      maxPages
+  ) {
+    throw new GoogleAdsKeywordStatsCollectorError(
+      "PAGE_LIMIT_EXCEEDED",
+      "Google Ads keyword search exceeded the bounded page limit.",
+    );
+  }
+
+  const canonicalRows =
+    toCanonicalRows(
+      targetCustomerId,
+      page.rows,
+    );
+
+  if (
+    canonicalRows.length >
+    GOOGLE_ADS_KEYWORD_STATS_PAGE_SIZE
+  ) {
+    throw new GoogleAdsKeywordStatsCollectorError(
+      "INVALID_RESPONSE",
+      "Google Ads keyword search page exceeded the fixed page row limit.",
+    );
+  }
+
+  const cursor:
+    GoogleAdsKeywordStatsPageCursor |
+    null =
+    page.nextPageToken
+      ? Object.freeze({
+          version:
+            1 as const,
+          pageIndex:
+            completedPageCount,
+          page:
+            page.nextPageToken,
+        })
+      : null;
+
+  return Object.freeze({
+    rows:
+      Object.freeze(
+        canonicalRows,
+      ),
+    status:
+      cursor
+        ? "partial"
+        : "completed",
+    isComplete:
+      cursor === null,
+    cursor,
+    pageCount:
+      1 as const,
+    completedPageCount,
+    requestCount,
+    retryCount,
+  });
+}
+
 export async function collectGoogleAdsKeywordStats(
   input:
     GoogleAdsKeywordStatsCollectorInput,
