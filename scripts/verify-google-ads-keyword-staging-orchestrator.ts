@@ -888,6 +888,156 @@ async function main():
     "PASS: replay of an uncheckpointed page preserves row boundary and resume cursor",
   );
 
+  let pageTokenErrorFetchCalls =
+    0;
+
+  let pageTokenErrorSleepCalls =
+    0;
+
+  let pageTokenErrorStagingCalls =
+    0;
+
+  for (
+    const requestError of [
+      "EXPIRED_PAGE_TOKEN",
+      "INVALID_PAGE_TOKEN",
+    ] as const
+  ) {
+    await assert.rejects(
+      () =>
+        runGoogleAdsKeywordStagingOrchestrator(
+          {
+            job:
+              makeJob(
+                1,
+              ),
+            accessToken:
+              ACCESS_TOKEN,
+            developerToken:
+              DEVELOPER_TOKEN,
+            loginCustomerId:
+              LOGIN_CUSTOMER_ID,
+            dateWindowIndex:
+              DATE_WINDOW_INDEX,
+            cursor:
+              resumeCursor,
+            collectorDependencies: {
+              fetchImpl:
+                async (
+                  _request,
+                  init,
+                ) => {
+                  pageTokenErrorFetchCalls +=
+                    1;
+
+                  const body =
+                    readRequestBody(
+                      init,
+                    );
+
+                  assert.equal(
+                    body.pageToken,
+                    "page-2",
+                  );
+
+                  return new Response(
+                    JSON.stringify({
+                      error: {
+                        code:
+                          400,
+                        message:
+                          "Fixture Google Ads page token error",
+                        status:
+                          "INVALID_ARGUMENT",
+                        details: [
+                          {
+                            "@type":
+                              "type.googleapis.com/google.ads.googleads.v25.errors.GoogleAdsFailure",
+                            errors: [
+                              {
+                                errorCode: {
+                                  requestError,
+                                },
+                              },
+                            ],
+                          },
+                        ],
+                      },
+                    }),
+                    {
+                      status:
+                        400,
+                      headers: {
+                        "Content-Type":
+                          "application/json",
+                        "request-id":
+                          `page-token-${requestError.toLowerCase()}-request`,
+                      },
+                    },
+                  );
+                },
+              sleepImpl:
+                async () => {
+                  pageTokenErrorSleepCalls +=
+                    1;
+                },
+              randomImpl:
+                () => 0,
+            },
+            collectorOptions: {
+              maxRetries:
+                3,
+            },
+            stagingRepositoryDependencies: {
+              invokeRpc:
+                async () => {
+                  pageTokenErrorStagingCalls +=
+                    1;
+
+                  return {
+                    data:
+                      null,
+                    error:
+                      null,
+                  };
+                },
+            },
+          },
+        ),
+      (
+        error:
+          unknown,
+      ) =>
+        error instanceof
+          GoogleAdsKeywordStatsCollectorError &&
+        error.code ===
+          "PAGE_TOKEN_ERROR" &&
+        error.googleRequestError ===
+          requestError &&
+        error.retryCount ===
+          0,
+    );
+  }
+
+  assert.equal(
+    pageTokenErrorFetchCalls,
+    2,
+  );
+
+  assert.equal(
+    pageTokenErrorSleepCalls,
+    0,
+  );
+
+  assert.equal(
+    pageTokenErrorStagingCalls,
+    0,
+  );
+
+  console.log(
+    "PASS: expired/invalid Google page tokens fail closed before staging or checkpoint advance",
+  );
+
   let pageLimitFetchCalls =
     0;
 
@@ -1166,11 +1316,11 @@ async function main():
   );
 
   console.log(
-    `INJECTED_GOOGLE_FETCH_CALLS=${primaryFetchCalls + retryFetchCalls + pageLimitFetchCalls + failureFetchCalls}`,
+    `INJECTED_GOOGLE_FETCH_CALLS=${primaryFetchCalls + retryFetchCalls + pageTokenErrorFetchCalls + pageLimitFetchCalls + failureFetchCalls}`,
   );
 
   console.log(
-    `INJECTED_STAGING_RPC_CALLS=${primaryStagingCalls.length + retryStagingCalls.length + failureStagingCalls.length}`,
+    `INJECTED_STAGING_RPC_CALLS=${primaryStagingCalls.length + retryStagingCalls.length + pageTokenErrorStagingCalls + failureStagingCalls.length}`,
   );
 
   console.log(

@@ -111,6 +111,9 @@ function response(
     nextPageToken?: string;
     status?: number;
     googleStatus?: string;
+    requestError?:
+      | "EXPIRED_PAGE_TOKEN"
+      | "INVALID_PAGE_TOKEN";
     requestId?: string;
   } = {},
 ): Response {
@@ -140,6 +143,24 @@ function response(
             status:
               input.googleStatus ??
               "UNKNOWN",
+            ...(input.requestError
+              ? {
+                  details: [
+                    {
+                      "@type":
+                        "type.googleapis.com/google.ads.googleads.v25.errors.GoogleAdsFailure",
+                      errors: [
+                        {
+                          errorCode: {
+                            requestError:
+                              input.requestError,
+                          },
+                        },
+                      ],
+                    },
+                  ],
+                }
+              : {}),
           },
         };
 
@@ -797,6 +818,157 @@ async function main(): Promise<void> {
   }
 
   {
+    for (
+      const requestError of [
+        "EXPIRED_PAGE_TOKEN",
+        "INVALID_PAGE_TOKEN",
+      ] as const
+    ) {
+      const requestBodies:
+        Array<
+          Record<
+            string,
+            unknown
+          >
+        > = [];
+
+      let fetchCalls = 0;
+      let sleepCalls = 0;
+
+      const requestId =
+        `page-token-${requestError.toLowerCase()}-request`;
+
+      const error =
+        await expectError(
+          () =>
+            collectGoogleAdsKeywordStats(
+              BASE_INPUT,
+              {
+                fetchImpl:
+                  async (
+                    _input,
+                    init,
+                  ) => {
+                    fetchCalls +=
+                      1;
+
+                    const body =
+                      JSON.parse(
+                        String(
+                          init?.body,
+                        ),
+                      ) as Record<
+                        string,
+                        unknown
+                      >;
+
+                    requestBodies.push(
+                      body,
+                    );
+
+                    if (
+                      fetchCalls ===
+                      1
+                    ) {
+                      return response({
+                        rows: [
+                          makeRow({
+                            date:
+                              "2026-05-01",
+                          }),
+                        ],
+                        nextPageToken:
+                          "page-token-under-test",
+                      });
+                    }
+
+                    return response({
+                      status:
+                        400,
+                      googleStatus:
+                        "INVALID_ARGUMENT",
+                      requestError,
+                      requestId,
+                    });
+                  },
+                sleepImpl:
+                  async () => {
+                    sleepCalls +=
+                      1;
+                  },
+                randomImpl:
+                  () => 0,
+              },
+              {
+                requestTimeoutMs:
+                  1_000,
+                maxRetries:
+                  3,
+              },
+            ),
+          "PAGE_TOKEN_ERROR",
+        );
+
+      assert.equal(
+        fetchCalls,
+        2,
+      );
+
+      assert.equal(
+        sleepCalls,
+        0,
+      );
+
+      assert.equal(
+        requestBodies[0]
+          ?.pageToken,
+        undefined,
+      );
+
+      assert.equal(
+        requestBodies[1]
+          ?.pageToken,
+        "page-token-under-test",
+      );
+
+      assert.equal(
+        error.status,
+        400,
+      );
+
+      assert.equal(
+        error.googleStatus,
+        "INVALID_ARGUMENT",
+      );
+
+      assert.equal(
+        error.googleRequestError,
+        requestError,
+      );
+
+      assert.equal(
+        error.requestId,
+        requestId,
+      );
+
+      assert.equal(
+        error.retryCount,
+        0,
+      );
+
+      assertNoSecretLeak(
+        error,
+      );
+
+      console.log(
+        `PASS: ${requestError} fails closed without retry`,
+      );
+
+      passed += 1;
+    }
+  }
+
+  {
     let fetchCalls = 0;
     const sleepDelays:
       number[] = [];
@@ -1050,11 +1222,11 @@ async function main(): Promise<void> {
 
   assert.equal(
     passed,
-    11,
+    13,
   );
 
   console.log(
-    `Google Ads keyword stats collector fixture: ${passed}/11 PASS`,
+    `Google Ads keyword stats collector fixture: ${passed}/13 PASS`,
   );
 
   console.log(

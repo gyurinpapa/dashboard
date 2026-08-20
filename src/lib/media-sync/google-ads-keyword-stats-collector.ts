@@ -51,11 +51,16 @@ const RETRYABLE_GOOGLE_STATUSES =
     "ABORTED",
   ]);
 
+export type GoogleAdsKeywordStatsPageTokenErrorReason =
+  | "EXPIRED_PAGE_TOKEN"
+  | "INVALID_PAGE_TOKEN";
+
 export type GoogleAdsKeywordStatsCollectorErrorCode =
   | "INVALID_INPUT"
   | "REQUEST_TIMEOUT"
   | "REQUEST_FAILED"
   | "API_HTTP_ERROR"
+  | "PAGE_TOKEN_ERROR"
   | "INVALID_RESPONSE"
   | "PAGINATION_LOOP"
   | "PAGE_LIMIT_EXCEEDED"
@@ -68,6 +73,9 @@ export class GoogleAdsKeywordStatsCollectorError extends Error {
   readonly status: number | null;
   readonly requestId: string | null;
   readonly googleStatus: string | null;
+  readonly googleRequestError:
+    GoogleAdsKeywordStatsPageTokenErrorReason |
+    null;
   readonly retryCount: number;
 
   constructor(
@@ -78,6 +86,9 @@ export class GoogleAdsKeywordStatsCollectorError extends Error {
       status?: number | null;
       requestId?: string | null;
       googleStatus?: string | null;
+      googleRequestError?:
+        GoogleAdsKeywordStatsPageTokenErrorReason |
+        null;
       retryCount?: number;
     },
   ) {
@@ -93,6 +104,8 @@ export class GoogleAdsKeywordStatsCollectorError extends Error {
       options?.requestId ?? null;
     this.googleStatus =
       options?.googleStatus ?? null;
+    this.googleRequestError =
+      options?.googleRequestError ?? null;
     this.retryCount =
       options?.retryCount ?? 0;
   }
@@ -696,6 +709,73 @@ function parseGoogleErrorStatus(
   return status || null;
 }
 
+function parseGooglePageTokenRequestError(
+  value: unknown,
+):
+  GoogleAdsKeywordStatsPageTokenErrorReason |
+  null {
+  if (
+    !isPlainObject(value) ||
+    !isPlainObject(value.error) ||
+    !Array.isArray(
+      value.error.details,
+    )
+  ) {
+    return null;
+  }
+
+  for (
+    const detail of
+    value.error.details
+  ) {
+    if (
+      !isPlainObject(detail) ||
+      !Array.isArray(
+        detail.errors,
+      )
+    ) {
+      continue;
+    }
+
+    for (
+      const googleError of
+      detail.errors
+    ) {
+      if (
+        !isPlainObject(
+          googleError,
+        ) ||
+        !isPlainObject(
+          googleError.errorCode,
+        ) ||
+        typeof googleError
+          .errorCode
+          .requestError !==
+          "string"
+      ) {
+        continue;
+      }
+
+      const requestError =
+        googleError
+          .errorCode
+          .requestError
+          .trim();
+
+      if (
+        requestError ===
+          "EXPIRED_PAGE_TOKEN" ||
+        requestError ===
+          "INVALID_PAGE_TOKEN"
+      ) {
+        return requestError;
+      }
+    }
+  }
+
+  return null;
+}
+
 function parseRetryAfterMs(
   value: string | null,
 ): number | null {
@@ -730,6 +810,13 @@ function isRetryableFailure(
   error:
     GoogleAdsKeywordStatsCollectorError,
 ): boolean {
+  if (
+    error.code ===
+      "PAGE_TOKEN_ERROR"
+  ) {
+    return false;
+  }
+
   if (
     error.code ===
       "REQUEST_TIMEOUT" ||
@@ -1058,6 +1145,30 @@ async function executeSearchPage(
         }
       }
 
+      const googleStatus =
+        parseGoogleErrorStatus(
+          errorBody,
+        );
+
+      const googleRequestError =
+        parseGooglePageTokenRequestError(
+          errorBody,
+        );
+
+      if (googleRequestError) {
+        throw new GoogleAdsKeywordStatsCollectorError(
+          "PAGE_TOKEN_ERROR",
+          "Google Ads keyword search page token is expired or invalid.",
+          {
+            status:
+              response.status,
+            requestId,
+            googleStatus,
+            googleRequestError,
+          },
+        );
+      }
+
       throw new GoogleAdsKeywordStatsCollectorError(
         "API_HTTP_ERROR",
         "Google Ads keyword search returned an unsuccessful response.",
@@ -1065,10 +1176,7 @@ async function executeSearchPage(
           status:
             response.status,
           requestId,
-          googleStatus:
-            parseGoogleErrorStatus(
-              errorBody,
-            ),
+          googleStatus,
         },
       );
     }
