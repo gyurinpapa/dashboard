@@ -9,12 +9,18 @@ import {
   MediaSyncWorkerOrchestrationError,
   processNextNaverMediaSyncJob,
 } from "../src/lib/media-sync/media-sync-worker-orchestration-repository";
+import {
+  processNextGoogleAdsMediaSyncJob,
+} from "../src/lib/media-sync/google-ads-media-sync-worker-orchestration-repository";
 
 const WORKER_NAME =
   "media-sync-worker";
 
 const ENABLED_ENV =
   "MEDIA_SYNC_WORKER_ENABLED";
+
+const GOOGLE_ADS_ENABLED_ENV =
+  "MEDIA_SYNC_WORKER_GOOGLE_ADS_ENABLED";
 
 const LOOP_ENV =
   "MEDIA_SYNC_WORKER_LOOP";
@@ -768,7 +774,7 @@ async function processSingleJob(
 ): Promise<boolean> {
   await recoverStaleProcessingJobs(options);
 
-  const result =
+  const naverResult =
     await processNextNaverMediaSyncJob({
       jobTimeoutMs:
         options.jobTimeoutMs,
@@ -797,6 +803,19 @@ async function processSingleJob(
       materializationBatchSize:
         options.materializationBatchSize,
     });
+
+  const result =
+    naverResult ??
+    (
+      readBooleanEnv(
+        GOOGLE_ADS_ENABLED_ENV,
+      )
+        ? await processNextGoogleAdsMediaSyncJob({
+            materializationBatchSize:
+              options.materializationBatchSize,
+          })
+        : null
+    );
 
   if (!result) {
     logNoJob();

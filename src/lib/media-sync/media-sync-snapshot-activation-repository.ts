@@ -13,6 +13,9 @@ const ACTIVATE_MEDIA_SYNC_SNAPSHOT_RPC =
 const NAVER_PROVIDER =
   "naver_searchad" as const;
 
+const GOOGLE_ADS_PROVIDER =
+  "google_ads" as const;
+
 const PROCESSING_STATUS =
   "processing" as const;
 
@@ -240,10 +243,13 @@ function validateJob(
     500,
   );
 
-  if (value.provider !== NAVER_PROVIDER) {
+  if (
+    value.provider !== NAVER_PROVIDER &&
+    value.provider !== GOOGLE_ADS_PROVIDER
+  ) {
     throw new MediaSyncSnapshotActivationError(
       "UNSUPPORTED_PROVIDER",
-      "Only Naver Search Ads snapshot activation is supported at this stage.",
+      "Only Naver Search Ads or Google Ads snapshot activation is supported.",
     );
   }
 

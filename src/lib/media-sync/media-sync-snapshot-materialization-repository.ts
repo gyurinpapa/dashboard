@@ -22,6 +22,9 @@ const COMPLETE_MEDIA_SYNC_SNAPSHOT_MATERIALIZATION_RPC =
 const NAVER_PROVIDER =
   "naver_searchad" as const;
 
+const GOOGLE_ADS_PROVIDER =
+  "google_ads" as const;
+
 const PROCESSING_STATUS =
   "processing" as const;
 
@@ -114,7 +117,9 @@ type MaterializationScope = {
   workspaceId: string;
   advertiserId: string;
   connectionId: string;
-  provider: typeof NAVER_PROVIDER;
+  provider:
+    | typeof NAVER_PROVIDER
+    | typeof GOOGLE_ADS_PROVIDER;
   externalAccountId: string;
   dateFrom: string;
   dateTo: string;
@@ -380,10 +385,13 @@ function validateJob(
     500,
   );
 
-  if (value.provider !== NAVER_PROVIDER) {
+  if (
+    value.provider !== NAVER_PROVIDER &&
+    value.provider !== GOOGLE_ADS_PROVIDER
+  ) {
     throw new MediaSyncSnapshotMaterializationError(
       "UNSUPPORTED_PROVIDER",
-      "Only Naver Search Ads snapshot materialization is supported at this stage.",
+      "Only Naver Search Ads or Google Ads snapshot materialization is supported.",
     );
   }
 
@@ -504,7 +512,10 @@ function buildMaterializationScope(
       input.job.connection_id,
 
     provider:
-      NAVER_PROVIDER,
+      input.job.provider ===
+        GOOGLE_ADS_PROVIDER
+        ? GOOGLE_ADS_PROVIDER
+        : NAVER_PROVIDER,
 
     externalAccountId:
       input.job.external_account_id,

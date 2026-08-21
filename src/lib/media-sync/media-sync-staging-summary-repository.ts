@@ -20,6 +20,9 @@ const NAVER_SEARCH_ADS_COMBINED_VALIDATION_BATCH_SIZE =
 const NAVER_SEARCH_ADS_PROVIDER =
   "naver_searchad" as const;
 
+const GOOGLE_ADS_PROVIDER =
+  "google_ads" as const;
+
 const PROCESSING_STATUS =
   "processing" as const;
 
@@ -343,6 +346,9 @@ function requireBoolean(
 
 function validateJob(
   value: unknown,
+  options: Readonly<{
+    allowGoogleAds?: boolean;
+  }> = {},
 ): asserts value is MediaSyncJobRecord {
   if (!isPlainObject(value)) {
     throw new MediaSyncStagingSummaryError(
@@ -387,13 +393,21 @@ function validateJob(
     500,
   );
 
+  const googleAdsAllowed =
+    options.allowGoogleAds === true &&
+    value.provider ===
+      GOOGLE_ADS_PROVIDER;
+
   if (
     value.provider !==
-    NAVER_SEARCH_ADS_PROVIDER
+      NAVER_SEARCH_ADS_PROVIDER &&
+    !googleAdsAllowed
   ) {
     throw new MediaSyncStagingSummaryError(
       "UNSUPPORTED_PROVIDER",
-      "Only Naver Search Ads staging summaries are supported at this stage.",
+      options.allowGoogleAds === true
+        ? "Only Naver Search Ads or Google Ads staging summaries are supported."
+        : "Only Naver Search Ads staging summaries are supported at this stage.",
     );
   }
 
@@ -1437,7 +1451,13 @@ export async function getMediaSyncStagingSummary(
     );
   }
 
-  validateJob(input.job);
+  validateJob(
+    input.job,
+    {
+      allowGoogleAds:
+        true,
+    },
+  );
 
   const expectedRows =
     normalizeNonNegativeInteger(
