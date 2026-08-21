@@ -631,24 +631,9 @@ async function copyInviteLink() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f7f7f8", padding: 24 }}>
-      <div
-        style={{
-          maxWidth: 1400,
-          margin: "0 auto",
-          display: "flex",
-          flexDirection: "column",
-          gap: 16,
-        }}
-      >
-        <div
-          style={{
-            background: "#fff",
-            border: "1px solid #e5e7eb",
-            borderRadius: 16,
-            padding: 20,
-          }}
-        >
+    <main style={pageShellStyle}>
+      <div style={contentStyle}>
+        <section style={panelStyle}>
           <div
             style={{
               display: "flex",
@@ -659,131 +644,84 @@ async function copyInviteLink() {
             }}
           >
             <div>
-              <div style={{ fontSize: 24, fontWeight: 800, color: "#111827" }}>
+              <div style={{ fontSize: 24, fontWeight: 800, color: TEXT_PRIMARY }}>
                 멤버 관리
               </div>
-              <div style={{ marginTop: 6, fontSize: 14, color: "#6b7280" }}>
+              <div style={{ marginTop: 6, fontSize: 14, color: TEXT_SECONDARY }}>
                 {isTrueMasterViewer
                   ? "true master 기준 전체 workspace 멤버 조회 및 역할/조직 정보 수정"
                   : "현재 workspace 기준 멤버 목록 조회 및 역할/조직 정보 수정"}
               </div>
-              <div style={{ marginTop: 8, fontSize: 13, color: "#6b7280" }}>
-                workspace_id: <b>{workspaceId || "-"}</b>
+              <div style={{ marginTop: 8, fontSize: 13, color: TEXT_SECONDARY }}>
+                workspace_id: <b style={{ color: TEXT_PRIMARY }}>{workspaceId || "-"}</b>
               </div>
-              <div style={{ marginTop: 4, fontSize: 13, color: "#6b7280" }}>
-                내 권한: <b>{me?.role || "-"}</b>
+              <div style={{ marginTop: 4, fontSize: 13, color: TEXT_SECONDARY }}>
+                내 권한: <b style={{ color: TEXT_PRIMARY }}>{me?.role || "-"}</b>
               </div>
               {me?.workspace_name ? (
-                <div style={{ marginTop: 4, fontSize: 13, color: "#6b7280" }}>
-                  기준 workspace: <b>{me.workspace_name}</b>
+                <div style={{ marginTop: 4, fontSize: 13, color: TEXT_SECONDARY }}>
+                  기준 workspace:{" "}
+                  <b style={{ color: TEXT_PRIMARY }}>{me.workspace_name}</b>
                 </div>
               ) : null}
-              <div style={{ marginTop: 4, fontSize: 12, color: "#9ca3af" }}>
-                master는 <b>{ONLY_MASTER_EMAIL}</b> 한 명만 허용됩니다.
+              <div style={{ marginTop: 4, fontSize: 12, color: TEXT_MUTED }}>
+                master는{" "}
+                <b style={{ color: TEXT_SECONDARY }}>{ONLY_MASTER_EMAIL}</b> 한 명만
+                허용됩니다.
               </div>
             </div>
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button
-                onClick={loadMembers}
-                style={{
-                  height: 40,
-                  padding: "0 14px",
-                  borderRadius: 10,
-                  border: "1px solid #d1d5db",
-                  background: "#fff",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  whiteSpace: "nowrap",
-                }}
-              >
+              <button onClick={loadMembers} style={secondaryButtonStyle}>
                 새로고침
               </button>
 
-              <button
-                onClick={goBack}
-                style={{
-                  height: 40,
-                  padding: "0 14px",
-                  borderRadius: 10,
-                  border: "1px solid #f59e0b",
-                  background: "#f59e0b",
-                  color: "#fff",
-                  fontWeight: 800,
-                  cursor: "pointer",
-                  whiteSpace: "nowrap",
-                }}
-              >
+              <button onClick={goBack} style={primaryButtonStyle}>
                 report-builder로 돌아가기
               </button>
             </div>
           </div>
-        </div>
+        </section>
 
         {!!error && (
-          <div
-            style={{
-              background: "#fff1f2",
-              border: "1px solid #fecdd3",
-              color: "#be123c",
-              borderRadius: 12,
-              padding: 14,
-              fontSize: 14,
-              fontWeight: 700,
-            }}
-          >
+          <div style={errorPanelStyle}>
             {error}
           </div>
         )}
 
         {!loading && me && !canAccess && (
-          <div
-            style={{
-              background: "#fff",
-              border: "1px solid #e5e7eb",
-              borderRadius: 16,
-              padding: 24,
-            }}
-          >
-            <div style={{ fontSize: 18, fontWeight: 800, color: "#111827" }}>
+          <section style={panelStyle}>
+            <div style={{ fontSize: 18, fontWeight: 800, color: TEXT_PRIMARY }}>
               접근 권한이 없습니다.
             </div>
-            <div style={{ marginTop: 8, color: "#6b7280", fontSize: 14 }}>
+            <div style={{ marginTop: 8, color: TEXT_SECONDARY, fontSize: 14 }}>
               이 페이지는 master / director만 접근할 수 있습니다.
             </div>
-          </div>
+          </section>
         )}
 
         {loading && (
-          <div
+          <section
             style={{
-              background: "#fff",
-              border: "1px solid #e5e7eb",
-              borderRadius: 16,
+              ...panelStyle,
               padding: 24,
-              color: "#6b7280",
+              color: TEXT_SECONDARY,
               fontWeight: 700,
             }}
           >
             멤버 목록 불러오는 중...
-          </div>
+          </section>
         )}
 
         {!loading && canAccess && (
           <>
-            <div
-              style={{
-                background: "#fff",
-                border: "1px solid #e5e7eb",
-                borderRadius: 16,
-                padding: 20,
-              }}
-            >
-              <div style={{ fontSize: 18, fontWeight: 800, color: "#111827" }}>
+            <section style={panelStyle}>
+              <div style={{ fontSize: 18, fontWeight: 800, color: TEXT_PRIMARY }}>
                 멤버 초대 (최소 UI 초안)
               </div>
-              <div style={{ marginTop: 6, fontSize: 13, color: "#6b7280" }}>
-                초대 링크를 생성합니다. 메일 자동 발송은 다음 단계에서 연결하고, 지금은 링크를 복사해 전달합니다.
+              <div style={{ marginTop: 6, fontSize: 13, color: TEXT_SECONDARY }}>
+                초대 링크를 생성합니다. 메일 자동 발송은 다음 단계에서 연결하고,
+                지금은 링크를 복사해 전달합니다.
               </div>
 
               <div
@@ -798,13 +736,7 @@ async function copyInviteLink() {
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
                   placeholder="초대할 이메일"
-                  style={{
-                    height: 42,
-                    borderRadius: 10,
-                    border: "1px solid #d1d5db",
-                    padding: "0 12px",
-                    outline: "none",
-                  }}
+                  style={inviteFieldStyle}
                 />
 
                 <select
@@ -814,14 +746,7 @@ async function copyInviteLink() {
                       e.target.value as "director" | "admin" | "staff" | "client"
                     )
                   }
-                  style={{
-                    height: 42,
-                    borderRadius: 10,
-                    border: "1px solid #d1d5db",
-                    padding: "0 12px",
-                    outline: "none",
-                    background: "#fff",
-                  }}
+                  style={inviteFieldStyle}
                 >
                   {isTrueMasterViewer ? (
                     <option value="director">director</option>
@@ -835,85 +760,47 @@ async function copyInviteLink() {
                   type="button"
                   onClick={createInvite}
                   disabled={inviteCreating}
-                  style={{
-                    height: 42,
-                    padding: "0 14px",
-                    borderRadius: 10,
-                    border: "1px solid #d1d5db",
-                    background: inviteCreating ? "#f3f4f6" : "#fff",
-                    color: inviteCreating ? "#9ca3af" : "#111827",
-                    fontWeight: 700,
-                    cursor: inviteCreating ? "default" : "pointer",
-                    whiteSpace: "nowrap",
-                  }}
+                  style={actionButtonStyle(inviteCreating)}
                 >
                   {inviteCreating ? "생성 중..." : "초대 링크 생성"}
                 </button>
               </div>
-              
+
               {createdInvitePath ? (
-              <div
-                style={{
-                  marginTop: 12,
-                  display: "flex",
-                  gap: 8,
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                  padding: 12,
-                  borderRadius: 12,
-                  background: "#f9fafb",
-                  border: "1px solid #e5e7eb",
-                }}
-              >
-                <div
-                  style={{
-                    flex: 1,
-                    minWidth: 260,
-                    fontSize: 13,
-                    color: "#374151",
-                    wordBreak: "break-all",
-                  }}
-                >
-                  {typeof window !== "undefined"
-                    ? `${window.location.origin}${createdInvitePath}`
-                    : createdInvitePath}
+                <div style={inviteResultStyle}>
+                  <div
+                    style={{
+                      flex: 1,
+                      minWidth: 260,
+                      fontSize: 13,
+                      color: TEXT_SECONDARY,
+                      wordBreak: "break-all",
+                    }}
+                  >
+                    {typeof window !== "undefined"
+                      ? `${window.location.origin}${createdInvitePath}`
+                      : createdInvitePath}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={copyInviteLink}
+                    style={secondaryButtonStyle}
+                  >
+                    링크 복사
+                  </button>
                 </div>
+              ) : null}
+            </section>
 
-                <button
-                  type="button"
-                  onClick={copyInviteLink}
-                  style={{
-                    height: 36,
-                    padding: "0 12px",
-                    borderRadius: 10,
-                    border: "1px solid #d1d5db",
-                    background: "#fff",
-                    fontWeight: 700,
-                    cursor: "pointer",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  링크 복사
-                </button>
-              </div>
-            ) : null}
-            </div>
-
-            <div
-              style={{
-                background: "#fff",
-                border: "1px solid #e5e7eb",
-                borderRadius: 16,
-                overflow: "hidden",
-              }}
-            >
+            <section style={{ ...panelStyle, padding: 0, overflow: "hidden" }}>
               <div
                 style={{
                   padding: "18px 20px",
-                  borderBottom: "1px solid #e5e7eb",
+                  borderBottom: PANEL_BORDER,
                   fontSize: 18,
                   fontWeight: 800,
-                  color: "#111827",
+                  color: TEXT_PRIMARY,
                 }}
               >
                 멤버 목록 ({sortedMembers.length}명)
@@ -924,15 +811,14 @@ async function copyInviteLink() {
                   style={{
                     width: "100%",
                     borderCollapse: "collapse",
-                    minWidth: isTrueMasterViewer ? 1470 : 1270,
+                    minWidth: isTrueMasterViewer ? 1330 : 1210,
                     tableLayout: "fixed",
                   }}
                 >
                   <colgroup>
-                    {isTrueMasterViewer ? <col style={{ width: 260 }} /> : null}
+                    {isTrueMasterViewer ? <col style={{ width: 120 }} /> : null}
                     <col style={{ width: 140 }} />
                     <col style={{ width: 260 }} />
-                    <col style={{ width: 280 }} />
                     <col style={{ width: 120 }} />
                     <col style={{ width: 180 }} />
                     <col style={{ width: 180 }} />
@@ -941,11 +827,10 @@ async function copyInviteLink() {
                   </colgroup>
 
                   <thead>
-                    <tr style={{ background: "#f9fafb" }}>
+                    <tr style={{ background: "rgba(124, 92, 255, 0.10)" }}>
                       {isTrueMasterViewer ? <th style={thStyle}>workspace</th> : null}
                       <th style={thStyle}>이름</th>
                       <th style={thStyle}>이메일</th>
-                      <th style={thStyle}>user_id</th>
                       <th style={thStyle}>role</th>
                       <th style={thStyle}>division</th>
                       <th style={thStyle}>department</th>
@@ -986,24 +871,14 @@ async function copyInviteLink() {
                         savingKey !== memberKey;
 
                       return (
-                        <tr key={memberKey}>
+                        <tr key={memberKey} style={{ background: "rgba(25, 19, 58, 0.16)" }}>
                           {isTrueMasterViewer ? (
                             <td style={tdStyle}>
-                              <div style={singleLineCellStyle}>
-                                <span style={{ fontWeight: 700, flexShrink: 0 }}>
-                                  {member.workspace_name || "-"}
-                                </span>
-                                <span
-                                  style={{
-                                    ...monoInlineStyle,
-                                    minWidth: 0,
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                  }}
-                                  title={member.workspace_id}
-                                >
-                                  {member.workspace_id}
-                                </span>
+                              <div
+                                style={{ ...singleLineCellStyle, fontWeight: 700 }}
+                                title={member.workspace_name || "-"}
+                              >
+                                {member.workspace_name || "-"}
                               </div>
                             </td>
                           ) : null}
@@ -1018,17 +893,11 @@ async function copyInviteLink() {
                           </td>
 
                           <td style={tdStyle}>
-                            <div style={singleLineCellStyle} title={member.email || "-"}>
-                              {member.email || "-"}
-                            </div>
-                          </td>
-
-                          <td style={tdStyle}>
                             <div
-                              style={{ ...singleLineCellStyle, ...monoInlineStyle }}
-                              title={member.user_id}
+                              style={singleLineCellStyle}
+                              title={member.email || "-"}
                             >
-                              {member.user_id}
+                              {member.email || "-"}
                             </div>
                           </td>
 
@@ -1098,33 +967,11 @@ async function copyInviteLink() {
                                   removingKey === memberKey
                                 }
                                 onClick={() => saveMember(member)}
-                                style={{
-                                  height: 38,
-                                  minWidth: 76,
-                                  padding: "0 14px",
-                                  borderRadius: 10,
-                                  border: "1px solid #f59e0b",
-                                  background:
-                                    !editable ||
+                                style={saveButtonStyle(
+                                  !editable ||
                                     savingKey === memberKey ||
                                     removingKey === memberKey
-                                      ? "#f3f4f6"
-                                      : "#f59e0b",
-                                  color:
-                                    !editable ||
-                                    savingKey === memberKey ||
-                                    removingKey === memberKey
-                                      ? "#9ca3af"
-                                      : "#fff",
-                                  fontWeight: 800,
-                                  cursor:
-                                    !editable ||
-                                    savingKey === memberKey ||
-                                    removingKey === memberKey
-                                      ? "default"
-                                      : "pointer",
-                                  whiteSpace: "nowrap",
-                                }}
+                                )}
                               >
                                 {savingKey === memberKey
                                   ? "저장 중..."
@@ -1140,27 +987,9 @@ async function copyInviteLink() {
                                   type="button"
                                   disabled={!removable || removingKey === memberKey}
                                   onClick={() => removeMember(member)}
-                                  style={{
-                                    height: 38,
-                                    minWidth: 76,
-                                    padding: "0 14px",
-                                    borderRadius: 10,
-                                    border: "1px solid #ef4444",
-                                    background:
-                                      !removable || removingKey === memberKey
-                                        ? "#f3f4f6"
-                                        : "#ef4444",
-                                    color:
-                                      !removable || removingKey === memberKey
-                                        ? "#9ca3af"
-                                        : "#fff",
-                                    fontWeight: 800,
-                                    cursor:
-                                      !removable || removingKey === memberKey
-                                        ? "default"
-                                        : "pointer",
-                                    whiteSpace: "nowrap",
-                                  }}
+                                  style={removeButtonStyle(
+                                    !removable || removingKey === memberKey
+                                  )}
                                 >
                                   {removingKey === memberKey
                                     ? "제거 중..."
@@ -1178,11 +1007,12 @@ async function copyInviteLink() {
                     {sortedMembers.length === 0 && (
                       <tr>
                         <td
-                          colSpan={isTrueMasterViewer ? 9 : 8}
+                          colSpan={isTrueMasterViewer ? 8 : 7}
                           style={{
                             padding: 24,
                             textAlign: "center",
-                            color: "#6b7280",
+                            color: TEXT_SECONDARY,
+                            borderBottom: PANEL_BORDER,
                           }}
                         >
                           멤버가 없습니다.
@@ -1192,29 +1022,139 @@ async function copyInviteLink() {
                   </tbody>
                 </table>
               </div>
-            </div>
+            </section>
           </>
         )}
       </div>
-    </div>
+    </main>
   );
+}
+
+const PAGE_BACKGROUND =
+  "radial-gradient(circle at 18% 0%, rgba(33, 223, 243, 0.10), transparent 30%), radial-gradient(circle at 82% 12%, rgba(124, 92, 255, 0.18), transparent 34%), linear-gradient(135deg, #251b4d 0%, #2c2061 48%, #211a46 100%)";
+
+const PANEL_BACKGROUND =
+  "linear-gradient(160deg, rgba(57, 43, 112, 0.94), rgba(47, 35, 96, 0.92))";
+
+const PANEL_BORDER = "1px solid rgba(255, 255, 255, 0.13)";
+const FIELD_BORDER = "1px solid rgba(255, 255, 255, 0.15)";
+const TEXT_PRIMARY = "#f7f7ff";
+const TEXT_SECONDARY = "#c8c5df";
+const TEXT_MUTED = "#9692b3";
+
+const pageShellStyle: React.CSSProperties = {
+  minHeight: "100vh",
+  background: PAGE_BACKGROUND,
+  backgroundAttachment: "fixed",
+  color: TEXT_PRIMARY,
+  padding: 24,
+};
+
+const contentStyle: React.CSSProperties = {
+  maxWidth: 1400,
+  margin: "0 auto",
+  display: "flex",
+  flexDirection: "column",
+  gap: 16,
+};
+
+const panelStyle: React.CSSProperties = {
+  background: PANEL_BACKGROUND,
+  border: PANEL_BORDER,
+  borderRadius: 16,
+  padding: 20,
+  boxShadow: "0 12px 32px rgba(12, 8, 30, 0.18)",
+};
+
+const secondaryButtonStyle: React.CSSProperties = {
+  height: 40,
+  padding: "0 14px",
+  borderRadius: 10,
+  border: FIELD_BORDER,
+  background: "rgba(38, 29, 82, 0.86)",
+  color: TEXT_PRIMARY,
+  fontWeight: 700,
+  cursor: "pointer",
+  whiteSpace: "nowrap",
+};
+
+const primaryButtonStyle: React.CSSProperties = {
+  height: 40,
+  padding: "0 14px",
+  borderRadius: 10,
+  border: "1px solid rgba(111, 203, 255, 0.56)",
+  background: "linear-gradient(90deg, #21cbea 0%, #6f65ff 100%)",
+  color: "#ffffff",
+  fontWeight: 800,
+  cursor: "pointer",
+  whiteSpace: "nowrap",
+  boxShadow: "0 8px 20px rgba(69, 87, 230, 0.18)",
+};
+
+const errorPanelStyle: React.CSSProperties = {
+  background: "rgba(118, 37, 67, 0.50)",
+  border: "1px solid rgba(251, 113, 133, 0.38)",
+  color: "#ffd7df",
+  borderRadius: 12,
+  padding: 14,
+  fontSize: 14,
+  fontWeight: 700,
+};
+
+const inviteFieldStyle: React.CSSProperties = {
+  height: 42,
+  borderRadius: 10,
+  border: FIELD_BORDER,
+  padding: "0 12px",
+  outline: "none",
+  background: "rgba(30, 24, 70, 0.78)",
+  color: TEXT_PRIMARY,
+  colorScheme: "dark",
+};
+
+const inviteResultStyle: React.CSSProperties = {
+  marginTop: 12,
+  display: "flex",
+  gap: 8,
+  alignItems: "center",
+  flexWrap: "wrap",
+  padding: 12,
+  borderRadius: 12,
+  background: "rgba(30, 24, 70, 0.56)",
+  border: FIELD_BORDER,
+};
+
+function actionButtonStyle(disabled?: boolean): React.CSSProperties {
+  return {
+    height: 42,
+    padding: "0 14px",
+    borderRadius: 10,
+    border: disabled ? FIELD_BORDER : "1px solid rgba(111, 203, 255, 0.50)",
+    background: disabled
+      ? "rgba(255, 255, 255, 0.06)"
+      : "linear-gradient(90deg, rgba(33, 203, 234, 0.92), rgba(111, 101, 255, 0.92))",
+    color: disabled ? TEXT_MUTED : "#ffffff",
+    fontWeight: 700,
+    cursor: disabled ? "default" : "pointer",
+    whiteSpace: "nowrap",
+  };
 }
 
 const thStyle: React.CSSProperties = {
   textAlign: "left",
   padding: "12px 14px",
-  borderBottom: "1px solid #e5e7eb",
+  borderBottom: PANEL_BORDER,
   fontSize: 13,
-  color: "#374151",
+  color: "#dedcf2",
   fontWeight: 800,
   whiteSpace: "nowrap",
 };
 
 const tdStyle: React.CSSProperties = {
   padding: "12px 14px",
-  borderBottom: "1px solid #f3f4f6",
+  borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
   fontSize: 14,
-  color: "#111827",
+  color: TEXT_PRIMARY,
   verticalAlign: "middle",
   whiteSpace: "nowrap",
   overflow: "hidden",
@@ -1228,25 +1168,57 @@ const singleLineCellStyle: React.CSSProperties = {
   textOverflow: "ellipsis",
 };
 
-const monoInlineStyle: React.CSSProperties = {
-  fontFamily:
-    'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-  fontSize: 12,
-  color: "#374151",
-};
-
 function inputStyle(disabled?: boolean): React.CSSProperties {
   return {
     width: "100%",
     height: 38,
     borderRadius: 10,
-    border: "1px solid #d1d5db",
+    border: FIELD_BORDER,
     padding: "0 10px",
     outline: "none",
-    background: disabled ? "#f9fafb" : "#fff",
-    color: disabled ? "#6b7280" : "#111827",
+    background: disabled
+      ? "rgba(255, 255, 255, 0.055)"
+      : "rgba(30, 24, 70, 0.76)",
+    color: disabled ? "#aaa6c1" : TEXT_PRIMARY,
+    colorScheme: "dark",
     whiteSpace: "nowrap",
     overflow: "hidden",
     textOverflow: "ellipsis",
+  };
+}
+
+function saveButtonStyle(disabled?: boolean): React.CSSProperties {
+  return {
+    height: 38,
+    minWidth: 76,
+    padding: "0 14px",
+    borderRadius: 10,
+    border: disabled ? FIELD_BORDER : "1px solid rgba(111, 203, 255, 0.48)",
+    background: disabled
+      ? "rgba(255, 255, 255, 0.055)"
+      : "linear-gradient(90deg, rgba(33, 203, 234, 0.92), rgba(111, 101, 255, 0.92))",
+    color: disabled ? TEXT_MUTED : "#ffffff",
+    fontWeight: 800,
+    cursor: disabled ? "default" : "pointer",
+    whiteSpace: "nowrap",
+  };
+}
+
+function removeButtonStyle(disabled?: boolean): React.CSSProperties {
+  return {
+    height: 38,
+    minWidth: 76,
+    padding: "0 14px",
+    borderRadius: 10,
+    border: disabled
+      ? FIELD_BORDER
+      : "1px solid rgba(248, 113, 113, 0.55)",
+    background: disabled
+      ? "rgba(255, 255, 255, 0.055)"
+      : "rgba(190, 52, 76, 0.72)",
+    color: disabled ? TEXT_MUTED : "#ffffff",
+    fontWeight: 800,
+    cursor: disabled ? "default" : "pointer",
+    whiteSpace: "nowrap",
   };
 }
