@@ -504,6 +504,8 @@ export default function ReportBuilderPage() {
   const [selectedApiMediaConnectionId, setSelectedApiMediaConnectionId] =
     useState("");
 
+  const [googleAdsConnectionFormOpen, setGoogleAdsConnectionFormOpen] =
+    useState(false);
   const [googleAdsTargetCustomerIdInput, setGoogleAdsTargetCustomerIdInput] =
     useState("");
   const [googleAdsLoginCustomerIdInput, setGoogleAdsLoginCustomerIdInput] =
@@ -1093,6 +1095,7 @@ export default function ReportBuilderPage() {
   }, [advertisers, selectedAdvertiserId]);
 
   useEffect(() => {
+    setGoogleAdsConnectionFormOpen(false);
     setGoogleAdsTargetCustomerIdInput("");
     setGoogleAdsLoginCustomerIdInput("");
     setGoogleAdsOAuthStartError("");
@@ -1149,6 +1152,7 @@ export default function ReportBuilderPage() {
     setSelectedAdvertiserMediaAccessScope(null);
     setSelectedAdvertiserMediaConnectionsError("");
     setResolvedAdvertiserMediaConnectionScopeKey("");
+    setGoogleAdsConnectionFormOpen(false);
     setNaverMediaConnectionFormMode(null);
     setNaverMediaConnectionTargetId("");
     setNaverExternalAccountIdInput("");
@@ -1725,6 +1729,11 @@ export default function ReportBuilderPage() {
     setSelectedReportIds([]);
     setSelectedAdvertiserIds([]);
     setDeletingAdvertisers(false);
+    setGoogleAdsConnectionFormOpen(false);
+    setGoogleAdsTargetCustomerIdInput("");
+    setGoogleAdsLoginCustomerIdInput("");
+    setGoogleAdsOAuthStartError("");
+    setStartingGoogleAdsOAuth(false);
     setNaverMediaConnectionFormMode(null);
     setNaverMediaConnectionTargetId("");
     setNaverExternalAccountIdInput("");
@@ -1753,9 +1762,27 @@ export default function ReportBuilderPage() {
     setNaverMediaConnectionFormError("");
   }
 
+  function closeGoogleAdsConnectionForm() {
+    setGoogleAdsConnectionFormOpen(false);
+    setGoogleAdsTargetCustomerIdInput("");
+    setGoogleAdsLoginCustomerIdInput("");
+    setGoogleAdsOAuthStartError("");
+  }
+
+  function openGoogleAdsConnectionForm() {
+    if (startingGoogleAdsOAuth) return;
+
+    closeNaverMediaConnectionForm();
+    setGoogleAdsConnectionFormOpen(true);
+    setGoogleAdsTargetCustomerIdInput("");
+    setGoogleAdsLoginCustomerIdInput("");
+    setGoogleAdsOAuthStartError("");
+  }
+
   function openCreateNaverMediaConnectionForm() {
     if (savingNaverMediaConnection) return;
 
+    closeGoogleAdsConnectionForm();
     setNaverMediaConnectionFormMode("create");
     setNaverMediaConnectionTargetId("");
     setNaverExternalAccountIdInput("");
@@ -1772,6 +1799,7 @@ export default function ReportBuilderPage() {
   function openReplaceNaverMediaConnectionForm(connection: SafeMediaConnection) {
     if (savingNaverMediaConnection) return;
 
+    closeGoogleAdsConnectionForm();
     setNaverMediaConnectionFormMode("replace");
     setNaverMediaConnectionTargetId(connection.id);
     setNaverExternalAccountIdInput("");
@@ -2938,6 +2966,19 @@ export default function ReportBuilderPage() {
     currentAdvertiserMediaConnections.filter(
       (connection) => connection.provider === "google_ads"
     );
+  const usableGoogleConnections = selectedAdvertiserGoogleConnections.filter(
+    (connection) =>
+      connection.status === "active" && connection.has_credentials
+  );
+  const googleConnectionWithoutCredentials =
+    selectedAdvertiserGoogleConnections.find(
+      (connection) =>
+        connection.status === "active" && !connection.has_credentials
+    ) ?? null;
+  const googleErrorConnection =
+    selectedAdvertiserGoogleConnections.find(
+      (connection) => connection.status === "error"
+    ) ?? null;
   const selectedAdvertiserMetaConnections =
     currentAdvertiserMediaConnections.filter(
       (connection) => connection.provider === "meta_ads"
@@ -4105,7 +4146,7 @@ export default function ReportBuilderPage() {
                           color: "#f7f7ff",
                         }}
                       >
-                        매체 API 연동
+                        매체 계정 연결
                       </div>
                       <div
                         style={{
@@ -4115,7 +4156,7 @@ export default function ReportBuilderPage() {
                           color: "#d7d5ec",
                         }}
                       >
-                        선택한 광고주의 실제 media connection 상태를 확인합니다.
+                        선택한 광고주에 등록된 매체 계정 연결을 확인하고 관리합니다.
                       </div>
                     </div>
 
@@ -4370,17 +4411,42 @@ export default function ReportBuilderPage() {
                         <span
                           style={{
                             borderRadius: 999,
-                            border: "1px solid rgba(255, 255, 255, 0.12)",
-                            background: "rgba(255, 255, 255, 0.05)",
+                            border:
+                              usableGoogleConnections.length > 0 &&
+                              hasCurrentAdvertiserMediaConnectionSnapshot
+                                ? "1px solid rgba(110, 231, 183, 0.28)"
+                                : "1px solid rgba(255, 255, 255, 0.12)",
+                            background:
+                              usableGoogleConnections.length > 0 &&
+                              hasCurrentAdvertiserMediaConnectionSnapshot
+                                ? "rgba(110, 231, 183, 0.10)"
+                                : "rgba(255, 255, 255, 0.05)",
                             padding: "4px 8px",
                             fontSize: 10,
                             fontWeight: 900,
-                            color: "#bbb8d4",
+                            color:
+                              usableGoogleConnections.length > 0 &&
+                              hasCurrentAdvertiserMediaConnectionSnapshot
+                                ? "#a7f3d0"
+                                : "#bbb8d4",
+                            whiteSpace: "nowrap",
                           }}
                         >
-                          준비 중
+                          {loadingSelectedAdvertiserMediaConnections ||
+                          !hasCurrentAdvertiserMediaConnectionSnapshot
+                            ? "조회 중"
+                            : selectedAdvertiserMediaConnectionsError
+                            ? "확인 불가"
+                            : usableGoogleConnections.length > 0
+                            ? "● 연결됨"
+                            : googleConnectionWithoutCredentials
+                            ? "자격증명 필요"
+                            : googleErrorConnection
+                            ? "오류"
+                            : "○ 미연결"}
                         </span>
                       </div>
+
                       <div
                         style={{
                           marginTop: 10,
@@ -4390,15 +4456,113 @@ export default function ReportBuilderPage() {
                           minHeight: 70,
                         }}
                       >
-                        Google Ads 연동 기능은 아직 활성화하지 않았습니다.
-                        {hasCurrentAdvertiserMediaConnectionSnapshot &&
-                        !selectedAdvertiserMediaConnectionsError &&
-                        selectedAdvertiserGoogleConnections.length > 0 ? (
+                        {loadingSelectedAdvertiserMediaConnections ||
+                        !hasCurrentAdvertiserMediaConnectionSnapshot ? (
+                          <>실제 연결 정보를 확인하고 있습니다.</>
+                        ) : selectedAdvertiserMediaConnectionsError ? (
+                          <>연결 정보를 표시할 수 없습니다.</>
+                        ) : usableGoogleConnections.length > 0 ? (
                           <>
+                            활성 연결: {usableGoogleConnections.length}개
                             <br />
-                            DB 연결 기록: {selectedAdvertiserGoogleConnections.length}개
+                            {usableGoogleConnections[0].external_account_name ||
+                              usableGoogleConnections[0].external_account_id}
+                            {" · "}
+                            {usableGoogleConnections[0].external_account_id}
+                            <br />
+                            최근 확인: {usableGoogleConnections[0].last_verified_at
+                              ? fmtDate(usableGoogleConnections[0].last_verified_at)
+                              : "-"}
                           </>
+                        ) : googleConnectionWithoutCredentials ? (
+                          <>활성 연결은 있지만 저장된 OAuth 자격증명이 없습니다.</>
+                        ) : googleErrorConnection ? (
+                          <>
+                            연결 상태가 오류입니다.
+                            {googleErrorConnection.last_error
+                              ? ` ${googleErrorConnection.last_error}`
+                              : ""}
+                          </>
+                        ) : (
+                          <>등록된 활성 Google Ads 연결이 없습니다.</>
+                        )}
+                      </div>
+
+                      {googleAdsOAuthReturnNotice ? (
+                        <div
+                          style={{
+                            marginTop: 10,
+                            border:
+                              googleAdsOAuthReturnNotice.kind === "success"
+                                ? "1px solid rgba(110, 231, 183, 0.28)"
+                                : googleAdsOAuthReturnNotice.kind === "error"
+                                ? "1px solid rgba(255, 99, 124, 0.26)"
+                                : "1px solid rgba(33, 223, 243, 0.24)",
+                            borderRadius: 10,
+                            background:
+                              googleAdsOAuthReturnNotice.kind === "success"
+                                ? "rgba(110, 231, 183, 0.09)"
+                                : googleAdsOAuthReturnNotice.kind === "error"
+                                ? "rgba(255, 99, 124, 0.08)"
+                                : "rgba(33, 223, 243, 0.08)",
+                            padding: "9px 10px",
+                            fontSize: 10,
+                            lineHeight: 1.55,
+                            color:
+                              googleAdsOAuthReturnNotice.kind === "success"
+                                ? "#a7f3d0"
+                                : googleAdsOAuthReturnNotice.kind === "error"
+                                ? "#ffb0bd"
+                                : "#9beef8",
+                          }}
+                        >
+                          {googleAdsOAuthReturnNotice.message}
+                        </div>
+                      ) : null}
+
+                      <div
+                        style={{
+                          marginTop: 12,
+                          display: "flex",
+                          gap: 8,
+                          alignItems: "center",
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        {canManageSelectedAdvertiserMediaConnections ? (
+                          <button
+                            type="button"
+                            className="subBtn"
+                            onClick={
+                              googleAdsConnectionFormOpen
+                                ? closeGoogleAdsConnectionForm
+                                : openGoogleAdsConnectionForm
+                            }
+                            disabled={startingGoogleAdsOAuth}
+                            style={{ padding: "8px 10px", fontSize: 11 }}
+                          >
+                            {googleAdsConnectionFormOpen
+                              ? "Google 연결 닫기"
+                              : "Google 계정 연결"}
+                          </button>
                         ) : null}
+
+                        <span
+                          style={{
+                            fontSize: 10,
+                            lineHeight: 1.5,
+                            color: "#8f8bad",
+                          }}
+                        >
+                          {loadingSelectedAdvertiserMediaConnections ||
+                          !hasCurrentAdvertiserMediaConnectionSnapshot
+                            ? "연결 상태 확인 후 관리할 수 있습니다."
+                            : selectedAdvertiserMediaConnectionsError
+                            ? "연결 상태 확인이 필요합니다."
+                            : selectedAdvertiserMediaAccessScope === "own_created"
+                            ? "조회 권한만 있습니다."
+                            : "OAuth 자격증명은 화면에 표시하지 않습니다."}
+                        </span>
                       </div>
                     </div>
 
@@ -4462,6 +4626,241 @@ export default function ReportBuilderPage() {
                       </div>
                     </div>
                   </div>
+
+                  {googleAdsConnectionFormOpen ? (
+                    <div
+                      style={{
+                        marginTop: 12,
+                        border: "1px solid rgba(124, 92, 255, 0.26)",
+                        borderRadius: 14,
+                        background: "rgba(33, 26, 72, 0.90)",
+                        padding: 16,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          justifyContent: "space-between",
+                          gap: 12,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <div>
+                          <div
+                            style={{
+                              fontSize: 13,
+                              fontWeight: 900,
+                              color: "#f7f7ff",
+                            }}
+                          >
+                            Google Ads 연결
+                          </div>
+                          <div
+                            style={{
+                              marginTop: 4,
+                              fontSize: 11,
+                              lineHeight: 1.55,
+                              color: "#bbb8d4",
+                            }}
+                          >
+                            선택한 광고주에 Google Ads 계정을 OAuth로 연결합니다.
+                            고객 ID와 필요한 경우 MCC / Login Customer ID만 입력합니다.
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          className="subBtn"
+                          onClick={closeGoogleAdsConnectionForm}
+                          disabled={startingGoogleAdsOAuth}
+                          style={{ padding: "7px 10px", fontSize: 11 }}
+                        >
+                          닫기
+                        </button>
+                      </div>
+
+                      {selectedAdvertiserGoogleConnections.length > 0 ? (
+                        <div
+                          style={{
+                            marginTop: 12,
+                            display: "grid",
+                            gap: 6,
+                          }}
+                        >
+                          {selectedAdvertiserGoogleConnections.map((connection) => {
+                            const statusLabel =
+                              connection.status === "disconnected"
+                                ? "연결 해제"
+                                : connection.status === "error"
+                                ? "오류"
+                                : !connection.has_credentials
+                                ? "자격증명 필요"
+                                : "사용 가능";
+
+                            return (
+                              <div
+                                key={connection.id}
+                                style={{
+                                  border:
+                                    "1px solid rgba(255, 255, 255, 0.09)",
+                                  borderRadius: 10,
+                                  background: "rgba(42, 33, 87, 0.72)",
+                                  padding: "9px 11px",
+                                  fontSize: 11,
+                                  lineHeight: 1.55,
+                                  color: "#c9c6df",
+                                }}
+                              >
+                                {connection.external_account_name ||
+                                  connection.external_account_id}
+                                {" · "}
+                                {connection.external_account_id}
+                                {" · "}
+                                {statusLabel}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+
+                      <div
+                        style={{
+                          marginTop: 14,
+                          display: "grid",
+                          gridTemplateColumns:
+                            "repeat(auto-fit, minmax(240px, 1fr))",
+                          gap: 12,
+                        }}
+                      >
+                        <label style={{ minWidth: 0 }}>
+                          <div
+                            style={{
+                              marginBottom: 6,
+                              fontSize: 11,
+                              fontWeight: 800,
+                              color: "#d7d5ec",
+                            }}
+                          >
+                            Google Ads 고객 ID *
+                          </div>
+                          <input
+                            value={googleAdsTargetCustomerIdInput}
+                            onChange={(event) =>
+                              setGoogleAdsTargetCustomerIdInput(event.target.value)
+                            }
+                            maxLength={200}
+                            autoComplete="off"
+                            autoCapitalize="none"
+                            spellCheck={false}
+                            disabled={startingGoogleAdsOAuth}
+                            placeholder="예: 123-456-7890"
+                            style={{
+                              width: "100%",
+                              padding: 10,
+                              borderRadius: 10,
+                              border: "1px solid rgba(255, 255, 255, 0.13)",
+                              background: "rgba(42, 33, 87, 0.90)",
+                              color: "#f7f7ff",
+                              fontSize: 12,
+                            }}
+                          />
+                        </label>
+
+                        <label style={{ minWidth: 0 }}>
+                          <div
+                            style={{
+                              marginBottom: 6,
+                              fontSize: 11,
+                              fontWeight: 800,
+                              color: "#d7d5ec",
+                            }}
+                          >
+                            MCC / Login Customer ID (선택)
+                          </div>
+                          <input
+                            value={googleAdsLoginCustomerIdInput}
+                            onChange={(event) =>
+                              setGoogleAdsLoginCustomerIdInput(event.target.value)
+                            }
+                            maxLength={200}
+                            autoComplete="off"
+                            autoCapitalize="none"
+                            spellCheck={false}
+                            disabled={startingGoogleAdsOAuth}
+                            placeholder="필요한 경우에만 입력"
+                            style={{
+                              width: "100%",
+                              padding: 10,
+                              borderRadius: 10,
+                              border: "1px solid rgba(255, 255, 255, 0.13)",
+                              background: "rgba(42, 33, 87, 0.90)",
+                              color: "#f7f7ff",
+                              fontSize: 12,
+                            }}
+                          />
+                        </label>
+                      </div>
+
+                      {googleAdsOAuthStartError ? (
+                        <div
+                          style={{
+                            marginTop: 10,
+                            border: "1px solid rgba(255, 99, 124, 0.24)",
+                            borderRadius: 10,
+                            background: "rgba(255, 99, 124, 0.08)",
+                            padding: "9px 11px",
+                            fontSize: 11,
+                            lineHeight: 1.5,
+                            color: "#ffb0bd",
+                          }}
+                        >
+                          {googleAdsOAuthStartError}
+                        </div>
+                      ) : null}
+
+                      <div
+                        style={{
+                          marginTop: 10,
+                          fontSize: 10,
+                          lineHeight: 1.55,
+                          color: "#8f8bad",
+                        }}
+                      >
+                        비밀번호나 OAuth 토큰은 이 화면에 입력하지 않습니다.
+                        OAuth 승인 후 Server API에서 계정 범위와 저장된 연결 상태를 다시 확인합니다.
+                      </div>
+
+                      <div
+                        style={{
+                          marginTop: 12,
+                          display: "flex",
+                          justifyContent: "flex-end",
+                          gap: 8,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          className="subBtn"
+                          onClick={closeGoogleAdsConnectionForm}
+                          disabled={startingGoogleAdsOAuth}
+                        >
+                          취소
+                        </button>
+                        <button
+                          type="button"
+                          className="primaryBtn"
+                          onClick={startGoogleAdsOAuth}
+                          disabled={startingGoogleAdsOAuth}
+                        >
+                          {startingGoogleAdsOAuth
+                            ? "Google 연결 준비 중..."
+                            : "Google Ads 연결"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
 
                   {naverMediaConnectionFormMode ? (
                     <div
@@ -5215,7 +5614,7 @@ export default function ReportBuilderPage() {
                         color: "#d7d5ec",
                       }}
                     >
-                      이 리포트가 사용할 광고 계정 연결을 정확히 1개 선택합니다.
+                      STEP 1에서 연결한 매체 계정 중 이 리포트가 사용할 연결을 선택합니다.
                     </div>
                   </div>
 
@@ -5489,242 +5888,105 @@ export default function ReportBuilderPage() {
                               flexShrink: 0,
                               borderRadius: 999,
                               border:
-                                selectedAdvertiserGoogleConnections.length > 0
+                                usableGoogleConnections.length > 0
                                   ? "1px solid rgba(110, 231, 183, 0.28)"
                                   : "1px solid rgba(255, 255, 255, 0.12)",
                               background:
-                                selectedAdvertiserGoogleConnections.length > 0
+                                usableGoogleConnections.length > 0
                                   ? "rgba(110, 231, 183, 0.10)"
                                   : "rgba(255, 255, 255, 0.05)",
                               padding: "4px 8px",
                               fontSize: 10,
                               fontWeight: 900,
                               color:
-                                selectedAdvertiserGoogleConnections.length > 0
+                                usableGoogleConnections.length > 0
                                   ? "#a7f3d0"
                                   : "#bbb8d4",
                               whiteSpace: "nowrap",
                             }}
                           >
-                            {selectedAdvertiserGoogleConnections.length > 0
-                              ? `${selectedAdvertiserGoogleConnections.length}개 연결`
-                              : "연결 가능"}
+                            {usableGoogleConnections.length > 0
+                              ? "동기화 준비 중"
+                              : "STEP 1 연결 필요"}
                           </span>
                         </div>
 
-                        {googleAdsOAuthReturnNotice ? (
-                          <div
-                            style={{
-                              marginTop: 12,
-                              border:
-                                googleAdsOAuthReturnNotice.kind ===
-                                "success"
-                                  ? "1px solid rgba(110, 231, 183, 0.28)"
-                                  : googleAdsOAuthReturnNotice.kind ===
-                                      "error"
-                                    ? "1px solid rgba(255, 99, 124, 0.26)"
-                                    : "1px solid rgba(33, 223, 243, 0.24)",
-                              borderRadius: 10,
-                              background:
-                                googleAdsOAuthReturnNotice.kind ===
-                                "success"
-                                  ? "rgba(110, 231, 183, 0.09)"
-                                  : googleAdsOAuthReturnNotice.kind ===
-                                      "error"
-                                    ? "rgba(255, 99, 124, 0.08)"
-                                    : "rgba(33, 223, 243, 0.08)",
-                              padding: "9px 10px",
-                              fontSize: 10,
-                              lineHeight: 1.55,
-                              color:
-                                googleAdsOAuthReturnNotice.kind ===
-                                "success"
-                                  ? "#a7f3d0"
-                                  : googleAdsOAuthReturnNotice.kind ===
-                                      "error"
-                                    ? "#ffb0bd"
-                                    : "#9beef8",
-                            }}
-                          >
-                            {googleAdsOAuthReturnNotice.message}
-                          </div>
-                        ) : null}
+                        <div
+                          style={{
+                            marginTop: 14,
+                            fontSize: 11,
+                            lineHeight: 1.65,
+                            color: "#bbb8d4",
+                          }}
+                        >
+                          STEP 1에서 관리한 Google Ads 연결을 사용합니다.
+                          현재 Google Ads 데이터 동기화 runtime은 비활성화되어
+                          리포트 연결 선택은 아직 잠겨 있습니다.
+                        </div>
 
-                        {selectedAdvertiserGoogleConnections.length > 0 ? (
-                          <div
-                            style={{
-                              marginTop: 12,
-                              display: "grid",
-                              gap: 6,
-                            }}
+                        <div
+                          className="advertiserSelectWrap"
+                          style={{ marginTop: 12 }}
+                        >
+                          <select
+                            disabled
+                            className="advertiserSelect"
                           >
+                            <option value="">
+                              {usableGoogleConnections.length > 0
+                                ? "Google Ads 연결 선택은 동기화 활성화 후 제공됩니다"
+                                : "STEP 1에서 Google Ads 계정을 먼저 연결하세요"}
+                            </option>
+
                             {selectedAdvertiserGoogleConnections.map(
-                              (connection) => (
-                                <div
-                                  key={connection.id}
-                                  style={{
-                                    border:
-                                      "1px solid rgba(255, 255, 255, 0.09)",
-                                    borderRadius: 10,
-                                    background: "rgba(33, 27, 68, 0.58)",
-                                    padding: "8px 9px",
-                                    fontSize: 10,
-                                    lineHeight: 1.5,
-                                    color: "#d7d5ec",
-                                  }}
-                                >
-                                  {connection.external_account_name ||
-                                    connection.external_account_id}
-                                  <br />
-                                  {connection.external_account_id}
-                                </div>
-                              ),
+                              (connection) => {
+                                const statusLabel =
+                                  connection.status === "disconnected"
+                                    ? "연결 해제"
+                                    : connection.status === "error"
+                                    ? "오류"
+                                    : !connection.has_credentials
+                                    ? "자격증명 필요"
+                                    : "연결됨";
+
+                                return (
+                                  <option
+                                    key={connection.id}
+                                    value={connection.id}
+                                  >
+                                    {connection.external_account_name ||
+                                      connection.external_account_id}{" "}
+                                    · {connection.external_account_id} ·{" "}
+                                    {statusLabel}
+                                  </option>
+                                );
+                              },
                             )}
-                          </div>
-                        ) : null}
+                          </select>
 
-                        {canManageSelectedAdvertiserMediaConnections ? (
-                          <>
-                            <label
-                              style={{
-                                display: "block",
-                                marginTop: 12,
-                                fontSize: 10,
-                                fontWeight: 800,
-                                color: "#bbb8d4",
-                              }}
-                            >
-                              Google Ads 고객 ID
-                            </label>
-
-                            <input
-                              value={googleAdsTargetCustomerIdInput}
-                              onChange={(e) =>
-                                setGoogleAdsTargetCustomerIdInput(
-                                  e.target.value,
-                                )
-                              }
-                              placeholder="예: 123-456-7890"
-                              disabled={startingGoogleAdsOAuth}
-                              style={{
-                                width: "100%",
-                                marginTop: 6,
-                                border:
-                                  "1px solid rgba(255, 255, 255, 0.13)",
-                                borderRadius: 11,
-                                background: "rgba(33, 27, 68, 0.70)",
-                                padding: "10px 11px",
-                                fontSize: 12,
-                                color: "#f7f7ff",
-                                outline: "none",
-                              }}
-                            />
-
-                            <label
-                              style={{
-                                display: "block",
-                                marginTop: 10,
-                                fontSize: 10,
-                                fontWeight: 800,
-                                color: "#bbb8d4",
-                              }}
-                            >
-                              MCC / Login Customer ID · 선택
-                            </label>
-
-                            <input
-                              value={googleAdsLoginCustomerIdInput}
-                              onChange={(e) =>
-                                setGoogleAdsLoginCustomerIdInput(
-                                  e.target.value,
-                                )
-                              }
-                              placeholder="필요한 경우에만 입력"
-                              disabled={startingGoogleAdsOAuth}
-                              style={{
-                                width: "100%",
-                                marginTop: 6,
-                                border:
-                                  "1px solid rgba(255, 255, 255, 0.13)",
-                                borderRadius: 11,
-                                background: "rgba(33, 27, 68, 0.70)",
-                                padding: "10px 11px",
-                                fontSize: 12,
-                                color: "#f7f7ff",
-                                outline: "none",
-                              }}
-                            />
-
-                            <button
-                              type="button"
-                              onClick={startGoogleAdsOAuth}
-                              disabled={startingGoogleAdsOAuth}
-                              style={{
-                                width: "100%",
-                                marginTop: 12,
-                                border:
-                                  "1px solid rgba(117, 227, 255, 0.25)",
-                                borderRadius: 11,
-                                background:
-                                  "linear-gradient(135deg, #21dff3 0%, #5f72ff 52%, #7c5cff 100%)",
-                                padding: "10px 12px",
-                                fontSize: 12,
-                                fontWeight: 900,
-                                color: "#ffffff",
-                                cursor: startingGoogleAdsOAuth
-                                  ? "wait"
-                                  : "pointer",
-                                opacity: startingGoogleAdsOAuth ? 0.72 : 1,
-                              }}
-                            >
-                              {startingGoogleAdsOAuth
-                                ? "Google 연결 준비 중..."
-                                : "Google Ads 연결"}
-                            </button>
-
-                            {googleAdsOAuthStartError ? (
-                              <div
-                                style={{
-                                  marginTop: 9,
-                                  fontSize: 10,
-                                  lineHeight: 1.5,
-                                  color: "#ffb0bd",
-                                }}
-                              >
-                                {googleAdsOAuthStartError}
-                              </div>
-                            ) : null}
-
-                            <div
-                              style={{
-                                marginTop: 9,
-                                fontSize: 9,
-                                lineHeight: 1.5,
-                                color: "#8f8bad",
-                              }}
-                            >
-                              비밀번호나 OAuth 토큰은 이 화면에 입력하지
-                              않습니다.
-                            </div>
-                          </>
-                        ) : (
-                          <div
-                            style={{
-                              marginTop: 14,
-                              border:
-                                "1px solid rgba(255, 255, 255, 0.09)",
-                              borderRadius: 10,
-                              background: "rgba(33, 27, 68, 0.58)",
-                              padding: "10px 11px",
-                              fontSize: 10,
-                              lineHeight: 1.5,
-                              color: "#bbb8d4",
-                            }}
+                          <span
+                            className="advertiserSelectArrow"
+                            aria-hidden="true"
                           >
-                            현재 계정은 매체 연결 상태를 조회할 수 있지만
-                            Google Ads 연결을 변경할 권한은 없습니다.
-                          </div>
-                        )}
+                            ⌄
+                          </span>
+                        </div>
+
+                        <div
+                          style={{
+                            marginTop: 10,
+                            fontSize: 11,
+                            lineHeight: 1.55,
+                            color:
+                              usableGoogleConnections.length > 0
+                                ? "#a7f3d0"
+                                : "#bbb8d4",
+                          }}
+                        >
+                          {usableGoogleConnections.length > 0
+                            ? `${usableGoogleConnections.length}개 사용 가능한 연결 확인 · 데이터 동기화 승인 대기`
+                            : "사용 가능한 Google Ads 연결이 없습니다. STEP 1에서 연결을 먼저 완료하세요."}
+                        </div>
                       </div>
 
                       <div
