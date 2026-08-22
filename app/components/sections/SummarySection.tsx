@@ -888,7 +888,10 @@ const SourcePerformanceRow = memo(function SourcePerformanceRow({
       className="border-t border-slate-200 bg-white even:bg-[var(--nature-blue-light)]/14 hover:bg-[var(--nature-blue-light)]/22"
       style={{ height: `${SOURCE_ROW_HEIGHT}px` }}
     >
-      <td className={`${SLIDE2_FIRST_TD_CLASS} truncate`} title={row.title}>
+      <td
+        className="whitespace-nowrap px-3 py-3.5 text-left text-[15px] font-bold text-slate-900 align-middle truncate"
+        title={row.title}
+      >
         <SourceBrand source={row.source} />
       </td>
 

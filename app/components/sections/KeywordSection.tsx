@@ -551,13 +551,13 @@ const KeywordRankingChart = memo(function KeywordRankingChart({
 
 const SortHeaderCell = memo(function SortHeaderCell({
   k,
-  align = "left",
+  align = "center",
   activeSortKey,
   sortDir,
   onClick,
 }: {
   k: SortKey;
-  align?: "left" | "right";
+  align?: "left" | "center";
   activeSortKey: SortKey;
   sortDir: SortDir;
   onClick: (k: SortKey) => void;
@@ -565,9 +565,11 @@ const SortHeaderCell = memo(function SortHeaderCell({
   return (
     <th
       className={[
-        "select-none whitespace-nowrap px-4 py-3.5 text-[11px] font-semibold uppercase tracking-[0.08em]",
-        align === "left" ? "text-left" : "text-right",
-        "cursor-pointer border-b border-[#CFC2B1]/55 text-[#7A8794] hover:bg-[#F3E4D2]/24 hover:text-[#5F87A3]",
+        "select-none whitespace-nowrap px-3 py-3.5 text-[13px] font-bold uppercase tracking-[0.03em] text-slate-700",
+        align === "left"
+          ? "text-left"
+          : "border-l border-[var(--nature-border-blue)]/45 text-center",
+        "cursor-pointer hover:bg-[var(--nature-blue-light)]/22 hover:text-[#4F7F9E]",
       ].join(" ")}
       onClick={() => onClick(k)}
       title={`정렬: ${SORT_LABEL[k]}`}
@@ -621,34 +623,42 @@ const KeywordTableRow = memo(function KeywordTableRow({
 }) {
   const tableMeta = getKeywordTableMeta(reportMode);
 
+  const metricCellClass =
+    "border-l border-slate-200/65 px-3 py-3.5 text-center text-[15px] font-medium text-slate-800 align-middle tabular-nums";
+
   return (
-    <tr className="border-t border-[#CFC2B1]/45 even:bg-[#F3E4D2]/10 hover:bg-[#B7D7E3]/12">
-      <td className="whitespace-nowrap px-4 py-3.5 text-left font-medium text-[#27364A]">
+    <tr className="border-t border-slate-200 bg-white even:bg-[var(--nature-blue-light)]/14 hover:bg-[var(--nature-blue-light)]/22">
+      <td className="whitespace-nowrap px-3 py-3.5 text-left text-[15px] font-bold tracking-[-0.01em] text-slate-900 align-middle">
         {row.keyword || "(empty)"}
       </td>
 
-      <td className="px-4 py-3.5">
+      <td className={metricCellClass}>
         <DataBarCell
+          emphasized
           value={row.impressionsValue}
           max={kwMaxImpr}
           label={row.impressionsLabel}
         />
       </td>
 
-      <td className="px-4 py-3.5">
+      <td className={metricCellClass}>
         <DataBarCell
+          emphasized
           value={row.clicksValue}
           max={kwMaxClicks}
           label={row.clicksLabel}
         />
       </td>
 
-      <td className="px-4 py-3.5 text-right text-[#52606D]">{row.ctrLabel}</td>
+      <td className={`${metricCellClass} text-[#4F7F9E]`}>
+        {row.ctrLabel}
+      </td>
 
-      <td className="px-4 py-3.5 text-right text-[#52606D]">{row.cpcLabel}</td>
+      <td className={metricCellClass}>{row.cpcLabel}</td>
 
-      <td className="px-4 py-3.5">
+      <td className={metricCellClass}>
         <DataBarCell
+          emphasized
           value={row.costValue}
           max={kwMaxCost}
           label={row.costLabel}
@@ -656,8 +666,9 @@ const KeywordTableRow = memo(function KeywordTableRow({
       </td>
 
       {tableMeta.showConv && (
-        <td className="px-4 py-3.5">
+        <td className={metricCellClass}>
           <DataBarCell
+            emphasized
             value={row.conversionsValue}
             max={kwMaxConv}
             label={row.conversionsLabel}
@@ -666,16 +677,19 @@ const KeywordTableRow = memo(function KeywordTableRow({
       )}
 
       {tableMeta.showCvr && (
-        <td className="px-4 py-3.5 text-right text-[#52606D]">{row.cvrLabel}</td>
+        <td className={`${metricCellClass} text-[#4F7F9E]`}>
+          {row.cvrLabel}
+        </td>
       )}
 
       {tableMeta.showCpa && (
-        <td className="px-4 py-3.5 text-right text-[#52606D]">{row.cpaLabel}</td>
+        <td className={metricCellClass}>{row.cpaLabel}</td>
       )}
 
       {tableMeta.showRevenue && (
-        <td className="px-4 py-3.5">
+        <td className={metricCellClass}>
           <DataBarCell
+            emphasized
             value={row.revenueValue}
             max={kwMaxRev}
             label={row.revenueLabel}
@@ -684,7 +698,9 @@ const KeywordTableRow = memo(function KeywordTableRow({
       )}
 
       {tableMeta.showRoas && (
-        <td className="px-4 py-3.5 text-right text-[#52606D]">{row.roasLabel}</td>
+        <td className={`${metricCellClass} font-semibold text-[#4F7F9E]`}>
+          {row.roasLabel}
+        </td>
       )}
     </tr>
   );
@@ -1306,14 +1322,13 @@ export default function KeywordSection({
 
           <div
             ref={tableScrollRef}
-            className="overflow-auto rounded-[18px] border border-[var(--nature-border-blue)] bg-white shadow-[0_3px_12px_rgba(127,166,196,0.06)]"
+            className="overflow-auto rounded-[20px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] shadow-[0_4px_14px_rgba(127,166,196,0.07)]"
           >
             <table className="w-full border-collapse text-sm">
-              <thead className="sticky top-0 z-10 bg-[#F3E4D2]/52">
+              <thead className="sticky top-0 z-10 border-b border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/34">
                 <tr>
                   <SortHeaderCell
                     k="keyword"
-                    align="left"
                     activeSortKey={sortKey}
                     sortDir={sortDir}
                     onClick={onClickHeader}
@@ -1393,9 +1408,9 @@ export default function KeywordSection({
 
               <tbody>
                 {tableRowModels.length === 0 ? (
-                  <tr className="border-t border-[#CFC2B1]/45">
+                  <tr className="border-t border-slate-200 bg-white">
                     <td
-                      className="px-4 py-8 text-center text-sm text-[#7A8794]"
+                      className="px-4 py-12 text-center text-sm font-medium text-slate-400"
                       colSpan={tableMeta.colSpan}
                     >
                       표시할 키워드 데이터가 없습니다. (필터 조건/컬럼명을 확인해 주세요)

@@ -46,25 +46,25 @@ const pctText = (rate01: number, digits = 1) =>
 const safeDiv = (a: number, b: number) => (b === 0 ? 0 : a / b);
 
 const TABLE_SURFACE_CLASS =
-  "overflow-x-auto rounded-[20px] border border-[#CFC2B1]/60 bg-white shadow-[0_8px_20px_rgba(127,166,196,0.07)]";
+  "overflow-x-auto rounded-[20px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] shadow-[0_4px_14px_rgba(127,166,196,0.07)]";
 
 const TABLE_HEAD_CLASS =
-  "border-b border-[#CFC2B1]/55 bg-[#F3E4D2]/30";
+  "border-b border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/34";
 
 const TH_CLASS =
-  "whitespace-nowrap px-4 py-3.5 text-right text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7B7166]";
+  "whitespace-nowrap border-l border-[var(--nature-border-blue)]/45 px-3 py-3.5 text-center text-[13px] font-bold uppercase tracking-[0.03em] text-slate-700";
 
 const FIRST_TH_CLASS =
-  "whitespace-nowrap px-4 py-3.5 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7B7166]";
+  "whitespace-nowrap px-3 py-3.5 text-center text-[13px] font-bold uppercase tracking-[0.03em] text-slate-700";
 
 const TD_CLASS =
-  "whitespace-nowrap px-4 py-3.5 text-right text-sm text-[#5F554B] align-middle";
+  "whitespace-nowrap border-l border-slate-200/65 px-3 py-3.5 text-center text-[15px] font-medium text-slate-800 align-middle tabular-nums";
 
 const FIRST_TD_CLASS =
-  "whitespace-nowrap px-4 py-3.5 text-left text-sm font-medium text-[#2F3A40] align-middle";
+  "whitespace-nowrap px-3 py-3.5 text-left text-[15px] font-bold tracking-[-0.01em] text-slate-900 align-middle";
 
 const EMPTY_STATE_CLASS =
-  "px-4 py-10 text-center text-sm font-medium text-[#7B7166]";
+  "px-4 py-12 text-center text-sm font-medium text-slate-400";
 
 function resolveReportMode(reportType?: ReportMode): ReportMode {
   if (reportType === "traffic") return "traffic";
@@ -537,7 +537,7 @@ const SourceTable = memo(function SourceTable({
 
         <tbody>
           {sourceRows.length === 0 ? (
-            <tr className="border-t border-[#CFC2B1]/60">
+            <tr className="border-t border-slate-200 bg-white">
               <td className={EMPTY_STATE_CLASS} colSpan={tableMeta.colSpan}>
                 {(allRowsLoading ?? false)
                   ? "데이터 로딩 중..."
@@ -560,7 +560,7 @@ const SourceTable = memo(function SourceTable({
               return (
                 <tr
                   key={r.source ?? idx}
-                  className="border-t border-[#CFC2B1]/60 even:bg-[#F3E4D2]/16 hover:bg-[#B7D7E3]/16"
+                  className="border-t border-slate-200 bg-white even:bg-[var(--nature-blue-light)]/14 hover:bg-[var(--nature-blue-light)]/22"
                 >
                   <td className={FIRST_TD_CLASS}>
                     <SourceBrand
@@ -571,21 +571,21 @@ const SourceTable = memo(function SourceTable({
                   </td>
 
                   <td className={TD_CLASS}>
-                    <DataBarCell value={impr} max={srcMax.maxImpr} />
+                    <DataBarCell emphasized value={impr} max={srcMax.maxImpr} />
                   </td>
 
                   <td className={TD_CLASS}>
-                    <DataBarCell value={clicks} max={srcMax.maxClicks} />
+                    <DataBarCell emphasized value={clicks} max={srcMax.maxClicks} />
                   </td>
 
-                  <td className={`${TD_CLASS} font-medium text-[#5F8FAE]`}>
+                  <td className={`${TD_CLASS} font-medium text-[#4F7F9E]`}>
                     {(ctr * 100).toFixed(2)}%
                   </td>
 
                   <td className={TD_CLASS}>{KRW(cpc)}</td>
 
                   <td className={TD_CLASS}>
-                    <DataBarCell
+                    <DataBarCell emphasized
                       value={cost}
                       max={srcMax.maxCost}
                       label={KRW(cost)}
@@ -594,12 +594,12 @@ const SourceTable = memo(function SourceTable({
 
                   {tableMeta.showConv && (
                     <td className={TD_CLASS}>
-                      <DataBarCell value={conv} max={srcMax.maxConv} />
+                      <DataBarCell emphasized value={conv} max={srcMax.maxConv} />
                     </td>
                   )}
 
                   {tableMeta.showCvr && (
-                    <td className={`${TD_CLASS} font-medium text-[#5F8FAE]`}>
+                    <td className={`${TD_CLASS} font-medium text-[#4F7F9E]`}>
                       {(cvr * 100).toFixed(2)}%
                     </td>
                   )}
@@ -608,7 +608,7 @@ const SourceTable = memo(function SourceTable({
 
                   {tableMeta.showRevenue && (
                     <td className={TD_CLASS}>
-                      <DataBarCell
+                      <DataBarCell emphasized
                         value={revenue}
                         max={srcMax.maxRev}
                         label={KRW(revenue)}
@@ -617,7 +617,7 @@ const SourceTable = memo(function SourceTable({
                   )}
 
                   {tableMeta.showRoas && (
-                    <td className={`${TD_CLASS} font-semibold text-[#B98252]`}>
+                    <td className={`${TD_CLASS} font-semibold text-[#4F7F9E]`}>
                       {(roas * 100).toFixed(1)}%
                     </td>
                   )}
@@ -772,26 +772,26 @@ const CampaignTable = memo(function CampaignTable({
             return (
               <tr
                 key={r.campaign ?? idx}
-                className="border-t border-[#CFC2B1]/60 even:bg-[#F3E4D2]/16 hover:bg-[#B7D7E3]/16"
+                className="border-t border-slate-200 bg-white even:bg-[var(--nature-blue-light)]/14 hover:bg-[var(--nature-blue-light)]/22"
               >
                 <td className={FIRST_TD_CLASS}>{r.campaign}</td>
 
                 <td className={TD_CLASS}>
-                  <DataBarCell value={impr} max={campMax.maxImpr} />
+                  <DataBarCell emphasized value={impr} max={campMax.maxImpr} />
                 </td>
 
                 <td className={TD_CLASS}>
-                  <DataBarCell value={clicks} max={campMax.maxClicks} />
+                  <DataBarCell emphasized value={clicks} max={campMax.maxClicks} />
                 </td>
 
-                <td className={`${TD_CLASS} font-medium text-[#5F8FAE]`}>
+                <td className={`${TD_CLASS} font-medium text-[#4F7F9E]`}>
                   {(ctr * 100).toFixed(2)}%
                 </td>
 
                 <td className={TD_CLASS}>{KRW(cpc)}</td>
 
                 <td className={TD_CLASS}>
-                  <DataBarCell
+                  <DataBarCell emphasized
                     value={cost}
                     max={campMax.maxCost}
                     label={KRW(cost)}
@@ -800,12 +800,12 @@ const CampaignTable = memo(function CampaignTable({
 
                 {tableMeta.showConv && (
                   <td className={TD_CLASS}>
-                    <DataBarCell value={conv} max={campMax.maxConv} />
+                    <DataBarCell emphasized value={conv} max={campMax.maxConv} />
                   </td>
                 )}
 
                 {tableMeta.showCvr && (
-                  <td className={`${TD_CLASS} font-medium text-[#5F8FAE]`}>
+                  <td className={`${TD_CLASS} font-medium text-[#4F7F9E]`}>
                     {(cvr * 100).toFixed(2)}%
                   </td>
                 )}
@@ -814,7 +814,7 @@ const CampaignTable = memo(function CampaignTable({
 
                 {tableMeta.showRevenue && (
                   <td className={TD_CLASS}>
-                    <DataBarCell
+                    <DataBarCell emphasized
                       value={revenue}
                       max={campMax.maxRev}
                       label={KRW(revenue)}
@@ -823,7 +823,7 @@ const CampaignTable = memo(function CampaignTable({
                 )}
 
                 {tableMeta.showRoas && (
-                  <td className={`${TD_CLASS} font-semibold text-[#B98252]`}>
+                  <td className={`${TD_CLASS} font-semibold text-[#4F7F9E]`}>
                     {(roas * 100).toFixed(1)}%
                   </td>
                 )}
@@ -832,7 +832,7 @@ const CampaignTable = memo(function CampaignTable({
           })}
 
           {campaignRows.length === 0 && (
-            <tr className="border-t border-[#CFC2B1]/60">
+            <tr className="border-t border-slate-200 bg-white">
               <td className={EMPTY_STATE_CLASS} colSpan={tableMeta.colSpan}>
                 표시할 캠페인 데이터가 없습니다. (필터/컬럼명을 확인)
               </td>
@@ -896,26 +896,26 @@ const GroupTable = memo(function GroupTable({
             return (
               <tr
                 key={r.group ?? idx}
-                className="border-t border-[#CFC2B1]/60 even:bg-[#F3E4D2]/16 hover:bg-[#B7D7E3]/16"
+                className="border-t border-slate-200 bg-white even:bg-[var(--nature-blue-light)]/14 hover:bg-[var(--nature-blue-light)]/22"
               >
                 <td className={FIRST_TD_CLASS}>{r.group}</td>
 
                 <td className={TD_CLASS}>
-                  <DataBarCell value={impr} max={grpMax.maxImpr} />
+                  <DataBarCell emphasized value={impr} max={grpMax.maxImpr} />
                 </td>
 
                 <td className={TD_CLASS}>
-                  <DataBarCell value={clicks} max={grpMax.maxClicks} />
+                  <DataBarCell emphasized value={clicks} max={grpMax.maxClicks} />
                 </td>
 
-                <td className={`${TD_CLASS} font-medium text-[#5F8FAE]`}>
+                <td className={`${TD_CLASS} font-medium text-[#4F7F9E]`}>
                   {(ctr * 100).toFixed(2)}%
                 </td>
 
                 <td className={TD_CLASS}>{KRW(cpc)}</td>
 
                 <td className={TD_CLASS}>
-                  <DataBarCell
+                  <DataBarCell emphasized
                     value={cost}
                     max={grpMax.maxCost}
                     label={KRW(cost)}
@@ -924,12 +924,12 @@ const GroupTable = memo(function GroupTable({
 
                 {tableMeta.showConv && (
                   <td className={TD_CLASS}>
-                    <DataBarCell value={conv} max={grpMax.maxConv} />
+                    <DataBarCell emphasized value={conv} max={grpMax.maxConv} />
                   </td>
                 )}
 
                 {tableMeta.showCvr && (
-                  <td className={`${TD_CLASS} font-medium text-[#5F8FAE]`}>
+                  <td className={`${TD_CLASS} font-medium text-[#4F7F9E]`}>
                     {(cvr * 100).toFixed(2)}%
                   </td>
                 )}
@@ -938,7 +938,7 @@ const GroupTable = memo(function GroupTable({
 
                 {tableMeta.showRevenue && (
                   <td className={TD_CLASS}>
-                    <DataBarCell
+                    <DataBarCell emphasized
                       value={revenue}
                       max={grpMax.maxRev}
                       label={KRW(revenue)}
@@ -947,7 +947,7 @@ const GroupTable = memo(function GroupTable({
                 )}
 
                 {tableMeta.showRoas && (
-                  <td className={`${TD_CLASS} font-semibold text-[#B98252]`}>
+                  <td className={`${TD_CLASS} font-semibold text-[#4F7F9E]`}>
                     {(roas * 100).toFixed(1)}%
                   </td>
                 )}
@@ -956,7 +956,7 @@ const GroupTable = memo(function GroupTable({
           })}
 
           {groupAggRows.length === 0 && (
-            <tr className="border-t border-[#CFC2B1]/60">
+            <tr className="border-t border-slate-200 bg-white">
               <td className={EMPTY_STATE_CLASS} colSpan={tableMeta.colSpan}>
                 표시할 그룹 데이터가 없습니다. (필터/캠페인 선택/컬럼명을
                 확인)

@@ -414,20 +414,20 @@ const Th = memo(function Th({
   sortKey,
   sortDir,
   onClickHeader,
-  align = "right",
+  align = "center",
 }: {
   k: SortKey;
   sortKey: SortKey;
   sortDir: SortDir;
   onClickHeader: (k: SortKey) => void;
-  align?: "left" | "right";
+  align?: "left" | "center";
 }) {
   return (
     <th
       className={[
-        "select-none whitespace-nowrap px-4 py-3.5 text-[11px] font-semibold uppercase tracking-[0.08em]",
-        align === "left" ? "text-left" : "text-right",
-        "cursor-pointer border-b border-[#CFC2B1]/55 text-[#7A8794] hover:bg-[#F3E4D2]/24 hover:text-[#5F87A3]",
+        "select-none whitespace-nowrap px-3 py-3.5 text-[13px] font-bold uppercase tracking-[0.03em] text-slate-700",
+        align === "left" ? "text-left" : "border-l border-[var(--nature-border-blue)]/45 text-center",
+        "cursor-pointer hover:bg-[var(--nature-blue-light)]/22 hover:text-[#4F7F9E]",
       ].join(" ")}
       onClick={() => onClickHeader(k)}
       title={`정렬: ${SORT_LABEL[k]}`}
@@ -463,12 +463,15 @@ const CreativeTableRow = memo(function CreativeTableRow({
 }) {
   const tableMeta = getCreativeTableMeta(reportMode);
 
+  const metricCellClass =
+    "border-l border-slate-200/65 px-3 py-3.5 text-center text-[15px] font-medium text-slate-800 align-middle tabular-nums";
+
   return (
     <tr
-      className="cursor-pointer border-t border-[#CFC2B1]/45 even:bg-[#F3E4D2]/10 hover:bg-[#B7D7E3]/12"
+      className="cursor-pointer border-t border-slate-200 bg-white even:bg-[var(--nature-blue-light)]/14 hover:bg-[var(--nature-blue-light)]/22"
       onClick={() => onSelectCreative(row)}
     >
-      <td className="whitespace-nowrap px-4 py-3.5 text-left font-medium text-[#27364A]">
+      <td className="whitespace-nowrap px-3 py-3.5 text-left text-[15px] font-bold tracking-[-0.01em] text-slate-900 align-middle">
         <div
           className="inline-flex max-w-[260px] items-center gap-2"
           onMouseEnter={(e) => onPreviewEnter(row, e.currentTarget as HTMLElement)}
@@ -497,30 +500,33 @@ const CreativeTableRow = memo(function CreativeTableRow({
         </div>
       </td>
 
-      <td className="px-4 py-3.5">
+      <td className={metricCellClass}>
         <DataBarCell
+          emphasized
           value={toSafeNumber(row.impressions)}
           max={maxImpr}
           label={formatCount(row.impressions)}
         />
       </td>
 
-      <td className="px-4 py-3.5">
+      <td className={metricCellClass}>
         <DataBarCell
+          emphasized
           value={toSafeNumber(row.clicks)}
           max={maxClicks}
           label={formatCount(row.clicks)}
         />
       </td>
 
-      <td className="px-4 py-3.5 text-right text-[#52606D]">
+      <td className={`${metricCellClass} text-[#4F7F9E]`}>
         {formatPercentFromRate(row.ctr, 2)}
       </td>
 
-      <td className="px-4 py-3.5 text-right text-[#52606D]">{KRW(row.cpc)}</td>
+      <td className={metricCellClass}>{KRW(row.cpc)}</td>
 
-      <td className="px-4 py-3.5">
+      <td className={metricCellClass}>
         <DataBarCell
+          emphasized
           value={toSafeNumber(row.cost)}
           max={maxCost}
           label={KRW(row.cost)}
@@ -528,8 +534,9 @@ const CreativeTableRow = memo(function CreativeTableRow({
       </td>
 
       {tableMeta.showConv && (
-        <td className="px-4 py-3.5">
+        <td className={metricCellClass}>
           <DataBarCell
+            emphasized
             value={toSafeNumber(row.conversions)}
             max={maxConv}
             label={formatCount(row.conversions)}
@@ -538,18 +545,19 @@ const CreativeTableRow = memo(function CreativeTableRow({
       )}
 
       {tableMeta.showCvr && (
-        <td className="px-4 py-3.5 text-right text-[#52606D]">
+        <td className={`${metricCellClass} text-[#4F7F9E]`}>
           {formatPercentFromRate(row.cvr, 2)}
         </td>
       )}
 
       {tableMeta.showCpa && (
-        <td className="px-4 py-3.5 text-right text-[#52606D]">{KRW(row.cpa)}</td>
+        <td className={metricCellClass}>{KRW(row.cpa)}</td>
       )}
 
       {tableMeta.showRevenue && (
-        <td className="px-4 py-3.5">
+        <td className={metricCellClass}>
           <DataBarCell
+            emphasized
             value={toSafeNumber(row.revenue)}
             max={maxRev}
             label={KRW(row.revenue)}
@@ -558,7 +566,7 @@ const CreativeTableRow = memo(function CreativeTableRow({
       )}
 
       {tableMeta.showRoas && (
-        <td className="px-4 py-3.5 text-right text-[#52606D]">
+        <td className={`${metricCellClass} font-semibold text-[#4F7F9E]`}>
           {formatPercentFromRoas(row.roas, 1)}
         </td>
       )}
@@ -1586,9 +1594,9 @@ export default function CreativeSection({
   const tableBody = useMemo(() => {
     if (tableRows.length === 0) {
       return (
-        <tr className="border-t border-[#CFC2B1]/45">
+        <tr className="border-t border-slate-200 bg-white">
           <td
-            className="px-4 py-8 text-center text-sm text-[#7A8794]"
+            className="px-4 py-12 text-center text-sm font-medium text-slate-400"
             colSpan={tableMeta.colSpan}
           >
             표시할 소재 데이터가 없습니다. (creative 컬럼을 확인해 주세요)
@@ -1691,13 +1699,12 @@ export default function CreativeSection({
             </div>
           </div>
 
-          <div className="overflow-auto rounded-[18px] border border-[var(--nature-border-blue)] bg-white shadow-[0_3px_12px_rgba(127,166,196,0.06)]">
+          <div className="overflow-auto rounded-[20px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] shadow-[0_4px_14px_rgba(127,166,196,0.07)]">
             <table className="w-full border-collapse text-sm">
-              <thead className="sticky top-0 z-10 bg-[#F3E4D2]/52">
+              <thead className="sticky top-0 z-10 border-b border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/34">
                 <tr>
                   <Th
                     k="creative"
-                    align="left"
                     sortKey={sortKey}
                     sortDir={sortDir}
                     onClickHeader={onClickHeader}
