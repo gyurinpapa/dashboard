@@ -54,7 +54,7 @@ type Props = {
    * 웹 요약 탭 슬라이드 전용 표시 인덱스.
    * undefined이면 기존 전체 요약 구조를 그대로 렌더링한다.
    */
-  activeSlide?: 0 | 1 | 2;
+  activeSlide?: 0 | 1 | 2 | 3;
 };
 
 const TH_CLASS =
@@ -1198,9 +1198,11 @@ const DAILY_CHART_LINE_COLOR = "#F97316";
 const DailyDualPerformanceCharts = memo(function DailyDualPerformanceCharts({
   reportType,
   rows,
+  dashboardOnly = false,
 }: {
   reportType?: ReportType;
   rows: readonly DailyDisplayRow[];
+  dashboardOnly?: boolean;
 }) {
   const resolvedType: ReportType = reportType ?? "commerce";
 
@@ -1345,6 +1347,26 @@ const DailyDualPerformanceCharts = memo(function DailyDualPerformanceCharts({
       },
     };
   }, [resolvedType, rows]);
+
+  if (dashboardOnly) {
+    return (
+      <SummaryChartView
+        data={resultChart.data}
+        density="export-side-compact"
+        reportType={reportType}
+        hideHeader
+        hideInsights
+        hideCostSeries
+        modeOverride={resultChart.mode}
+        lineColor={DAILY_CHART_LINE_COLOR}
+        xAxisMode="daily-auto"
+        barGapOverride={4}
+        barCategoryGapOverride="18%"
+        transparentChartSurface
+        className="!overflow-visible !rounded-none !border-0 !bg-transparent !shadow-none [&>div:first-child]:!px-0 [&>div:first-child]:!pt-1 [&>div:first-child>div]:!rounded-none [&>div:first-child>div]:!border-0 [&>div:first-child>div]:!bg-transparent [&>div:first-child>div]:!px-0 [&>div:first-child>div]:!py-1 [&>div:first-child>div]:!shadow-none [&>div:last-child]:!h-[380px] [&>div:last-child]:!px-0 [&>div:last-child]:!pb-0 [&>div:last-child]:!pt-1 [&>div:last-child>div]:!rounded-none [&>div:last-child>div]:!border-0 [&>div:last-child>div]:!bg-transparent [&>div:last-child>div]:!px-0 [&>div:last-child>div]:!py-0"
+      />
+    );
+  }
 
   return (
     <div className="mb-6 grid gap-4 lg:grid-cols-2">
@@ -1746,9 +1768,10 @@ function SummarySectionComponent(props: Props) {
   const stableWeekChartData = weekChartData;
 
   const showAllSections = activeSlide == null;
-  const isGoalSlideActive = showAllSections || activeSlide === 0;
-  const isTrendSlideActive = showAllSections || activeSlide === 1;
-  const isSourceSlideActive = showAllSections || activeSlide === 2;
+  const isDashboardSlideActive = activeSlide === 0;
+  const isGoalSlideActive = showAllSections || activeSlide === 1;
+  const isTrendSlideActive = showAllSections || activeSlide === 2;
+  const isSourceSlideActive = showAllSections || activeSlide === 3;
 
   /**
    * 일반 웹에서는 현재 슬라이드만 최초 계산·mount하고,
@@ -1810,7 +1833,7 @@ function SummarySectionComponent(props: Props) {
   }, [weeks, shouldRenderTrendSlide]);
 
   const sourceDerived = useMemo(() => {
-    if (!shouldRenderSourceSlide) {
+    if (!shouldRenderSourceSlide && !isDashboardSlideActive) {
       return {
         sourceDisplayRows: EMPTY_LIST as readonly SourceDisplayRow[],
         dailyDisplayRows: EMPTY_LIST as readonly DailyDisplayRow[],
@@ -1827,27 +1850,440 @@ function SummarySectionComponent(props: Props) {
       };
     }
 
+    const sourceDisplayRows = buildSourceDisplayRows(sources);
+    const srcMaxImpr = getMaxValue(sourceDisplayRows, (r) => r.impressions);
+    const srcMaxClicks = getMaxValue(sourceDisplayRows, (r) => r.clicks);
+    const srcMaxCost = getMaxValue(sourceDisplayRows, (r) => r.cost);
+    const srcMaxConv = getMaxValue(sourceDisplayRows, (r) => r.conversions);
+    const srcMaxRev = getMaxValue(sourceDisplayRows, (r) => r.revenue);
+
     const sortedDays = [...days].sort((a, b) =>
       daySortKey(a).localeCompare(daySortKey(b))
     );
-    const sourceDisplayRows = buildSourceDisplayRows(sources);
     const dailyDisplayRows = buildDailyDisplayRows(sortedDays);
 
     return {
       sourceDisplayRows,
       dailyDisplayRows,
-      srcMaxImpr: getMaxValue(sourceDisplayRows, (r) => r.impressions),
-      srcMaxClicks: getMaxValue(sourceDisplayRows, (r) => r.clicks),
-      srcMaxCost: getMaxValue(sourceDisplayRows, (r) => r.cost),
-      srcMaxConv: getMaxValue(sourceDisplayRows, (r) => r.conversions),
-      srcMaxRev: getMaxValue(sourceDisplayRows, (r) => r.revenue),
+      srcMaxImpr,
+      srcMaxClicks,
+      srcMaxCost,
+      srcMaxConv,
+      srcMaxRev,
       dayMaxImpr: getMaxValue(dailyDisplayRows, (r) => r.impressions),
       dayMaxClicks: getMaxValue(dailyDisplayRows, (r) => r.clicks),
       dayMaxCost: getMaxValue(dailyDisplayRows, (r) => r.cost),
       dayMaxConv: getMaxValue(dailyDisplayRows, (r) => r.conversions),
       dayMaxRev: getMaxValue(dailyDisplayRows, (r) => r.revenue),
     };
-  }, [days, sources, shouldRenderSourceSlide]);
+  }, [days, isDashboardSlideActive, sources, shouldRenderSourceSlide]);
+
+  const dashboardHero = useMemo(() => {
+    if (!isDashboardSlideActive) return null;
+
+    const impressions = toSafeNumber(stableTotals?.impressions ?? stableTotals?.impr);
+    const clicks = toSafeNumber(stableTotals?.clicks ?? stableTotals?.click);
+    const ctr = normalizeRate01(stableTotals?.ctr);
+    const cpc = toSafeNumber(stableTotals?.cpc);
+    const cost = toSafeNumber(stableTotals?.cost);
+    const conversions = toSafeNumber(
+      stableTotals?.conversions ?? stableTotals?.conv
+    );
+    const cvr = normalizeRate01(stableTotals?.cvr);
+    const revenue = toSafeNumber(stableTotals?.revenue ?? stableTotals?.sales);
+    const cpa = toSafeNumber(stableTotals?.cpa);
+    const roas = normalizeRoas01(stableTotals?.roas);
+
+    if (reportType === "traffic") {
+      return {
+        eyebrow: "TRAFFIC PERFORMANCE",
+        primaryLabel: "Clicks",
+        primaryValue: formatCount(clicks),
+        primaryMemo: "현재 필터 기준 핵심 유입 성과",
+        efficiencyLabel: "CTR · CPC",
+        efficiency: [
+          { label: "CTR", value: formatPercentFromRate(ctr, 2) },
+          { label: "CPC", value: KRW(cpc) },
+        ],
+        supporting: [
+          { label: "Impressions", value: formatCount(impressions) },
+          { label: "CTR", value: formatPercentFromRate(ctr, 2) },
+          { label: "CPC", value: KRW(cpc) },
+          { label: "Cost", value: KRW(cost) },
+        ],
+      };
+    }
+
+    if (reportType === "db_acquisition") {
+      return {
+        eyebrow: "DB ACQUISITION PERFORMANCE",
+        primaryLabel: "Conversions",
+        primaryValue: formatCount(conversions),
+        primaryMemo: "현재 필터 기준 핵심 전환 성과",
+        efficiencyLabel: "CVR · CPA · CPC",
+        efficiency: [
+          { label: "CVR", value: formatPercentFromRate(cvr, 2) },
+          { label: "CPA", value: KRW(cpa) },
+          { label: "CPC", value: KRW(cpc) },
+        ],
+        supporting: [
+          { label: "Clicks", value: formatCount(clicks) },
+          { label: "CVR", value: formatPercentFromRate(cvr, 2) },
+          { label: "CPA", value: KRW(cpa) },
+          { label: "Cost", value: KRW(cost) },
+        ],
+      };
+    }
+
+    return {
+      eyebrow: "COMMERCE PERFORMANCE",
+      primaryLabel: "Revenue",
+      primaryValue: KRW(revenue),
+      primaryMemo: "현재 필터 기준 핵심 매출 성과",
+      efficiencyLabel: "ROAS · CVR · CPA · CPC",
+      efficiency: [
+        { label: "ROAS", value: formatPercentFromRoas(roas, 1) },
+        { label: "CVR", value: formatPercentFromRate(cvr, 2) },
+        { label: "CPA", value: KRW(cpa) },
+        { label: "CPC", value: KRW(cpc) },
+      ],
+      supporting: [
+        { label: "ROAS", value: formatPercentFromRoas(roas, 1) },
+        { label: "Conversions", value: formatCount(conversions) },
+        { label: "CPA", value: KRW(cpa) },
+        { label: "Cost", value: KRW(cost) },
+      ],
+    };
+  }, [isDashboardSlideActive, reportType, stableTotals]);
+
+  const [dashboardHeatmapPage, setDashboardHeatmapPage] = useState(0);
+
+  const dashboardHeatmap = useMemo(() => {
+    if (!isDashboardSlideActive) return null;
+
+    const metricLabel =
+      reportType === "traffic"
+        ? "Clicks"
+        : reportType === "db_acquisition"
+          ? "Conversions"
+          : "Revenue";
+
+    const metricLabelKor =
+      reportType === "traffic"
+        ? "클릭수"
+        : reportType === "db_acquisition"
+          ? "전환수"
+          : "매출";
+
+    const metricValue = (row: DailyDisplayRow) =>
+      reportType === "traffic"
+        ? row.clicks
+        : reportType === "db_acquisition"
+          ? row.conversions
+          : row.revenue;
+
+    const formatValue = (value: number) =>
+      reportType === "commerce" ? KRW(value) : formatCount(value);
+
+    const palette = [
+      "bg-[#F3E4D2]/35 border-[#CFC2B1]/45 text-[#7A8794]",
+      "bg-[#B7D7E3]/18 border-[#B7D7E3]/35 text-[#5F87A3]",
+      "bg-[#B7D7E3]/28 border-[#B7D7E3]/45 text-[#5F87A3]",
+      "bg-[#B7D7E3]/42 border-[#B7D7E3]/60 text-[#27364A]",
+      "bg-[#7FA6C4]/55 border-[#7FA6C4]/65 text-white",
+      "bg-[#7FA6C4]/75 border-[#7FA6C4]/80 text-white",
+      "bg-[#5F87A3] border-[#5F87A3] text-white",
+    ] as const;
+
+    const parseDate = (value: unknown) => {
+      const raw = String(value ?? "").trim();
+      const match = raw.match(
+        /^(\d{4})[.\-/]?(\d{1,2})[.\-/]?(\d{1,2})/
+      );
+
+      if (!match) return null;
+
+      const year = Number(match[1]);
+      const month = Number(match[2]);
+      const day = Number(match[3]);
+      const date = new Date(year, month - 1, day);
+
+      if (
+        date.getFullYear() !== year ||
+        date.getMonth() !== month - 1 ||
+        date.getDate() !== day
+      ) {
+        return null;
+      }
+
+      date.setHours(0, 0, 0, 0);
+      return date;
+    };
+
+    const toDateKey = (date: Date) =>
+      [
+        date.getFullYear(),
+        String(date.getMonth() + 1).padStart(2, "0"),
+        String(date.getDate()).padStart(2, "0"),
+      ].join("-");
+
+    const entries: Array<{
+      row: DailyDisplayRow;
+      date: Date;
+      dateKey: string;
+      value: number;
+    }> = [];
+
+    for (const row of sourceDerived.dailyDisplayRows) {
+      const date = parseDate(row.key);
+
+      if (!date) continue;
+
+      entries.push({
+        row,
+        date,
+        dateKey: toDateKey(date),
+        value: Math.max(0, metricValue(row)),
+      });
+    }
+
+    entries.sort((a, b) => a.date.getTime() - b.date.getTime());
+
+    const positiveValues = entries
+      .map((entry) => entry.value)
+      .filter((value) => Number.isFinite(value) && value > 0)
+      .sort((a, b) => a - b);
+
+    const percentile = (ratio: number) => {
+      if (!positiveValues.length) return 0;
+
+      const index = Math.min(
+        positiveValues.length - 1,
+        Math.max(
+          0,
+          Math.round((positiveValues.length - 1) * ratio)
+        )
+      );
+
+      return positiveValues[index];
+    };
+
+    const thresholds = {
+      p10: percentile(0.1),
+      p30: percentile(0.3),
+      p50: percentile(0.5),
+      p70: percentile(0.7),
+      p85: percentile(0.85),
+      hasValues: positiveValues.length > 0,
+      singleValueOnly: positiveValues.length === 1,
+    };
+
+    const levelFor = (value: number) => {
+      if (!thresholds.hasValues || value <= 0) return 0;
+      if (thresholds.singleValueOnly) return 6;
+      if (value <= thresholds.p10) return 1;
+      if (value <= thresholds.p30) return 2;
+      if (value <= thresholds.p50) return 3;
+      if (value <= thresholds.p70) return 4;
+      if (value <= thresholds.p85) return 5;
+      return 6;
+    };
+
+    if (!entries.length) {
+      return {
+        metricLabel,
+        metricLabelKor,
+        palette,
+        totalWeeks: 0,
+        page: 0,
+        maxPage: 0,
+        canOlder: false,
+        canNewer: false,
+        rangeLabel: "-",
+        weekLabels: [] as string[],
+        gridRows: [] as Array<
+          Array<{
+            dateKey: string;
+            level: number;
+            title: string;
+            outsideRange: boolean;
+          }>
+        >,
+        navigatorLeft: 0,
+        navigatorWidth: 100,
+      };
+    }
+
+    const entryMap = new Map(
+      entries.map((entry) => [entry.dateKey, entry] as const)
+    );
+
+    const firstDate = entries[0].date;
+    const lastDate = entries[entries.length - 1].date;
+
+    const calendarStart = new Date(firstDate);
+    const firstMondayOffset = (calendarStart.getDay() + 6) % 7;
+    calendarStart.setDate(
+      calendarStart.getDate() - firstMondayOffset
+    );
+
+    const calendarEnd = new Date(lastDate);
+    const lastMondayOffset = (calendarEnd.getDay() + 6) % 7;
+    calendarEnd.setDate(
+      calendarEnd.getDate() + (6 - lastMondayOffset)
+    );
+
+    const weeks: Date[][] = [];
+
+    for (
+      let weekStart = new Date(calendarStart);
+      weekStart <= calendarEnd;
+      weekStart.setDate(weekStart.getDate() + 7)
+    ) {
+      const week: Date[] = [];
+
+      for (let dayIndex = 0; dayIndex < 7; dayIndex += 1) {
+        const date = new Date(weekStart);
+        date.setDate(date.getDate() + dayIndex);
+        week.push(date);
+      }
+
+      weeks.push(week);
+    }
+
+    const viewportWeeks = 8;
+    const maxPage = Math.max(
+      0,
+      Math.ceil(weeks.length / viewportWeeks) - 1
+    );
+    const page = Math.min(dashboardHeatmapPage, maxPage);
+
+    const endWeekIndex = Math.max(
+      0,
+      weeks.length - page * viewportWeeks
+    );
+    const startWeekIndex = Math.max(
+      0,
+      endWeekIndex - viewportWeeks
+    );
+
+    const visibleWeeks = weeks.slice(
+      startWeekIndex,
+      endWeekIndex
+    );
+
+    const weekLabels = visibleWeeks.map((week) => {
+      const date = week[0];
+      return `${date.getMonth() + 1}/${date.getDate()}`;
+    });
+
+    const gridRows = Array.from({ length: 7 }).map(
+      (_, dayIndex) =>
+        visibleWeeks.map((week) => {
+          const date = week[dayIndex];
+          const dateKey = toDateKey(date);
+          const entry = entryMap.get(dateKey);
+          const value = entry?.value ?? 0;
+          const outsideRange =
+            date.getTime() < firstDate.getTime() ||
+            date.getTime() > lastDate.getTime();
+
+          return {
+            dateKey,
+            level: levelFor(value),
+            title: entry
+              ? `${dateKey} · ${metricLabelKor} ${formatValue(value)}`
+              : dateKey,
+            outsideRange,
+          };
+        })
+    );
+
+    const visibleFirst =
+      visibleWeeks[0]?.[0] ?? firstDate;
+    const lastWeek =
+      visibleWeeks[visibleWeeks.length - 1];
+    const visibleLast =
+      lastWeek?.[6] ?? lastDate;
+
+    const shortDate = (date: Date) =>
+      `${String(date.getMonth() + 1).padStart(2, "0")}.${String(
+        date.getDate()
+      ).padStart(2, "0")}`;
+
+    const totalWeeks = weeks.length;
+    const navigatorLeft =
+      totalWeeks > 0
+        ? (startWeekIndex / totalWeeks) * 100
+        : 0;
+    const navigatorWidth =
+      totalWeeks > 0
+        ? (visibleWeeks.length / totalWeeks) * 100
+        : 100;
+
+    return {
+      metricLabel,
+      metricLabelKor,
+      palette,
+      totalWeeks,
+      page,
+      maxPage,
+      canOlder: startWeekIndex > 0,
+      canNewer: endWeekIndex < totalWeeks,
+      rangeLabel: `${shortDate(visibleFirst)} - ${shortDate(
+        visibleLast
+      )}`,
+      weekLabels,
+      gridRows,
+      navigatorLeft,
+      navigatorWidth,
+    };
+  }, [
+    dashboardHeatmapPage,
+    isDashboardSlideActive,
+    reportType,
+    sourceDerived.dailyDisplayRows,
+  ]);
+
+  const dashboardSource = useMemo(() => {
+    if (!isDashboardSlideActive) return null;
+
+    const rows = sourceDerived.sourceDisplayRows.slice(0, 3);
+
+    if (reportType === "traffic") {
+      return {
+        metricLabel: "Clicks",
+        maxValue: sourceDerived.srcMaxClicks,
+        rows: rows.map((row) => ({
+          row,
+          value: row.clicks,
+          valueText: formatCount(row.clicks),
+        })),
+      };
+    }
+
+    if (reportType === "db_acquisition") {
+      return {
+        metricLabel: "Conversions",
+        maxValue: sourceDerived.srcMaxConv,
+        rows: rows.map((row) => ({
+          row,
+          value: row.conversions,
+          valueText: formatCount(row.conversions),
+        })),
+      };
+    }
+
+    return {
+      metricLabel: "Revenue",
+      maxValue: sourceDerived.srcMaxRev,
+      rows: rows.map((row) => ({
+        row,
+        value: row.revenue,
+        valueText: KRW(row.revenue),
+      })),
+    };
+  }, [isDashboardSlideActive, reportType, sourceDerived]);
 
   return (
     <div
@@ -1855,6 +2291,634 @@ function SummarySectionComponent(props: Props) {
         activeSlide == null ? "mt-6 space-y-12 lg:space-y-14" : "space-y-0",
       ].join(" ")}
     >
+      {isDashboardSlideActive && dashboardHero ? (
+        <section aria-label="Executive Performance Cockpit" className="space-y-4">
+          <SectionIntro
+            badge="PERFORMANCE COCKPIT"
+            title="성과 한눈에 보기"
+            description="핵심 성과를 중심에 두고 주차·Source·일자·효율 흐름을 한 화면에서 빠르게 확인합니다."
+            compact
+          />
+
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(380px,1.28fr)_minmax(0,0.9fr)] xl:grid-rows-2">
+            <div className="relative order-1 min-h-[420px] overflow-hidden rounded-[28px] border border-[var(--nature-border-blue)] bg-[linear-gradient(145deg,rgba(255,253,249,0.98)_0%,rgba(243,228,210,0.42)_45%,rgba(183,215,227,0.34)_100%)] p-6 shadow-[0_14px_34px_rgba(90,117,136,0.12)] sm:p-7 xl:col-start-2 xl:row-span-2 xl:row-start-1 xl:min-h-[520px]">
+              <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full border border-[var(--nature-blue-light)]/35" />
+              <div className="pointer-events-none absolute -right-8 -top-8 h-40 w-40 rounded-full bg-[var(--nature-blue-light)]/14" />
+              <div className="pointer-events-none absolute -left-24 top-[32%] h-64 w-64 rounded-full bg-[radial-gradient(circle,rgba(243,228,210,0.38)_0%,rgba(243,228,210,0)_70%)]" />
+
+              <div className="relative flex h-full flex-col">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="inline-flex rounded-full border border-[var(--nature-border-blue)] bg-white/80 px-3 py-1.5 text-[10px] font-bold tracking-[0.12em] text-[#5F87A3]">
+                    {dashboardHero.eyebrow}
+                  </span>
+
+                  <span className="text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">
+                    Performance Core
+                  </span>
+                </div>
+
+                <div className="relative mx-auto mt-8 flex h-[300px] w-full max-w-[520px] items-center justify-center">
+                  <div className="pointer-events-none absolute h-[264px] w-[264px] rounded-full border border-[#B7D7E3]/45" />
+                  <div className="pointer-events-none absolute h-[210px] w-[210px] rounded-full border border-[#7FA6C4]/28" />
+                  <div className="pointer-events-none absolute h-[156px] w-[156px] rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.92)_0%,rgba(183,215,227,0.22)_52%,rgba(183,215,227,0)_76%)]" />
+
+                  <svg
+                    viewBox="0 0 500 250"
+                    className="pointer-events-none absolute inset-0 h-full w-full"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M72 54 C150 72 180 105 250 125"
+                      fill="none"
+                      stroke="#B7D7E3"
+                      strokeWidth="1.5"
+                      strokeDasharray="4 7"
+                      opacity="0.75"
+                    />
+                    <path
+                      d="M428 58 C348 72 320 104 250 125"
+                      fill="none"
+                      stroke="#7FA6C4"
+                      strokeWidth="1.5"
+                      strokeDasharray="4 7"
+                      opacity="0.62"
+                    />
+                    <path
+                      d="M95 202 C158 178 190 150 250 125"
+                      fill="none"
+                      stroke="#CFC2B1"
+                      strokeWidth="1.5"
+                      strokeDasharray="4 7"
+                      opacity="0.64"
+                    />
+                    <path
+                      d="M405 200 C342 178 308 150 250 125"
+                      fill="none"
+                      stroke="#B7D7E3"
+                      strokeWidth="1.5"
+                      strokeDasharray="4 7"
+                      opacity="0.68"
+                    />
+
+                    <circle cx="72" cy="54" r="6" fill="#F3E4D2" stroke="#CFC2B1" />
+                    <circle cx="428" cy="58" r="6" fill="#B7D7E3" stroke="#7FA6C4" />
+                    <circle cx="95" cy="202" r="5" fill="#CFC2B1" />
+                    <circle cx="405" cy="200" r="5" fill="#B7D7E3" />
+                    <circle cx="250" cy="125" r="8" fill="#7FA6C4" />
+                    <circle
+                      cx="250"
+                      cy="125"
+                      r="15"
+                      fill="none"
+                      stroke="#7FA6C4"
+                      strokeWidth="1"
+                      opacity="0.34"
+                    />
+                  </svg>
+
+                  <div className="relative z-10 max-w-[90%] text-center">
+                    <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#5F87A3]">
+                      {dashboardHero.primaryLabel}
+                    </div>
+
+                    <div className="mt-2 whitespace-nowrap text-[clamp(44px,3.9vw,70px)] font-bold leading-none tracking-[-0.058em] text-slate-900">
+                      {dashboardHero.primaryValue}
+                    </div>
+
+                    <div className="mx-auto mt-3 h-px w-16 bg-[linear-gradient(90deg,transparent,#7FA6C4,transparent)]" />
+
+                    <p className="mt-3 text-[11px] font-medium text-slate-500">
+                      {dashboardHero.primaryMemo}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-9">
+                  <div className="mb-4 flex items-center gap-3">
+                    <div className="h-px flex-1 bg-[linear-gradient(90deg,transparent,rgba(127,166,196,0.38))]" />
+                    <div className="text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">
+                      Performance Signals
+                    </div>
+                    <div className="h-px flex-1 bg-[linear-gradient(90deg,rgba(127,166,196,0.38),transparent)]" />
+                  </div>
+
+                  <div className="grid grid-cols-3">
+                    {dashboardHero.supporting
+                      .filter((item) => item.label !== "Cost")
+                      .slice(0, 3)
+                      .map((item, index) => {
+                        const isRateMetric = ["CTR", "CVR", "ROAS"].includes(
+                          item.label,
+                        );
+                        const isEfficiencyMetric = ["CPC", "CPA"].includes(
+                          item.label,
+                        );
+
+                        const semanticLabel = isRateMetric
+                          ? "Transformation"
+                          : isEfficiencyMetric
+                            ? "Efficiency Control"
+                            : "Volume Flow";
+
+                        return (
+                          <div
+                            key={item.label}
+                            className={[
+                              "relative min-w-0 px-2 text-center sm:px-3",
+                              index > 0
+                                ? "border-l border-[var(--nature-border-blue)]/45"
+                                : "",
+                            ]
+                              .filter(Boolean)
+                              .join(" ")}
+                          >
+                            <div className="relative mx-auto flex h-[86px] w-[86px] items-center justify-center">
+                              {isRateMetric ? (
+                                <svg
+                                  viewBox="0 0 86 86"
+                                  className="h-full w-full"
+                                  aria-hidden="true"
+                                >
+                                  <path
+                                    d="M14 22 H72"
+                                    stroke="#B7D7E3"
+                                    strokeWidth="5"
+                                    strokeLinecap="round"
+                                  />
+                                  <path
+                                    d="M21 35 H65"
+                                    stroke="#B7D7E3"
+                                    strokeWidth="5"
+                                    strokeLinecap="round"
+                                    opacity="0.8"
+                                  />
+                                  <path
+                                    d="M29 48 H57"
+                                    stroke="#7FA6C4"
+                                    strokeWidth="5"
+                                    strokeLinecap="round"
+                                    opacity="0.82"
+                                  />
+                                  <path
+                                    d="M38 61 H48"
+                                    stroke="#5F87A3"
+                                    strokeWidth="6"
+                                    strokeLinecap="round"
+                                  />
+                                  <circle cx="43" cy="70" r="4" fill="#5F87A3" />
+                                </svg>
+                              ) : isEfficiencyMetric ? (
+                                <svg
+                                  viewBox="0 0 86 86"
+                                  className="h-full w-full"
+                                  aria-hidden="true"
+                                >
+                                  <circle
+                                    cx="43"
+                                    cy="43"
+                                    r="31"
+                                    fill="none"
+                                    stroke="#B7D7E3"
+                                    strokeWidth="5"
+                                    opacity="0.72"
+                                  />
+                                  <circle
+                                    cx="43"
+                                    cy="43"
+                                    r="20"
+                                    fill="none"
+                                    stroke="#7FA6C4"
+                                    strokeWidth="3"
+                                    opacity="0.78"
+                                  />
+                                  <path
+                                    d="M43 12 V22 M43 64 V74 M12 43 H22 M64 43 H74"
+                                    stroke="#CFC2B1"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                  />
+                                  <circle cx="43" cy="43" r="7" fill="#5F87A3" />
+                                </svg>
+                              ) : (
+                                <svg
+                                  viewBox="0 0 86 86"
+                                  className="h-full w-full"
+                                  aria-hidden="true"
+                                >
+                                  <path
+                                    d="M11 22 C30 22 32 39 47 43 C58 46 65 55 75 64"
+                                    fill="none"
+                                    stroke="#B7D7E3"
+                                    strokeWidth="3"
+                                    strokeLinecap="round"
+                                  />
+                                  <path
+                                    d="M11 43 C30 43 34 43 47 43 C61 43 67 43 76 43"
+                                    fill="none"
+                                    stroke="#7FA6C4"
+                                    strokeWidth="3"
+                                    strokeLinecap="round"
+                                  />
+                                  <path
+                                    d="M11 64 C29 64 32 49 47 43 C59 38 66 30 75 22"
+                                    fill="none"
+                                    stroke="#CFC2B1"
+                                    strokeWidth="3"
+                                    strokeLinecap="round"
+                                  />
+                                  <circle cx="11" cy="22" r="4" fill="#F3E4D2" />
+                                  <circle cx="11" cy="43" r="4" fill="#B7D7E3" />
+                                  <circle cx="11" cy="64" r="4" fill="#CFC2B1" />
+                                  <circle cx="47" cy="43" r="6" fill="#7FA6C4" />
+                                  <circle cx="76" cy="43" r="4" fill="#5F87A3" />
+                                </svg>
+                              )}
+                            </div>
+
+                            <div className="mt-1 text-[8px] font-bold uppercase tracking-[0.13em] text-slate-400">
+                              {semanticLabel}
+                            </div>
+
+                            <div className="mt-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-[#5F87A3]">
+                              {item.label}
+                            </div>
+
+                            <div className="mt-1 truncate text-[18px] font-bold tabular-nums tracking-[-0.03em] text-slate-800">
+                              {item.value}
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+
+                <div className="relative mb-12 mt-16 overflow-hidden pt-10 text-center">
+                  <div className="pointer-events-none absolute inset-x-[-18%] bottom-[-92px] h-[175px] rounded-[50%] bg-[rgba(183,215,227,0.24)]" />
+                  <div className="pointer-events-none absolute inset-x-[-10%] bottom-[-76px] h-[138px] rounded-[50%] border-t border-[#7FA6C4]/38 bg-[rgba(243,228,210,0.28)]" />
+                  <div className="pointer-events-none absolute inset-x-[5%] bottom-[-56px] h-[100px] rounded-[50%] border-t border-white/90 bg-white/28" />
+
+                  <div className="relative z-10 pb-2">
+                    <div className="text-[9px] font-bold uppercase tracking-[0.18em] text-[#5F87A3]">
+                      Investment Horizon
+                    </div>
+
+                    <div className="mt-1 text-[9px] font-semibold uppercase tracking-[0.13em] text-slate-400">
+                      Total Media Cost
+                    </div>
+
+                    <div className="mt-2 truncate text-[clamp(28px,2.6vw,46px)] font-bold tabular-nums leading-none tracking-[-0.045em] text-slate-900">
+                      {dashboardHero.supporting.find(
+                        (item) => item.label === "Cost",
+                      )?.value ?? "-"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="order-2 min-h-[220px] overflow-hidden rounded-[24px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] p-4 shadow-[0_7px_20px_rgba(127,166,196,0.08)] sm:p-5 xl:col-start-1 xl:row-start-1">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[10px] font-bold tracking-[0.12em] text-[#5F87A3]">
+                    WEEKLY PERFORMANCE
+                  </div>
+                  <div className="mt-1.5 text-lg font-semibold tracking-[-0.025em] text-slate-900">
+                    주차별 성과 흐름
+                  </div>
+                </div>
+
+                <div className="shrink-0 rounded-full bg-[var(--nature-blue-light)]/20 px-3 py-1.5 text-[10px] font-semibold text-[#5F87A3]">
+                  {stableWeekChartData.length}개 구간
+                </div>
+              </div>
+
+              {stableWeekChartData.length > 0 ? (
+                <div className="mt-2 min-w-0">
+                  <SummaryChart
+                    reportType={reportType}
+                    data={stableWeekChartData}
+                    density="export-wide"
+                    hideInsights
+                    lineColor={
+                      reportType === "db_acquisition"
+                        ? DAILY_CHART_LINE_COLOR
+                        : undefined
+                    }
+                    transparentChartSurface
+                    className="!overflow-visible !rounded-none !border-0 !bg-transparent !shadow-none [&>div:first-child]:!px-0 [&>div:first-child]:!pt-1 [&>div:first-child>div]:!rounded-none [&>div:first-child>div]:!border-0 [&>div:first-child>div]:!bg-transparent [&>div:first-child>div]:!px-0 [&>div:first-child>div]:!py-1 [&>div:first-child>div]:!shadow-none [&>div:first-child_.inline-flex]:!h-6 [&>div:first-child_.inline-flex]:!gap-1.5 [&>div:first-child_.inline-flex]:!px-2.5 [&>div:first-child_.inline-flex]:!text-[9px] [&>div:first-child_.inline-flex>span:first-child]:!h-[9px] [&>div:first-child_.inline-flex>span:first-child]:!w-[9px] [&>div:last-child]:!h-[380px] [&>div:last-child]:!px-0 [&>div:last-child]:!pb-0 [&>div:last-child]:!pt-1 [&>div:last-child>div]:!rounded-none [&>div:last-child>div]:!border-0 [&>div:last-child>div]:!bg-transparent [&>div:last-child>div]:!px-0 [&>div:last-child>div]:!py-0"
+                  />
+                </div>
+              ) : (
+                <div className="mt-4 flex h-[380px] items-center justify-center text-xs font-medium text-slate-400">
+                  표시할 주차별 데이터가 없습니다.
+                </div>
+              )}
+            </div>
+
+            <div className="order-5 flex min-h-[220px] flex-col rounded-[24px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] p-5 shadow-[0_7px_20px_rgba(127,166,196,0.08)] xl:col-start-3 xl:row-start-2">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[10px] font-bold tracking-[0.12em] text-[#5F87A3]">
+                    PERFORMANCE HEATMAP
+                  </div>
+                  <div className="mt-1.5 text-lg font-semibold tracking-[-0.025em] text-slate-900">
+                    일자 성과 강도
+                  </div>
+                </div>
+
+                {dashboardHeatmap ? (
+                  <div className="shrink-0 rounded-full border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/14 px-2.5 py-1 text-[10px] font-semibold text-[#5F87A3]">
+                    {dashboardHeatmap.metricLabel}
+                  </div>
+                ) : null}
+              </div>
+
+              {dashboardHeatmap && dashboardHeatmap.totalWeeks > 0 ? (
+                <div className="mt-4 flex flex-1 flex-col">
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDashboardHeatmapPage(
+                          Math.min(
+                            dashboardHeatmap.maxPage,
+                            dashboardHeatmap.page + 1
+                          )
+                        )
+                      }
+                      disabled={!dashboardHeatmap.canOlder}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-[var(--nature-border-blue)] bg-white text-xs font-bold text-slate-600 transition hover:bg-[var(--nature-blue-light)]/18 disabled:cursor-not-allowed disabled:opacity-30"
+                      aria-label="이전 8주 보기"
+                    >
+                      ‹
+                    </button>
+
+                    <div className="text-center">
+                      <div className="text-[11px] font-bold tabular-nums text-slate-700">
+                        {dashboardHeatmap.rangeLabel}
+                      </div>
+                      <div className="mt-0.5 text-[9px] font-semibold text-slate-400">
+                        최대 8주 · 전체 {dashboardHeatmap.totalWeeks}주
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDashboardHeatmapPage(
+                          Math.max(
+                            0,
+                            dashboardHeatmap.page - 1
+                          )
+                        )
+                      }
+                      disabled={!dashboardHeatmap.canNewer}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-[var(--nature-border-blue)] bg-white text-xs font-bold text-slate-600 transition hover:bg-[var(--nature-blue-light)]/18 disabled:cursor-not-allowed disabled:opacity-30"
+                      aria-label="다음 8주 보기"
+                    >
+                      ›
+                    </button>
+                  </div>
+
+                  <div
+                    className="mt-4 grid gap-1.5"
+                    style={{
+                      gridTemplateColumns: `28px repeat(${dashboardHeatmap.weekLabels.length}, minmax(0, 1fr))`,
+                    }}
+                  >
+                    <div />
+                    {dashboardHeatmap.weekLabels.map(
+                      (label, weekIndex) => (
+                        <div
+                          key={`heat-week-${weekIndex}`}
+                          className="truncate text-center text-[8px] font-semibold tabular-nums text-slate-400"
+                        >
+                          {label}
+                        </div>
+                      )
+                    )}
+
+                    {dashboardHeatmap.gridRows.map(
+                      (row, dayIndex) => (
+                        <>
+                          <div
+                            key={`heat-day-${dayIndex}`}
+                            className="flex h-7 items-center text-[9px] font-semibold text-slate-400"
+                          >
+                            {
+                              ["월", "화", "수", "목", "금", "토", "일"][
+                                dayIndex
+                              ]
+                            }
+                          </div>
+
+                          {row.map((cell) => (
+                            <div
+                              key={cell.dateKey}
+                              title={cell.title}
+                              className={[
+                                "h-7 rounded-[7px] border transition-transform hover:scale-[1.06]",
+                                dashboardHeatmap.palette[cell.level],
+                                cell.outsideRange ? "opacity-30" : "",
+                              ]
+                                .filter(Boolean)
+                                .join(" ")}
+                            />
+                          ))}
+                        </>
+                      )
+                    )}
+                  </div>
+
+                  <div className="mt-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-[9px] font-semibold text-slate-400">
+                        전체 기간 위치
+                      </div>
+                      <div className="text-[9px] font-semibold text-slate-400">
+                        Hover 시 일자별 값 확인
+                      </div>
+                    </div>
+
+                    <div className="relative mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className="absolute inset-y-0 rounded-full bg-[var(--nature-blue)]"
+                        style={{
+                          left: `${dashboardHeatmap.navigatorLeft}%`,
+                          width: `${dashboardHeatmap.navigatorWidth}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex items-center justify-end gap-1">
+                    <span className="mr-1 text-[9px] font-semibold text-slate-400">
+                      낮음
+                    </span>
+                    {dashboardHeatmap.palette.map(
+                      (heatClass, index) => (
+                        <span
+                          key={`heat-legend-${index}`}
+                          className={[
+                            "h-2.5 w-4 rounded-[4px] border",
+                            heatClass,
+                          ].join(" ")}
+                        />
+                      )
+                    )}
+                    <span className="ml-1 text-[9px] font-semibold text-slate-400">
+                      높음
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-1 items-center justify-center py-10 text-xs font-medium text-slate-400">
+                  표시할 일자별 데이터가 없습니다.
+                </div>
+              )}
+            </div>
+
+            <div className="order-4 min-h-[220px] overflow-hidden rounded-[24px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] p-4 shadow-[0_7px_20px_rgba(127,166,196,0.08)] sm:p-5 xl:col-start-3 xl:row-start-1">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[10px] font-bold tracking-[0.12em] text-[#5F87A3]">
+                    DAILY MOVEMENT
+                  </div>
+                  <div className="mt-1.5 text-lg font-semibold tracking-[-0.025em] text-slate-900">
+                    일자별 움직임
+                  </div>
+                </div>
+
+                <div className="shrink-0 rounded-full bg-[var(--nature-blue-light)]/20 px-3 py-1.5 text-[10px] font-semibold text-[#5F87A3]">
+                  {sourceDerived.dailyDisplayRows.length}개 일자
+                </div>
+              </div>
+
+              {sourceDerived.dailyDisplayRows.length > 0 ? (
+                <div className="mt-2 min-w-0">
+                  <DailyDualPerformanceCharts
+                    reportType={reportType}
+                    rows={sourceDerived.dailyDisplayRows}
+                    dashboardOnly
+                  />
+                </div>
+              ) : (
+                <div className="mt-4 flex h-[380px] items-center justify-center text-xs font-medium text-slate-400">
+                  표시할 일자별 데이터가 없습니다.
+                </div>
+              )}
+            </div>
+
+            <div className="order-3 flex min-h-[220px] flex-col rounded-[24px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] p-5 shadow-[0_7px_20px_rgba(127,166,196,0.08)] xl:col-start-1 xl:row-start-2">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[10px] font-bold tracking-[0.12em] text-[#5F87A3]">
+                    SOURCE LADDER
+                  </div>
+                  <div className="mt-1.5 text-lg font-semibold tracking-[-0.025em] text-slate-900">
+                    Source별 성과
+                  </div>
+                </div>
+
+                <div className="shrink-0 rounded-full bg-[var(--nature-cream)]/70 px-3 py-1.5 text-[10px] font-semibold text-slate-600">
+                  {sources.length}개 Source
+                </div>
+              </div>
+
+              {dashboardSource && dashboardSource.rows.length > 0 ? (
+                dashboardSource.rows.length === 1 ? (
+                  <div className="flex flex-1 flex-col items-center justify-center py-4">
+                    <div className="flex h-52 w-52 shrink-0 items-center justify-center rounded-full border-[16px] border-[var(--nature-blue-light)]/45 bg-white/80 shadow-[0_12px_30px_rgba(90,117,136,0.11)]">
+                      <div className="px-3 text-center">
+                        <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#5F87A3]">
+                          {dashboardSource.metricLabel}
+                        </div>
+
+                        <div className="mt-2.5 text-[42px] font-bold leading-none tabular-nums tracking-[-0.055em] text-slate-900">
+                          {dashboardSource.rows[0].valueText}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 flex min-w-0 max-w-full justify-center">
+                      <SourceBrand
+                        source={dashboardSource.rows[0].row.source}
+                        className="min-w-0"
+                        logoClassName="!h-5 !w-5"
+                        textClassName="text-[14px] font-bold text-slate-800"
+                      />
+                    </div>
+
+                    <div className="mt-2 text-[10px] font-semibold text-slate-400">
+                      현재 필터 기준 단일 Source
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-5 flex flex-1 flex-col justify-center gap-5">
+                    {dashboardSource.rows.map((item, index) => {
+                      const width =
+                        dashboardSource.maxValue > 0
+                          ? Math.max(
+                              8,
+                              Math.min(
+                                100,
+                                (item.value / dashboardSource.maxValue) * 100,
+                              ),
+                            )
+                          : 0;
+
+                      const barClass =
+                        [
+                          "bg-[#7FA6C4]",
+                          "bg-[#B7D7E3]",
+                          "bg-[#CFC2B1]",
+                        ][index] ?? "bg-[#B7D7E3]";
+
+                      return (
+                        <div key={item.row.key} className="min-w-0">
+                          <div className="flex min-w-0 items-center justify-between gap-4">
+                            <SourceBrand
+                              source={item.row.source}
+                              className="min-w-0"
+                              logoClassName="!h-4 !w-4"
+                              textClassName="truncate text-[12px] font-bold text-slate-700"
+                            />
+
+                            <div className="shrink-0 text-[16px] font-bold tabular-nums tracking-[-0.025em] text-slate-800">
+                              {item.valueText}
+                            </div>
+                          </div>
+
+                          <div className="mt-2.5 h-3 overflow-hidden rounded-full bg-[var(--nature-blue-light)]/16">
+                            <div
+                              className={[
+                                "h-full rounded-full",
+                                barClass,
+                              ].join(" ")}
+                              style={{ width: `${width}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {sources.length > dashboardSource.rows.length ? (
+                      <div className="text-right text-[10px] font-semibold text-slate-400">
+                        외 {sources.length - dashboardSource.rows.length}개 Source
+                      </div>
+                    ) : null}
+                  </div>
+                )
+              ) : (
+                <div className="flex flex-1 items-center justify-center py-10 text-xs font-medium text-slate-400">
+                  표시할 Source 데이터가 없습니다.
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      ) : null}
+
       {shouldRenderGoalSlide ? (
         <div
           className={isGoalSlideActive ? "block" : "hidden"}

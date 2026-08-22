@@ -1510,7 +1510,11 @@ export default function CreativeDetailSection({
         byWeekChart={byWeekChart}
         bySource={bySource}
         byDay={byDay}
-        activeSlide={activeSlide}
+        activeSlide={
+          activeSlide == null
+            ? undefined
+            : ((activeSlide + 1) as 1 | 2 | 3)
+        }
       />
     ),
     [

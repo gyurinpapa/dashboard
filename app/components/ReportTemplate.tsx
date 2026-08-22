@@ -322,6 +322,7 @@ type Props = {
 
 type ReportFilterKey = FilterKey;
 type SummarySlideIndex = 0 | 1 | 2;
+type SummaryWebSlideIndex = 0 | 1 | 2 | 3;
 type HeaderBarProps = ComponentProps<typeof HeaderBar>;
 
 type HypothesisTabKey =
@@ -3098,7 +3099,7 @@ export default function ReportTemplate({
   forcedSlideIndex,
 }: Props) {
   const [internalTab, setInternalTab] = useState<TabKey>("summary");
-  const [summarySlide, setSummarySlide] = useState<SummarySlideIndex>(0);
+  const [summarySlide, setSummarySlide] = useState<SummaryWebSlideIndex>(0);
   const [summary2Slide, setSummary2Slide] = useState<SummarySlideIndex>(0);
   const [structureSlide, setStructureSlide] = useState<SummarySlideIndex>(0);
   const [keywordSlide, setKeywordSlide] = useState<SummarySlideIndex>(0);
@@ -3117,13 +3118,13 @@ export default function ReportTemplate({
 
   const goToPreviousSummarySlide = useCallback(() => {
     setSummarySlide((current) =>
-      Math.max(0, current - 1) as SummarySlideIndex,
+      Math.max(0, current - 1) as SummaryWebSlideIndex,
     );
   }, []);
 
   const goToNextSummarySlide = useCallback(() => {
     setSummarySlide((current) =>
-      Math.min(2, current + 1) as SummarySlideIndex,
+      Math.min(3, current + 1) as SummaryWebSlideIndex,
     );
   }, []);
 
@@ -3353,7 +3354,11 @@ export default function ReportTemplate({
 
   const effectiveSummarySlide =
     forcedTab === "summary"
-      ? clampSlideIndex(forcedSlideIndex, 2, summarySlide)
+      ? clampSlideIndex(
+          forcedSlideIndex,
+          2,
+          Math.min(2, summarySlide) as SummarySlideIndex,
+        )
       : summarySlide;
   const effectiveSummary2Slide =
     forcedTab === "summary2"
@@ -4392,7 +4397,7 @@ export default function ReportTemplate({
                         <div className={effectiveSummarySlide === 0 ? "mt-6 rounded-2xl" : "rounded-2xl"}>
                           <SummarySection
                             {...(summarySectionProps as any)}
-                            activeSlide={effectiveSummarySlide}
+                            activeSlide={(effectiveSummarySlide + 1) as 1 | 2 | 3}
                           />
                         </div>
                       </>
@@ -4410,11 +4415,11 @@ export default function ReportTemplate({
 
                           <div className="flex flex-col items-center gap-2">
                             <div className="text-xs font-semibold tracking-[0.08em] text-slate-600">
-                              슬라이드 {summarySlide + 1} / 3
+                              슬라이드 {summarySlide + 1} / 4
                             </div>
 
                             <div className="flex items-center gap-2" aria-label="요약 슬라이드 선택">
-                              {([0, 1, 2] as const).map((slideIndex) => (
+                              {([0, 1, 2, 3] as const).map((slideIndex) => (
                                 <button
                                   key={slideIndex}
                                   type="button"
@@ -4437,7 +4442,7 @@ export default function ReportTemplate({
                           <button
                             type="button"
                             onClick={goToNextSummarySlide}
-                            disabled={summarySlide === 2}
+                            disabled={summarySlide === 3}
                             className="inline-flex h-9 min-w-[104px] items-center justify-center rounded-full border border-[var(--nature-border-blue)] bg-white px-4 text-xs font-semibold text-slate-700 transition hover:bg-[var(--nature-blue-light)]/25 disabled:cursor-not-allowed disabled:opacity-35"
                           >
                             다음 ›
@@ -4449,11 +4454,11 @@ export default function ReportTemplate({
                           <div className="relative min-h-[680px] p-4 sm:p-5 lg:min-h-[760px] lg:p-6 xl:p-7">
                             <div
                               className={
-                                summarySlide === 0
+                                summarySlide === 1
                                   ? "block"
                                   : "hidden"
                               }
-                              aria-hidden={summarySlide !== 0}
+                              aria-hidden={summarySlide !== 1}
                             >
                               <div className="relative overflow-hidden rounded-[28px] bg-transparent [&>section]:mb-0 [&>section]:mt-0 [&>section]:rounded-[28px] [&>section]:border-0 [&>section]:bg-transparent [&>section]:shadow-none">
                                 <MonthGoalSection
@@ -4462,7 +4467,7 @@ export default function ReportTemplate({
                               </div>
                             </div>
 
-                            <div className={summarySlide === 0 ? "mt-6" : "mt-0"}>
+                            <div className={summarySlide === 1 ? "mt-6" : "mt-0"}>
                               <SummarySection
                                 {...(summarySectionProps as any)}
                                 activeSlide={summarySlide}

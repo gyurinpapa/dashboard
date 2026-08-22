@@ -10,11 +10,19 @@ import {
   formatPercentFromRate,
 } from "../../../../src/lib/report/format";
 import SummaryChartView from "./SummaryChartView";
-import type { SummaryChartViewPoint } from "./SummaryChartView";
+import type {
+  SummaryChartViewDensity,
+  SummaryChartViewPoint,
+} from "./SummaryChartView";
 
 type Props = {
   reportType?: ReportType;
   data: any[];
+  density?: SummaryChartViewDensity;
+  hideInsights?: boolean;
+  className?: string;
+  lineColor?: string;
+  transparentChartSurface?: boolean;
 };
 
 type SummaryChartInsight = {
@@ -226,7 +234,15 @@ function buildChartModel(
   return buildCommerceChartModel(safeData);
 }
 
-function SummaryChart({ reportType = "commerce", data }: Props) {
+function SummaryChart({
+  reportType = "commerce",
+  data,
+  density = "report",
+  hideInsights = false,
+  className,
+  lineColor,
+  transparentChartSurface = false,
+}: Props) {
   const safeData = useMemo(
     () => (Array.isArray(data) ? data : EMPTY_DATA),
     [data]
@@ -239,10 +255,14 @@ function SummaryChart({ reportType = "commerce", data }: Props) {
   return (
     <SummaryChartView
       data={chartData}
-      density="report"
+      density={density}
       insight={insight}
       reportType={reportType}
       hideHeader
+      hideInsights={hideInsights}
+      className={className}
+      lineColor={lineColor}
+      transparentChartSurface={transparentChartSurface}
     />
   );
 }

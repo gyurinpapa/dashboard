@@ -1230,7 +1230,11 @@ const SummarySectionBlock = memo(function SummarySectionBlock({
           byWeekChart={byWeekChart as any}
           bySource={bySource as any}
           byDay={byDay as any}
-          activeSlide={activeSlide}
+          activeSlide={
+            activeSlide == null
+              ? undefined
+              : ((activeSlide + 1) as 1 | 2 | 3)
+          }
         />
       </div>
     </div>

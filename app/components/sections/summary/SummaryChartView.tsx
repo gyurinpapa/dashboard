@@ -51,6 +51,7 @@ type Props = {
   density?: SummaryChartViewDensity;
   insight?: Partial<SummaryChartInsight>;
   className?: string;
+  transparentChartSurface?: boolean;
   reportType?: ReportType;
   hideHeader?: boolean;
   modeOverride?: MetricViewMode;
@@ -637,6 +638,7 @@ function SummaryChartView({
   density = "report",
   insight,
   className,
+  transparentChartSurface = false,
   reportType = "commerce",
   hideHeader = false,
   modeOverride,
@@ -826,7 +828,16 @@ function SummaryChartView({
   }, [safeData, activeIndex, mode.renderRevenueAsBar]);
 
   return (
-    <div className={rootClassName}>
+    <div
+      className={[
+        rootClassName,
+        transparentChartSurface
+          ? "!bg-none !bg-transparent !border-0 !shadow-none"
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
       {!hideHeader ? (
         <div className={densityClasses.headerWrap}>
           <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-slate-200/80 to-transparent" />
@@ -841,7 +852,16 @@ function SummaryChartView({
           .filter(Boolean)
           .join(" ")}
       >
-        <div className={densityClasses.topStrip}>
+        <div
+          className={[
+            densityClasses.topStrip,
+            transparentChartSurface
+              ? "!bg-none !bg-transparent !border-0 !shadow-none"
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
           <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-wrap items-center gap-2">
               <SlimLegendItem
@@ -894,7 +914,16 @@ function SummaryChartView({
       </div>
 
       <div className={densityClasses.chartWrap}>
-        <div className="h-full rounded-[16px] border border-[var(--nature-border)] bg-white px-2 py-2 sm:px-3 sm:py-3">
+        <div
+          className={[
+            "h-full rounded-[16px] border border-[var(--nature-border)] bg-white px-2 py-2 sm:px-3 sm:py-3",
+            transparentChartSurface
+              ? "!rounded-none !border-0 !bg-none !bg-transparent !px-0 !py-0 !shadow-none sm:!px-0 sm:!py-0"
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
           <ResponsiveContainer
             width="100%"
             height="100%"
