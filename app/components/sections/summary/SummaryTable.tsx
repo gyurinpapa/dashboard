@@ -120,19 +120,19 @@ type MonthRowProps = {
 };
 
 const TABLE_HEAD_TH_CLASS =
-  "whitespace-nowrap px-4 py-3.5 text-right text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 sm:px-5";
+  "whitespace-nowrap border-l border-[var(--nature-border-blue)]/45 px-3 py-3.5 text-center text-[13px] font-bold uppercase tracking-[0.03em] text-slate-700";
 const TABLE_HEAD_FIRST_TH_CLASS =
-  "whitespace-nowrap px-4 py-3.5 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 sm:px-5";
+  "whitespace-nowrap px-3 py-3.5 text-center text-[13px] font-bold uppercase tracking-[0.03em] text-slate-700";
 const TD_TEXT_RIGHT_CLASS =
-  "whitespace-nowrap px-4 py-3.5 text-right sm:px-5";
+  "whitespace-nowrap border-l border-slate-200/65 px-3 py-3.5 text-center text-[15px] font-medium text-slate-800 align-middle tabular-nums";
 const TD_TEXT_LEFT_CLASS =
-  "whitespace-nowrap px-4 py-3.5 text-left font-semibold tracking-[-0.01em] text-slate-900 sm:px-5";
+  "whitespace-nowrap px-3 py-3.5 text-center text-[15px] font-bold tracking-[-0.01em] text-slate-900 align-middle";
 const TD_TEXT_RIGHT_MEDIUM_CLASS =
-  "whitespace-nowrap px-4 py-3.5 text-right font-medium text-slate-700 sm:px-5";
+  "whitespace-nowrap border-l border-slate-200/65 px-3 py-3.5 text-center text-[15px] font-medium text-slate-800 align-middle tabular-nums";
 const TD_TEXT_RIGHT_STRONG_CLASS =
-  "whitespace-nowrap px-4 py-3.5 text-right font-semibold text-sky-700 sm:px-5";
+  "whitespace-nowrap border-l border-slate-200/65 px-3 py-3.5 text-center text-[15px] font-semibold text-sky-700 align-middle tabular-nums";
 const TD_BAR_CLASS =
-  "whitespace-nowrap px-4 py-3.5 text-right align-middle sm:px-5";
+  "whitespace-nowrap border-l border-slate-200/65 px-3 py-3.5 text-center text-[15px] font-medium align-middle tabular-nums";
 
 const WRAPPER_CLASS_NAME =
   "overflow-auto rounded-[20px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] shadow-[0_4px_14px_rgba(127,166,196,0.07)]";
@@ -142,9 +142,9 @@ const COMMERCE_TABLE_CLASS_NAME = "w-full min-w-[1120px] text-sm";
 const EMPTY_ROW_CLASS_NAME =
   "px-4 py-12 text-center text-sm font-medium text-slate-400";
 const MONTH_ROW_TR_CLASS_NAME =
-  "border-t border-[var(--nature-border)] odd:bg-[var(--nature-surface)] even:bg-[var(--nature-cream)]/18 hover:bg-[var(--nature-blue-light)]/16";
+  "border-t border-slate-200 odd:bg-white even:bg-[var(--nature-blue-light)]/14 hover:bg-[var(--nature-blue-light)]/22";
 const DELTA_ROW_TR_CLASS_NAME =
-  "border-b border-[var(--nature-border)] bg-[var(--nature-cream)]/30 text-slate-800";
+  "border-b border-[var(--nature-border-blue)]/55 bg-[var(--nature-cream)]/72 text-slate-800";
 
 function getMetricMode(reportType?: ReportType): MetricMode {
   const resolvedType: ReportType = reportType ?? "commerce";
@@ -223,7 +223,7 @@ const SummaryTableHeader = memo(function SummaryTableHeader({
   labels,
 }: HeaderProps) {
   return (
-    <thead className="sticky top-0 z-10 border-b border-[var(--nature-border)] bg-[var(--nature-cream)]/88">
+    <thead className="sticky top-0 z-10 border-b border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/34">
       <tr>
         <th className={TABLE_HEAD_FIRST_TH_CLASS}>{labels.month}</th>
         <th className={TABLE_HEAD_TH_CLASS}>{labels.impressions}</th>
@@ -282,6 +282,7 @@ const SummaryTableMonthRow = memo(function SummaryTableMonthRow({
                 value={cell.value}
                 max={cell.max}
                 label={cell.label}
+                emphasized
               />
             </td>
           );

@@ -17,10 +17,14 @@ import {
   normalizeRoas01,
   formatPercentFromRate,
   formatPercentFromRoas,
+  formatCount,
+  formatCurrencyAxisCompact,
+  formatPercentAxisFromRoas,
   diffRatio,
 } from "../../../src/lib/report/format";
 
 import SummaryChart from "./summary/SummaryChart";
+import SummaryChartView from "./summary/SummaryChartView";
 import SummaryKPI from "./summary/SummaryKPI";
 import SummaryTable from "./summary/SummaryTable";
 import TrendCell from "../ui/TrendCell";
@@ -369,6 +373,7 @@ function buildDailyDisplayRows(rows: readonly any[]): DailyDisplayRow[] {
     const revenue = toSafeNumber(d?.revenue);
     const cpc = toSafeNumber(d?.cpc);
     const cpa = toSafeNumber(d?.cpa);
+    const roas = normalizeRoas01(d?.roas);
     const label = dayLabel(d);
 
     return {
@@ -385,14 +390,17 @@ function buildDailyDisplayRows(rows: readonly any[]): DailyDisplayRow[] {
       impressions,
       clicks,
       ctrText: formatPercentFromRate(d?.ctr, 2),
+      cpc,
       cpcText: KRW(cpc),
       cost,
       costText: KRW(cost),
       conversions,
       cvrText: formatPercentFromRate(d?.cvr, 2),
+      cpa,
       cpaText: KRW(cpa),
       revenue,
       revenueText: KRW(revenue),
+      roas,
       roasText: formatPercentFromRoas(d?.roas, 1),
     };
   });
@@ -462,25 +470,38 @@ const MetricColGroup = memo(function MetricColGroup({
   );
 });
 
+const SLIDE2_TABLE_HEAD_CLASS =
+  "border-b border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/34";
+const SLIDE2_TH_CLASS =
+  "whitespace-nowrap border-l border-[var(--nature-border-blue)]/45 px-3 py-3.5 text-center text-[13px] font-bold uppercase tracking-[0.03em] text-slate-700";
+const SLIDE2_FIRST_TH_CLASS =
+  "whitespace-nowrap px-3 py-3.5 text-center text-[13px] font-bold uppercase tracking-[0.03em] text-slate-700";
+const SLIDE2_TD_CLASS =
+  "whitespace-nowrap border-l border-slate-200/65 px-3 py-3.5 text-center text-[15px] font-medium text-slate-800 align-middle tabular-nums";
+const SLIDE2_FIRST_TD_CLASS =
+  "whitespace-nowrap px-3 py-3.5 text-center text-[15px] font-bold text-slate-900 align-middle";
+const SLIDE3_TABLE_HEAD_CLASS =
+  `${SLIDE2_TABLE_HEAD_CLASS} sticky top-0 z-10`;
+
 const WeeklyTableHead = memo(function WeeklyTableHead({
   mode,
 }: {
   mode: MetricMode;
 }) {
   return (
-    <thead className={TABLE_HEAD_CLASS}>
+    <thead className={SLIDE2_TABLE_HEAD_CLASS}>
       <tr>
-        <th className={FIRST_TH_CLASS}>Week</th>
-        <th className={TH_CLASS}>Impr</th>
-        <th className={TH_CLASS}>Clicks</th>
-        <th className={TH_CLASS}>CTR</th>
-        <th className={TH_CLASS}>CPC</th>
-        <th className={TH_CLASS}>Cost</th>
-        {mode.showConversions && <th className={TH_CLASS}>Conv</th>}
-        {mode.showCvr && <th className={TH_CLASS}>CVR</th>}
-        {mode.showCpa && <th className={TH_CLASS}>CPA</th>}
-        {mode.showRevenue && <th className={TH_CLASS}>Revenue</th>}
-        {mode.showRoas && <th className={TH_CLASS}>ROAS</th>}
+        <th className={SLIDE2_FIRST_TH_CLASS}>Week</th>
+        <th className={SLIDE2_TH_CLASS}>Impr</th>
+        <th className={SLIDE2_TH_CLASS}>Clicks</th>
+        <th className={SLIDE2_TH_CLASS}>CTR</th>
+        <th className={SLIDE2_TH_CLASS}>CPC</th>
+        <th className={SLIDE2_TH_CLASS}>Cost</th>
+        {mode.showConversions && <th className={SLIDE2_TH_CLASS}>Conv</th>}
+        {mode.showCvr && <th className={SLIDE2_TH_CLASS}>CVR</th>}
+        {mode.showCpa && <th className={SLIDE2_TH_CLASS}>CPA</th>}
+        {mode.showRevenue && <th className={SLIDE2_TH_CLASS}>Revenue</th>}
+        {mode.showRoas && <th className={SLIDE2_TH_CLASS}>ROAS</th>}
       </tr>
     </thead>
   );
@@ -492,19 +513,19 @@ const SourceTableHead = memo(function SourceTableHead({
   mode: MetricMode;
 }) {
   return (
-    <thead className={TABLE_HEAD_CLASS}>
+    <thead className={SLIDE3_TABLE_HEAD_CLASS}>
       <tr>
-        <th className={FIRST_TH_CLASS}>Source</th>
-        <th className={TH_CLASS}>Impr</th>
-        <th className={TH_CLASS}>Clicks</th>
-        <th className={TH_CLASS}>CTR</th>
-        <th className={TH_CLASS}>CPC</th>
-        <th className={TH_CLASS}>Cost</th>
-        {mode.showConversions && <th className={TH_CLASS}>Conv</th>}
-        {mode.showCvr && <th className={TH_CLASS}>CVR</th>}
-        {mode.showCpa && <th className={TH_CLASS}>CPA</th>}
-        {mode.showRevenue && <th className={TH_CLASS}>Revenue</th>}
-        {mode.showRoas && <th className={TH_CLASS}>ROAS</th>}
+        <th className={SLIDE2_FIRST_TH_CLASS}>Source</th>
+        <th className={SLIDE2_TH_CLASS}>Impr</th>
+        <th className={SLIDE2_TH_CLASS}>Clicks</th>
+        <th className={SLIDE2_TH_CLASS}>CTR</th>
+        <th className={SLIDE2_TH_CLASS}>CPC</th>
+        <th className={SLIDE2_TH_CLASS}>Cost</th>
+        {mode.showConversions && <th className={SLIDE2_TH_CLASS}>Conv</th>}
+        {mode.showCvr && <th className={SLIDE2_TH_CLASS}>CVR</th>}
+        {mode.showCpa && <th className={SLIDE2_TH_CLASS}>CPA</th>}
+        {mode.showRevenue && <th className={SLIDE2_TH_CLASS}>Revenue</th>}
+        {mode.showRoas && <th className={SLIDE2_TH_CLASS}>ROAS</th>}
       </tr>
     </thead>
   );
@@ -516,19 +537,19 @@ const DailyTableHead = memo(function DailyTableHead({
   mode: MetricMode;
 }) {
   return (
-    <thead className={TABLE_HEAD_CLASS}>
+    <thead className={SLIDE3_TABLE_HEAD_CLASS}>
       <tr>
-        <th className={FIRST_TH_CLASS}>Date</th>
-        <th className={TH_CLASS}>Impr</th>
-        <th className={TH_CLASS}>Clicks</th>
-        <th className={TH_CLASS}>CTR</th>
-        <th className={TH_CLASS}>CPC</th>
-        <th className={TH_CLASS}>Cost</th>
-        {mode.showConversions && <th className={TH_CLASS}>Conv</th>}
-        {mode.showCvr && <th className={TH_CLASS}>CVR</th>}
-        {mode.showCpa && <th className={TH_CLASS}>CPA</th>}
-        {mode.showRevenue && <th className={TH_CLASS}>Revenue</th>}
-        {mode.showRoas && <th className={TH_CLASS}>ROAS</th>}
+        <th className={SLIDE2_FIRST_TH_CLASS}>Date</th>
+        <th className={SLIDE2_TH_CLASS}>Impr</th>
+        <th className={SLIDE2_TH_CLASS}>Clicks</th>
+        <th className={SLIDE2_TH_CLASS}>CTR</th>
+        <th className={SLIDE2_TH_CLASS}>CPC</th>
+        <th className={SLIDE2_TH_CLASS}>Cost</th>
+        {mode.showConversions && <th className={SLIDE2_TH_CLASS}>Conv</th>}
+        {mode.showCvr && <th className={SLIDE2_TH_CLASS}>CVR</th>}
+        {mode.showCpa && <th className={SLIDE2_TH_CLASS}>CPA</th>}
+        {mode.showRevenue && <th className={SLIDE2_TH_CLASS}>Revenue</th>}
+        {mode.showRoas && <th className={SLIDE2_TH_CLASS}>ROAS</th>}
       </tr>
     </thead>
   );
@@ -564,10 +585,10 @@ const WeeklyDeltaRow = memo(function WeeklyDeltaRow({
   if (!lastRow || !prevRow) return null;
 
   return (
-    <tr className="border-b border-[var(--nature-border)] bg-[var(--nature-cream)]/30 font-medium text-slate-800">
-      <td className={`${FIRST_TD_CLASS} truncate`}>증감(최근주-전주)</td>
+    <tr className="border-b border-[var(--nature-border-blue)]/55 bg-[var(--nature-cream)]/72 font-medium text-slate-800">
+      <td className={`${SLIDE2_FIRST_TD_CLASS} truncate`}>증감(최근주-전주)</td>
 
-      <td className={TD_CLASS}>
+      <td className={SLIDE2_TD_CLASS}>
         <TrendCell
           v={
             diffRatio(
@@ -578,13 +599,13 @@ const WeeklyDeltaRow = memo(function WeeklyDeltaRow({
         />
       </td>
 
-      <td className={TD_CLASS}>
+      <td className={SLIDE2_TD_CLASS}>
         <TrendCell
           v={diffRatio(lastRow?.clicks ?? 0, prevRow?.clicks ?? 0) ?? 0}
         />
       </td>
 
-      <td className={TD_CLASS}>
+      <td className={SLIDE2_TD_CLASS}>
         <TrendCell
           v={
             diffRatio(
@@ -596,19 +617,19 @@ const WeeklyDeltaRow = memo(function WeeklyDeltaRow({
         />
       </td>
 
-      <td className={TD_CLASS}>
+      <td className={SLIDE2_TD_CLASS}>
         <TrendCell
           v={diffRatio(lastRow?.cpc ?? 0, prevRow?.cpc ?? 0) ?? 0}
           digits={2}
         />
       </td>
 
-      <td className={TD_CLASS}>
+      <td className={SLIDE2_TD_CLASS}>
         <TrendCell v={diffRatio(lastRow?.cost ?? 0, prevRow?.cost ?? 0) ?? 0} />
       </td>
 
       {mode.showConversions && (
-        <td className={TD_CLASS}>
+        <td className={SLIDE2_TD_CLASS}>
           <TrendCell
             v={
               diffRatio(
@@ -621,7 +642,7 @@ const WeeklyDeltaRow = memo(function WeeklyDeltaRow({
       )}
 
       {mode.showCvr && (
-        <td className={TD_CLASS}>
+        <td className={SLIDE2_TD_CLASS}>
           <TrendCell
             v={
               diffRatio(
@@ -635,7 +656,7 @@ const WeeklyDeltaRow = memo(function WeeklyDeltaRow({
       )}
 
       {mode.showCpa && (
-        <td className={TD_CLASS}>
+        <td className={SLIDE2_TD_CLASS}>
           <TrendCell
             v={diffRatio(lastRow?.cpa ?? 0, prevRow?.cpa ?? 0) ?? 0}
             digits={2}
@@ -644,7 +665,7 @@ const WeeklyDeltaRow = memo(function WeeklyDeltaRow({
       )}
 
       {mode.showRevenue && (
-        <td className={TD_CLASS}>
+        <td className={SLIDE2_TD_CLASS}>
           <TrendCell
             v={diffRatio(lastRow?.revenue ?? 0, prevRow?.revenue ?? 0) ?? 0}
           />
@@ -652,7 +673,7 @@ const WeeklyDeltaRow = memo(function WeeklyDeltaRow({
       )}
 
       {mode.showRoas && (
-        <td className={TD_CLASS}>
+        <td className={SLIDE2_TD_CLASS}>
           <TrendCell
             v={
               diffRatio(
@@ -686,46 +707,46 @@ const WeeklyPerformanceRow = memo(function WeeklyPerformanceRow({
   maxRev: number;
 }) {
   return (
-    <tr className="border-t border-[var(--nature-border)] even:bg-[var(--nature-cream)]/16 hover:bg-[var(--nature-blue-light)]/14">
-      <td className={`${FIRST_TD_CLASS} truncate`} title={row.title}>
+    <tr className="border-t border-slate-200 bg-white even:bg-[var(--nature-blue-light)]/14 hover:bg-[var(--nature-blue-light)]/22">
+      <td className={`${SLIDE2_FIRST_TD_CLASS} truncate`} title={row.title}>
         {row.label}
       </td>
 
-      <td className={TD_CLASS}>
-        <DataBarCell value={row.impressions} max={maxImpr} />
+      <td className={SLIDE2_TD_CLASS}>
+        <DataBarCell emphasized value={row.impressions} max={maxImpr} />
       </td>
 
-      <td className={TD_CLASS}>
-        <DataBarCell value={row.clicks} max={maxClicks} />
+      <td className={SLIDE2_TD_CLASS}>
+        <DataBarCell emphasized value={row.clicks} max={maxClicks} />
       </td>
 
-      <td className={`${TD_CLASS} font-medium text-[#4F7F9E]`}>
+      <td className={`${SLIDE2_TD_CLASS} font-medium text-[#4F7F9E]`}>
         {row.ctrText}
       </td>
 
-      <td className={TD_CLASS}>{row.cpcText}</td>
+      <td className={SLIDE2_TD_CLASS}>{row.cpcText}</td>
 
-      <td className={TD_CLASS}>
-        <DataBarCell value={row.cost} max={maxCost} label={row.costText} />
+      <td className={SLIDE2_TD_CLASS}>
+        <DataBarCell emphasized value={row.cost} max={maxCost} label={row.costText} />
       </td>
 
       {mode.showConversions && (
-        <td className={TD_CLASS}>
-          <DataBarCell value={row.conversions} max={maxConv} />
+        <td className={SLIDE2_TD_CLASS}>
+          <DataBarCell emphasized value={row.conversions} max={maxConv} />
         </td>
       )}
 
       {mode.showCvr && (
-        <td className={`${TD_CLASS} font-medium text-[#4F7F9E]`}>
+        <td className={`${SLIDE2_TD_CLASS} font-medium text-[#4F7F9E]`}>
           {row.cvrText}
         </td>
       )}
 
-      {mode.showCpa && <td className={TD_CLASS}>{row.cpaText}</td>}
+      {mode.showCpa && <td className={SLIDE2_TD_CLASS}>{row.cpaText}</td>}
 
       {mode.showRevenue && (
-        <td className={TD_CLASS}>
-          <DataBarCell
+        <td className={SLIDE2_TD_CLASS}>
+          <DataBarCell emphasized
             value={row.revenue}
             max={maxRev}
             label={row.revenueText}
@@ -734,7 +755,7 @@ const WeeklyPerformanceRow = memo(function WeeklyPerformanceRow({
       )}
 
       {mode.showRoas && (
-        <td className={`${TD_CLASS} font-semibold text-[#4F7F9E]`}>
+        <td className={`${SLIDE2_TD_CLASS} font-semibold text-[#4F7F9E]`}>
           {row.roasText}
         </td>
       )}
@@ -864,48 +885,48 @@ const SourcePerformanceRow = memo(function SourcePerformanceRow({
 }) {
   return (
     <tr
-      className="border-t border-[var(--nature-border)] even:bg-[var(--nature-cream)]/16 hover:bg-[var(--nature-blue-light)]/14"
+      className="border-t border-slate-200 bg-white even:bg-[var(--nature-blue-light)]/14 hover:bg-[var(--nature-blue-light)]/22"
       style={{ height: `${SOURCE_ROW_HEIGHT}px` }}
     >
-      <td className={`${FIRST_TD_CLASS} truncate`} title={row.title}>
+      <td className={`${SLIDE2_FIRST_TD_CLASS} truncate`} title={row.title}>
         <SourceBrand source={row.source} />
       </td>
 
-      <td className={TD_CLASS}>
-        <DataBarCell value={row.impressions} max={maxImpr} />
+      <td className={SLIDE2_TD_CLASS}>
+        <DataBarCell emphasized value={row.impressions} max={maxImpr} />
       </td>
 
-      <td className={TD_CLASS}>
-        <DataBarCell value={row.clicks} max={maxClicks} />
+      <td className={SLIDE2_TD_CLASS}>
+        <DataBarCell emphasized value={row.clicks} max={maxClicks} />
       </td>
 
-      <td className={`${TD_CLASS} font-medium text-[#4F7F9E]`}>
+      <td className={`${SLIDE2_TD_CLASS} font-medium text-[#4F7F9E]`}>
         {row.ctrText}
       </td>
 
-      <td className={TD_CLASS}>{row.cpcText}</td>
+      <td className={SLIDE2_TD_CLASS}>{row.cpcText}</td>
 
-      <td className={TD_CLASS}>
-        <DataBarCell value={row.cost} max={maxCost} label={row.costText} />
+      <td className={SLIDE2_TD_CLASS}>
+        <DataBarCell emphasized value={row.cost} max={maxCost} label={row.costText} />
       </td>
 
       {mode.showConversions && (
-        <td className={TD_CLASS}>
-          <DataBarCell value={row.conversions} max={maxConv} />
+        <td className={SLIDE2_TD_CLASS}>
+          <DataBarCell emphasized value={row.conversions} max={maxConv} />
         </td>
       )}
 
       {mode.showCvr && (
-        <td className={`${TD_CLASS} font-medium text-[#4F7F9E]`}>
+        <td className={`${SLIDE2_TD_CLASS} font-medium text-[#4F7F9E]`}>
           {row.cvrText}
         </td>
       )}
 
-      {mode.showCpa && <td className={TD_CLASS}>{row.cpaText}</td>}
+      {mode.showCpa && <td className={SLIDE2_TD_CLASS}>{row.cpaText}</td>}
 
       {mode.showRevenue && (
-        <td className={TD_CLASS}>
-          <DataBarCell
+        <td className={SLIDE2_TD_CLASS}>
+          <DataBarCell emphasized
             value={row.revenue}
             max={maxRev}
             label={row.revenueText}
@@ -914,7 +935,7 @@ const SourcePerformanceRow = memo(function SourcePerformanceRow({
       )}
 
       {mode.showRoas && (
-        <td className={`${TD_CLASS} font-semibold text-[#4F7F9E]`}>
+        <td className={`${SLIDE2_TD_CLASS} font-semibold text-[#4F7F9E]`}>
           {row.roasText}
         </td>
       )}
@@ -1137,16 +1158,245 @@ type DailyDisplayRow = {
   impressions: number;
   clicks: number;
   ctrText: string;
+  cpc: number;
   cpcText: string;
   cost: number;
   costText: string;
   conversions: number;
   cvrText: string;
+  cpa: number;
   cpaText: string;
   revenue: number;
   revenueText: string;
+  roas: number;
   roasText: string;
 };
+
+function formatDailyCountAxisCompact(value: any) {
+  const n = toSafeNumber(value);
+
+  if (n >= 100000000) {
+    return `${(n / 100000000).toFixed(n >= 1000000000 ? 0 : 1)}억`;
+  }
+
+  if (n >= 10000) {
+    return `${(n / 10000).toFixed(n >= 100000 ? 0 : 1)}만`;
+  }
+
+  if (n >= 1000) {
+    return `${Math.round(n / 100) / 10}천`;
+  }
+
+  return formatCount(n);
+}
+
+const DAILY_CHART_LINE_COLOR = "#F97316";
+
+const DailyDualPerformanceCharts = memo(function DailyDualPerformanceCharts({
+  reportType,
+  rows,
+}: {
+  reportType?: ReportType;
+  rows: readonly DailyDisplayRow[];
+}) {
+  const resolvedType: ReportType = reportType ?? "commerce";
+
+  const inflowData = useMemo(
+    () =>
+      rows.map((row) => ({
+        label: row.label,
+        revenue: row.clicks,
+        roas: row.cpc,
+      })),
+    [rows]
+  );
+
+  const inflowMode = useMemo(
+    () => ({
+      isTraffic: false,
+      isDbAcquisition: false,
+      metricSummaryText: "클릭수 · CPC",
+      costLabel: "",
+      revenueLabel: "클릭수",
+      roasLabel: "CPC",
+      maxRevenueInsightLabel: "",
+      minCostInsightLabel: "",
+      costValueFormatter: (value: any) =>
+        formatCount(toSafeNumber(value)),
+      revenueValueFormatter: (value: any) =>
+        formatCount(toSafeNumber(value)),
+      roasValueFormatter: (value: any) =>
+        KRW(toSafeNumber(value)),
+      leftAxisFormatter: (value: any) =>
+        formatDailyCountAxisCompact(value),
+      rightAxisFormatter: (value: any) =>
+        formatCurrencyAxisCompact(value),
+      renderRevenueAsBar: true,
+      useHiddenRevenueAxis: false,
+      revenueAxisId: "left" as const,
+    }),
+    []
+  );
+
+  const resultChart = useMemo(() => {
+    if (resolvedType === "db_acquisition") {
+      return {
+        title: "일자별 전환 성과",
+        description: "전환수와 CPA의 일별 흐름을 함께 확인합니다.",
+        data: rows.map((row) => ({
+          label: row.label,
+          revenue: row.conversions,
+          roas: row.cpa,
+        })),
+        mode: {
+          isTraffic: false,
+          isDbAcquisition: false,
+          metricSummaryText: "전환수 · CPA",
+          costLabel: "",
+          revenueLabel: "전환수",
+          roasLabel: "CPA",
+          maxRevenueInsightLabel: "",
+          minCostInsightLabel: "",
+          costValueFormatter: (value: any) =>
+            formatCount(toSafeNumber(value)),
+          revenueValueFormatter: (value: any) =>
+            formatCount(toSafeNumber(value)),
+          roasValueFormatter: (value: any) =>
+            KRW(toSafeNumber(value)),
+          leftAxisFormatter: (value: any) =>
+            formatDailyCountAxisCompact(value),
+          rightAxisFormatter: (value: any) =>
+            formatCurrencyAxisCompact(value),
+          renderRevenueAsBar: true,
+          useHiddenRevenueAxis: false,
+          revenueAxisId: "left" as const,
+        },
+      };
+    }
+
+    if (resolvedType === "traffic") {
+      return {
+        title: "일자별 비용 성과",
+        description: "클릭수와 총비용의 일별 흐름을 함께 확인합니다.",
+        data: rows.map((row) => ({
+          label: row.label,
+          revenue: row.clicks,
+          roas: row.cost,
+        })),
+        mode: {
+          isTraffic: false,
+          isDbAcquisition: false,
+          metricSummaryText: "클릭수 · 총비용",
+          costLabel: "",
+          revenueLabel: "클릭수",
+          roasLabel: "총비용",
+          maxRevenueInsightLabel: "",
+          minCostInsightLabel: "",
+          costValueFormatter: (value: any) =>
+            formatCount(toSafeNumber(value)),
+          revenueValueFormatter: (value: any) =>
+            formatCount(toSafeNumber(value)),
+          roasValueFormatter: (value: any) =>
+            KRW(toSafeNumber(value)),
+          leftAxisFormatter: (value: any) =>
+            formatDailyCountAxisCompact(value),
+          rightAxisFormatter: (value: any) =>
+            formatCurrencyAxisCompact(value),
+          renderRevenueAsBar: true,
+          useHiddenRevenueAxis: false,
+          revenueAxisId: "left" as const,
+        },
+      };
+    }
+
+    return {
+      title: "일자별 매출 성과",
+      description: "전환매출과 ROAS의 일별 흐름을 함께 확인합니다.",
+      data: rows.map((row) => ({
+        label: row.label,
+        revenue: row.revenue,
+        roas: row.roas,
+      })),
+      mode: {
+        isTraffic: false,
+        isDbAcquisition: false,
+        metricSummaryText: "전환매출 · ROAS",
+        costLabel: "",
+        revenueLabel: "전환매출",
+        roasLabel: "ROAS",
+        maxRevenueInsightLabel: "",
+        minCostInsightLabel: "",
+        costValueFormatter: (value: any) =>
+          KRW(toSafeNumber(value)),
+        revenueValueFormatter: (value: any) =>
+          KRW(toSafeNumber(value)),
+        roasValueFormatter: (value: any) =>
+          formatPercentFromRoas(value, 1),
+        leftAxisFormatter: (value: any) =>
+          formatCurrencyAxisCompact(value),
+        rightAxisFormatter: (value: any) =>
+          formatPercentAxisFromRoas(value),
+        renderRevenueAsBar: true,
+        useHiddenRevenueAxis: false,
+        revenueAxisId: "left" as const,
+      },
+    };
+  }, [resolvedType, rows]);
+
+  return (
+    <div className="mb-6 grid gap-4 lg:grid-cols-2">
+      <div className="min-w-0">
+        <div className="mb-3">
+          <h4 className="text-[15px] font-bold tracking-[-0.02em] text-slate-900">
+            일자별 유입 성과
+          </h4>
+          <p className="mt-1 text-[12px] font-medium leading-5 text-slate-500">
+            클릭수와 CPC의 일별 흐름을 함께 확인합니다.
+          </p>
+        </div>
+
+        <SummaryChartView
+          data={inflowData}
+          density="report"
+          reportType={reportType}
+          hideHeader
+          hideInsights
+          hideCostSeries
+          modeOverride={inflowMode}
+          lineColor={DAILY_CHART_LINE_COLOR}
+          xAxisMode="daily-auto"
+          barGapOverride={4}
+          barCategoryGapOverride="18%"
+        />
+      </div>
+
+      <div className="min-w-0">
+        <div className="mb-3">
+          <h4 className="text-[15px] font-bold tracking-[-0.02em] text-slate-900">
+            {resultChart.title}
+          </h4>
+          <p className="mt-1 text-[12px] font-medium leading-5 text-slate-500">
+            {resultChart.description}
+          </p>
+        </div>
+
+        <SummaryChartView
+          data={resultChart.data}
+          density="report"
+          reportType={reportType}
+          hideHeader
+          hideInsights
+          hideCostSeries
+          modeOverride={resultChart.mode}
+          lineColor={DAILY_CHART_LINE_COLOR}
+          xAxisMode="daily-auto"
+          barCategoryGapOverride="18%"
+        />
+      </div>
+    </div>
+  );
+});
+
 
 const DailyEmptyRow = memo(function DailyEmptyRow({
   colSpan,
@@ -1184,48 +1434,48 @@ const DailyPerformanceRow = memo(function DailyPerformanceRow({
 }) {
   return (
     <tr
-      className="border-t border-[var(--nature-border)] even:bg-[var(--nature-cream)]/16 hover:bg-[var(--nature-blue-light)]/14"
+      className="border-t border-slate-200 bg-white even:bg-[var(--nature-blue-light)]/14 hover:bg-[var(--nature-blue-light)]/22"
       style={{ height: `${DAILY_ROW_HEIGHT}px` }}
     >
-      <td className={`${FIRST_TD_CLASS} truncate`} title={row.title}>
+      <td className={`${SLIDE2_FIRST_TD_CLASS} truncate`} title={row.title}>
         {row.label}
       </td>
 
-      <td className={TD_CLASS}>
-        <DataBarCell value={row.impressions} max={maxImpr} />
+      <td className={SLIDE2_TD_CLASS}>
+        <DataBarCell emphasized value={row.impressions} max={maxImpr} />
       </td>
 
-      <td className={TD_CLASS}>
-        <DataBarCell value={row.clicks} max={maxClicks} />
+      <td className={SLIDE2_TD_CLASS}>
+        <DataBarCell emphasized value={row.clicks} max={maxClicks} />
       </td>
 
-      <td className={`${TD_CLASS} font-medium text-[#4F7F9E]`}>
+      <td className={`${SLIDE2_TD_CLASS} font-medium text-[#4F7F9E]`}>
         {row.ctrText}
       </td>
 
-      <td className={TD_CLASS}>{row.cpcText}</td>
+      <td className={SLIDE2_TD_CLASS}>{row.cpcText}</td>
 
-      <td className={TD_CLASS}>
-        <DataBarCell value={row.cost} max={maxCost} label={row.costText} />
+      <td className={SLIDE2_TD_CLASS}>
+        <DataBarCell emphasized value={row.cost} max={maxCost} label={row.costText} />
       </td>
 
       {mode.showConversions && (
-        <td className={TD_CLASS}>
-          <DataBarCell value={row.conversions} max={maxConv} />
+        <td className={SLIDE2_TD_CLASS}>
+          <DataBarCell emphasized value={row.conversions} max={maxConv} />
         </td>
       )}
 
       {mode.showCvr && (
-        <td className={`${TD_CLASS} font-medium text-[#4F7F9E]`}>
+        <td className={`${SLIDE2_TD_CLASS} font-medium text-[#4F7F9E]`}>
           {row.cvrText}
         </td>
       )}
 
-      {mode.showCpa && <td className={TD_CLASS}>{row.cpaText}</td>}
+      {mode.showCpa && <td className={SLIDE2_TD_CLASS}>{row.cpaText}</td>}
 
       {mode.showRevenue && (
-        <td className={TD_CLASS}>
-          <DataBarCell
+        <td className={SLIDE2_TD_CLASS}>
+          <DataBarCell emphasized
             value={row.revenue}
             max={maxRev}
             label={row.revenueText}
@@ -1234,7 +1484,7 @@ const DailyPerformanceRow = memo(function DailyPerformanceRow({
       )}
 
       {mode.showRoas && (
-        <td className={`${TD_CLASS} font-semibold text-[#4F7F9E]`}>
+        <td className={`${SLIDE2_TD_CLASS} font-semibold text-[#4F7F9E]`}>
           {row.roasText}
         </td>
       )}
@@ -1707,6 +1957,13 @@ function SummarySectionComponent(props: Props) {
               description={copy.dailyDescription}
               compact
             />
+
+            {sourceDerived.dailyDisplayRows.length > 0 ? (
+              <DailyDualPerformanceCharts
+                reportType={reportType}
+                rows={sourceDerived.dailyDisplayRows}
+              />
+            ) : null}
 
             <DailyPerformanceTable
               mode={mode}

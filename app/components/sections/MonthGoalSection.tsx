@@ -81,6 +81,26 @@ function toRate01(value: any) {
   return n > 1 ? n / 100 : n;
 }
 
+function toRoasMultiplier(value: any) {
+  if (value == null) return 0;
+
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return 0;
+    return value > 10 ? value / 100 : value;
+  }
+
+  const raw = String(value).trim();
+  if (!raw) return 0;
+
+  const hasPercent = raw.includes("%");
+  const n = toGoalNumber(raw);
+
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  if (hasPercent) return n / 100;
+
+  return n > 10 ? n / 100 : n;
+}
+
 function roundGoal(value: number) {
   if (!Number.isFinite(value) || value <= 0) return 0;
   return Math.round(value);
@@ -354,114 +374,235 @@ function buildGoalProgressModel(input: {
   };
 }
 
-const GoalProgressCard = memo(function GoalProgressCard({
-  title,
-  value,
-  description,
-  tone = "slate",
+const GoalGaugeRing = memo(function GoalGaugeRing({
+  rate,
+  label,
+  tone = "blue",
 }: {
-  title: string;
-  value: string;
-  description: string;
-  tone?: "slate" | "blue" | "amber" | "emerald";
+  rate: number | null;
+  label: string;
+  tone?: "blue" | "amber" | "emerald";
 }) {
+  const safeRate =
+    rate == null || !Number.isFinite(rate)
+      ? 0
+      : Math.max(0, Math.min(100, rate));
+
+  const radius = 42;
+  const circumference = 2 * Math.PI * radius;
+  const dashOffset = circumference * (1 - safeRate / 100);
+
   const toneClass =
     tone === "emerald"
-      ? "border-emerald-200/80 bg-emerald-50/38 text-emerald-800"
+      ? "text-emerald-500"
       : tone === "amber"
-        ? "border-amber-200/80 bg-amber-50/38 text-amber-800"
-        : tone === "blue"
-          ? "border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/20 text-slate-800"
-          : "border-slate-200/85 bg-white text-slate-800";
+        ? "text-amber-500"
+        : "text-[#5C9BC2]";
 
   return (
-    <div className={`relative overflow-hidden rounded-[18px] border px-4 py-4 ${toneClass}`}>
-      <div
-        className={[
-          "absolute inset-y-0 left-0 w-[3px]",
-          tone === "emerald"
-            ? "bg-emerald-300/80"
-            : tone === "amber"
-              ? "bg-amber-300/80"
-              : tone === "blue"
-                ? "bg-[var(--nature-blue)]/75"
-                : "bg-slate-200",
-        ].join(" ")}
-      />
+    <div className="relative h-[158px] w-[158px] shrink-0 self-center transition-transform duration-200 ease-out group-hover:scale-[1.08]">
+      <svg
+        viewBox="0 0 100 100"
+        className="h-full w-full -rotate-90 overflow-visible"
+        aria-hidden="true"
+      >
+        <circle
+          cx="50"
+          cy="50"
+          r={radius}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="8"
+          className="text-slate-100"
+        />
+        <circle
+          cx="50"
+          cy="50"
+          r={radius}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="8"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={dashOffset}
+          className={toneClass}
+        />
+      </svg>
 
-      <div className="text-[11px] font-semibold tracking-[0.12em] opacity-70">
-        {title}
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-[25px] font-bold leading-[0.94] tracking-[-0.045em] text-slate-900">
+            {label}
+          </div>
+        </div>
       </div>
-      <div className="mt-2 text-xl font-semibold tracking-[-0.03em]">
-        {value}
+    </div>
+  );
+});
+
+const GoalGaugeCard = memo(function GoalGaugeCard({
+  eyebrow,
+  primaryLabel,
+  primaryValue,
+  secondaryLabel,
+  secondaryValue,
+  rate,
+  rateLabel,
+  footer,
+  tone = "blue",
+}: {
+  eyebrow: string;
+  primaryLabel: string;
+  primaryValue: string;
+  secondaryLabel: string;
+  secondaryValue: string;
+  rate: number | null;
+  rateLabel: string;
+  footer?: string;
+  tone?: "blue" | "amber" | "emerald";
+}) {
+  return (
+    <div className="group flex h-full min-w-0 items-stretch justify-between gap-3 rounded-[18px] border border-slate-200/85 bg-white px-4 py-3 shadow-[0_3px_10px_rgba(127,166,196,0.06)] transition-[border-color,box-shadow] duration-200 hover:border-[var(--nature-border-blue)]/60 hover:shadow-[0_6px_18px_rgba(127,166,196,0.12)]">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-h-[30px] items-start pt-1.5 text-[10px] font-bold uppercase tracking-[0.10em] text-slate-500">
+          {eyebrow}
+        </div>
+
+        <div className="mt-3 space-y-2">
+          <div>
+            <div className="text-[10px] font-semibold tracking-[0.06em] text-slate-400">
+              {primaryLabel}
+            </div>
+            <div className="mt-0.5 text-[18px] font-bold tracking-[-0.03em] text-slate-900">
+              {primaryValue}
+            </div>
+          </div>
+
+          {secondaryLabel && secondaryValue ? (
+            <div>
+              <div className="text-[10px] font-semibold tracking-[0.06em] text-slate-400">
+                {secondaryLabel}
+              </div>
+              <div className="mt-0.5 text-[15px] font-semibold tracking-[-0.02em] text-slate-700">
+                {secondaryValue}
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        {footer ? (
+          <div className="mt-2 text-[10px] font-medium leading-4 text-slate-500">
+            {footer}
+          </div>
+        ) : null}
       </div>
-      <p className="mt-2 text-xs font-medium leading-5 opacity-80">
-        {description}
-      </p>
+
+      <GoalGaugeRing
+        rate={rate}
+        label={rateLabel}
+        tone={tone}
+      />
     </div>
   );
 });
 
 const GoalProgressPanel = memo(function GoalProgressPanel({
   model,
+  reportType,
+  monthGoal,
+  currentMonthActual,
 }: {
   model: GoalProgressModel;
+  reportType?: ReportType;
+  monthGoal?: any;
+  currentMonthActual?: any;
 }) {
+  const isCommerce = reportType === "commerce";
+
+  const targetRoas = isCommerce
+    ? toRoasMultiplier(monthGoal?.roas)
+    : 0;
+
+  const currentRoas = isCommerce
+    ? toSafeNumber(currentMonthActual?.roas)
+    : 0;
+
+  const primaryRate = isCommerce
+    ? targetRoas > 0
+      ? (currentRoas / targetRoas) * 100
+      : null
+    : model.hasGoal && model.forecast != null
+      ? (model.forecast / model.target) * 100
+      : null;
+
+  const primaryRateLabel =
+    primaryRate == null
+      ? "-"
+      : formatAchievementRate(primaryRate);
+
   const achievementTone =
     model.achievementRate == null
-      ? "slate"
-      : model.achievementRate >= 100
+      ? "blue"
+      : model.achievementRate >= 90
         ? "emerald"
         : model.achievementRate >= 70
           ? "blue"
           : "amber";
 
+  const primaryTone = "blue";
+
+  const targetValue = isCommerce
+    ? targetRoas > 0
+      ? `${(targetRoas * 100).toFixed(1)}%`
+      : "-"
+    : model.hasGoal
+      ? formatGoalNumber(
+          model.target,
+          model.metricKey === "revenue" ? "currency" : "count"
+        )
+      : "-";
+
+  const projectedValue = isCommerce
+    ? currentRoas > 0
+      ? `${(currentRoas * 100).toFixed(1)}%`
+      : "-"
+    : model.forecastLabel;
+
+  const firstPrimaryLabel = isCommerce
+    ? "목표 ROAS"
+    : model.targetLabel;
+
+  const firstSecondaryLabel = isCommerce
+    ? "현재 ROAS"
+    : reportType === "db_acquisition"
+      ? "현재 추세 예상 전환"
+      : reportType === "traffic"
+        ? "현재 추세 예상 클릭"
+        : "현재 추세 예상 달성치";
+
   return (
-    <div className="mt-3 bg-transparent p-0">
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <GoalProgressCard
-          title={model.targetLabel}
-          value={
-            model.hasGoal
-              ? formatGoalNumber(
-                  model.target,
-                  model.metricKey === "revenue" ? "currency" : "count"
-                )
-              : "-"
-          }
-          description="편집 화면에서 저장한 월 목표값입니다."
-          tone="slate"
+    <div className="h-full bg-transparent p-0">
+      <div className="grid h-full grid-cols-1 gap-3 sm:grid-cols-2">
+        <GoalGaugeCard
+          eyebrow="FORECAST"
+          primaryLabel={firstPrimaryLabel}
+          primaryValue={targetValue}
+          secondaryLabel={firstSecondaryLabel}
+          secondaryValue={projectedValue}
+          rate={primaryRate}
+          rateLabel={primaryRateLabel}
+          tone={primaryTone}
         />
 
-        <GoalProgressCard
-          title="목표 대비 달성률"
-          value={model.achievementLabel}
-          description={`${model.actualLabel} 기준으로 계산한 목표 달성률입니다.`}
+        <GoalGaugeCard
+          eyebrow="ACHIEVEMENT"
+          primaryLabel="목표 대비 부족분"
+          primaryValue={model.gapLabel}
+          secondaryLabel=""
+          secondaryValue=""
+          rate={model.achievementRate}
+          rateLabel={model.achievementLabel}
           tone={achievementTone}
-        />
-
-        <GoalProgressCard
-          title="목표 대비 부족분"
-          value={model.gapLabel}
-          description={
-            model.hasGoal
-              ? "남은 기간 동안 추가로 확보해야 하는 목표 차이입니다."
-              : "목표값이 없으면 부족분을 계산하지 않습니다."
-          }
-          tone={model.gap > 0 ? "amber" : "emerald"}
-        />
-
-        <GoalProgressCard
-          title="현재 추세 예상 달성치"
-          value={model.forecastLabel}
-          description={model.forecastMemo}
-          tone={
-            model.forecast != null &&
-            model.hasGoal &&
-            model.forecast >= model.target
-              ? "emerald"
-              : "blue"
-          }
         />
       </div>
     </div>
@@ -515,9 +656,9 @@ export default function MonthGoalSection({
   );
 
   return (
-    <section className="mb-8 mt-2">
+    <section className="mb-5 mt-2">
       <div className="overflow-hidden rounded-[22px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] shadow-[0_5px_16px_rgba(127,166,196,0.08)]">
-        <div className="px-5 py-5 sm:px-6">
+        <div className="px-5 py-4 sm:px-6">
           <SummaryGoal
             reportType={reportType}
             currentMonthKey={currentMonthKey}
@@ -527,7 +668,14 @@ export default function MonthGoalSection({
             setMonthGoal={setMonthGoal}
             monthGoalInsight={monthGoalInsight}
             lastDataDate={lastDataDate}
-            goalProgressContent={<GoalProgressPanel model={goalProgressModel} />}
+            goalProgressContent={
+              <GoalProgressPanel
+                model={goalProgressModel}
+                reportType={reportType}
+                monthGoal={monthGoal}
+                currentMonthActual={goalProgressCurrentMonthActual}
+              />
+            }
           />
         </div>
       </div>

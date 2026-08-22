@@ -53,6 +53,13 @@ type Props = {
   className?: string;
   reportType?: ReportType;
   hideHeader?: boolean;
+  modeOverride?: MetricViewMode;
+  hideInsights?: boolean;
+  hideCostSeries?: boolean;
+  lineColor?: string;
+  xAxisMode?: "default" | "daily-auto";
+  barGapOverride?: number;
+  barCategoryGapOverride?: string | number;
 };
 
 type DensityClasses = {
@@ -299,6 +306,28 @@ function splitXAxisLabel(raw: any) {
   return [normalized, ""];
 }
 
+function compactDailyXAxisLabel(raw: any) {
+  const value = String(raw ?? "").trim();
+
+  const standardMatch = value.match(
+    /^(\d{4})[-./](\d{1,2})[-./](\d{1,2})/
+  );
+
+  if (standardMatch) {
+    return `${Number(standardMatch[2])}/${Number(standardMatch[3])}`;
+  }
+
+  const koreanMatch = value.match(
+    /^(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일/
+  );
+
+  if (koreanMatch) {
+    return `${Number(koreanMatch[2])}/${Number(koreanMatch[3])}`;
+  }
+
+  return value;
+}
+
 function formatCountAxisCompact(value: any) {
   const n = toSafeNumber(value);
 
@@ -397,8 +426,15 @@ const CustomXAxisTick = memo(function CustomXAxisTick({
   payload,
   xTick1,
   xTick2Offset,
-}: any & { xTick1: number; xTick2Offset: number }) {
-  const [line1, line2] = splitXAxisLabel(payload?.value);
+  compactDaily = false,
+}: any & {
+  xTick1: number;
+  xTick2Offset: number;
+  compactDaily?: boolean;
+}) {
+  const [line1, line2] = compactDaily
+    ? [compactDailyXAxisLabel(payload?.value), ""]
+    : splitXAxisLabel(payload?.value);
 
   return (
     <g transform={`translate(${x},${y})`}>
@@ -427,10 +463,19 @@ const CustomTooltip = memo(function CustomTooltip({
   payload,
   label,
   reportType,
-}: any & { reportType?: ReportType }) {
+  roasColor,
+  modeOverride,
+  hideCostSeries = false,
+}: any & {
+  reportType?: ReportType;
+  roasColor?: string;
+  modeOverride?: MetricViewMode;
+  hideCostSeries?: boolean;
+}) {
   if (!active || !payload?.length) return null;
 
-  const mode = getMetricViewMode(reportType);
+  const mode = modeOverride ?? getMetricViewMode(reportType);
+  const resolvedRoasColor = roasColor ?? TOKENS.metric.roas;
 
   const costItem = payload.find((item: any) => item?.dataKey === "cost");
   const revenueItem = payload.find((item: any) => item?.dataKey === "revenue");
@@ -445,18 +490,20 @@ const CustomTooltip = memo(function CustomTooltip({
       <div className="mt-2 h-px bg-[var(--nature-border)]" />
 
       <div className="mt-3 space-y-2.5">
-        <div className="flex items-center justify-between gap-4 text-[12px]">
-          <div className="flex items-center gap-2 text-slate-600">
-            <span
-              className="inline-block h-2.5 w-2.5 rounded-full"
-              style={{ backgroundColor: TOKENS.metric.cost }}
-            />
-            <span className="font-medium">{mode.costLabel}</span>
+        {!hideCostSeries ? (
+          <div className="flex items-center justify-between gap-4 text-[12px]">
+            <div className="flex items-center gap-2 text-slate-600">
+              <span
+                className="inline-block h-2.5 w-2.5 rounded-full"
+                style={{ backgroundColor: TOKENS.metric.cost }}
+              />
+              <span className="font-medium">{mode.costLabel}</span>
+            </div>
+            <div className="font-semibold text-slate-900">
+              {mode.costValueFormatter(costItem?.value)}
+            </div>
           </div>
-          <div className="font-semibold text-slate-900">
-            {mode.costValueFormatter(costItem?.value)}
-          </div>
-        </div>
+        ) : null}
 
         <div className="flex items-center justify-between gap-4 text-[12px]">
           <div className="flex items-center gap-2 text-slate-600">
@@ -475,7 +522,7 @@ const CustomTooltip = memo(function CustomTooltip({
           <div className="flex items-center gap-2 text-slate-600">
             <span
               className="inline-block h-2.5 w-2.5 rounded-full"
-              style={{ backgroundColor: TOKENS.metric.roas }}
+              style={{ backgroundColor: resolvedRoasColor }}
             />
             <span className="font-medium">{mode.roasLabel}</span>
           </div>
@@ -592,13 +639,38 @@ function SummaryChartView({
   className,
   reportType = "commerce",
   hideHeader = false,
+  modeOverride,
+  hideInsights = false,
+  hideCostSeries = false,
+  lineColor,
+  xAxisMode = "default",
+  barGapOverride,
+  barCategoryGapOverride,
 }: Props) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const activeIndexRef = useRef<number | null>(null);
 
   const safeData = useMemo(() => (Array.isArray(data) ? data : EMPTY_DATA), [data]);
   const densityClasses = useMemo(() => getDensityClasses(density), [density]);
-  const mode = useMemo(() => getMetricViewMode(reportType), [reportType]);
+  const defaultMode = useMemo(() => getMetricViewMode(reportType), [reportType]);
+  const mode = modeOverride ?? defaultMode;
+
+  const resolvedLineColor =
+    lineColor ??
+    (density === "report" && mode.isDbAcquisition
+      ? "#F97316"
+      : TOKENS.metric.roas);
+
+  const resolvedBarGap =
+    barGapOverride ??
+    (density === "report" && mode.isDbAcquisition ? 6 : undefined);
+
+  const resolvedBarCategoryGap =
+    barCategoryGapOverride ??
+    (density === "report" && mode.isDbAcquisition ? "16%" : "24%");
+
+  const reportDbBarSize =
+    density === "report" && mode.isDbAcquisition ? 40 : undefined;
 
   const resolvedInsight = useMemo<SummaryChartInsight>(() => {
     return {
@@ -641,14 +713,23 @@ function SummaryChartView({
         {...props}
         xTick1={densityClasses.xTick1}
         xTick2Offset={densityClasses.xTick2Offset}
+        compactDaily={xAxisMode === "daily-auto"}
       />
     ),
-    [densityClasses.xTick1, densityClasses.xTick2Offset]
+    [densityClasses.xTick1, densityClasses.xTick2Offset, xAxisMode]
   );
 
   const renderTooltip = useCallback(
-    (props: any) => <CustomTooltip {...props} reportType={reportType} />,
-    [reportType]
+    (props: any) => (
+      <CustomTooltip
+        {...props}
+        reportType={reportType}
+        roasColor={resolvedLineColor}
+        modeOverride={modeOverride}
+        hideCostSeries={hideCostSeries}
+      />
+    ),
+    [reportType, resolvedLineColor, modeOverride, hideCostSeries]
   );
 
   const renderRevenueDot = useCallback(
@@ -667,10 +748,10 @@ function SummaryChartView({
       <HoverAwareDot
         {...props}
         activeIndex={activeIndex}
-        fill={TOKENS.metric.roas}
+        fill={resolvedLineColor}
       />
     ),
-    [activeIndex]
+    [activeIndex, resolvedLineColor]
   );
 
   const revenueActiveDot = useMemo(
@@ -688,9 +769,9 @@ function SummaryChartView({
       r: 7,
       stroke: "#FFFFFF",
       strokeWidth: 3,
-      fill: TOKENS.metric.roas,
+      fill: resolvedLineColor,
     }),
-    []
+    [resolvedLineColor]
   );
 
   const lineStrokeWidth =
@@ -764,15 +845,17 @@ function SummaryChartView({
           <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-wrap items-center gap-2">
               <SlimLegendItem
-                color={TOKENS.metric.roas}
+                color={resolvedLineColor}
                 label={mode.roasLabel}
                 pillClass={densityClasses.legendPill}
               />
-              <SlimLegendItem
-                color={TOKENS.metric.cost}
-                label={mode.costLabel}
-                pillClass={densityClasses.legendPill}
-              />
+              {!hideCostSeries ? (
+                <SlimLegendItem
+                  color={TOKENS.metric.cost}
+                  label={mode.costLabel}
+                  pillClass={densityClasses.legendPill}
+                />
+              ) : null}
               <SlimLegendItem
                 color={TOKENS.metric.revenue}
                 label={mode.revenueLabel}
@@ -780,30 +863,32 @@ function SummaryChartView({
               />
             </div>
 
-            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
-              <InlineInsight
-                label="현재"
-                value={resolvedInsight.currentLabel}
-                labelClassName={densityClasses.insightLabel}
-                valueClassName={densityClasses.insightValue}
-              />
-              <StatusDivider />
-              <InlineInsight
-                label={mode.maxRevenueInsightLabel}
-                value={resolvedInsight.maxRevenueLabel}
-                tone="sky"
-                labelClassName={densityClasses.insightLabel}
-                valueClassName={densityClasses.insightValue}
-              />
-              <StatusDivider />
-              <InlineInsight
-                label={mode.minCostInsightLabel}
-                value={resolvedInsight.minCostLabel}
-                tone="amber"
-                labelClassName={densityClasses.insightLabel}
-                valueClassName={densityClasses.insightValue}
-              />
-            </div>
+            {!hideInsights ? (
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+                <InlineInsight
+                  label="현재"
+                  value={resolvedInsight.currentLabel}
+                  labelClassName={densityClasses.insightLabel}
+                  valueClassName={densityClasses.insightValue}
+                />
+                <StatusDivider />
+                <InlineInsight
+                  label={mode.maxRevenueInsightLabel}
+                  value={resolvedInsight.maxRevenueLabel}
+                  tone="sky"
+                  labelClassName={densityClasses.insightLabel}
+                  valueClassName={densityClasses.insightValue}
+                />
+                <StatusDivider />
+                <InlineInsight
+                  label={mode.minCostInsightLabel}
+                  value={resolvedInsight.minCostLabel}
+                  tone="amber"
+                  labelClassName={densityClasses.insightLabel}
+                  valueClassName={densityClasses.insightValue}
+                />
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
@@ -820,7 +905,9 @@ function SummaryChartView({
             <ComposedChart
               data={safeData}
               margin={{ top: 10, right: 12, left: 2, bottom: 18 }}
-              barCategoryGap="24%"
+              barCategoryGap={resolvedBarCategoryGap}
+              barGap={resolvedBarGap}
+              barSize={reportDbBarSize}
               onMouseMove={handleMouseMove}
               onMouseLeave={handleMouseLeave}
             >
@@ -844,10 +931,14 @@ function SummaryChartView({
                 dataKey="label"
                 axisLine={false}
                 tickLine={false}
-                interval={0}
+                interval={
+                  xAxisMode === "daily-auto"
+                    ? "preserveStartEnd"
+                    : 0
+                }
                 height={densityClasses.xHeight}
                 tickMargin={densityClasses.tickMargin}
-                minTickGap={12}
+                minTickGap={xAxisMode === "daily-auto" ? 34 : 12}
                 tick={renderXAxisTick}
               />
 
@@ -884,17 +975,19 @@ function SummaryChartView({
                 animationDuration={0}
               />
 
-              <Bar
-                yAxisId="left"
-                dataKey="cost"
-                name={mode.costLabel}
-                fill={TOKENS.metric.cost}
-                radius={[6, 6, 0, 0]}
-                maxBarSize={densityClasses.maxBarSize}
-                isAnimationActive={false}
-              >
-                {costCells}
-              </Bar>
+              {!hideCostSeries ? (
+                <Bar
+                  yAxisId="left"
+                  dataKey="cost"
+                  name={mode.costLabel}
+                  fill={TOKENS.metric.cost}
+                  radius={[6, 6, 0, 0]}
+                  maxBarSize={densityClasses.maxBarSize}
+                  isAnimationActive={false}
+                >
+                  {costCells}
+                </Bar>
+              ) : null}
 
               {mode.renderRevenueAsBar ? (
                 <Bar
@@ -929,7 +1022,7 @@ function SummaryChartView({
                 type="natural"
                 dataKey="roas"
                 name={mode.roasLabel}
-                stroke={TOKENS.metric.roas}
+                stroke={resolvedLineColor}
                 strokeWidth={lineStrokeWidth}
                 strokeOpacity={1}
                 connectNulls

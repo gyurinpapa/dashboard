@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import type { Row, ReportType } from "../../../src/lib/report/types";
@@ -1090,6 +1091,225 @@ function buildBadgeMap(perfList: CreativePerf[], reportMode: ReportMode) {
   return map;
 }
 
+type CompactCreativeSelectorProps = {
+  creatives: string[];
+  selectedCreative: string | null;
+  onSelectCreative: (creative: string) => void;
+  getPreviewUrl: (creative: string) => string;
+};
+
+const CompactCreativeSelector = memo(function CompactCreativeSelector({
+  creatives,
+  selectedCreative,
+  onSelectCreative,
+  getPreviewUrl,
+}: CompactCreativeSelectorProps) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [hoveredCreative, setHoveredCreative] = useState<string | null>(null);
+
+  const filteredCreatives = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+
+    if (!normalized) return creatives;
+
+    return creatives.filter((creative) =>
+      String(creative).toLowerCase().includes(normalized)
+    );
+  }, [creatives, query]);
+
+  const hoveredPreviewUrl = hoveredCreative
+    ? getPreviewUrl(hoveredCreative)
+    : "";
+
+  const closeSelector = useCallback(() => {
+    setOpen(false);
+    setQuery("");
+    setHoveredCreative(null);
+  }, []);
+
+  const handleToggle = useCallback(() => {
+    if (open) {
+      closeSelector();
+      return;
+    }
+
+    setOpen(true);
+  }, [closeSelector, open]);
+
+  const handleSelect = useCallback(
+    (creative: string) => {
+      onSelectCreative(creative);
+      closeSelector();
+    },
+    [closeSelector, onSelectCreative]
+  );
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handleOutsideClick = (event: MouseEvent) => {
+      const root = rootRef.current;
+
+      if (!root || root.contains(event.target as Node)) return;
+
+      closeSelector();
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+
+      closeSelector();
+    };
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    window.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [closeSelector, open]);
+
+  return (
+    <div ref={rootRef} className="relative z-30 w-full max-w-[420px]">
+      <button
+        type="button"
+        onClick={handleToggle}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        className={[
+          "flex h-11 w-full items-center gap-2 rounded-[12px] border bg-white px-3.5 text-left shadow-[0_3px_10px_rgba(127,166,196,0.06)] transition",
+          open
+            ? "border-[#7FA6C4] ring-2 ring-[#B7D7E3]/25"
+            : "border-[#CFC2B1]/55 hover:border-[#7FA6C4]/75",
+        ].join(" ")}
+        title={selectedCreative ? `선택: ${selectedCreative}` : "소재 선택"}
+      >
+        <span className="shrink-0 text-[11px] font-semibold text-[#7A8794]">
+          선택:
+        </span>
+
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[#27364A]">
+          {selectedCreative ?? "선택 없음"}
+        </span>
+
+        <svg
+          viewBox="0 0 20 20"
+          aria-hidden="true"
+          className={[
+            "h-4 w-4 shrink-0 text-[#7FA6C4] transition-transform",
+            open ? "rotate-180" : "",
+          ].join(" ")}
+        >
+          <path
+            d="M5.5 7.5 10 12l4.5-4.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+
+      {open ? (
+        <div className="absolute right-0 top-full z-[70] mt-2 w-full rounded-[16px] border border-[var(--nature-border-blue)] bg-white p-3 shadow-[0_14px_34px_rgba(39,54,74,0.16)]">
+          {hoveredCreative ? (
+            <div className="pointer-events-none absolute right-[calc(100%+12px)] top-0 hidden w-[280px] lg:block">
+              <div className="overflow-hidden rounded-[16px] border border-[var(--nature-border-blue)] bg-white p-3 shadow-[0_14px_34px_rgba(39,54,74,0.16)]">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#7A8794]">
+                  Creative Preview
+                </div>
+
+                <div
+                  className="mt-1 truncate text-sm font-semibold text-[#27364A]"
+                  title={hoveredCreative}
+                >
+                  {hoveredCreative}
+                </div>
+
+                <div className="mt-3 flex h-[220px] items-center justify-center overflow-hidden rounded-[12px] border border-slate-200 bg-slate-50/60">
+                  {hoveredPreviewUrl ? (
+                    <img
+                      src={hoveredPreviewUrl}
+                      alt={`${hoveredCreative} preview`}
+                      className="max-h-full max-w-full object-contain"
+                      decoding="async"
+                    />
+                  ) : (
+                    <div className="px-4 text-center text-xs leading-5 text-slate-400">
+                      미리보기 이미지 없음
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="flex items-center justify-between gap-3 px-1">
+            <div className="text-sm font-semibold text-[#27364A]">
+              소재 선택
+            </div>
+
+            <div className="shrink-0 text-[11px] text-[#7A8794]">
+              {filteredCreatives.length.toLocaleString()}개
+            </div>
+          </div>
+
+          <input
+            type="text"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="소재명 검색"
+            autoFocus
+            className="mt-3 h-10 w-full rounded-[10px] border border-[#CFC2B1]/55 bg-white px-3 text-sm text-[#27364A] outline-none placeholder:text-[#9A8F81] focus:border-[#7FA6C4] focus:ring-2 focus:ring-[#B7D7E3]/30"
+          />
+
+          {filteredCreatives.length === 0 ? (
+            <div className="mt-2 rounded-[10px] border border-[#CFC2B1]/40 bg-[#F3E4D2]/14 px-3 py-4 text-center text-sm text-[#6F7B86]">
+              검색 결과가 없습니다.
+            </div>
+          ) : (
+            <div
+              role="listbox"
+              className="mt-2 max-h-72 space-y-2 overflow-auto pr-1"
+            >
+              {filteredCreatives.map((creative) => {
+                const active = creative === selectedCreative;
+
+                return (
+                  <button
+                    key={creative}
+                    type="button"
+                    role="option"
+                    aria-selected={active}
+                    onMouseEnter={() => setHoveredCreative(creative)}
+                    onMouseLeave={() => setHoveredCreative(null)}
+                    onFocus={() => setHoveredCreative(creative)}
+                    onBlur={() => setHoveredCreative(null)}
+                    onClick={() => handleSelect(creative)}
+                    title={creative}
+                    className={[
+                      "block h-10 w-full overflow-hidden text-ellipsis whitespace-nowrap rounded-[10px] border px-3 text-left text-sm font-semibold",
+                      active
+                        ? "border-[#7FA6C4] bg-[#7FA6C4] text-white"
+                        : "border-[#CFC2B1]/55 bg-white text-[#27364A] hover:border-[#7FA6C4]/75 hover:bg-[#B7D7E3]/10",
+                    ].join(" ")}
+                  >
+                    {creative}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+});
+
 export default function CreativeDetailSection({
   reportType,
   rows,
@@ -1152,6 +1372,11 @@ export default function CreativeDetailSection({
     if (!selectedCreative) return "";
     return previewMetaByCreative.get(selectedCreative)?.url ?? "";
   }, [previewMetaByCreative, selectedCreative]);
+
+  const getCreativePreviewUrl = useCallback(
+    (creative: string) => previewMetaByCreative.get(creative)?.url ?? "",
+    [previewMetaByCreative]
+  );
 
   const sideThumbs = useMemo(() => {
     if (!creatives.length) return [] as { creative: string; url: string }[];
@@ -1427,6 +1652,24 @@ export default function CreativeDetailSection({
             showOverviewSlide ? "" : "lg:col-span-2",
           ].join(" ")}
         >
+          {!showOverviewSlide ? (
+            <div className="flex w-full justify-end">
+              <CompactCreativeSelector
+                key={`creative-selector-${activeSlide}`}
+                creatives={creatives}
+                selectedCreative={selectedCreative}
+                onSelectCreative={handleSelectCreative}
+                getPreviewUrl={getCreativePreviewUrl}
+              />
+            </div>
+          ) : null}
+
+          {activeSlide === 0 ? (
+            <div className="creative-detail-week-table-fix min-w-0">
+              <div className="min-w-0">{summarySectionNode}</div>
+            </div>
+          ) : null}
+
           <div className={showOverviewSlide ? "min-w-0" : "hidden"}>
             <section className="min-w-0 rounded-[20px] border border-[var(--nature-border-blue)] bg-white p-6 shadow-[0_4px_14px_rgba(127,166,196,0.07)]">
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
@@ -1519,9 +1762,11 @@ export default function CreativeDetailSection({
             </section>
           </div>
 
-          <div className="creative-detail-week-table-fix min-w-0">
-            <div className="min-w-0">{summarySectionNode}</div>
-          </div>
+          {activeSlide === 0 ? null : (
+            <div className="creative-detail-week-table-fix min-w-0">
+              <div className="min-w-0">{summarySectionNode}</div>
+            </div>
+          )}
         </div>
       </div>
 

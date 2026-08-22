@@ -1,7 +1,10 @@
 // app/components/sections/HeaderBar.tsx
 "use client";
 
-import { memo, useCallback, useEffect, useMemo, useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef,
+  useLayoutEffect,
+  useState,
+} from "react";
 
 import type {
   ChannelKey,
@@ -385,7 +388,10 @@ const UnifiedTabBar = memo(function UnifiedTabBar({
   filterToolbar: React.ReactNode;
 }) {
   return (
-    <div className="overflow-x-auto overscroll-x-contain bg-transparent [scrollbar-width:thin]">
+    <div
+      data-header-filter-scroll
+      className="overflow-x-auto overscroll-x-contain bg-transparent [scrollbar-width:thin]"
+    >
       <div className="flex min-w-max justify-center px-2 pt-1.5 sm:px-3">
         <div className="flex items-end gap-1.5">
           <TabButtons
@@ -446,32 +452,44 @@ const FilterToolbar = memo(function FilterToolbar({
 }) {
   return (
     <div className="flex shrink-0 items-center gap-1.5">
-      <FilterBtn active={filterKey === "month"} onClick={onToggleMonth}>
-        월
-      </FilterBtn>
+      <div data-header-filter-anchor="month" className="shrink-0">
+        <FilterBtn active={filterKey === "month"} onClick={onToggleMonth}>
+          월
+        </FilterBtn>
+      </div>
 
-      <FilterBtn active={filterKey === "week"} onClick={onToggleWeek}>
-        주차
-      </FilterBtn>
+      <div data-header-filter-anchor="week" className="shrink-0">
+        <FilterBtn active={filterKey === "week"} onClick={onToggleWeek}>
+          주차
+        </FilterBtn>
+      </div>
 
-      <FilterBtn active={filterKey === "device"} onClick={onToggleDevice}>
-        기기
-      </FilterBtn>
+      <div data-header-filter-anchor="device" className="shrink-0">
+        <FilterBtn active={filterKey === "device"} onClick={onToggleDevice}>
+          기기
+        </FilterBtn>
+      </div>
 
-      <FilterBtn active={filterKey === "channel"} onClick={onToggleChannel}>
-        채널
-      </FilterBtn>
+      <div data-header-filter-anchor="channel" className="shrink-0">
+        <FilterBtn active={filterKey === "channel"} onClick={onToggleChannel}>
+          채널
+        </FilterBtn>
+      </div>
 
       {hasSourceOptions ? (
-        <FilterBtn active={filterKey === "source"} onClick={onToggleSource}>
-          소스
-        </FilterBtn>
+        <div data-header-filter-anchor="source" className="shrink-0">
+          <FilterBtn active={filterKey === "source"} onClick={onToggleSource}>
+            소스
+          </FilterBtn>
+        </div>
       ) : null}
 
       {hasProductOptions ? (
-        <FilterBtn active={filterKey === "product"} onClick={onToggleProduct}>
-          상품
-        </FilterBtn>
+        <div data-header-filter-anchor="product" className="shrink-0">
+          <FilterBtn active={filterKey === "product"} onClick={onToggleProduct}>
+            상품
+          </FilterBtn>
+        </div>
       ) : null}
     </div>
   );
@@ -480,12 +498,21 @@ const FilterToolbar = memo(function FilterToolbar({
 const OptionPopover = memo(function OptionPopover({
   title,
   children,
+  position,
 }: {
   title: string;
   children: React.ReactNode;
+  position: { top: number; right: number } | null;
 }) {
   return (
-    <div className="absolute left-0 top-full z-50 mt-2 w-[520px] max-w-[calc(100vw-2rem)] rounded-xl border border-[var(--nature-border)] bg-[var(--nature-surface)]/98 p-3 shadow-[0_18px_40px_rgba(127,166,196,0.18)] backdrop-blur-md">
+    <div
+      className="absolute z-50 w-[520px] max-w-[calc(100vw-2rem)] rounded-xl border border-[var(--nature-border)] bg-[var(--nature-surface)]/98 p-3 shadow-[0_18px_40px_rgba(127,166,196,0.18)] backdrop-blur-md"
+      style={{
+        top: position?.top ?? 0,
+        right: position?.right ?? 0,
+        visibility: position ? "visible" : "hidden",
+      }}
+    >
       <div className="mb-2 text-xs font-semibold text-slate-800">{title}</div>
 
       <div className="flex max-h-[220px] flex-wrap gap-2 overflow-auto">
@@ -535,6 +562,10 @@ function EditorHeaderBar(props: Props) {
 
   const disableDisplayChannel = tab === "keyword" || tab === "keywordDetail";
   const filterRootRef = useRef<HTMLDivElement | null>(null);
+  const [filterPopoverPosition, setFilterPopoverPosition] = useState<{
+    top: number;
+    right: number;
+  } | null>(null);
 
   const hasSourceOptions = sourceOptions.length > 0;
   const hasProductOptions = productOptions.length > 0;
@@ -579,6 +610,68 @@ function EditorHeaderBar(props: Props) {
     () => toggleFilter("product"),
     [toggleFilter],
   );
+
+  useLayoutEffect(() => {
+    if (!filterKey) {
+      setFilterPopoverPosition(null);
+      return;
+    }
+
+    const root = filterRootRef.current;
+
+    if (!root) {
+      setFilterPopoverPosition(null);
+      return;
+    }
+
+    const anchor = root.querySelector<HTMLElement>(
+      `[data-header-filter-anchor="${filterKey}"]`
+    );
+
+    if (!anchor) {
+      setFilterPopoverPosition(null);
+      return;
+    }
+
+    const updatePosition = () => {
+      const rootRect = root.getBoundingClientRect();
+      const anchorRect = anchor.getBoundingClientRect();
+
+      const nextTop = anchorRect.bottom - rootRect.top + 8;
+      const nextRight = Math.max(0, rootRect.right - anchorRect.right);
+
+      setFilterPopoverPosition((prev) => {
+        if (
+          prev &&
+          Math.abs(prev.top - nextTop) < 0.5 &&
+          Math.abs(prev.right - nextRight) < 0.5
+        ) {
+          return prev;
+        }
+
+        return {
+          top: nextTop,
+          right: nextRight,
+        };
+      });
+    };
+
+    updatePosition();
+
+    const scrollContainer = anchor.closest<HTMLElement>(
+      "[data-header-filter-scroll]"
+    );
+
+    window.addEventListener("resize", updatePosition);
+    scrollContainer?.addEventListener("scroll", updatePosition, {
+      passive: true,
+    });
+
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      scrollContainer?.removeEventListener("scroll", updatePosition);
+    };
+  }, [filterKey]);
 
   useEffect(() => {
     if (!filterKey) return;
@@ -917,7 +1010,7 @@ function EditorHeaderBar(props: Props) {
       ) : null}
 
       {filterKey === "month" && (
-        <OptionPopover title="월 선택">
+        <OptionPopover title="월 선택" position={filterPopoverPosition}>
           <button
             type="button"
             onClick={handleSelectMonthAll}
@@ -930,7 +1023,7 @@ function EditorHeaderBar(props: Props) {
       )}
 
       {filterKey === "week" && (
-        <OptionPopover title="주차 선택">
+        <OptionPopover title="주차 선택" position={filterPopoverPosition}>
           <button
             type="button"
             onClick={handleSelectWeekAll}
@@ -943,7 +1036,7 @@ function EditorHeaderBar(props: Props) {
       )}
 
       {filterKey === "device" && (
-        <OptionPopover title="기기 선택">
+        <OptionPopover title="기기 선택" position={filterPopoverPosition}>
           <button
             type="button"
             onClick={handleSelectDeviceAll}
@@ -956,7 +1049,7 @@ function EditorHeaderBar(props: Props) {
       )}
 
       {filterKey === "channel" && (
-        <OptionPopover title="채널 선택">
+        <OptionPopover title="채널 선택" position={filterPopoverPosition}>
           <button
             type="button"
             onClick={handleSelectChannelAll}
@@ -969,7 +1062,7 @@ function EditorHeaderBar(props: Props) {
       )}
 
       {hasSourceOptions && filterKey === "source" && (
-        <OptionPopover title="소스 선택">
+        <OptionPopover title="소스 선택" position={filterPopoverPosition}>
           <button
             type="button"
             onClick={handleSelectSourceAll}
@@ -982,7 +1075,7 @@ function EditorHeaderBar(props: Props) {
       )}
 
       {hasProductOptions && filterKey === "product" && (
-        <OptionPopover title="상품 선택">
+        <OptionPopover title="상품 선택" position={filterPopoverPosition}>
           <button
             type="button"
             onClick={handleSelectProductAll}

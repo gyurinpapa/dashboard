@@ -398,19 +398,19 @@ export default function SummaryGoal({
   };
 
   const headClass =
-    "whitespace-nowrap px-2.5 py-3 text-right text-[10px] font-semibold uppercase tracking-[0.03em] text-slate-500";
+    "whitespace-nowrap border-l border-[var(--nature-border-blue)]/45 px-3 py-3.5 text-center text-[13px] font-bold uppercase tracking-[0.03em] text-slate-700";
   const firstHeadClass =
-    "whitespace-nowrap px-3 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.03em] text-slate-500";
+    "whitespace-nowrap px-3 py-3.5 text-center text-[13px] font-bold uppercase tracking-[0.03em] text-slate-700";
   const tdClass =
-    "whitespace-nowrap px-2.5 py-3 text-right text-[13px] text-slate-800 align-middle tabular-nums";
+    "whitespace-nowrap border-l border-slate-200/65 px-3 py-3.5 text-center text-[15px] font-medium text-slate-800 align-middle tabular-nums";
   const firstTdClass =
-    "whitespace-nowrap px-3 py-3 text-left text-[13px] font-semibold text-slate-900 align-middle";
+    "whitespace-nowrap px-3 py-3.5 text-center text-[15px] font-bold text-slate-900 align-middle";
 
   const inputClass =
-    "h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-right text-[13px] font-semibold text-slate-900 outline-none placeholder:text-slate-400 focus:border-[var(--nature-blue)] focus:ring-2 focus:ring-[var(--nature-blue-light)]/35";
+    "w-full border-0 bg-transparent px-0 py-0 text-center text-[15px] font-semibold text-slate-900 outline-none tabular-nums placeholder:text-slate-400 focus:ring-0";
 
   const readonlyTargetClass =
-    "inline-flex h-9 w-full items-center justify-end rounded-lg border border-slate-200 bg-slate-50/80 px-2.5 text-[13px] font-semibold text-slate-700";
+    "inline-flex w-full items-center justify-center text-[15px] font-semibold text-slate-800 tabular-nums";
 
   const { mainProgressRate, progressPercent } = useMemo(() => {
     const fallback = clamp01(
@@ -476,9 +476,9 @@ export default function SummaryGoal({
       </div>
 
       <div className="overflow-hidden rounded-[20px] border border-slate-200/90 bg-white shadow-[0_4px_14px_rgba(127,166,196,0.07)]">
-        <div className="border-b border-slate-200/80 bg-slate-50/55 px-5 py-4">
-          <div className="mx-auto max-w-[720px]">
-            <div className="mb-3 flex items-end justify-between gap-3">
+        <div className="grid gap-4 border-b border-slate-200/80 bg-slate-50/55 px-5 py-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)] lg:items-stretch">
+          <div className="min-w-0 flex h-full flex-col justify-between rounded-[18px] border border-slate-200/80 bg-white/75 px-5 py-4 lg:h-[214px]">
+            <div className="mb-2 flex items-end justify-between gap-3">
               <div>
                 <div className="text-[10px] font-semibold uppercase tracking-[0.10em] text-slate-500">
                   Monthly Progress
@@ -498,7 +498,7 @@ export default function SummaryGoal({
               </div>
             </div>
 
-            <div className="rounded-[16px] border border-slate-200/85 bg-white px-4 py-4">
+            <div className="rounded-[16px] border border-slate-200/85 bg-white px-4 py-3">
               <div className="mb-2 flex items-center justify-between text-[10px] font-semibold tracking-[0.08em] text-slate-400">
                 <span>월 초</span>
                 <span>중간 점검</span>
@@ -527,10 +527,14 @@ export default function SummaryGoal({
               </div>
             </div>
           </div>
+
+          <div className="min-w-0 lg:h-[214px] [&>div]:h-full [&>div]:mt-0">
+            {goalProgressContent}
+          </div>
         </div>
 
         <div className="w-full">
-          <table className="w-full table-fixed text-sm">
+          <table className="w-full table-fixed text-[15px]">
             <colgroup>
               {mode.isTraffic ? (
                 <>
@@ -570,7 +574,7 @@ export default function SummaryGoal({
               )}
             </colgroup>
 
-            <thead className="border-b border-slate-200 bg-slate-50/75">
+            <thead className="border-b border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/34">
               <tr>
                 <th className={firstHeadClass}>구분</th>
                 <th className={headClass}>Impr</th>
@@ -641,21 +645,16 @@ export default function SummaryGoal({
                 </td>
 
                 <td className={tdClass}>
-                  <div className="relative">
-                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[12px] text-slate-400">
-                      ₩
-                    </span>
-                    <input
-                      className={`${inputClass} pl-6`}
-                      value={formatNumber(monthGoal?.cost ?? 0)}
-                      onChange={(e) =>
-                        setMonthGoal((p: any) => ({
-                          ...p,
-                          cost: parseNumberInput(e.target.value),
-                        }))
-                      }
-                    />
-                  </div>
+                  <input
+                    className={inputClass}
+                    value={KRW(monthGoal?.cost ?? 0)}
+                    onChange={(e) =>
+                      setMonthGoal((p: any) => ({
+                        ...p,
+                        cost: parseNumberInput(e.target.value),
+                      }))
+                    }
+                  />
                 </td>
 
                 {mode.showConversions && (
@@ -690,10 +689,10 @@ export default function SummaryGoal({
                 {mode.showRevenue && (
                   <td className={tdClass}>
                     <div className="relative">
-                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[12px] text-slate-400">
+                      <span className="absolute left-0 top-1/2 -translate-y-1/2 text-[13px] text-slate-400">
                         ₩
                       </span>
-                      <span className={`${readonlyTargetClass} pl-6`}>
+                      <span className={`${readonlyTargetClass} pl-4`}>
                         {formatNumber(goalRev)}
                       </span>
                     </div>
@@ -708,62 +707,62 @@ export default function SummaryGoal({
               </tr>
 
               <tr className="border-t border-slate-200 bg-[var(--nature-blue-light)]/14">
-                <td className="whitespace-nowrap px-3 py-3 text-left text-[13px] font-bold text-slate-900">
+                <td className="whitespace-nowrap px-3 py-3.5 text-center text-[15px] font-bold text-slate-900">
                   결과
                 </td>
 
-                <td className="whitespace-nowrap px-2.5 py-3 text-right text-[13px] font-semibold text-slate-900 tabular-nums">
+                <td className="whitespace-nowrap border-l border-slate-200/65 px-3 py-3.5 text-center text-[15px] font-semibold text-slate-900 tabular-nums">
                   {formatNumber(actualImpr)}
                 </td>
 
-                <td className="whitespace-nowrap px-2.5 py-3 text-right text-[13px] font-semibold text-slate-900 tabular-nums">
+                <td className="whitespace-nowrap border-l border-slate-200/65 px-3 py-3.5 text-center text-[15px] font-semibold text-slate-900 tabular-nums">
                   {formatNumber(actualClicks)}
                 </td>
 
-                <td className="whitespace-nowrap px-2.5 py-3 text-right text-[13px] font-bold text-violet-600 tabular-nums">
+                <td className="whitespace-nowrap border-l border-slate-200/65 px-3 py-3.5 text-center text-[15px] font-bold text-violet-600 tabular-nums">
                   {pct2(actualCtr)}
                 </td>
 
-                <td className="whitespace-nowrap px-2.5 py-3 text-right text-[13px] font-semibold text-slate-900 tabular-nums">
+                <td className="whitespace-nowrap border-l border-slate-200/65 px-3 py-3.5 text-center text-[15px] font-semibold text-slate-900 tabular-nums">
                   {KRW(actualCpc)}
                 </td>
 
-                <td className="whitespace-nowrap px-2.5 py-3 text-right text-[13px] font-semibold text-slate-900 tabular-nums">
+                <td className="whitespace-nowrap border-l border-slate-200/65 px-3 py-3.5 text-center text-[15px] font-semibold text-slate-900 tabular-nums">
                   {KRW(actualCost)}
                 </td>
 
                 {mode.showConversions && (
-                  <td className="whitespace-nowrap px-2.5 py-3 text-right text-[13px] font-semibold text-slate-900 tabular-nums">
+                  <td className="whitespace-nowrap border-l border-slate-200/65 px-3 py-3.5 text-center text-[15px] font-semibold text-slate-900 tabular-nums">
                     {formatNumber(actualConv)}
                   </td>
                 )}
 
                 {mode.showCvr && (
-                  <td className="whitespace-nowrap px-2.5 py-3 text-right text-[13px] font-bold text-violet-600 tabular-nums">
+                  <td className="whitespace-nowrap border-l border-slate-200/65 px-3 py-3.5 text-center text-[15px] font-bold text-violet-600 tabular-nums">
                     {pct2(actualCvr)}
                   </td>
                 )}
 
                 {mode.showCpa && (
-                  <td className="whitespace-nowrap px-2.5 py-3 text-right text-[13px] font-semibold text-slate-900 tabular-nums">
+                  <td className="whitespace-nowrap border-l border-slate-200/65 px-3 py-3.5 text-center text-[15px] font-semibold text-slate-900 tabular-nums">
                     {KRW(actualCpa)}
                   </td>
                 )}
 
                 {mode.showRevenue && (
-                  <td className="whitespace-nowrap px-2.5 py-3 text-right text-[13px] font-bold text-emerald-600 tabular-nums">
+                  <td className="whitespace-nowrap border-l border-slate-200/65 px-3 py-3.5 text-center text-[15px] font-bold text-emerald-600 tabular-nums">
                     {KRW(actualRevenue)}
                   </td>
                 )}
 
                 {mode.showRoas && (
-                  <td className="whitespace-nowrap px-2.5 py-3 text-right text-[13px] font-bold text-orange-600 tabular-nums">
+                  <td className="whitespace-nowrap border-l border-slate-200/65 px-3 py-3.5 text-center text-[15px] font-bold text-orange-600 tabular-nums">
                     {pct1(actualRoas)}
                   </td>
                 )}
               </tr>
 
-              <tr className="border-t border-slate-200 bg-[var(--nature-cream)]/30">
+              <tr className="border-t border-[var(--nature-border-blue)]/55 bg-[var(--nature-cream)]/72">
                 <td className={firstTdClass}>달성률</td>
 
                 <td className={`${tdClass} font-semibold text-slate-900`}>
@@ -806,8 +805,6 @@ export default function SummaryGoal({
       <p className="mt-3 text-xs text-slate-500">
         * 목표 &amp; 달성현황은 필터의 영향을 받지 않습니다.
       </p>
-
-      {goalProgressContent}
 
       {monthGoalInsight ? (
         <div className="mt-6">

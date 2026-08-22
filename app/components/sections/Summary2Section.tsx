@@ -65,7 +65,455 @@ type ChannelDeviceAgg = {
   channel: string;
   device: string;
   value: number;
+  conversions: number;
+  cost: number;
+  clicks: number;
 };
+
+type ConversionEfficiencyPoint = ChannelDeviceAgg & {
+  cpa: number;
+};
+
+const ConversionEfficiencyMap = memo(function ConversionEfficiencyMap({
+  items,
+}: {
+  items: readonly ConversionEfficiencyPoint[];
+}) {
+  const [activeKey, setActiveKey] = useState<string | null>(null);
+
+  const activeItems = items.filter(
+    (item) =>
+      Number.isFinite(item.conversions) &&
+      Number.isFinite(item.cpa) &&
+      item.conversions > 0 &&
+      item.cpa > 0,
+  );
+
+  const median = (values: number[]) => {
+    if (values.length === 0) return 0;
+
+    const sorted = [...values].sort((a, b) => a - b);
+    const middle = Math.floor(sorted.length / 2);
+
+    if (sorted.length % 2 === 0) {
+      return (sorted[middle - 1] + sorted[middle]) / 2;
+    }
+
+    return sorted[middle];
+  };
+
+  const activeItem =
+    activeKey == null
+      ? null
+      : activeItems.find(
+          (item) => `${item.channel}__${item.device}` === activeKey,
+        ) ?? null;
+
+  if (activeItems.length === 0) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[20px] border border-[var(--nature-border-blue)] bg-white shadow-[0_4px_14px_rgba(127,166,196,0.07)]">
+        <div className="border-b border-[var(--nature-border)] px-5 py-4">
+          <div className="mb-2">
+            <span className="inline-flex items-center rounded-full border border-[#B7D7E3]/70 bg-[#B7D7E3]/22 px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] text-[#5F87A3]">
+              EFFICIENCY MATRIX
+            </span>
+          </div>
+
+          <h3 className="text-base font-semibold text-[#27364A]">
+            채널 · 기기 전환 효율 매트릭스
+          </h3>
+
+          <p className="mt-1 text-sm text-[#7A8794]">
+            전환 규모와 CPA를 함께 비교해 확대와 개선 우선순위를 확인합니다.
+          </p>
+        </div>
+
+        <div className="flex flex-1 items-center justify-center px-6 py-10 text-sm text-[#7A8794]">
+          전환 효율을 분석할 채널·기기 데이터가 없습니다.
+        </div>
+      </div>
+    );
+  }
+
+  const width = 800;
+  const height = 250;
+
+  const left = 62;
+  const right = 30;
+  const top = 24;
+  const bottom = 38;
+
+  const bubblePaddingX = 30;
+  const bubblePaddingY = 26;
+
+  const plotXStart = left + bubblePaddingX;
+  const plotXEnd = width - right - bubblePaddingX;
+  const plotYStart = top + bubblePaddingY;
+  const plotYEnd = height - bottom - bubblePaddingY;
+
+  const plotWidth = Math.max(1, plotXEnd - plotXStart);
+  const plotHeight = Math.max(1, plotYEnd - plotYStart);
+
+  const maxConversions = Math.max(
+    ...activeItems.map((item) => item.conversions),
+    1,
+  );
+
+  const cpas = activeItems.map((item) => item.cpa);
+  const minCpa = Math.min(...cpas);
+  const maxCpa = Math.max(...cpas);
+
+  const maxCost = Math.max(
+    ...activeItems.map((item) => item.cost),
+    1,
+  );
+
+  const medianConversions = median(
+    activeItems.map((item) => item.conversions),
+  );
+
+  const medianCpa = median(cpas);
+
+  const xFor = (value: number) => {
+    const ratio = Math.max(0, value) / maxConversions;
+
+    return (
+      plotXStart +
+      Math.sqrt(Math.min(1, ratio)) * plotWidth
+    );
+  };
+
+  const yFor = (value: number) => {
+    if (maxCpa <= minCpa) {
+      return plotYStart + plotHeight / 2;
+    }
+
+    const clamped = Math.max(
+      minCpa,
+      Math.min(maxCpa, value),
+    );
+
+    return (
+      plotYStart +
+      ((clamped - minCpa) / (maxCpa - minCpa)) *
+        plotHeight
+    );
+  };
+
+  const radiusFor = (value: number) => {
+    if (value <= 0) return 7;
+
+    return 7 + Math.sqrt(value / maxCost) * 10;
+  };
+
+  const medianX = xFor(medianConversions);
+  const medianY = yFor(medianCpa);
+
+  const bestItem =
+    [...activeItems].sort((a, b) => a.cpa - b.cpa)[0] ?? null;
+
+  const uniqueChannels = Array.from(
+    new Set(activeItems.map((item) => item.channel)),
+  );
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[20px] border border-[var(--nature-border-blue)] bg-white shadow-[0_4px_14px_rgba(127,166,196,0.07)]">
+      <div className="border-b border-[var(--nature-border)] px-5 py-4">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+          <div className="min-w-0">
+            <div className="mb-2">
+              <span className="inline-flex items-center rounded-full border border-[#B7D7E3]/70 bg-[#B7D7E3]/22 px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] text-[#5F87A3]">
+                EFFICIENCY MATRIX
+              </span>
+            </div>
+
+            <h3 className="text-base font-semibold text-[#27364A]">
+              채널 · 기기 전환 효율 매트릭스
+            </h3>
+
+            <p className="mt-1 text-sm text-[#7A8794]">
+              전환수·CPA·광고비를 함께 비교해 확대와 개선 우선순위를 확인합니다.
+            </p>
+          </div>
+
+          <div className="shrink-0 rounded-[14px] border border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/10 px-4 py-3">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+              BEST CPA
+            </div>
+
+            <div className="mt-1 max-w-[240px] truncate text-sm font-semibold text-[#27364A]">
+              {bestItem
+                ? `${bestItem.channel} · ${bestItem.device}`
+                : "-"}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex min-h-0 flex-1 flex-col px-4 pb-4 pt-3">
+        <div className="relative flex min-h-[250px] flex-1 overflow-hidden rounded-[16px] border border-[var(--nature-border)] bg-slate-50/35">
+          <svg
+            viewBox={`0 0 ${width} ${height}`}
+            className="h-full min-h-[230px] w-full"
+            role="img"
+            aria-label="채널과 기기 조합별 전환 규모와 CPA 효율 매트릭스"
+            onMouseLeave={() => setActiveKey(null)}
+          >
+            <rect
+              x={left}
+              y={top}
+              width={Math.max(0, medianX - left)}
+              height={Math.max(0, medianY - top)}
+              fill="rgba(183,215,227,0.055)"
+            />
+
+            <rect
+              x={medianX}
+              y={top}
+              width={Math.max(0, width - right - medianX)}
+              height={Math.max(0, medianY - top)}
+              fill="rgba(127,166,196,0.075)"
+            />
+
+            <rect
+              x={left}
+              y={medianY}
+              width={Math.max(0, medianX - left)}
+              height={Math.max(0, height - bottom - medianY)}
+              fill="rgba(243,228,210,0.07)"
+            />
+
+            <rect
+              x={medianX}
+              y={medianY}
+              width={Math.max(0, width - right - medianX)}
+              height={Math.max(0, height - bottom - medianY)}
+              fill="rgba(207,194,177,0.07)"
+            />
+
+            <line
+              x1={left}
+              y1={top}
+              x2={left}
+              y2={height - bottom}
+              stroke="#D7E0E7"
+              strokeWidth="1"
+            />
+
+            <line
+              x1={left}
+              y1={height - bottom}
+              x2={width - right}
+              y2={height - bottom}
+              stroke="#D7E0E7"
+              strokeWidth="1"
+            />
+
+            <line
+              x1={medianX}
+              y1={top}
+              x2={medianX}
+              y2={height - bottom}
+              stroke="#B7C7D3"
+              strokeDasharray="5 6"
+              strokeWidth="1"
+              strokeOpacity="0.78"
+            />
+
+            <line
+              x1={left}
+              y1={medianY}
+              x2={width - right}
+              y2={medianY}
+              stroke="#B7C7D3"
+              strokeDasharray="5 6"
+              strokeWidth="1"
+              strokeOpacity="0.78"
+            />
+
+            <text
+              x={left + 12}
+              y={top + 17}
+              fontSize="9"
+              fontWeight="700"
+              fill="#7A8794"
+              opacity="0.48"
+              letterSpacing="0.08em"
+            >
+              OPPORTUNITY
+            </text>
+
+            <text
+              x={width - right - 12}
+              y={top + 17}
+              textAnchor="end"
+              fontSize="9"
+              fontWeight="700"
+              fill="#5F87A3"
+              opacity="0.52"
+              letterSpacing="0.08em"
+            >
+              SCALE
+            </text>
+
+            <text
+              x={left + 12}
+              y={height - bottom - 10}
+              fontSize="9"
+              fontWeight="700"
+              fill="#9A8C7B"
+              opacity="0.48"
+              letterSpacing="0.08em"
+            >
+              WATCH
+            </text>
+
+            <text
+              x={width - right - 12}
+              y={height - bottom - 10}
+              textAnchor="end"
+              fontSize="9"
+              fontWeight="700"
+              fill="#A67C52"
+              opacity="0.52"
+              letterSpacing="0.08em"
+            >
+              OPTIMIZE
+            </text>
+
+            <text
+              x={17}
+              y={top + (height - bottom - top) / 2}
+              transform={`rotate(-90 17 ${top + (height - bottom - top) / 2})`}
+              textAnchor="middle"
+              fontSize="10"
+              fontWeight="700"
+              fill="#64748B"
+            >
+              CPA 효율 ↑
+            </text>
+
+            <text
+              x={width - right}
+              y={height - 10}
+              textAnchor="end"
+              fontSize="10"
+              fontWeight="700"
+              fill="#64748B"
+            >
+              전환 규모 →
+            </text>
+
+            {activeItems.map((item) => {
+              const key = `${item.channel}__${item.device}`;
+              const isActive = activeKey === key;
+              const hasActive = activeKey !== null;
+
+              const cx = xFor(item.conversions);
+              const cy = yFor(item.cpa);
+              const radius = radiusFor(item.cost);
+
+              return (
+                <g
+                  key={key}
+                  className="cursor-pointer"
+                  onMouseEnter={() => setActiveKey(key)}
+                >
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={radius + 4}
+                    fill={channelColor(item.channel)}
+                    fillOpacity={isActive ? "0.16" : "0.08"}
+                  />
+
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={isActive ? radius + 2 : radius}
+                    fill={channelColor(item.channel)}
+                    fillOpacity={
+                      isActive
+                        ? "0.96"
+                        : hasActive
+                          ? "0.34"
+                          : "0.82"
+                    }
+                    stroke="#FFFFFF"
+                    strokeWidth={isActive ? "3" : "2"}
+                  />
+                </g>
+              );
+            })}
+          </svg>
+
+          {activeItem ? (
+            <div className="pointer-events-none absolute right-3 top-3 z-10 min-w-[220px] rounded-[14px] border border-[var(--nature-border-blue)] bg-white/95 px-4 py-3 shadow-[0_8px_20px_rgba(127,166,196,0.16)] backdrop-blur-sm">
+              <div className="flex items-center gap-2">
+                <span
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{
+                    backgroundColor: channelColor(activeItem.channel),
+                  }}
+                />
+
+                <div className="text-[12px] font-bold text-slate-800">
+                  {activeItem.channel} · {activeItem.device}
+                </div>
+              </div>
+
+              <div className="mt-2.5 grid grid-cols-2 gap-x-5 gap-y-1.5 text-[11px]">
+                <div className="text-slate-400">전환수</div>
+                <div className="text-right font-semibold text-slate-700">
+                  {formatCount(activeItem.conversions)}
+                </div>
+
+                <div className="text-slate-400">CPA</div>
+                <div className="text-right font-semibold text-slate-700">
+                  {KRW(activeItem.cpa)}
+                </div>
+
+                <div className="text-slate-400">광고비</div>
+                <div className="text-right font-semibold text-slate-700">
+                  {KRW(activeItem.cost)}
+                </div>
+
+                <div className="text-slate-400">클릭수</div>
+                <div className="text-right font-semibold text-slate-700">
+                  {formatCount(activeItem.clicks)}
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 px-1">
+          <div className="flex flex-wrap items-center gap-2">
+            {uniqueChannels.map((channel) => (
+              <div
+                key={`efficiency-channel-${channel}`}
+                className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-semibold text-slate-600"
+              >
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: channelColor(channel) }}
+                />
+
+                {channel}
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1 text-[10px] font-medium text-slate-400">
+            <span>버블 크기 = 광고비</span>
+            <span>기준선 = 조합별 중앙값</span>
+            <span>X축 간격 = √전환수 보정</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
 
 type ChannelMetricAgg = {
   channel: string;
@@ -1515,8 +1963,14 @@ export default function Summary2Section({
       const channel = normalizeChannel(r?.channel ?? r?.source ?? r?.platform);
       const device = normalizeDevice(r?.device);
 
+      const conversions = toSafeNumber(
+        r?.conversions ?? r?.conv ?? r?.cv,
+      );
+      const cost = toSafeNumber(r?.cost ?? r?.spend ?? r?.ad_cost);
+      const clicks = toSafeNumber(r?.clicks ?? r?.click ?? r?.clk);
+
       const value = isDbAcquisition
-        ? toSafeNumber(r?.conversions ?? r?.conv ?? r?.cv)
+        ? conversions
         : toSafeNumber(r?.revenue ?? r?.sales ?? r?.purchase_amount ?? r?.gmv);
 
       if (value <= 0) continue;
@@ -1526,17 +1980,48 @@ export default function Summary2Section({
 
       if (prev) {
         prev.value += value;
+        prev.conversions += conversions;
+        prev.cost += cost;
+        prev.clicks += clicks;
       } else {
         map.set(key, {
           channel,
           device,
           value,
+          conversions,
+          cost,
+          clicks,
         });
       }
     }
 
     return Array.from(map.values()).sort((a, b) => b.value - a.value);
   }, [rows, isDbAcquisition, shouldBuildFlowData]);
+
+  const channelDeviceEfficiencyData = useMemo(() => {
+    if (!shouldBuildFlowData || !isDbAcquisition) {
+      return [] as ConversionEfficiencyPoint[];
+    }
+
+    return channelDeviceAgg
+      .map((item) => ({
+        ...item,
+        cpa:
+          item.conversions > 0
+            ? item.cost / item.conversions
+            : 0,
+      }))
+      .filter(
+        (item) =>
+          item.conversions > 0 &&
+          item.cpa > 0,
+      )
+      .sort((a, b) => b.conversions - a.conversions);
+  }, [
+    channelDeviceAgg,
+    isDbAcquisition,
+    shouldBuildFlowData,
+  ]);
 
   const channelOutcome = useMemo(() => {
     if (!shouldBuildFlowData) return [] as Array<{ channel: string; value: number }>;
@@ -1878,7 +2363,7 @@ export default function Summary2Section({
     if (!shouldBuildFlowData) {
           return {
             width: 800,
-            height: 270,
+            height: isDbAcquisition ? 178 : 270,
             channels: [] as any[],
             devices: [] as any[],
             outcomeNode: [] as any[],
@@ -1886,13 +2371,13 @@ export default function Summary2Section({
           };
         }
     const width = 800;
-    const height = 270;
+    const height = isDbAcquisition ? 178 : 270;
     const nodeWidth = 18;
-    const topPad = 20;
-    const bottomPad = 16;
+    const topPad = isDbAcquisition ? 12 : 20;
+    const bottomPad = isDbAcquisition ? 10 : 16;
     const usableHeight = height - topPad - bottomPad;
-    const gap = 12;
-    const minNodeH = 20;
+    const gap = isDbAcquisition ? 8 : 12;
+    const minNodeH = isDbAcquisition ? 14 : 20;
     const totalValue = Math.max(sankeyData.totalValue, 1);
 
     const buildColumn = (
@@ -2491,7 +2976,14 @@ export default function Summary2Section({
                 description={funnelDescription}
               />
 
-              <div className="flex min-w-0 flex-col rounded-[20px] border border-[var(--nature-border-blue)] bg-white shadow-[0_4px_14px_rgba(127,166,196,0.07)]">
+              <div
+                className={
+                  isDbAcquisition
+                    ? "flex min-w-0 flex-col gap-6"
+                    : "contents"
+                }
+              >
+                <div className="flex min-w-0 flex-col rounded-[20px] border border-[var(--nature-border-blue)] bg-white shadow-[0_4px_14px_rgba(127,166,196,0.07)]">
                 <div className="border-b border-[var(--nature-border)] px-6 py-4">
                   <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
                     <div>
@@ -2530,12 +3022,24 @@ export default function Summary2Section({
                   ) : null}
                 </div>
 
-                <div className="flex flex-1 flex-col justify-between px-6 py-4">
+                <div
+                  className={
+                    isDbAcquisition
+                      ? "flex flex-1 flex-col justify-between px-5 py-3"
+                      : "flex flex-1 flex-col justify-between px-6 py-4"
+                  }
+                >
                   {sankeyData.totalValue > 0 ? (
-                    <div className="flex justify-center pb-5 pt-8">
+                    <div
+                      className={
+                        isDbAcquisition
+                          ? "flex justify-center pb-2 pt-3"
+                          : "flex justify-center pb-5 pt-8"
+                      }
+                    >
                       <div className="w-full max-w-[800px]">
                         <svg
-                          viewBox="0 0 800 270"
+                          viewBox={`0 0 800 ${sankeyLayout.height}`}
                           className="h-auto w-full"
                           role="img"
                           aria-label={
@@ -2651,6 +3155,13 @@ export default function Summary2Section({
                   )}
                 </div>
               </div>
+
+              {isDbAcquisition ? (
+                <ConversionEfficiencyMap
+                  items={channelDeviceEfficiencyData}
+                />
+              ) : null}
+            </div>
             </div>
           ) : null}
           </div>

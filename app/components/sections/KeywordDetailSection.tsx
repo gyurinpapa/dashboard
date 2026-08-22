@@ -763,16 +763,20 @@ type VirtualKeywordListProps = {
   keywords: string[];
   selectedKeyword: string | null;
   onSelectKeyword: (keyword: string) => void;
+  compact?: boolean;
 };
 
 const VirtualKeywordList = memo(function VirtualKeywordList({
   keywords,
   selectedKeyword,
   onSelectKeyword,
+  compact = false,
 }: VirtualKeywordListProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
-  const [viewportHeight, setViewportHeight] = useState(FALLBACK_VIEWPORT_HEIGHT);
+  const [viewportHeight, setViewportHeight] = useState(
+    compact ? 288 : FALLBACK_VIEWPORT_HEIGHT
+  );
 
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     setScrollTop(e.currentTarget.scrollTop);
@@ -866,7 +870,11 @@ const VirtualKeywordList = memo(function VirtualKeywordList({
     <div
       ref={containerRef}
       onScroll={handleScroll}
-      className="mt-3 overflow-auto pr-1 lg:max-h-[calc(100vh-17rem)]"
+      className={
+        compact
+          ? "mt-2 max-h-72 overflow-auto pr-1"
+          : "mt-3 overflow-auto pr-1 lg:max-h-[calc(100vh-17rem)]"
+      }
     >
       <div
         className="relative w-full"
@@ -893,6 +901,160 @@ const VirtualKeywordList = memo(function VirtualKeywordList({
           </div>
         ))}
       </div>
+    </div>
+  );
+});
+
+type CompactKeywordSelectorProps = {
+  keywords: string[];
+  selectedKeyword: string | null;
+  onSelectKeyword: (keyword: string) => void;
+};
+
+const CompactKeywordSelector = memo(function CompactKeywordSelector({
+  keywords,
+  selectedKeyword,
+  onSelectKeyword,
+}: CompactKeywordSelectorProps) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+
+  const filteredKeywords = useMemo(() => {
+    const normalized = normalizeKeywordSearchText(query);
+
+    if (!normalized) return keywords;
+
+    return keywords.filter((keyword) =>
+      normalizeKeywordSearchText(keyword).includes(normalized)
+    );
+  }, [keywords, query]);
+
+  const closeSelector = useCallback(() => {
+    setOpen(false);
+    setQuery("");
+  }, []);
+
+  const handleToggle = useCallback(() => {
+    if (open) {
+      closeSelector();
+      return;
+    }
+
+    setOpen(true);
+  }, [closeSelector, open]);
+
+  const handleSelect = useCallback(
+    (keyword: string) => {
+      onSelectKeyword(keyword);
+      closeSelector();
+    },
+    [closeSelector, onSelectKeyword]
+  );
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handleOutsideClick = (event: MouseEvent) => {
+      const root = rootRef.current;
+
+      if (!root || root.contains(event.target as Node)) return;
+
+      closeSelector();
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+
+      closeSelector();
+    };
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    window.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [closeSelector, open]);
+
+  return (
+    <div ref={rootRef} className="relative z-30 w-full max-w-[420px]">
+      <button
+        type="button"
+        onClick={handleToggle}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        className={[
+          "flex h-11 w-full items-center gap-2 rounded-[12px] border bg-white px-3.5 text-left shadow-[0_3px_10px_rgba(127,166,196,0.06)] transition",
+          open
+            ? "border-[#7FA6C4] ring-2 ring-[#B7D7E3]/25"
+            : "border-[#CFC2B1]/55 hover:border-[#7FA6C4]/75",
+        ].join(" ")}
+        title={selectedKeyword ? `선택: ${selectedKeyword}` : "키워드 선택"}
+      >
+        <span className="shrink-0 text-[11px] font-semibold text-[#7A8794]">
+          선택:
+        </span>
+
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[#27364A]">
+          {selectedKeyword ?? "선택 없음"}
+        </span>
+
+        <svg
+          viewBox="0 0 20 20"
+          aria-hidden="true"
+          className={[
+            "h-4 w-4 shrink-0 text-[#7FA6C4] transition-transform",
+            open ? "rotate-180" : "",
+          ].join(" ")}
+        >
+          <path
+            d="M5.5 7.5 10 12l4.5-4.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+
+      {open ? (
+        <div className="absolute right-0 top-full z-[70] mt-2 w-full overflow-hidden rounded-[16px] border border-[var(--nature-border-blue)] bg-white p-3 shadow-[0_14px_34px_rgba(39,54,74,0.16)]">
+          <div className="flex items-center justify-between gap-3 px-1">
+            <div className="text-sm font-semibold text-[#27364A]">
+              키워드 선택
+            </div>
+
+            <div className="shrink-0 text-[11px] text-[#7A8794]">
+              {filteredKeywords.length.toLocaleString()}개
+            </div>
+          </div>
+
+          <input
+            type="text"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="키워드 검색"
+            autoFocus
+            className="mt-3 h-10 w-full rounded-[10px] border border-[#CFC2B1]/55 bg-white px-3 text-sm text-[#27364A] outline-none placeholder:text-[#9A8F81] focus:border-[#7FA6C4] focus:ring-2 focus:ring-[#B7D7E3]/30"
+          />
+
+          {filteredKeywords.length === 0 ? (
+            <div className="mt-2 rounded-[10px] border border-[#CFC2B1]/40 bg-[#F3E4D2]/14 px-3 py-4 text-center text-sm text-[#6F7B86]">
+              검색 결과가 없습니다.
+            </div>
+          ) : (
+            <VirtualKeywordList
+              keywords={filteredKeywords}
+              selectedKeyword={selectedKeyword}
+              onSelectKeyword={handleSelect}
+              compact
+            />
+          )}
+        </div>
+      ) : null}
     </div>
   );
 });
@@ -1201,6 +1363,32 @@ export default function KeywordDetailSection(props: Props) {
   const showAllSlides = activeSlide == null;
   const showOverviewSlide = showAllSlides || activeSlide === 0;
 
+  const overviewInsightPanel = (
+    <div className={showOverviewSlide ? "min-w-0" : "hidden"}>
+      <InsightPanel
+        reportMode={reportMode}
+        title={insight.title}
+        selectedKeyword={selectedKeyword}
+        avgRank={avgRank}
+        bullets={insight.bullets}
+        actions={insight.actions}
+      />
+    </div>
+  );
+
+  const summarySectionBlock = (
+    <SummarySectionBlock
+      reportType={reportMode}
+      totals={totals}
+      byMonth={byMonth}
+      byWeekOnly={byWeekOnly}
+      byWeekChart={byWeekChart}
+      bySource={bySource}
+      byDay={byDay}
+      activeSlide={activeSlide}
+    />
+  );
+
   return (
     <section className="w-full min-w-0">
       <div className="mt-4 grid grid-cols-1 items-start gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
@@ -1220,27 +1408,28 @@ export default function KeywordDetailSection(props: Props) {
             showOverviewSlide ? "" : "lg:col-span-2",
           ].join(" ")}
         >
-          <div className={showOverviewSlide ? "min-w-0" : "hidden"}>
-            <InsightPanel
-              reportMode={reportMode}
-              title={insight.title}
-              selectedKeyword={selectedKeyword}
-              avgRank={avgRank}
-              bullets={insight.bullets}
-              actions={insight.actions}
-            />
-          </div>
+          {!showOverviewSlide ? (
+            <div className="flex w-full justify-end">
+              <CompactKeywordSelector
+                key={`keyword-selector-${activeSlide}`}
+                keywords={keywords}
+                selectedKeyword={selectedKeyword}
+                onSelectKeyword={handleSelectKeyword}
+              />
+            </div>
+          ) : null}
 
-          <SummarySectionBlock
-            reportType={reportMode}
-            totals={totals}
-            byMonth={byMonth}
-            byWeekOnly={byWeekOnly}
-            byWeekChart={byWeekChart}
-            bySource={bySource}
-            byDay={byDay}
-            activeSlide={activeSlide}
-          />
+          {activeSlide === 0 ? (
+            <>
+              {summarySectionBlock}
+              {overviewInsightPanel}
+            </>
+          ) : (
+            <>
+              {overviewInsightPanel}
+              {summarySectionBlock}
+            </>
+          )}
         </div>
       </div>
 

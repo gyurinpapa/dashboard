@@ -8,6 +8,7 @@ type Props = {
   max: number;
   label?: string;
   height?: number;
+  emphasized?: boolean;
 };
 
 /**
@@ -22,8 +23,10 @@ function DataBarCellComponent({
   value,
   max,
   label,
-  height = 18,
+  height,
+  emphasized = false,
 }: Props) {
+  const resolvedHeight = height ?? (emphasized ? 24 : 18);
   const pct = useMemo(() => {
     if (!(max > 0)) return 0;
     const raw = (value / max) * 100;
@@ -41,18 +44,20 @@ function DataBarCellComponent({
   const barStyle = useMemo(
     () => ({
       width: `${pct}%`,
-      height: `${height}px`,
+      height: `${resolvedHeight}px`,
       background:
         "linear-gradient(90deg, rgba(183,215,227,0.92) 0%, rgba(127,166,196,0.96) 100%)",
       boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.18)",
     }),
-    [pct, height]
+    [pct, resolvedHeight]
   );
 
   const insideLabelStyle = useMemo(
     () => ({ pointerEvents: "none" as const }),
     []
   );
+
+  const labelTextClass = emphasized ? "text-[13px]" : "text-[11px]";
 
   return (
     <div className="flex w-full items-center gap-2.5">
@@ -64,7 +69,7 @@ function DataBarCellComponent({
 
         {!isSmall && (
           <div
-            className="absolute inset-y-0 right-2.5 flex items-center text-[11px] font-semibold tracking-[-0.01em] text-[#27364A]"
+            className={`absolute inset-y-0 right-2.5 flex items-center ${labelTextClass} font-semibold tracking-[-0.01em] text-[#27364A]`}
             style={insideLabelStyle}
           >
             {text}
@@ -73,7 +78,7 @@ function DataBarCellComponent({
       </div>
 
       {isSmall && (
-        <div className="whitespace-nowrap text-[11px] font-semibold tracking-[-0.01em] text-[#52606D]">
+        <div className={`whitespace-nowrap ${labelTextClass} font-semibold tracking-[-0.01em] text-[#52606D]`}>
           {text}
         </div>
       )}
