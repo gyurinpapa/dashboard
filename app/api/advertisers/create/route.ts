@@ -1,6 +1,6 @@
 // app/api/advertisers/create/route.ts
 import { NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { getSupabaseAdmin, supabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
 
 export const runtime = "nodejs";
@@ -9,6 +9,57 @@ export const dynamic = "force-dynamic";
 function asString(v: any) {
   if (v == null) return "";
   return String(v).trim();
+}
+
+const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
+
+function normalizeEmail(v: any) {
+  return asString(v).toLowerCase();
+}
+
+async function getProfileEmailByUserId(userId: string) {
+  const id = asString(userId);
+  if (!id) return "";
+
+  const { data, error } = await supabaseAdmin
+    .from("profiles")
+    .select("email")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`FAILED_TO_FETCH_PROFILE_EMAIL:${error.message}`);
+  }
+
+  return normalizeEmail(data?.email);
+}
+
+async function hasMasterMembership(userId: string) {
+  const id = asString(userId);
+  if (!id) return false;
+
+  const { data, error } = await supabaseAdmin
+    .from("workspace_members")
+    .select("workspace_id")
+    .eq("user_id", id)
+    .eq("role", "master")
+    .limit(1);
+
+  if (error) {
+    throw new Error(`FAILED_TO_FETCH_MASTER_MEMBERSHIP:${error.message}`);
+  }
+
+  return Array.isArray(data) && data.length > 0;
+}
+
+async function isTrueMasterUser(userId: string) {
+  const email = await getProfileEmailByUserId(userId);
+
+  if (email !== ONLY_MASTER_EMAIL) {
+    return false;
+  }
+
+  return await hasMasterMembership(userId);
 }
 
 function jsonError(status: number, message: string, extra?: any) {
@@ -73,27 +124,41 @@ export async function POST(req: Request) {
 
     const admin = getSupabaseAdmin();
 
-    const { data: mem, error: memErr } = await admin
-      .from("workspace_members")
-      .select("workspace_id, user_id, role")
-      .eq("workspace_id", workspace_id)
-      .eq("user_id", user.id)
-      .limit(1)
-      .maybeSingle();
+    const actorIsTrueMaster = await isTrueMasterUser(user.id);
 
-    if (memErr) {
-      return jsonError(500, "MEMBERSHIP_CHECK_FAILED", { detail: memErr.message });
+    let mem: {
+      workspace_id?: string | null;
+      user_id?: string | null;
+      role?: string | null;
+    } | null = null;
+
+    if (!actorIsTrueMaster) {
+      const { data, error: memErr } = await admin
+        .from("workspace_members")
+        .select("workspace_id, user_id, role")
+        .eq("workspace_id", workspace_id)
+        .eq("user_id", user.id)
+        .limit(1)
+        .maybeSingle();
+
+      if (memErr) {
+        return jsonError(500, "MEMBERSHIP_CHECK_FAILED", { detail: memErr.message });
+      }
+
+      mem = data;
+
+      if (!mem) {
+        return jsonError(403, "FORBIDDEN");
+      }
+
+      if (!canCreateAdvertiser(mem.role)) {
+        return jsonError(403, "FORBIDDEN_CREATE_ADVERTISER_PERMISSION");
+      }
     }
 
-    if (!mem) {
-      return jsonError(403, "FORBIDDEN");
-    }
-
-    if (!canCreateAdvertiser(mem.role)) {
-      return jsonError(403, "FORBIDDEN_CREATE_ADVERTISER_PERMISSION");
-    }
-
-    const resolvedWorkspaceId = asString(mem.workspace_id);
+    const resolvedWorkspaceId = actorIsTrueMaster
+      ? workspace_id
+      : asString(mem?.workspace_id);
 
     if (!resolvedWorkspaceId || resolvedWorkspaceId !== workspace_id) {
       return jsonError(403, "FORBIDDEN_WORKSPACE_MISMATCH");
