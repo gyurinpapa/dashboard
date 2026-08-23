@@ -1069,7 +1069,7 @@ export default function CreativeSection({
             title="노출수 TOP20 소재"
             description="노출 기여도가 높은 소재를 빠르게 비교할 수 있도록 정리했습니다."
           >
-            <div style={{ width: "100%", height: 340 }}>
+            <div data-studio-axis-white="true" style={{ width: "100%", height: 340 }}>
               <ResponsiveContainer
                 width="100%"
                 height="100%"
@@ -1125,7 +1125,7 @@ export default function CreativeSection({
             title="클릭수 TOP20 소재"
             description="실제 유입 반응이 많이 발생한 소재를 중심으로 확인할 수 있습니다."
           >
-            <div style={{ width: "100%", height: 340 }}>
+            <div data-studio-axis-white="true" style={{ width: "100%", height: 340 }}>
               <ResponsiveContainer
                 width="100%"
                 height="100%"
@@ -1181,7 +1181,7 @@ export default function CreativeSection({
             title="비용 TOP20 소재"
             description="예산이 많이 집행된 소재를 기준으로 운영 집중도를 살펴봅니다."
           >
-            <div style={{ width: "100%", height: 340 }}>
+            <div data-studio-axis-white="true" style={{ width: "100%", height: 340 }}>
               <ResponsiveContainer
                 width="100%"
                 height="100%"
@@ -1243,7 +1243,7 @@ export default function CreativeSection({
             title="클릭수 TOP20 소재"
             description="유입을 가장 많이 만든 소재를 우선순위 기준으로 정리했습니다."
           >
-            <div style={{ width: "100%", height: 340 }}>
+            <div data-studio-axis-white="true" style={{ width: "100%", height: 340 }}>
               <ResponsiveContainer
                 width="100%"
                 height="100%"
@@ -1299,7 +1299,7 @@ export default function CreativeSection({
             title="전환수 TOP20 소재"
             description="리드/전환 기여도가 높은 소재를 중심으로 효율 우선순위를 파악합니다."
           >
-            <div style={{ width: "100%", height: 340 }}>
+            <div data-studio-axis-white="true" style={{ width: "100%", height: 340 }}>
               <ResponsiveContainer
                 width="100%"
                 height="100%"
@@ -1355,7 +1355,7 @@ export default function CreativeSection({
             title="CPA 우수 TOP20 소재"
             description="전환이 발생한 소재만 기준으로 CPA가 낮은 순서대로 정리했습니다."
           >
-            <div style={{ width: "100%", height: 340 }}>
+            <div data-studio-axis-white="true" style={{ width: "100%", height: 340 }}>
               <ResponsiveContainer
                 width="100%"
                 height="100%"
@@ -1416,7 +1416,7 @@ export default function CreativeSection({
           title="클릭수 TOP20 소재"
           description="유입을 가장 많이 만든 소재를 우선순위 기준으로 정리했습니다."
         >
-          <div style={{ width: "100%", height: 340 }}>
+          <div data-studio-axis-white="true" style={{ width: "100%", height: 340 }}>
             <ResponsiveContainer
                 width="100%"
                 height="100%"
@@ -1472,7 +1472,7 @@ export default function CreativeSection({
           title="전환수 TOP20 소재"
           description="전환 기여도가 높은 소재를 중심으로 효율 우선순위를 파악합니다."
         >
-          <div style={{ width: "100%", height: 340 }}>
+          <div data-studio-axis-white="true" style={{ width: "100%", height: 340 }}>
             <ResponsiveContainer
                 width="100%"
                 height="100%"
@@ -1528,7 +1528,7 @@ export default function CreativeSection({
           title="ROAS TOP20 소재"
           description="매출 효율이 좋은 소재를 빠르게 식별할 수 있도록 정리했습니다."
         >
-          <div style={{ width: "100%", height: 340 }}>
+          <div data-studio-axis-white="true" style={{ width: "100%", height: 340 }}>
             <ResponsiveContainer
                 width="100%"
                 height="100%"
@@ -1699,7 +1699,10 @@ export default function CreativeSection({
             </div>
           </div>
 
-          <div className="overflow-auto rounded-[20px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] shadow-[0_4px_14px_rgba(127,166,196,0.07)]">
+          <div
+            data-report-ten-row-scroll={activeSlide != null ? "true" : undefined}
+            className="overflow-auto rounded-[20px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] shadow-[0_4px_14px_rgba(127,166,196,0.07)]"
+          >
             <table className="w-full border-collapse text-sm">
               <thead className="sticky top-0 z-10 border-b border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/34">
                 <tr>

@@ -5,6 +5,8 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
 import { isPlatformOwner } from "@/src/lib/supabase/platform-role";
 
+import { normalizeReportTheme } from "@/src/lib/report/theme";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -310,6 +312,7 @@ function normalizeReportRow(args: {
     published_period_end: asNullableString(row?.published_period_end),
     published_at: asNullableString(row?.published_at),
 
+    report_theme: normalizeReportTheme(meta.report_theme),
     data_source_kind: getReportDataSourceKindFromMeta(meta),
     ...mediaSyncSettings,
   };

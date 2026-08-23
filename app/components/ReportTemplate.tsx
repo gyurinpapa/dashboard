@@ -1,6 +1,7 @@
 // app/components/ReportTemplate.tsx
 "use client";
 
+import type { ReportTheme } from "@/src/lib/report/theme";
 import dynamic from "next/dynamic";
 import {
   memo,
@@ -297,6 +298,7 @@ type Props = {
   reportTypeName?: string | null;
   reportTypeKey?: string | null;
   workspaceLogoUrl?: string | null;
+  reportTheme?: ReportTheme;
   reportPeriod: ReportPeriod;
   onChangeReportPeriod: (next: ReportPeriod) => void;
   monthGoal?: MonthGoalProp;
@@ -3087,6 +3089,7 @@ export default function ReportTemplate({
   reportTypeName,
   reportTypeKey,
   workspaceLogoUrl,
+  reportTheme = "light",
   reportPeriod,
   onChangeReportPeriod,
   monthGoal: incomingMonthGoal,
@@ -3098,6 +3101,8 @@ export default function ReportTemplate({
   exportMode = false,
   forcedSlideIndex,
 }: Props) {
+  const isStudioTheme = reportTheme === "studio";
+
   const [internalTab, setInternalTab] = useState<TabKey>("summary");
   const [summarySlide, setSummarySlide] = useState<SummaryWebSlideIndex>(0);
   const [summary2Slide, setSummary2Slide] = useState<SummarySlideIndex>(0);
@@ -4342,7 +4347,16 @@ export default function ReportTemplate({
 
     return (
     <main
+      data-report-theme={reportTheme}
       data-ppt-export-mode={exportMode ? "true" : undefined}
+      style={
+        isStudioTheme
+          ? {
+              background:
+                "radial-gradient(circle at top right, rgba(33, 223, 243, 0.18), transparent 30%), radial-gradient(circle at top left, rgba(124, 92, 255, 0.22), transparent 34%), linear-gradient(180deg, rgba(42, 33, 87, 1) 0%, rgba(53, 40, 103, 0.98) 52%, rgba(46, 35, 94, 1) 100%)",
+            }
+          : undefined
+      }
       className={[
         "min-h-screen w-full min-w-0 max-w-full overflow-x-clip bg-[radial-gradient(circle_at_top_right,rgba(183,215,227,0.28),transparent_28%),linear-gradient(180deg,var(--nature-page)_0%,rgba(250,247,241,0.96)_100%)] text-slate-900",
         exportMode
@@ -4353,10 +4367,40 @@ export default function ReportTemplate({
       {!exportMode ? <HeaderSurface {...headerBarProps} /> : null}
 
       <div className="relative -mt-1 px-4 pb-12 pt-0 sm:px-6 lg:px-8">
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-[linear-gradient(180deg,rgba(183,215,227,0.13)_0%,rgba(243,228,210,0.08)_48%,transparent_100%)]" />
+        <div
+          className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-[linear-gradient(180deg,rgba(183,215,227,0.13)_0%,rgba(243,228,210,0.08)_48%,transparent_100%)]"
+          style={
+            isStudioTheme
+              ? {
+                  background:
+                    "linear-gradient(180deg, rgba(33, 223, 243, 0.10) 0%, rgba(124, 92, 255, 0.08) 48%, transparent 100%)",
+                }
+              : undefined
+          }
+        />
 
-        <div className="relative mx-auto w-full min-w-0 max-w-[1680px] overflow-visible rounded-b-[36px] rounded-t-[26px] bg-[linear-gradient(145deg,rgba(255,253,249,0.94)_0%,rgba(249,246,240,0.92)_58%,rgba(239,247,249,0.90)_100%)] p-3.5 shadow-[0_28px_70px_rgba(90,117,136,0.14),0_4px_14px_rgba(90,117,136,0.07)] sm:p-4">
-          <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.96)_18%,rgba(255,255,255,0.96)_82%,transparent_100%)]" />
+        <div
+          className="relative mx-auto w-full min-w-0 max-w-[1680px] overflow-visible rounded-b-[36px] rounded-t-[26px] bg-[linear-gradient(145deg,rgba(255,253,249,0.94)_0%,rgba(249,246,240,0.92)_58%,rgba(239,247,249,0.90)_100%)] p-3.5 shadow-[0_28px_70px_rgba(90,117,136,0.14),0_4px_14px_rgba(90,117,136,0.07)] sm:p-4"
+          style={
+            isStudioTheme
+              ? {
+                  background:
+                    "linear-gradient(145deg, rgba(53, 40, 103, 0.96) 0%, rgba(42, 33, 87, 0.94) 58%, rgba(46, 35, 94, 0.96) 100%)",
+                }
+              : undefined
+          }
+        >
+          <div
+            className="pointer-events-none absolute inset-x-8 top-0 h-px bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.96)_18%,rgba(255,255,255,0.96)_82%,transparent_100%)]"
+            style={
+              isStudioTheme
+                ? {
+                    background:
+                      "linear-gradient(90deg, transparent 0%, rgba(33, 223, 243, 0.72) 24%, rgba(124, 92, 255, 0.72) 76%, transparent 100%)",
+                  }
+                : undefined
+            }
+          />
 
           {isLoading ? (
             <div className="mb-6 overflow-hidden rounded-2xl border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] shadow-sm">
@@ -4402,7 +4446,7 @@ export default function ReportTemplate({
                         </div>
                       </>
                     ) : (
-                      <section aria-label="요약 슬라이드" className="space-y-4">
+                      <section aria-label="요약 슬라이드" data-summary-slide={summarySlide + 1} className="space-y-4">
                         <div className="flex flex-col items-center justify-between gap-3 rounded-[22px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)]/88 px-4 py-3 shadow-[0_8px_22px_rgba(127,166,196,0.10)] sm:flex-row">
                           <button
                             type="button"
@@ -4789,7 +4833,7 @@ export default function ReportTemplate({
                         />
                       </div>
                     ) : (
-                      <section className="space-y-4">
+                      <section aria-label="키워드 상세 슬라이드" className="space-y-4">
                         <div className="flex items-center justify-between gap-4 rounded-[22px] border border-[var(--nature-border-blue)] bg-white/88 px-4 py-3 shadow-[0_10px_26px_rgba(90,117,136,0.08)] backdrop-blur sm:px-5">
                           <button
                             type="button"

@@ -44,3 +44,5321 @@ body {
   overscroll-behavior-y: none;
   overscroll-behavior-x: none;
 }
+/* ETRYLUE_STUDIO_EXECUTIVE_COCKPIT_V1 */
+[data-report-theme="studio"] {
+  --nature-page: #07111f;
+  --nature-shell: #0b1630;
+  --nature-surface: #0d1a34;
+  --nature-surface-soft: #142342;
+  --nature-border: #203555;
+  --nature-border-blue: #285379;
+  --nature-blue: #21dff3;
+  --nature-blue-light: #12395c;
+  --nature-cream: #172744;
+}
+
+[data-report-theme="studio"] section[aria-label="Executive Performance Cockpit"] {
+  color: #f7f7ff;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"] {
+  border-radius: 28px;
+  background:
+    radial-gradient(
+      circle at 52% 34%,
+      rgba(33, 223, 243, 0.08),
+      transparent 28%
+    ),
+    radial-gradient(
+      circle at 88% 12%,
+      rgba(124, 92, 255, 0.12),
+      transparent 30%
+    ),
+    linear-gradient(
+      145deg,
+      rgba(7, 17, 31, 0.98) 0%,
+      rgba(11, 22, 48, 0.98) 54%,
+      rgba(13, 24, 52, 0.98) 100%
+    );
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [class~="bg-white"],
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [class*="bg-white/"] {
+  background-color: rgba(11, 22, 48, 0.96) !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [class*="bg-slate-50"] {
+  background-color: rgba(14, 29, 57, 0.96) !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [class*="bg-slate-100"] {
+  background-color: rgba(18, 35, 66, 0.96) !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [class*="bg-[linear-gradient"] {
+  background:
+    linear-gradient(
+      145deg,
+      rgba(14, 29, 57, 0.98) 0%,
+      rgba(10, 23, 47, 0.98) 56%,
+      rgba(18, 31, 67, 0.98) 100%
+    ) !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [class*="text-slate-900"] {
+  color: #f7f7ff !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [class*="text-slate-800"] {
+  color: #edf5ff !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [class*="text-slate-700"] {
+  color: #d7e5f5 !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [class*="text-slate-600"] {
+  color: #b7c9dc !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [class*="text-slate-500"] {
+  color: #91a9c4 !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [class*="text-slate-400"] {
+  color: #7189a6 !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [class*="text-[#5F87A3]"] {
+  color: #78f0ff !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [class*="text-[#4F7F9E]"] {
+  color: #8ebcff !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [class*="border-slate-"] {
+  border-color: rgba(81, 119, 161, 0.34) !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [class*="shadow-"] {
+  box-shadow:
+    0 16px 36px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(120, 240, 255, 0.035) !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  button {
+  border-color: rgba(56, 139, 191, 0.42);
+  color: #d7e5f5;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  button:not(:disabled):hover {
+  border-color: rgba(33, 223, 243, 0.58);
+  background-color: rgba(33, 223, 243, 0.08) !important;
+  color: #f7f7ff;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  .recharts-cartesian-grid
+  line {
+  stroke: rgba(120, 240, 255, 0.11) !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  .recharts-cartesian-axis-line,
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  .recharts-cartesian-axis-tick-line {
+  stroke: rgba(120, 240, 255, 0.18) !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  .recharts-cartesian-axis-tick-value,
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  .recharts-text {
+  fill: #91a9c4 !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  .recharts-legend-item-text {
+  color: #d7e5f5 !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  .recharts-default-tooltip {
+  border: 1px solid rgba(33, 223, 243, 0.28) !important;
+  background: rgba(7, 17, 31, 0.97) !important;
+  color: #f7f7ff !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.32) !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  .recharts-tooltip-label,
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  .recharts-tooltip-item {
+  color: #e7f5ff !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  svg
+  [stroke="#B7D7E3"] {
+  stroke: #388fe8 !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  svg
+  [stroke="#7FA6C4"] {
+  stroke: #21dff3 !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  svg
+  [stroke="#5F87A3"] {
+  stroke: #78f0ff !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  svg
+  [stroke="#4F7F9E"] {
+  stroke: #8ebcff !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  svg
+  [stroke="#CFC2B1"] {
+  stroke: #7c5cff !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  svg
+  [fill="#B7D7E3"] {
+  fill: #388fe8 !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  svg
+  [fill="#7FA6C4"] {
+  fill: #21dff3 !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  svg
+  [fill="#5F87A3"] {
+  fill: #78f0ff !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  svg
+  [fill="#4F7F9E"] {
+  fill: #8ebcff !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  svg
+  [fill="#CFC2B1"] {
+  fill: #7c5cff !important;
+}
+
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  svg
+  [stroke="#F97316"],
+[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  svg
+  [fill="#F97316"] {
+  stroke: #f97316 !important;
+  fill: #f97316 !important;
+}
+
+/* ETRYLUE_STUDIO_EXECUTIVE_COCKPIT_V1_END */
+
+/* ETRYLUE_STUDIO_SHARED_CHROME_V1 */
+
+/* HeaderSurface outer glass */
+main[data-report-theme="studio"] > div.sticky {
+  color: #f7f7ff;
+}
+
+main[data-report-theme="studio"] > div.sticky > div:first-child {
+  background:
+    radial-gradient(
+      circle at 78% 12%,
+      rgba(33, 223, 243, 0.13),
+      transparent 32%
+    ),
+    radial-gradient(
+      circle at 24% 0%,
+      rgba(124, 92, 255, 0.16),
+      transparent 34%
+    ),
+    linear-gradient(
+      135deg,
+      rgba(7, 17, 31, 0.985) 0%,
+      rgba(10, 24, 49, 0.985) 42%,
+      rgba(15, 31, 62, 0.98) 72%,
+      rgba(11, 22, 48, 0.985) 100%
+    ) !important;
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.30),
+    inset 0 -1px 0 rgba(33, 223, 243, 0.10) !important;
+}
+
+main[data-report-theme="studio"] > div.sticky > div:nth-last-child(2) {
+  background:
+    linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(33, 223, 243, 0.58) 22%,
+      rgba(124, 92, 255, 0.58) 78%,
+      transparent 100%
+    ) !important;
+}
+
+main[data-report-theme="studio"] > div.sticky > div:last-child {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(7, 17, 31, 0.44) 0%,
+      rgba(7, 17, 31, 0.12) 48%,
+      transparent 100%
+    ) !important;
+}
+
+/* HeaderBar own hard-coded Light backdrop */
+main[data-report-theme="studio"] > div.sticky header {
+  background: transparent !important;
+  color: #f7f7ff;
+}
+
+main[data-report-theme="studio"] > div.sticky header > div:first-child {
+  background:
+    linear-gradient(
+      135deg,
+      rgba(7, 17, 31, 0.94) 0%,
+      rgba(12, 26, 53, 0.91) 44%,
+      rgba(16, 35, 69, 0.88) 74%,
+      rgba(10, 23, 48, 0.92) 100%
+    ) !important;
+}
+
+main[data-report-theme="studio"] > div.sticky header > div:nth-child(2) {
+  background:
+    radial-gradient(
+      circle at top right,
+      rgba(33, 223, 243, 0.08),
+      transparent 32%
+    ),
+    radial-gradient(
+      circle at bottom left,
+      rgba(124, 92, 255, 0.10),
+      transparent 40%
+    ) !important;
+}
+
+main[data-report-theme="studio"] > div.sticky header > div:last-child {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(33, 223, 243, 0.10) 0%,
+      rgba(124, 92, 255, 0.05) 46%,
+      transparent 100%
+    ) !important;
+}
+
+/* Header typography */
+main[data-report-theme="studio"]
+  > div.sticky
+  header
+  [class*="text-slate-950"],
+main[data-report-theme="studio"]
+  > div.sticky
+  header
+  [class*="text-slate-900"] {
+  color: #f7f7ff !important;
+}
+
+main[data-report-theme="studio"]
+  > div.sticky
+  header
+  [class*="text-slate-800"],
+main[data-report-theme="studio"]
+  > div.sticky
+  header
+  [class*="text-slate-700"] {
+  color: #dcecff !important;
+}
+
+main[data-report-theme="studio"]
+  > div.sticky
+  header
+  [class*="text-slate-600"] {
+  color: #b8cce2 !important;
+}
+
+main[data-report-theme="studio"]
+  > div.sticky
+  header
+  [class*="text-slate-500"] {
+  color: #93acc7 !important;
+}
+
+main[data-report-theme="studio"]
+  > div.sticky
+  header
+  [class*="text-slate-400"] {
+  color: #748da9 !important;
+}
+
+/* Remove Light white chips/surfaces from header */
+main[data-report-theme="studio"]
+  > div.sticky
+  header
+  [class~="bg-white"],
+main[data-report-theme="studio"]
+  > div.sticky
+  header
+  [class*="bg-white/"] {
+  background-color: rgba(12, 27, 54, 0.90) !important;
+}
+
+main[data-report-theme="studio"]
+  > div.sticky
+  header
+  [class*="bg-slate-50"] {
+  background-color: rgba(16, 34, 66, 0.94) !important;
+}
+
+/* Report title */
+main[data-report-theme="studio"] > div.sticky header h1 {
+  color: #f7f7ff !important;
+  filter:
+    drop-shadow(0 0 14px rgba(33, 223, 243, 0.10))
+    drop-shadow(0 3px 14px rgba(0, 0, 0, 0.24)) !important;
+}
+
+/* Badge / VAT / compact chips */
+main[data-report-theme="studio"]
+  > div.sticky
+  header
+  [class*="rounded-full"] {
+  border-color: rgba(54, 151, 201, 0.46) !important;
+}
+
+/* Top tabs and filters */
+main[data-report-theme="studio"] > div.sticky header button {
+  border-color: rgba(57, 111, 157, 0.52);
+}
+
+main[data-report-theme="studio"]
+  > div.sticky
+  header
+  button:not(:disabled):hover {
+  border-color: rgba(33, 223, 243, 0.62) !important;
+  color: #f7f7ff !important;
+}
+
+main[data-report-theme="studio"]
+  > div.sticky
+  header
+  button[aria-current="page"],
+main[data-report-theme="studio"]
+  > div.sticky
+  header
+  button[aria-pressed="true"] {
+  border-color: rgba(33, 223, 243, 0.72) !important;
+  color: #f7f7ff !important;
+}
+
+/* Shared slide navigation */
+main[data-report-theme="studio"]
+  section[aria-label$="슬라이드"]
+  > div:first-child {
+  border-color: rgba(42, 102, 150, 0.62) !important;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(10, 23, 47, 0.97) 0%,
+      rgba(14, 31, 62, 0.96) 58%,
+      rgba(17, 31, 69, 0.96) 100%
+    ) !important;
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(120, 240, 255, 0.04) !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label$="슬라이드"]
+  > div:first-child
+  [class*="text-slate-"] {
+  color: #b8cce2 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label$="슬라이드"]
+  > div:first-child
+  button[class*="bg-white"] {
+  border-color: rgba(54, 135, 185, 0.52) !important;
+  background: rgba(13, 29, 57, 0.94) !important;
+  color: #dcecff !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label$="슬라이드"]
+  > div:first-child
+  button[class*="bg-white"]:not(:disabled):hover {
+  border-color: rgba(33, 223, 243, 0.66) !important;
+  background: rgba(33, 223, 243, 0.09) !important;
+  color: #f7f7ff !important;
+}
+
+/* Shared slide content frame: remove the large Light rectangle */
+main[data-report-theme="studio"]
+  section[aria-label$="슬라이드"]
+  > div:last-child {
+  border-color: rgba(40, 94, 139, 0.62) !important;
+  background:
+    radial-gradient(
+      circle at 76% 4%,
+      rgba(33, 223, 243, 0.055),
+      transparent 30%
+    ),
+    radial-gradient(
+      circle at 20% 100%,
+      rgba(124, 92, 255, 0.07),
+      transparent 36%
+    ),
+    linear-gradient(
+      145deg,
+      rgba(8, 19, 39, 0.98) 0%,
+      rgba(11, 25, 51, 0.98) 56%,
+      rgba(14, 27, 59, 0.98) 100%
+    ) !important;
+  box-shadow:
+    0 22px 54px rgba(0, 0, 0, 0.27),
+    inset 0 1px 0 rgba(120, 240, 255, 0.035) !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label$="슬라이드"]
+  > div:last-child
+  > div:first-child.pointer-events-none {
+  background:
+    linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(33, 223, 243, 0.28) 22%,
+      rgba(124, 92, 255, 0.28) 78%,
+      transparent 100%
+    ) !important;
+}
+
+/* Executive Cockpit outer border/frame */
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]
+  section[aria-label="Executive Performance Cockpit"] {
+  border-color: rgba(37, 95, 143, 0.58) !important;
+}
+
+/* Shared disabled navigation */
+main[data-report-theme="studio"]
+  section[aria-label$="슬라이드"]
+  button:disabled {
+  color: #607995 !important;
+}
+
+/* ETRYLUE_STUDIO_SHARED_CHROME_V1_END */
+
+/* ETRYLUE_STUDIO_COCKPIT_CHART_REFINEMENT_V1 */
+
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [data-studio-chart="weekly"]
+  .recharts-area-area,
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [data-studio-chart="daily"]
+  .recharts-area-area {
+  fill: transparent !important;
+  fill-opacity: 0 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [data-studio-chart="weekly"]
+  .recharts-area-curve,
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [data-studio-chart="weekly"]
+  .recharts-line-curve {
+  fill: none !important;
+  stroke-width: 2.15px !important;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [data-studio-chart="weekly"]
+  .recharts-line-dots circle,
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [data-studio-chart="weekly"]
+  .recharts-area-dots circle {
+  r: 3px;
+  stroke-width: 1px !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [data-studio-chart="daily"]
+  .recharts-line-curve,
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [data-studio-chart="daily"]
+  .recharts-area-curve {
+  fill: none !important;
+  stroke-width: 1.8px !important;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [data-studio-chart="daily"]
+  .recharts-line-dots,
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [data-studio-chart="daily"]
+  .recharts-area-dots {
+  display: none !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [data-studio-chart="daily"]
+  .recharts-active-dot circle {
+  r: 2.5px;
+  stroke-width: 1px !important;
+}
+
+/* ETRYLUE_STUDIO_COCKPIT_CHART_REFINEMENT_V1_END */
+
+/* ETRYLUE_STUDIO_COST_HORIZON_V3 */
+
+/*
+ * Light theme:
+ * Studio artwork stays hidden and the original three Light horizon layers
+ * in SummarySection remain untouched.
+ */
+[data-cost-horizon="studio"] {
+  display: none;
+}
+
+/*
+ * Studio-only stage.
+ * Extra bottom breathing room keeps the horizon below the monetary value.
+ */
+main[data-report-theme="studio"]
+  [data-cost-horizon="shell"] {
+  isolation: isolate;
+  padding-bottom: 38px;
+}
+
+main[data-report-theme="studio"]
+  [data-cost-horizon="shell"]
+  > [data-cost-horizon="light"] {
+  display: none !important;
+}
+
+main[data-report-theme="studio"]
+  [data-cost-horizon="studio"] {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  overflow: hidden;
+  pointer-events: none;
+
+  /*
+   * Tiny static digital particles.
+   * No image asset and no animation.
+   */
+  background:
+    radial-gradient(
+      circle at 17% 83%,
+      rgba(120, 240, 255, 0.48) 0 0.7px,
+      transparent 1.2px
+    ),
+    radial-gradient(
+      circle at 27% 77%,
+      rgba(56, 143, 232, 0.44) 0 0.6px,
+      transparent 1.1px
+    ),
+    radial-gradient(
+      circle at 38% 88%,
+      rgba(124, 92, 255, 0.42) 0 0.6px,
+      transparent 1.1px
+    ),
+    radial-gradient(
+      circle at 61% 84%,
+      rgba(120, 240, 255, 0.50) 0 0.65px,
+      transparent 1.15px
+    ),
+    radial-gradient(
+      circle at 73% 79%,
+      rgba(56, 143, 232, 0.42) 0 0.65px,
+      transparent 1.15px
+    ),
+    radial-gradient(
+      circle at 84% 87%,
+      rgba(124, 92, 255, 0.34) 0 0.6px,
+      transparent 1.1px
+    );
+}
+
+/*
+ * Perspective floor:
+ * an extremely faint technical grid fading toward the vanishing point.
+ */
+main[data-report-theme="studio"]
+  [data-cost-horizon="studio"]::before {
+  content: "";
+  position: absolute;
+  bottom: -76px;
+  left: 50%;
+  width: 88%;
+  height: 118px;
+
+  transform:
+    translateX(-50%)
+    perspective(280px)
+    rotateX(67deg);
+  transform-origin: 50% 100%;
+
+  background-image:
+    repeating-linear-gradient(
+      90deg,
+      rgba(33, 223, 243, 0.095) 0,
+      rgba(33, 223, 243, 0.095) 1px,
+      transparent 1px,
+      transparent 46px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      rgba(56, 143, 232, 0.09) 0,
+      rgba(56, 143, 232, 0.09) 1px,
+      transparent 1px,
+      transparent 17px
+    );
+
+  -webkit-mask-image:
+    linear-gradient(
+      180deg,
+      rgba(0, 0, 0, 0.72) 0%,
+      rgba(0, 0, 0, 0.30) 46%,
+      transparent 92%
+    );
+  mask-image:
+    linear-gradient(
+      180deg,
+      rgba(0, 0, 0, 0.72) 0%,
+      rgba(0, 0, 0, 0.30) 46%,
+      transparent 92%
+    );
+
+  opacity: 0.32;
+}
+
+/*
+ * Atmospheric cyan/violet depth around the center.
+ */
+main[data-report-theme="studio"]
+  [data-cost-horizon="studio"]::after {
+  content: "";
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  width: 56%;
+  height: 58px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+
+  background:
+    radial-gradient(
+      ellipse at center,
+      rgba(235, 254, 255, 0.18) 0%,
+      rgba(120, 240, 255, 0.10) 16%,
+      rgba(33, 223, 243, 0.055) 32%,
+      rgba(124, 92, 255, 0.025) 51%,
+      transparent 73%
+    );
+
+  filter: blur(4px);
+  opacity: 0.82;
+}
+
+/* Primary optical horizon */
+main[data-report-theme="studio"]
+  [data-cost-horizon="arc-primary"] {
+  position: absolute;
+  right: 7%;
+  bottom: -9px;
+  left: 7%;
+  height: 31px;
+
+  border-top: 1px solid rgba(180, 250, 255, 0.98);
+  border-radius: 50%;
+
+  box-shadow:
+    0 -1px 4px rgba(245, 255, 255, 0.58),
+    0 -3px 12px rgba(120, 240, 255, 0.30),
+    0 -8px 30px rgba(33, 223, 243, 0.12),
+    0 -14px 48px rgba(56, 143, 232, 0.055);
+
+  opacity: 1;
+}
+
+/* Secondary distant orbit */
+main[data-report-theme="studio"]
+  [data-cost-horizon="arc-secondary"] {
+  position: absolute;
+  right: 15%;
+  bottom: -17px;
+  left: 15%;
+  height: 34px;
+
+  border-top: 1px solid rgba(124, 92, 255, 0.26);
+  border-radius: 50%;
+  opacity: 0.76;
+}
+
+/*
+ * The straight optical beam is intentionally brightest only near center.
+ */
+main[data-report-theme="studio"]
+  [data-cost-horizon="beam"] {
+  position: absolute;
+  right: 12%;
+  bottom: 23px;
+  left: 12%;
+  height: 1px;
+
+  background:
+    linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(56, 143, 232, 0.025) 9%,
+      rgba(56, 143, 232, 0.11) 27%,
+      rgba(33, 223, 243, 0.50) 41%,
+      rgba(120, 240, 255, 0.92) 47%,
+      rgba(255, 255, 255, 1) 50%,
+      rgba(120, 240, 255, 0.92) 53%,
+      rgba(33, 223, 243, 0.50) 59%,
+      rgba(56, 143, 232, 0.11) 73%,
+      rgba(56, 143, 232, 0.025) 91%,
+      transparent 100%
+    );
+
+  box-shadow:
+    0 0 5px rgba(220, 254, 255, 0.48),
+    0 0 14px rgba(120, 240, 255, 0.22),
+    0 0 30px rgba(33, 223, 243, 0.09);
+}
+
+/* Tiny central event light */
+main[data-report-theme="studio"]
+  [data-cost-horizon="glow"] {
+  position: absolute;
+  bottom: 5px;
+  left: 50%;
+
+  width: 220px;
+  height: 54px;
+
+  transform: translateX(-50%);
+  border-radius: 999px;
+
+  background:
+    radial-gradient(
+      ellipse at center,
+      rgba(255, 255, 255, 0.98) 0%,
+      rgba(218, 252, 255, 0.82) 6%,
+      rgba(120, 240, 255, 0.44) 17%,
+      rgba(33, 223, 243, 0.16) 34%,
+      rgba(56, 143, 232, 0.07) 50%,
+      rgba(124, 92, 255, 0.025) 61%,
+      transparent 76%
+    );
+
+  filter: blur(2px);
+  opacity: 0.96;
+  mix-blend-mode: screen;
+}
+
+/*
+ * Five perspective rays originate at the horizon vanishing point
+ * and disappear into the lower depth plane.
+ */
+main[data-report-theme="studio"]
+  [data-cost-horizon="ray"] {
+  position: absolute;
+  top: calc(100% - 23px);
+  left: 50%;
+
+  width: 1px;
+  height: 46px;
+
+  transform-origin: 50% 0%;
+
+  background:
+    linear-gradient(
+      180deg,
+      rgba(120, 240, 255, 0.24) 0%,
+      rgba(56, 143, 232, 0.09) 36%,
+      transparent 88%
+    );
+
+  opacity: 0.54;
+}
+
+main[data-report-theme="studio"]
+  [data-cost-horizon="ray"][data-ray="-2"] {
+  transform: translateX(-50%) rotate(67deg);
+}
+
+main[data-report-theme="studio"]
+  [data-cost-horizon="ray"][data-ray="-1"] {
+  transform: translateX(-50%) rotate(38deg);
+}
+
+main[data-report-theme="studio"]
+  [data-cost-horizon="ray"][data-ray="0"] {
+  transform: translateX(-50%);
+  opacity: 0.30;
+}
+
+main[data-report-theme="studio"]
+  [data-cost-horizon="ray"][data-ray="1"] {
+  transform: translateX(-50%) rotate(-38deg);
+}
+
+main[data-report-theme="studio"]
+  [data-cost-horizon="ray"][data-ray="2"] {
+  transform: translateX(-50%) rotate(-67deg);
+}
+
+/*
+ * Cost remains the visual hero.
+ * Decoration must support the number, never compete with it.
+ */
+main[data-report-theme="studio"]
+  [data-cost-horizon="shell"]
+  > .relative.z-10
+  > div:last-child {
+  position: relative;
+  z-index: 3;
+
+  text-shadow:
+    0 4px 18px rgba(0, 0, 0, 0.46),
+    0 7px 22px rgba(33, 223, 243, 0.18),
+    0 12px 38px rgba(56, 143, 232, 0.11),
+    0 0 20px rgba(120, 240, 255, 0.06);
+
+  filter:
+    drop-shadow(0 8px 18px rgba(33, 223, 243, 0.12));
+}
+
+/* ETRYLUE_STUDIO_COST_HORIZON_V3_END */
+
+/* ETRYLUE_STUDIO_COCKPIT_READABILITY_V1 */
+
+/*
+ * Studio cockpit secondary typography.
+ * Avoid muddy gray on the navy surface:
+ * use restrained blue-white tones below pure white.
+ */
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [class*="text-slate-700"],
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [class*="text-slate-600"] {
+  color: #cbd8e8 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [class*="text-slate-500"],
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [class*="text-slate-400"] {
+  color: #b8c8da !important;
+}
+
+/* Chart axes, dates, ticks and Recharts-generated labels */
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  .recharts-cartesian-axis-tick-value,
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  .recharts-cartesian-axis-tick
+  text,
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  .recharts-text {
+  fill: #c3d2e3 !important;
+}
+
+/* Axis lines remain understated while labels stay readable */
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  .recharts-cartesian-axis-line,
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  .recharts-cartesian-axis-tick-line {
+  stroke: rgba(195, 210, 227, 0.28) !important;
+}
+
+/* Chart legends */
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  .recharts-legend-item-text {
+  color: #cbd8e8 !important;
+}
+
+/* Keep tooltip secondary copy equally readable */
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  .recharts-tooltip-label,
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  .recharts-tooltip-item {
+  color: #d5e2ef !important;
+}
+
+/* ETRYLUE_STUDIO_COCKPIT_READABILITY_V1_END */
+
+/* ETRYLUE_STUDIO_CHART_AXIS_READABILITY_V1 */
+
+/*
+ * Weekly / Daily chart axis labels need stronger contrast than
+ * ordinary tertiary copy on the Studio navy canvas.
+ */
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [data-studio-chart="weekly"]
+  svg
+  text,
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [data-studio-chart="daily"]
+  svg
+  text {
+  fill: #d7e3f1 !important;
+  color: #d7e3f1 !important;
+  opacity: 1 !important;
+}
+
+/* Recharts x-axis values: week names / calendar dates */
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [data-studio-chart="weekly"]
+  .recharts-xAxis
+  .recharts-cartesian-axis-tick-value,
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [data-studio-chart="daily"]
+  .recharts-xAxis
+  .recharts-cartesian-axis-tick-value {
+  fill: #d7e3f1 !important;
+  opacity: 1 !important;
+}
+
+/* Keep y-axis figures equally legible but one step quieter */
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [data-studio-chart="weekly"]
+  .recharts-yAxis
+  .recharts-cartesian-axis-tick-value,
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [data-studio-chart="daily"]
+  .recharts-yAxis
+  .recharts-cartesian-axis-tick-value {
+  fill: #cbd8e8 !important;
+  opacity: 1 !important;
+}
+
+/* Any nested tspan must inherit the same readable tone */
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [data-studio-chart="weekly"]
+  svg
+  text
+  tspan,
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [data-studio-chart="daily"]
+  svg
+  text
+  tspan {
+  fill: inherit !important;
+}
+
+/* ETRYLUE_STUDIO_CHART_AXIS_READABILITY_V1_END */
+
+/* ETRYLUE_LIGHT_COST_HORIZON_V2 */
+
+/*
+ * Light theme: Smart Glass Horizon
+ * No large filled ellipse. The cost value remains the visual hero.
+ */
+main[data-report-theme="light"]
+  [data-cost-horizon="shell"] {
+  padding-bottom: 28px;
+}
+
+/* soft atmospheric bloom beneath the value */
+main[data-report-theme="light"]
+  [data-light-horizon="ambient"] {
+  right: 12%;
+  bottom: -10px;
+  left: 12%;
+  height: 68px;
+
+  border-radius: 50%;
+
+  background:
+    radial-gradient(
+      ellipse at 50% 18%,
+      rgba(255, 255, 255, 0.96) 0%,
+      rgba(215, 237, 247, 0.34) 18%,
+      rgba(183, 215, 227, 0.13) 38%,
+      rgba(127, 166, 196, 0.035) 56%,
+      transparent 74%
+    );
+
+  filter: blur(3px);
+  opacity: 0.92;
+}
+
+/* precision curved orbit */
+main[data-report-theme="light"]
+  [data-light-horizon="orbit"] {
+  right: 8%;
+  bottom: -18px;
+  left: 8%;
+  height: 52px;
+
+  border-top: 1px solid rgba(95, 135, 163, 0.34);
+  border-radius: 50%;
+
+  box-shadow:
+    0 -1px 0 rgba(255, 255, 255, 0.88),
+    0 -4px 16px rgba(127, 166, 196, 0.08);
+
+  opacity: 0.84;
+}
+
+/* short optical beam */
+main[data-report-theme="light"]
+  [data-light-horizon="beam"] {
+  right: 19%;
+  bottom: 25px;
+  left: 19%;
+  height: 1px;
+
+  background:
+    linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(127, 166, 196, 0.05) 12%,
+      rgba(127, 166, 196, 0.22) 31%,
+      rgba(183, 215, 227, 0.62) 44%,
+      rgba(255, 255, 255, 1) 50%,
+      rgba(183, 215, 227, 0.62) 56%,
+      rgba(127, 166, 196, 0.22) 69%,
+      rgba(127, 166, 196, 0.05) 88%,
+      transparent 100%
+    );
+
+  box-shadow:
+    0 0 4px rgba(183, 215, 227, 0.28),
+    0 0 13px rgba(127, 166, 196, 0.09);
+}
+
+/* compact central light source */
+main[data-report-theme="light"]
+  [data-light-horizon="beam"]::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+
+  width: 110px;
+  height: 22px;
+
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+
+  background:
+    radial-gradient(
+      ellipse at center,
+      rgba(255, 255, 255, 0.98) 0%,
+      rgba(230, 246, 251, 0.68) 10%,
+      rgba(183, 215, 227, 0.23) 29%,
+      rgba(127, 166, 196, 0.06) 49%,
+      transparent 72%
+    );
+
+  filter: blur(1.5px);
+}
+
+/* Cost value subtly catches the reflected horizon light */
+main[data-report-theme="light"]
+  [data-cost-horizon="shell"]
+  > .relative.z-10
+  > div:last-child {
+  text-shadow:
+    0 3px 2px rgba(255, 255, 255, 0.70),
+    0 9px 26px rgba(127, 166, 196, 0.12);
+}
+
+/* ETRYLUE_LIGHT_COST_HORIZON_V2_END */
+
+/* ETRYLUE_LIGHT_COST_HORIZON_V2_1_IMPACT */
+
+/* stronger concentrated atmospheric light */
+main[data-report-theme="light"]
+  [data-light-horizon="ambient"] {
+  right: 7%;
+  bottom: -2px;
+  left: 7%;
+  height: 92px;
+
+  background:
+    radial-gradient(
+      ellipse at 50% 10%,
+      rgba(255, 255, 255, 1) 0%,
+      rgba(226, 247, 253, 0.66) 10%,
+      rgba(183, 215, 227, 0.32) 26%,
+      rgba(127, 166, 196, 0.13) 43%,
+      rgba(127, 166, 196, 0.035) 61%,
+      transparent 78%
+    );
+
+  filter: blur(4px);
+  opacity: 1;
+}
+
+/* sharper, brighter outer optical arc */
+main[data-report-theme="light"]
+  [data-light-horizon="orbit"] {
+  right: 4%;
+  bottom: -15px;
+  left: 4%;
+  height: 55px;
+
+  border-top: 1.5px solid rgba(95, 163, 198, 0.72);
+
+  box-shadow:
+    0 -1px 0 rgba(255, 255, 255, 1),
+    0 -2px 5px rgba(183, 229, 243, 0.52),
+    0 -7px 22px rgba(90, 169, 204, 0.20),
+    0 -15px 42px rgba(127, 166, 196, 0.09);
+
+  opacity: 1;
+}
+
+/* long high-contrast optical beam */
+main[data-report-theme="light"]
+  [data-light-horizon="beam"] {
+  right: 11%;
+  bottom: 27px;
+  left: 11%;
+  height: 2px;
+
+  background:
+    linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(80, 155, 194, 0.04) 7%,
+      rgba(80, 155, 194, 0.24) 25%,
+      rgba(136, 207, 232, 0.64) 40%,
+      rgba(220, 249, 255, 0.96) 47%,
+      rgba(255, 255, 255, 1) 50%,
+      rgba(220, 249, 255, 0.96) 53%,
+      rgba(136, 207, 232, 0.64) 60%,
+      rgba(80, 155, 194, 0.24) 75%,
+      rgba(80, 155, 194, 0.04) 93%,
+      transparent 100%
+    );
+
+  box-shadow:
+    0 0 3px rgba(255, 255, 255, 0.92),
+    0 0 9px rgba(183, 229, 243, 0.54),
+    0 0 24px rgba(89, 173, 211, 0.20);
+}
+
+/* upward lens flare that visually lifts the number */
+main[data-report-theme="light"]
+  [data-light-horizon="beam"]::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -1px;
+
+  width: 300px;
+  height: 92px;
+
+  transform: translateX(-50%);
+
+  background:
+    radial-gradient(
+      ellipse at 50% 100%,
+      rgba(255, 255, 255, 0.92) 0%,
+      rgba(220, 247, 253, 0.48) 12%,
+      rgba(150, 215, 238, 0.20) 31%,
+      rgba(127, 166, 196, 0.06) 52%,
+      transparent 73%
+    );
+
+  filter: blur(4px);
+  opacity: 0.92;
+}
+
+/* compact event light at the vanishing point */
+main[data-report-theme="light"]
+  [data-light-horizon="beam"]::after {
+  width: 170px;
+  height: 34px;
+
+  background:
+    radial-gradient(
+      ellipse at center,
+      rgba(255, 255, 255, 1) 0%,
+      rgba(235, 252, 255, 0.94) 7%,
+      rgba(183, 229, 243, 0.54) 20%,
+      rgba(112, 190, 222, 0.18) 40%,
+      rgba(127, 166, 196, 0.05) 58%,
+      transparent 76%
+    );
+
+  filter: blur(1px);
+}
+
+/* stronger reflected optical light on the Cost number */
+main[data-report-theme="light"]
+  [data-cost-horizon="shell"]
+  > .relative.z-10
+  > div:last-child {
+  text-shadow:
+    0 2px 0 rgba(255, 255, 255, 0.92),
+    0 7px 8px rgba(183, 229, 243, 0.30),
+    0 13px 28px rgba(89, 173, 211, 0.20),
+    0 22px 52px rgba(127, 166, 196, 0.12);
+
+  filter:
+    drop-shadow(0 7px 8px rgba(183, 229, 243, 0.18));
+}
+
+/* ETRYLUE_LIGHT_COST_HORIZON_V2_1_IMPACT_END */
+
+/* ETRYLUE_STUDIO_SUMMARY_SLIDE_2_DARK_V1 */
+
+/*
+ * SUMMARY 2/4 — FULL STUDIO
+ * Scope is intentionally exact:
+ * studio theme + summary slide 2 only.
+ */
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"] {
+  --nature-blue-light: #173a59;
+  --nature-border-blue: #315a79;
+  --nature-cream: #17263f;
+  --nature-warm-gray: #20324d;
+
+  color: #f7f7ff;
+}
+
+/*
+ * TEXT
+ * Studio slide 2 uses white, not muddy slate/gray.
+ */
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class*="text-slate-"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class*="text-gray-"] {
+  color: #f7f7ff !important;
+  opacity: 1 !important;
+}
+
+/* existing muted blue becomes intentional cyan */
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class*="text-[#4F7F9E]"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class*="text-[#5F87A3]"] {
+  color: #78f0ff !important;
+  opacity: 1 !important;
+}
+
+/*
+ * SURFACES
+ * No white / pale gray cards inside Studio slide 2.
+ */
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class~="bg-white"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class*="bg-white/"] {
+  background-color: #101f3a !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class*="bg-slate-50"] {
+  background-color: #132643 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class*="bg-slate-100"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class*="bg-slate-200"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class*="bg-gray-50"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class*="bg-gray-100"] {
+  background-color: #172a47 !important;
+}
+
+/* nature Light fills */
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class*="bg-[var(--nature-blue-light)]"] {
+  background-color: rgba(22, 55, 83, 0.88) !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class*="bg-[var(--nature-cream)]"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class*="bg-[var(--nature-warm-gray)]"] {
+  background-color: #182b47 !important;
+}
+
+/*
+ * BORDERS
+ */
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class*="border-slate-"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class*="border-gray-"] {
+  border-color: rgba(84, 139, 180, 0.38) !important;
+}
+
+/*
+ * TABLE
+ */
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  table {
+  background: #0e1c35 !important;
+  color: #f7f7ff !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  thead {
+  background: #183755 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  thead
+  tr,
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  thead
+  th {
+  background: #183755 !important;
+  color: #ffffff !important;
+  border-color: rgba(95, 157, 198, 0.42) !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  tbody
+  tr {
+  background: #101f3a !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  tbody
+  tr:nth-child(even) {
+  background: #142744 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  tbody
+  tr:last-child {
+  background: #1b3150 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  th,
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  td {
+  color: #ffffff !important;
+  border-color: rgba(71, 124, 165, 0.35) !important;
+}
+
+/*
+ * KPI / MONTHLY PROGRESS / FORECAST / ACHIEVEMENT
+ * Catch nested Light cards without changing geometry.
+ */
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class*="rounded-[16px]"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class*="rounded-[18px]"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class*="rounded-[20px]"] {
+  border-color: rgba(75, 132, 174, 0.40) !important;
+}
+
+/*
+ * Progress rails:
+ * preserve actual progress indicator colors,
+ * darken only pale/slate tracks.
+ */
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class*="rounded-full"][class*="bg-slate-"] {
+  background-color: #203653 !important;
+}
+
+/*
+ * INSIGHT
+ */
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class*="whitespace-pre-wrap"] {
+  color: #ffffff !important;
+  opacity: 1 !important;
+}
+
+/*
+ * SVG / CHART LABELS
+ */
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  svg
+  text,
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  svg
+  tspan {
+  fill: #ffffff !important;
+  opacity: 1 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  .recharts-text,
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  .recharts-cartesian-axis-tick-value {
+  fill: #ffffff !important;
+  opacity: 1 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  .recharts-cartesian-grid
+  line {
+  stroke: rgba(120, 240, 255, 0.12) !important;
+}
+
+/*
+ * Studio badge / pill definition
+ */
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class*="rounded-full"][class*="border"] {
+  border-color: rgba(33, 223, 243, 0.42) !important;
+}
+
+/*
+ * Remove Light-card shadow language.
+ */
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class*="shadow-"] {
+  box-shadow:
+    0 14px 34px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(120, 240, 255, 0.035) !important;
+}
+
+/* ETRYLUE_STUDIO_SUMMARY_SLIDE_2_DARK_V1_END */
+
+/* ETRYLUE_STUDIO_SUMMARY_SLIDE_2_EMPHASIS_V1 */
+
+/*
+ * TABLE HIERARCHY
+ * Header = cyan/deep-blue
+ * Achievement row = violet/deep-navy
+ */
+
+/* column subject/header row */
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  table
+  thead,
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  table
+  thead
+  tr {
+  background: #113e5c !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  table
+  thead
+  th {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(24, 76, 108, 1) 0%,
+      rgba(16, 55, 83, 1) 100%
+    ) !important;
+
+  color: #ffffff !important;
+
+  border-color: rgba(120, 240, 255, 0.28) !important;
+
+  box-shadow:
+    inset 0 1px 0 rgba(120, 240, 255, 0.18),
+    inset 0 -1px 0 rgba(33, 223, 243, 0.16) !important;
+}
+
+/* achievement row */
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  table
+  tbody
+  tr:last-child,
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  table
+  tbody
+  tr:last-child
+  td,
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  table
+  tbody
+  tr:last-child
+  th {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(43, 39, 86, 0.98) 0%,
+      rgba(33, 38, 77, 0.98) 100%
+    ) !important;
+
+  color: #ffffff !important;
+
+  border-color: rgba(124, 92, 255, 0.36) !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  table
+  tbody
+  tr:last-child
+  td:first-child,
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  table
+  tbody
+  tr:last-child
+  th:first-child {
+  color: #d9ceff !important;
+  font-weight: 800 !important;
+}
+
+/*
+ * KPI GRID
+ * DB Acquisition exact order:
+ * 1 conversions / 2 CPA / 3 CVR / 4 clicks / 5 Cost.
+ */
+
+/* 2nd — CPA */
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class~="grid"][class*="lg:grid-cols-5"]
+  > :nth-child(2) {
+  background:
+    radial-gradient(
+      circle at 84% 14%,
+      rgba(124, 92, 255, 0.18) 0%,
+      rgba(124, 92, 255, 0) 38%
+    ),
+    linear-gradient(
+      145deg,
+      #102641 0%,
+      #11233e 52%,
+      #211e48 100%
+    ) !important;
+
+  border-color: rgba(33, 223, 243, 0.78) !important;
+
+  box-shadow:
+    0 0 0 1px rgba(120, 240, 255, 0.08),
+    0 10px 26px rgba(0, 0, 0, 0.28),
+    0 0 24px rgba(33, 223, 243, 0.11),
+    0 0 38px rgba(124, 92, 255, 0.08),
+    inset 0 1px 0 rgba(120, 240, 255, 0.16) !important;
+
+  color: #ffffff !important;
+  opacity: 1 !important;
+}
+
+/* 5th — total Cost */
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class~="grid"][class*="lg:grid-cols-5"]
+  > :nth-child(5) {
+  background:
+    radial-gradient(
+      circle at 84% 14%,
+      rgba(243, 228, 210, 0.11) 0%,
+      rgba(243, 228, 210, 0) 38%
+    ),
+    radial-gradient(
+      circle at 12% 100%,
+      rgba(33, 223, 243, 0.09) 0%,
+      rgba(33, 223, 243, 0) 46%
+    ),
+    linear-gradient(
+      145deg,
+      #10253f 0%,
+      #132743 58%,
+      #20243c 100%
+    ) !important;
+
+  border-color: rgba(120, 240, 255, 0.66) !important;
+
+  box-shadow:
+    0 0 0 1px rgba(243, 228, 210, 0.055),
+    0 10px 26px rgba(0, 0, 0, 0.28),
+    0 0 24px rgba(33, 223, 243, 0.10),
+    0 0 34px rgba(243, 228, 210, 0.05),
+    inset 0 1px 0 rgba(243, 248, 255, 0.16) !important;
+
+  color: #ffffff !important;
+  opacity: 1 !important;
+}
+
+/* kill old gray/dark text inside emphasized cards */
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class~="grid"][class*="lg:grid-cols-5"]
+  > :nth-child(2)
+  [class*="text-"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class~="grid"][class*="lg:grid-cols-5"]
+  > :nth-child(5)
+  [class*="text-"] {
+  color: #ffffff !important;
+  opacity: 1 !important;
+}
+
+/* CPA badge */
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class~="grid"][class*="lg:grid-cols-5"]
+  > :nth-child(2)
+  [class*="rounded-full"][class*="border"] {
+  background: rgba(33, 223, 243, 0.11) !important;
+  border-color: rgba(33, 223, 243, 0.62) !important;
+  color: #78f0ff !important;
+}
+
+/* Cost badge */
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class~="grid"][class*="lg:grid-cols-5"]
+  > :nth-child(5)
+  [class*="rounded-full"][class*="border"] {
+  background: rgba(243, 228, 210, 0.08) !important;
+  border-color: rgba(120, 240, 255, 0.48) !important;
+  color: #ffffff !important;
+}
+
+/* make the two key numbers the visual anchors */
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class~="grid"][class*="lg:grid-cols-5"]
+  > :nth-child(2)
+  [class*="tabular-nums"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class~="grid"][class*="lg:grid-cols-5"]
+  > :nth-child(5)
+  [class*="tabular-nums"] {
+  color: #ffffff !important;
+
+  text-shadow:
+    0 2px 14px rgba(33, 223, 243, 0.18),
+    0 5px 24px rgba(0, 0, 0, 0.30) !important;
+}
+
+/* ETRYLUE_STUDIO_SUMMARY_SLIDE_2_EMPHASIS_V1_END */
+
+/* ETRYLUE_STUDIO_SUMMARY_SLIDE_3_4_DARK_V1 */
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  ) {
+  --nature-surface: #0d1a34;
+  --nature-surface-soft: #132442;
+  --nature-border: #294563;
+  --nature-border-blue: #315a79;
+  --nature-blue-light: #173a59;
+  --nature-cream: #17263f;
+  --nature-warm-gray: #20324d;
+
+  color: #f7f7ff;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="text-slate-900"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="text-slate-800"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="text-slate-700"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="text-gray-900"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="text-gray-800"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="text-gray-700"] {
+  color: #f7f7ff !important;
+  opacity: 1 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="text-slate-600"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="text-slate-500"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="text-gray-600"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="text-gray-500"] {
+  color: #d7e3f1 !important;
+  opacity: 1 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="text-slate-400"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="text-gray-400"] {
+  color: #cbd8e8 !important;
+  opacity: 1 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="text-[#4F7F9E]"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="text-[#5F87A3]"] {
+  color: #78f0ff !important;
+  opacity: 1 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class~="bg-white"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="bg-white/"] {
+  background: #101f3a !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="bg-slate-50"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="bg-gray-50"] {
+  background: #132643 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="bg-slate-100"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="bg-slate-200"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="bg-gray-100"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="bg-gray-200"] {
+  background: #172a47 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="bg-[var(--nature-surface)]"] {
+  background: #101f3a !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="bg-[var(--nature-blue-light)]"] {
+  background-color: rgba(22, 55, 83, 0.9) !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="bg-[var(--nature-cream)]"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="bg-[var(--nature-warm-gray)]"] {
+  background-color: #182b47 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="border-slate-"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="border-gray-"] {
+  border-color: rgba(84, 139, 180, 0.38) !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="inline-flex"][class*="rounded-full"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="shrink-0"][class*="rounded-full"][class*="text-"] {
+  background:
+    linear-gradient(
+      145deg,
+      rgba(22, 62, 91, 0.96),
+      rgba(29, 44, 82, 0.96)
+    ) !important;
+
+  border-color: rgba(33, 223, 243, 0.52) !important;
+  color: #78f0ff !important;
+
+  box-shadow:
+    inset 0 1px 0 rgba(120, 240, 255, 0.12),
+    0 0 16px rgba(33, 223, 243, 0.07) !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  table {
+  background: #0e1c35 !important;
+  color: #f7f7ff !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  table
+  thead,
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  table
+  thead
+  tr {
+  background: #113e5c !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  table
+  thead
+  th {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(24, 76, 108, 1) 0%,
+      rgba(16, 55, 83, 1) 100%
+    ) !important;
+
+  color: #ffffff !important;
+  border-color: rgba(120, 240, 255, 0.28) !important;
+
+  box-shadow:
+    inset 0 1px 0 rgba(120, 240, 255, 0.16),
+    inset 0 -1px 0 rgba(33, 223, 243, 0.14) !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  table
+  tbody
+  tr {
+  background: #101f3a !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  table
+  tbody
+  tr:nth-child(even) {
+  background: #142744 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  table
+  tbody
+  tr:hover {
+  background: #18304d !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  table
+  th,
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  table
+  td {
+  color: #f7f7ff !important;
+  border-color: rgba(71, 124, 165, 0.35) !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  table
+  td[class*="text-[#4F7F9E]"] {
+  color: #78f0ff !important;
+  font-weight: 700 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  svg
+  text,
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  svg
+  tspan {
+  fill: #d7e3f1 !important;
+  opacity: 1 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  .recharts-cartesian-axis-tick-value,
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  .recharts-text {
+  fill: #d7e3f1 !important;
+  opacity: 1 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  .recharts-cartesian-grid
+  line {
+  stroke: rgba(120, 240, 255, 0.12) !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  .recharts-legend-item-text {
+  color: #d7e3f1 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  .recharts-default-tooltip {
+  background: rgba(11, 29, 56, 0.98) !important;
+  border: 1px solid rgba(33, 223, 243, 0.28) !important;
+  color: #f7f7ff !important;
+
+  box-shadow:
+    0 14px 32px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(120, 240, 255, 0.04) !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  .recharts-tooltip-label,
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  .recharts-tooltip-item {
+  color: #f7f7ff !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"]:is(
+    [data-summary-slide="3"],
+    [data-summary-slide="4"]
+  )
+  [class*="shadow-"] {
+  box-shadow:
+    0 14px 34px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(120, 240, 255, 0.035) !important;
+}
+
+/* ETRYLUE_STUDIO_SUMMARY_SLIDE_3_4_DARK_V1_END */
+
+/* ETRYLUE_STUDIO_SUMMARY_SLIDE_4_TINY_CHART_MARKERS_V1 */
+
+/*
+ * Summary 4/4 daily dual charts.
+ * Keep lines/data intact; reduce only visible line markers.
+ */
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="4"]
+  .recharts-line-dots
+  circle {
+  r: 1.8px !important;
+  stroke-width: 1px !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="4"]
+  .recharts-active-dot
+  circle {
+  r: 2.8px !important;
+  stroke-width: 1px !important;
+}
+
+/* fallback for Recharts builds where dots carry the dot class directly */
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="4"]
+  circle.recharts-dot {
+  r: 1.8px !important;
+  stroke-width: 1px !important;
+}
+
+/* ETRYLUE_STUDIO_SUMMARY_SLIDE_4_TINY_CHART_MARKERS_V1_END */
+
+/* ETRYLUE_STUDIO_SUMMARY_SLIDE_2_BADGE_MATCH_V1 */
+
+/*
+ * Summary 2/4 badge language
+ * Match approved Summary 3/4 Studio badges exactly.
+ */
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class*="inline-flex"][class*="rounded-full"],
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class*="shrink-0"][class*="rounded-full"][class*="text-"] {
+  background:
+    linear-gradient(
+      145deg,
+      rgba(22, 62, 91, 0.96),
+      rgba(29, 44, 82, 0.96)
+    ) !important;
+
+  border-color: rgba(33, 223, 243, 0.52) !important;
+  color: #78f0ff !important;
+
+  box-shadow:
+    inset 0 1px 0 rgba(120, 240, 255, 0.12),
+    0 0 16px rgba(33, 223, 243, 0.07) !important;
+
+  opacity: 1 !important;
+}
+
+/* bordered pills use the same Studio cyan edge */
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="2"]
+  [class*="rounded-full"][class*="border"] {
+  border-color: rgba(33, 223, 243, 0.52) !important;
+  color: #78f0ff !important;
+}
+
+/* ETRYLUE_STUDIO_SUMMARY_SLIDE_2_BADGE_MATCH_V1_END */
+
+/* ETRYLUE_STUDIO_SUMMARY2_FULL_DARK_V1 */
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"] {
+  --nature-surface: #0d1a34;
+  --nature-surface-soft: #132442;
+  --nature-border: #294563;
+  --nature-border-blue: #315a79;
+  --nature-blue-light: #173a59;
+  --nature-cream: #17263f;
+  --nature-warm-gray: #20324d;
+
+  color: #f7f7ff;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  > div:first-child {
+  background:
+    linear-gradient(
+      145deg,
+      rgba(15, 34, 62, 0.98),
+      rgba(19, 37, 70, 0.98)
+    ) !important;
+
+  border-color: rgba(64, 119, 159, 0.46) !important;
+
+  box-shadow:
+    0 12px 30px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(120, 240, 255, 0.04) !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  > div:first-child
+  button {
+  background: #132643 !important;
+  border-color: rgba(64, 119, 159, 0.48) !important;
+  color: #f7f7ff !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  > div:first-child
+  button:not(:disabled):hover {
+  background: #183552 !important;
+  border-color: rgba(33, 223, 243, 0.54) !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  > div:first-child
+  [class*="text-slate-"] {
+  color: #d7e3f1 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  > div:nth-child(2) {
+  background:
+    radial-gradient(
+      circle at 14% 0%,
+      rgba(33, 223, 243, 0.055),
+      transparent 31%
+    ),
+    radial-gradient(
+      circle at 88% 8%,
+      rgba(124, 92, 255, 0.07),
+      transparent 34%
+    ),
+    linear-gradient(
+      145deg,
+      #0b1931 0%,
+      #0e1d38 52%,
+      #111d3b 100%
+    ) !important;
+
+  border-color: rgba(49, 90, 121, 0.58) !important;
+
+  box-shadow:
+    0 22px 54px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(120, 240, 255, 0.035) !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  > div:nth-child(2)
+  > div:first-child {
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      rgba(120, 240, 255, 0.16),
+      transparent
+    ) !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class~="bg-white"],
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="bg-white/"] {
+  background-color: #101f3a !important;
+  background-image: none !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="bg-slate-50"],
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="bg-gray-50"] {
+  background-color: #132643 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="bg-slate-100"],
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="bg-slate-200"],
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="bg-gray-100"],
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="bg-gray-200"] {
+  background-color: #172a47 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="bg-[var(--nature-surface)]"] {
+  background-color: #101f3a !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="bg-[var(--nature-blue-light)]"] {
+  background-color: rgba(22, 55, 83, 0.9) !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="bg-[var(--nature-cream)]"],
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="bg-[var(--nature-warm-gray)]"] {
+  background-color: #182b47 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="text-slate-900"],
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="text-slate-800"],
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="text-slate-700"] {
+  color: #f7f7ff !important;
+  opacity: 1 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="text-slate-600"],
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="text-slate-500"] {
+  color: #d7e3f1 !important;
+  opacity: 1 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="text-slate-400"],
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="text-slate-300"] {
+  color: #cbd8e8 !important;
+  opacity: 1 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="text-[#27364A]"],
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="text-[#35465A]"] {
+  color: #f7f7ff !important;
+  opacity: 1 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="text-[#6F7B86]"],
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="text-[#7A8794]"] {
+  color: #d7e3f1 !important;
+  opacity: 1 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="text-[#4F7F9E]"],
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="text-[#5F87A3]"] {
+  color: #78f0ff !important;
+  opacity: 1 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="border-slate-"],
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="border-gray-"] {
+  border-color: rgba(84, 139, 180, 0.38) !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="inline-flex"][class*="rounded-full"],
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="rounded-full"][class*="border"] {
+  background:
+    linear-gradient(
+      145deg,
+      rgba(22, 62, 91, 0.96),
+      rgba(29, 44, 82, 0.96)
+    ) !important;
+
+  border-color: rgba(33, 223, 243, 0.52) !important;
+  color: #78f0ff !important;
+
+  box-shadow:
+    inset 0 1px 0 rgba(120, 240, 255, 0.12),
+    0 0 16px rgba(33, 223, 243, 0.07) !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  table {
+  background: #0e1c35 !important;
+  color: #f7f7ff !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  table
+  thead,
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  table
+  thead
+  tr {
+  background: #113e5c !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  table
+  thead
+  th {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(24, 76, 108, 1) 0%,
+      rgba(16, 55, 83, 1) 100%
+    ) !important;
+
+  color: #ffffff !important;
+  border-color: rgba(120, 240, 255, 0.28) !important;
+
+  box-shadow:
+    inset 0 1px 0 rgba(120, 240, 255, 0.16),
+    inset 0 -1px 0 rgba(33, 223, 243, 0.14) !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  table
+  tbody
+  tr {
+  background: #101f3a !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  table
+  tbody
+  tr:nth-child(even) {
+  background: #142744 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  table
+  tbody
+  tr:hover {
+  background: #18304d !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  table
+  th,
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  table
+  td {
+  color: #f7f7ff !important;
+  border-color: rgba(71, 124, 165, 0.35) !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  svg
+  text,
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  svg
+  tspan {
+  fill: #d7e3f1 !important;
+  opacity: 1 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  .recharts-cartesian-axis-tick-value,
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  .recharts-text {
+  fill: #d7e3f1 !important;
+  opacity: 1 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  .recharts-cartesian-grid
+  line {
+  stroke: rgba(120, 240, 255, 0.12) !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  .recharts-legend-item-text {
+  color: #d7e3f1 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  .recharts-default-tooltip {
+  background: rgba(11, 29, 56, 0.98) !important;
+  border: 1px solid rgba(33, 223, 243, 0.28) !important;
+  color: #f7f7ff !important;
+
+  box-shadow:
+    0 14px 32px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(120, 240, 255, 0.04) !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  .recharts-tooltip-label,
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  .recharts-tooltip-item {
+  color: #f7f7ff !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="shadow-"] {
+  box-shadow:
+    0 14px 34px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(120, 240, 255, 0.035) !important;
+}
+
+/* ETRYLUE_STUDIO_SUMMARY2_FULL_DARK_V1_END */
+
+/* ETRYLUE_STUDIO_SHARED_HEATMAP_CONTRAST_AND_DONUT_CENTER_V1 */
+
+/*
+ * Shared Studio heatmap language
+ *
+ * level 0 = no / zero value
+ * level 1 = low
+ * level 2 = low-mid
+ * level 3 = mid
+ * level 4 = mid-high
+ * level 5 = high
+ * level 6 = highest
+ *
+ * Threshold calculation and data remain untouched.
+ */
+
+/* LEVEL 0 — zero / no value */
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [class*="bg-[#F3E4D2]/35"],
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="bg-[#F3E4D2]/35"] {
+  background-color: #111b31 !important;
+  border-color: rgba(83, 105, 137, 0.48) !important;
+  color: #aebfd2 !important;
+}
+
+/* LEVEL 1 — LOW / deep blue */
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [class*="bg-[#B7D7E3]/18"],
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="bg-[#B7D7E3]/18"] {
+  background-color: #173a59 !important;
+  border-color: #285b7a !important;
+  color: #d7e8f5 !important;
+}
+
+/* LEVEL 2 — blue teal */
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [class*="bg-[#B7D7E3]/28"],
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="bg-[#B7D7E3]/28"] {
+  background-color: #126077 !important;
+  border-color: #18859b !important;
+  color: #f7f7ff !important;
+}
+
+/* LEVEL 3 — CYAN */
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [class*="bg-[#B7D7E3]/42"],
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="bg-[#B7D7E3]/42"] {
+  background-color: #078da4 !important;
+  border-color: #21dff3 !important;
+  color: #ffffff !important;
+
+  box-shadow:
+    inset 0 0 0 1px rgba(120, 240, 255, 0.10) !important;
+}
+
+/* LEVEL 4 — bright electric blue */
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [class*="bg-[#7FA6C4]/55"],
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="bg-[#7FA6C4]/55"] {
+  background-color: #315fc3 !important;
+  border-color: #5e8cff !important;
+  color: #ffffff !important;
+}
+
+/* LEVEL 5 — HIGH / violet */
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [class*="bg-[#7FA6C4]/75"],
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class*="bg-[#7FA6C4]/75"] {
+  background-color: #6549ce !important;
+  border-color: #a18cff !important;
+  color: #ffffff !important;
+
+  box-shadow:
+    inset 0 0 0 1px rgba(199, 187, 255, 0.12),
+    0 0 12px rgba(124, 92, 255, 0.10) !important;
+}
+
+/* LEVEL 6 — HIGHEST / warm orange */
+main[data-report-theme="studio"]
+  section[aria-label="Executive Performance Cockpit"]
+  [class~="bg-[#5F87A3]"],
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [class~="bg-[#5F87A3]"] {
+  background-color: #d97706 !important;
+  border-color: #fbbf24 !important;
+  color: #ffffff !important;
+
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 244, 214, 0.16),
+    0 0 14px rgba(245, 158, 11, 0.14) !important;
+}
+
+/*
+ * Summary2 3/3 donut centers.
+ * Remove the Light white center without touching ring data/colors.
+ */
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  circle[r="46"][fill="white"] {
+  fill: #0d1a34 !important;
+  stroke: rgba(120, 240, 255, 0.28) !important;
+  stroke-width: 1.25px !important;
+}
+
+/* center labels remain crisp on the dark center */
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  circle[r="46"][fill="white"]
+  ~ text {
+  fill: #f7f7ff !important;
+}
+
+/* ETRYLUE_STUDIO_SHARED_HEATMAP_CONTRAST_AND_DONUT_CENTER_V1_END */
+
+/* ETRYLUE_STUDIO_SUMMARY_SLIDE_3_TREND_UP_READABILITY_V2 */
+
+/*
+ * Visible Summary 3/4 monthly + weekly delta tables.
+ * Positive TrendCell only.
+ * Calculation, state logic, down/flat colors remain untouched.
+ */
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide="3"]
+  .text-sky-700 {
+  color: #8ef4ff !important;
+  font-weight: 700 !important;
+  text-shadow: 0 0 8px rgba(33, 223, 243, 0.18);
+}
+
+/* ETRYLUE_STUDIO_SUMMARY_SLIDE_3_TREND_UP_READABILITY_V2_END */
+
+/* ETRYLUE_STUDIO_SUMMARY2_SLIDE_INDICATORS_V2 */
+
+/*
+ * Summary2 navigation.
+ * Specificity intentionally exceeds the shared Summary2 button rule.
+ * Exactly three indicators remain rendered by existing JSX.
+ */
+
+/* all three indicators */
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [aria-label="요약2 슬라이드 선택"]
+  button[aria-label] {
+  background: #cbd8e8 !important;
+  border: 0 !important;
+  border-color: transparent !important;
+  opacity: 1 !important;
+  box-shadow: none !important;
+}
+
+/* currently selected indicator */
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [aria-label="요약2 슬라이드 선택"]
+  button[aria-label][aria-current="page"] {
+  background: #21dff3 !important;
+  border-color: transparent !important;
+
+  box-shadow:
+    0 0 10px rgba(33, 223, 243, 0.22) !important;
+}
+
+/* inactive indicators */
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [aria-label="요약2 슬라이드 선택"]
+  button[aria-label]:not([aria-current="page"]) {
+  background: #cbd8e8 !important;
+  opacity: 1 !important;
+}
+
+/* inactive hover */
+main[data-report-theme="studio"]
+  section[aria-label="요약2 슬라이드"]
+  [aria-label="요약2 슬라이드 선택"]
+  button[aria-label]:not([aria-current="page"]):hover {
+  background: #f7f7ff !important;
+}
+
+/* ETRYLUE_STUDIO_SUMMARY2_SLIDE_INDICATORS_V2_END */
+
+/* ETRYLUE_STUDIO_SUMMARY_SLIDE_INDICATORS_MATCH_V2 */
+
+/*
+ * Summary 1/4–4/4 navigation indicators.
+ * Specificity intentionally exceeds per-slide Studio surface overrides.
+ *
+ * active   = cyan pill
+ * inactive = white circles
+ */
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide]
+  [aria-label="요약 슬라이드 선택"]
+  button[aria-label]:not([aria-current="page"]) {
+  background: #f7f7ff !important;
+  background-color: #f7f7ff !important;
+  border: 0 !important;
+  border-color: transparent !important;
+  opacity: 1 !important;
+  box-shadow: none !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide]
+  [aria-label="요약 슬라이드 선택"]
+  button[aria-label][aria-current="page"] {
+  background: #21dff3 !important;
+  background-color: #21dff3 !important;
+  border: 0 !important;
+  border-color: transparent !important;
+  opacity: 1 !important;
+
+  box-shadow:
+    0 0 10px rgba(33, 223, 243, 0.22) !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="요약 슬라이드"][data-summary-slide]
+  [aria-label="요약 슬라이드 선택"]
+  button[aria-label]:not([aria-current="page"]):hover {
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+}
+
+/* ETRYLUE_STUDIO_SUMMARY_SLIDE_INDICATORS_MATCH_V2_END */
+
+/* ETRYLUE_STUDIO_STRUCTURE_FULL_DARK_V1 */
+
+/*
+ * Structure 1/3–3/3
+ * Match the approved Summary2 Studio visual language.
+ * Presentation only.
+ */
+
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"] {
+  --nature-surface: #0d1a34;
+  --nature-surface-soft: #132442;
+  --nature-border: #294563;
+  --nature-border-blue: #315a79;
+  --nature-blue-light: #173a59;
+  --nature-cream: #17263f;
+  --nature-warm-gray: #20324d;
+
+  color: #f7f7ff;
+}
+
+/* navigation shell */
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  > div:first-child {
+  background:
+    linear-gradient(
+      145deg,
+      rgba(15, 34, 62, 0.98),
+      rgba(19, 37, 70, 0.98)
+    ) !important;
+
+  border-color: rgba(64, 119, 159, 0.46) !important;
+
+  box-shadow:
+    0 12px 30px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(120, 240, 255, 0.04) !important;
+}
+
+/* previous / next */
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  > div:first-child
+  > button {
+  background: #132643 !important;
+  border-color: rgba(64, 119, 159, 0.48) !important;
+  color: #f7f7ff !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  > div:first-child
+  > button:not(:disabled):hover {
+  background: #183552 !important;
+  border-color: rgba(33, 223, 243, 0.54) !important;
+}
+
+/* slide counter */
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  > div:first-child
+  [class*="text-slate-"] {
+  color: #d7e3f1 !important;
+}
+
+/* navigation indicators — same as Summary2 */
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [aria-label="구조 슬라이드 선택"]
+  button[aria-label]:not([aria-current="page"]) {
+  background: #f7f7ff !important;
+  background-color: #f7f7ff !important;
+  border: 0 !important;
+  border-color: transparent !important;
+  opacity: 1 !important;
+  box-shadow: none !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [aria-label="구조 슬라이드 선택"]
+  button[aria-label][aria-current="page"] {
+  background: #21dff3 !important;
+  background-color: #21dff3 !important;
+  border: 0 !important;
+  border-color: transparent !important;
+  opacity: 1 !important;
+
+  box-shadow:
+    0 0 10px rgba(33, 223, 243, 0.22) !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [aria-label="구조 슬라이드 선택"]
+  button[aria-label]:not([aria-current="page"]):hover {
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+}
+
+/* main slide surface */
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  > div:nth-child(2) {
+  background:
+    radial-gradient(
+      circle at 14% 0%,
+      rgba(33, 223, 243, 0.055),
+      transparent 31%
+    ),
+    radial-gradient(
+      circle at 88% 8%,
+      rgba(124, 92, 255, 0.07),
+      transparent 34%
+    ),
+    linear-gradient(
+      145deg,
+      #0b1931 0%,
+      #0e1d38 52%,
+      #111d3b 100%
+    ) !important;
+
+  border-color: rgba(49, 90, 121, 0.58) !important;
+
+  box-shadow:
+    0 22px 54px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(120, 240, 255, 0.035) !important;
+}
+
+/* remove Light surfaces */
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class~="bg-white"],
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="bg-white/"] {
+  background-color: #101f3a !important;
+  background-image: none !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="bg-slate-50"],
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="bg-gray-50"] {
+  background-color: #132643 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="bg-slate-100"],
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="bg-slate-200"],
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="bg-gray-100"],
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="bg-gray-200"] {
+  background-color: #172a47 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="bg-[var(--nature-surface)]"] {
+  background-color: #101f3a !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="bg-[var(--nature-blue-light)]"] {
+  background-color: #173a59 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="bg-[#F3E4D2]"] {
+  background-color: #172a47 !important;
+  background-image: none !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="bg-[#7FA6C4]"] {
+  background-color: #185c79 !important;
+  color: #ffffff !important;
+}
+
+/* text hierarchy */
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="text-slate-900"],
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="text-slate-800"],
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="text-slate-700"] {
+  color: #f7f7ff !important;
+  opacity: 1 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="text-slate-600"],
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="text-slate-500"] {
+  color: #d7e3f1 !important;
+  opacity: 1 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="text-slate-400"] {
+  color: #cbd8e8 !important;
+  opacity: 1 !important;
+}
+
+/* StructureSection hard-coded Light typography */
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="text-[#2F3A40]"] {
+  color: #f7f7ff !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="text-[#5F554B]"],
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="text-[#7B7166]"] {
+  color: #d7e3f1 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="text-[#4F7F9E]"] {
+  color: #78f0ff !important;
+}
+
+/* borders */
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="border-slate-"],
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="border-gray-"],
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="border-[#CFC2B1]"],
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="border-[#B7D7E3]"] {
+  border-color: rgba(84, 139, 180, 0.40) !important;
+}
+
+/* SOURCE / CAMPAIGN / GROUP badges */
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="inline-flex"][class*="w-fit"][class*="rounded-full"] {
+  background:
+    linear-gradient(
+      145deg,
+      rgba(22, 62, 91, 0.96),
+      rgba(29, 44, 82, 0.96)
+    ) !important;
+
+  border-color: rgba(33, 223, 243, 0.52) !important;
+  color: #78f0ff !important;
+
+  box-shadow:
+    inset 0 1px 0 rgba(120, 240, 255, 0.12),
+    0 0 16px rgba(33, 223, 243, 0.07) !important;
+}
+
+/* tables */
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  table {
+  background: #0e1c35 !important;
+  color: #f7f7ff !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  table
+  thead,
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  table
+  thead
+  tr {
+  background: #113e5c !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  table
+  thead
+  th {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(24, 76, 108, 1) 0%,
+      rgba(16, 55, 83, 1) 100%
+    ) !important;
+
+  color: #ffffff !important;
+  border-color: rgba(120, 240, 255, 0.28) !important;
+
+  box-shadow:
+    inset 0 1px 0 rgba(120, 240, 255, 0.16),
+    inset 0 -1px 0 rgba(33, 223, 243, 0.14) !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  table
+  tbody
+  tr {
+  background: #101f3a !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  table
+  tbody
+  tr:nth-child(even) {
+  background: #142744 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  table
+  tbody
+  tr:hover {
+  background: #18304d !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  table
+  th,
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  table
+  td {
+  color: #f7f7ff !important;
+  border-color: rgba(71, 124, 165, 0.35) !important;
+}
+
+/* efficiency/ratio cells */
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  table
+  [class*="text-[#4F7F9E]"] {
+  color: #78f0ff !important;
+}
+
+/* insight panel cards */
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="bg-white/80"],
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="bg-white/90"] {
+  background: #101f3a !important;
+  border-color: rgba(71, 124, 165, 0.40) !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="ring-[#B7D7E3]"] {
+  background:
+    linear-gradient(
+      145deg,
+      rgba(33, 223, 243, 0.16),
+      rgba(124, 92, 255, 0.15)
+    ) !important;
+
+  color: #78f0ff !important;
+  --tw-ring-color: rgba(33, 223, 243, 0.42) !important;
+}
+
+/* Group campaign dropdown */
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  button[class*="border-[#CFC2B1]"] {
+  background: #132643 !important;
+  border-color: rgba(84, 139, 180, 0.48) !important;
+  color: #f7f7ff !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  div[class*="border-[#CFC2B1]"][class*="bg-white"] {
+  background: #0f203c !important;
+  border-color: rgba(84, 139, 180, 0.48) !important;
+
+  box-shadow:
+    0 14px 30px rgba(0, 0, 0, 0.30),
+    inset 0 1px 0 rgba(120, 240, 255, 0.04) !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  button[class*="bg-[#F3E4D2]"] {
+  background: #172a47 !important;
+  color: #d7e3f1 !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  button[class*="bg-[#F3E4D2]"]:hover {
+  background: #1b3857 !important;
+  color: #f7f7ff !important;
+}
+
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  button[class*="bg-[#7FA6C4]"] {
+  background: #17647f !important;
+  color: #ffffff !important;
+
+  box-shadow:
+    inset 0 0 0 1px rgba(120, 240, 255, 0.20) !important;
+}
+
+/* shadows */
+main[data-report-theme="studio"]
+  section[aria-label="구조 슬라이드"]
+  [class*="shadow-"] {
+  box-shadow:
+    0 14px 34px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(120, 240, 255, 0.035) !important;
+}
+
+/* ETRYLUE_STUDIO_STRUCTURE_FULL_DARK_V1_END */
+
+/* ETRYLUE_STUDIO_ALL_TABLE_DATABAR_CONTRAST_V2 */
+
+/*
+ * Shared DataBarCell contrast correction for Studio.
+ *
+ * pct >= 18:
+ *   numeric value sits over the bar -> white value on dark navy pill.
+ *
+ * pct < 18:
+ *   numeric value sits outside the bar -> bright white value with
+ *   a compact dark navy readability surface.
+ *
+ * Width, fill, metric value and calculation remain untouched.
+ */
+
+/* value rendered inside medium / long bars */
+main[data-report-theme="studio"]
+  table
+  div[class*="relative"][class*="overflow-hidden"][class*="rounded-lg"][class*="bg-[#F3E4D2]"]
+  > div[class*="absolute"][class*="inset-y-0"][class*="right-2.5"][class*="text-[#27364A]"] {
+  z-index: 3 !important;
+
+  color: #ffffff !important;
+  background: rgba(6, 18, 36, 0.94) !important;
+
+  border: 1px solid rgba(120, 240, 255, 0.34) !important;
+  border-radius: 9999px !important;
+
+  padding-left: 7px !important;
+  padding-right: 7px !important;
+
+  font-weight: 800 !important;
+  opacity: 1 !important;
+
+  text-shadow: none !important;
+  -webkit-text-stroke: 0 !important;
+
+  box-shadow:
+    0 2px 5px rgba(0, 0, 0, 0.30),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+
+/* value rendered outside very short bars */
+main[data-report-theme="studio"]
+  table
+  div[class*="flex"][class*="w-full"][class*="gap-2.5"]
+  > div[class*="whitespace-nowrap"][class*="text-[#52606D]"] {
+  color: #ffffff !important;
+  background: rgba(6, 18, 36, 0.88) !important;
+
+  border: 1px solid rgba(120, 240, 255, 0.24) !important;
+  border-radius: 7px !important;
+
+  padding: 3px 6px !important;
+
+  font-weight: 800 !important;
+  opacity: 1 !important;
+
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.42) !important;
+
+  box-shadow:
+    0 2px 5px rgba(0, 0, 0, 0.22) !important;
+}
+
+/* ETRYLUE_STUDIO_ALL_TABLE_DATABAR_CONTRAST_V2_END */
+
+/* ETRYLUE_STUDIO_KEYWORD_CREATIVE_FOUR_TABS_V1 */
+
+/*
+ * Keyword / Keyword Detail / Creative / Creative Detail
+ * Studio presentation only.
+ *
+ * Keep all source data, filtering, sorting, click behavior,
+ * preview behavior, aggregation and visited-slide/lazy logic untouched.
+ */
+
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  ) {
+  --nature-surface: #0d1a34;
+  --nature-surface-soft: #132442;
+  --nature-border: #294563;
+  --nature-border-blue: #315a79;
+  --nature-blue-light: #173a59;
+  --nature-cream: #17263f;
+  --nature-warm-gray: #20324d;
+
+  color: #f7f7ff;
+}
+
+/* ---------------------------------------------------------
+   Slide navigation indicators
+   active = cyan pill / inactive = white circles
+--------------------------------------------------------- */
+
+main[data-report-theme="studio"]
+  :is(
+    [aria-label="키워드 슬라이드 선택"],
+    [aria-label="키워드 상세 슬라이드 선택"],
+    [aria-label="소재 슬라이드 선택"],
+    [aria-label="소재 상세 슬라이드 선택"]
+  )
+  button[aria-label]:not([aria-current="page"]) {
+  background: #f7f7ff !important;
+  background-color: #f7f7ff !important;
+  border: 0 !important;
+  border-color: transparent !important;
+  opacity: 1 !important;
+  box-shadow: none !important;
+}
+
+main[data-report-theme="studio"]
+  :is(
+    [aria-label="키워드 슬라이드 선택"],
+    [aria-label="키워드 상세 슬라이드 선택"],
+    [aria-label="소재 슬라이드 선택"],
+    [aria-label="소재 상세 슬라이드 선택"]
+  )
+  button[aria-label][aria-current="page"] {
+  background: #21dff3 !important;
+  background-color: #21dff3 !important;
+  border: 0 !important;
+  border-color: transparent !important;
+  opacity: 1 !important;
+
+  box-shadow:
+    0 0 10px rgba(33, 223, 243, 0.22) !important;
+}
+
+/* ---------------------------------------------------------
+   Light surfaces -> Studio navy
+--------------------------------------------------------- */
+
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  [class~="bg-white"],
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  [class*="bg-white/"] {
+  background-color: #101f3a !important;
+  background-image: none !important;
+}
+
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  [class*="bg-slate-50"],
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  [class*="bg-slate-100"],
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  [class*="bg-slate-200"] {
+  background-color: #142744 !important;
+}
+
+/* cream / light-blue surfaces */
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  [class*="bg-[#F3E4D2]"] {
+  background-color: #172a47 !important;
+  background-image: none !important;
+}
+
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  [class*="bg-[#B7D7E3]"] {
+  background-color: #173a59 !important;
+  background-image: none !important;
+}
+
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  [class*="bg-[#7FA6C4]"] {
+  background-color: #17647f !important;
+  color: #ffffff !important;
+}
+
+/* ---------------------------------------------------------
+   Text hierarchy
+--------------------------------------------------------- */
+
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  :is(
+    [class*="text-slate-900"],
+    [class*="text-slate-800"],
+    [class*="text-slate-700"],
+    [class*="text-[#27364A]"],
+    [class*="text-[#334155]"]
+  ) {
+  color: #f7f7ff !important;
+  opacity: 1 !important;
+}
+
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  :is(
+    [class*="text-slate-600"],
+    [class*="text-slate-500"],
+    [class*="text-[#6F7B86]"],
+    [class*="text-[#52606D]"],
+    [class*="text-[#7A8794]"]
+  ) {
+  color: #d7e3f1 !important;
+  opacity: 1 !important;
+}
+
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  :is(
+    [class*="text-slate-400"],
+    [class*="text-[#9A8F81]"]
+  ) {
+  color: #cbd8e8 !important;
+  opacity: 1 !important;
+}
+
+/* existing accent text */
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  :is(
+    [class*="text-[#4F7F9E]"],
+    [class*="text-[#5F87A3]"],
+    [class*="text-[#7FA6C4]"]
+  ) {
+  color: #78f0ff !important;
+}
+
+/* ---------------------------------------------------------
+   Borders / cards
+--------------------------------------------------------- */
+
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  :is(
+    [class*="border-slate-"],
+    [class*="border-[#CFC2B1]"],
+    [class*="border-[#B7D7E3]"]
+  ) {
+  border-color: rgba(84, 139, 180, 0.40) !important;
+}
+
+/* general cards */
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  [class*="rounded-[20px]"][class*="border"] {
+  border-color: rgba(71, 124, 165, 0.42) !important;
+
+  box-shadow:
+    0 14px 34px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(120, 240, 255, 0.035) !important;
+}
+
+/* ---------------------------------------------------------
+   Badges
+--------------------------------------------------------- */
+
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  span[class*="rounded-full"][class*="border"] {
+  border-color: rgba(33, 223, 243, 0.48) !important;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(22, 62, 91, 0.96),
+      rgba(29, 44, 82, 0.96)
+    ) !important;
+
+  color: #78f0ff !important;
+}
+
+/* ---------------------------------------------------------
+   Inputs / dropdowns / selectors
+--------------------------------------------------------- */
+
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  :is(input, select, textarea) {
+  background: #0f203c !important;
+  color: #f7f7ff !important;
+  border-color: rgba(84, 139, 180, 0.48) !important;
+
+  box-shadow:
+    inset 0 1px 0 rgba(120, 240, 255, 0.025) !important;
+}
+
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  :is(input, textarea)::placeholder {
+  color: #91a6bb !important;
+  opacity: 1 !important;
+}
+
+/* inactive filter / selector buttons */
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  button[class*="bg-white"] {
+  background: #132643 !important;
+  color: #f7f7ff !important;
+  border-color: rgba(84, 139, 180, 0.48) !important;
+}
+
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  button[class*="bg-[#F3E4D2]"] {
+  background: #172a47 !important;
+  color: #d7e3f1 !important;
+  border-color: rgba(84, 139, 180, 0.42) !important;
+}
+
+/* selected filter / selector buttons */
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  button[class*="bg-[#7FA6C4]"] {
+  background: #17647f !important;
+  border-color: rgba(33, 223, 243, 0.58) !important;
+  color: #ffffff !important;
+}
+
+/* dropdown panels */
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  div[class*="absolute"][class*="bg-white"][class*="border"] {
+  background: #0f203c !important;
+  border-color: rgba(84, 139, 180, 0.48) !important;
+
+  box-shadow:
+    0 16px 34px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(120, 240, 255, 0.035) !important;
+}
+
+/* ---------------------------------------------------------
+   Tables — match Summary / Structure
+--------------------------------------------------------- */
+
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  table {
+  background: #0e1c35 !important;
+  color: #f7f7ff !important;
+}
+
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  table
+  thead,
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  table
+  thead
+  tr {
+  background: #113e5c !important;
+}
+
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  table
+  thead
+  th {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(24, 76, 108, 1) 0%,
+      rgba(16, 55, 83, 1) 100%
+    ) !important;
+
+  color: #ffffff !important;
+  border-color: rgba(120, 240, 255, 0.28) !important;
+
+  box-shadow:
+    inset 0 1px 0 rgba(120, 240, 255, 0.16),
+    inset 0 -1px 0 rgba(33, 223, 243, 0.14) !important;
+}
+
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  table
+  tbody
+  tr {
+  background: #101f3a !important;
+}
+
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  table
+  tbody
+  tr:nth-child(even) {
+  background: #142744 !important;
+}
+
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  table
+  tbody
+  tr:hover {
+  background: #18304d !important;
+}
+
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  table
+  :is(th, td) {
+  color: #f7f7ff !important;
+  border-color: rgba(71, 124, 165, 0.35) !important;
+}
+
+/* accent efficiency cells */
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  table
+  [class*="text-[#4F7F9E]"] {
+  color: #78f0ff !important;
+  font-weight: 700 !important;
+}
+
+/* ---------------------------------------------------------
+   Recharts — readable Studio charts
+--------------------------------------------------------- */
+
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  .recharts-cartesian-grid
+  line {
+  stroke: #315a79 !important;
+  stroke-opacity: 0.50 !important;
+}
+
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  :is(
+    .recharts-cartesian-axis-line,
+    .recharts-cartesian-axis-tick-line
+  ) {
+  stroke: #527696 !important;
+}
+
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  :is(
+    .recharts-cartesian-axis-tick text,
+    .recharts-label-list text
+  ) {
+  fill: #d7e3f1 !important;
+  font-weight: 600 !important;
+}
+
+/* tooltip */
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  .recharts-default-tooltip {
+  background: #0b1931 !important;
+  border: 1px solid rgba(84, 139, 180, 0.52) !important;
+  border-radius: 10px !important;
+
+  box-shadow:
+    0 10px 26px rgba(0, 0, 0, 0.30) !important;
+}
+
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  :is(
+    .recharts-tooltip-label,
+    .recharts-tooltip-item
+  ) {
+  color: #f7f7ff !important;
+}
+
+/* ---------------------------------------------------------
+   Insight / helper panels
+--------------------------------------------------------- */
+
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="키워드 슬라이드"],
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"],
+    section:has([aria-label="키워드 상세 슬라이드 선택"]):not(
+        :has(section [aria-label="키워드 상세 슬라이드 선택"])
+      )
+  )
+  [class*="bg-[#F3E4D2]"][class*="rounded-"] {
+  background:
+    linear-gradient(
+      145deg,
+      rgba(20, 43, 71, 0.98),
+      rgba(18, 34, 65, 0.98)
+    ) !important;
+
+  border-color: rgba(71, 124, 165, 0.38) !important;
+}
+
+/* preserve real creative images */
+main[data-report-theme="studio"]
+  :is(
+    section[aria-label="소재 슬라이드"],
+    [aria-label="소재 상세 슬라이드"]
+  )
+  img {
+  opacity: 1 !important;
+  filter: none !important;
+}
+
+/* ETRYLUE_STUDIO_KEYWORD_CREATIVE_FOUR_TABS_V1_END */
+
+
+
+
+/* ETRYLUE_STUDIO_RANKING_CHART_AXIS_WHITE_V2 */
+
+/*
+ * Direct hook on Keyword / Creative ranking chart containers.
+ * Axis typography only.
+ * Data, scales, bars, labels and tooltip values remain unchanged.
+ */
+main[data-report-theme="studio"]
+  [data-studio-axis-white="true"]
+  .recharts-cartesian-axis-tick-value,
+main[data-report-theme="studio"]
+  [data-studio-axis-white="true"]
+  .recharts-cartesian-axis-tick
+  text {
+  fill: #ffffff !important;
+  color: #ffffff !important;
+  opacity: 1 !important;
+  font-weight: 700 !important;
+}
+
+main[data-report-theme="studio"]
+  [data-studio-axis-white="true"]
+  .recharts-cartesian-axis-tick-value
+  tspan,
+main[data-report-theme="studio"]
+  [data-studio-axis-white="true"]
+  .recharts-cartesian-axis-tick
+  text
+  tspan {
+  fill: #ffffff !important;
+  color: #ffffff !important;
+}
+
+/* ETRYLUE_STUDIO_RANKING_CHART_AXIS_WHITE_V2_END */
+
+/* ETRYLUE_STUDIO_KEYWORD_DETAIL_FULL_DARK_V2 */
+
+/*
+ * Keyword Detail 1/3–3/3.
+ * Explicit component-root scope.
+ * Presentation only.
+ */
+
+main[data-report-theme="studio"]
+  [data-report-section="keyword-detail"] {
+  --nature-surface: #0d1a34;
+  --nature-surface-soft: #132442;
+  --nature-border: #294563;
+  --nature-border-blue: #315a79;
+  --nature-blue-light: #173a59;
+  --nature-cream: #17263f;
+  --nature-warm-gray: #20324d;
+
+  position: relative;
+  isolation: isolate;
+
+  color: #f7f7ff !important;
+
+  background:
+    radial-gradient(
+      circle at 12% 0%,
+      rgba(33, 223, 243, 0.055),
+      transparent 30%
+    ),
+    radial-gradient(
+      circle at 88% 5%,
+      rgba(124, 92, 255, 0.065),
+      transparent 33%
+    ),
+    linear-gradient(
+      145deg,
+      #0b1931 0%,
+      #0e1d38 52%,
+      #111d3b 100%
+    ) !important;
+
+  border-radius: 22px;
+}
+
+/* make the component root fill the visible slide surface */
+main[data-report-theme="studio"]
+  [data-report-section="keyword-detail"]::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+
+  inset: -18px;
+
+  border-radius: 24px;
+
+  background:
+    linear-gradient(
+      145deg,
+      #0b1931 0%,
+      #0e1d38 52%,
+      #111d3b 100%
+    );
+
+  box-shadow:
+    0 18px 44px rgba(0, 0, 0, 0.22);
+}
+
+/* all Light cards */
+main[data-report-theme="studio"]
+  [data-report-section="keyword-detail"]
+  [class~="bg-white"],
+main[data-report-theme="studio"]
+  [data-report-section="keyword-detail"]
+  [class*="bg-white/"] {
+  background-color: #101f3a !important;
+  background-image: none !important;
+}
+
+/* slate surfaces */
+main[data-report-theme="studio"]
+  [data-report-section="keyword-detail"]
+  [class*="bg-slate-50"],
+main[data-report-theme="studio"]
+  [data-report-section="keyword-detail"]
+  [class*="bg-slate-100"],
+main[data-report-theme="studio"]
+  [data-report-section="keyword-detail"]
+  [class*="bg-slate-200"] {
+  background-color: #142744 !important;
+}
+
+/* cream surfaces */
+main[data-report-theme="studio"]
+  [data-report-section="keyword-detail"]
+  [class*="bg-[#F3E4D2]"] {
+  background-color: #172a47 !important;
+  background-image: none !important;
+}
+
+/* light-blue surfaces */
+main[data-report-theme="studio"]
+  [data-report-section="keyword-detail"]
+  [class*="bg-[#B7D7E3]"] {
+  background-color: #173a59 !important;
+  background-image: none !important;
+}
+
+/* main text */
+main[data-report-theme="studio"]
+  [data-report-section="keyword-detail"]
+  :is(
+    [class*="text-slate-900"],
+    [class*="text-slate-800"],
+    [class*="text-slate-700"],
+    [class*="text-gray-900"],
+    [class*="text-gray-800"],
+    [class*="text-gray-700"],
+    [class*="text-[#27364A]"],
+    [class*="text-[#334155]"]
+  ) {
+  color: #f7f7ff !important;
+  opacity: 1 !important;
+}
+
+/* secondary text */
+main[data-report-theme="studio"]
+  [data-report-section="keyword-detail"]
+  :is(
+    [class*="text-slate-600"],
+    [class*="text-slate-500"],
+    [class*="text-gray-600"],
+    [class*="text-gray-500"],
+    [class*="text-[#52606D]"],
+    [class*="text-[#6F7B86]"],
+    [class*="text-[#7A8794]"]
+  ) {
+  color: #d7e3f1 !important;
+  opacity: 1 !important;
+}
+
+/* helper text */
+main[data-report-theme="studio"]
+  [data-report-section="keyword-detail"]
+  :is(
+    [class*="text-slate-400"],
+    [class*="text-gray-400"],
+    [class*="text-[#9A8F81]"]
+  ) {
+  color: #cbd8e8 !important;
+  opacity: 1 !important;
+}
+
+/* cyan accents */
+main[data-report-theme="studio"]
+  [data-report-section="keyword-detail"]
+  :is(
+    [class*="text-[#4F7F9E]"],
+    [class*="text-[#5F87A3]"],
+    [class*="text-[#7FA6C4]"]
+  ) {
+  color: #78f0ff !important;
+}
+
+/* borders */
+main[data-report-theme="studio"]
+  [data-report-section="keyword-detail"]
+  :is(
+    [class*="border-slate-"],
+    [class*="border-gray-"],
+    [class*="border-[#CFC2B1]"],
+    [class*="border-[#B7D7E3]"]
+  ) {
+  border-color: rgba(84, 139, 180, 0.40) !important;
+}
+
+/* keyword selector / search */
+main[data-report-theme="studio"]
+  [data-report-section="keyword-detail"]
+  :is(input, select, textarea) {
+  background: #0f203c !important;
+  color: #f7f7ff !important;
+  border-color: rgba(84, 139, 180, 0.48) !important;
+}
+
+main[data-report-theme="studio"]
+  [data-report-section="keyword-detail"]
+  :is(input, textarea)::placeholder {
+  color: #91a6bb !important;
+  opacity: 1 !important;
+}
+
+/* inactive selector buttons */
+main[data-report-theme="studio"]
+  [data-report-section="keyword-detail"]
+  button[class*="bg-white"] {
+  background: #132643 !important;
+  color: #f7f7ff !important;
+  border-color: rgba(84, 139, 180, 0.46) !important;
+}
+
+/* selected keyword */
+main[data-report-theme="studio"]
+  [data-report-section="keyword-detail"]
+  button[class*="bg-[#7FA6C4]"] {
+  background: #17647f !important;
+  color: #ffffff !important;
+  border-color: rgba(33, 223, 243, 0.58) !important;
+}
+
+/* insight / action blocks */
+main[data-report-theme="studio"]
+  [data-report-section="keyword-detail"]
+  [class*="rounded-[14px]"][class*="border"] {
+  border-color: rgba(71, 124, 165, 0.38) !important;
+}
+
+/* nested reused SummarySection */
+main[data-report-theme="studio"]
+  [data-report-section="keyword-detail"]
+  .keyword-detail-week-table-fix {
+  color: #f7f7ff !important;
+}
+
+/* ETRYLUE_STUDIO_KEYWORD_DETAIL_FULL_DARK_V2_END */
+
+/* ETRYLUE_STUDIO_KEYWORD_DETAIL_OUTER_FRAME_DARK_V1 */
+
+/*
+ * Keyword Detail 1/3–3/3 outer report frame.
+ * Match Summary / Structure / Creative Detail Studio surface.
+ * Presentation only.
+ */
+
+main[data-report-theme="studio"]
+  section[aria-label="키워드 상세 슬라이드"]
+  > div:nth-child(2) {
+  background:
+    radial-gradient(
+      circle at 14% 0%,
+      rgba(33, 223, 243, 0.055),
+      transparent 31%
+    ),
+    radial-gradient(
+      circle at 88% 8%,
+      rgba(124, 92, 255, 0.07),
+      transparent 34%
+    ),
+    linear-gradient(
+      145deg,
+      #0b1931 0%,
+      #0e1d38 52%,
+      #111d3b 100%
+    ) !important;
+
+  border-color: rgba(49, 90, 121, 0.62) !important;
+
+  box-shadow:
+    0 22px 54px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(120, 240, 255, 0.035) !important;
+}
+
+/* replace the Light white top highlight */
+main[data-report-theme="studio"]
+  section[aria-label="키워드 상세 슬라이드"]
+  > div:nth-child(2)
+  > div:first-child {
+  background:
+    linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(120, 240, 255, 0.04) 18%,
+      rgba(120, 240, 255, 0.10) 50%,
+      rgba(120, 240, 255, 0.04) 82%,
+      transparent 100%
+    ) !important;
+}
+
+/* preserve the full content area's dark continuity */
+main[data-report-theme="studio"]
+  section[aria-label="키워드 상세 슬라이드"]
+  > div:nth-child(2)
+  > div:nth-child(2) {
+  background: transparent !important;
+}
+
+/* navigation — same Studio convention */
+main[data-report-theme="studio"]
+  section[aria-label="키워드 상세 슬라이드"]
+  > div:first-child {
+  background:
+    linear-gradient(
+      145deg,
+      rgba(15, 34, 62, 0.98),
+      rgba(19, 37, 70, 0.98)
+    ) !important;
+
+  border-color: rgba(64, 119, 159, 0.46) !important;
+}
+
+/* ETRYLUE_STUDIO_KEYWORD_DETAIL_OUTER_FRAME_DARK_V1_END */
+
+/* ETRYLUE_STUDIO_DETAIL_PERIOD_KPI_MATCH_SUMMARY2_V1 */
+
+/*
+ * Keyword Detail 1/3 + Creative Detail 1/3
+ * Period performance summary.
+ *
+ * Card 2 = CPA
+ * Card 5 = Cost
+ *
+ * Remove the remaining Light/warm-gray emphasis and use the
+ * same dark Studio visual language as Summary 2/4.
+ * Presentation only.
+ */
+
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [class*="grid-cols-5"]
+  > :nth-child(2),
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [class*="grid-cols-5"]
+  > :nth-child(5) {
+  background:
+    linear-gradient(
+      145deg,
+      #101f3a 0%,
+      #132442 56%,
+      #172a47 100%
+    ) !important;
+
+  border-color: rgba(71, 124, 165, 0.56) !important;
+
+  color: #f7f7ff !important;
+
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.20),
+    inset 0 1px 0 rgba(120, 240, 255, 0.055) !important;
+}
+
+/* primary value */
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [class*="grid-cols-5"]
+  > :is(:nth-child(2), :nth-child(5))
+  :is(
+    [class*="text-slate-900"],
+    [class*="text-slate-800"],
+    [class*="text-slate-700"],
+    [class*="text-[#27364A]"],
+    [class*="text-[#5F554B]"],
+    [class*="text-[#7B7166]"]
+  ) {
+  color: #f7f7ff !important;
+  opacity: 1 !important;
+}
+
+/* description / helper text */
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [class*="grid-cols-5"]
+  > :is(:nth-child(2), :nth-child(5))
+  :is(
+    [class*="text-slate-600"],
+    [class*="text-slate-500"],
+    [class*="text-slate-400"],
+    [class*="text-[#52606D]"],
+    [class*="text-[#6F7B86]"],
+    [class*="text-[#7A8794]"],
+    [class*="text-[#9A8F81]"]
+  ) {
+  color: #d7e3f1 !important;
+  opacity: 1 !important;
+}
+
+/* CPA / COST badge */
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [class*="grid-cols-5"]
+  > :is(:nth-child(2), :nth-child(5))
+  span[class*="rounded-full"] {
+  background:
+    linear-gradient(
+      145deg,
+      rgba(22, 62, 91, 0.98),
+      rgba(29, 44, 82, 0.98)
+    ) !important;
+
+  border-color: rgba(33, 223, 243, 0.50) !important;
+  color: #78f0ff !important;
+
+  box-shadow:
+    inset 0 1px 0 rgba(120, 240, 255, 0.10) !important;
+}
+
+/* small status dot */
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [class*="grid-cols-5"]
+  > :is(:nth-child(2), :nth-child(5))
+  [class*="rounded-full"][class*="h-2"],
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [class*="grid-cols-5"]
+  > :is(:nth-child(2), :nth-child(5))
+  [class*="rounded-full"][class*="w-2"] {
+  background: #78f0ff !important;
+  opacity: 0.78 !important;
+}
+
+/* ETRYLUE_STUDIO_DETAIL_PERIOD_KPI_MATCH_SUMMARY2_V1_END */
+
+/* ETRYLUE_STUDIO_DETAIL_PERIOD_KPI_TEXT_FORCE_V2 */
+
+/*
+ * Keyword Detail 1/3 + Creative Detail 1/3
+ * Period KPI card 2 (CPA) + card 5 (Cost)
+ *
+ * The card surface is already Studio dark.
+ * Force every inherited/hard-coded Light-theme text color
+ * inside these two cards to the approved Summary 2/4 contrast.
+ */
+
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [class*="grid-cols-5"]
+  > :is(:nth-child(2), :nth-child(5)),
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [class*="grid-cols-5"]
+  > :is(:nth-child(2), :nth-child(5))
+  * {
+  color: #f7f7ff !important;
+  opacity: 1 !important;
+  -webkit-text-fill-color: #f7f7ff !important;
+}
+
+/* KPI main number */
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [class*="grid-cols-5"]
+  > :is(:nth-child(2), :nth-child(5))
+  [class*="text-2xl"],
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [class*="grid-cols-5"]
+  > :is(:nth-child(2), :nth-child(5))
+  [class*="text-3xl"] {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+
+  font-weight: 800 !important;
+
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.32) !important;
+}
+
+/* description/helper line */
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [class*="grid-cols-5"]
+  > :is(:nth-child(2), :nth-child(5))
+  [class*="text-xs"] {
+  color: #d7e3f1 !important;
+  -webkit-text-fill-color: #d7e3f1 !important;
+}
+
+/* CPA / Cost badge */
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [class*="grid-cols-5"]
+  > :is(:nth-child(2), :nth-child(5))
+  span[class*="rounded-full"] {
+  color: #78f0ff !important;
+  -webkit-text-fill-color: #78f0ff !important;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(22, 62, 91, 0.98),
+      rgba(29, 44, 82, 0.98)
+    ) !important;
+
+  border-color: rgba(33, 223, 243, 0.50) !important;
+}
+
+/* status dot remains cyan */
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [class*="grid-cols-5"]
+  > :is(:nth-child(2), :nth-child(5))
+  [class*="rounded-full"][class*="h-2"] {
+  background-color: #78f0ff !important;
+}
+
+/* ETRYLUE_STUDIO_DETAIL_PERIOD_KPI_TEXT_FORCE_V2_END */
+
+
+
+
+/* ETRYLUE_STUDIO_DETAIL_WEEKLY_TREND_AXIS_WHITE_V2 */
+
+/*
+ * Keyword Detail 2/3 + Creative Detail 2/3.
+ *
+ * Exact lower weekly trend chart only.
+ * SummaryChartView uses both custom X-axis SVG text and
+ * Recharts Y-axis ticks, so target the actual chart SVG.
+ *
+ * Data, series, scales, grid and tooltip logic remain unchanged.
+ */
+
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [data-summary-weekly-trend-chart="true"]
+  .recharts-cartesian-axis-tick
+  text,
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [data-summary-weekly-trend-chart="true"]
+  .recharts-cartesian-axis-tick
+  tspan {
+  fill: #ffffff !important;
+  color: #ffffff !important;
+  opacity: 1 !important;
+  font-weight: 700 !important;
+}
+
+/* CustomXAxisTick / presentation-attribute safety */
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [data-summary-weekly-trend-chart="true"]
+  svg
+  text {
+  fill: #ffffff !important;
+  color: #ffffff !important;
+  opacity: 1 !important;
+}
+
+/* left + right Y-axis tick safety */
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [data-summary-weekly-trend-chart="true"]
+  :is(
+    .recharts-yAxis,
+    .recharts-xAxis,
+    .recharts-cartesian-axis
+  )
+  text {
+  fill: #ffffff !important;
+  color: #ffffff !important;
+  opacity: 1 !important;
+  font-weight: 700 !important;
+}
+
+/* ETRYLUE_STUDIO_DETAIL_WEEKLY_TREND_AXIS_WHITE_V2_END */
+
+/* ETRYLUE_STUDIO_DETAIL_SLIDE_3_DAILY_MARKERS_MATCH_SUMMARY4_V1 */
+
+/*
+ * Keyword Detail 3/3 + Creative Detail 3/3.
+ *
+ * Match the approved Summary 4/4 daily dual-chart markers exactly.
+ *
+ * normal marker = 1.8px / stroke 1px
+ * active marker = 2.8px / stroke 1px
+ *
+ * Lines, colors, data, scales and tooltip behavior remain unchanged.
+ */
+
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [data-summary-daily-performance="true"]
+  .recharts-line-dots
+  circle {
+  r: 1.8px !important;
+  stroke-width: 1px !important;
+}
+
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [data-summary-daily-performance="true"]
+  .recharts-active-dot
+  circle {
+  r: 2.8px !important;
+  stroke-width: 1px !important;
+}
+
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [data-summary-daily-performance="true"]
+  circle.recharts-dot {
+  r: 1.8px !important;
+  stroke-width: 1px !important;
+}
+
+/* ETRYLUE_STUDIO_DETAIL_SLIDE_3_DAILY_MARKERS_MATCH_SUMMARY4_V1_END */
+
+/* ETRYLUE_STUDIO_DETAIL_SLIDE_3_DAILY_AXIS_WHITE_V1 */
+
+/*
+ * Keyword Detail 3/3 + Creative Detail 3/3.
+ *
+ * Daily inflow / conversion charts only.
+ * Make all X/Y Cartesian axis typography pure white.
+ *
+ * Markers, lines, bars, data, scales and tooltips stay unchanged.
+ */
+
+/* X + Y axis tick text */
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [data-summary-daily-performance="true"]
+  .recharts-cartesian-axis-tick
+  text,
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [data-summary-daily-performance="true"]
+  .recharts-cartesian-axis-tick
+  tspan {
+  fill: #ffffff !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  opacity: 1 !important;
+  font-weight: 700 !important;
+}
+
+/* explicit X-axis safety */
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [data-summary-daily-performance="true"]
+  .recharts-xAxis
+  text,
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [data-summary-daily-performance="true"]
+  .recharts-xAxis
+  tspan {
+  fill: #ffffff !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  opacity: 1 !important;
+}
+
+/* left + right Y-axis safety */
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [data-summary-daily-performance="true"]
+  .recharts-yAxis
+  text,
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [data-summary-daily-performance="true"]
+  .recharts-yAxis
+  tspan {
+  fill: #ffffff !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  opacity: 1 !important;
+}
+
+/* separately rendered axis labels */
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [data-summary-daily-performance="true"]
+  .recharts-label {
+  fill: #ffffff !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  opacity: 1 !important;
+}
+
+/* ETRYLUE_STUDIO_DETAIL_SLIDE_3_DAILY_AXIS_WHITE_V1_END */
+
+/* ETRYLUE_STUDIO_DETAIL_SLIDE_3_DAILY_AXIS_WHITE_V2 */
+
+/*
+ * Browser DOM authority:
+ * - axis wrapper selectors resolve to zero nodes
+ * - actual date / numeric ticks are SVG <text> nodes
+ * - current presentation fill is #64748B
+ *
+ * Scope is limited to:
+ * Keyword Detail 3/3 + Creative Detail 3/3
+ * Daily performance charts.
+ */
+
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [data-summary-daily-performance="true"]
+  svg
+  text {
+  fill: #ffffff !important;
+  color: #ffffff !important;
+  opacity: 1 !important;
+}
+
+/* Recharts numeric tick nodes */
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [data-summary-daily-performance="true"]
+  svg
+  text.recharts-cartesian-axis-tick-value {
+  fill: #ffffff !important;
+  color: #ffffff !important;
+  opacity: 1 !important;
+  font-weight: 700 !important;
+}
+
+/* Custom X-axis date ticks render without a class */
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [data-summary-daily-performance="true"]
+  svg
+  g
+  > text {
+  fill: #ffffff !important;
+  color: #ffffff !important;
+  opacity: 1 !important;
+}
+
+/* nested tspan safety */
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [data-summary-daily-performance="true"]
+  svg
+  text
+  tspan {
+  fill: #ffffff !important;
+  color: #ffffff !important;
+  opacity: 1 !important;
+}
+
+/* ETRYLUE_STUDIO_DETAIL_SLIDE_3_DAILY_AXIS_WHITE_V2_END */
+
+/* ETRYLUE_STUDIO_CREATIVE_DETAIL_INSIGHT_TEXT_V1 */
+
+/*
+ * Creative Detail 1/3 — selected creative insight.
+ * Readability only.
+ */
+
+main[data-report-theme="studio"]
+  [data-creative-detail-insight="true"] {
+  color: #e2ebf5 !important;
+}
+
+main[data-report-theme="studio"]
+  [data-creative-detail-insight="true"]
+  h3 {
+  color: #f7f7ff !important;
+}
+
+/* selected creative name + secondary labels */
+main[data-report-theme="studio"]
+  [data-creative-detail-insight="true"]
+  :is(
+    [class*="text-gray-400"],
+    [class*="text-gray-500"],
+    [class*="text-gray-600"],
+    [class*="text-slate-400"],
+    [class*="text-slate-500"],
+    [class*="text-[#6F7B86]"],
+    [class*="text-[#7A8794]"],
+    [class*="text-[#9A8F81]"]
+  ) {
+  color: #cbd8e8 !important;
+  opacity: 1 !important;
+}
+
+/* main insight sentences */
+main[data-report-theme="studio"]
+  [data-creative-detail-insight="true"]
+  :is(
+    ul,
+    li,
+    [class*="text-gray-700"],
+    [class*="text-gray-800"],
+    [class*="text-slate-600"],
+    [class*="text-slate-700"],
+    [class*="text-[#27364A]"],
+    [class*="text-[#52606D]"]
+  ) {
+  color: #e2ebf5 !important;
+  opacity: 1 !important;
+}
+
+/* preserve bright headings inside action blocks */
+main[data-report-theme="studio"]
+  [data-creative-detail-insight="true"]
+  [class*="font-semibold"]:not([class*="rounded-full"]) {
+  color: #f7f7ff !important;
+}
+
+/* ETRYLUE_STUDIO_CREATIVE_DETAIL_INSIGHT_TEXT_V1_END */
+
+/* ETRYLUE_STUDIO_DETAIL_WEEKLY_INSIGHT_LABEL_BRIGHT_V1 */
+
+/*
+ * Keyword Detail 2/3 + Creative Detail 2/3
+ * Weekly chart upper-right summary labels only.
+ *
+ * child 1 = 현재
+ * child 3 = 최대 전환
+ * child 5 = 최저 CPA
+ */
+
+/* 최대 전환 — brighter Studio cyan */
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [data-summary-weekly-trend-chart="true"]
+  [class~="sm:justify-end"]
+  > :nth-child(3)
+  [class*="text-[10px]"] {
+  color: #78f0ff !important;
+  -webkit-text-fill-color: #78f0ff !important;
+  opacity: 1 !important;
+  font-weight: 800 !important;
+
+  text-shadow:
+    0 0 10px rgba(33, 223, 243, 0.16) !important;
+}
+
+/* 최저 CPA — bright blue-white */
+main[data-report-theme="studio"]
+  :is(
+    .keyword-detail-week-table-fix,
+    .creative-detail-week-table-fix
+  )
+  [data-summary-weekly-trend-chart="true"]
+  [class~="sm:justify-end"]
+  > :nth-child(5)
+  [class*="text-[10px]"] {
+  color: #f7f7ff !important;
+  -webkit-text-fill-color: #f7f7ff !important;
+  opacity: 1 !important;
+  font-weight: 800 !important;
+}
+
+/* ETRYLUE_STUDIO_DETAIL_WEEKLY_INSIGHT_LABEL_BRIGHT_V1_END */
+
+/* ETRYLUE_REPORT_TABLE_TEN_ROW_SCROLL_V1 */
+
+/*
+ * Web slide only:
+ * Structure 2/3, Structure 3/3,
+ * Keyword 2/2, Creative 2/2.
+ *
+ * Header 48px + 10 rows x 57px = 618px.
+ * All source rows remain available through internal scrolling.
+ */
+
+[data-report-ten-row-scroll="true"] {
+  max-height: 618px !important;
+  overflow-x: auto !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+[data-report-ten-row-scroll="true"] thead {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 20 !important;
+}
+
+[data-report-ten-row-scroll="true"] thead > tr {
+  height: 48px;
+}
+
+[data-report-ten-row-scroll="true"] tbody > tr {
+  height: 57px;
+}
+
+/* ETRYLUE_REPORT_TABLE_TEN_ROW_SCROLL_V1_END */
+
+/* ETRYLUE_DETAIL_OVERVIEW_EQUAL_HEIGHT_V1 */
+
+/*
+ * V2
+ *
+ * RIGHT COLUMN IS HEIGHT AUTHORITY.
+ *
+ * Left content must never increase the grid row height.
+ * The right overview column determines the row height.
+ * The left panel stretches only to that height.
+ * Overflow stays inside the left list.
+ */
+
+@media (min-width: 1024px) {
+  [data-detail-overview-height-match="true"] {
+    align-items: stretch !important;
+  }
+
+  /*
+   * Keyword Detail:
+   * direct left grid item is the wrapper around KeywordListPanel.
+   *
+   * size containment prevents the long keyword list from contributing
+   * its intrinsic height to the grid row.
+   */
+  [data-detail-overview-height-match="true"]
+    > [data-detail-list-column="true"] {
+    display: flex !important;
+    align-self: stretch !important;
+
+    min-height: 0 !important;
+    height: auto !important;
+
+    contain: size !important;
+  }
+
+  [data-detail-overview-height-match="true"]
+    .keyword-detail-list-panel {
+    position: relative !important;
+    top: auto !important;
+
+    display: flex !important;
+    flex: 1 1 0% !important;
+    flex-direction: column !important;
+
+    min-height: 0 !important;
+    height: auto !important;
+    max-height: none !important;
+
+    overflow: hidden !important;
+  }
+
+  /*
+   * Creative Detail:
+   * the aside itself is the direct left grid item.
+   * It must not participate in row-height growth.
+   */
+  [data-detail-overview-height-match="true"]
+    .creative-detail-list-panel {
+    contain: size !important;
+
+    display: flex !important;
+    flex-direction: column !important;
+
+    align-self: stretch !important;
+
+    min-height: 0 !important;
+    height: auto !important;
+    max-height: none !important;
+
+    overflow: hidden !important;
+  }
+
+  /*
+   * Only the list body scrolls.
+   * Search/current-selection/memo areas remain fixed.
+   */
+  [data-detail-overview-height-match="true"]
+    .keyword-detail-list-scroll,
+  [data-detail-overview-height-match="true"]
+    .creative-detail-list-scroll {
+    flex: 1 1 0% !important;
+
+    min-height: 0 !important;
+    height: auto !important;
+    max-height: none !important;
+
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+
+    overscroll-behavior: contain;
+  }
+}
+
+/* ETRYLUE_DETAIL_OVERVIEW_EQUAL_HEIGHT_V1_END */

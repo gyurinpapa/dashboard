@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/src/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { normalizeReportTheme, type ReportTheme } from "@/src/lib/report/theme";
 
 type ReportType = {
   id: string;
@@ -44,6 +45,7 @@ type ReportRow = {
   published_period_label?: string | null;
   published_at?: string | null;
 
+  report_theme?: ReportTheme;
   data_source_kind?: ReportDataSourceKind;
   media_sync_date_from?: string | null;
   media_sync_date_to?: string | null;
@@ -499,8 +501,13 @@ export default function ReportBuilderPage() {
   const [nextOffset, setNextOffset] = useState(0);
 
   const [creating, setCreating] = useState(false);
+  const [savingReportThemeId, setSavingReportThemeId] = useState<string | null>(
+    null
+  );
   const [selectedReportDataSourceKind, setSelectedReportDataSourceKind] =
     useState<ReportDataSourceKind>("csv");
+  const [selectedReportTheme, setSelectedReportTheme] =
+    useState<ReportTheme>("light");
   const [selectedApiMediaConnectionId, setSelectedApiMediaConnectionId] =
     useState("");
 
@@ -688,6 +695,7 @@ export default function ReportBuilderPage() {
 
       workspace_id: r.workspace_id ? String(r.workspace_id) : null,
       workspace_name: r.workspace_name ? String(r.workspace_name) : null,
+      report_theme: normalizeReportTheme(r.report_theme),
 
       advertiser_id: r.advertiser_id ? String(r.advertiser_id) : null,
       advertiser_name: r.advertiser_name ? String(r.advertiser_name) : null,
@@ -2418,7 +2426,10 @@ export default function ReportBuilderPage() {
           : {}),
         report_type_id: type.id,
         title: `${type.name} - Draft`,
-        meta: reportDataSourceMeta,
+        meta: {
+          ...reportDataSourceMeta,
+          report_theme: selectedReportTheme,
+        },
         status: "draft",
       }),
     });
@@ -2456,6 +2467,83 @@ export default function ReportBuilderPage() {
 
     await fetchReports();
     router.push(`/reports/${reportId}`);
+  }
+
+  async function updateExistingReportTheme(
+    report: ReportRow,
+    nextTheme: ReportTheme
+  ) {
+    const reportId = String(report?.id ?? "").trim();
+    const currentTheme = normalizeReportTheme(report?.report_theme);
+
+    if (!reportId || savingReportThemeId || currentTheme === nextTheme) {
+      return;
+    }
+
+    setSavingReportThemeId(reportId);
+    setLocalMsg("");
+
+    try {
+      const token = await getAccessToken();
+
+      if (!token) {
+        setLocalMsg("로그인 세션이 없습니다.");
+        return;
+      }
+
+      const res = await fetch(
+        `/api/reports/${encodeURIComponent(reportId)}`,
+        {
+          method: "PATCH",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            meta: {
+              report_theme: nextTheme,
+            },
+          }),
+        }
+      );
+
+      const json = await safeReadJson(res);
+
+      if (!res.ok || !(json as any)?.ok) {
+        console.warn("[reports/theme] failed", res.status, json);
+        setLocalMsg(
+          (json as any)?.message ||
+            (json as any)?.error ||
+            "리포트 테마 저장 실패"
+        );
+        return;
+      }
+
+      setReports((prev) =>
+        prev.map((item) =>
+          item.id === reportId
+            ? {
+                ...item,
+                report_theme: nextTheme,
+              }
+            : item
+        )
+      );
+
+      setLocalMsg(
+        nextTheme === "studio"
+          ? "리포트 테마를 Etrylue Studio로 저장했습니다."
+          : "리포트 테마를 Etrylue Light로 저장했습니다."
+      );
+    } catch (error) {
+      console.warn("[reports/theme] exception", error);
+      setLocalMsg("리포트 테마 저장 중 오류가 발생했습니다.");
+    } finally {
+      setSavingReportThemeId((current) =>
+        current === reportId ? null : current
+      );
+    }
   }
 
   const fetchLatestMediaSyncJobForReport = useCallback(
@@ -6088,6 +6176,252 @@ export default function ReportBuilderPage() {
 
             <div
               style={{
+                marginTop: 14,
+                border: "1px solid rgba(255, 255, 255, 0.13)",
+                borderRadius: 16,
+                background: "rgba(53, 40, 103, 0.90)",
+                padding: 14,
+              }}
+            >
+              <div style={{ fontSize: 14, fontWeight: 900, color: "#f7f7ff" }}>
+                리포트 테마
+              </div>
+              <div
+                style={{
+                  marginTop: 4,
+                  fontSize: 12,
+                  color: "#d7d5ec",
+                  lineHeight: 1.5,
+                }}
+              >
+                고객에게 보여질 리포트의 배경 스타일을 선택합니다.
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))",
+                  gap: 10,
+                  marginTop: 12,
+                }}
+              >
+                <button
+                  type="button"
+                  className="subBtn"
+                  onClick={() => setSelectedReportTheme("light")}
+                  disabled={creating}
+                  aria-pressed={selectedReportTheme === "light"}
+                  style={{
+                    minHeight: 150,
+                    padding: 12,
+                    borderRadius: 14,
+                    border:
+                      selectedReportTheme === "light"
+                        ? "1px solid #21dff3"
+                        : "1px solid rgba(255, 255, 255, 0.13)",
+                    background:
+                      selectedReportTheme === "light"
+                        ? "rgba(33, 223, 243, 0.08)"
+                        : "rgba(46, 35, 94, 0.72)",
+                    color: "#f7f7ff",
+                    textAlign: "left",
+                  }}
+                >
+                  <div
+                    style={{
+                      height: 78,
+                      borderRadius: 10,
+                      background: "#f7f3ec",
+                      padding: 9,
+                      boxShadow: "inset 0 0 0 1px rgba(207, 194, 177, 0.72)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        height: 13,
+                        borderRadius: 999,
+                        background: "#7fa6c4",
+                        opacity: 0.8,
+                      }}
+                    />
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr",
+                        gap: 6,
+                        marginTop: 8,
+                      }}
+                    >
+                      <div
+                        style={{
+                          height: 38,
+                          borderRadius: 7,
+                          background: "#fffaf3",
+                          border: "1px solid #d9cdbc",
+                        }}
+                      />
+                      <div
+                        style={{
+                          height: 38,
+                          borderRadius: 7,
+                          background: "#f3e4d2",
+                          border: "1px solid #b7d7e3",
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      marginTop: 10,
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 900 }}>
+                        Etrylue Light
+                      </div>
+                      <div
+                        style={{
+                          marginTop: 3,
+                          fontSize: 11,
+                          lineHeight: 1.45,
+                          color: "#d7d5ec",
+                        }}
+                      >
+                        현재 리포트 디자인
+                      </div>
+                    </div>
+
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 900,
+                        color:
+                          selectedReportTheme === "light"
+                            ? "#78f0ff"
+                            : "#bbb8d4",
+                      }}
+                    >
+                      {selectedReportTheme === "light" ? "● 선택됨" : "선택"}
+                    </span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  className="subBtn"
+                  onClick={() => setSelectedReportTheme("studio")}
+                  disabled={creating}
+                  aria-pressed={selectedReportTheme === "studio"}
+                  style={{
+                    minHeight: 150,
+                    padding: 12,
+                    borderRadius: 14,
+                    border:
+                      selectedReportTheme === "studio"
+                        ? "1px solid #21dff3"
+                        : "1px solid rgba(255, 255, 255, 0.13)",
+                    background:
+                      selectedReportTheme === "studio"
+                        ? "rgba(33, 223, 243, 0.08)"
+                        : "rgba(46, 35, 94, 0.72)",
+                    color: "#f7f7ff",
+                    textAlign: "left",
+                  }}
+                >
+                  <div
+                    style={{
+                      height: 78,
+                      borderRadius: 10,
+                      background: "rgba(42, 33, 87, 0.96)",
+                      padding: 9,
+                      boxShadow:
+                        "inset 0 0 0 1px rgba(255, 255, 255, 0.10)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        height: 13,
+                        borderRadius: 999,
+                        background:
+                          "linear-gradient(135deg, #21dff3 0%, #7c5cff 100%)",
+                      }}
+                    />
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr",
+                        gap: 6,
+                        marginTop: 8,
+                      }}
+                    >
+                      <div
+                        style={{
+                          height: 38,
+                          borderRadius: 7,
+                          background: "rgba(53, 40, 103, 0.90)",
+                          border: "1px solid rgba(33, 223, 243, 0.20)",
+                        }}
+                      />
+                      <div
+                        style={{
+                          height: 38,
+                          borderRadius: 7,
+                          background: "rgba(46, 35, 94, 0.92)",
+                          border: "1px solid rgba(124, 92, 255, 0.34)",
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      marginTop: 10,
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 900 }}>
+                        Etrylue Studio
+                      </div>
+                      <div
+                        style={{
+                          marginTop: 3,
+                          fontSize: 11,
+                          lineHeight: 1.45,
+                          color: "#d7d5ec",
+                        }}
+                      >
+                        Report Builder 컬러
+                      </div>
+                    </div>
+
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 900,
+                        color:
+                          selectedReportTheme === "studio"
+                            ? "#78f0ff"
+                            : "#bbb8d4",
+                      }}
+                    >
+                      {selectedReportTheme === "studio" ? "● 선택됨" : "선택"}
+                    </span>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            <div
+              style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))",
                 gap: 16,
@@ -6456,6 +6790,64 @@ export default function ReportBuilderPage() {
                                   onClick={(event) => event.stopPropagation()}
                                 >
                                   <div className="reportModePill">CSV 업로드형</div>
+                                  <div
+                                    style={{
+                                      display: "grid",
+                                      gridTemplateColumns: "1fr 1fr",
+                                      gap: 5,
+                                      width: "100%",
+                                    }}
+                                  >
+                                    {(["light", "studio"] as ReportTheme[]).map(
+                                      (theme) => {
+                                        const active =
+                                          normalizeReportTheme(r.report_theme) ===
+                                          theme;
+                                        const saving =
+                                          savingReportThemeId === r.id;
+
+                                        return (
+                                          <button
+                                            key={theme}
+                                            type="button"
+                                            className="subBtn"
+                                            onClick={() =>
+                                              updateExistingReportTheme(r, theme)
+                                            }
+                                            disabled={saving}
+                                            aria-pressed={active}
+                                            style={{
+                                              minWidth: 0,
+                                              padding: "6px 5px",
+                                              borderRadius: 9,
+                                              fontSize: 10,
+                                              borderColor: active
+                                                ? "#21dff3"
+                                                : "rgba(255, 255, 255, 0.13)",
+                                              background: active
+                                                ? "rgba(33, 223, 243, 0.12)"
+                                                : "rgba(53, 40, 103, 0.90)",
+                                              color: active
+                                                ? "#78f0ff"
+                                                : "#d7d5ec",
+                                              boxShadow: "none",
+                                            }}
+                                            title={
+                                              theme === "studio"
+                                                ? "Etrylue Studio 테마로 변경"
+                                                : "Etrylue Light 테마로 변경"
+                                            }
+                                          >
+                                            {saving
+                                              ? "저장"
+                                              : theme === "studio"
+                                                ? "Studio"
+                                                : "Light"}
+                                          </button>
+                                        );
+                                      }
+                                    )}
+                                  </div>
                                 </div>
                               );
                             }
@@ -6483,6 +6875,65 @@ export default function ReportBuilderPage() {
                                 className="reportActionRail"
                                 onClick={(event) => event.stopPropagation()}
                               >
+                                  <div
+                                    style={{
+                                      display: "grid",
+                                      gridTemplateColumns: "1fr 1fr",
+                                      gap: 5,
+                                      width: "100%",
+                                    }}
+                                  >
+                                    {(["light", "studio"] as ReportTheme[]).map(
+                                      (theme) => {
+                                        const active =
+                                          normalizeReportTheme(r.report_theme) ===
+                                          theme;
+                                        const saving =
+                                          savingReportThemeId === r.id;
+
+                                        return (
+                                          <button
+                                            key={theme}
+                                            type="button"
+                                            className="subBtn"
+                                            onClick={() =>
+                                              updateExistingReportTheme(r, theme)
+                                            }
+                                            disabled={saving}
+                                            aria-pressed={active}
+                                            style={{
+                                              minWidth: 0,
+                                              padding: "6px 5px",
+                                              borderRadius: 9,
+                                              fontSize: 10,
+                                              borderColor: active
+                                                ? "#21dff3"
+                                                : "rgba(255, 255, 255, 0.13)",
+                                              background: active
+                                                ? "rgba(33, 223, 243, 0.12)"
+                                                : "rgba(53, 40, 103, 0.90)",
+                                              color: active
+                                                ? "#78f0ff"
+                                                : "#d7d5ec",
+                                              boxShadow: "none",
+                                            }}
+                                            title={
+                                              theme === "studio"
+                                                ? "Etrylue Studio 테마로 변경"
+                                                : "Etrylue Light 테마로 변경"
+                                            }
+                                          >
+                                            {saving
+                                              ? "저장"
+                                              : theme === "studio"
+                                                ? "Studio"
+                                                : "Light"}
+                                          </button>
+                                        );
+                                      }
+                                    )}
+                                  </div>
+
                                 <button
                                   type="button"
                                   className="subBtn reportSyncBtn"

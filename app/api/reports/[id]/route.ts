@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
 import { isTrueMasterUser } from "@/src/lib/true-master-access";
+import { normalizeReportTheme } from "@/src/lib/report/theme";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -493,6 +494,15 @@ export async function PATCH(req: Request, ctx: Ctx) {
 
     const incomingMeta = isPlainObject(body.meta) ? body.meta : undefined;
 
+    const hasReportTheme =
+      incomingMeta
+        ? Object.prototype.hasOwnProperty.call(incomingMeta, "report_theme")
+        : false;
+
+    const incomingReportTheme = hasReportTheme
+      ? normalizeReportTheme(incomingMeta?.report_theme)
+      : undefined;
+
     const hasMonthGoal =
       Object.prototype.hasOwnProperty.call(body, "month_goal") ||
       (incomingMeta
@@ -534,12 +544,16 @@ export async function PATCH(req: Request, ctx: Ctx) {
 
     const meta =
       incomingMeta !== undefined ||
+      incomingReportTheme !== undefined ||
       incomingMonthGoal !== undefined ||
       incomingBrandSearchContracts !== undefined ||
       incomingMediaSyncSettings !== undefined
         ? {
             ...existingMeta,
             ...(incomingMeta ?? {}),
+            ...(incomingReportTheme !== undefined
+              ? { report_theme: incomingReportTheme }
+              : {}),
             ...(incomingMonthGoal !== undefined
               ? { month_goal: incomingMonthGoal }
               : {}),

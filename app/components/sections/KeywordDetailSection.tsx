@@ -873,7 +873,7 @@ const VirtualKeywordList = memo(function VirtualKeywordList({
       className={
         compact
           ? "mt-2 max-h-72 overflow-auto pr-1"
-          : "mt-3 overflow-auto pr-1 lg:max-h-[calc(100vh-17rem)]"
+          : "keyword-detail-list-scroll mt-3 overflow-auto pr-1 lg:max-h-[calc(100vh-17rem)]"
       }
     >
       <div
@@ -1084,7 +1084,7 @@ const KeywordListPanel = memo(function KeywordListPanel({
   );
 
   return (
-    <aside className="min-w-0 rounded-[20px] border border-[var(--nature-border-blue)] bg-white p-4 shadow-[0_4px_14px_rgba(127,166,196,0.07)] lg:sticky lg:top-24 lg:max-h-[calc(100vh-6rem)] lg:overflow-hidden">
+    <aside className="keyword-detail-list-panel min-w-0 rounded-[20px] border border-[var(--nature-border-blue)] bg-white p-4 shadow-[0_4px_14px_rgba(127,166,196,0.07)] lg:sticky lg:top-24 lg:max-h-[calc(100vh-6rem)] lg:overflow-hidden">
       <div className="flex items-center justify-between gap-3">
         <div className="text-sm font-semibold">키워드 리스트</div>
         <div className="min-w-0 truncate text-xs text-[#7A8794]">
@@ -1394,9 +1394,15 @@ export default function KeywordDetailSection(props: Props) {
   );
 
   return (
-    <section className="w-full min-w-0">
-      <div className="mt-4 grid grid-cols-1 items-start gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
-        <div className={showOverviewSlide ? "min-w-0" : "hidden"}>
+    <section data-report-section="keyword-detail" className="w-full min-w-0">
+      <div
+        data-detail-overview-height-match={activeSlide === 0 ? "true" : undefined}
+        className="mt-4 grid grid-cols-1 items-start gap-6 lg:grid-cols-[360px_minmax(0,1fr)]"
+      >
+        <div
+          data-detail-list-column="true"
+          className={showOverviewSlide ? "min-w-0" : "hidden"}
+        >
           <KeywordListPanel
             keywords={filteredKeywordList}
             selectedKeyword={selectedKeyword}

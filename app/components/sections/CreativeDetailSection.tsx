@@ -1541,10 +1541,13 @@ export default function CreativeDetailSection({
 
   return (
     <section className="w-full min-w-0">
-      <div className="mt-4 grid grid-cols-1 items-start gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
+      <div
+        data-detail-overview-height-match={activeSlide === 0 ? "true" : undefined}
+        className="mt-4 grid grid-cols-1 items-start gap-6 lg:grid-cols-[360px_minmax(0,1fr)]"
+      >
         <aside
           className={[
-            "min-w-0 rounded-[20px] border border-[var(--nature-border-blue)] bg-white p-4 shadow-[0_4px_14px_rgba(127,166,196,0.07)] self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-hidden",
+            "creative-detail-list-panel min-w-0 rounded-[20px] border border-[var(--nature-border-blue)] bg-white p-4 shadow-[0_4px_14px_rgba(127,166,196,0.07)] self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-hidden",
             showOverviewSlide ? "" : "hidden",
           ].join(" ")}
         >
@@ -1612,7 +1615,7 @@ export default function CreativeDetailSection({
             </div>
           </div>
 
-          <div className="mt-4 overflow-auto pr-1 lg:max-h-[calc(100vh-20rem)]">
+          <div className="creative-detail-list-scroll mt-4 overflow-auto pr-1 lg:max-h-[calc(100vh-20rem)]">
             <div className="flex flex-col gap-2.5">
               {creatives.length === 0 ? (
                 <div className="rounded-[14px] border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">
@@ -1675,7 +1678,7 @@ export default function CreativeDetailSection({
           ) : null}
 
           <div className={showOverviewSlide ? "min-w-0" : "hidden"}>
-            <section className="min-w-0 rounded-[20px] border border-[var(--nature-border-blue)] bg-white p-6 shadow-[0_4px_14px_rgba(127,166,196,0.07)]">
+            <section data-creative-detail-insight="true" className="min-w-0 rounded-[20px] border border-[var(--nature-border-blue)] bg-white p-6 shadow-[0_4px_14px_rgba(127,166,196,0.07)]">
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
               <div className="min-w-0">
                 <div className="flex items-start justify-between gap-4">

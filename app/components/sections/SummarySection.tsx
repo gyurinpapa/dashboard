@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Fragment,
   memo,
   useCallback,
   useEffect,
@@ -95,6 +96,10 @@ const EMPTY_MUTABLE_LIST: any[] = [];
 
 const SOURCE_ROW_HEIGHT = 57;
 const DAILY_ROW_HEIGHT = 57;
+const DAILY_VISIBLE_ROW_COUNT = 10;
+const DAILY_TABLE_HEADER_HEIGHT = 48;
+const DAILY_TABLE_SCROLL_HEIGHT =
+  DAILY_TABLE_HEADER_HEIGHT + DAILY_ROW_HEIGHT * DAILY_VISIBLE_ROW_COUNT;
 const TABLE_OVERSCAN = 8;
 const TABLE_FALLBACK_VIEWPORT_HEIGHT = 720;
 const DAILY_ACTIVATION_ROOT_MARGIN = "1200px 0px";
@@ -1525,6 +1530,7 @@ const DailyPerformanceTable = memo(function DailyPerformanceTable({
   maxCost,
   maxConv,
   maxRev,
+  constrainToTenRows = false,
 }: {
   mode: MetricMode;
   rows: readonly DailyDisplayRow[];
@@ -1533,6 +1539,7 @@ const DailyPerformanceTable = memo(function DailyPerformanceTable({
   maxCost: number;
   maxConv: number;
   maxRev: number;
+  constrainToTenRows?: boolean;
 }) {
   const activation = useActivateWhenNearViewport<HTMLDivElement>();
   const wrapperRef = activation.ref;
@@ -1595,9 +1602,34 @@ const DailyPerformanceTable = memo(function DailyPerformanceTable({
     []
   );
 
+  const updateFromInternalScroll = useCallback(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+
+    const nextViewportHeight = Math.max(
+      DAILY_ROW_HEIGHT,
+      el.clientHeight - DAILY_TABLE_HEADER_HEIGHT
+    );
+    const nextScrollTop = Math.max(
+      0,
+      el.scrollTop - DAILY_TABLE_HEADER_HEIGHT
+    );
+
+    setViewportHeight((prev) =>
+      prev === nextViewportHeight ? prev : nextViewportHeight
+    );
+
+    updateVisibleRange(nextScrollTop, nextViewportHeight, rows.length);
+  }, [rows.length, updateVisibleRange, wrapperRef]);
+
   const updateFromWindowScroll = useCallback(() => {
     const el = wrapperRef.current;
     if (!el) return;
+
+    if (constrainToTenRows) {
+      updateFromInternalScroll();
+      return;
+    }
 
     const rect = el.getBoundingClientRect();
     const elementHeight = el.offsetHeight || TABLE_FALLBACK_VIEWPORT_HEIGHT;
@@ -1612,7 +1644,25 @@ const DailyPerformanceTable = memo(function DailyPerformanceTable({
     );
 
     updateVisibleRange(visibleTop, nextViewportHeight, rows.length);
-  }, [rows.length, updateVisibleRange, wrapperRef]);
+  }, [
+    constrainToTenRows,
+    rows.length,
+    updateFromInternalScroll,
+    updateVisibleRange,
+    wrapperRef,
+  ]);
+
+  const handleInternalScroll = useCallback(() => {
+    if (!constrainToTenRows) return;
+
+    if (frameRef.current != null) {
+      cancelAnimationFrame(frameRef.current);
+    }
+
+    frameRef.current = requestAnimationFrame(() => {
+      updateFromInternalScroll();
+    });
+  }, [constrainToTenRows, updateFromInternalScroll]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -1687,7 +1737,19 @@ const DailyPerformanceTable = memo(function DailyPerformanceTable({
   }, [isActive, rows, visibleRange]);
 
   return (
-    <div ref={wrapperRef} className={DAILY_TABLE_SURFACE_CLASS}>
+    <div
+      ref={wrapperRef}
+      className={DAILY_TABLE_SURFACE_CLASS}
+      onScroll={constrainToTenRows ? handleInternalScroll : undefined}
+      style={
+        constrainToTenRows
+          ? {
+              maxHeight: `${DAILY_TABLE_SCROLL_HEIGHT}px`,
+              overflowY: "auto",
+            }
+          : undefined
+      }
+    >
       <table className={mode.tableClassName}>
         <MetricColGroup mode={mode} />
         <DailyTableHead mode={mode} />
@@ -2552,10 +2614,37 @@ function SummarySectionComponent(props: Props) {
                   </div>
                 </div>
 
-                <div className="relative mb-12 mt-16 overflow-hidden pt-10 text-center">
-                  <div className="pointer-events-none absolute inset-x-[-18%] bottom-[-92px] h-[175px] rounded-[50%] bg-[rgba(183,215,227,0.24)]" />
-                  <div className="pointer-events-none absolute inset-x-[-10%] bottom-[-76px] h-[138px] rounded-[50%] border-t border-[#7FA6C4]/38 bg-[rgba(243,228,210,0.28)]" />
-                  <div className="pointer-events-none absolute inset-x-[5%] bottom-[-56px] h-[100px] rounded-[50%] border-t border-white/90 bg-white/28" />
+                <div
+                  data-cost-horizon="shell"
+                  className="relative mb-12 mt-16 overflow-hidden pt-10 text-center"
+                >
+                  <div
+                    data-cost-horizon="light"
+                    data-light-horizon="ambient"
+                    className="pointer-events-none absolute"
+                  />
+                  <div
+                    data-cost-horizon="light"
+                    data-light-horizon="orbit"
+                    className="pointer-events-none absolute"
+                  />
+                  <div
+                    data-cost-horizon="light"
+                    data-light-horizon="beam"
+                    className="pointer-events-none absolute"
+                  />
+
+                  <div data-cost-horizon="studio" aria-hidden="true">
+                    <span data-cost-horizon="arc-primary" />
+                    <span data-cost-horizon="arc-secondary" />
+                    <span data-cost-horizon="beam" />
+                    <span data-cost-horizon="glow" />
+                    <span data-cost-horizon="ray" data-ray="-2" />
+                    <span data-cost-horizon="ray" data-ray="-1" />
+                    <span data-cost-horizon="ray" data-ray="0" />
+                    <span data-cost-horizon="ray" data-ray="1" />
+                    <span data-cost-horizon="ray" data-ray="2" />
+                  </div>
 
                   <div className="relative z-10 pb-2">
                     <div className="text-[9px] font-bold uppercase tracking-[0.18em] text-[#5F87A3]">
@@ -2576,7 +2665,7 @@ function SummarySectionComponent(props: Props) {
               </div>
             </div>
 
-            <div className="order-2 min-h-[220px] overflow-hidden rounded-[24px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] p-4 shadow-[0_7px_20px_rgba(127,166,196,0.08)] sm:p-5 xl:col-start-1 xl:row-start-1">
+            <div data-studio-chart="weekly" className="order-2 min-h-[220px] overflow-hidden rounded-[24px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] p-4 shadow-[0_7px_20px_rgba(127,166,196,0.08)] sm:p-5 xl:col-start-1 xl:row-start-1">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="text-[10px] font-bold tracking-[0.12em] text-[#5F87A3]">
@@ -2700,7 +2789,7 @@ function SummarySectionComponent(props: Props) {
 
                     {dashboardHeatmap.gridRows.map(
                       (row, dayIndex) => (
-                        <>
+                        <Fragment key={`heat-row-${dayIndex}`}>
                           <div
                             key={`heat-day-${dayIndex}`}
                             className="flex h-7 items-center text-[9px] font-semibold text-slate-400"
@@ -2725,7 +2814,7 @@ function SummarySectionComponent(props: Props) {
                                 .join(" ")}
                             />
                           ))}
-                        </>
+                        </Fragment>
                       )
                     )}
                   </div>
@@ -2778,7 +2867,7 @@ function SummarySectionComponent(props: Props) {
               )}
             </div>
 
-            <div className="order-4 min-h-[220px] overflow-hidden rounded-[24px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] p-4 shadow-[0_7px_20px_rgba(127,166,196,0.08)] sm:p-5 xl:col-start-3 xl:row-start-1">
+            <div data-studio-chart="daily" className="order-4 min-h-[220px] overflow-hidden rounded-[24px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] p-4 shadow-[0_7px_20px_rgba(127,166,196,0.08)] sm:p-5 xl:col-start-3 xl:row-start-1">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="text-[10px] font-bold tracking-[0.12em] text-[#5F87A3]">
@@ -2979,7 +3068,7 @@ function SummarySectionComponent(props: Props) {
                 maxRev={trendDerived.maxRev}
               />
 
-              <div className={CHART_SURFACE_CLASS}>
+              <div data-summary-weekly-trend-chart="true" className={CHART_SURFACE_CLASS}>
                 <SummaryChart reportType={reportType} data={stableWeekChartData} />
               </div>
             </div>
@@ -3017,7 +3106,7 @@ function SummarySectionComponent(props: Props) {
             />
           </div>
 
-          <div>
+          <div data-summary-daily-performance="true">
             <SectionIntro
               badge="DAILY"
               title={copy.dailyTitle}
@@ -3034,6 +3123,7 @@ function SummarySectionComponent(props: Props) {
 
             <DailyPerformanceTable
               mode={mode}
+              constrainToTenRows={activeSlide != null}
               rows={sourceDerived.dailyDisplayRows}
               maxImpr={sourceDerived.dayMaxImpr}
               maxClicks={sourceDerived.dayMaxClicks}

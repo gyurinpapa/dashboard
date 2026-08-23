@@ -497,7 +497,7 @@ const KeywordRankingChart = memo(function KeywordRankingChart({
 }) {
   return (
     <ChartCard badge={badge} title={title} description={description}>
-      <div style={{ width: "100%", height: 340 }}>
+      <div data-studio-axis-white="true" style={{ width: "100%", height: 340 }}>
         <ResponsiveContainer
           width="100%"
           height="100%"
@@ -1322,6 +1322,7 @@ export default function KeywordSection({
 
           <div
             ref={tableScrollRef}
+            data-report-ten-row-scroll={activeSlide != null ? "true" : undefined}
             className="overflow-auto rounded-[20px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] shadow-[0_4px_14px_rgba(127,166,196,0.07)]"
           >
             <table className="w-full border-collapse text-sm">

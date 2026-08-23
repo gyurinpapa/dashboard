@@ -1,4 +1,5 @@
 // app/api/share/[token]/route.ts
+import { normalizeReportTheme } from "@/src/lib/report/theme";
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { loadWorkspaceBrandingInfo } from "@/src/lib/workspace-branding";
@@ -125,6 +126,8 @@ function buildPublicMeta(metaValue: any) {
       out.brand_search_contracts = publicContracts;
     }
   }
+
+  out.report_theme = normalizeReportTheme(meta.report_theme);
 
   return out;
 }

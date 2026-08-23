@@ -723,17 +723,22 @@ const InsightPanel = memo(function InsightPanel({
 type CampaignTableProps = {
   reportMode: ReportMode;
   campaignRows: any[];
+  constrainToTenRows?: boolean;
 };
 
 const CampaignTable = memo(function CampaignTable({
   reportMode,
   campaignRows,
+  constrainToTenRows = false,
 }: CampaignTableProps) {
   const campMax = useMemo(() => getMetricMaxes(campaignRows), [campaignRows]);
   const tableMeta = getTableMeta(reportMode);
 
   return (
-    <div className={TABLE_SURFACE_CLASS}>
+    <div
+      className={TABLE_SURFACE_CLASS}
+      data-report-ten-row-scroll={constrainToTenRows ? "true" : undefined}
+    >
       <table
         className={[
           "w-full text-sm border-collapse",
@@ -847,17 +852,22 @@ const CampaignTable = memo(function CampaignTable({
 type GroupTableProps = {
   reportMode: ReportMode;
   groupAggRows: any[];
+  constrainToTenRows?: boolean;
 };
 
 const GroupTable = memo(function GroupTable({
   reportMode,
   groupAggRows,
+  constrainToTenRows = false,
 }: GroupTableProps) {
   const grpMax = useMemo(() => getMetricMaxes(groupAggRows), [groupAggRows]);
   const tableMeta = getTableMeta(reportMode);
 
   return (
-    <div className={TABLE_SURFACE_CLASS}>
+    <div
+      className={TABLE_SURFACE_CLASS}
+      data-report-ten-row-scroll={constrainToTenRows ? "true" : undefined}
+    >
       <table
         className={[
           "w-full text-sm border-collapse",
@@ -973,12 +983,14 @@ type GroupSectionProps = {
   reportMode: ReportMode;
   scopedRows: any[];
   description: string;
+  constrainToTenRows?: boolean;
 };
 
 const GroupSection = memo(function GroupSection({
   reportMode,
   scopedRows,
   description,
+  constrainToTenRows = false,
 }: GroupSectionProps) {
   const [selectedCampaign, setSelectedCampaign] = useState<string | null>(null);
   const [campaignOpen, setCampaignOpen] = useState(false);
@@ -1068,7 +1080,11 @@ const GroupSection = memo(function GroupSection({
         </div>
       </div>
 
-      <GroupTable reportMode={reportMode} groupAggRows={groupAggRows} />
+      <GroupTable
+        reportMode={reportMode}
+        groupAggRows={groupAggRows}
+        constrainToTenRows={constrainToTenRows}
+      />
     </div>
   );
 });
@@ -1171,7 +1187,11 @@ export default function StructureSection({
             compact
           />
 
-          <CampaignTable reportMode={reportMode} campaignRows={campaignRows} />
+          <CampaignTable
+            reportMode={reportMode}
+            campaignRows={campaignRows}
+            constrainToTenRows={!showAllSlides}
+          />
         </div>
       ) : null}
 
@@ -1189,6 +1209,7 @@ export default function StructureSection({
             reportMode={reportMode}
             scopedRows={scopedRows}
             description={copy.groupDescription}
+            constrainToTenRows={!showAllSlides}
           />
         </div>
       ) : null}

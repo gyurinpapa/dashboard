@@ -6,6 +6,8 @@ import { sbAuth } from "@/src/lib/supabase/auth-server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+import { normalizeReportTheme } from "@/src/lib/report/theme";
+
 const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
 
 type ReportDataSourceKind = "csv" | "api";
@@ -99,6 +101,7 @@ function normalizeReportMeta(input: any) {
 
     return {
       ...meta,
+      report_theme: normalizeReportTheme(meta.report_theme),
       data_source: {
         ...normalizedDataSource,
         kind: "api" as const,
@@ -110,6 +113,7 @@ function normalizeReportMeta(input: any) {
 
   return {
     ...meta,
+    report_theme: normalizeReportTheme(meta.report_theme),
     data_source: {
       ...existingDataSource,
       kind: "csv" as const,

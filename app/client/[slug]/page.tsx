@@ -1,5 +1,6 @@
 "use client";
 
+import { pickReportThemeFromMeta } from "@/src/lib/report/theme";
 import {
   memo,
   useDeferredValue,
@@ -521,6 +522,7 @@ export default function ClientSlugReportPage() {
       reportTypeName={reportTypeName}
       reportTypeKey={reportTypeKey}
       workspaceLogoUrl={workspaceLogoUrl}
+      reportTheme={pickReportThemeFromMeta(report?.meta)}
       reportPeriod={shareReportPeriod}
       monthGoal={monthGoal}
       brandSearchContracts={brandSearchContracts}
