@@ -60,6 +60,35 @@ function isOnlyMasterEmail(email: any) {
   return normalizeEmail(email) === ONLY_MASTER_EMAIL;
 }
 
+async function hasMasterMembership(userId: string) {
+  const id = asString(userId);
+  if (!id) return false;
+
+  const { data, error } = await supabaseAdmin
+    .from("workspace_members")
+    .select("workspace_id")
+    .eq("user_id", id)
+    .eq("role", "master")
+    .limit(1);
+
+  if (error) {
+    throw new Error(`FAILED_TO_FETCH_MASTER_MEMBERSHIP:${error.message}`);
+  }
+
+  return Array.isArray(data) && data.length > 0;
+}
+
+async function isTrueMasterUser(
+  userId: string,
+  email?: string | null,
+) {
+  if (!isOnlyMasterEmail(email)) {
+    return false;
+  }
+
+  return await hasMasterMembership(userId);
+}
+
 function canCreateReport(
   role: string | null | undefined,
   email?: string | null,
@@ -394,31 +423,45 @@ export async function POST(req: Request) {
     }
 
     // ✅ 3) 멤버십 체크 (resolved workspace 기준)
-    const { data: wm, error: wmErr } =
-      await supabaseAdmin
-        .from("workspace_members")
-        .select("workspace_id, role")
-        .eq("workspace_id", resolved_workspace_id)
-        .eq("user_id", created_by)
-        .limit(1)
-        .maybeSingle();
+    // - true master는 검증된 cross-workspace authority를 사용
+    // - 그 외 사용자는 기존 target workspace membership 계약을 그대로 유지
+    const actorIsTrueMaster =
+      await isTrueMasterUser(created_by, userEmail);
 
-    if (wmErr) {
-      return jsonError(500, wmErr.message);
-    }
+    let wm: {
+      workspace_id?: string | null;
+      role?: string | null;
+    } | null = null;
 
-    if (!wm) {
-      return jsonError(
-        403,
-        "Forbidden: you are not a member of this workspace",
-      );
-    }
+    if (!actorIsTrueMaster) {
+      const { data, error: wmErr } =
+        await supabaseAdmin
+          .from("workspace_members")
+          .select("workspace_id, role")
+          .eq("workspace_id", resolved_workspace_id)
+          .eq("user_id", created_by)
+          .limit(1)
+          .maybeSingle();
 
-    if (!canCreateReport(wm.role, userEmail)) {
-      return jsonError(
-        403,
-        "Forbidden: insufficient workspace role",
-      );
+      if (wmErr) {
+        return jsonError(500, wmErr.message);
+      }
+
+      wm = data;
+
+      if (!wm) {
+        return jsonError(
+          403,
+          "Forbidden: you are not a member of this workspace",
+        );
+      }
+
+      if (!canCreateReport(wm.role, userEmail)) {
+        return jsonError(
+          403,
+          "Forbidden: insufficient workspace role",
+        );
+      }
     }
 
     // ✅ 3-1) advertiser_id가 들어오면 같은 workspace 소속 광고주인지 최종 재검증
@@ -437,7 +480,9 @@ export async function POST(req: Request) {
       }
 
       const normalizedWorkspaceRole =
-        asString(wm.role).toLowerCase();
+        actorIsTrueMaster
+          ? "master"
+          : asString(wm?.role).toLowerCase();
 
       if (
         !adv ||
