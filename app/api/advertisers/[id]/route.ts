@@ -99,6 +99,37 @@ async function isTrueMasterUser(userId: string, workspaceId: string) {
   return role === "master";
 }
 
+async function hasMasterMembership(userId: string) {
+  const id = asString(userId);
+  if (!id) return false;
+
+  const { data, error } = await supabaseAdmin
+    .from("workspace_members")
+    .select("workspace_id")
+    .eq("user_id", id)
+    .eq("role", "master")
+    .limit(1);
+
+  if (error) {
+    throw new Error(`MASTER_MEMBERSHIP_CHECK_FAILED:${error.message}`);
+  }
+
+  return Array.isArray(data) && data.length > 0;
+}
+
+async function isCrossWorkspaceTrueMasterUser(userId: string) {
+  const id = asString(userId);
+  if (!id) return false;
+
+  const email = await getProfileEmailByUserId(id);
+
+  if (email !== ONLY_MASTER_EMAIL) {
+    return false;
+  }
+
+  return await hasMasterMembership(id);
+}
+
 function canManageWorkspaceAdvertiser(role: string) {
   return role === "director" || role === "admin";
 }
@@ -283,7 +314,7 @@ export async function DELETE(req: Request, ctx: Ctx) {
     }
 
     const role = await getWorkspaceRole(user.id, workspaceId);
-    const isTrueMaster = await isTrueMasterUser(user.id, workspaceId);
+    const isTrueMaster = await isCrossWorkspaceTrueMasterUser(user.id);
     const advertiserCreatedBy = asString((adv as any)?.created_by);
 
     if (
@@ -355,6 +386,12 @@ export async function DELETE(req: Request, ctx: Ctx) {
     if (msg.startsWith("WORKSPACE_ROLE_CHECK_FAILED:")) {
       return jsonError(500, "WORKSPACE_ROLE_CHECK_FAILED", {
         detail: msg.replace("WORKSPACE_ROLE_CHECK_FAILED:", ""),
+      });
+    }
+
+    if (msg.startsWith("MASTER_MEMBERSHIP_CHECK_FAILED:")) {
+      return jsonError(500, "MASTER_MEMBERSHIP_CHECK_FAILED", {
+        detail: msg.replace("MASTER_MEMBERSHIP_CHECK_FAILED:", ""),
       });
     }
 
