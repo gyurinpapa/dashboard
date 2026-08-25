@@ -3753,6 +3753,86 @@ export default function ReportBuilderPage() {
                   </div>
                 </div>
               </div>
+
+              <div
+                style={{
+                  width: "100%",
+                  maxWidth: 760,
+                  marginTop: 10,
+                  paddingTop: 14,
+                  borderTop: "1px solid rgba(255, 255, 255, 0.10)",
+                  textAlign: "center",
+                }}
+              >
+                <div
+                  style={{
+                    color: "#d7d5e8",
+                    fontSize: 12,
+                    lineHeight: 1.65,
+                  }}
+                >
+                  <strong style={{ color: "#f0eff8", fontWeight: 800 }}>
+                    Google Ads Integration
+                  </strong>
+                  {" · "}
+                  Authorized users connect their Google Ads accounts through
+                  OAuth 2.0. Google Ads API access is used for reporting and
+                  analytics only, not for creating or editing ads.
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "center",
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                    gap: 7,
+                    marginTop: 7,
+                    fontSize: 12,
+                    fontWeight: 700,
+                  }}
+                >
+                  <Link
+                    href="/about"
+                    style={{ color: "#82efff", textDecoration: "none" }}
+                  >
+                    Google Ads Integration
+                  </Link>
+
+                  <span aria-hidden="true" style={{ color: "#77738f" }}>
+                    ·
+                  </span>
+
+                  <Link
+                    href="/privacy"
+                    style={{ color: "#82efff", textDecoration: "none" }}
+                  >
+                    Privacy Policy
+                  </Link>
+
+                  <span aria-hidden="true" style={{ color: "#77738f" }}>
+                    ·
+                  </span>
+
+                  <Link
+                    href="/terms"
+                    style={{ color: "#82efff", textDecoration: "none" }}
+                  >
+                    Terms of Service
+                  </Link>
+
+                  <span aria-hidden="true" style={{ color: "#77738f" }}>
+                    ·
+                  </span>
+
+                  <a
+                    href="mailto:etrylue3479@gmail.com"
+                    style={{ color: "#82efff", textDecoration: "none" }}
+                  >
+                    Contact
+                  </a>
+                </div>
+              </div>
             </>
           ) : (
             <>
