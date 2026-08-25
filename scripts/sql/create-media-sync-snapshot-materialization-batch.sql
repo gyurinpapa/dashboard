@@ -17,6 +17,7 @@ CREATE OR REPLACE FUNCTION public.materialize_media_sync_snapshot_batch(p_payloa
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO 'pg_catalog', 'public', 'extensions'
+ SET statement_timeout TO '2min'
 AS $function$
 declare
   v_job public.media_sync_jobs%rowtype;
