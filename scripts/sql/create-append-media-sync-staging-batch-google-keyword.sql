@@ -129,6 +129,25 @@ begin
       message = 'MSS_JOB_NOT_PROCESSING';
   end if;
 
+  /*
+   * Staging becomes immutable once snapshot materialization has started.
+   *
+   * The job row lock above serializes append and prepare transactions.
+   * After prepare commits, either the primary snapshot mirror or a report
+   * projection proves that materialization authority has been established.
+   */
+  if v_job.snapshot_ingestion_id is not null
+     or exists (
+       select 1
+       from public.media_sync_report_projections as projection
+       where projection.media_sync_job_id = v_job_id
+     )
+  then
+    raise exception using
+      errcode = 'P0001',
+      message = 'MSS_JOB_NOT_PROCESSING';
+  end if;
+
   if v_job.provider not in (
        'naver_searchad',
        'google_ads'
