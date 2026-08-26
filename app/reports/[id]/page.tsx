@@ -186,6 +186,12 @@ type MediaSyncSettingsDraft = {
   mode: "snapshot_replace";
 };
 
+type ReportMediaSyncJob = {
+  id?: string | null;
+  status?: string | null;
+  progress?: number | null;
+};
+
 function normalizeYmdInput(value: any) {
   const normalized = String(value ?? "").trim();
 
@@ -221,6 +227,23 @@ function isMediaSyncDateWindowAllowed(dateFrom: string, dateTo: string) {
   const days = getInclusiveDateWindowDays(dateFrom, dateTo);
 
   return days >= 1 && days <= MAX_MEDIA_SYNC_DATE_WINDOW_DAYS;
+}
+
+function isActiveMediaSyncJobStatus(status: any) {
+  return status === "pending" || status === "processing";
+}
+
+function getMediaSyncJobStatusText(job: ReportMediaSyncJob | null) {
+  if (!job) return "동기화 요청 전";
+  if (job.status === "pending") return "대기 중";
+  if (job.status === "processing") {
+    const progress = Math.max(0, Math.min(100, Number(job.progress ?? 0)));
+    return `처리 중 ${progress}%`;
+  }
+  if (job.status === "done") return "완료";
+  if (job.status === "failed") return "실패";
+  if (job.status === "cancelled") return "취소됨";
+  return String(job.status ?? "상태 확인");
 }
 
 function normalizeMediaSyncDataLevel(value: any): MediaSyncSettingsDraft["dataLevel"] {
@@ -1575,6 +1598,9 @@ export default function ReportDetailPage() {
   const [mediaSyncSettingsSavedText, setMediaSyncSettingsSavedText] =
     useState<string>("");
   const lastLoadedMediaSyncSettingsKeyRef = useRef<string>("");
+  const [mediaSyncJob, setMediaSyncJob] = useState<ReportMediaSyncJob | null>(null);
+  const [loadingMediaSyncJob, setLoadingMediaSyncJob] = useState(false);
+  const [requestingMediaSync, setRequestingMediaSync] = useState(false);
 
   const [creativesMap, setCreativesMap] = useState<Record<string, string>>({});
   const creativesBatchIdRef = useRef<string | null | undefined>(undefined);
@@ -2584,7 +2610,7 @@ export default function ReportDetailPage() {
       lastLoadedMediaSyncSettingsKeyRef.current = savedKey;
       setMediaSyncSettingsSavedText("저장 완료");
       setMsg(
-        "API 동기화 기간이 저장되었습니다. Report Builder의 동기화 요청은 이 기간만 사용합니다.",
+        "API 동기화 기간이 저장되었습니다. 이 화면의 동기화 요청은 이 기간만 사용합니다.",
       );
     } catch (e: any) {
       setMediaSyncSettingsSavedText("");
@@ -2593,6 +2619,191 @@ export default function ReportDetailPage() {
       setSavingMediaSyncSettings(false);
     }
   }, [mediaSyncSettings, reportId]);
+
+  const fetchLatestMediaSyncJob = useCallback(
+    async (silent = false) => {
+      if (!reportId || !isApiReport) {
+        setMediaSyncJob(null);
+        return null;
+      }
+
+      if (!silent) {
+        setLoadingMediaSyncJob(true);
+      }
+
+      try {
+        const res = await authFetch(
+          `/api/reports/${encodeURIComponent(reportId)}/media-sync-jobs`,
+          {
+            method: "GET",
+          },
+        );
+
+        const json = await safeJson(res);
+
+        if (!res.ok || !json?.ok) {
+          if (!silent) {
+            setMsg(json?.error || "동기화 상태 조회 실패");
+          }
+          return null;
+        }
+
+        const activeJob =
+          (json?.active_job as ReportMediaSyncJob | null) ?? null;
+        const latestJob =
+          Array.isArray(json?.jobs) && json.jobs.length > 0
+            ? (json.jobs[0] as ReportMediaSyncJob)
+            : null;
+        const nextJob = activeJob ?? latestJob;
+
+        setMediaSyncJob(nextJob);
+        return nextJob;
+      } catch (e: any) {
+        if (!silent) {
+          setMsg(e?.message || "동기화 상태 조회 실패");
+        }
+        return null;
+      } finally {
+        if (!silent) {
+          setLoadingMediaSyncJob(false);
+        }
+      }
+    },
+    [isApiReport, reportId],
+  );
+
+  useEffect(() => {
+    if (!reportId || !isApiReport) {
+      setMediaSyncJob(null);
+      return;
+    }
+
+    void fetchLatestMediaSyncJob();
+  }, [fetchLatestMediaSyncJob, isApiReport, reportId]);
+
+  useEffect(() => {
+    if (
+      !reportId ||
+      !isApiReport ||
+      !isActiveMediaSyncJobStatus(mediaSyncJob?.status)
+    ) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      void fetchLatestMediaSyncJob(true);
+    }, 5000);
+
+    return () => window.clearInterval(timer);
+  }, [
+    fetchLatestMediaSyncJob,
+    isApiReport,
+    mediaSyncJob?.status,
+    reportId,
+  ]);
+
+  const handleRequestMediaSync = useCallback(async () => {
+    if (!reportId || !isApiReport || requestingMediaSync) return;
+
+    if (mediaSyncSettingsDirty) {
+      setMsg("API 동기화 기간을 먼저 저장한 뒤 동기화를 요청해 주세요.");
+      return;
+    }
+
+    const validationMessage = getMediaSyncSettingsError(mediaSyncSettings);
+    if (validationMessage) {
+      setMsg(validationMessage);
+      return;
+    }
+
+    if (isActiveMediaSyncJobStatus(mediaSyncJob?.status)) {
+      setMsg("이미 대기 또는 처리 중인 API 동기화 job이 있습니다.");
+      return;
+    }
+
+    const dateFrom = normalizeYmdInput(mediaSyncSettings.dateFrom);
+    const dateTo = normalizeYmdInput(mediaSyncSettings.dateTo);
+
+    setRequestingMediaSync(true);
+    setMsg("API 동기화 요청을 준비합니다...");
+
+    try {
+      const res = await authFetch(
+        `/api/reports/${encodeURIComponent(reportId)}/media-sync-jobs`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            dateFrom,
+            dateTo,
+            dataLevel: normalizeMediaSyncDataLevel(
+              mediaSyncSettings.dataLevel,
+            ),
+            mode: "snapshot_replace",
+          }),
+        },
+      );
+
+      const json = await safeJson(res);
+
+      if (!res.ok || !json?.ok) {
+        const syncError = String(json?.error ?? "").trim();
+
+        if (syncError === "ACTIVE_JOB_ALREADY_EXISTS") {
+          await fetchLatestMediaSyncJob(true);
+          setMsg("이미 대기 또는 처리 중인 API 동기화 job이 있습니다.");
+          return;
+        }
+
+        if (syncError === "REPORT_CONNECTION_NOT_MAPPED") {
+          setMsg("리포트에 연결된 API 매체 연결을 찾을 수 없습니다.");
+          return;
+        }
+
+        if (
+          syncError === "CONNECTION_NOT_FOUND" ||
+          syncError === "CONNECTION_SCOPE_MISMATCH" ||
+          syncError === "CONNECTION_NOT_ACTIVE"
+        ) {
+          setMsg("리포트에 연결된 API 매체 연결 상태를 확인해 주세요.");
+          return;
+        }
+
+        if (syncError === "PROVIDER_SYNC_NOT_ENABLED") {
+          setMsg("해당 매체의 API 동기화 기능은 아직 활성화되지 않았습니다.");
+          return;
+        }
+
+        if (syncError === "PROVIDER_DATA_LEVEL_NOT_SUPPORTED") {
+          setMsg(
+            "현재 리포트 데이터 수준은 해당 매체 동기화에서 지원되지 않습니다.",
+          );
+          return;
+        }
+
+        setMsg(syncError || "API 동기화 요청 실패");
+        return;
+      }
+
+      const job = (json?.job ?? null) as ReportMediaSyncJob | null;
+      setMediaSyncJob(job);
+      setMsg(`API 동기화 요청 생성 완료: ${dateFrom} ~ ${dateTo}`);
+    } catch (e: any) {
+      setMsg(e?.message || "API 동기화 요청 실패");
+    } finally {
+      setRequestingMediaSync(false);
+    }
+  }, [
+    fetchLatestMediaSyncJob,
+    isApiReport,
+    mediaSyncJob?.status,
+    mediaSyncSettings,
+    mediaSyncSettingsDirty,
+    reportId,
+    requestingMediaSync,
+  ]);
 
   const handleSaveBrandSearchContracts = useCallback(async () => {
     if (!reportId) return;
@@ -3288,10 +3499,10 @@ export default function ReportDetailPage() {
             <div className="space-y-4">
               <div>
                 API 연동형 리포트는 사용자가 저장한 기간만 media_sync_jobs의 date_from/date_to로 사용합니다.
-                저장만으로 동기화는 실행되지 않으며, 실제 동기화는 Report Builder의 동기화 요청 버튼과 Railway media sync worker가 처리합니다.
+                저장만으로 동기화는 실행되지 않으며, 실제 동기화는 이 화면의 동기화 요청 버튼과 Railway media sync worker가 처리합니다.
               </div>
 
-              <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(160px,0.6fr)_auto] md:items-end">
+              <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(160px,0.6fr)_auto_auto] md:items-end">
                 <label className="block">
                   <span className="text-xs font-extrabold text-[#bbb8d4]">API 동기화 시작일</span>
                   <input
@@ -3353,6 +3564,33 @@ export default function ReportDetailPage() {
                 >
                   {savingMediaSyncSettings ? "저장 중..." : "기간 저장"}
                 </button>
+
+                <button
+                  type="button"
+                  onClick={handleRequestMediaSync}
+                  disabled={
+                    requestingMediaSync ||
+                    loadingMediaSyncJob ||
+                    savingMediaSyncSettings ||
+                    mediaSyncSettingsDirty ||
+                    !isValidMediaSyncSettingsDraft(mediaSyncSettings) ||
+                    isActiveMediaSyncJobStatus(mediaSyncJob?.status)
+                  }
+                  className="etrylue-primary-button rounded-xl px-4 py-2.5 text-sm font-black"
+                  title={
+                    mediaSyncSettingsDirty
+                      ? "API 동기화 기간을 먼저 저장해 주세요."
+                      : isActiveMediaSyncJobStatus(mediaSyncJob?.status)
+                        ? "이미 대기 또는 처리 중인 API 동기화 job이 있습니다."
+                        : "pending job만 생성하고 실제 동기화는 Railway worker가 처리합니다."
+                  }
+                >
+                  {requestingMediaSync
+                    ? "요청 중..."
+                    : isActiveMediaSyncJobStatus(mediaSyncJob?.status)
+                      ? getMediaSyncJobStatusText(mediaSyncJob)
+                      : "동기화 요청"}
+                </button>
               </div>
 
               <div className="text-xs text-[#bbb8d4]">
@@ -3365,6 +3603,12 @@ export default function ReportDetailPage() {
                 ) : (
                   <span>저장된 기간으로만 pending job을 생성합니다.</span>
                 )}
+              </div>
+
+              <div className="text-xs text-[#bbb8d4]">
+                {loadingMediaSyncJob
+                  ? "동기화 상태 확인 중..."
+                  : `동기화 상태: ${getMediaSyncJobStatusText(mediaSyncJob)}`}
               </div>
             </div>
           ) : (
