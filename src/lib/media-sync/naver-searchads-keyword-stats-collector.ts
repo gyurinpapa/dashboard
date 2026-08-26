@@ -14,6 +14,13 @@ import {
   type NaverSearchAdsListPage,
 } from "./naver-searchads-api";
 import {
+  NaverSearchAdsAuthoritativeGrainError,
+  resolveNaverSearchAdsCampaignCollectionContract,
+} from "./naver-searchads-authoritative-grain";
+import {
+  fetchNaverSearchAdsStatReportKeywordDailyStats,
+} from "./naver-searchads-stat-report-daily-metrics";
+import {
   NAVER_KEYWORD_STATS_DEFAULT_CHUNK_PAUSE_MS,
   NAVER_KEYWORD_STATS_DEFAULT_CHUNK_SIZE,
   NAVER_KEYWORD_STATS_DEFAULT_MAX_RETRY_COUNT,
@@ -52,7 +59,8 @@ export type NaverKeywordStatsCollectorErrorCode =
   | "CONSUMER_FAILED"
   | "INVALID_PAGINATION_CURSOR"
   | "PAGE_LIMIT_EXCEEDED"
-  | "RESUME_POSITION_NOT_FOUND";
+  | "RESUME_POSITION_NOT_FOUND"
+  | "UNSUPPORTED_CAMPAIGN_TYPE";
 
 export class NaverKeywordStatsCollectorError extends Error {
   readonly code: NaverKeywordStatsCollectorErrorCode;
@@ -198,6 +206,8 @@ export type NaverKeywordStatsCollectorDependencies = {
   fetchKeywordPage: typeof fetchNaverSearchAdsKeywordPage;
   fetchKeywordDailyStats:
     typeof fetchNaverSearchAdsKeywordDailyStats;
+  fetchStatReportKeywordDailyStats?:
+    typeof fetchNaverSearchAdsStatReportKeywordDailyStats;
 
   sleep: NaverKeywordStatsCollectorSleep;
   now: () => number;
@@ -281,7 +291,13 @@ type NormalizedCollectorOptions = {
 };
 
 type ResolvedCollectorDependencies =
-  NaverKeywordStatsCollectorDependencies;
+  Omit<
+    NaverKeywordStatsCollectorDependencies,
+    "fetchStatReportKeywordDailyStats"
+  > & {
+    fetchStatReportKeywordDailyStats:
+      typeof fetchNaverSearchAdsStatReportKeywordDailyStats;
+  };
 
 type CollectorRuntimeState = {
   cursor: NaverKeywordStatsCursor;
@@ -353,6 +369,9 @@ const DEFAULT_COLLECTOR_DEPENDENCIES:
 
     fetchKeywordDailyStats:
       fetchNaverSearchAdsKeywordDailyStats,
+
+    fetchStatReportKeywordDailyStats:
+      fetchNaverSearchAdsStatReportKeywordDailyStats,
 
     sleep: async (
       milliseconds: number,
@@ -518,6 +537,10 @@ function resolveCollectorDependencies(
     [
       "fetchKeywordDailyStats",
       resolvedDependencies.fetchKeywordDailyStats,
+    ],
+    [
+      "fetchStatReportKeywordDailyStats",
+      resolvedDependencies.fetchStatReportKeywordDailyStats,
     ],
     [
       "sleep",
@@ -1570,6 +1593,43 @@ function assertResumeTargetResolved(
   );
 }
 
+function isWebSiteFastPathCampaign(
+  campaign: NaverSearchAdsCampaignRecord,
+): boolean {
+  return (
+    campaign.campaignType
+      ?.trim()
+      .toUpperCase() === "WEB_SITE"
+  );
+}
+
+function resolveKeywordCampaignContract(
+  campaign: NaverSearchAdsCampaignRecord,
+  cursor: NaverKeywordStatsCursor,
+) {
+  try {
+    return resolveNaverSearchAdsCampaignCollectionContract(
+      campaign.campaignType,
+    );
+  } catch (error) {
+    if (
+      error instanceof
+      NaverSearchAdsAuthoritativeGrainError
+    ) {
+      throw new NaverKeywordStatsCollectorError(
+        "UNSUPPORTED_CAMPAIGN_TYPE",
+        error.message,
+        {
+          cursor,
+          cause: error,
+        },
+      );
+    }
+
+    throw error;
+  }
+}
+
 async function consumeKeywordChunk(input: {
   campaign: NaverSearchAdsCampaignRecord;
   adgroup: NaverSearchAdsAdgroupRecord;
@@ -1736,6 +1796,11 @@ async function consumeKeywordChunk(input: {
         keywordIndex,
     });
 
+    const useStatReportFastPath =
+      isWebSiteFastPathCampaign(
+        input.campaign,
+      );
+
     const statsRequest:
       ApiRequestResult<NaverSearchAdsKeywordDailyStatsResult> =
       await executeApiRequestWithRetry<
@@ -1763,25 +1828,63 @@ async function consumeKeywordChunk(input: {
           input.dependencies,
 
         beforeAttempt:
-          async (): Promise<void> => {
-            await waitForStatsRequestInterval({
-              state:
-                input.state,
+          useStatReportFastPath
+            ? undefined
+            : async (): Promise<void> => {
+                await waitForStatsRequestInterval({
+                  state:
+                    input.state,
 
-              options:
-                input.options,
+                  options:
+                    input.options,
 
-              signal:
-                input.signal,
+                  signal:
+                    input.signal,
 
-              dependencies:
-                input.dependencies,
-            });
-          },
+                  dependencies:
+                    input.dependencies,
+                });
+              },
 
         request:
-          (): Promise<NaverSearchAdsKeywordDailyStatsResult> =>
-            input.dependencies.fetchKeywordDailyStats({
+          async (): Promise<NaverSearchAdsKeywordDailyStatsResult> => {
+            if (useStatReportFastPath) {
+              try {
+                return await input.dependencies
+                  .fetchStatReportKeywordDailyStats({
+                    credentials:
+                      input.credentials,
+
+                    keywordId:
+                      keyword.id,
+
+                    dateFrom:
+                      input.state.cursor.dateFrom,
+
+                    dateTo:
+                      input.state.cursor.dateTo,
+
+                    signal:
+                      input.signal,
+                  });
+              } catch {
+                await waitForStatsRequestInterval({
+                  state:
+                    input.state,
+
+                  options:
+                    input.options,
+
+                  signal:
+                    input.signal,
+
+                  dependencies:
+                    input.dependencies,
+                });
+              }
+            }
+
+            return input.dependencies.fetchKeywordDailyStats({
               credentials:
                 input.credentials,
 
@@ -1793,7 +1896,8 @@ async function consumeKeywordChunk(input: {
 
               dateTo:
                 input.state.cursor.dateTo,
-            }),
+            });
+          },
       });
 
     const cursorAfter =
@@ -1908,6 +2012,9 @@ async function consumeKeywordChunk(input: {
   });
 
   if (
+    !isWebSiteFastPathCampaign(
+      input.campaign,
+    ) &&
     input.chunk.length ===
       input.options.keywordChunkSize &&
     input.options.chunkPauseMs > 0
@@ -2742,6 +2849,25 @@ export async function collectNaverKeywordDailyStats(
           campaign.id,
         )
       ) {
+        continue;
+      }
+
+      const contract =
+        resolveKeywordCampaignContract(
+          campaign,
+          state.cursor,
+        );
+
+      if (
+        contract.authoritativeGrain !==
+        "keyword"
+      ) {
+        if (resumeTarget.enabled) {
+          markResumeCompleted(
+            resumeTarget,
+          );
+        }
+
         continue;
       }
 

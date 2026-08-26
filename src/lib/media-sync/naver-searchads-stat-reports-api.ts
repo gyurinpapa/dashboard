@@ -20,8 +20,12 @@ const NAVER_SEARCH_ADS_DOWNLOAD_PROBE_TIMEOUT_MS =
 const NAVER_SEARCH_ADS_DOWNLOAD_PROBE_MAX_BYTES =
   65_536;
 
+const NAVER_SEARCH_ADS_DOWNLOAD_MAX_BYTES =
+  64 * 1024 * 1024;
+
 const NAVER_SEARCH_ADS_STAT_REPORT_TYPES = [
   "AD",
+  "AD_CONVERSION",
   "AD_DETAIL",
   "EXPKEYWORD",
   "SHOPPINGKEYWORD_DETAIL",
@@ -93,6 +97,23 @@ export type GetNaverSearchAdsStatReportInput = {
 export type ProbeNaverSearchAdsStatReportDownloadInput = {
   credentials: NaverSearchAdsCredentials;
   downloadUrl: string;
+};
+
+export type DownloadNaverSearchAdsStatReportInput = {
+  credentials: NaverSearchAdsCredentials;
+  downloadUrl: string;
+  maxBytes?: number;
+};
+
+export type NaverSearchAdsStatReportDownloadResult = {
+  host: string;
+  pathname: string;
+  hasFileVersion: boolean;
+  status: number;
+  contentType: string | null;
+  contentDisposition: string | null;
+  bytesRead: number;
+  text: string;
 };
 
 export type NaverSearchAdsStatReportDownloadProbeResult = {
@@ -635,6 +656,28 @@ async function requestNaverSearchAdsJson(input: {
   }
 }
 
+function normalizeDownloadMaxBytes(
+  value: unknown,
+): number {
+  if (value === undefined) {
+    return NAVER_SEARCH_ADS_DOWNLOAD_MAX_BYTES;
+  }
+
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value < 1 ||
+    value > NAVER_SEARCH_ADS_DOWNLOAD_MAX_BYTES
+  ) {
+    throw new NaverSearchAdsStatReportApiError(
+      "INVALID_INPUT",
+      `maxBytes must be an integer between 1 and ${NAVER_SEARCH_ADS_DOWNLOAD_MAX_BYTES}.`,
+    );
+  }
+
+  return value;
+}
+
 function validateDownloadUrl(
   value: unknown,
 ): URL {
@@ -809,6 +852,204 @@ export async function getNaverSearchAdsStatReport(
   }
 
   return report;
+}
+
+export async function downloadNaverSearchAdsStatReport(
+  input: DownloadNaverSearchAdsStatReportInput,
+): Promise<NaverSearchAdsStatReportDownloadResult> {
+  const normalizedCredentials =
+    normalizeCredentials(
+      input.credentials,
+    );
+
+  const downloadUrl = validateDownloadUrl(
+    input.downloadUrl,
+  );
+
+  const maxBytes =
+    normalizeDownloadMaxBytes(
+      input.maxBytes,
+    );
+
+  const timestamp =
+    Date.now().toString();
+
+  const signature =
+    createNaverSearchAdsSignature({
+      timestamp,
+      method: "GET",
+      uri:
+        NAVER_SEARCH_ADS_REPORT_DOWNLOAD_URI,
+      secretKey:
+        normalizedCredentials.secretKey,
+    });
+
+  const abortController =
+    new AbortController();
+
+  const timeoutId = setTimeout(() => {
+    abortController.abort();
+  }, NAVER_SEARCH_ADS_DOWNLOAD_PROBE_TIMEOUT_MS * 3);
+
+  try {
+    const response = await fetch(
+      downloadUrl,
+      {
+        method: "GET",
+        headers: {
+          Accept:
+            "text/tab-separated-values,text/csv,text/plain,*/*",
+          "X-Timestamp": timestamp,
+          "X-API-KEY":
+            normalizedCredentials.accessLicense,
+          "X-Customer":
+            normalizedCredentials.customerId,
+          "X-Signature": signature,
+        },
+        cache: "no-store",
+        signal: abortController.signal,
+      },
+    );
+
+    if (!response.ok) {
+      const safeErrorBody =
+        await readSafeErrorBody(response);
+
+      const safeQueryKeys =
+        getSafeDownloadQueryKeys(
+          downloadUrl,
+        );
+
+      const contentType =
+        response.headers.get(
+          "content-type",
+        ) ?? "unknown";
+
+      throw new NaverSearchAdsStatReportApiError(
+        "HTTP_ERROR",
+        [
+          "Naver Search Ads report download returned an unsuccessful response.",
+          `queryKeys=${safeQueryKeys}`,
+          `contentType=${contentType}`,
+          safeErrorBody
+            ? `body=${safeErrorBody}`
+            : "body=empty",
+        ].join(" "),
+        {
+          status: response.status,
+        },
+      );
+    }
+
+    if (!response.body) {
+      throw new NaverSearchAdsStatReportApiError(
+        "INVALID_RESPONSE",
+        "Naver Search Ads report download response has no body.",
+      );
+    }
+
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let bytesRead = 0;
+
+    try {
+      while (true) {
+        const { value, done } =
+          await reader.read();
+
+        if (done) {
+          break;
+        }
+
+        if (!value) {
+          continue;
+        }
+
+        bytesRead += value.byteLength;
+
+        if (bytesRead > maxBytes) {
+          throw new NaverSearchAdsStatReportApiError(
+            "INVALID_RESPONSE",
+            `Naver Search Ads report download exceeded the ${maxBytes} byte limit.`,
+          );
+        }
+
+        chunks.push(value);
+      }
+    } finally {
+      if (bytesRead > maxBytes) {
+        await reader.cancel();
+      }
+    }
+
+    const combinedBytes = new Uint8Array(
+      bytesRead,
+    );
+
+    let offset = 0;
+
+    for (const chunk of chunks) {
+      combinedBytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+
+    const text = new TextDecoder(
+      "utf-8",
+      {
+        fatal: false,
+      },
+    )
+      .decode(combinedBytes)
+      .replace(/^\uFEFF/, "");
+
+    return {
+      host: downloadUrl.hostname,
+      pathname: downloadUrl.pathname,
+      hasFileVersion:
+        downloadUrl.searchParams.has(
+          "fileversion",
+        ) ||
+        downloadUrl.searchParams.has(
+          "fileVersion",
+        ),
+      status: response.status,
+      contentType:
+        response.headers.get(
+          "content-type",
+        ),
+      contentDisposition:
+        response.headers.get(
+          "content-disposition",
+        ),
+      bytesRead,
+      text,
+    };
+  } catch (error) {
+    if (
+      error instanceof
+      NaverSearchAdsStatReportApiError
+    ) {
+      throw error;
+    }
+
+    if (
+      abortController.signal.aborted ||
+      isAbortError(error)
+    ) {
+      throw new NaverSearchAdsStatReportApiError(
+        "REQUEST_TIMEOUT",
+        "Naver Search Ads report download timed out.",
+      );
+    }
+
+    throw new NaverSearchAdsStatReportApiError(
+      "NETWORK_ERROR",
+      "Naver Search Ads report download failed.",
+      { cause: error },
+    );
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export async function probeNaverSearchAdsStatReportDownload(
