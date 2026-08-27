@@ -877,7 +877,7 @@ async function main(): Promise<void> {
     );
     assert.match(
       capability,
-      /google_ads:\s*\{[\s\S]*?syncRuntimeEnabled:\s*false/,
+      /google_ads:\s*\{[\s\S]*?syncRuntimeEnabled:\s*true/,
     );
 
     const combinedStart =

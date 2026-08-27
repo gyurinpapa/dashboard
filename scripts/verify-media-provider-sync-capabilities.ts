@@ -86,11 +86,11 @@ function main(): void {
 
   results.push(
     runFixture(
-      "Google runtime stays disabled with keyword-only future contract",
+      "Google runtime is enabled with keyword-only production contract",
       () => {
         assertCapability({
           provider: "google_ads",
-          enabled: false,
+          enabled: true,
           allowedDataLevels: [
             "keyword",
           ],

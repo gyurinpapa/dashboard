@@ -22,7 +22,7 @@ const MEDIA_PROVIDER_SYNC_CAPABILITIES = {
       ALL_NAVER_SEARCH_ADS_DATA_LEVELS,
   },
   google_ads: {
-    syncRuntimeEnabled: false,
+    syncRuntimeEnabled: true,
     allowedDataLevels: ["keyword"],
   },
   meta_ads: {

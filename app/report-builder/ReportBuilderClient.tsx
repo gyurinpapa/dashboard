@@ -3094,9 +3094,19 @@ export default function ReportBuilderPage() {
   const selectedApiReportConnection =
     hasCurrentAdvertiserMediaConnectionSnapshot &&
     !selectedAdvertiserMediaConnectionsError
-      ? usableNaverConnections.find(
+      ? [...usableNaverConnections, ...usableGoogleConnections].find(
           (connection) => connection.id === selectedApiMediaConnectionId
         ) ?? null
+      : null;
+
+  const selectedNaverApiReportConnection =
+    selectedApiReportConnection?.provider === "naver_searchad"
+      ? selectedApiReportConnection
+      : null;
+
+  const selectedGoogleApiReportConnection =
+    selectedApiReportConnection?.provider === "google_ads"
+      ? selectedApiReportConnection
       : null;
   const canManageSelectedAdvertiserMediaConnections =
     hasCurrentAdvertiserMediaConnectionSnapshot &&
@@ -5894,22 +5904,22 @@ export default function ReportBuilderPage() {
                             style={{
                               flexShrink: 0,
                               borderRadius: 999,
-                              border: selectedApiReportConnection
+                              border: selectedNaverApiReportConnection
                                 ? "1px solid rgba(110, 231, 183, 0.28)"
                                 : "1px solid rgba(255, 255, 255, 0.12)",
-                              background: selectedApiReportConnection
+                              background: selectedNaverApiReportConnection
                                 ? "rgba(110, 231, 183, 0.10)"
                                 : "rgba(255, 255, 255, 0.05)",
                               padding: "4px 8px",
                               fontSize: 10,
                               fontWeight: 900,
-                              color: selectedApiReportConnection
+                              color: selectedNaverApiReportConnection
                                 ? "#a7f3d0"
                                 : "#bbb8d4",
                               whiteSpace: "nowrap",
                             }}
                           >
-                            {selectedApiReportConnection
+                            {selectedNaverApiReportConnection
                               ? "● 선택됨"
                               : usableNaverConnections.length > 0
                                 ? "선택 가능"
@@ -5934,7 +5944,11 @@ export default function ReportBuilderPage() {
                           style={{ marginTop: 12 }}
                         >
                           <select
-                            value={selectedApiMediaConnectionId}
+                            value={
+                              selectedNaverApiReportConnection
+                                ? selectedApiMediaConnectionId
+                                : ""
+                            }
                             onChange={(e) =>
                               setSelectedApiMediaConnectionId(e.target.value)
                             }
@@ -5991,17 +6005,17 @@ export default function ReportBuilderPage() {
                             marginTop: 10,
                             fontSize: 11,
                             lineHeight: 1.55,
-                            color: selectedApiReportConnection
+                            color: selectedNaverApiReportConnection
                               ? "#a7f3d0"
                               : "#bbb8d4",
                           }}
                         >
-                          {selectedApiReportConnection
+                          {selectedNaverApiReportConnection
                             ? `선택됨 · ${
-                                selectedApiReportConnection.external_account_name ||
-                                selectedApiReportConnection.external_account_id
+                                selectedNaverApiReportConnection.external_account_name ||
+                                selectedNaverApiReportConnection.external_account_id
                               } · ${
-                                selectedApiReportConnection.external_account_id
+                                selectedNaverApiReportConnection.external_account_id
                               }`
                             : usableNaverConnections.length === 0
                               ? "현재 사용할 수 있는 Naver Search Ads 연결이 없습니다."
@@ -6073,9 +6087,11 @@ export default function ReportBuilderPage() {
                               whiteSpace: "nowrap",
                             }}
                           >
-                            {usableGoogleConnections.length > 0
-                              ? "동기화 준비 중"
-                              : "STEP 1 연결 필요"}
+                            {selectedGoogleApiReportConnection
+                              ? "● 선택됨"
+                              : usableGoogleConnections.length > 0
+                                ? "선택 가능"
+                                : "연결 필요"}
                           </span>
                         </div>
 
@@ -6088,8 +6104,8 @@ export default function ReportBuilderPage() {
                           }}
                         >
                           STEP 1에서 관리한 Google Ads 연결을 사용합니다.
-                          현재 Google Ads 데이터 동기화 runtime은 비활성화되어
-                          리포트 연결 선택은 아직 잠겨 있습니다.
+                          활성 상태이며 자격증명이 있는 연결만 선택할 수 있습니다.
+                          현재 지원 데이터 레벨은 키워드입니다.
                         </div>
 
                         <div
@@ -6097,17 +6113,31 @@ export default function ReportBuilderPage() {
                           style={{ marginTop: 12 }}
                         >
                           <select
-                            disabled
+                            value={
+                              selectedGoogleApiReportConnection
+                                ? selectedApiMediaConnectionId
+                                : ""
+                            }
+                            onChange={(e) =>
+                              setSelectedApiMediaConnectionId(e.target.value)
+                            }
+                            disabled={
+                              creating || usableGoogleConnections.length === 0
+                            }
                             className="advertiserSelect"
                           >
                             <option value="">
                               {usableGoogleConnections.length > 0
-                                ? "Google Ads 연결 선택은 동기화 활성화 후 제공됩니다"
+                                ? "Google Ads 연결을 선택하세요"
                                 : "STEP 1에서 Google Ads 계정을 먼저 연결하세요"}
                             </option>
 
                             {selectedAdvertiserGoogleConnections.map(
                               (connection) => {
+                                const selectable =
+                                  connection.status === "active" &&
+                                  connection.has_credentials;
+
                                 const statusLabel =
                                   connection.status === "disconnected"
                                     ? "연결 해제"
@@ -6121,6 +6151,7 @@ export default function ReportBuilderPage() {
                                   <option
                                     key={connection.id}
                                     value={connection.id}
+                                    disabled={!selectable}
                                   >
                                     {connection.external_account_name ||
                                       connection.external_account_id}{" "}
@@ -6151,9 +6182,16 @@ export default function ReportBuilderPage() {
                                 : "#bbb8d4",
                           }}
                         >
-                          {usableGoogleConnections.length > 0
-                            ? `${usableGoogleConnections.length}개 사용 가능한 연결 확인 · 데이터 동기화 승인 대기`
-                            : "사용 가능한 Google Ads 연결이 없습니다. STEP 1에서 연결을 먼저 완료하세요."}
+                          {selectedGoogleApiReportConnection
+                            ? `선택됨 · ${
+                                selectedGoogleApiReportConnection.external_account_name ||
+                                selectedGoogleApiReportConnection.external_account_id
+                              } · ${
+                                selectedGoogleApiReportConnection.external_account_id
+                              }`
+                            : usableGoogleConnections.length > 0
+                              ? "사용할 Google Ads 연결을 선택하세요."
+                              : "사용 가능한 Google Ads 연결이 없습니다. STEP 1에서 연결을 먼저 완료하세요."}
                         </div>
                       </div>
 
