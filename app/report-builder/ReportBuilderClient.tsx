@@ -6869,7 +6869,6 @@ export default function ReportBuilderPage() {
                                   className="reportActionRail"
                                   onClick={(event) => event.stopPropagation()}
                                 >
-                                  <div className="reportModePill">CSV 업로드형</div>
                                   <div
                                     style={{
                                       display: "grid",
@@ -7014,30 +7013,6 @@ export default function ReportBuilderPage() {
                                     )}
                                   </div>
 
-                                <button
-                                  type="button"
-                                  className="subBtn reportSyncBtn"
-                                  onClick={() => requestMediaSyncForReport(r)}
-                                  disabled={isSyncDisabled}
-                                  style={{
-                                    padding: "8px 10px",
-                                    fontSize: 12,
-                                    whiteSpace: "nowrap",
-                                  }}
-                                  title={
-                                    !r.advertiser_id
-                                      ? "광고주가 연결된 리포트만 API 동기화를 요청할 수 있습니다."
-                                      : !syncRange
-                                      ? "API 연동 기간 설정이 필요하거나 31일을 초과했습니다. 리포트 편집 화면에서 31일 이내 기간을 저장하세요."
-                                      : isActiveSyncJob
-                                      ? "이미 대기 또는 처리 중인 API 동기화 job이 있습니다."
-                                      : "pending job만 생성하고 실제 동기화는 Railway worker가 처리합니다."
-                                  }
-                                >
-                                  {isRequestingSync
-                                    ? "요청 중..."
-                                    : getMediaSyncJobStatusText(currentSyncJob)}
-                                </button>
 
                                 {currentSyncJob ? (
                                   <div
