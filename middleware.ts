@@ -2,8 +2,54 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+const APP_CANONICAL_HOST = "app.etrylue.com";
+
+const NON_CANONICAL_APP_HOSTS = new Set([
+  "etrylue.com",
+  "www.etrylue.com",
+]);
+
+function isCanonicalAppPath(pathname: string): boolean {
+  return (
+    pathname === "/report-builder" ||
+    pathname.startsWith("/report-builder/") ||
+    pathname === "/reports" ||
+    pathname.startsWith("/reports/")
+  );
+}
+
+function getRequestHostname(req: NextRequest): string {
+  const rawHost =
+    req.headers.get("x-forwarded-host") ??
+    req.headers.get("host") ??
+    req.nextUrl.hostname;
+
+  const firstHost =
+    rawHost.split(",")[0]?.trim().toLowerCase() ?? "";
+
+  return firstHost
+    .replace(/:\d+$/u, "")
+    .replace(/\.$/u, "");
+}
+
 export function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
+
+  const requestHostname =
+    getRequestHostname(req);
+
+  if (
+    NON_CANONICAL_APP_HOSTS.has(requestHostname) &&
+    isCanonicalAppPath(pathname)
+  ) {
+    const url = req.nextUrl.clone();
+
+    url.protocol = "https:";
+    url.hostname = APP_CANONICAL_HOST;
+    url.port = "";
+
+    return NextResponse.redirect(url, 307);
+  }
 
   // always allow
   if (
