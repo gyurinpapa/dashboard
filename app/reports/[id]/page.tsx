@@ -1527,6 +1527,24 @@ export default function ReportDetailPage() {
     useState(false);
 
   const [report, setReport] = useState<ReportDetail | null>(null);
+
+  const [reportTitleDraft, setReportTitleDraft] =
+    useState<string | null>(null);
+  const [savingReportTitle, setSavingReportTitle] = useState(false);
+  const [reportTitleSavedText, setReportTitleSavedText] =
+    useState<string>("");
+
+  const currentReportTitle = asStr(report?.title);
+  const resolvedReportTitleDraft =
+    reportTitleDraft ?? currentReportTitle;
+  const normalizedReportTitleDraft =
+    resolvedReportTitleDraft.trim();
+
+  const canSaveReportTitle =
+    !!reportId &&
+    !!normalizedReportTitleDraft &&
+    normalizedReportTitleDraft !== currentReportTitle &&
+    !savingReportTitle;
   const reportDataSourceKind = useMemo(
     () => getReportDataSourceKind(report),
     [report],
@@ -2534,6 +2552,83 @@ export default function ReportDetailPage() {
     [],
   );
 
+  const handleSaveReportTitle = useCallback(async () => {
+    if (!reportId) return;
+
+    const nextTitle = normalizedReportTitleDraft;
+
+    if (!nextTitle) {
+      setReportTitleSavedText("");
+      setMsg("리포트 이름을 입력해 주세요.");
+      return;
+    }
+
+    if (nextTitle === currentReportTitle) {
+      setReportTitleDraft(null);
+      setReportTitleSavedText("");
+      return;
+    }
+
+    setSavingReportTitle(true);
+    setReportTitleSavedText("");
+    setMsg("");
+
+    try {
+      const res = await authFetch(
+        `/api/reports/${encodeURIComponent(reportId)}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            title: nextTitle,
+          }),
+        },
+      );
+
+      const json = await safeJson(res);
+
+      if (!res.ok || !json?.ok) {
+        throw new Error(
+          String(
+            json?.error ||
+              json?.message ||
+              `리포트 이름 저장 실패 (${res.status})`,
+          ),
+        );
+      }
+
+      const updatedReport =
+        json?.report && typeof json.report === "object"
+          ? json.report
+          : {
+              title: nextTitle,
+            };
+
+      setReport((prev) => ({
+        ...(prev ?? {}),
+        ...updatedReport,
+        title: String(updatedReport?.title ?? nextTitle),
+      }));
+
+      setReportTitleDraft(null);
+      setReportTitleSavedText("저장 완료");
+      setMsg(
+        "리포트 이름이 저장되었습니다. 발행 상태와 공유 URL, 데이터 snapshot은 변경되지 않습니다.",
+      );
+    } catch (e: any) {
+      setReportTitleSavedText("");
+      setMsg(e?.message || "리포트 이름 저장 실패");
+    } finally {
+      setSavingReportTitle(false);
+    }
+  }, [
+    currentReportTitle,
+    normalizedReportTitleDraft,
+    reportId,
+  ]);
+
   const handleSaveMonthGoal = useCallback(async () => {
     if (!reportId) return;
 
@@ -3468,6 +3563,100 @@ export default function ReportDetailPage() {
           </div>
         </div>
       </div>
+
+      <section
+        style={{
+          marginTop: 24,
+            marginBottom: 20,
+          padding: "22px 24px",
+          borderRadius: 22,
+          border: "1px solid rgba(255,255,255,0.14)",
+          background: "rgba(53,40,103,0.78)",
+        }}
+      >
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 800,
+            color: "rgba(255,255,255,0.72)",
+          }}
+        >
+          리포트 이름
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) auto",
+            alignItems: "center",
+            gap: 12,
+            marginTop: 12,
+          }}
+        >
+          <input
+            type="text"
+            value={resolvedReportTitleDraft}
+            onChange={(event) => {
+              setReportTitleDraft(event.target.value);
+              setReportTitleSavedText("");
+            }}
+            onKeyDown={(event) => {
+              if (
+                event.key === "Enter" &&
+                canSaveReportTitle
+              ) {
+                event.preventDefault();
+                void handleSaveReportTitle();
+              }
+            }}
+            disabled={!report || savingReportTitle}
+            placeholder="리포트 이름을 입력하세요"
+            aria-label="리포트 이름"
+            style={{
+              width: "100%",
+              minWidth: 0,
+              height: 48,
+              padding: "0 16px",
+              borderRadius: 14,
+              border: "1px solid rgba(255,255,255,0.16)",
+              outline: "none",
+              background: "rgba(35,28,78,0.76)",
+              color: "#ffffff",
+              fontSize: 15,
+              fontWeight: 700,
+            }}
+          />
+
+          <button
+            type="button"
+            className="subBtn"
+            onClick={() => void handleSaveReportTitle()}
+            disabled={!canSaveReportTitle}
+            style={{
+              minWidth: 112,
+              height: 48,
+              padding: "0 18px",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {savingReportTitle ? "저장 중..." : "이름 저장"}
+          </button>
+        </div>
+
+        <div
+          style={{
+            minHeight: 20,
+            marginTop: 9,
+            fontSize: 12,
+            color: reportTitleSavedText
+              ? "#78f0ff"
+              : "rgba(255,255,255,0.56)",
+          }}
+        >
+          {reportTitleSavedText ||
+            "발행된 리포트도 이름만 변경할 수 있으며 공유 URL과 발행 데이터는 그대로 유지됩니다."}
+        </div>
+      </section>
 
       <section className="mb-5 rounded-[20px] border border-white/[0.13] bg-[#392b70]/90 p-5 shadow-[0_22px_54px_rgba(8,5,29,0.22)]">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
