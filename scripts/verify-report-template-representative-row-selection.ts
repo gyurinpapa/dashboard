@@ -342,6 +342,232 @@ function verifyMixedAndLegacyContracts(): void {
   }
 }
 
+function verifyGoogleAdsAuthorityContracts(): void {
+  const googleSearchKeywordDetail: FixtureRow = {
+    id:
+      "google-search-keyword-detail",
+    provider:
+      "google_ads",
+    channel:
+      "검색광고",
+    row_level:
+      "keyword",
+    data_level:
+      "keyword",
+    row_level_reason:
+      "google_ads_keyword_daily_stats",
+    keyword:
+      "google-keyword",
+    impressions:
+      100,
+    clicks:
+      10,
+    cost:
+      1_000,
+    conversions:
+      1,
+    revenue:
+      2_000,
+    provider_meta: {
+      product_family:
+        "search",
+      authoritative_grain:
+        "ad",
+      entity_type:
+        "keyword",
+      entity_id:
+        "keyword-1",
+    },
+  };
+
+  assertExcluded(
+    "Google Search keyword detail with ad authority",
+    googleSearchKeywordDetail,
+  );
+
+  const googleSearchAdAuthority: FixtureRow = {
+    id:
+      "google-search-ad-authority",
+    provider:
+      "google_ads",
+    channel:
+      "검색광고",
+    row_level:
+      "creative",
+    data_level:
+      "creative",
+    row_level_reason:
+      "google_ads_search_ad_daily_stats",
+    creative:
+      "google-search-ad",
+    impressions:
+      100,
+    clicks:
+      10,
+    cost:
+      1_000,
+    conversions:
+      1,
+    revenue:
+      2_000,
+    provider_meta: {
+      product_family:
+        "search",
+      authoritative_grain:
+        "ad",
+      entity_type:
+        "ad",
+      entity_id:
+        "ad-1",
+    },
+  };
+
+  assertIncluded(
+    "Google Search authoritative ad",
+    googleSearchAdAuthority,
+  );
+
+  assertExcluded(
+    "Google Search asset detail",
+    {
+      ...googleSearchAdAuthority,
+      id:
+        "google-search-asset-detail",
+      row_level_reason:
+        "google_ads_search_ad_asset_daily_stats",
+      provider_meta: {
+        product_family:
+          "search",
+        authoritative_grain:
+          "ad",
+        entity_type:
+          "asset",
+        entity_id:
+          "asset-1",
+      },
+    },
+  );
+
+  const googleDemandGenAdAuthority: FixtureRow = {
+    id:
+      "google-demand-gen-ad-authority",
+    provider:
+      "google_ads",
+    channel:
+      "디스플레이광고",
+    row_level:
+      "creative",
+    data_level:
+      "creative",
+    row_level_reason:
+      "google_ads_demand_gen_ad_daily_stats",
+    creative:
+      "google-demand-gen-ad",
+    impressions:
+      200,
+    clicks:
+      20,
+    cost:
+      2_000,
+    conversions:
+      2,
+    revenue:
+      4_000,
+    provider_meta: {
+      product_family:
+        "demand_gen",
+      authoritative_grain:
+        "ad",
+      entity_type:
+        "ad",
+      entity_id:
+        "demand-ad-1",
+    },
+  };
+
+  assertIncluded(
+    "Google Demand Gen authoritative ad",
+    googleDemandGenAdAuthority,
+  );
+
+  assertExcluded(
+    "Google Demand Gen asset detail",
+    {
+      ...googleDemandGenAdAuthority,
+      id:
+        "google-demand-gen-asset-detail",
+      row_level_reason:
+        "google_ads_demand_gen_ad_asset_daily_stats",
+      provider_meta: {
+        product_family:
+          "demand_gen",
+        authoritative_grain:
+          "ad",
+        entity_type:
+          "asset",
+        entity_id:
+          "demand-asset-1",
+      },
+    },
+  );
+
+  /**
+   * 현재 Production Google keyword collector 호환성.
+   * authority metadata가 없는 기존 google_ads keyword row는
+   * 기존 representative 동작을 그대로 유지해야 한다.
+   */
+  assertIncluded(
+    "existing untagged Google keyword",
+    {
+      id:
+        "google-existing-keyword",
+      provider:
+        "google_ads",
+      channel:
+        "검색광고",
+      row_level:
+        "keyword",
+      data_level:
+        "keyword",
+      row_level_reason:
+        "google_ads_keyword_daily_stats",
+      keyword:
+        "existing-google-keyword",
+    },
+  );
+
+  /**
+   * 부분 metadata도 fail-open한다.
+   * 새 collector가 완전한 authority contract를 쓰기 전에는
+   * 기존 KPI를 갑자기 누락시키지 않는다.
+   */
+  assertIncluded(
+    "incomplete Google authority metadata fails open",
+    {
+      id:
+        "google-incomplete-authority",
+      provider:
+        "google_ads",
+      channel:
+        "검색광고",
+      row_level:
+        "keyword",
+      data_level:
+        "keyword",
+      row_level_reason:
+        "google_ads_keyword_daily_stats",
+      keyword:
+        "incomplete-google-keyword",
+      provider_meta: {
+        product_family:
+          "search",
+        authoritative_grain:
+          "ad",
+      },
+    },
+  );
+}
+
 function verifyCurrentCombinedTotals(): void {
   const rows: FixtureRow[] = [
     {
@@ -475,6 +701,7 @@ function verifyCurrentCombinedTotals(): void {
 function main(): void {
   verifyCreativeContracts();
   verifyMixedAndLegacyContracts();
+  verifyGoogleAdsAuthorityContracts();
   verifyCurrentCombinedTotals();
 
   console.log(
@@ -491,6 +718,12 @@ function main(): void {
   );
   console.log(
     "BRAND_SEARCH mixed included: true",
+  );
+  console.log(
+    "Google tagged authority/detail selection: true",
+  );
+  console.log(
+    "existing untagged Google keyword preserved: true",
   );
   console.log(
     "combined totals: 7075 / 1183 / 113850 / 67 / 12729300",

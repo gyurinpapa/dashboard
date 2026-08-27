@@ -2405,6 +2405,89 @@ function resolveRepresentativeRowLevel(input: {
   return "unknown";
 }
 
+function resolveGoogleAdsRepresentativeAuthoritySelection(
+  row: any,
+): boolean | null {
+  /**
+   * Google ALL-DATA authority contract.
+   *
+   * - 기존 Google keyword-only Production row에는 provider_meta authority 정보가 없다.
+   *   그런 row는 반드시 기존 representative 규칙을 그대로 사용한다.
+   * - 새 Google multi-grain row가 완전한 authority metadata를 가진 경우에만
+   *   entity_type === authoritative_grain 행을 KPI representative로 사용한다.
+   * - product_family / authoritative_grain / entity_type 중 하나라도 없으면
+   *   incomplete metadata로 보고 기존 동작으로 fail-open한다.
+   */
+  const provider = firstNonEmpty(
+    row?.provider,
+  )
+    .toLowerCase()
+    .trim();
+
+  if (provider !== "google_ads") {
+    return null;
+  }
+
+  const providerMeta =
+    row?.provider_meta ??
+    row?.providerMeta;
+
+  if (
+    !providerMeta ||
+    typeof providerMeta !== "object" ||
+    Array.isArray(providerMeta)
+  ) {
+    return null;
+  }
+
+  const productFamily = firstNonEmpty(
+    providerMeta?.product_family,
+    providerMeta?.productFamily,
+  )
+    .toLowerCase()
+    .trim();
+
+  const authoritativeGrain = firstNonEmpty(
+    providerMeta?.authoritative_grain,
+    providerMeta?.authoritativeGrain,
+  )
+    .toLowerCase()
+    .trim();
+
+  const entityType = firstNonEmpty(
+    providerMeta?.entity_type,
+    providerMeta?.entityType,
+  )
+    .toLowerCase()
+    .trim();
+
+  if (
+    !productFamily ||
+    !authoritativeGrain ||
+    !entityType
+  ) {
+    return null;
+  }
+
+  return entityType === authoritativeGrain;
+}
+
+function shouldIncludeGoogleAdsAuthorityTaggedRow(
+  row: any,
+  fallback: () => boolean,
+) {
+  const authoritySelection =
+    resolveGoogleAdsRepresentativeAuthoritySelection(
+      row,
+    );
+
+  if (authoritySelection != null) {
+    return authoritySelection;
+  }
+
+  return fallback();
+}
+
 function pickRepresentativeRows(input: {
   keywordRows: any[];
   creativeRows: any[];
@@ -2417,7 +2500,12 @@ function pickRepresentativeRows(input: {
      * 네이버처럼 keyword/creative가 별도 rows로 들어오는 경우,
      * creative rows까지 전체 성과에 포함하면 중복 집계될 수 있다.
      */
-    ...input.keywordRows,
+    ...input.keywordRows.filter((row) =>
+      shouldIncludeGoogleAdsAuthorityTaggedRow(
+        row,
+        () => true,
+      ),
+    ),
 
     /**
      * creative rows는 display ad, keyword 신호가 없는 creative-only row,
@@ -2425,14 +2513,30 @@ function pickRepresentativeRows(input: {
      * 그 외 search ad creative rows는 소재 탭에서는 사용하지만 전체 성과에서는 제외한다.
      */
     ...input.creativeRows.filter((row) =>
-      shouldIncludeCreativeRowInRepresentativeRows(row),
+      shouldIncludeGoogleAdsAuthorityTaggedRow(
+        row,
+        () =>
+          shouldIncludeCreativeRowInRepresentativeRows(
+            row,
+          ),
+      ),
     ),
 
     /**
      * mixed/unknown은 기존처럼 전체 성과 기준에 포함한다.
      */
-    ...input.mixedRows,
-    ...input.unknownRows,
+    ...input.mixedRows.filter((row) =>
+      shouldIncludeGoogleAdsAuthorityTaggedRow(
+        row,
+        () => true,
+      ),
+    ),
+    ...input.unknownRows.filter((row) =>
+      shouldIncludeGoogleAdsAuthorityTaggedRow(
+        row,
+        () => true,
+      ),
+    ),
   ];
 
   return representativeRows.length > 0 ? representativeRows : EMPTY_ROWS;
