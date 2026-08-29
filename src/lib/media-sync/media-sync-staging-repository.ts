@@ -2,6 +2,10 @@ import {
   buildMediaSyncStagingRowKey,
 } from "./media-sync-staging-row-identity";
 import {
+  GoogleAdsAllDataStagingContractError,
+  prepareGoogleAdsAllDataSearchStagingRows,
+} from "./google-ads-all-data-staging-contract";
+import {
   isMediaSyncDataLevel,
   isValidMediaSyncDateRange,
   isValidYmd,
@@ -18,6 +22,9 @@ const NAVER_SEARCH_ADS_PROVIDER =
 
 const GOOGLE_ADS_PROVIDER =
   "google_ads" as const;
+
+const GOOGLE_ADS_ALL_DATA_EXECUTION_CONTRACT =
+  "google_all_data_v1" as const;
 
 const GOOGLE_ADS_KEYWORD_ROW_LEVEL_REASON =
   "google_ads_keyword_daily_stats" as const;
@@ -541,12 +548,17 @@ function validateCanonicalRow(input: {
   row: unknown;
   rowIndexInBatch: number;
   job: MediaSyncJobRecord;
+  googleAdsAllDataSearch?: boolean;
 }): EtrylueNormalizedMediaRow {
   const {
     row,
     rowIndexInBatch,
     job,
   } = input;
+
+  const googleAdsAllDataSearch =
+    input.googleAdsAllDataSearch ===
+    true;
 
   const rowPath =
     `rows[${rowIndexInBatch}]`;
@@ -660,6 +672,7 @@ function validateCanonicalRow(input: {
   }
 
   if (
+    !googleAdsAllDataSearch &&
     typedRow.provider ===
       GOOGLE_ADS_PROVIDER &&
     (
@@ -695,7 +708,40 @@ function validateCanonicalRow(input: {
     `${rowPath}.group`,
   );
 
-  if (
+  if (googleAdsAllDataSearch) {
+    if (
+      typedRow.provider !==
+      GOOGLE_ADS_PROVIDER
+    ) {
+      throw new MediaSyncStagingRepositoryError(
+        "INVALID_INPUT",
+        `${rowPath} cannot use the Google Ads ALL-DATA Search staging contract.`,
+      );
+    }
+
+    if (
+      typedRow.row_level ===
+      "keyword"
+    ) {
+      normalizeRequiredString(
+        typedRow.keyword,
+        `${rowPath}.keyword`,
+      );
+    } else if (
+      typedRow.row_level ===
+      "creative"
+    ) {
+      normalizeRequiredString(
+        typedRow.creative,
+        `${rowPath}.creative`,
+      );
+    } else {
+      throw new MediaSyncStagingRepositoryError(
+        "INVALID_INPUT",
+        `${rowPath} must be a Google Ads Search keyword or creative ALL-DATA row.`,
+      );
+    }
+  } else if (
     typedRow.row_level ===
     "keyword"
   ) {
@@ -862,6 +908,112 @@ function validateCanonicalRow(input: {
   }
 
   return typedRow;
+}
+
+
+type MediaSyncJobRecordWithExecutionContract =
+  MediaSyncJobRecord &
+  Readonly<{
+    execution_contract?: unknown;
+  }>;
+
+function isGoogleAdsAllDataSearchJob(
+  job: MediaSyncJobRecord,
+): boolean {
+  const executionContract =
+    (
+      job as
+        MediaSyncJobRecordWithExecutionContract
+    ).execution_contract;
+
+  if (
+    executionContract === undefined ||
+    executionContract === null
+  ) {
+    return false;
+  }
+
+  if (
+    executionContract !==
+    GOOGLE_ADS_ALL_DATA_EXECUTION_CONTRACT
+  ) {
+    throw new MediaSyncStagingRepositoryError(
+      "INVALID_JOB",
+      "The media sync job contains an unsupported execution contract.",
+    );
+  }
+
+  if (
+    job.provider !==
+    GOOGLE_ADS_PROVIDER
+  ) {
+    throw new MediaSyncStagingRepositoryError(
+      "INVALID_JOB",
+      "The Google Ads ALL-DATA execution contract can only be used by Google Ads jobs.",
+    );
+  }
+
+  return true;
+}
+
+function prepareGoogleAdsAllDataSearchRpcRows(
+  input: {
+    rows:
+      readonly EtrylueNormalizedMediaRow[];
+    rowStartIndex:
+      number;
+    job:
+      MediaSyncJobRecord;
+  },
+): readonly StagingRpcInputRow[] {
+  const canonicalRows =
+    input.rows.map(
+      (
+        row,
+        index,
+      ) =>
+        validateCanonicalRow({
+          row,
+          rowIndexInBatch:
+            index,
+          job:
+            input.job,
+          googleAdsAllDataSearch:
+            true,
+        }),
+    );
+
+  try {
+    /*
+     * The E1 prepared-row contract is intentionally identical
+     * to StagingRpcInputRow, including snake_case row_index/row_key.
+     * No additional mapping or row-key reconstruction occurs here.
+     */
+    return prepareGoogleAdsAllDataSearchStagingRows({
+      externalAccountId:
+        input.job.external_account_id,
+      rowStartIndex:
+        input.rowStartIndex,
+      rows:
+        canonicalRows,
+    });
+  } catch (error) {
+    if (
+      error instanceof
+      GoogleAdsAllDataStagingContractError
+    ) {
+      throw new MediaSyncStagingRepositoryError(
+        "INVALID_INPUT",
+        "The Google Ads ALL-DATA Search staging rows violate the staging contract.",
+        {
+          cause:
+            error,
+        },
+      );
+    }
+
+    throw error;
+  }
 }
 
 function mapRpcError(
@@ -1235,42 +1387,59 @@ export async function appendMediaSyncStagingBatch(
     );
   }
 
-  const rpcRows: StagingRpcInputRow[] =
-    input.rows.map(
-      (row, index) => {
-        const canonicalRow =
-          validateCanonicalRow({
-            row,
-            rowIndexInBatch: index,
-            job: input.job,
-          });
-
-        return {
-          row_index:
-            rowStartIndex + index,
-
-          row_key:
-            buildMediaSyncStagingRowKey(
-              canonicalRow,
-            ),
-
-          date:
-            canonicalRow.date,
-
-          channel:
-            canonicalRow.channel,
-
-          device:
-            canonicalRow.device,
-
-          source:
-            canonicalRow.source,
-
-          row:
-            canonicalRow,
-        };
-      },
+  const googleAdsAllDataSearch =
+    isGoogleAdsAllDataSearchJob(
+      input.job,
     );
+
+  const rpcRows:
+    readonly StagingRpcInputRow[] =
+      googleAdsAllDataSearch
+        ? prepareGoogleAdsAllDataSearchRpcRows({
+            rows:
+              input.rows,
+            rowStartIndex,
+            job:
+              input.job,
+          })
+        : input.rows.map(
+            (row, index) => {
+              const canonicalRow =
+                validateCanonicalRow({
+                  row,
+                  rowIndexInBatch:
+                    index,
+                  job:
+                    input.job,
+                });
+
+              return {
+                row_index:
+                  rowStartIndex +
+                  index,
+
+                row_key:
+                  buildMediaSyncStagingRowKey(
+                    canonicalRow,
+                  ),
+
+                date:
+                  canonicalRow.date,
+
+                channel:
+                  canonicalRow.channel,
+
+                device:
+                  canonicalRow.device,
+
+                source:
+                  canonicalRow.source,
+
+                row:
+                  canonicalRow,
+              };
+            },
+          );
 
   const payload = {
     job_id:

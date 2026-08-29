@@ -18,6 +18,15 @@ import type {
 } from "./google-ads-media-sync-runtime-adapter";
 
 import type {
+  GoogleAdsClaimedMediaSyncJobRecord,
+  GoogleAdsExecutionContract,
+} from "./google-ads-media-sync-worker-claim-repository";
+
+import type {
+  ProcessGoogleAdsAllDataWorkerResult,
+} from "./google-ads-all-data-worker-handler";
+
+import type {
   MediaSyncStagingSummary,
 } from "./media-sync-staging-summary-repository";
 
@@ -92,7 +101,7 @@ export class GoogleAdsMediaSyncWorkerOrchestrationError
 
 type GoogleAdsClaimNext =
   () => Promise<
-    MediaSyncJobRecord |
+    GoogleAdsClaimedMediaSyncJobRecord |
     null
   >;
 
@@ -108,6 +117,20 @@ type GoogleAdsProcessClaimed =
       ProcessClaimedGoogleAdsKeywordJobInput,
   ) => Promise<
     GoogleAdsKeywordProcessingOrchestratorResult
+  >;
+
+type GoogleAdsProcessAllDataClaimed =
+  (
+    input: Readonly<{
+      job:
+        GoogleAdsClaimedMediaSyncJobRecord;
+      executionContract:
+        GoogleAdsExecutionContract;
+      materializationBatchSize?:
+        number;
+    }>,
+  ) => Promise<
+    ProcessGoogleAdsAllDataWorkerResult
   >;
 
 type GoogleAdsReleaseForResume =
@@ -347,6 +370,43 @@ function wrapStage(
   );
 }
 
+function readGoogleAdsAllDataPostActivationFailureCode(
+  error:
+    unknown,
+):
+  | "ACTIVATION_FAILED"
+  | "FINALIZATION_FAILED"
+  | null {
+  if (
+    !(error instanceof Error) ||
+    error.name !==
+      "GoogleAdsAllDataWorkerHandlerError"
+  ) {
+    return null;
+  }
+
+  const code =
+    (
+      error as
+        Error &
+        Readonly<{
+          code?:
+            unknown;
+        }>
+    ).code;
+
+  if (
+    code ===
+      "ACTIVATION_FAILED" ||
+    code ===
+      "FINALIZATION_FAILED"
+  ) {
+    return code;
+  }
+
+  return null;
+}
+
 function shouldDeferAutomaticFailureMark(
   error: unknown,
 ): boolean {
@@ -371,6 +431,39 @@ const defaultClaimNext:
       );
 
     return await claimNextGoogleAdsMediaSyncJob();
+  };
+
+const defaultProcessAllDataClaimed:
+  GoogleAdsProcessAllDataClaimed =
+  async input => {
+    const {
+      processGoogleAdsAllDataWorkerHandler,
+    } =
+      await import(
+        "./google-ads-all-data-worker-handler"
+      );
+
+    return await processGoogleAdsAllDataWorkerHandler({
+      job: {
+        ...input.job,
+
+        execution_contract:
+          input.executionContract,
+      },
+
+      executionContract:
+        input.executionContract,
+
+      ...(
+        input.materializationBatchSize ===
+          undefined
+          ? {}
+          : {
+              materializationBatchSize:
+                input.materializationBatchSize,
+            }
+      ),
+    });
   };
 
 const defaultProcessClaimed:
@@ -683,13 +776,16 @@ export type ProcessGoogleAdsMediaSyncJobCompletedResult =
 
 export type ProcessGoogleAdsMediaSyncJobResult =
   | ProcessGoogleAdsMediaSyncJobPartialResult
-  | ProcessGoogleAdsMediaSyncJobCompletedResult;
+  | ProcessGoogleAdsMediaSyncJobCompletedResult
+  | ProcessGoogleAdsAllDataWorkerResult;
 
 export type GoogleAdsMediaSyncWorkerOrchestrationDependencies =
   Readonly<{
     claimNext?: GoogleAdsClaimNext;
     readCheckpoint?: GoogleAdsCheckpointReader;
     processClaimed?: GoogleAdsProcessClaimed;
+    processAllDataClaimed?:
+      GoogleAdsProcessAllDataClaimed;
     releaseForResume?: GoogleAdsReleaseForResume;
     summarize?: GoogleAdsSummarize;
     materialize?: GoogleAdsMaterialize;
@@ -772,7 +868,7 @@ export async function processNextGoogleAdsMediaSyncJob(
     defaultMarkFailed;
 
   let claimedJob:
-    MediaSyncJobRecord |
+    GoogleAdsClaimedMediaSyncJobRecord |
     null;
 
   try {
@@ -794,6 +890,59 @@ export async function processNextGoogleAdsMediaSyncJob(
     assertClaimedGoogleJob(
       claimedJob,
     );
+
+    const executionContract =
+      claimedJob.execution_contract;
+
+    if (
+      executionContract !==
+      undefined
+    ) {
+      const processAllDataClaimed =
+        dependencies.processAllDataClaimed ??
+        defaultProcessAllDataClaimed;
+
+      try {
+        return await processAllDataClaimed({
+          job:
+            claimedJob,
+
+          executionContract,
+
+          ...(
+            input.materializationBatchSize ===
+              undefined
+              ? {}
+              : {
+                  materializationBatchSize:
+                    input.materializationBatchSize,
+                }
+          ),
+        });
+      } catch (error) {
+        const postActivationFailureCode =
+          readGoogleAdsAllDataPostActivationFailureCode(
+            error,
+          );
+
+        if (postActivationFailureCode) {
+          throw new GoogleAdsMediaSyncWorkerOrchestrationError(
+            postActivationFailureCode,
+            "The claimed Google Ads ALL-DATA job failed at or after snapshot activation authority.",
+            {
+              cause:
+                error,
+            },
+          );
+        }
+
+        throw wrapStage(
+          "PROCESSING_FAILED",
+          "The claimed Google Ads ALL-DATA job failed during outer routing.",
+          error,
+        );
+      }
+    }
 
     let checkpointState:
       GoogleAdsMediaSyncProcessingCheckpointState;

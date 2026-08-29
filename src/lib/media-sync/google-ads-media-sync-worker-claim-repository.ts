@@ -14,6 +14,19 @@ const CLAIMED_JOB_STATUS =
 const PROCESSING_CHECKPOINT_KEY =
   "processing_checkpoint" as const;
 
+export const GOOGLE_ADS_ALL_DATA_EXECUTION_CONTRACT =
+  "google_all_data_v1" as const;
+
+export type GoogleAdsExecutionContract =
+  typeof GOOGLE_ADS_ALL_DATA_EXECUTION_CONTRACT;
+
+export type GoogleAdsClaimedMediaSyncJobRecord =
+  MediaSyncJobRecord &
+  Readonly<{
+    execution_contract?:
+      GoogleAdsExecutionContract;
+  }>;
+
 export type GoogleAdsMediaSyncWorkerClaimRepositoryErrorCode =
   | "INVALID_RECORD"
   | "DATABASE_ERROR"
@@ -87,6 +100,36 @@ function isPlainObject(
   );
 }
 
+function parseGoogleAdsExecutionContract(
+  value: unknown,
+): GoogleAdsExecutionContract | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const executionContract =
+    value.execution_contract;
+
+  if (
+    executionContract === undefined ||
+    executionContract === null
+  ) {
+    return null;
+  }
+
+  if (
+    executionContract ===
+    GOOGLE_ADS_ALL_DATA_EXECUTION_CONTRACT
+  ) {
+    return executionContract;
+  }
+
+  throw new GoogleAdsMediaSyncWorkerClaimRepositoryError(
+    "INVALID_RECORD",
+    "The claimed Google Ads media sync job has an unsupported execution_contract value.",
+  );
+}
+
 function hasOnlyProcessingCheckpoint(
   errorDetail: unknown,
 ): boolean {
@@ -124,7 +167,7 @@ async function parseClaimedGoogleAdsJob(
   value: unknown,
   parseJobRecord:
     GoogleAdsMediaSyncJobRecordParser,
-): Promise<MediaSyncJobRecord> {
+): Promise<GoogleAdsClaimedMediaSyncJobRecord> {
   let job:
     MediaSyncJobRecord;
 
@@ -205,7 +248,20 @@ async function parseClaimedGoogleAdsJob(
     );
   }
 
-  return job;
+  const executionContract =
+    parseGoogleAdsExecutionContract(
+      value,
+    );
+
+  if (executionContract === null) {
+    return job;
+  }
+
+  return {
+    ...job,
+    execution_contract:
+      executionContract,
+  };
 }
 
 async function invokeDefaultClaimRpc(): Promise<{
@@ -231,7 +287,7 @@ export async function claimNextGoogleAdsMediaSyncJob(
   dependencies:
     GoogleAdsMediaSyncWorkerClaimRepositoryDependencies = {},
 ): Promise<
-  MediaSyncJobRecord |
+  GoogleAdsClaimedMediaSyncJobRecord |
   null
 > {
   const invokeRpc =
