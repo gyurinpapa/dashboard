@@ -870,6 +870,39 @@ const defaultFinalize:
     );
   };
 
+export function assertGoogleAdsAllDataCheckpointCanReleaseForResume(
+  checkpoint:
+    GoogleAdsAllDataProcessingCheckpointState,
+): void {
+  const releasableProductBoundary =
+    checkpoint.phase ===
+      "product_boundary" &&
+    checkpoint.cursor ===
+      null &&
+    checkpoint.routing !==
+      undefined &&
+    !checkpoint.routing.complete;
+
+  if (
+    !checkpoint.hasCheckpoint ||
+    checkpoint.complete ||
+    checkpoint.phase ===
+      null ||
+    checkpoint.phase ===
+      "completed" ||
+    (
+      checkpoint.cursor ===
+        null &&
+      !releasableProductBoundary
+    )
+  ) {
+    throw new GoogleAdsAllDataWorkerHandlerError(
+      "JOB_RELEASE_FAILED",
+      "Only a partial persisted Google Ads ALL-DATA checkpoint can be released.",
+    );
+  }
+}
+
 export async function releaseGoogleAdsAllDataJobForResume(
   job:
     MediaSyncJobRecord,
@@ -891,22 +924,10 @@ export async function releaseGoogleAdsAllDataJobForResume(
       error,
     );
   }
+  assertGoogleAdsAllDataCheckpointCanReleaseForResume(
+    checkpoint,
+  );
 
-  if (
-    !checkpoint.hasCheckpoint ||
-    checkpoint.complete ||
-    checkpoint.phase ===
-      null ||
-    checkpoint.phase ===
-      "completed" ||
-    checkpoint.cursor ===
-      null
-  ) {
-    throw new GoogleAdsAllDataWorkerHandlerError(
-      "JOB_RELEASE_FAILED",
-      "Only a partial persisted Google Ads ALL-DATA checkpoint can be released.",
-    );
-  }
 
   const {
     getSupabaseAdmin,
