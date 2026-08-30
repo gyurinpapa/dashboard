@@ -511,6 +511,7 @@ begin
       end if;
     elsif v_phase = 'search_ad' then
       if v_phase_cursor is not null
+         and v_phase_cursor <> 'null'::jsonb
          and jsonb_typeof(
            v_phase_cursor
          ) <> 'object'
