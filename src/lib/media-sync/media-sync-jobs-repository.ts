@@ -42,6 +42,23 @@ const MEDIA_SYNC_JOB_MODE =
 const NAVER_SEARCH_ADS_PROVIDER =
   "naver_searchad" as const;
 
+const GOOGLE_ADS_PROVIDER =
+  "google_ads" as const;
+
+const GOOGLE_ADS_ALL_DATA_EXECUTION_CONTRACT =
+  "google_all_data_v1" as const;
+
+export function buildPendingMediaSyncJobExecutionContractFields(
+  provider: MediaProvider,
+) {
+  return provider === GOOGLE_ADS_PROVIDER
+    ? {
+        execution_contract:
+          GOOGLE_ADS_ALL_DATA_EXECUTION_CONTRACT,
+      }
+    : {};
+}
+
 const DEFAULT_STALE_PROCESSING_JOB_MS =
   60 * 60 * 1_000;
 
@@ -1105,6 +1122,11 @@ export async function createPendingMediaSyncJob(
 
     provider:
       connection.provider satisfies MediaProvider,
+
+    ...buildPendingMediaSyncJobExecutionContractFields(
+      connection.provider,
+    ),
+
     external_account_id:
       connection.external_account_id,
 
