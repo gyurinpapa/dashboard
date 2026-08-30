@@ -475,7 +475,7 @@ async function main():
 
   assert.match(
     sql,
-    /v_phase not in\s*\(\s*'product_boundary',\s*'keyword',\s*'search_ad',\s*'completed'\s*\)/u,
+    /v_phase not in\s*\(\s*'product_boundary',\s*'keyword',\s*'search_ad',\s*'demand_gen_ad',\s*'completed'\s*\)/u,
   );
 
   assert.match(

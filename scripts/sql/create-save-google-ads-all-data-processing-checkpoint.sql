@@ -196,8 +196,11 @@ begin
       )::boolean;
 
     v_cursor :=
-      v_collector ->
-      'cursor';
+      nullif(
+        v_collector ->
+          'cursor',
+        'null'::jsonb
+      );
 
     v_has_product_routing :=
       v_collector ?
@@ -680,8 +683,11 @@ begin
         )::boolean;
 
       v_existing_cursor :=
-        v_existing_collector ->
-        'cursor';
+        nullif(
+          v_existing_collector ->
+            'cursor',
+          'null'::jsonb
+        );
 
       v_existing_has_product_routing :=
         v_existing_collector ?
