@@ -734,6 +734,95 @@ function logSafeError(
     `[${WORKER_NAME}] error message: ${safeError.message}`,
   );
 
+  const rootErrorRecord =
+    error !== null &&
+    typeof error === "object"
+      ? (
+          error as
+            Record<
+              string,
+              unknown
+            >
+        )
+      : null;
+
+  let causeValue:
+    unknown =
+      rootErrorRecord === null
+        ? undefined
+        : rootErrorRecord[
+            "cause"
+          ];
+
+  let causeDepth =
+    0;
+
+  while (
+    causeValue !==
+      null &&
+    typeof causeValue ===
+      "object" &&
+    causeDepth <
+      8
+  ) {
+    causeDepth +=
+      1;
+
+    const causeRecord =
+      causeValue as
+        Record<
+          string,
+          unknown
+        >;
+
+    const causeName =
+      typeof causeRecord[
+        "name"
+      ] === "string"
+        ? causeRecord[
+            "name"
+          ]
+        : "Error";
+
+    const causeCode =
+      typeof causeRecord[
+        "code"
+      ] === "string"
+        ? causeRecord[
+            "code"
+          ]
+        : "";
+
+    const causeMessage =
+      typeof causeRecord[
+        "message"
+      ] === "string"
+        ? causeRecord[
+            "message"
+          ].slice(
+            0,
+            1000,
+          )
+        : "";
+
+    console.error(
+      `[${WORKER_NAME}] error cause ${causeDepth} name: ${causeName}`,
+    );
+
+    console.error(
+      `[${WORKER_NAME}] error cause ${causeDepth} code: ${causeCode}`,
+    );
+
+    console.error(
+      `[${WORKER_NAME}] error cause ${causeDepth} message: ${causeMessage}`,
+    );
+
+    causeValue =
+      causeRecord[
+        "cause"
+      ];
+  }
+
   if (safeError.causeName) {
     console.error(
       `[${WORKER_NAME}] cause name: ${safeError.causeName}`,
