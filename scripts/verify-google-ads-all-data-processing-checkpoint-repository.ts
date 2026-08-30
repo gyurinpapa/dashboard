@@ -1090,6 +1090,174 @@ async function main():
     "ALL_DATA_SAVER_LEGACY_JOB_FAILS_BEFORE_RPC=PASS",
   );
 
+  const jsonbOrderCalls = {
+    calls:
+      0,
+  };
+
+  const jsonbOrderSaved =
+    await saveGoogleAdsAllDataProcessingCheckpoint(
+      {
+        job:
+          transitionJob,
+        result:
+          transitionResult,
+      },
+      {
+        invokeRpc:
+          async (
+            _functionName,
+            args,
+          ) => {
+            jsonbOrderCalls.calls +=
+              1;
+
+            const returnedJob =
+              buildReturnedJob(
+                transitionJob,
+                args.p_payload,
+              );
+
+            const returnedErrorDetail =
+              returnedJob.error_detail as
+                unknown as
+                Record<
+                  string,
+                  unknown
+                >;
+
+            const returnedCheckpoint =
+              returnedErrorDetail[
+                "processing_checkpoint"
+              ] as
+                Record<
+                  string,
+                  unknown
+                >;
+
+            const returnedCollector =
+              returnedCheckpoint[
+                "collector"
+              ] as
+                Record<
+                  string,
+                  unknown
+                >;
+
+            const cursor =
+              returnedCollector[
+                "cursor"
+              ] as
+                Record<
+                  string,
+                  unknown
+                >;
+
+            const reorderedCursor = {
+              phaseCursor:
+                cursor[
+                  "phaseCursor"
+                ],
+              expectedRowStartIndex:
+                cursor[
+                  "expectedRowStartIndex"
+                ],
+              dateTo:
+                cursor[
+                  "dateTo"
+                ],
+              dateFrom:
+                cursor[
+                  "dateFrom"
+                ],
+              dateWindowIndex:
+                cursor[
+                  "dateWindowIndex"
+                ],
+              externalAccountId:
+                cursor[
+                  "externalAccountId"
+                ],
+              phase:
+                cursor[
+                  "phase"
+                ],
+              version:
+                cursor[
+                  "version"
+                ],
+            };
+
+            assert.deepEqual(
+              reorderedCursor,
+              transitionCursor,
+            );
+
+            assert.notEqual(
+              JSON.stringify(
+                reorderedCursor,
+              ),
+              JSON.stringify(
+                transitionCursor,
+              ),
+            );
+
+            const reorderedJob = {
+              ...returnedJob,
+
+              error_detail: {
+                ...returnedErrorDetail,
+
+                processing_checkpoint: {
+                  ...returnedCheckpoint,
+
+                  collector: {
+                    ...returnedCollector,
+
+                    cursor:
+                      reorderedCursor,
+                  },
+                },
+              },
+            } as
+              GoogleAdsAllDataCheckpointJobRecord;
+
+            return {
+              data: [
+                reorderedJob,
+              ],
+              error:
+                null,
+            };
+          },
+
+        parseJob:
+          async (
+            value,
+          ) =>
+            value as
+              GoogleAdsAllDataCheckpointJobRecord,
+      },
+    );
+
+  assert.equal(
+    jsonbOrderCalls.calls,
+    1,
+  );
+
+  assert.equal(
+    jsonbOrderSaved.inserted_rows,
+    1,
+  );
+
+  console.log(
+    "ALL_DATA_SAVER_JSONB_CURSOR_RAW_STRING_ORDER_DIFF=PASS",
+  );
+
+  console.log(
+    "ALL_DATA_SAVER_JSONB_CURSOR_KEY_ORDER_INVARIANT=PASS",
+  );
+
   const sql =
     fs.readFileSync(
       "scripts/sql/create-save-google-ads-all-data-processing-checkpoint.sql",

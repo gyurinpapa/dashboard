@@ -557,6 +557,56 @@ function validateResult(
   });
 }
 
+function stableJson(
+  value: unknown,
+): string {
+  if (
+    value === null ||
+    typeof value !==
+      "object"
+  ) {
+    return (
+      JSON.stringify(
+        value,
+      ) ??
+      "undefined"
+    );
+  }
+
+  if (
+    Array.isArray(
+      value,
+    )
+  ) {
+    return `[${value
+      .map(
+        stableJson,
+      )
+      .join(",")}]`;
+  }
+
+  const record =
+    value as
+      Record<
+        string,
+        unknown
+      >;
+
+  return `{${Object.keys(
+    record,
+  )
+    .sort()
+    .map(
+      (key) =>
+        `${JSON.stringify(
+          key,
+        )}:${stableJson(
+          record[key],
+        )}`,
+    )
+    .join(",")}}`;
+}
+
 function readRpcErrorMessage(
   error: unknown,
 ): string {
@@ -1039,10 +1089,10 @@ export async function saveGoogleAdsAllDataProcessingCheckpoint(
       validated.nextRowIndex ||
     savedCheckpoint.complete !==
       checkpointComplete ||
-    JSON.stringify(
+    stableJson(
       savedCheckpoint.cursor,
     ) !==
-      JSON.stringify(
+      stableJson(
         validated.cursor,
       )
   ) {
