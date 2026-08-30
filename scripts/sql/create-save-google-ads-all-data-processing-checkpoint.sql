@@ -865,16 +865,33 @@ begin
       end if;
 
       if v_product_index =
-           v_existing_product_index
-         and (
-           v_phase_rank <
-             v_existing_phase_rank
-           or v_phase_rank >
-             (
-               v_existing_phase_rank +
-               1
-             )
-         )
+          v_existing_product_index
+        and (
+          v_phase_rank <
+            v_existing_phase_rank
+          or (
+            v_phase_rank >
+              (
+                v_existing_phase_rank +
+                1
+              )
+            and not (
+              v_existing_phase =
+                'product_boundary'
+              and v_phase =
+                'search_ad'
+              and v_existing_product_family =
+                'search'
+              and v_product_family =
+                'search'
+              and (
+                v_phase_cursor is null
+                or v_phase_cursor =
+                  'null'::jsonb
+              )
+            )
+          )
+        )
       then
         raise exception using
           errcode = 'P0001',

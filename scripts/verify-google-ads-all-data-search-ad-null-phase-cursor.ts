@@ -48,3 +48,39 @@ console.log(
 
 console.log("DB_CALLS=0");
 console.log("GOOGLE_API_CALLS=0");
+
+assert.match(
+  sql,
+  /v_existing_phase\s*=\s*'product_boundary'\s+and\s+v_phase\s*=\s*'search_ad'/,
+);
+
+assert.match(
+  sql,
+  /v_existing_product_family\s*=\s*'search'\s+and\s+v_product_family\s*=\s*'search'/,
+);
+
+assert.match(
+  sql,
+  /v_phase_cursor\s+is\s+null\s+or\s+v_phase_cursor\s*=\s*'null'::jsonb/,
+);
+
+assert.match(
+  sql,
+  /v_phase_rank\s*>\s*\(\s*v_existing_phase_rank\s*\+\s*1\s*\)/,
+);
+
+console.log(
+  "DIRECT_PRODUCT_BOUNDARY_TO_SEARCH_AD_CONTRACT=PASS",
+);
+
+console.log(
+  "DIRECT_TRANSITION_SEARCH_PRODUCT_ONLY=PASS",
+);
+
+console.log(
+  "DIRECT_TRANSITION_NULL_PHASE_CURSOR_ONLY=PASS",
+);
+
+console.log(
+  "GENERIC_PHASE_SKIP_FAIL_CLOSED_PRESERVED=PASS",
+);
