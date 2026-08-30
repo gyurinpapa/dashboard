@@ -2,7 +2,7 @@ import {
   collectGoogleAdsAccountInventory,
 } from "./google-ads-account-inventory";
 import {
-  buildGoogleAdsAllDataProductRoute,
+  buildGoogleAdsAllDataExecutableProductRoute,
   validateGoogleAdsAllDataProductRoutingState,
 } from "./google-ads-all-data-product-routing";
 import {
@@ -1054,7 +1054,7 @@ export async function processClaimedGoogleAdsAllDataJob(
       });
 
     const route =
-      buildGoogleAdsAllDataProductRoute(
+      buildGoogleAdsAllDataExecutableProductRoute(
         inventory.supportedCampaigns.map(
           campaign =>
             campaign.productFamily,

@@ -171,6 +171,19 @@ export function buildGoogleAdsAllDataProductRoute(
   );
 }
 
+export function buildGoogleAdsAllDataExecutableProductRoute(
+  productFamilies:
+    readonly GoogleAdsProductFamily[],
+): readonly GoogleAdsProductFamily[] {
+  return buildGoogleAdsAllDataProductRoute(
+    productFamilies.filter(
+      productFamily =>
+        productFamily === "search" ||
+        productFamily === "demand_gen",
+    ),
+  );
+}
+
 export function validateGoogleAdsAllDataProductRoutingState(
   value: unknown,
 ): GoogleAdsAllDataProductRoutingState {
