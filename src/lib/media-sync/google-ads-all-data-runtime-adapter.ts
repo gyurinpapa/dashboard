@@ -845,8 +845,12 @@ function resolveResumeCoordinates(
     if (
       state.dateWindowIndex !==
         0 ||
-      state.nextRowIndex !==
-        0 ||
+      (
+        routing?.productIndex ===
+          0 &&
+        state.nextRowIndex !==
+          0
+      ) ||
       state.cursor !==
         null ||
       routing ===

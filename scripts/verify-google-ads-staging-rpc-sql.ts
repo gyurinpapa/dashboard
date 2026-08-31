@@ -104,6 +104,12 @@ function main(): void {
       functionDefinition,
     );
 
+  // Comments document the read-only materialization-start guard. They are not
+  // materialization writes; inspect executable SQL for forbidden mutations.
+  const normalizedExecutableFunction = normalizeSql(
+    functionDefinition.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--[^\n]*/g, " "),
+  );
+
   assertContains(
     normalizedSql,
     `Production baseline pg_get_functiondef MD5: ${EXPECTED_BASELINE_MD5}`,
@@ -248,10 +254,13 @@ function main(): void {
     "reconcile_naver",
   ]) {
     assertDoesNotContain(
-      normalizedFunction,
+      normalizedExecutableFunction,
       forbiddenMutationToken,
     );
   }
+
+  assertContains(normalizedExecutableFunction, "v_job.snapshot_ingestion_id is not null");
+  assertContains(normalizedExecutableFunction, "from public.media_sync_report_projections");
 
   console.log(
     "GOOGLE_ADS_STAGING_RPC_SQL_FIXTURE=PASS",

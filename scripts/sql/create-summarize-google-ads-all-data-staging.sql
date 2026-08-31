@@ -19,7 +19,7 @@ begin;
  *    - scope
  *    - row key
  *    - fingerprint
- *    - canonical Search keyword / Search ad contract
+ *    - canonical Search keyword / Search ad / Demand Gen ad contract
  *    - provider_meta authority
  *    - date-window summaries
  *
@@ -741,15 +741,16 @@ begin
                'YYYY-MM-DD'
              )
 
-        or staging.row ->> 'channel'
+        /* Match the existing TypeScript nullable presentation-field mapping. */
+        or nullif(btrim(staging.row ->> 'channel'), '')
              is distinct from
              staging.channel
 
-        or staging.row ->> 'device'
+        or nullif(btrim(staging.row ->> 'device'), '')
              is distinct from
              staging.device
 
-        or staging.row ->> 'source'
+        or nullif(btrim(staging.row ->> 'source'), '')
              is distinct from
              staging.source
 
@@ -814,15 +815,21 @@ begin
              is distinct from
              'google_ads'
 
-        or staging.row
-             #>> '{provider_meta,campaign_type}'
-             is distinct from
-             'SEARCH'
-
-        or staging.row
-             #>> '{provider_meta,product_family}'
-             is distinct from
-             'search'
+        or not (
+          (
+            staging.row #>> '{provider_meta,campaign_type}'
+              is not distinct from 'SEARCH'
+            and staging.row #>> '{provider_meta,product_family}'
+              is not distinct from 'search'
+          )
+          or
+          (
+            staging.row #>> '{provider_meta,campaign_type}'
+              is not distinct from 'DEMAND_GEN'
+            and staging.row #>> '{provider_meta,product_family}'
+              is not distinct from 'demand_gen'
+          )
+        )
 
         or staging.row
              #>> '{provider_meta,authoritative_grain}'
@@ -830,7 +837,7 @@ begin
              'ad'
 
         /*
-         * Exactly one current Google Search ALL-DATA canonical grain.
+         * Exactly one executable ALL-DATA canonical grain.
          */
         or not (
           (
@@ -845,6 +852,9 @@ begin
             and staging.row ->> 'row_level_reason'
               is not distinct from
               'google_ads_keyword_daily_stats'
+
+            and staging.row #>> '{provider_meta,product_family}'
+              is not distinct from 'search'
 
             and nullif(
                   btrim(
@@ -896,9 +906,21 @@ begin
               is not distinct from
               'creative'
 
-            and staging.row ->> 'row_level_reason'
-              is not distinct from
-              'google_ads_search_ad_daily_stats'
+            and (
+              (
+                staging.row #>> '{provider_meta,product_family}'
+                  is not distinct from 'search'
+                and staging.row ->> 'row_level_reason'
+                  is not distinct from 'google_ads_search_ad_daily_stats'
+              )
+              or
+              (
+                staging.row #>> '{provider_meta,product_family}'
+                  is not distinct from 'demand_gen'
+                and staging.row ->> 'row_level_reason'
+                  is not distinct from 'google_ads_demand_gen_ad_daily_stats'
+              )
+            )
 
             and nullif(
                   btrim(
@@ -941,7 +963,7 @@ begin
         )
 
         /*
-         * Exact persisted ALL-DATA Search row identity.
+         * Exact persisted ALL-DATA product-specific row identity.
          *
          * array_to_json(text[]) emits the same compact JSON-array shape used
          * by JSON.stringify() in the TypeScript staging contract.
@@ -951,7 +973,7 @@ begin
              array_to_json(
                array[
                  'google_ads'::text,
-                 'search'::text,
+                 staging.row #>> '{provider_meta,product_family}',
 
                  staging.row
                    #>> '{provider_meta,entity_type}',
@@ -1131,7 +1153,7 @@ is
 comment on function
 public.validate_google_ads_all_data_staging_batch_v1(jsonb)
 is
-  'Validates at most 2,000 Google Ads ALL-DATA Search staging rows for scope, row-key identity, fingerprint, canonical JSON, provider authority, and date windows.';
+  'Validates at most 2,000 Google Ads ALL-DATA Search and Demand Gen staging rows for scope, row-key identity, fingerprint, canonical JSON, provider authority, and date windows.';
 
 
 notify pgrst, 'reload schema';

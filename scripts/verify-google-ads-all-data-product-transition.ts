@@ -264,6 +264,7 @@ assert.deepEqual(
 let invalidStageCalls =
   0;
 
+for (const blockedProduct of ["display", "performance_max"] as const) {
 await assert.rejects(
   async () =>
     await runGoogleAdsAllDataProcessingOrchestrator(
@@ -289,13 +290,15 @@ await assert.rejects(
           route: [
             "search",
             "demand_gen",
+            "display",
+            "performance_max",
           ],
 
           productIndex:
-            1,
+            blockedProduct === "display" ? 2 : 3,
 
           productFamily:
-            "demand_gen",
+            blockedProduct,
 
           complete:
             false,
@@ -313,6 +316,12 @@ await assert.rejects(
             } as never;
           },
 
+        runDemandGenStaging:
+          async () => {
+            invalidStageCalls += 1;
+            throw new Error("Blocked products must not enter Demand Gen staging.");
+          },
+
         saveCheckpoint:
           async () =>
             ({
@@ -323,6 +332,7 @@ await assert.rejects(
     ),
   GoogleAdsAllDataProductRoutingError,
 );
+}
 
 assert.equal(
   invalidStageCalls,
@@ -351,7 +361,6 @@ for (
   const required
   of [
     "advanceGoogleAdsAllDataProductRoutingState",
-    'currentRouting.productFamily !==\n        "search"',
     "nextRouting",
     "routing:",
   ]
@@ -364,13 +373,16 @@ for (
   );
 }
 
+assert.match(processingSource, /currentRouting\.productFamily\s*!==\s*"search"/);
+assert.match(processingSource, /currentRouting\.productFamily\s*!==\s*"demand_gen"/);
+
 for (
   const required
   of [
     '"product_boundary"',
     "productBoundary",
     "GOOGLE_ADS_ALL_DATA_PRODUCT_BOUNDARY",
-    "cannot re-enter SEARCH processing",
+    "cannot re-enter an unsupported product",
   ]
 ) {
   assert.ok(
@@ -383,7 +395,7 @@ for (
 
 const reentryGuardIndex =
   handlerSource.indexOf(
-    "cannot re-enter SEARCH processing",
+    "cannot re-enter an unsupported product",
   );
 
 const processRuntimeIndex =
@@ -423,7 +435,7 @@ console.log(
 );
 
 console.log(
-  "NON_SEARCH_ROUTING_FAILS_BEFORE_SEARCH_STAGE=PASS",
+  "BLOCKED_PRODUCT_ROUTING_FAILS_BEFORE_ANY_STAGE=PASS",
 );
 
 console.log(
