@@ -1665,7 +1665,7 @@ export default function ReportDetailPage() {
   const lastLoadedMonthGoalKeyRef = useRef<string>("");
 
   const [brandSearchContracts, setBrandSearchContracts] =
-    useState<BrandSearchContractsDraft>(() => buildEmptyBrandSearchContracts());
+    useState<BrandSearchContractsDraft>([]);
   const [savingBrandSearchContracts, setSavingBrandSearchContracts] =
     useState(false);
   const [brandSearchContractsSavedText, setBrandSearchContractsSavedText] =
@@ -1744,7 +1744,9 @@ export default function ReportDetailPage() {
   const lastSavedReportPeriodKeyRef = useRef<string>("");
 
   const [reportPeriod, setReportPeriod] = useState<ReportPeriod>(() =>
-    resolvePresetPeriod(),
+    resolvePresetPeriod({
+      today: new Date(2000, 0, 15, 12, 0, 0, 0),
+    }),
   );
 
   const displayRows = rows;
