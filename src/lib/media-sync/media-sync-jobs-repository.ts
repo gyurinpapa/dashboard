@@ -130,6 +130,12 @@ export type ListRecentMediaSyncJobsForReportInput = {
   limit?: number;
 };
 
+export type ListReportMediaConnectionIdsInput = {
+  reportId: string;
+  workspaceId: string;
+  advertiserId: string;
+};
+
 export type RecoverStaleProcessingMediaSyncJobsForReportInput = {
   reportId: string;
   workspaceId: string;
@@ -1285,4 +1291,98 @@ export async function listRecentMediaSyncJobsForReport(
       parseMediaSyncJobRecord(record),
     ),
   );
+}
+
+/**
+ * 리포트에 명시적으로 매핑된 connection id를 읽기 전용으로 반환한다.
+ *
+ * 현재 Production은 리포트당 1개 매핑을 강제하지만, 이 조회 계약은
+ * M5 다매체 UI가 기존 단일 매핑과 향후 복수 매핑을 같은 형식으로
+ * 안전하게 표시할 수 있도록 배열을 사용한다.
+ */
+export async function listReportMediaConnectionIds(
+  input: ListReportMediaConnectionIdsInput,
+): Promise<string[]> {
+  const reportId = normalizeRequiredString(
+    input.reportId,
+    "reportId",
+    200,
+  );
+  const workspaceId = normalizeRequiredString(
+    input.workspaceId,
+    "workspaceId",
+    200,
+  );
+  const advertiserId = normalizeRequiredString(
+    input.advertiserId,
+    "advertiserId",
+    200,
+  );
+
+  await requireScopedReport({
+    reportId,
+    workspaceId,
+    advertiserId,
+  });
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from(REPORT_MEDIA_CONNECTIONS_TABLE)
+    .select("workspace_id, advertiser_id, report_id, connection_id")
+    .eq("report_id", reportId)
+    .eq("workspace_id", workspaceId)
+    .eq("advertiser_id", advertiserId)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    throw wrapDatabaseError(
+      "Report media connection mappings could not be loaded.",
+      error,
+    );
+  }
+
+  if (!Array.isArray(data)) {
+    throw new MediaSyncJobsRepositoryError(
+      "INVALID_RECORD",
+      "Report media connection mapping query returned an invalid result.",
+    );
+  }
+
+  const connectionIds = new Set<string>();
+
+  for (const value of data) {
+    if (!isPlainObject(value)) {
+      throw new MediaSyncJobsRepositoryError(
+        "INVALID_RECORD",
+        "Report media connection mapping contains an invalid row.",
+      );
+    }
+
+    if (
+      requireString(value.report_id, "mapping.report_id") !== reportId ||
+      requireString(value.workspace_id, "mapping.workspace_id") !== workspaceId ||
+      requireString(value.advertiser_id, "mapping.advertiser_id") !== advertiserId
+    ) {
+      throw new MediaSyncJobsRepositoryError(
+        "REPORT_SCOPE_MISMATCH",
+        "Report media connection mapping does not match the requested scope.",
+      );
+    }
+
+    const connectionId = requireString(
+      value.connection_id,
+      "mapping.connection_id",
+    );
+
+    if (connectionIds.has(connectionId)) {
+      throw new MediaSyncJobsRepositoryError(
+        "INVALID_RECORD",
+        "Report media connection mapping contains a duplicate connection.",
+      );
+    }
+
+    connectionIds.add(connectionId);
+  }
+
+  return [...connectionIds];
 }

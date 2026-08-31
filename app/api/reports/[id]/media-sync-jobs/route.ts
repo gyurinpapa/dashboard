@@ -6,7 +6,12 @@ import {
   resolveReportMediaConnectionAccess,
 } from "@/src/lib/media-sync/media-connection-access";
 import {
+  listSafeMediaConnections,
+  MediaConnectionsRepositoryError,
+} from "@/src/lib/media-sync/media-connections-repository";
+import {
   createPendingMediaSyncJob,
+  listReportMediaConnectionIds,
   listRecentMediaSyncJobsForReport,
   MediaSyncJobsRepositoryError,
 } from "@/src/lib/media-sync/media-sync-jobs-repository";
@@ -27,6 +32,9 @@ import {
   MediaSyncJobsRoutePolicyError,
   type MediaSyncJobsRouteErrorResponse,
 } from "@/src/lib/media-sync/media-sync-jobs-route-policy";
+import {
+  buildMediaSyncProviderDashboard,
+} from "@/src/lib/media-sync/media-sync-provider-dashboard";
 import type { SafeMediaSyncJob } from "@/src/lib/media-sync/types";
 
 export const runtime = "nodejs";
@@ -208,13 +216,40 @@ export async function GET(
         action: "run_sync",
       });
 
-    const jobs =
-      await listRecentMediaSyncJobsForReport({
+    const [
+      jobs,
+      mappedConnectionIds,
+      advertiserConnections,
+    ] = await Promise.all([
+      listRecentMediaSyncJobsForReport({
         reportId: access.reportId,
         workspaceId: access.workspaceId,
         advertiserId: access.advertiserId,
-        limit: 5,
-      });
+        limit: 20,
+      }),
+      listReportMediaConnectionIds({
+        reportId: access.reportId,
+        workspaceId: access.workspaceId,
+        advertiserId: access.advertiserId,
+      }),
+      listSafeMediaConnections({
+        workspaceId: access.workspaceId,
+        advertiserId: access.advertiserId,
+      }),
+    ]);
+
+    const mappedConnectionIdSet =
+      new Set(mappedConnectionIds);
+    const mappedConnections = advertiserConnections.filter(
+      (connection) => mappedConnectionIdSet.has(connection.id),
+    );
+
+    if (mappedConnections.length !== mappedConnectionIds.length) {
+      throw new MediaSyncJobsRepositoryError(
+        "INVALID_RECORD",
+        "A report media connection mapping could not be resolved safely.",
+      );
+    }
 
     const activeJob =
       jobs.find(isActiveMediaSyncJob) ?? null;
@@ -227,6 +262,10 @@ export async function GET(
       access_scope: access.accessScope,
       active_job: activeJob,
       jobs,
+      provider_sync: buildMediaSyncProviderDashboard({
+        connections: mappedConnections,
+        jobs,
+      }),
     };
 
     assertSafeMediaSyncJobPayload(response);
@@ -253,6 +292,16 @@ export async function GET(
         mapMediaSyncJobsRepositoryRouteError(
           error.code,
         ),
+      );
+    }
+
+    if (
+      error instanceof
+      MediaConnectionsRepositoryError
+    ) {
+      return jsonError(
+        500,
+        "MEDIA_SYNC_CONNECTIONS_ERROR",
       );
     }
 

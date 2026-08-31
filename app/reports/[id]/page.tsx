@@ -192,6 +192,44 @@ type ReportMediaSyncJob = {
   progress?: number | null;
 };
 
+type ReportMediaSyncProviderProduct = {
+  key: string;
+  label: string;
+  description: string;
+  state: "enabled" | "preparing";
+};
+
+type ReportMediaSyncProviderStatus = {
+  provider: "naver_searchad" | "google_ads" | "meta_ads";
+  label: string;
+  runtime_enabled: boolean;
+  selection_mode: "fixed_all" | "unavailable";
+  products: ReportMediaSyncProviderProduct[];
+  connections: Array<{
+    id: string;
+    external_account_id: string;
+    external_account_name?: string | null;
+    status: string;
+    last_sync_at?: string | null;
+    last_error?: string | null;
+  }>;
+  latest_job: null | {
+    id: string;
+    status: string;
+    progress: number;
+    phase: string | null;
+    current_product: string | null;
+    current_product_label: string | null;
+    collected_rows: number;
+    failed_rows: number;
+    created_at: string;
+    started_at: string | null;
+    finished_at: string | null;
+    updated_at: string;
+    error: string | null;
+  };
+};
+
 function normalizeYmdInput(value: any) {
   const normalized = String(value ?? "").trim();
 
@@ -244,6 +282,30 @@ function getMediaSyncJobStatusText(job: ReportMediaSyncJob | null) {
   if (job.status === "failed") return "실패";
   if (job.status === "cancelled") return "취소됨";
   return String(job.status ?? "상태 확인");
+}
+
+function getProviderSyncStatusText(
+  provider: ReportMediaSyncProviderStatus,
+) {
+  if (!provider.runtime_enabled) return "준비 중";
+  if (provider.connections.length === 0) return "리포트 연결 없음";
+
+  const job = provider.latest_job;
+
+  if (!job) return "동기화 요청 전";
+  if (job.status === "pending") return "대기 중";
+  if (job.status === "processing") return `처리 중 ${job.progress}%`;
+  if (job.status === "done") return "완료";
+  if (job.status === "failed") return "실패";
+  if (job.status === "cancelled") return "취소됨";
+  return "상태 확인";
+}
+
+function formatProviderSyncTimestamp(value?: string | null) {
+  if (!value) return "-";
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "-" : date.toLocaleString("ko-KR");
 }
 
 function normalizeMediaSyncDataLevel(value: any): MediaSyncSettingsDraft["dataLevel"] {
@@ -322,7 +384,7 @@ function getMediaSyncSettingsError(v: MediaSyncSettingsDraft) {
   }
 
   if (!isMediaSyncDateWindowAllowed(dateFrom, dateTo)) {
-    return "네이버 검색광고 API 동기화 기간은 31일 이내로 선택해주세요.";
+    return "매체 API 동기화 기간은 31일 이내로 선택해주세요.";
   }
 
   return "";
@@ -1617,6 +1679,8 @@ export default function ReportDetailPage() {
     useState<string>("");
   const lastLoadedMediaSyncSettingsKeyRef = useRef<string>("");
   const [mediaSyncJob, setMediaSyncJob] = useState<ReportMediaSyncJob | null>(null);
+  const [mediaSyncProviders, setMediaSyncProviders] =
+    useState<ReportMediaSyncProviderStatus[]>([]);
   const [loadingMediaSyncJob, setLoadingMediaSyncJob] = useState(false);
   const [requestingMediaSync, setRequestingMediaSync] = useState(false);
 
@@ -2719,6 +2783,7 @@ export default function ReportDetailPage() {
     async (silent = false) => {
       if (!reportId || !isApiReport) {
         setMediaSyncJob(null);
+        setMediaSyncProviders([]);
         return null;
       }
 
@@ -2751,7 +2816,12 @@ export default function ReportDetailPage() {
             : null;
         const nextJob = activeJob ?? latestJob;
 
+        const providerSync = Array.isArray(json?.provider_sync)
+          ? (json.provider_sync as ReportMediaSyncProviderStatus[])
+          : [];
+
         setMediaSyncJob(nextJob);
+        setMediaSyncProviders(providerSync);
         return nextJob;
       } catch (e: any) {
         if (!silent) {
@@ -2770,6 +2840,7 @@ export default function ReportDetailPage() {
   useEffect(() => {
     if (!reportId || !isApiReport) {
       setMediaSyncJob(null);
+      setMediaSyncProviders([]);
       return;
     }
 
@@ -2884,6 +2955,7 @@ export default function ReportDetailPage() {
 
       const job = (json?.job ?? null) as ReportMediaSyncJob | null;
       setMediaSyncJob(job);
+      await fetchLatestMediaSyncJob(true);
       setMsg(`API 동기화 요청 생성 완료: ${dateFrom} ~ ${dateTo}`);
     } catch (e: any) {
       setMsg(e?.message || "API 동기화 요청 실패");
@@ -3722,24 +3794,12 @@ export default function ReportDetailPage() {
                   />
                 </label>
 
-                <label className="block">
-                  <span className="text-xs font-extrabold text-[#bbb8d4]">데이터 레벨</span>
-                  <select
-                    value={mediaSyncSettings.dataLevel}
-                    onChange={(event) =>
-                      setMediaSyncSettings((prev) => ({
-                        ...prev,
-                        dataLevel: normalizeMediaSyncDataLevel(event.target.value),
-                      }))
-                    }
-                    className="etrylue-field mt-1 w-full rounded-xl px-3.5 py-2.5 text-sm"
-                  >
-                    <option value="keyword">키워드</option>
-                    <option value="creative">소재</option>
-                    <option value="mixed">혼합</option>
-                    <option value="unknown">미지정</option>
-                  </select>
-                </label>
+                <div className="block">
+                  <span className="text-xs font-extrabold text-[#bbb8d4]">수집 계약</span>
+                  <div className="mt-1 rounded-xl border border-[#21dff3]/20 bg-[#21dff3]/[0.07] px-3.5 py-2.5 text-sm font-extrabold text-[#9ef5ff]">
+                    매체별 ALL-DATA
+                  </div>
+                </div>
 
                 <button
                   type="button"
@@ -3782,6 +3842,131 @@ export default function ReportDetailPage() {
                 </button>
               </div>
 
+              <div>
+                <div className="flex flex-wrap items-end justify-between gap-2">
+                  <div>
+                    <div className="text-sm font-black text-[#f7f7ff]">매체별 동기화 현황</div>
+                    <div className="mt-1 text-xs text-[#bbb8d4]">
+                      데이터 레벨이 아니라 매체의 실제 상품 계약과 job 결과를 표시합니다.
+                    </div>
+                  </div>
+                  <div className="text-xs font-extrabold text-[#9ef5ff]">
+                    상품 선택 저장은 다매체 실행 계약 적용 후 활성화됩니다.
+                  </div>
+                </div>
+
+                <div className="mt-3 grid gap-3 xl:grid-cols-3">
+                  {mediaSyncProviders.map((provider) => {
+                    const connection = provider.connections[0] ?? null;
+                    const job = provider.latest_job;
+                    const enabledProducts = provider.products.filter(
+                      (product) => product.state === "enabled",
+                    );
+                    const progress = Math.max(
+                      0,
+                      Math.min(100, Number(job?.progress ?? 0)),
+                    );
+
+                    return (
+                      <div
+                        key={provider.provider}
+                        className="rounded-xl border border-white/[0.10] bg-[#211b44]/70 p-3.5"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="font-black text-[#f7f7ff]">{provider.label}</div>
+                            <div className="mt-1 text-xs text-[#bbb8d4]">
+                              {connection
+                                ? connection.external_account_name || connection.external_account_id
+                                : "이 리포트에 연결되지 않음"}
+                            </div>
+                          </div>
+                          <span
+                            className={`rounded-full border px-2.5 py-1 text-[11px] font-black ${
+                              job?.status === "done"
+                                ? "border-emerald-300/25 bg-emerald-300/10 text-emerald-100"
+                                : job?.status === "failed"
+                                  ? "border-rose-300/25 bg-rose-300/10 text-rose-100"
+                                  : job?.status === "processing" || job?.status === "pending"
+                                    ? "border-cyan-300/25 bg-cyan-300/10 text-cyan-100"
+                                    : "border-white/[0.12] bg-white/[0.05] text-[#bbb8d4]"
+                            }`}
+                          >
+                            {getProviderSyncStatusText(provider)}
+                          </span>
+                        </div>
+
+                        <div className="mt-3">
+                          <div className="text-[11px] font-extrabold text-[#bbb8d4]">상품 범위</div>
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {provider.products.map((product) => (
+                              <span
+                                key={product.key}
+                                title={product.description}
+                                className={`rounded-full border px-2 py-1 text-[11px] font-extrabold ${
+                                  product.state === "enabled"
+                                    ? "border-[#21dff3]/25 bg-[#21dff3]/10 text-[#9ef5ff]"
+                                    : "border-white/[0.10] bg-white/[0.04] text-[#8f8ca8]"
+                                }`}
+                              >
+                                {product.state === "enabled" ? "✓ " : "준비 중 · "}
+                                {product.label}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#15112f]">
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-[#21dff3] to-[#7c5cff] transition-all"
+                            style={{ width: `${progress}%` }}
+                          />
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <div className="text-[#8f8ca8]">수집 행</div>
+                            <div className="mt-0.5 font-black text-[#f7f7ff]">
+                              {Number(job?.collected_rows ?? 0).toLocaleString("ko-KR")}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-[#8f8ca8]">현재 단계</div>
+                            <div className="mt-0.5 truncate font-black text-[#f7f7ff]">
+                              {job?.current_product_label || job?.phase || "-"}
+                            </div>
+                          </div>
+                          <div className="col-span-2">
+                            <div className="text-[#8f8ca8]">마지막 갱신</div>
+                            <div className="mt-0.5 font-semibold text-[#d7d5ec]">
+                              {formatProviderSyncTimestamp(
+                                job?.updated_at || connection?.last_sync_at,
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {!provider.runtime_enabled ? (
+                          <div className="mt-3 text-xs text-amber-100">
+                            런타임 준비 전이므로 job을 생성하지 않습니다.
+                          </div>
+                        ) : connection && enabledProducts.length > 0 ? (
+                          <div className="mt-3 text-xs text-[#bbb8d4]">
+                            현재 {enabledProducts.length}개 상품을 전체 고정 범위로 표시합니다.
+                          </div>
+                        ) : null}
+
+                        {job?.error || connection?.last_error ? (
+                          <div className="mt-3 rounded-lg border border-rose-300/15 bg-rose-300/[0.06] px-2.5 py-2 text-xs text-rose-100">
+                            {job?.error || connection?.last_error}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
               <div className="text-xs text-[#bbb8d4]">
                 {mediaSyncSettingsSavedText ? (
                   <span className="font-extrabold text-emerald-200">{mediaSyncSettingsSavedText}</span>
@@ -3794,11 +3979,9 @@ export default function ReportDetailPage() {
                 )}
               </div>
 
-              <div className="text-xs text-[#bbb8d4]">
-                {loadingMediaSyncJob
-                  ? "동기화 상태 확인 중..."
-                  : `동기화 상태: ${getMediaSyncJobStatusText(mediaSyncJob)}`}
-              </div>
+              {loadingMediaSyncJob ? (
+                <div className="text-xs text-[#bbb8d4]">매체별 동기화 상태 확인 중...</div>
+              ) : null}
             </div>
           ) : (
             <>

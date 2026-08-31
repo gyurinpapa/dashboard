@@ -6105,7 +6105,8 @@ export default function ReportBuilderPage() {
                         >
                           STEP 1에서 관리한 Google Ads 연결을 사용합니다.
                           활성 상태이며 자격증명이 있는 연결만 선택할 수 있습니다.
-                          현재 지원 데이터 레벨은 키워드입니다.
+                          현재 ALL-DATA 계약은 검색(키워드·광고)과 Demand Gen(광고)을 수집합니다.
+                          디스플레이, Performance Max, 쇼핑은 준비 중입니다.
                         </div>
 
                         <div
