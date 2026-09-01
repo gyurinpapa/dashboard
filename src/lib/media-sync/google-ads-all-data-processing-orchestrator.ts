@@ -10,12 +10,24 @@ import type {
   GoogleAdsDemandGenAdStatsCollectorOptions,
 } from "./google-ads-demand-gen-ad-stats-collector";
 
+import type {
+  GoogleAdsDisplayAdStatsCollectorDependencies,
+  GoogleAdsDisplayAdStatsCollectorOptions,
+} from "./google-ads-display-ad-stats-collector";
+
 import {
   runGoogleAdsAllDataDemandGenStagingOrchestrator,
   type GoogleAdsAllDataDemandGenStagingCursor,
   type GoogleAdsAllDataDemandGenStagingOrchestratorDependencies,
   type GoogleAdsAllDataDemandGenStagingOrchestratorResult,
 } from "./google-ads-all-data-demand-gen-staging-orchestrator";
+
+import {
+  runGoogleAdsAllDataDisplayStagingOrchestrator,
+  type GoogleAdsAllDataDisplayStagingCursor,
+  type GoogleAdsAllDataDisplayStagingOrchestratorDependencies,
+  type GoogleAdsAllDataDisplayStagingOrchestratorResult,
+} from "./google-ads-all-data-display-staging-orchestrator";
 
 import {
   runGoogleAdsAllDataSearchStagingOrchestrator,
@@ -63,6 +75,9 @@ export type GoogleAdsAllDataProcessingOrchestratorDependencies =
     runDemandGenStaging?:
       typeof runGoogleAdsAllDataDemandGenStagingOrchestrator;
 
+    runDisplayStaging?:
+      typeof runGoogleAdsAllDataDisplayStagingOrchestrator;
+
     saveCheckpoint?:
       GoogleAdsAllDataProcessingCheckpointSaver;
 
@@ -71,6 +86,9 @@ export type GoogleAdsAllDataProcessingOrchestratorDependencies =
 
     demandGenStagingDependencies?:
       GoogleAdsAllDataDemandGenStagingOrchestratorDependencies;
+
+    displayStagingDependencies?:
+      GoogleAdsAllDataDisplayStagingOrchestratorDependencies;
 
     checkpointDependencies?:
       GoogleAdsAllDataProcessingCheckpointDependencies;
@@ -87,6 +105,13 @@ export type GoogleAdsAllDataProcessingOrchestratorInput =
 
     demandGenCollectorOptions?:
       GoogleAdsDemandGenAdStatsCollectorOptions;
+
+
+    displayCollectorDependencies?:
+      GoogleAdsDisplayAdStatsCollectorDependencies;
+
+    displayCollectorOptions?:
+      GoogleAdsDisplayAdStatsCollectorOptions;
   }>;
 
 export type GoogleAdsAllDataProcessingOrchestratorResult =
@@ -270,6 +295,163 @@ function normalizeDemandGenStagingResult(
   });
 }
 
+function resolveDisplayPhaseCursor(
+  value:
+    unknown,
+): unknown {
+  if (
+    value ===
+      undefined ||
+    value ===
+      null
+  ) {
+    return undefined;
+  }
+
+  if (
+    !isPlainObject(
+      value,
+    ) ||
+    value.version !==
+      1 ||
+    value.phase !==
+      "display_ad" ||
+    !(
+      "phaseCursor" in
+        value
+    )
+  ) {
+    throw new GoogleAdsAllDataProductRoutingError(
+      "ROUTING_CONFLICT",
+      "Display processing requires a durable display_ad resume cursor.",
+    );
+  }
+
+  return value.phaseCursor;
+}
+
+function wrapDisplayCursor(
+  cursor:
+    GoogleAdsAllDataDisplayStagingCursor,
+) {
+  return Object.freeze({
+    version:
+      1 as const,
+
+    phase:
+      "display_ad" as const,
+
+    externalAccountId:
+      cursor.externalAccountId,
+
+    dateWindowIndex:
+      cursor.dateWindowIndex,
+
+    dateFrom:
+      cursor.dateFrom,
+
+    dateTo:
+      cursor.dateTo,
+
+    expectedRowStartIndex:
+      cursor.expectedRowStartIndex,
+
+    phaseCursor:
+      cursor,
+  });
+}
+
+function normalizeDisplayStagingResult(
+  result:
+    GoogleAdsAllDataDisplayStagingOrchestratorResult,
+): GoogleAdsAllDataProcessingStagingResult {
+  const nextPhase =
+    result.isComplete
+      ? null
+      : "display_ad" as const;
+
+  const rawCursor =
+    result.checkpoint.cursor;
+
+  if (
+    !result.isComplete &&
+    rawCursor ===
+      null
+  ) {
+    throw new GoogleAdsAllDataProductRoutingError(
+      "ROUTING_CONFLICT",
+      "A partial Display staging result lost its durable cursor.",
+    );
+  }
+
+  const cursor =
+    rawCursor ===
+      null
+      ? null
+      : wrapDisplayCursor(
+          rawCursor,
+        );
+
+  return Object.freeze({
+    jobId:
+      result.jobId,
+
+    dateWindowIndex:
+      result.dateWindowIndex,
+
+    phaseRun:
+      "display_ad" as const,
+
+    nextPhase,
+
+    rowStartIndex:
+      result.rowStartIndex,
+
+    nextRowIndex:
+      result.nextRowIndex,
+
+    runCanonicalRowCount:
+      result.runCanonicalRowCount,
+
+    status:
+      result.status,
+
+    isComplete:
+      result.isComplete,
+
+    apiPageExecutionCount:
+      1 as const,
+
+    stageResult:
+      result,
+
+    checkpoint:
+      Object.freeze({
+        version:
+          1 as const,
+
+        phaseRun:
+          "display_ad" as const,
+
+        nextPhase,
+
+        nextRowIndex:
+          result.checkpoint.nextRowIndex,
+
+        totalRows:
+          result.checkpoint.totalRows,
+
+        failedRows:
+          0 as const,
+
+        complete:
+          result.checkpoint.complete,
+
+        cursor,
+      }),
+  });
+}
+
 export async function runGoogleAdsAllDataProcessingOrchestrator(
   input:
     GoogleAdsAllDataProcessingOrchestratorInput,
@@ -299,13 +481,15 @@ export async function runGoogleAdsAllDataProcessingOrchestrator(
         currentRouting.productFamily !==
           "search" &&
         currentRouting.productFamily !==
-          "demand_gen"
+          "demand_gen" &&
+        currentRouting.productFamily !==
+          "display"
       )
     )
   ) {
     throw new GoogleAdsAllDataProductRoutingError(
       "ROUTING_CONFLICT",
-      "Google Ads ALL-DATA processing requires an incomplete SEARCH or DEMAND_GEN durable product route.",
+      "Google Ads ALL-DATA processing requires an incomplete SEARCH, DEMAND_GEN, or DISPLAY durable product route.",
     );
   }
 
@@ -329,7 +513,10 @@ export async function runGoogleAdsAllDataProcessingOrchestrator(
         input,
         dependencies.stagingDependencies,
       );
-  } else {
+  } else if (
+    productFamily ===
+      "demand_gen"
+  ) {
     const runDemandGenStaging =
       dependencies.runDemandGenStaging ??
       runGoogleAdsAllDataDemandGenStagingOrchestrator;
@@ -373,6 +560,58 @@ export async function runGoogleAdsAllDataProcessingOrchestrator(
       normalizeDemandGenStagingResult(
         demandGenResult,
       );
+  } else if (
+    productFamily ===
+      "display"
+  ) {
+    const runDisplayStaging =
+      dependencies.runDisplayStaging ??
+      runGoogleAdsAllDataDisplayStagingOrchestrator;
+
+    const displayResult =
+      await runDisplayStaging(
+        {
+          job:
+            input.job,
+
+          accessToken:
+            input.accessToken,
+
+          developerToken:
+            input.developerToken,
+
+          loginCustomerId:
+            input.loginCustomerId,
+
+          dateWindowIndex:
+            input.dateWindowIndex,
+
+          cursor:
+            resolveDisplayPhaseCursor(
+              input.cursor,
+            ),
+
+          collectorDependencies:
+            input.displayCollectorDependencies,
+
+          collectorOptions:
+            input.displayCollectorOptions,
+
+          stagingRepositoryDependencies:
+            input.stagingRepositoryDependencies,
+        },
+        dependencies.displayStagingDependencies,
+      );
+
+    staging =
+      normalizeDisplayStagingResult(
+        displayResult,
+      );
+  } else {
+    throw new GoogleAdsAllDataProductRoutingError(
+      "ROUTING_CONFLICT",
+      "Unsupported Google Ads ALL-DATA product dispatch.",
+    );
   }
 
   const nextRouting =

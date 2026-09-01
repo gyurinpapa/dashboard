@@ -112,8 +112,8 @@ const PROVIDER_PRODUCTS: Readonly<
     {
       key: "display",
       label: "디스플레이",
-      description: "DISPLAY 수집 런타임 준비 중",
-      state: "preparing" as const,
+      description: "DISPLAY 광고 일별 성과",
+      state: "enabled" as const,
     },
     {
       key: "performance_max",

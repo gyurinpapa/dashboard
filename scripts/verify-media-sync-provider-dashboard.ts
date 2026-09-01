@@ -132,7 +132,7 @@ assert.deepEqual(
   google.products
     .filter((product) => product.state === "enabled")
     .map((product) => product.key),
-  ["search", "demand_gen"],
+  ["search", "demand_gen", "display"],
 );
 assert.equal(google.latest_job?.phase, "demand_gen_ad");
 assert.equal(google.latest_job?.current_product, "demand_gen");
@@ -158,7 +158,7 @@ for (const forbidden of [
 
 console.log("MEDIA_SYNC_PROVIDER_DASHBOARD=PASS");
 console.log("PROVIDER_CARDS=3");
-console.log("GOOGLE_ENABLED_PRODUCTS=2");
+console.log("GOOGLE_ENABLED_PRODUCTS=3");
 console.log("NAVER_ENABLED_PRODUCTS=5");
 console.log("META_RUNTIME=DISABLED");
 console.log("DATABASE_MUTATIONS=0");

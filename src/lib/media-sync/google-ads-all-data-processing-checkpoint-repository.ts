@@ -112,7 +112,8 @@ type MediaSyncJobWithExecutionContract =
 export type GoogleAdsAllDataCheckpointStagingPhase =
   | "keyword"
   | "search_ad"
-  | "demand_gen_ad";
+  | "demand_gen_ad"
+  | "display_ad";
 
 export type GoogleAdsAllDataCheckpointStagingResult =
   Readonly<{
@@ -508,7 +509,9 @@ function validateResult(
       result.nextPhase !==
         "search_ad" &&
       result.nextPhase !==
-        "demand_gen_ad"
+        "demand_gen_ad" &&
+      result.nextPhase !==
+        "display_ad"
     ) ||
     !checkpoint.cursor
   ) {

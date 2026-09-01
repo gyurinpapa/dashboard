@@ -264,7 +264,7 @@ assert.deepEqual(
 let invalidStageCalls =
   0;
 
-for (const blockedProduct of ["display", "performance_max"] as const) {
+for (const blockedProduct of ["performance_max"] as const) {
 await assert.rejects(
   async () =>
     await runGoogleAdsAllDataProcessingOrchestrator(
@@ -295,7 +295,7 @@ await assert.rejects(
           ],
 
           productIndex:
-            blockedProduct === "display" ? 2 : 3,
+            3,
 
           productFamily:
             blockedProduct,
@@ -375,6 +375,7 @@ for (
 
 assert.match(processingSource, /currentRouting\.productFamily\s*!==\s*"search"/);
 assert.match(processingSource, /currentRouting\.productFamily\s*!==\s*"demand_gen"/);
+assert.match(processingSource, /currentRouting\.productFamily\s*!==\s*"display"/);
 
 for (
   const required

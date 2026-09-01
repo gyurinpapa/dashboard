@@ -1084,16 +1084,6 @@ async function verifyFutureProductBoundaryRetriesFailBeforeIo():
   const cases = [
     {
       label:
-        "DISPLAY",
-
-      productIndex:
-        2,
-
-      productFamily:
-        "display" as const,
-    },
-    {
-      label:
         "PERFORMANCE_MAX",
 
       productIndex:

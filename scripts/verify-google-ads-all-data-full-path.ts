@@ -23,7 +23,7 @@ const SNAPSHOT = "77777777-7777-4777-8777-777777777777";
 const NOW = "2026-08-31T00:00:00.000Z";
 type Job = GoogleAdsAllDataWorkerJobRecord;
 type ObjectRecord = Record<string, any>;
-type Family = "search" | "demand_gen";
+type Family = "search" | "demand_gen" | "display";
 
 function jsonb<T>(value: T): T {
   function reorder(item: any): any {
@@ -94,7 +94,10 @@ async function verifyInvalidBoundaries() {
     (job: any) => { job.error_detail.processing_checkpoint.collector.phase = "demand_gen_ad"; },
   ]) { const job = jsonb(valid); mutate(job); await mustRejectBeforeIo(job, "malformed subsequent boundary"); }
   const future = ["search", "demand_gen", "display", "performance_max"];
-  await mustRejectBeforeIo(boundaryJob(future, 2, 7), "Display blocked");
+  await mustRejectBeforeIo(
+    boundaryJob(["display"], 0, 7),
+    "initial Display must start at zero",
+  );
   await mustRejectBeforeIo(boundaryJob(future, 3, 7), "Performance Max blocked");
   await mustRejectBeforeIo(boundaryJob(["shopping"], 0, 0), "Shopping excluded");
   console.log("INITIAL_AND_SUBSEQUENT_BOUNDARY_NEGATIVE_CASES_BEFORE_IO=PASS");
@@ -115,7 +118,16 @@ export class OfflineScenario {
   publishedPointer = this.job.previous_ingestion_id;
   completedCheckpoint: Job | null = null;
 
-  constructor(readonly route: Family[], readonly pages: Record<"keyword" | "search_ad" | "demand_gen_ad", number[]>) {}
+  constructor(
+    readonly route: Family[],
+    readonly pages: Record<
+      "keyword" |
+      "search_ad" |
+      "demand_gen_ad" |
+      "display_ad",
+      number[]
+    >,
+  ) {}
 
   async claim(): Promise<Job> {
     const previous = jsonb(this.job.error_detail);
@@ -197,7 +209,11 @@ export class OfflineScenario {
       assert.equal(this.rows.some(existing => existing.row_key === row.row_key), false);
       assert.equal(row.row.external_account_id, ACCOUNT);
       assert.equal(row.row.provider_meta.authoritative_grain, "ad");
-      assert.ok(["search", "demand_gen"].includes(row.row.provider_meta.product_family));
+      assert.ok(
+        ["search", "demand_gen", "display"].includes(
+          row.row.provider_meta.product_family,
+        ),
+      );
       assert.deepEqual(JSON.parse(row.row_key).slice(0, 3), ["google_ads", row.row.provider_meta.product_family, row.row.provider_meta.entity_type]);
       assert.equal(JSON.stringify(row).includes("fixture-access"), false);
     }
@@ -214,12 +230,32 @@ export class OfflineScenario {
     assert.equal(body.pageSize, undefined);
     if (/FROM campaign\b/.test(query)) {
       this.inventoryCalls += 1;
-      return response({ results: [...this.route, "display", "performance_max", "shopping"].map((family, index) => ({ campaign: {
+      return response({ results: [...this.route, "performance_max", "shopping"].map((family, index) => ({ campaign: {
         id: String(1000 + index), name: family, advertisingChannelType: family.toUpperCase(), status: "ENABLED",
       } })) });
     }
-    const phase = /FROM keyword_view\b/.test(query) ? "keyword" : /'DEMAND_GEN'/.test(query) ? "demand_gen_ad" : "search_ad";
-    if (phase === "search_ad") assert.match(query, /campaign\.advertising_channel_type = 'SEARCH'/);
+    const phase =
+      /FROM keyword_view\b/.test(query)
+        ? "keyword"
+        : /'DEMAND_GEN'/.test(query)
+          ? "demand_gen_ad"
+          : /'DISPLAY'/.test(query)
+            ? "display_ad"
+            : "search_ad";
+
+    if (phase === "search_ad") {
+      assert.match(
+        query,
+        /campaign\.advertising_channel_type = 'SEARCH'/,
+      );
+    }
+
+    if (phase === "display_ad") {
+      assert.match(
+        query,
+        /campaign\.advertising_channel_type = 'DISPLAY'/,
+      );
+    }
     const pageIndex = body.pageToken === undefined ? 0 : Number(String(body.pageToken).split(":")[1]);
     assert.equal(body.pageToken, pageIndex === 0 ? undefined : `${phase}:${pageIndex}`);
     assert.ok(pageIndex < this.pages[phase].length);
@@ -229,7 +265,21 @@ export class OfflineScenario {
     const rows = Array.from({ length: this.pages[phase][pageIndex] }, (_, index) => {
       const id = String(3000 + pageIndex * 100 + index);
       return {
-        campaign: { id: phase === "demand_gen_ad" ? "1002" : "1001", name: phase === "demand_gen_ad" ? "Demand Gen" : "Search" },
+        campaign: {
+          id:
+            phase === "demand_gen_ad"
+              ? "1002"
+              : phase === "display_ad"
+                ? "1003"
+                : "1001",
+
+          name:
+            phase === "demand_gen_ad"
+              ? "Demand Gen"
+              : phase === "display_ad"
+                ? "Display"
+                : "Search",
+        },
         adGroup: { id: "2001", name: "Ad group" },
         ...(phase === "keyword" ? { adGroupCriterion: { criterionId: id, keyword: { text: `keyword ${id}` } } } : { adGroupAd: { ad: { id } } }),
         segments: { date: DATE },
@@ -264,9 +314,26 @@ export class OfflineScenario {
         assert.deepEqual(input.cursor ?? null, checkpoint.cursor);
         const collectorDependencies = { fetchImpl: this.googleTransport, sleepImpl: async () => assert.fail("unexpected retry"), randomImpl: () => 0 };
         return runGoogleAdsAllDataProcessingOrchestrator({
-          ...input, keywordCollectorDependencies: collectorDependencies, searchAdCollectorDependencies: collectorDependencies,
-          demandGenCollectorDependencies: collectorDependencies, stagingRepositoryDependencies: { invokeRpc: this.stagingRpc },
-          keywordCollectorOptions: { maxRetries: 0 }, searchAdCollectorOptions: { maxRetries: 0 }, demandGenCollectorOptions: { maxRetries: 0 },
+          ...input,
+          keywordCollectorDependencies: collectorDependencies,
+          searchAdCollectorDependencies: collectorDependencies,
+          demandGenCollectorDependencies: collectorDependencies,
+          displayCollectorDependencies: collectorDependencies,
+          stagingRepositoryDependencies: {
+            invokeRpc: this.stagingRpc,
+          },
+          keywordCollectorOptions: {
+            maxRetries: 0,
+          },
+          searchAdCollectorOptions: {
+            maxRetries: 0,
+          },
+          demandGenCollectorOptions: {
+            maxRetries: 0,
+          },
+          displayCollectorOptions: {
+            maxRetries: 0,
+          },
         }, { checkpointDependencies: { invokeRpc: this.checkpointRpc } });
       },
     });
@@ -352,35 +419,52 @@ async function main() {
   process.env.NEXT_PUBLIC_SUPABASE_URL = FIXTURE_DB;
   process.env.SUPABASE_SERVICE_ROLE_KEY = "offline-fixture-key-not-a-real-credential";
   const originalFetch = globalThis.fetch;
-  const expectedBlocker = process.argv.find(arg => arg.startsWith("--expect-blocker="))?.split("=")[1];
-  const exact = new OfflineScenario(["search", "demand_gen"], { keyword: [4], search_ad: [3], demand_gen_ad: [1, 1] });
+  const exact = new OfflineScenario(
+    [
+      "search",
+      "demand_gen",
+      "display",
+    ],
+    {
+      keyword: [4],
+      search_ad: [3],
+      demand_gen_ad: [1, 1],
+      display_ad: [1, 1],
+    },
+  );
+
   try {
-    if (expectedBlocker) {
-      await assert.rejects(() => exact.run(), error => {
-        const chain = causes(error);
-        console.log(JSON.stringify({ diagnostic: expectedBlocker, causes: chain, stagedRows: exact.rows.length, requests: exact.requests }));
-        return expectedBlocker === "runtime"
-          ? chain.some(value => value.includes("Only durable SEARCH or DEMAND_GEN product boundaries"))
-          : expectedBlocker === "staging" && chain.some(value => value.includes("not a supported Google Ads Search ALL-DATA staging row"));
-      });
-      assert.equal(exact.rows.length, 7);
-      assert.equal(exact.job.inserted_rows, 7);
-      assert.equal(exact.job.snapshot_ingestion_id, null);
-      assert.equal(exact.completion.length, 0);
-      assert.equal(exact.currentPointer, exact.job.previous_ingestion_id);
-      console.log(`NO_LIVE_${expectedBlocker.toUpperCase()}_BLOCKER_REPRODUCED=PASS`);
-      console.log("ALL_DATA_FULL_NO_LIVE_PATH_PROOF=BLOCKED");
-      return;
-    }
     await verifyInvalidBoundaries();
     await exact.run();
     const states = exact.saved.map(job => readGoogleAdsAllDataProcessingCheckpoint(job));
-    assert.deepEqual(states.map(state => [state.routing?.productIndex, state.routing?.productFamily, state.phase, state.nextRowIndex]), [
-      [0, "search", "product_boundary", 0], [0, "search", "search_ad", 4], [1, "demand_gen", "product_boundary", 7],
-      [1, "demand_gen", "demand_gen_ad", 8], [2, null, "completed", 9],
-    ]);
+    assert.deepEqual(
+      states.map(
+        state => [
+          state.routing?.productIndex,
+          state.routing?.productFamily,
+          state.phase,
+          state.nextRowIndex,
+        ],
+      ),
+      [
+        [0, "search", "product_boundary", 0],
+        [0, "search", "search_ad", 4],
+        [1, "demand_gen", "product_boundary", 7],
+        [1, "demand_gen", "demand_gen_ad", 8],
+        [2, "display", "product_boundary", 9],
+        [2, "display", "display_ad", 10],
+        [3, null, "completed", 11],
+      ],
+    );
     for (const state of states) {
-      assert.deepEqual(state.routing?.route, ["search", "demand_gen"]);
+      assert.deepEqual(
+        state.routing?.route,
+        [
+          "search",
+          "demand_gen",
+          "display",
+        ],
+      );
       assert.equal(state.cursor === null, ["product_boundary", "completed"].includes(state.phase!));
     }
     const demandPartial = exact.saved.find(job => readGoogleAdsAllDataProcessingCheckpoint(job).phase === "demand_gen_ad");
@@ -397,17 +481,142 @@ async function main() {
       await mustRejectBeforeIo(invalid, "Demand Gen partial cursor mismatch");
     }
     console.log("DEMAND_GEN_PARTIAL_CURSOR_NEGATIVE_CASES_BEFORE_IO=PASS");
+
+    const displayPartial =
+      exact.saved.find(
+        job =>
+          readGoogleAdsAllDataProcessingCheckpoint(
+            job,
+          ).phase ===
+            "display_ad",
+      );
+
+    assert.ok(
+      displayPartial,
+    );
+
+    const displayState =
+      readGoogleAdsAllDataProcessingCheckpoint(
+        displayPartial,
+      );
+
+    const staleDisplayRowIndex =
+      displayState.nextRowIndex - 1;
+
+    for (
+      const mutate
+      of [
+        (cursor: any) => {
+          cursor.expectedRowStartIndex =
+            staleDisplayRowIndex;
+        },
+        (cursor: any) => {
+          cursor.phaseCursor =
+            null;
+        },
+        (cursor: any) => {
+          cursor.phaseCursor.expectedRowStartIndex =
+            staleDisplayRowIndex;
+        },
+        (cursor: any) => {
+          cursor.phaseCursor.page.pageIndex =
+            0;
+        },
+        (cursor: any) => {
+          cursor.externalAccountId =
+            "0000000000";
+        },
+      ]
+    ) {
+      const invalid =
+        jsonb(
+          displayPartial,
+        );
+
+      mutate(
+        (invalid.error_detail as any)
+          .processing_checkpoint
+          .collector
+          .cursor,
+      );
+
+      await mustRejectBeforeIo(
+        invalid,
+        "Display partial cursor mismatch",
+      );
+    }
+
+    console.log(
+      "DISPLAY_PARTIAL_CURSOR_NEGATIVE_CASES_BEFORE_IO=PASS",
+    );
     const additional = [
-      new OfflineScenario(["search", "demand_gen"], { keyword: [2, 2], search_ad: [1, 2], demand_gen_ad: [1, 1] }),
-      new OfflineScenario(["search", "demand_gen"], { keyword: [0], search_ad: [0], demand_gen_ad: [1] }),
-      new OfflineScenario(["demand_gen"], { keyword: [0], search_ad: [0], demand_gen_ad: [1, 1] }),
-      new OfflineScenario(["search"], { keyword: [0], search_ad: [0], demand_gen_ad: [0] }),
+      new OfflineScenario(
+        [
+          "search",
+          "demand_gen",
+          "display",
+        ],
+        {
+          keyword: [2,          2],
+          search_ad: [1, 2],
+          demand_gen_ad: [1, 1],
+          display_ad: [1, 1],
+        },
+      ),
+
+      new OfflineScenario(
+        [
+          "search",
+          "demand_gen",
+          "display",
+        ],
+        {
+          keyword: [0],
+          search_ad: [0],
+          demand_gen_ad: [1],
+          display_ad: [1],
+        },
+      ),
+
+      new OfflineScenario(
+        [
+          "demand_gen",
+          "display",
+        ],
+        {
+          keyword: [0],
+          search_ad: [0],
+          demand_gen_ad: [1, 1],
+          display_ad: [1],
+        },
+      ),
+
+      new OfflineScenario(
+        ["display"],
+        {
+          keyword: [0],
+          search_ad: [0],
+          demand_gen_ad: [0],
+          display_ad: [1, 1],
+        },
+      ),
+
+      new OfflineScenario(
+        ["search"],
+        {
+          keyword: [0],
+          search_ad: [0],
+          demand_gen_ad: [0],
+          display_ad: [0],
+        },
+      ),
     ];
     for (const scenario of additional) await scenario.run();
     const tracePath = process.argv.find(arg => arg.startsWith("--trace="))?.slice("--trace=".length);
     if (tracePath) writeFileSync(tracePath, JSON.stringify([exact, ...additional].map(scenario => ({
       route: scenario.route, saved: scenario.saved, rows: scenario.rows, requests: scenario.requests,
     })), null, 2));
+    console.log("DISPLAY_ALL_DATA_FULL_NO_LIVE_PATH=PASS");
     console.log("ALL_DATA_REAL_TYPESCRIPT_FULL_PATH=PASS");
     console.log("COMPLETION_REPOSITORY_RESULTS=SIMULATED_NOT_DEPLOYED_SQL_PROOF");
     console.log("LIVE_DB_CALLS=0");

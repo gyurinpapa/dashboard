@@ -37,25 +37,34 @@ function main(): void {
     [
       "search",
       "demand_gen",
+      "display",
     ],
   );
 
   console.log(
-    "MIXED_ACCOUNT_EXECUTABLE_ROUTE=SEARCH_DEMAND_GEN_PASS",
+    "MIXED_ACCOUNT_EXECUTABLE_ROUTE=SEARCH_DEMAND_GEN_DISPLAY_PASS",
   );
 
   assert.deepEqual(
     buildGoogleAdsAllDataExecutableProductRoute(
-      [
-        "display",
-        "performance_max",
-      ],
+      ["display"],
+    ),
+    ["display"],
+  );
+
+  console.log(
+    "DISPLAY_ONLY_EXECUTABLE_ROUTE=PASS",
+  );
+
+  assert.deepEqual(
+    buildGoogleAdsAllDataExecutableProductRoute(
+      ["performance_max"],
     ),
     [],
   );
 
   console.log(
-    "BLOCKED_ONLY_ACCOUNT_EXECUTABLE_ROUTE_EMPTY=PASS",
+    "PERFORMANCE_MAX_ONLY_EXECUTABLE_ROUTE_EMPTY=PASS",
   );
 
   assert.deepEqual(
@@ -65,19 +74,11 @@ function main(): void {
     ["search"],
   );
 
-  console.log(
-    "SEARCH_ONLY_EXECUTABLE_ROUTE=PASS",
-  );
-
   assert.deepEqual(
     buildGoogleAdsAllDataExecutableProductRoute(
       ["demand_gen"],
     ),
     ["demand_gen"],
-  );
-
-  console.log(
-    "DEMAND_GEN_ONLY_EXECUTABLE_ROUTE=PASS",
   );
 
   assert.deepEqual(
@@ -88,11 +89,10 @@ function main(): void {
         "performance_max",
       ],
     ),
-    ["search"],
-  );
-
-  console.log(
-    "SEARCH_WITH_FUTURE_PRODUCTS_EXECUTABLE_ROUTE=PASS",
+    [
+      "search",
+      "display",
+    ],
   );
 
   assert.deepEqual(
@@ -103,15 +103,18 @@ function main(): void {
         "display",
       ],
     ),
-    ["demand_gen"],
+    [
+      "demand_gen",
+      "display",
+    ],
   );
 
   console.log(
-    "DEMAND_GEN_WITH_FUTURE_PRODUCTS_EXECUTABLE_ROUTE=PASS",
+    "SEARCH_DEMAND_GEN_DISPLAY_CANONICAL_EXECUTION_ORDER=PASS",
   );
 
   console.log(
-    "DISPLAY_RUNTIME_EXECUTION=BLOCKED",
+    "DISPLAY_RUNTIME_EXECUTION=ENABLED",
   );
 
   console.log(

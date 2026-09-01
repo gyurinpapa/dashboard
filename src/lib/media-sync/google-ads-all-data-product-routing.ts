@@ -179,7 +179,8 @@ export function buildGoogleAdsAllDataExecutableProductRoute(
     productFamilies.filter(
       productFamily =>
         productFamily === "search" ||
-        productFamily === "demand_gen",
+        productFamily === "demand_gen" ||
+        productFamily === "display",
     ),
   );
 }

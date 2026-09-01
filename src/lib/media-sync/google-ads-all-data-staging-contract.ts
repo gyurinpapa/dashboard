@@ -11,6 +11,9 @@ import {
   GOOGLE_ADS_DEMAND_GEN_AD_ROW_LEVEL_REASON,
 } from "./google-ads-demand-gen-ad-canonical-row";
 import {
+  GOOGLE_ADS_DISPLAY_AD_ROW_LEVEL_REASON,
+} from "./google-ads-display-ad-canonical-row";
+import {
   isValidYmd,
   type EtrylueNormalizedMediaRow,
 } from "./types";
@@ -22,8 +25,8 @@ const API_INGESTION_SOURCE =
   "api" as const;
 
 // Preserve the existing Search-named exports and Search byte-level row keys.
-// The only additional executable contract is Demand Gen/ad; no other product
-// or grain is inferred from metadata or silently retagged as Search.
+// Additional ad authority contracts are admitted only by explicit product reason.
+// No product or grain is inferred from metadata or silently retagged as Search.
 
 const SEARCH_PRODUCT_FAMILY =
   "search" as const;
@@ -221,7 +224,7 @@ function buildExpectedAuthorityMeta(
   entityType:
     GoogleAdsAllDataSearchEntityType,
   entityId: string,
-  campaignType: "SEARCH" | "DEMAND_GEN" = "SEARCH",
+  campaignType: "SEARCH" | "DEMAND_GEN" | "DISPLAY" = "SEARCH",
 ) {
   return buildGoogleAdsAuthorityProviderMeta({
     campaignType:
@@ -276,7 +279,7 @@ function withAuthorityMeta(
   entityId: string,
   requireExisting:
     boolean,
-  campaignType: "SEARCH" | "DEMAND_GEN" = "SEARCH",
+  campaignType: "SEARCH" | "DEMAND_GEN" | "DISPLAY" = "SEARCH",
 ): EtrylueNormalizedMediaRow {
   const existing =
     requireProviderMeta(
@@ -518,7 +521,8 @@ function prepareSearchRow(
       "creative" &&
     (
       base.reason === GOOGLE_ADS_SEARCH_AD_ROW_LEVEL_REASON ||
-      base.reason === GOOGLE_ADS_DEMAND_GEN_AD_ROW_LEVEL_REASON
+      base.reason === GOOGLE_ADS_DEMAND_GEN_AD_ROW_LEVEL_REASON ||
+      base.reason === GOOGLE_ADS_DISPLAY_AD_ROW_LEVEL_REASON
     )
   ) {
     const creativeId =
@@ -557,7 +561,9 @@ function prepareSearchRow(
       true,
       base.reason === GOOGLE_ADS_DEMAND_GEN_AD_ROW_LEVEL_REASON
         ? "DEMAND_GEN"
-        : "SEARCH",
+        : base.reason === GOOGLE_ADS_DISPLAY_AD_ROW_LEVEL_REASON
+          ? "DISPLAY"
+          : "SEARCH",
     );
   }
 
@@ -630,7 +636,8 @@ export function buildGoogleAdsAllDataSearchStagingRowKey(
   if (
     (
       providerMeta.product_family !== SEARCH_PRODUCT_FAMILY &&
-      providerMeta.product_family !== "demand_gen"
+      providerMeta.product_family !== "demand_gen" &&
+      providerMeta.product_family !== "display"
     ) ||
     providerMeta.authoritative_grain !==
       SEARCH_AUTHORITATIVE_GRAIN
@@ -673,6 +680,10 @@ export function buildGoogleAdsAllDataSearchStagingRowKey(
       (
         providerMeta.product_family === "demand_gen" &&
         row.row_level_reason === GOOGLE_ADS_DEMAND_GEN_AD_ROW_LEVEL_REASON
+      ) ||
+      (
+        providerMeta.product_family === "display" &&
+        row.row_level_reason === GOOGLE_ADS_DISPLAY_AD_ROW_LEVEL_REASON
       )
     )
   ) {

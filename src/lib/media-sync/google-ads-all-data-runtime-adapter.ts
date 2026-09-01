@@ -864,12 +864,14 @@ function resolveResumeCoordinates(
             0
         ) ||
         routing.productFamily ===
-          "demand_gen"
+          "demand_gen" ||
+        routing.productFamily ===
+          "display"
       )
     ) {
       throw new GoogleAdsAllDataRuntimeAdapterError(
         "INVALID_INPUT",
-        "Only durable SEARCH or DEMAND_GEN product boundaries may enter the current Google Ads ALL-DATA page-processing runtime.",
+        "Only durable SEARCH, DEMAND_GEN, or DISPLAY product boundaries may enter the current Google Ads ALL-DATA page-processing runtime.",
       );
     }
 
@@ -1148,13 +1150,15 @@ export async function processClaimedGoogleAdsAllDataJob(
         routing.productFamily !==
           "search" &&
         routing.productFamily !==
-          "demand_gen"
+          "demand_gen" &&
+        routing.productFamily !==
+          "display"
       )
     )
   ) {
     throw new GoogleAdsAllDataRuntimeAdapterError(
       "INVALID_INPUT",
-      "The current Google Ads ALL-DATA runtime can only execute SEARCH or DEMAND_GEN products.",
+      "The current Google Ads ALL-DATA runtime can execute SEARCH, DEMAND_GEN, or DISPLAY products.",
     );
   }
 

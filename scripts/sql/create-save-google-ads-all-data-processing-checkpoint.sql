@@ -273,6 +273,7 @@ begin
        'keyword',
        'search_ad',
        'demand_gen_ad',
+       'display_ad',
        'completed'
      )
      or v_date_window_index is null
@@ -386,6 +387,7 @@ begin
       when 'product_boundary' then 0
       when 'keyword' then 1
       when 'demand_gen_ad' then 1
+      when 'display_ad' then 1
       when 'search_ad' then 2
       when 'completed' then 3
       else null
@@ -520,7 +522,10 @@ begin
           errcode = 'P0001',
           message = 'MSC_INVALID_INPUT';
       end if;
-    elsif v_phase = 'demand_gen_ad' then
+    elsif v_phase in (
+      'demand_gen_ad',
+      'display_ad'
+    ) then
       if jsonb_typeof(
         v_phase_cursor
       ) <> 'object'
@@ -810,6 +815,7 @@ begin
         when 'product_boundary' then 0
         when 'keyword' then 1
         when 'demand_gen_ad' then 1
+      when 'display_ad' then 1
         when 'search_ad' then 2
         when 'completed' then 3
         else null

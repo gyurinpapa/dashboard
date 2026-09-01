@@ -7,6 +7,10 @@ import type {
 } from "./google-ads-all-data-demand-gen-staging-orchestrator";
 
 import type {
+  GoogleAdsAllDataDisplayStagingCursor,
+} from "./google-ads-all-data-display-staging-orchestrator";
+
+import type {
   GoogleAdsAllDataSearchStagingCursor,
 } from "./google-ads-all-data-search-staging-orchestrator";
 import type {
@@ -39,6 +43,7 @@ export type GoogleAdsAllDataProcessingCheckpointPhase =
   | "keyword"
   | "search_ad"
   | "demand_gen_ad"
+  | "display_ad"
   | "completed";
 
 export type GoogleAdsAllDataDemandGenProcessingCursor =
@@ -67,9 +72,36 @@ export type GoogleAdsAllDataDemandGenProcessingCursor =
       GoogleAdsAllDataDemandGenStagingCursor;
   }>;
 
+export type GoogleAdsAllDataDisplayProcessingCursor =
+  Readonly<{
+    version: 1;
+
+    phase:
+      "display_ad";
+
+    externalAccountId:
+      string;
+
+    dateWindowIndex:
+      number;
+
+    dateFrom:
+      string;
+
+    dateTo:
+      string;
+
+    expectedRowStartIndex:
+      number;
+
+    phaseCursor:
+      GoogleAdsAllDataDisplayStagingCursor;
+  }>;
+
 export type GoogleAdsAllDataProcessingCheckpointCursor =
   | GoogleAdsAllDataSearchStagingCursor
-  | GoogleAdsAllDataDemandGenProcessingCursor;
+  | GoogleAdsAllDataDemandGenProcessingCursor
+  | GoogleAdsAllDataDisplayProcessingCursor;
 
 export type GoogleAdsAllDataProcessingCheckpointErrorCode =
   | "INVALID_JOB"
@@ -431,7 +463,7 @@ function validateCursor(
   ) {
     throw new GoogleAdsAllDataProcessingCheckpointError(
       "INVALID_CHECKPOINT",
-      "The Demand Gen ALL-DATA phase requires a nested ad cursor.",
+      "The Google Ads ad-product ALL-DATA phase requires a nested ad cursor.",
     );
   }
 
@@ -469,12 +501,13 @@ function validateCursor(
   ) {
     throw new GoogleAdsAllDataProcessingCheckpointError(
       "CHECKPOINT_SCOPE_MISMATCH",
-      "The Demand Gen ALL-DATA nested ad cursor does not match the durable job boundary.",
+      "The Google Ads ad-product ALL-DATA nested cursor does not match the durable job boundary.",
     );
   }
 
   return cursor as unknown as
-    GoogleAdsAllDataDemandGenProcessingCursor;
+    | GoogleAdsAllDataDemandGenProcessingCursor
+    | GoogleAdsAllDataDisplayProcessingCursor;
 }
 
 export function readGoogleAdsAllDataProcessingCheckpoint(
@@ -689,6 +722,8 @@ export function readGoogleAdsAllDataProcessingCheckpoint(
       "search_ad" &&
     phase !==
       "demand_gen_ad" &&
+    phase !==
+      "display_ad" &&
     phase !==
       "completed"
   ) {
