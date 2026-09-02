@@ -46,8 +46,8 @@ const MAX_ENTITIES_PER_RUN = 1_000_000;
 const MAX_STATS_REQUESTS_PER_RUN = 1_000_000;
 const MAX_DISCOVERY_PAGES_PER_RUN = 1_000_000;
 const MAX_JITTER_MS = 500;
-const SHOPPING_STATS_MAX_CONCURRENCY = 4;
-const SHOPPING_STATS_REQUEST_INTERVAL_MS = 250;
+const AUTHORITATIVE_STATS_MAX_CONCURRENCY = 4;
+const AUTHORITATIVE_STATS_REQUEST_INTERVAL_MS = 250;
 
 export type NaverAuthoritativeEntityStatsCollectorErrorCode =
   | "INVALID_INPUT"
@@ -263,7 +263,7 @@ type EntityPageInput<
     ResolvedNaverAuthoritativeEntityStatsCollectorDependencies;
 };
 
-type ShoppingStatsTaskResult<
+type BoundedEntityStatsTaskResult<
   T extends NaverSearchAdsAdgroupRecord | NaverSearchAdsAdRecord,
 > = {
   entity: T;
@@ -716,6 +716,23 @@ function isShoppingBoundedStatsPath(input: {
   );
 }
 
+function isBrandSearchBoundedStatsPath(input: {
+  campaign: NaverSearchAdsCampaignRecord;
+  grain: "adgroup" | "ad";
+  options: Options;
+}): boolean {
+  return (
+    isBrandSearchFastPath({
+      campaign:
+        input.campaign,
+      grain:
+        input.grain,
+    }) &&
+    input.options.maxStatsRequestsPerRun ===
+      null
+  );
+}
+
 function remainingEntityStatsBudget(
   state: RuntimeState,
   options: Options,
@@ -730,7 +747,7 @@ function remainingEntityStatsBudget(
   );
 }
 
-function createShoppingStatsStartGate(input: {
+function createBoundedStatsStartGate(input: {
   state: RuntimeState;
   options: Options;
   signal: AbortSignal | undefined;
@@ -740,7 +757,7 @@ function createShoppingStatsStartGate(input: {
   const requestIntervalMs =
     input.options.requestIntervalMs === 0
       ? 0
-      : SHOPPING_STATS_REQUEST_INTERVAL_MS;
+      : AUTHORITATIVE_STATS_REQUEST_INTERVAL_MS;
 
   let nextAllowedStartAt =
     input.state.lastStatsRequestStartedAt === null
@@ -761,8 +778,14 @@ function createShoppingStatsStartGate(input: {
         }
       }
 
+      const startedAt =
+        input.dependencies.now();
+
+      input.state.lastStatsRequestStartedAt =
+        startedAt;
+
       nextAllowedStartAt =
-        input.dependencies.now() + requestIntervalMs;
+        startedAt + requestIntervalMs;
     });
 
     tail = scheduled.catch(() => undefined);
@@ -771,7 +794,7 @@ function createShoppingStatsStartGate(input: {
   };
 }
 
-function createShoppingRequestState(
+function createBoundedRequestState(
   state: RuntimeState,
   cursor: NaverAuthoritativeEntityStatsCursor,
 ): RuntimeState {
@@ -785,7 +808,7 @@ function createShoppingRequestState(
   };
 }
 
-function mergeShoppingRequestState(
+function mergeBoundedRequestState(
   state: RuntimeState,
   requestState: RuntimeState,
 ): void {
@@ -806,13 +829,13 @@ function mergeShoppingRequestState(
   }
 }
 
-async function consumeShoppingEntityPageBounded<
+async function consumeEntityPageBounded<
   T extends NaverSearchAdsAdgroupRecord | NaverSearchAdsAdRecord,
 >(
   input: EntityPageInput<T>,
   startIndex: number,
 ): Promise<TraversalResult> {
-  const waitForStart = createShoppingStatsStartGate({
+  const waitForFallbackStart = createBoundedStatsStartGate({
     state: input.state,
     options: input.options,
     signal: input.signal,
@@ -829,7 +852,7 @@ async function consumeShoppingEntityPageBounded<
     }
 
     const batchSize = Math.min(
-      SHOPPING_STATS_MAX_CONCURRENCY,
+      AUTHORITATIVE_STATS_MAX_CONCURRENCY,
       input.entities.length - index,
       remainingEntityStatsBudget(input.state, input.options),
     );
@@ -843,7 +866,7 @@ async function consumeShoppingEntityPageBounded<
       };
     }
 
-    const tasks: Array<Promise<ShoppingStatsTaskResult<T>>> = [];
+    const tasks: Array<Promise<BoundedEntityStatsTaskResult<T>>> = [];
     let plannedCursor = cloneCursor(input.state.cursor);
 
     for (let offset = 0; offset < batchSize; offset += 1) {
@@ -866,7 +889,7 @@ async function consumeShoppingEntityPageBounded<
       });
       plannedCursor = cloneCursor(cursorAfter);
 
-      const requestState = createShoppingRequestState(
+      const requestState = createBoundedRequestState(
         input.state,
         cursorBefore,
       );
@@ -884,7 +907,10 @@ async function consumeShoppingEntityPageBounded<
       );
 
       tasks.push(
-        (async (): Promise<ShoppingStatsTaskResult<T>> => {
+        (async (): Promise<BoundedEntityStatsTaskResult<T>> => {
+          let statReportUnavailable =
+            false;
+
           const statsRequest = await executeApiRequestWithRetry({
             operation: "entity_stats",
             entityId: entity.id,
@@ -893,15 +919,53 @@ async function consumeShoppingEntityPageBounded<
             signal: input.signal,
             onRetry: input.onRetry,
             dependencies: input.dependencies,
-            beforeAttempt: waitForStart,
-            request: () =>
-              input.dependencies.fetchEntityDailyStats({
+            request: async () => {
+              if (
+                isBrandSearchFastPath({
+                  campaign:
+                    input.campaign,
+                  grain:
+                    input.grain,
+                }) &&
+                !statReportUnavailable
+              ) {
+                try {
+                  return await input.dependencies
+                    .fetchStatReportAdgroupDailyStats({
+                      credentials:
+                        input.credentials,
+                      entityId:
+                        entity.id,
+                      entityType:
+                        "adgroup",
+                      dateFrom:
+                        cursorBefore.dateFrom,
+                      dateTo:
+                        cursorBefore.dateTo,
+                      signal:
+                        input.signal,
+                    });
+                } catch {
+                  assertNotAborted(
+                    input.signal,
+                    cursorBefore,
+                  );
+
+                  statReportUnavailable =
+                    true;
+                }
+              }
+
+              await waitForFallbackStart();
+
+              return input.dependencies.fetchEntityDailyStats({
                 credentials: input.credentials,
                 entityId: entity.id,
                 entityType: input.grain,
                 dateFrom: cursorBefore.dateFrom,
                 dateTo: cursorBefore.dateTo,
-              }),
+              });
+            },
           });
 
           return {
@@ -924,7 +988,7 @@ async function consumeShoppingEntityPageBounded<
       if (!outcome) {
         throw new NaverAuthoritativeEntityStatsCollectorError(
           "INVALID_INPUT",
-          "The bounded shopping request result is missing.",
+          "The bounded authoritative request result is missing.",
           { cursor: input.state.cursor },
         );
       }
@@ -935,7 +999,7 @@ async function consumeShoppingEntityPageBounded<
 
       const result = outcome.value;
 
-      mergeShoppingRequestState(input.state, result.requestState);
+      mergeBoundedRequestState(input.state, result.requestState);
 
       try {
         await input.onEntityStats({
@@ -1012,9 +1076,14 @@ async function consumeEntityPage<
       campaign: input.campaign,
       grain: input.grain,
       options: input.options,
+    }) ||
+    isBrandSearchBoundedStatsPath({
+      campaign: input.campaign,
+      grain: input.grain,
+      options: input.options,
     })
   ) {
-    return consumeShoppingEntityPageBounded(input, startIndex);
+    return consumeEntityPageBounded(input, startIndex);
   }
 
   for (let index = startIndex; index < input.entities.length; index += 1) {

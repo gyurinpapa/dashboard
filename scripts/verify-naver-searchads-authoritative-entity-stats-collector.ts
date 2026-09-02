@@ -208,6 +208,11 @@ async function main(): Promise<void> {
 
       return stats(input.entityId, input.entityType as "adgroup" | "ad");
     },
+    fetchStatReportAdgroupDailyStats: async () => {
+      throw new Error(
+        "STAT_REPORT_UNAVAILABLE_FOR_VERIFICATION",
+      );
+    },
     sleep: async () => undefined,
     now: () => {
       now += 1_000;

@@ -686,6 +686,13 @@ async function main(): Promise<void> {
         );
       },
 
+    fetchStatReportAdgroupDailyStats:
+      async () => {
+        throw new Error(
+          "STAT_REPORT_UNAVAILABLE_FOR_VERIFICATION",
+        );
+      },
+
     sleep:
       async () =>
         undefined,

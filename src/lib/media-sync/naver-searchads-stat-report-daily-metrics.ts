@@ -20,7 +20,9 @@ import {
 const MAX_DATE_WINDOW_DAYS = 31;
 const REPORT_POLL_INTERVAL_MS = 1_000;
 const MAX_REPORT_POLL_ATTEMPTS = 60;
-const CACHE_TTL_MS = 5 * 60 * 1_000;
+const MAX_REPORT_BUILD_MS = 3 * 60 * 1_000;
+const READY_CACHE_TTL_MS = 60 * 60 * 1_000;
+const FAILED_CACHE_TTL_MS = 5 * 60 * 1_000;
 const MAX_CACHE_ENTRIES = 4;
 
 const AD_COLUMN_COUNT = 14;
@@ -58,7 +60,8 @@ type DailyMetricsIndex = {
 };
 
 type CacheEntry = {
-  createdAt: number;
+  state: "pending" | "ready" | "failed";
+  settledAt: number | null;
   promise: Promise<DailyMetricsIndex>;
 };
 
@@ -68,6 +71,7 @@ export type NaverSearchAdsStatReportDailyMetricsErrorCode =
   | "INVALID_INPUT"
   | "COLLECTION_ABORTED"
   | "REPORT_FAILED"
+  | "REPORT_BUILD_TIMEOUT"
   | "REPORT_POLL_LIMIT_EXCEEDED"
   | "INVALID_REPORT_SCHEMA";
 
@@ -552,49 +556,113 @@ async function buildDailyMetricsIndex(input: {
     adgroup: new Map(),
   };
 
-  for (const date of dates) {
-    assertNotAborted(input.signal);
+  const buildAbortController =
+    new AbortController();
+  let buildTimedOut = false;
 
-    const [adText, conversionText] =
-      await Promise.all([
-        loadReportText({
-          credentials: input.credentials,
-          statDate: date,
-          reportType: "AD",
-          signal: input.signal,
-        }),
-        loadReportText({
-          credentials: input.credentials,
-          statDate: date,
-          reportType: "AD_CONVERSION",
-          signal: input.signal,
-        }),
-      ]);
+  const abortFromCaller = (): void => {
+    buildAbortController.abort();
+  };
 
-    const adRows = parseReportRows({
-      text: adText,
-      expectedColumns: AD_COLUMN_COUNT,
-      reportType: "AD",
-    });
+  input.signal?.addEventListener(
+    "abort",
+    abortFromCaller,
+    {
+      once: true,
+    },
+  );
 
-    const conversionRows = parseReportRows({
-      text: conversionText,
-      expectedColumns:
-        AD_CONVERSION_COLUMN_COUNT,
-      reportType: "AD_CONVERSION",
-    });
+  if (input.signal?.aborted) {
+    abortFromCaller();
+  }
 
-    aggregatePerformanceRows({
-      rows: adRows,
-      date,
-      index,
-    });
+  const buildTimeoutId = setTimeout(
+    () => {
+      buildTimedOut = true;
+      buildAbortController.abort();
+    },
+    MAX_REPORT_BUILD_MS,
+  );
 
-    aggregateConversionRows({
-      rows: conversionRows,
-      date,
-      index,
-    });
+  try {
+    for (const date of dates) {
+      assertNotAborted(
+        buildAbortController.signal,
+      );
+
+      const [adText, conversionText] =
+        await Promise.all([
+          loadReportText({
+            credentials: input.credentials,
+            statDate: date,
+            reportType: "AD",
+            signal:
+              buildAbortController.signal,
+          }),
+          loadReportText({
+            credentials: input.credentials,
+            statDate: date,
+            reportType: "AD_CONVERSION",
+            signal:
+              buildAbortController.signal,
+          }),
+        ]);
+
+      const adRows = parseReportRows({
+        text: adText,
+        expectedColumns: AD_COLUMN_COUNT,
+        reportType: "AD",
+      });
+
+      const conversionRows = parseReportRows({
+        text: conversionText,
+        expectedColumns:
+          AD_CONVERSION_COLUMN_COUNT,
+        reportType: "AD_CONVERSION",
+      });
+
+      aggregatePerformanceRows({
+        rows: adRows,
+        date,
+        index,
+      });
+
+      aggregateConversionRows({
+        rows: conversionRows,
+        date,
+        index,
+      });
+    }
+  } catch (error) {
+    if (input.signal?.aborted) {
+      throw new NaverSearchAdsStatReportDailyMetricsError(
+        "COLLECTION_ABORTED",
+        "The StatReport fast path was aborted by the collector.",
+        {
+          cause:
+            error,
+        },
+      );
+    }
+
+    if (buildTimedOut) {
+      throw new NaverSearchAdsStatReportDailyMetricsError(
+        "REPORT_BUILD_TIMEOUT",
+        `The StatReport fast path exceeded its ${MAX_REPORT_BUILD_MS}ms build budget.`,
+        {
+          cause:
+            error,
+        },
+      );
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(buildTimeoutId);
+    input.signal?.removeEventListener(
+      "abort",
+      abortFromCaller,
+    );
   }
 
   return index;
@@ -615,8 +683,19 @@ function createCacheKey(input: {
 function pruneCache(now: number): void {
   for (const [key, entry] of CACHE) {
     if (
-      now - entry.createdAt >
-      CACHE_TTL_MS
+      entry.state === "pending" ||
+      entry.settledAt === null
+    ) {
+      continue;
+    }
+
+    const ttlMs =
+      entry.state === "ready"
+        ? READY_CACHE_TTL_MS
+        : FAILED_CACHE_TTL_MS;
+
+    if (
+      now - entry.settledAt > ttlMs
     ) {
       CACHE.delete(key);
     }
@@ -625,12 +704,17 @@ function pruneCache(now: number): void {
   while (
     CACHE.size >= MAX_CACHE_ENTRIES
   ) {
-    const oldestKey =
-      CACHE.keys().next().value;
+    let oldestKey:
+      string | null = null;
 
-    if (
-      typeof oldestKey !== "string"
-    ) {
+    for (const [key, entry] of CACHE) {
+      if (entry.state !== "pending") {
+        oldestKey = key;
+        break;
+      }
+    }
+
+    if (oldestKey === null) {
       break;
     }
 
@@ -663,28 +747,73 @@ function getDailyMetricsIndex(input: {
   const now = Date.now();
   const cached = CACHE.get(key);
 
-  if (
-    cached &&
-    now - cached.createdAt <= CACHE_TTL_MS
-  ) {
-    return cached.promise;
+  if (cached) {
+    if (
+      cached.state === "pending" ||
+      cached.settledAt === null
+    ) {
+      return cached.promise;
+    }
+
+    const ttlMs =
+      cached.state === "ready"
+        ? READY_CACHE_TTL_MS
+        : FAILED_CACHE_TTL_MS;
+
+    if (
+      now - cached.settledAt <= ttlMs
+    ) {
+      return cached.promise;
+    }
+
+    CACHE.delete(key);
   }
 
   pruneCache(now);
 
-  const promise = buildDailyMetricsIndex({
+  const entry: CacheEntry = {
+    state: "pending",
+    settledAt: null,
+    promise: Promise.resolve({
+      keyword: new Map(),
+      adgroup: new Map(),
+    }),
+  };
+
+  entry.promise = buildDailyMetricsIndex({
     credentials: input.credentials,
     dateFrom,
     dateTo,
     signal: input.signal,
-  });
+  }).then(
+    (index): DailyMetricsIndex => {
+      entry.state = "ready";
+      entry.settledAt = Date.now();
+      return index;
+    },
+    (error: unknown): never => {
+      entry.state = "failed";
+      entry.settledAt = Date.now();
 
-  CACHE.set(key, {
-    createdAt: now,
-    promise,
-  });
+      const errorCode =
+        error &&
+        typeof error === "object" &&
+        "code" in error &&
+        typeof error.code === "string"
+          ? error.code
+          : "UNKNOWN";
 
-  return promise;
+      console.warn(
+        `[media-sync-worker] Naver StatReport fast path unavailable for ${dateFrom}..${dateTo}; exact /stats fallback enabled; code=${errorCode}`,
+      );
+
+      throw error;
+    },
+  );
+
+  CACHE.set(key, entry);
+
+  return entry.promise;
 }
 
 function getMetricsRecords(input: {

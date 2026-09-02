@@ -252,6 +252,9 @@ function createBaseDependencies(input: {
   fetchKeywordDailyStats?: (
     input: FetchNaverSearchAdsKeywordDailyStatsInput,
   ) => Promise<NaverSearchAdsKeywordDailyStatsResult>;
+  fetchStatReportKeywordDailyStats?: NonNullable<
+    NaverKeywordStatsCollectorDependencies["fetchStatReportKeywordDailyStats"]
+  >;
 }): NaverKeywordStatsCollectorDependencies {
   const clock =
     input.clock ??
@@ -370,6 +373,16 @@ function createBaseDependencies(input: {
         }
       ),
 
+    fetchStatReportKeywordDailyStats:
+      input.fetchStatReportKeywordDailyStats ??
+      (
+        async (): Promise<NaverSearchAdsKeywordDailyStatsResult> => {
+          throw new Error(
+            "STAT_REPORT_UNAVAILABLE_FOR_VERIFICATION",
+          );
+        }
+      ),
+
     sleep:
       async (
         milliseconds: number,
@@ -399,6 +412,9 @@ function createOneHierarchyDependencies(input: {
   fetchKeywordDailyStats?: (
     input: FetchNaverSearchAdsKeywordDailyStatsInput,
   ) => Promise<NaverSearchAdsKeywordDailyStatsResult>;
+  fetchStatReportKeywordDailyStats?: NonNullable<
+    NaverKeywordStatsCollectorDependencies["fetchStatReportKeywordDailyStats"]
+  >;
 }): NaverKeywordStatsCollectorDependencies {
   return createBaseDependencies({
     clock:
@@ -422,10 +438,13 @@ function createOneHierarchyDependencies(input: {
 
     fetchKeywordDailyStats:
       input.fetchKeywordDailyStats,
+
+    fetchStatReportKeywordDailyStats:
+      input.fetchStatReportKeywordDailyStats,
   });
 }
 
-async function verifySequentialIntervalAndChunks(): Promise<void> {
+async function verifyBoundedFallbackAndOrder(): Promise<void> {
   const clock =
     createFakeClock();
 
@@ -444,6 +463,9 @@ async function verifySequentialIntervalAndChunks(): Promise<void> {
   const requestStartTimes:
     number[] = [];
 
+  let activeRequests = 0;
+  let maxActiveRequests = 0;
+
   const consumedKeywordIds:
     string[] = [];
 
@@ -460,6 +482,21 @@ async function verifySequentialIntervalAndChunks(): Promise<void> {
           requestStartTimes.push(
             clock.now,
           );
+
+          activeRequests += 1;
+          maxActiveRequests =
+            Math.max(
+              maxActiveRequests,
+              activeRequests,
+            );
+
+          await new Promise<void>(
+            (resolve) => {
+              setTimeout(resolve, 0);
+            },
+          );
+
+          activeRequests -= 1;
 
           return createStatsResult(
             input.keywordId,
@@ -535,6 +572,11 @@ async function verifySequentialIntervalAndChunks(): Promise<void> {
     5,
   );
 
+  ok(
+    maxActiveRequests > 1 &&
+    maxActiveRequests <= 4,
+  );
+
   for (
     let index = 1;
     index < requestStartTimes.length;
@@ -554,7 +596,7 @@ async function verifySequentialIntervalAndChunks(): Promise<void> {
     ok(
       currentStart -
         previousStart >=
-        1_000,
+        250,
     );
   }
 
@@ -566,7 +608,7 @@ async function verifySequentialIntervalAndChunks(): Promise<void> {
 
   equal(
     chunkPauseCount,
-    2,
+    0,
   );
 }
 
@@ -707,6 +749,13 @@ async function verifyKeywordPagination(): Promise<void> {
             input.keywordId,
             input.dateFrom,
             input.dateTo,
+          );
+        },
+
+      fetchStatReportKeywordDailyStats:
+        async (): Promise<NaverSearchAdsKeywordDailyStatsResult> => {
+          throw new Error(
+            "STAT_REPORT_UNAVAILABLE_FOR_VERIFICATION",
           );
         },
 
@@ -1289,10 +1338,10 @@ const tests:
   AsyncVerificationTest[] = [
     {
       name:
-        "collector enforces sequential request interval and chunk pause",
+        "collector bounds WEB_SITE fallback starts and preserves consumer order",
 
       run:
-        verifySequentialIntervalAndChunks,
+        verifyBoundedFallbackAndOrder,
     },
     {
       name:

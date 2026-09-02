@@ -1010,6 +1010,13 @@ async function main(): Promise<void> {
             input.keywordId,
           ),
 
+      fetchStatReportKeywordDailyStats:
+        async () => {
+          throw new Error(
+            "STAT_REPORT_UNAVAILABLE_FOR_VERIFICATION",
+          );
+        },
+
       sleep:
         async () =>
           undefined,
@@ -1202,6 +1209,13 @@ async function main(): Promise<void> {
           return entityStats(
             input.entityId,
             input.entityType,
+          );
+        },
+
+      fetchStatReportAdgroupDailyStats:
+        async () => {
+          throw new Error(
+            "STAT_REPORT_UNAVAILABLE_FOR_VERIFICATION",
           );
         },
 

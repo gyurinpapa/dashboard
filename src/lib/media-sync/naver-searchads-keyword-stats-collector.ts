@@ -49,6 +49,8 @@ const NAVER_KEYWORD_STATS_MAX_KEYWORD_PAGES = 10_000;
 
 const NAVER_KEYWORD_STATS_MAX_KEYWORDS_PER_RUN = 1_000_000;
 const NAVER_KEYWORD_STATS_MAX_REQUESTS_PER_RUN = 1_000_000;
+const NAVER_WEB_SITE_STATS_MAX_CONCURRENCY = 4;
+const NAVER_WEB_SITE_STATS_REQUEST_INTERVAL_MS = 250;
 const NAVER_KEYWORD_DISCOVERY_MAX_PAGES_PER_RUN = 1_000_000;
 
 export type NaverKeywordStatsCollectorErrorCode =
@@ -324,6 +326,15 @@ type CollectorRuntimeState = {
 type ApiRequestResult<T> = {
   value: T;
   attemptCount: number;
+};
+
+type WebSiteStatsTaskResult = {
+  keyword: NaverSearchAdsKeywordRecord;
+  keywordIndex: number;
+  cursorBefore: NaverKeywordStatsCursor;
+  cursorAfter: NaverKeywordStatsCursor;
+  statsRequest: ApiRequestResult<NaverSearchAdsKeywordDailyStatsResult>;
+  requestState: CollectorRuntimeState;
 };
 
 type ResumeTarget = {
@@ -1630,6 +1641,496 @@ function resolveKeywordCampaignContract(
   }
 }
 
+function isWebSiteBoundedStatsPath(input: {
+  campaign: NaverSearchAdsCampaignRecord;
+  options: NormalizedCollectorOptions;
+}): boolean {
+  return (
+    isWebSiteFastPathCampaign(
+      input.campaign,
+    ) &&
+    input.options.maxStatsRequestsPerRun ===
+      null
+  );
+}
+
+function remainingKeywordStatsBudget(
+  state: CollectorRuntimeState,
+  options: NormalizedCollectorOptions,
+): number {
+  if (
+    options.maxKeywordStatsPerRun ===
+    null
+  ) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+
+  return Math.max(
+    0,
+    options.maxKeywordStatsPerRun -
+      state.keywordsCompletedInRun,
+  );
+}
+
+function createWebSiteStatsStartGate(input: {
+  state: CollectorRuntimeState;
+  options: NormalizedCollectorOptions;
+  signal: AbortSignal | undefined;
+  dependencies: ResolvedCollectorDependencies;
+}): () => Promise<void> {
+  const requestIntervalMs =
+    input.options.requestIntervalMs === 0
+      ? 0
+      : NAVER_WEB_SITE_STATS_REQUEST_INTERVAL_MS;
+
+  let nextAllowedStartAt =
+    input.state.lastStatsRequestStartedAt ===
+    null
+      ? null
+      : input.state.lastStatsRequestStartedAt +
+        requestIntervalMs;
+
+  let tail: Promise<void> =
+    Promise.resolve();
+
+  return (): Promise<void> => {
+    const scheduled = tail.then(
+      async (): Promise<void> => {
+        assertNotAborted(
+          input.signal,
+          input.state.cursor,
+        );
+
+        if (
+          nextAllowedStartAt !== null &&
+          requestIntervalMs > 0
+        ) {
+          const remaining =
+            nextAllowedStartAt -
+            input.dependencies.now();
+
+          if (remaining > 0) {
+            await input.dependencies.sleep(
+              remaining,
+              input.signal,
+            );
+          }
+        }
+
+        const startedAt =
+          input.dependencies.now();
+
+        input.state.lastStatsRequestStartedAt =
+          startedAt;
+
+        nextAllowedStartAt =
+          startedAt + requestIntervalMs;
+      },
+    );
+
+    tail = scheduled.catch(
+      () => undefined,
+    );
+
+    return scheduled;
+  };
+}
+
+function createWebSiteRequestState(
+  state: CollectorRuntimeState,
+  cursor: NaverKeywordStatsCursor,
+): CollectorRuntimeState {
+  return {
+    ...state,
+    cursor:
+      cloneCursor(cursor),
+    statsRequestsAttempted:
+      0,
+    statsRequestsSucceeded:
+      0,
+    retryCount:
+      0,
+    lastStatsRequestStartedAt:
+      null,
+  };
+}
+
+function mergeWebSiteRequestState(
+  state: CollectorRuntimeState,
+  requestState: CollectorRuntimeState,
+): void {
+  state.statsRequestsAttempted +=
+    requestState.statsRequestsAttempted;
+  state.statsRequestsSucceeded +=
+    requestState.statsRequestsSucceeded;
+  state.retryCount +=
+    requestState.retryCount;
+
+  if (
+    requestState.lastStatsRequestStartedAt !==
+      null &&
+    (
+      state.lastStatsRequestStartedAt ===
+        null ||
+      requestState.lastStatsRequestStartedAt >
+        state.lastStatsRequestStartedAt
+    )
+  ) {
+    state.lastStatsRequestStartedAt =
+      requestState.lastStatsRequestStartedAt;
+  }
+}
+
+async function consumeWebSiteKeywordChunkBounded(input: {
+  campaign: NaverSearchAdsCampaignRecord;
+  adgroup: NaverSearchAdsAdgroupRecord;
+  chunk: readonly NaverSearchAdsKeywordRecord[];
+  chunkIndex: number;
+  startIndex: number;
+  state: CollectorRuntimeState;
+  options: NormalizedCollectorOptions;
+  credentials: NaverSearchAdsCredentials;
+  onKeywordStats: NaverKeywordStatsCollectorConsumer;
+  onRetry:
+    | NaverKeywordStatsCollectorRetryCallback
+    | undefined;
+  onProgress:
+    | NaverKeywordStatsCollectorProgressCallback
+    | undefined;
+  signal: AbortSignal | undefined;
+  dependencies: ResolvedCollectorDependencies;
+}): Promise<CollectorTraversalResult> {
+  const waitForFallbackStart =
+    createWebSiteStatsStartGate({
+      state:
+        input.state,
+      options:
+        input.options,
+      signal:
+        input.signal,
+      dependencies:
+        input.dependencies,
+    });
+
+  let keywordIndex =
+    input.startIndex;
+
+  while (
+    keywordIndex < input.chunk.length
+  ) {
+    const partialReasonBeforeBatch =
+      getPartialReasonForCurrentRun(
+        input.state,
+        input.options,
+      );
+
+    if (
+      partialReasonBeforeBatch !== null
+    ) {
+      return {
+        status: "partial",
+        reason:
+          partialReasonBeforeBatch,
+      };
+    }
+
+    const batchSize = Math.min(
+      NAVER_WEB_SITE_STATS_MAX_CONCURRENCY,
+      input.chunk.length - keywordIndex,
+      remainingKeywordStatsBudget(
+        input.state,
+        input.options,
+      ),
+    );
+
+    if (batchSize <= 0) {
+      return {
+        status: "partial",
+        reason:
+          "max_keyword_stats_per_run_reached",
+      };
+    }
+
+    const tasks: Array<
+      Promise<WebSiteStatsTaskResult>
+    > = [];
+
+    let plannedCursor =
+      cloneCursor(input.state.cursor);
+
+    for (
+      let offset = 0;
+      offset < batchSize;
+      offset += 1
+    ) {
+      const currentKeywordIndex =
+        keywordIndex + offset;
+      const keyword =
+        input.chunk[
+          currentKeywordIndex
+        ];
+
+      if (!keyword) {
+        throw new NaverKeywordStatsCollectorError(
+          "INVALID_INPUT",
+          "The bounded WEB_SITE keyword request contains an invalid item.",
+          {
+            cursor:
+              input.state.cursor,
+          },
+        );
+      }
+
+      const cursorBefore =
+        cloneCursor(plannedCursor);
+      const cursorAfter =
+        markNaverKeywordStatsKeywordCompleted({
+          cursor:
+            cursorBefore,
+          keywordId:
+            keyword.id,
+          keywordIndexInChunk:
+            currentKeywordIndex,
+        });
+
+      plannedCursor =
+        cloneCursor(cursorAfter);
+
+      const requestState =
+        createWebSiteRequestState(
+          input.state,
+          cursorBefore,
+        );
+
+      await notifyProgress({
+        callback:
+          input.onProgress,
+        stage:
+          "keyword_stats:start",
+        state:
+          requestState,
+        campaignId:
+          input.campaign.id,
+        adgroupId:
+          input.adgroup.id,
+        keywordId:
+          keyword.id,
+        chunkIndex:
+          input.chunkIndex,
+        chunkSize:
+          input.chunk.length,
+        keywordIndexInChunk:
+          currentKeywordIndex,
+      });
+
+      tasks.push(
+        (async (): Promise<WebSiteStatsTaskResult> => {
+          let statReportUnavailable =
+            false;
+
+          const statsRequest =
+            await executeApiRequestWithRetry<
+              NaverSearchAdsKeywordDailyStatsResult
+            >({
+              operation:
+                "keyword_stats",
+              keywordId:
+                keyword.id,
+              state:
+                requestState,
+              options:
+                input.options,
+              signal:
+                input.signal,
+              onRetry:
+                input.onRetry,
+              dependencies:
+                input.dependencies,
+              request:
+                async (): Promise<NaverSearchAdsKeywordDailyStatsResult> => {
+                  if (
+                    !statReportUnavailable
+                  ) {
+                    try {
+                      return await input.dependencies
+                        .fetchStatReportKeywordDailyStats({
+                          credentials:
+                            input.credentials,
+                          keywordId:
+                            keyword.id,
+                          dateFrom:
+                            cursorBefore.dateFrom,
+                          dateTo:
+                            cursorBefore.dateTo,
+                          signal:
+                            input.signal,
+                        });
+                    } catch {
+                      assertNotAborted(
+                        input.signal,
+                        cursorBefore,
+                      );
+
+                      statReportUnavailable =
+                        true;
+                    }
+                  }
+
+                  await waitForFallbackStart();
+
+                  return input.dependencies
+                    .fetchKeywordDailyStats({
+                      credentials:
+                        input.credentials,
+                      keywordId:
+                        keyword.id,
+                      dateFrom:
+                        cursorBefore.dateFrom,
+                      dateTo:
+                        cursorBefore.dateTo,
+                    });
+                },
+            });
+
+          return {
+            keyword,
+            keywordIndex:
+              currentKeywordIndex,
+            cursorBefore,
+            cursorAfter,
+            statsRequest,
+            requestState,
+          };
+        })(),
+      );
+    }
+
+    const settled =
+      await Promise.allSettled(tasks);
+
+    for (
+      let offset = 0;
+      offset < settled.length;
+      offset += 1
+    ) {
+      const outcome =
+        settled[offset];
+
+      if (!outcome) {
+        throw new NaverKeywordStatsCollectorError(
+          "INVALID_INPUT",
+          "The bounded WEB_SITE keyword request result is missing.",
+          {
+            cursor:
+              input.state.cursor,
+          },
+        );
+      }
+
+      if (
+        outcome.status === "rejected"
+      ) {
+        throw outcome.reason;
+      }
+
+      const result =
+        outcome.value;
+
+      mergeWebSiteRequestState(
+        input.state,
+        result.requestState,
+      );
+
+      try {
+        await input.onKeywordStats({
+          campaign:
+            input.campaign,
+          adgroup:
+            input.adgroup,
+          keyword:
+            result.keyword,
+          stats:
+            result.statsRequest.value,
+          cursorBefore:
+            cloneCursor(
+              result.cursorBefore,
+            ),
+          cursorAfter:
+            cloneCursor(
+              result.cursorAfter,
+            ),
+          requestAttemptCount:
+            result.statsRequest.attemptCount,
+        });
+      } catch (error) {
+        throw new NaverKeywordStatsCollectorError(
+          "CONSUMER_FAILED",
+          "The bounded WEB_SITE keyword stats consumer failed.",
+          {
+            cursor:
+              result.cursorBefore,
+            cause:
+              error,
+          },
+        );
+      }
+
+      input.state.cursor =
+        cloneCursor(
+          result.cursorAfter,
+        );
+      input.state.keywordsCompletedInRun +=
+        1;
+
+      await notifyProgress({
+        callback:
+          input.onProgress,
+        stage:
+          "keyword_stats:done",
+        state:
+          input.state,
+        campaignId:
+          input.campaign.id,
+        adgroupId:
+          input.adgroup.id,
+        keywordId:
+          result.keyword.id,
+        chunkIndex:
+          input.chunkIndex,
+        chunkSize:
+          input.chunk.length,
+        keywordIndexInChunk:
+          result.keywordIndex,
+        recordsRead:
+          result.statsRequest.value.records.length,
+        attemptCount:
+          result.statsRequest.attemptCount,
+      });
+    }
+
+    const partialReasonAfterBatch =
+      getPartialReasonForCurrentRun(
+        input.state,
+        input.options,
+      );
+
+    if (
+      partialReasonAfterBatch !== null
+    ) {
+      return {
+        status: "partial",
+        reason:
+          partialReasonAfterBatch,
+      };
+    }
+
+    keywordIndex +=
+      batchSize;
+  }
+
+  return CONTINUE_TRAVERSAL;
+}
+
 async function consumeKeywordChunk(input: {
   campaign: NaverSearchAdsCampaignRecord;
   adgroup: NaverSearchAdsAdgroupRecord;
@@ -1731,6 +2232,70 @@ async function consumeKeywordChunk(input: {
     chunkSize:
       input.chunk.length,
   });
+
+  if (
+    isWebSiteBoundedStatsPath({
+      campaign:
+        input.campaign,
+      options:
+        input.options,
+    })
+  ) {
+    const boundedResult =
+      await consumeWebSiteKeywordChunkBounded({
+        campaign:
+          input.campaign,
+        adgroup:
+          input.adgroup,
+        chunk:
+          input.chunk,
+        chunkIndex:
+          input.chunkIndex,
+        startIndex,
+        state:
+          input.state,
+        options:
+          input.options,
+        credentials:
+          input.credentials,
+        onKeywordStats:
+          input.onKeywordStats,
+        onRetry:
+          input.onRetry,
+        onProgress:
+          input.onProgress,
+        signal:
+          input.signal,
+        dependencies:
+          input.dependencies,
+      });
+
+    if (
+      boundedResult.status ===
+      "partial"
+    ) {
+      return boundedResult;
+    }
+
+    await notifyProgress({
+      callback:
+        input.onProgress,
+      stage:
+        "keyword_chunk:done",
+      state:
+        input.state,
+      campaignId:
+        input.campaign.id,
+      adgroupId:
+        input.adgroup.id,
+      chunkIndex:
+        input.chunkIndex,
+      chunkSize:
+        input.chunk.length,
+    });
+
+    return CONTINUE_TRAVERSAL;
+  }
 
   for (
     let keywordIndex = startIndex;

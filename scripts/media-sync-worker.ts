@@ -70,6 +70,12 @@ const DEFAULT_POLL_INTERVAL_MS =
 const DEFAULT_JOB_TIMEOUT_MS =
   10 * 60 * 1_000;
 
+const DEFAULT_MAX_KEYWORD_STATS_PER_RUN =
+  500;
+
+const DEFAULT_MAX_AUTHORITATIVE_ENTITY_STATS_PER_RUN =
+  500;
+
 const DEFAULT_STALE_PROCESSING_MS =
   60 * 60 * 1_000;
 
@@ -323,7 +329,8 @@ function readRuntimeOptions():
 
       max:
         MAX_KEYWORD_STATS_PER_RUN_UPPER_BOUND,
-    });
+    }) ??
+    DEFAULT_MAX_KEYWORD_STATS_PER_RUN;
 
   const maxStatsRequestsPerRun =
     readOptionalPositiveIntegerEnv({
@@ -350,7 +357,8 @@ function readRuntimeOptions():
 
       max:
         MAX_AUTHORITATIVE_ENTITY_STATS_PER_RUN_UPPER_BOUND,
-    });
+    }) ??
+    DEFAULT_MAX_AUTHORITATIVE_ENTITY_STATS_PER_RUN;
 
   const maxAuthoritativeStatsRequestsPerRun =
     readOptionalPositiveIntegerEnv({
