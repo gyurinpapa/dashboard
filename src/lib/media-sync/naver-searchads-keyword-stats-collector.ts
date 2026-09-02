@@ -318,6 +318,14 @@ type CollectorRuntimeState = {
   statsRequestsAttempted: number;
   statsRequestsSucceeded: number;
 
+  /*
+   * StatReport lookups are in-memory index reads after one shared bulk
+   * report build. They must remain visible in the public progress counters,
+   * but must not consume the safety budgets that bound exact /stats calls.
+   */
+  exactKeywordStatsCompletedInRun: number;
+  exactStatsRequestsAttemptedInRun: number;
+
   retryCount: number;
 
   lastStatsRequestStartedAt: number | null;
@@ -610,6 +618,9 @@ function createInitialRuntimeState(
     statsRequestsAttempted: 0,
     statsRequestsSucceeded: 0,
 
+    exactKeywordStatsCompletedInRun: 0,
+    exactStatsRequestsAttemptedInRun: 0,
+
     retryCount: 0,
 
     lastStatsRequestStartedAt: null,
@@ -792,7 +803,7 @@ function getPartialReasonForCurrentRun(
 ): NaverKeywordStatsCollectorPartialReason | null {
   if (
     options.maxKeywordStatsPerRun !== null &&
-    state.keywordsCompletedInRun >=
+    state.exactKeywordStatsCompletedInRun >=
       options.maxKeywordStatsPerRun
   ) {
     return "max_keyword_stats_per_run_reached";
@@ -800,7 +811,7 @@ function getPartialReasonForCurrentRun(
 
   if (
     options.maxStatsRequestsPerRun !== null &&
-    state.statsRequestsAttempted >=
+    state.exactStatsRequestsAttemptedInRun >=
       options.maxStatsRequestsPerRun
   ) {
     return "max_stats_requests_per_run_reached";
@@ -1668,7 +1679,7 @@ function remainingKeywordStatsBudget(
   return Math.max(
     0,
     options.maxKeywordStatsPerRun -
-      state.keywordsCompletedInRun,
+      state.exactKeywordStatsCompletedInRun,
   );
 }
 
@@ -1748,6 +1759,10 @@ function createWebSiteRequestState(
       0,
     statsRequestsSucceeded:
       0,
+    exactKeywordStatsCompletedInRun:
+      0,
+    exactStatsRequestsAttemptedInRun:
+      0,
     retryCount:
       0,
     lastStatsRequestStartedAt:
@@ -1763,6 +1778,10 @@ function mergeWebSiteRequestState(
     requestState.statsRequestsAttempted;
   state.statsRequestsSucceeded +=
     requestState.statsRequestsSucceeded;
+  state.exactKeywordStatsCompletedInRun +=
+    requestState.exactKeywordStatsCompletedInRun;
+  state.exactStatsRequestsAttemptedInRun +=
+    requestState.exactStatsRequestsAttemptedInRun;
   state.retryCount +=
     requestState.retryCount;
 
@@ -1927,6 +1946,8 @@ async function consumeWebSiteKeywordChunkBounded(input: {
         (async (): Promise<WebSiteStatsTaskResult> => {
           let statReportUnavailable =
             false;
+          let usedStatReport =
+            false;
 
           const statsRequest =
             await executeApiRequestWithRetry<
@@ -1952,7 +1973,7 @@ async function consumeWebSiteKeywordChunkBounded(input: {
                     !statReportUnavailable
                   ) {
                     try {
-                      return await input.dependencies
+                      const result = await input.dependencies
                         .fetchStatReportKeywordDailyStats({
                           credentials:
                             input.credentials,
@@ -1965,6 +1986,11 @@ async function consumeWebSiteKeywordChunkBounded(input: {
                           signal:
                             input.signal,
                         });
+
+                      usedStatReport =
+                        true;
+
+                      return result;
                     } catch {
                       assertNotAborted(
                         input.signal,
@@ -1991,6 +2017,13 @@ async function consumeWebSiteKeywordChunkBounded(input: {
                     });
                 },
             });
+
+          if (!usedStatReport) {
+            requestState.exactKeywordStatsCompletedInRun +=
+              1;
+            requestState.exactStatsRequestsAttemptedInRun +=
+              statsRequest.attemptCount;
+          }
 
           return {
             keyword,
@@ -2366,6 +2399,9 @@ async function consumeKeywordChunk(input: {
         input.campaign,
       );
 
+    let usedStatReport =
+      false;
+
     const statsRequest:
       ApiRequestResult<NaverSearchAdsKeywordDailyStatsResult> =
       await executeApiRequestWithRetry<
@@ -2415,7 +2451,7 @@ async function consumeKeywordChunk(input: {
           async (): Promise<NaverSearchAdsKeywordDailyStatsResult> => {
             if (useStatReportFastPath) {
               try {
-                return await input.dependencies
+                const result = await input.dependencies
                   .fetchStatReportKeywordDailyStats({
                     credentials:
                       input.credentials,
@@ -2432,6 +2468,11 @@ async function consumeKeywordChunk(input: {
                     signal:
                       input.signal,
                   });
+
+                usedStatReport =
+                  true;
+
+                return result;
               } catch {
                 await waitForStatsRequestInterval({
                   state:
@@ -2464,6 +2505,13 @@ async function consumeKeywordChunk(input: {
             });
           },
       });
+
+    if (!usedStatReport) {
+      input.state.exactKeywordStatsCompletedInRun +=
+        1;
+      input.state.exactStatsRequestsAttemptedInRun +=
+        statsRequest.attemptCount;
+    }
 
     const cursorAfter =
       markNaverKeywordStatsKeywordCompleted({

@@ -612,6 +612,132 @@ async function verifyBoundedFallbackAndOrder(): Promise<void> {
   );
 }
 
+async function verifyStatReportDoesNotConsumeExactFallbackBudget(): Promise<void> {
+  const keywords = Array.from(
+    { length: 5 },
+    (_, index) =>
+      createKeyword(
+        `keyword-fast-${index + 1}`,
+        "adgroup-1",
+      ),
+  );
+  const consumedKeywordIds: string[] = [];
+  let exactStatsCalls = 0;
+
+  const dependencies =
+    createOneHierarchyDependencies({
+      keywords,
+      fetchKeywordDailyStats:
+        async (): Promise<NaverSearchAdsKeywordDailyStatsResult> => {
+          exactStatsCalls += 1;
+          throw new Error(
+            "EXACT_STATS_MUST_NOT_RUN_WHILE_STAT_REPORT_IS_READY",
+          );
+        },
+      fetchStatReportKeywordDailyStats:
+        async (input): Promise<NaverSearchAdsKeywordDailyStatsResult> =>
+          createStatsResult(
+            input.keywordId,
+            input.dateFrom,
+            input.dateTo,
+          ),
+    });
+
+  const result =
+    await collectNaverKeywordDailyStats({
+      credentials:
+        FAKE_CREDENTIALS,
+      cursor:
+        createInitialCursor(),
+      requestIntervalMs:
+        0,
+      keywordChunkSize:
+        5,
+      chunkPauseMs:
+        0,
+      maxKeywordStatsPerRun:
+        2,
+      maxStatsRequestsPerRun:
+        2,
+      dependencies,
+      onKeywordStats:
+        async (item): Promise<void> => {
+          consumedKeywordIds.push(
+            item.keyword.id,
+          );
+        },
+    });
+
+  equal(result.status, "completed");
+  equal(result.keywordsCompletedInRun, 5);
+  equal(result.statsRequestsAttempted, 5);
+  equal(result.statsRequestsSucceeded, 5);
+  equal(exactStatsCalls, 0);
+  deepStrictEqual(
+    consumedKeywordIds,
+    keywords.map((keyword) => keyword.id),
+  );
+}
+
+async function verifyStatReportFailurePreservesExactFallbackBudget(): Promise<void> {
+  const keywords = Array.from(
+    { length: 5 },
+    (_, index) =>
+      createKeyword(
+        `keyword-fallback-${index + 1}`,
+        "adgroup-1",
+      ),
+  );
+  let exactStatsCalls = 0;
+
+  const dependencies =
+    createOneHierarchyDependencies({
+      keywords,
+      fetchKeywordDailyStats:
+        async (input): Promise<NaverSearchAdsKeywordDailyStatsResult> => {
+          exactStatsCalls += 1;
+          return createStatsResult(
+            input.keywordId,
+            input.dateFrom,
+            input.dateTo,
+          );
+        },
+      fetchStatReportKeywordDailyStats:
+        async (): Promise<NaverSearchAdsKeywordDailyStatsResult> => {
+          throw new Error(
+            "SYNTHETIC_STAT_REPORT_UNAVAILABLE",
+          );
+        },
+    });
+
+  const result =
+    await collectNaverKeywordDailyStats({
+      credentials:
+        FAKE_CREDENTIALS,
+      cursor:
+        createInitialCursor(),
+      requestIntervalMs:
+        0,
+      keywordChunkSize:
+        5,
+      chunkPauseMs:
+        0,
+      maxKeywordStatsPerRun:
+        2,
+      dependencies,
+      onKeywordStats:
+        async (): Promise<void> => undefined,
+    });
+
+  equal(result.status, "partial");
+  equal(
+    result.partialReason,
+    "max_keyword_stats_per_run_reached",
+  );
+  equal(result.keywordsCompletedInRun, 2);
+  equal(exactStatsCalls, 2);
+}
+
 async function verifyKeywordPagination(): Promise<void> {
   const campaign =
     createCampaign(
@@ -1336,6 +1462,20 @@ async function verifyRetryExhaustionPreservesFailureState(): Promise<void> {
 
 const tests:
   AsyncVerificationTest[] = [
+    {
+      name:
+        "StatReport hits bypass exact fallback run budgets",
+
+      run:
+        verifyStatReportDoesNotConsumeExactFallbackBudget,
+    },
+    {
+      name:
+        "StatReport failure keeps exact fallback run budgets",
+
+      run:
+        verifyStatReportFailurePreservesExactFallbackBudget,
+    },
     {
       name:
         "collector bounds WEB_SITE fallback starts and preserves consumer order",
