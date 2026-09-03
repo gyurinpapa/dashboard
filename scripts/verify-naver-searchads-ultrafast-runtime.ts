@@ -4,6 +4,7 @@ import {
   ok,
   rejects,
 } from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import type { NaverSearchAdsCredentials } from "../src/lib/media-sync/connection-credentials";
 import {
@@ -535,6 +536,35 @@ async function main(): Promise<void> {
   await verifyMissingReportsAreCreated();
   console.log(
     "PASS: missing reusable StatReports still use the bounded create path",
+  );
+
+  const workerOrchestrationSource = readFileSync(
+    new URL(
+      "../src/lib/media-sync/media-sync-worker-orchestration-repository.ts",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  ok(
+    /DEFAULT_RECONCILIATION_STEPS_PER_CLAIM\s*=\s*\n?\s*8\s*;/.test(
+      workerOrchestrationSource,
+    ),
+    "Production Naver claims must run a bounded eight reconciliation steps by default.",
+  );
+  ok(
+    /step\s*<=\s*reconciliationStepsPerClaim/.test(
+      workerOrchestrationSource,
+    ) &&
+      /step\s*===\s*reconciliationStepsPerClaim/.test(
+        workerOrchestrationSource,
+      ) &&
+      /releaseCombinedPartial\s*\(\s*\{/.test(
+        workerOrchestrationSource,
+      ),
+    "The in-claim reconciliation loop must remain bounded and release safely at its limit.",
+  );
+  console.log(
+    "PASS: production claims run up to eight reconciliation steps and preserve bounded release",
   );
 
   console.log(

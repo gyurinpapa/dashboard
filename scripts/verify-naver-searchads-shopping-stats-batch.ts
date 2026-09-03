@@ -399,6 +399,207 @@ async function verifyCollectorFallback(): Promise<void> {
   );
 }
 
+async function verifyCrossAdgroupAndCampaignBatch(): Promise<void> {
+  const campaigns = ["cmp-shopping-1", "cmp-shopping-2"].map(
+    (id, index) => ({
+      id,
+      name: `Shopping ${index + 1}`,
+      campaignType: "SHOPPING",
+      status: "ELIGIBLE",
+      statusReason: null,
+      userLock: false,
+    }),
+  );
+  const adgroupsByCampaign = new Map(
+    campaigns.map((campaign) => [
+      campaign.id,
+      Array.from({ length: 3 }, (_, index) => ({
+        id: `${campaign.id}-group-${index + 1}`,
+        campaignId: campaign.id,
+        name: `Group ${index + 1}`,
+        adgroupType: "SHOPPING_PRODUCT_AD",
+        status: "ELIGIBLE",
+        statusReason: null,
+        userLock: false,
+      })),
+    ]),
+  );
+  const allAdIds = campaigns.flatMap(
+    (campaign) =>
+      (adgroupsByCampaign.get(campaign.id) ?? []).map(
+        (adgroup) => `${adgroup.id}-ad`,
+      ),
+  );
+  const batchScopes: string[][] = [];
+  const consumedIds: string[] = [];
+  let singleRequests = 0;
+  let now = Date.parse("2026-09-03T00:00:00.000Z");
+
+  const result = await collectNaverAuthoritativeEntityDailyStats({
+    credentials: CREDENTIALS,
+    cursor: createNaverAuthoritativeEntityStatsCursor({
+      dateWindow: {
+        index: 0,
+        dateFrom: DATE,
+        dateTo: DATE,
+      },
+    }),
+    requestIntervalMs: 0,
+    dependencies: {
+      fetchCampaignPage: async () => page(campaigns),
+      fetchAdgroupPage: async (request) =>
+        page(adgroupsByCampaign.get(request.campaignId) ?? []),
+      fetchAdPage: async (request) =>
+        page([
+          {
+            id: `${request.adgroupId}-ad`,
+            adgroupId: request.adgroupId,
+            type: "SHOPPING_PRODUCT_AD",
+            inspectStatus: "APPROVED",
+            status: "ELIGIBLE",
+            statusReason: null,
+            userLock: false,
+            referenceKey: `${request.adgroupId}-product`,
+          },
+        ]),
+      fetchEntityDailyStatsBatch: async (request) => {
+        batchScopes.push([...request.entityIds]);
+        return {
+          entityType: "ad",
+          dateFrom: request.dateFrom,
+          dateTo: request.dateTo,
+          results: request.entityIds.map(stats),
+        };
+      },
+      fetchEntityDailyStats: async (request) => {
+        singleRequests += 1;
+        return stats(request.entityId);
+      },
+      sleep: async () => undefined,
+      now: () => {
+        now += 250;
+        return now;
+      },
+      random: () => 0,
+    },
+    onEntityStats: (item) => {
+      consumedIds.push(item.entity.id);
+    },
+  });
+
+  equal(result.status, "completed");
+  deepStrictEqual(batchScopes, [allAdIds.slice(0, 5)]);
+  equal(singleRequests, 1);
+  equal(result.statsRequestsAttempted, 2);
+  equal(result.statsRequestsSucceeded, 2);
+  deepStrictEqual(consumedIds, allAdIds);
+  equal(result.cursor.campaignId, null);
+  equal(result.cursor.adgroupId, null);
+  equal(result.cursor.completedEntityCount, 6);
+}
+
+async function verifyCrossAdgroupBoundedResume(): Promise<void> {
+  const campaign = {
+    id: "cmp-shopping-resume",
+    name: "Shopping Resume",
+    campaignType: "SHOPPING",
+    status: "ELIGIBLE",
+    statusReason: null,
+    userLock: false,
+  };
+  const adgroups = Array.from({ length: 7 }, (_, index) => ({
+    id: `grp-resume-${index + 1}`,
+    campaignId: campaign.id,
+    name: `Resume Group ${index + 1}`,
+    adgroupType: "SHOPPING_PRODUCT_AD",
+    status: "ELIGIBLE",
+    statusReason: null,
+    userLock: false,
+  }));
+  const expectedIds = adgroups.map(
+    (adgroup) => `${adgroup.id}-ad`,
+  );
+  const consumedIds: string[] = [];
+  const batchScopes: string[][] = [];
+  let now = Date.parse("2026-09-03T00:10:00.000Z");
+  const dependencies: Partial<NaverAuthoritativeEntityStatsCollectorDependencies> = {
+    fetchCampaignPage: async () => page([campaign]),
+    fetchAdgroupPage: async () => page(adgroups),
+    fetchAdPage: async (request) => page([
+      {
+        id: `${request.adgroupId}-ad`,
+        adgroupId: request.adgroupId,
+        type: "SHOPPING_PRODUCT_AD",
+        inspectStatus: "APPROVED",
+        status: "ELIGIBLE",
+        statusReason: null,
+        userLock: false,
+        referenceKey: `${request.adgroupId}-product`,
+      },
+    ]),
+    fetchEntityDailyStatsBatch: async (request) => {
+      batchScopes.push([...request.entityIds]);
+      return {
+        entityType: "ad",
+        dateFrom: request.dateFrom,
+        dateTo: request.dateTo,
+        results: request.entityIds.map(stats),
+      };
+    },
+    fetchEntityDailyStats: async (request) => stats(request.entityId),
+    sleep: async () => undefined,
+    now: () => {
+      now += 250;
+      return now;
+    },
+    random: () => 0,
+  };
+
+  const first = await collectNaverAuthoritativeEntityDailyStats({
+    credentials: CREDENTIALS,
+    cursor: createNaverAuthoritativeEntityStatsCursor({
+      dateWindow: {
+        index: 0,
+        dateFrom: DATE,
+        dateTo: DATE,
+      },
+    }),
+    requestIntervalMs: 0,
+    maxEntityStatsPerRun: 4,
+    dependencies,
+    onEntityStats: (item) => {
+      consumedIds.push(item.entity.id);
+    },
+  });
+
+  equal(first.status, "partial");
+  equal(first.partialReason, "max_entity_stats_per_run_reached");
+  equal(first.cursor.adgroupId, "grp-resume-4");
+  equal(first.cursor.lastCompletedEntityId, "grp-resume-4-ad");
+  deepStrictEqual(consumedIds, expectedIds.slice(0, 4));
+
+  const second = await collectNaverAuthoritativeEntityDailyStats({
+    credentials: CREDENTIALS,
+    cursor: first.cursor,
+    requestIntervalMs: 0,
+    maxEntityStatsPerRun: 4,
+    dependencies,
+    onEntityStats: (item) => {
+      consumedIds.push(item.entity.id);
+    },
+  });
+
+  equal(second.status, "completed");
+  deepStrictEqual(consumedIds, expectedIds);
+  deepStrictEqual(batchScopes, [
+    expectedIds.slice(0, 4),
+    expectedIds.slice(4),
+  ]);
+  equal(new Set(consumedIds).size, expectedIds.length);
+  equal(second.cursor.completedEntityCount, 7);
+  equal(second.cursor.campaignId, null);
+}
+
 async function verifyBatchInputGuard(): Promise<void> {
   await rejects(
     () =>
@@ -447,6 +648,16 @@ async function main(): Promise<void> {
   await verifyCollectorFallback();
   console.log(
     "PASS: invalid batch contract disables batching and falls back to singles",
+  );
+
+  await verifyCrossAdgroupAndCampaignBatch();
+  console.log(
+    "PASS: Shopping batches cross adgroup and campaign boundaries without changing row order",
+  );
+
+  await verifyCrossAdgroupBoundedResume();
+  console.log(
+    "PASS: bounded cross-adgroup batching resumes after the last committed entity without duplicates",
   );
 
   await verifyBatchInputGuard();

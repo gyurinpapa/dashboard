@@ -967,6 +967,74 @@ async function main(): Promise<void> {
             "Completed collector checkpoint must be an object before reconciliation.",
           );
 
+        if (reconciliationCount <= 5) {
+          const phases = [
+            "mutation",
+            "mutation_discover",
+            "mutation_classify",
+            "retained_validation",
+            "finalization",
+          ] as const;
+          const phase = phases[reconciliationCount - 1];
+
+          assert.ok(
+            phase,
+            "Synthetic reconciliation phase is missing.",
+          );
+
+          return {
+            kind:
+              "brand_search_cross_grain_dedup_v1" as const,
+            version:
+              1 as const,
+            changed:
+              false,
+            alreadyReconciled:
+              false,
+            sourceRows:
+              RAW_COMPLETED_ROWS,
+            excludedRows:
+              0,
+            retainedRows:
+              RAW_COMPLETED_ROWS,
+            mixedCampaignCount:
+              1,
+            matchedCampaignCount:
+              1,
+            remainingOverlapRows:
+              0,
+            excludedImpressions:
+              0,
+            excludedClicks:
+              0,
+            excludedCost:
+              0,
+            excludedConversions:
+              0,
+            excludedRevenue:
+              0,
+            job:
+              input.job,
+            checkpoint:
+              processingCheckpoint as never,
+            progress: {
+              phase,
+              sourceRows:
+                RAW_COMPLETED_ROWS,
+              excludedRows:
+                0,
+              retainedRows:
+                RAW_COMPLETED_ROWS,
+              cursor:
+                reconciliationCount,
+              validatedRows:
+                RAW_COMPLETED_ROWS,
+              batchSize:
+                500,
+            },
+          };
+        }
+
         const reconciledCheckpoint = {
           ...processingCheckpoint,
           raw_rows:
@@ -1141,7 +1209,7 @@ async function main(): Promise<void> {
 
         assert.equal(
           reconciliationCount,
-          1,
+          6,
           "Combined summary ran before reconciliation.",
         );
 
@@ -1160,6 +1228,19 @@ async function main(): Promise<void> {
           RECONCILED_ROWS,
         );
       },
+
+    loadFanoutTargets:
+      async (
+        job:
+          MediaSyncJobRecord,
+      ) => [
+        {
+          reportId:
+            job.report_id,
+          primary:
+            true,
+        },
+      ],
 
     materialize:
       async (
@@ -1215,6 +1296,25 @@ async function main(): Promise<void> {
             false,
         };
       },
+
+    loadProjectionAuthority:
+      async (
+        input: {
+          job:
+            MediaSyncJobRecord;
+          reportId:
+            string;
+          snapshotIngestionId:
+            string;
+        },
+      ) => ({
+        reportId:
+          input.reportId,
+        previousIngestionId:
+          PREVIOUS_INGESTION_ID,
+        snapshotIngestionId:
+          input.snapshotIngestionId,
+      }),
 
     activate:
       async (
@@ -1351,6 +1451,8 @@ async function main(): Promise<void> {
   const runOptions = {
     jobTimeoutMs:
       60_000,
+    reconciliationStepsPerClaim:
+      8,
     orchestrationDependencies:
       orchestrationDependencies as never,
     combinedCheckpointDependencies: {
@@ -1510,7 +1612,7 @@ async function main(): Promise<void> {
 
   assert.equal(
     reconciliationCount,
-    1,
+    6,
   );
 
   assert.equal(
@@ -1572,6 +1674,11 @@ async function main(): Promise<void> {
   assert.deepEqual(
     completedLifecycleOrder,
     [
+      "reconciliation",
+      "reconciliation",
+      "reconciliation",
+      "reconciliation",
+      "reconciliation",
       "reconciliation",
       "summary",
       "materialization",
@@ -1712,7 +1819,7 @@ async function main(): Promise<void> {
   );
 
   console.log(
-    "verified reconciliation calls after raw combined completion: 1",
+    "verified six reconciliation steps complete inside one claim: true",
   );
 
   console.log(
@@ -1720,7 +1827,7 @@ async function main(): Promise<void> {
   );
 
   console.log(
-    "verified completed lifecycle order: reconciliation / summary / materialization / activation / finalization",
+    "verified completed lifecycle order: six reconciliation steps / summary / materialization / activation / finalization",
   );
 
   console.log(

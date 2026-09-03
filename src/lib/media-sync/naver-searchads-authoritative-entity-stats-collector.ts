@@ -283,6 +283,29 @@ type BoundedEntityStatsTaskResult<
   requestState: RuntimeState;
 };
 
+type ShoppingBatchItem = {
+  campaign: NaverSearchAdsCampaignRecord;
+  campaignBaseSearchId: string | null;
+  adgroup: NaverSearchAdsAdgroupRecord;
+  adgroupBaseSearchId: string | null;
+  entity: NaverSearchAdsAdRecord;
+  entityBaseSearchId: string | null;
+  entityIndexInPage: number;
+  completeAdgroupAfter: boolean;
+  completeCampaignAfter: boolean;
+};
+
+type ShoppingBatchAccumulator = {
+  readonly pendingCount: number;
+  enqueue: (item: ShoppingBatchItem) => Promise<void>;
+  flush: () => Promise<void>;
+  markAdgroupComplete: (input: {
+    campaignId: string;
+    adgroupId: string;
+  }) => boolean;
+  markCampaignComplete: (campaignId: string) => boolean;
+};
+
 const CONTINUE: TraversalResult = { status: "continue" };
 
 const DEFAULT_DEPENDENCIES:
@@ -713,6 +736,25 @@ function setDiscoveredLowerBound(
   );
 }
 
+function setDiscoveredLowerBoundWithPending(input: {
+  state: RuntimeState;
+  pendingCount: number;
+  remainingEntityCount: number;
+}): void {
+  const next = Math.max(
+    input.state.cursor.discoveredEntityCount,
+    input.state.cursor.completedEntityCount +
+      input.pendingCount +
+      input.remainingEntityCount,
+  );
+
+  input.state.cursor =
+    setNaverAuthoritativeEntityStatsDiscoveredCount(
+      input.state.cursor,
+      next,
+    );
+}
+
 function isBrandSearchFastPath(input: {
   campaign: NaverSearchAdsCampaignRecord;
   grain: "adgroup" | "ad";
@@ -872,6 +914,356 @@ function mergeBoundedRequestState(
     state.lastStatsRequestStartedAt =
       requestState.lastStatsRequestStartedAt;
   }
+}
+
+function positionShoppingCursorForItem(input: {
+  cursor: NaverAuthoritativeEntityStatsCursor;
+  item: ShoppingBatchItem;
+}): NaverAuthoritativeEntityStatsCursor {
+  let cursor = cloneCursor(input.cursor);
+
+  if (
+    cursor.campaignId !== input.item.campaign.id ||
+    cursor.campaignBaseSearchId !== input.item.campaignBaseSearchId ||
+    cursor.authoritativeGrain !== "ad"
+  ) {
+    cursor = setNaverAuthoritativeEntityStatsCampaignPosition(
+      cursor,
+      {
+        campaignBaseSearchId:
+          input.item.campaignBaseSearchId,
+        campaignId:
+          input.item.campaign.id,
+        campaignType:
+          "SHOPPING",
+        authoritativeGrain:
+          "ad",
+      },
+    );
+  }
+
+  if (
+    cursor.adgroupId !== input.item.adgroup.id ||
+    cursor.adgroupBaseSearchId !== input.item.adgroupBaseSearchId
+  ) {
+    cursor = setNaverAuthoritativeEntityStatsAdgroupPosition(
+      cursor,
+      {
+        adgroupBaseSearchId:
+          input.item.adgroupBaseSearchId,
+        adgroupId:
+          input.item.adgroup.id,
+      },
+    );
+  }
+
+  if (
+    cursor.entityBaseSearchId !== input.item.entityBaseSearchId
+  ) {
+    cursor = setNaverAuthoritativeEntityStatsEntityPagePosition(
+      cursor,
+      {
+        entityBaseSearchId:
+          input.item.entityBaseSearchId,
+      },
+    );
+  }
+
+  return cursor;
+}
+
+function createShoppingBatchAccumulator(input: {
+  state: RuntimeState;
+  options: Options;
+  credentials: NaverSearchAdsCredentials;
+  onEntityStats: NaverAuthoritativeEntityStatsCollectorConsumer;
+  onRetry: NaverAuthoritativeEntityStatsCollectorInput["onRetry"];
+  onProgress: NaverAuthoritativeEntityStatsCollectorInput["onProgress"];
+  signal: AbortSignal | undefined;
+  dependencies:
+    ResolvedNaverAuthoritativeEntityStatsCollectorDependencies;
+}): ShoppingBatchAccumulator {
+  const pending: ShoppingBatchItem[] = [];
+  const waitForRequestStart = createBoundedStatsStartGate({
+    state: input.state,
+    options: input.options,
+    signal: input.signal,
+    dependencies: input.dependencies,
+  });
+
+  const consumeItem = async (
+    item: ShoppingBatchItem,
+    stats: NaverSearchAdsEntityDailyStatsResult,
+    requestAttemptCount: number,
+  ): Promise<void> => {
+    const cursorBefore =
+      positionShoppingCursorForItem({
+        cursor: input.state.cursor,
+        item,
+      });
+    const cursorAfter =
+      markNaverAuthoritativeEntityStatsEntityCompleted({
+        cursor: cursorBefore,
+        entityId: item.entity.id,
+        entityIndexInPage: item.entityIndexInPage,
+      });
+
+    try {
+      await input.onEntityStats({
+        campaign: item.campaign,
+        adgroup: item.adgroup,
+        entity: item.entity,
+        authoritativeGrain: "ad",
+        stats,
+        cursorBefore,
+        cursorAfter: cloneCursor(cursorAfter),
+        requestAttemptCount,
+      });
+    } catch (error) {
+      throw new NaverAuthoritativeEntityStatsCollectorError(
+        "CONSUMER_FAILED",
+        "The authoritative Shopping batch consumer failed.",
+        { cursor: cursorBefore, cause: error },
+      );
+    }
+
+    input.state.cursor = cursorAfter;
+    input.state.entitiesCompletedInRun += 1;
+
+    await notifyProgress(
+      input.onProgress,
+      "entity_stats:done",
+      input.state,
+      {
+        campaignId: item.campaign.id,
+        adgroupId: item.adgroup.id,
+        entityId: item.entity.id,
+        authoritativeGrain: "ad",
+        recordsRead: stats.records.length,
+        attemptCount: requestAttemptCount,
+      },
+    );
+
+    if (item.completeAdgroupAfter) {
+      await notifyProgress(
+        input.onProgress,
+        "adgroup:done",
+        input.state,
+        {
+          campaignId: item.campaign.id,
+          adgroupId: item.adgroup.id,
+          authoritativeGrain: "ad",
+        },
+      );
+    }
+
+    if (item.completeCampaignAfter) {
+      await notifyProgress(
+        input.onProgress,
+        "campaign:done",
+        input.state,
+        {
+          campaignId: item.campaign.id,
+          authoritativeGrain: "ad",
+        },
+      );
+    }
+  };
+
+  const consumeSingles = async (
+    items: readonly ShoppingBatchItem[],
+  ): Promise<void> => {
+    for (const item of items) {
+      await notifyProgress(
+        input.onProgress,
+        "entity_stats:start",
+        input.state,
+        {
+          campaignId: item.campaign.id,
+          adgroupId: item.adgroup.id,
+          entityId: item.entity.id,
+          authoritativeGrain: "ad",
+        },
+      );
+
+      const request = await executeApiRequestWithRetry({
+        operation: "entity_stats",
+        entityId: item.entity.id,
+        state: input.state,
+        options: input.options,
+        signal: input.signal,
+        onRetry: input.onRetry,
+        dependencies: input.dependencies,
+        beforeAttempt: waitForRequestStart,
+        request: () =>
+          input.dependencies.fetchEntityDailyStats({
+            credentials: input.credentials,
+            entityId: item.entity.id,
+            entityType: "ad",
+            dateFrom: input.state.cursor.dateFrom,
+            dateTo: input.state.cursor.dateTo,
+          }),
+      });
+
+      await consumeItem(
+        item,
+        request.value,
+        request.attemptCount,
+      );
+    }
+  };
+
+  const flush = async (): Promise<void> => {
+    if (pending.length === 0) {
+      return;
+    }
+
+    const items = pending.splice(
+      0,
+      AUTHORITATIVE_STATS_MAX_BATCH_SIZE,
+    );
+    const fetchBatch =
+      input.dependencies.fetchEntityDailyStatsBatch;
+
+    if (!fetchBatch || items.length < 2) {
+      await consumeSingles(items);
+      return;
+    }
+
+    for (const item of items) {
+      await notifyProgress(
+        input.onProgress,
+        "entity_stats:start",
+        input.state,
+        {
+          campaignId: item.campaign.id,
+          adgroupId: item.adgroup.id,
+          entityId: item.entity.id,
+          authoritativeGrain: "ad",
+        },
+      );
+    }
+
+    let batchRequest:
+      ApiRequestResult<NaverSearchAdsEntityDailyStatsBatchResult>;
+
+    try {
+      batchRequest = await executeApiRequestWithRetry({
+        operation: "entity_stats",
+        entityId: items[0]?.entity.id ?? null,
+        state: input.state,
+        options: input.options,
+        signal: input.signal,
+        onRetry: input.onRetry,
+        dependencies: input.dependencies,
+        beforeAttempt: waitForRequestStart,
+        request: () =>
+          fetchBatch({
+            credentials: input.credentials,
+            entityIds: items.map(
+              (item) => item.entity.id,
+            ),
+            entityType: "ad",
+            dateFrom: input.state.cursor.dateFrom,
+            dateTo: input.state.cursor.dateTo,
+          }),
+      });
+    } catch (error) {
+      if (!isBatchContractFallbackError(error)) {
+        throw error;
+      }
+
+      input.dependencies.fetchEntityDailyStatsBatch = null;
+      await consumeSingles(items);
+      return;
+    }
+
+    const valid =
+      batchRequest.value.results.length === items.length &&
+      batchRequest.value.results.every(
+        (stats, index) => {
+          const item = items[index];
+
+          return (
+            !!item &&
+            stats.entityId === item.entity.id &&
+            stats.entityType === "ad" &&
+            stats.dateFrom === input.state.cursor.dateFrom &&
+            stats.dateTo === input.state.cursor.dateTo
+          );
+        },
+      );
+
+    if (!valid) {
+      input.dependencies.fetchEntityDailyStatsBatch = null;
+      await consumeSingles(items);
+      return;
+    }
+
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
+      const stats = batchRequest.value.results[index];
+
+      if (!item || !stats) {
+        throw new NaverAuthoritativeEntityStatsCollectorError(
+          "INVALID_INPUT",
+          "The cross-adgroup Shopping batch result is incomplete.",
+          { cursor: input.state.cursor },
+        );
+      }
+
+      await consumeItem(
+        item,
+        stats,
+        batchRequest.attemptCount,
+      );
+    }
+  };
+
+  return {
+    get pendingCount() {
+      return pending.length;
+    },
+
+    async enqueue(item) {
+      pending.push(item);
+
+      if (pending.length >= AUTHORITATIVE_STATS_MAX_BATCH_SIZE) {
+        await flush();
+      }
+    },
+
+    flush,
+
+    markAdgroupComplete(mark) {
+      for (let index = pending.length - 1; index >= 0; index -= 1) {
+        const item = pending[index];
+
+        if (
+          item?.campaign.id === mark.campaignId &&
+          item.adgroup.id === mark.adgroupId
+        ) {
+          item.completeAdgroupAfter = true;
+          return true;
+        }
+      }
+
+      return false;
+    },
+
+    markCampaignComplete(campaignId) {
+      for (let index = pending.length - 1; index >= 0; index -= 1) {
+        const item = pending[index];
+
+        if (item?.campaign.id === campaignId) {
+          item.completeCampaignAfter = true;
+          return true;
+        }
+      }
+
+      return false;
+    },
+  };
 }
 
 async function consumeEntityPageBounded<
@@ -1516,7 +1908,9 @@ async function consumeEntityPage<
 
 async function collectShoppingAds(input: {
   campaign: NaverSearchAdsCampaignRecord;
+  campaignBaseSearchId: string | null;
   adgroup: NaverSearchAdsAdgroupRecord;
+  adgroupBaseSearchId: string | null;
   state: RuntimeState;
   options: Options;
   credentials: NaverSearchAdsCredentials;
@@ -1526,6 +1920,7 @@ async function collectShoppingAds(input: {
   signal: AbortSignal | undefined;
   dependencies:
     ResolvedNaverAuthoritativeEntityStatsCollectorDependencies;
+  shoppingBatchAccumulator: ShoppingBatchAccumulator | null;
 }): Promise<TraversalResult> {
   let baseSearchId =
     input.state.cursor.adgroupId === input.adgroup.id
@@ -1569,7 +1964,10 @@ async function collectShoppingAds(input: {
       (input.state.cursor.lastCompletedEntityId !== null ||
         input.state.cursor.entityIndexInPage > 0);
 
-    if (!isResumingEntityPage) {
+    if (
+      !input.shoppingBatchAccumulator &&
+      !isResumingEntityPage
+    ) {
       input.state.cursor = setNaverAuthoritativeEntityStatsEntityPagePosition(
         input.state.cursor,
         { entityBaseSearchId: pageBaseSearchId },
@@ -1585,22 +1983,121 @@ async function collectShoppingAds(input: {
       attemptCount: request.attemptCount,
     });
 
-    const consumed = await consumeEntityPage({
-      campaign: input.campaign,
-      adgroup: input.adgroup,
-      entities: request.value.records,
-      grain: "ad",
-      state: input.state,
-      options: input.options,
-      credentials: input.credentials,
-      onEntityStats: input.onEntityStats,
-      onRetry: input.onRetry,
-      onProgress: input.onProgress,
-      signal: input.signal,
-      dependencies: input.dependencies,
-    });
+    let consumed: TraversalResult;
+
+    if (input.shoppingBatchAccumulator) {
+      const entityIds =
+        request.value.records.map(
+          (entity) => entity.id,
+        );
+      const startIndex =
+        isResumingEntityPage
+          ? resolveNaverAuthoritativeEntityStatsResumePosition(
+              input.state.cursor,
+              entityIds,
+            ).entityIndexInPage
+          : 0;
+      const remainingInPage = Math.max(
+        0,
+        request.value.records.length - startIndex,
+      );
+      const availableBudget = Math.max(
+        0,
+        remainingEntityStatsBudget(
+          input.state,
+          input.options,
+        ) - input.shoppingBatchAccumulator.pendingCount,
+      );
+      const scheduledCount = Math.min(
+        remainingInPage,
+        availableBudget,
+      );
+
+      setDiscoveredLowerBoundWithPending({
+        state: input.state,
+        pendingCount:
+          input.shoppingBatchAccumulator.pendingCount,
+        remainingEntityCount:
+          scheduledCount,
+      });
+      input.state.entitiesDiscoveredInRun +=
+        scheduledCount;
+
+      for (
+        let index = startIndex;
+        index < startIndex + scheduledCount;
+        index += 1
+      ) {
+        const entity = request.value.records[index];
+
+        if (!entity) {
+          throw new NaverAuthoritativeEntityStatsCollectorError(
+            "INVALID_INPUT",
+            "The Shopping entity page contains an invalid item.",
+            { cursor: input.state.cursor },
+          );
+        }
+
+        await input.shoppingBatchAccumulator.enqueue({
+          campaign: input.campaign,
+          campaignBaseSearchId:
+            input.campaignBaseSearchId,
+          adgroup: input.adgroup,
+          adgroupBaseSearchId:
+            input.adgroupBaseSearchId,
+          entity,
+          entityBaseSearchId:
+            pageBaseSearchId,
+          entityIndexInPage: index,
+          completeAdgroupAfter: false,
+          completeCampaignAfter: false,
+        });
+      }
+
+      if (scheduledCount < remainingInPage) {
+        await input.shoppingBatchAccumulator.flush();
+
+        return {
+          status: "partial",
+          reason:
+            currentPartialReason(
+              input.state,
+              input.options,
+            ) ??
+            "max_entity_stats_per_run_reached",
+        };
+      }
+
+      const reason = currentPartialReason(
+        input.state,
+        input.options,
+      );
+
+      consumed = reason
+        ? { status: "partial", reason }
+        : CONTINUE;
+    } else {
+      consumed = await consumeEntityPage({
+        campaign: input.campaign,
+        adgroup: input.adgroup,
+        entities: request.value.records,
+        grain: "ad",
+        state: input.state,
+        options: input.options,
+        credentials: input.credentials,
+        onEntityStats: input.onEntityStats,
+        onRetry: input.onRetry,
+        onProgress: input.onProgress,
+        signal: input.signal,
+        dependencies: input.dependencies,
+      });
+    }
 
     if (consumed.status === "partial") {
+      if (input.shoppingBatchAccumulator) {
+        await input.shoppingBatchAccumulator.flush();
+      }
+
       return consumed;
     }
 
@@ -1617,14 +2114,20 @@ async function collectShoppingAds(input: {
     );
 
     baseSearchId = request.value.nextBaseSearchId;
-    input.state.cursor = setNaverAuthoritativeEntityStatsEntityPagePosition(
-      input.state.cursor,
-      { entityBaseSearchId: baseSearchId },
-    );
+    if (!input.shoppingBatchAccumulator) {
+      input.state.cursor = setNaverAuthoritativeEntityStatsEntityPagePosition(
+        input.state.cursor,
+        { entityBaseSearchId: baseSearchId },
+      );
+    }
 
     const discoveryReason = discoveryPartialReason(input.state, input.options);
 
     if (discoveryReason) {
+      if (input.shoppingBatchAccumulator) {
+        await input.shoppingBatchAccumulator.flush();
+      }
+
       return { status: "partial", reason: discoveryReason };
     }
   }
@@ -1638,6 +2141,7 @@ async function collectShoppingAds(input: {
 
 async function collectCampaignAdgroups(input: {
   campaign: NaverSearchAdsCampaignRecord;
+  campaignBaseSearchId: string | null;
   grain: "adgroup" | "ad";
   state: RuntimeState;
   options: Options;
@@ -1648,6 +2152,7 @@ async function collectCampaignAdgroups(input: {
   signal: AbortSignal | undefined;
   dependencies:
     ResolvedNaverAuthoritativeEntityStatsCollectorDependencies;
+  shoppingBatchAccumulator: ShoppingBatchAccumulator | null;
 }): Promise<TraversalResult> {
   let baseSearchId =
     input.state.cursor.campaignId === input.campaign.id
@@ -1783,7 +2288,10 @@ async function collectCampaignAdgroups(input: {
           );
         }
 
-        if (input.state.cursor.adgroupId !== adgroup.id) {
+        if (
+          !input.shoppingBatchAccumulator &&
+          input.state.cursor.adgroupId !== adgroup.id
+        ) {
           input.state.cursor = setNaverAuthoritativeEntityStatsAdgroupPosition(
             input.state.cursor,
             {
@@ -1802,7 +2310,11 @@ async function collectCampaignAdgroups(input: {
 
         const result = await collectShoppingAds({
           campaign: input.campaign,
+          campaignBaseSearchId:
+            input.campaignBaseSearchId,
           adgroup,
+          adgroupBaseSearchId:
+            pageBaseSearchId,
           state: input.state,
           options: input.options,
           credentials: input.credentials,
@@ -1811,25 +2323,43 @@ async function collectCampaignAdgroups(input: {
           onProgress: input.onProgress,
           signal: input.signal,
           dependencies: input.dependencies,
+          shoppingBatchAccumulator:
+            input.shoppingBatchAccumulator,
         });
 
         if (result.status === "partial") {
           return result;
         }
 
-        await notifyProgress(input.onProgress, "adgroup:done", input.state, {
-          campaignId: input.campaign.id,
-          adgroupId: adgroup.id,
-          authoritativeGrain: "ad",
-        });
+        const completionDeferred =
+          input.shoppingBatchAccumulator
+            ?.markAdgroupComplete({
+              campaignId:
+                input.campaign.id,
+              adgroupId:
+                adgroup.id,
+            }) ?? false;
 
-        input.state.cursor = setNaverAuthoritativeEntityStatsAdgroupPosition(
-          input.state.cursor,
-          {
-            adgroupBaseSearchId: pageBaseSearchId,
-            adgroupId: null,
-          },
-        );
+        if (!completionDeferred) {
+          await notifyProgress(input.onProgress, "adgroup:done", input.state, {
+            campaignId: input.campaign.id,
+            adgroupId: adgroup.id,
+            authoritativeGrain: "ad",
+          });
+
+          if (
+            input.state.cursor.campaignId === input.campaign.id &&
+            input.state.cursor.adgroupId === adgroup.id
+          ) {
+            input.state.cursor = setNaverAuthoritativeEntityStatsAdgroupPosition(
+              input.state.cursor,
+              {
+                adgroupBaseSearchId: pageBaseSearchId,
+                adgroupId: null,
+              },
+            );
+          }
+        }
       }
     }
 
@@ -1846,14 +2376,23 @@ async function collectCampaignAdgroups(input: {
     );
 
     baseSearchId = request.value.nextBaseSearchId;
-    input.state.cursor = setNaverAuthoritativeEntityStatsAdgroupPosition(
-      input.state.cursor,
-      { adgroupBaseSearchId: baseSearchId, adgroupId: null },
-    );
+    if (
+      !input.shoppingBatchAccumulator &&
+      input.state.cursor.campaignId === input.campaign.id
+    ) {
+      input.state.cursor = setNaverAuthoritativeEntityStatsAdgroupPosition(
+        input.state.cursor,
+        { adgroupBaseSearchId: baseSearchId, adgroupId: null },
+      );
+    }
 
     const discoveryReason = discoveryPartialReason(input.state, input.options);
 
     if (discoveryReason) {
+      if (input.shoppingBatchAccumulator) {
+        await input.shoppingBatchAccumulator.flush();
+      }
+
       return { status: "partial", reason: discoveryReason };
     }
   }
@@ -1879,6 +2418,20 @@ export async function collectNaverAuthoritativeEntityDailyStats(
   const options = normalizeOptions(input);
   const dependencies = resolveDependencies(input.dependencies);
   const state = createState(normalizeNaverAuthoritativeEntityStatsCursor(input.cursor));
+  const shoppingBatchAccumulator =
+    dependencies.fetchEntityDailyStatsBatch &&
+    options.maxStatsRequestsPerRun === null
+      ? createShoppingBatchAccumulator({
+          state,
+          options,
+          credentials: input.credentials,
+          onEntityStats: input.onEntityStats,
+          onRetry: input.onRetry,
+          onProgress: input.onProgress,
+          signal: input.signal,
+          dependencies,
+        })
+      : null;
   let campaignBaseSearchId = state.cursor.campaignBaseSearchId;
 
   await notifyProgress(input.onProgress, "collector:start", state);
@@ -1975,7 +2528,24 @@ export async function collectNaverAuthoritativeEntityDailyStats(
         continue;
       }
 
-      if (state.cursor.campaignId !== campaign.id) {
+      const useCrossAdgroupShoppingBatch =
+        contract.authoritativeGrain === "ad" &&
+        shoppingBatchAccumulator !== null;
+
+      if (
+        contract.authoritativeGrain === "adgroup" &&
+        shoppingBatchAccumulator?.pendingCount
+      ) {
+        await shoppingBatchAccumulator.flush();
+      }
+
+      if (
+        state.cursor.campaignId !== campaign.id &&
+        (
+          !useCrossAdgroupShoppingBatch ||
+          shoppingBatchAccumulator?.pendingCount === 0
+        )
+      ) {
         state.cursor = setNaverAuthoritativeEntityStatsCampaignPosition(
           state.cursor,
           {
@@ -1997,6 +2567,8 @@ export async function collectNaverAuthoritativeEntityDailyStats(
 
       const result = await collectCampaignAdgroups({
         campaign,
+        campaignBaseSearchId:
+          pageBaseSearchId,
         grain: contract.authoritativeGrain,
         state,
         options,
@@ -2006,6 +2578,10 @@ export async function collectNaverAuthoritativeEntityDailyStats(
         onProgress: input.onProgress,
         signal: input.signal,
         dependencies,
+        shoppingBatchAccumulator:
+          useCrossAdgroupShoppingBatch
+            ? shoppingBatchAccumulator
+            : null,
       });
 
       if (result.status === "partial") {
@@ -2013,23 +2589,53 @@ export async function collectNaverAuthoritativeEntityDailyStats(
         return buildResult(state, result.reason);
       }
 
-      await notifyProgress(input.onProgress, "campaign:done", state, {
-        campaignId: campaign.id,
-        authoritativeGrain: contract.authoritativeGrain,
-      });
+      const completionDeferred =
+        useCrossAdgroupShoppingBatch
+          ? (
+              shoppingBatchAccumulator
+                ?.markCampaignComplete(
+                  campaign.id,
+                ) ?? false
+            )
+          : false;
 
-      state.cursor = setNaverAuthoritativeEntityStatsCampaignPosition(
-        state.cursor,
-        {
-          campaignBaseSearchId: pageBaseSearchId,
-          campaignId: null,
-          campaignType: null,
-          authoritativeGrain: null,
-        },
-      );
+      if (!completionDeferred) {
+        await notifyProgress(input.onProgress, "campaign:done", state, {
+          campaignId: campaign.id,
+          authoritativeGrain: contract.authoritativeGrain,
+        });
+
+        if (state.cursor.campaignId === campaign.id) {
+          state.cursor = setNaverAuthoritativeEntityStatsCampaignPosition(
+            state.cursor,
+            {
+              campaignBaseSearchId: pageBaseSearchId,
+              campaignId: null,
+              campaignType: null,
+              authoritativeGrain: null,
+            },
+          );
+        }
+      }
     }
 
     if (request.value.records.length < HIERARCHY_RECORD_SIZE) {
+      if (shoppingBatchAccumulator?.pendingCount) {
+        await shoppingBatchAccumulator.flush();
+      }
+
+      if (state.cursor.campaignId !== null) {
+        state.cursor = setNaverAuthoritativeEntityStatsCampaignPosition(
+          state.cursor,
+          {
+            campaignBaseSearchId: pageBaseSearchId,
+            campaignId: null,
+            campaignType: null,
+            authoritativeGrain: null,
+          },
+        );
+      }
+
       await notifyProgress(input.onProgress, "collector:done", state);
       return buildResult(state, null);
     }
@@ -2041,6 +2647,10 @@ export async function collectNaverAuthoritativeEntityDailyStats(
       state.cursor,
       "campaign",
     );
+
+    if (shoppingBatchAccumulator?.pendingCount) {
+      await shoppingBatchAccumulator.flush();
+    }
 
     campaignBaseSearchId = request.value.nextBaseSearchId;
     state.cursor = setNaverAuthoritativeEntityStatsCampaignPosition(

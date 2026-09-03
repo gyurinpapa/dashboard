@@ -98,6 +98,12 @@ const MIN_JOB_TIMEOUT_MS =
 const MAX_JOB_TIMEOUT_MS =
   60 * 60 * 1_000;
 
+const DEFAULT_RECONCILIATION_STEPS_PER_CLAIM =
+  8;
+
+const MAX_RECONCILIATION_STEPS_PER_CLAIM =
+  256;
+
 const MAX_SAFE_ERROR_TEXT_LENGTH =
   1_000;
 
@@ -213,6 +219,7 @@ export type ProcessNaverMediaSyncJobOptions = {
   maxAuthoritativeDiscoveryPagesPerRun?: number;
 
   reconciliationBatchSize?: number;
+  reconciliationStepsPerClaim?: number;
   materializationBatchSize?: number;
   jobTimeoutMs?: number;
   signal?: AbortSignal;
@@ -550,6 +557,29 @@ function normalizeTimeoutMs(
     throw new MediaSyncWorkerOrchestrationError(
       "INVALID_INPUT",
       `jobTimeoutMs must be an integer between ${MIN_JOB_TIMEOUT_MS} and ${MAX_JOB_TIMEOUT_MS}.`,
+    );
+  }
+
+  return numericValue;
+}
+
+function normalizeReconciliationStepsPerClaim(
+  value: unknown,
+): number {
+  if (value === undefined || value === null) {
+    return 1;
+  }
+
+  const numericValue = Number(value);
+
+  if (
+    !Number.isSafeInteger(numericValue) ||
+    numericValue < 1 ||
+    numericValue > MAX_RECONCILIATION_STEPS_PER_CLAIM
+  ) {
+    throw new MediaSyncWorkerOrchestrationError(
+      "INVALID_INPUT",
+      `reconciliationStepsPerClaim must be an integer between 1 and ${MAX_RECONCILIATION_STEPS_PER_CLAIM}.`,
     );
   }
 
@@ -2383,70 +2413,96 @@ export async function processClaimedNaverMediaSyncJob(
 
   let reconciliation:
     NaverSearchAdsBrandSearchCrossGrainReconciliationCompletedResult;
+  const reconciliationStepsPerClaim =
+    normalizeReconciliationStepsPerClaim(
+      options.reconciliationStepsPerClaim,
+    );
 
   try {
-    logStage({
-      job:
-        checkpointJob,
-      stage:
-        "staging:reconciliation:start",
-      detail:
-        `rows=${checkpoint.totalRows}`,
-    });
+    let reconciliationCompleted:
+      NaverSearchAdsBrandSearchCrossGrainReconciliationCompletedResult |
+      null = null;
 
-    const reconciliationAttempt =
-      await dependencies
-        .reconcileStaging(
-          {
-            job:
-              checkpointJob,
-            expectedRows:
-              checkpoint.totalRows,
-            batchSize:
-              options.reconciliationBatchSize,
-          },
-          options.reconciliationDependencies,
+    for (
+      let step = 1;
+      step <= reconciliationStepsPerClaim;
+      step += 1
+    ) {
+      logStage({
+        job:
+          checkpointJob,
+        stage:
+          "staging:reconciliation:start",
+        detail:
+          `rows=${checkpoint.totalRows} step=${step}/${reconciliationStepsPerClaim}`,
+      });
+
+      const reconciliationAttempt =
+        await dependencies
+          .reconcileStaging(
+            {
+              job:
+                checkpointJob,
+              expectedRows:
+                checkpoint.totalRows,
+              batchSize:
+                options.reconciliationBatchSize,
+            },
+            options.reconciliationDependencies,
+          );
+
+      checkpointJob =
+        reconciliationAttempt.job;
+
+      checkpoint =
+        readNaverSearchAdsCombinedProcessingCheckpoint(
+          checkpointJob,
         );
 
-    checkpointJob =
-      reconciliationAttempt.job;
+      if (
+        !isNaverSearchAdsBrandSearchCrossGrainReconciliationPartialResult(
+          reconciliationAttempt,
+        )
+      ) {
+        reconciliationCompleted =
+          reconciliationAttempt;
+        break;
+      }
 
-    checkpoint =
-      readNaverSearchAdsCombinedProcessingCheckpoint(
-        checkpointJob,
-      );
-
-    if (
-      isNaverSearchAdsBrandSearchCrossGrainReconciliationPartialResult(
-        reconciliationAttempt,
-      )
-    ) {
       logStage({
         job:
           checkpointJob,
         stage:
           "staging:reconciliation:partial",
         detail:
-          `phase=${reconciliationAttempt.progress.phase} cursor=${reconciliationAttempt.progress.cursor} validatedRows=${reconciliationAttempt.progress.validatedRows} sourceRows=${reconciliationAttempt.sourceRows} retainedRows=${reconciliationAttempt.retainedRows}`,
+          `phase=${reconciliationAttempt.progress.phase} cursor=${reconciliationAttempt.progress.cursor} validatedRows=${reconciliationAttempt.progress.validatedRows} sourceRows=${reconciliationAttempt.sourceRows} retainedRows=${reconciliationAttempt.retainedRows} step=${step}/${reconciliationStepsPerClaim}`,
       });
 
-      return releaseCombinedPartial({
-        job:
-          context.job,
-        checkpointJob,
-        checkpoint,
-        resultPhase:
-          "reconciliation",
-        partialReason:
-          `reconciliation_${reconciliationAttempt.progress.phase}`,
-        keyword,
-        authoritative,
-        dependencies,
-      });
+      if (step === reconciliationStepsPerClaim) {
+        return releaseCombinedPartial({
+          job:
+            context.job,
+          checkpointJob,
+          checkpoint,
+          resultPhase:
+            "reconciliation",
+          partialReason:
+            `reconciliation_${reconciliationAttempt.progress.phase}`,
+          keyword,
+          authoritative,
+          dependencies,
+        });
+      }
     }
 
-    reconciliation =
-      reconciliationAttempt;
+    if (!reconciliationCompleted) {
+      throw new MediaSyncWorkerOrchestrationError(
+        "RECONCILIATION_FAILED",
+        "The Naver reconciliation step loop ended without a completed or releasable result.",
+      );
+    }
+
+    reconciliation = reconciliationCompleted;
 
     if (
       checkpoint.phase !== "completed" ||
@@ -3082,6 +3138,9 @@ export async function processNextNaverMediaSyncJob(
 
   const processingInput: ProcessNaverMediaSyncJobOptions = {
     ...input,
+    reconciliationStepsPerClaim:
+      input.reconciliationStepsPerClaim ??
+      DEFAULT_RECONCILIATION_STEPS_PER_CLAIM,
     signal: input.signal ?? abortController?.signal,
   };
 
