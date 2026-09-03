@@ -473,6 +473,49 @@ function assertDateRange(
   }
 }
 
+function createZeroEntityDailyStatsRecords(
+  entityId: string,
+  entityType: NaverSearchAdsStatsEntityType,
+  dateFrom: string,
+  dateTo: string,
+): NaverSearchAdsEntityDailyStatsRecord[] {
+  const oneDayMilliseconds =
+    24 * 60 * 60 * 1_000;
+  const fromMilliseconds = Date.parse(
+    `${dateFrom}T00:00:00.000Z`,
+  );
+  const toMilliseconds = Date.parse(
+    `${dateTo}T00:00:00.000Z`,
+  );
+  const records:
+    NaverSearchAdsEntityDailyStatsRecord[] = [];
+
+  for (
+    let timestamp = fromMilliseconds;
+    timestamp <= toMilliseconds;
+    timestamp += oneDayMilliseconds
+  ) {
+    const date = new Date(timestamp)
+      .toISOString()
+      .slice(0, 10);
+
+    records.push({
+      entityId,
+      entityType,
+      date,
+      periodStart: date,
+      periodEnd: date,
+      impCnt: 0,
+      clkCnt: 0,
+      salesAmt: 0,
+      ccnt: 0,
+      convAmt: 0,
+    });
+  }
+
+  return records;
+}
+
 function normalizeStatsEntityType(
   value: unknown,
 ): NaverSearchAdsStatsEntityType {
@@ -1190,15 +1233,18 @@ function parseEntityDailyStatsBatchResponse(
   }
 
   return entityIds.map((entityId) => {
-    const records =
+    const returnedRecords =
       recordsByEntityId.get(entityId);
-
-    if (!records) {
-      throw new NaverSearchAdsApiError(
-        "INVALID_RESPONSE",
-        "Naver Search Ads batch stats response is missing a requested entity ID.",
-      );
-    }
+    const records =
+      returnedRecords &&
+      returnedRecords.length > 0
+        ? returnedRecords
+        : createZeroEntityDailyStatsRecords(
+            entityId,
+            entityType,
+            dateFrom,
+            dateTo,
+          );
 
     const seenDates = new Set<string>();
 

@@ -13,6 +13,9 @@ import {
   createNaverAuthoritativeEntityStatsCursor,
 } from "../src/lib/media-sync/naver-searchads-authoritative-entity-stats-state";
 import {
+  convertNaverShoppingAdDailyStatsToCanonicalRows,
+} from "../src/lib/media-sync/naver-searchads-canonical-row";
+import {
   fetchNaverSearchAdsEntityDailyStatsBatch,
   NaverSearchAdsApiError,
   type NaverSearchAdsAdRecord,
@@ -221,6 +224,208 @@ async function verifyMultiDayBatchContract(): Promise<void> {
     equal(
       result.results[1]?.records[1]?.date,
       "2026-05-02",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+async function verifyOmittedZeroMetricIdsContract(): Promise<void> {
+  const originalFetch = globalThis.fetch;
+  let requestCount = 0;
+
+  globalThis.fetch = async (): Promise<Response> => {
+    requestCount += 1;
+
+    return jsonResponse({
+      compTm: "202609030148",
+      cycleBaseTm: "202609030145",
+      data: [
+        {
+          id: "ad-positive",
+          data: [
+            {
+              dateStart: "2026-05-01",
+              dateEnd: "2026-05-01",
+              impCnt: 11,
+              clkCnt: 2,
+              salesAmt: 300,
+              ccnt: 1,
+              convAmt: 400,
+            },
+            {
+              dateStart: "2026-05-02",
+              dateEnd: "2026-05-02",
+              impCnt: 12,
+              clkCnt: 3,
+              salesAmt: 500,
+              ccnt: 2,
+              convAmt: 700,
+            },
+          ],
+        },
+        {
+          id: "ad-empty-shape",
+          data: [],
+        },
+      ],
+    });
+  };
+
+  try {
+    const result =
+      await fetchNaverSearchAdsEntityDailyStatsBatch({
+        credentials: CREDENTIALS,
+        entityIds: [
+          "ad-omitted-zero",
+          "ad-positive",
+          "ad-empty-shape",
+        ],
+        entityType: "ad",
+        dateFrom: "2026-05-01",
+        dateTo: "2026-05-02",
+      });
+
+    equal(requestCount, 1);
+    deepStrictEqual(
+      result.results.map(
+        (item) => item.entityId,
+      ),
+      [
+        "ad-omitted-zero",
+        "ad-positive",
+        "ad-empty-shape",
+      ],
+    );
+    deepStrictEqual(
+      result.results[0]?.records,
+      ["2026-05-01", "2026-05-02"].map(
+        (date) => ({
+          entityId: "ad-omitted-zero",
+          entityType: "ad",
+          date,
+          periodStart: date,
+          periodEnd: date,
+          impCnt: 0,
+          clkCnt: 0,
+          salesAmt: 0,
+          ccnt: 0,
+          convAmt: 0,
+        }),
+      ),
+    );
+    equal(
+      result.results[1]?.records[1]?.convAmt,
+      700,
+    );
+    deepStrictEqual(
+      result.results[2]?.records.map(
+        (record) => record.date,
+      ),
+      ["2026-05-01", "2026-05-02"],
+    );
+    equal(
+      result.results[2]?.records.every(
+        (record) =>
+          record.impCnt === 0 &&
+          record.clkCnt === 0 &&
+          record.salesAmt === 0 &&
+          record.ccnt === 0 &&
+          record.convAmt === 0,
+      ),
+      true,
+    );
+
+    const zeroRows =
+      convertNaverShoppingAdDailyStatsToCanonicalRows({
+        externalAccountId: "shopping-batch-customer",
+        campaign: {
+          id: "cmp-shopping",
+          name: "Shopping",
+          campaignType: "SHOPPING",
+          status: "ELIGIBLE",
+          statusReason: null,
+          userLock: false,
+        },
+        adgroup: {
+          id: "grp-shopping",
+          campaignId: "cmp-shopping",
+          name: "Shopping Group",
+          adgroupType: "SHOPPING_PRODUCT_AD",
+          status: "ELIGIBLE",
+          statusReason: null,
+          userLock: false,
+        },
+        ad: {
+          id: "ad-omitted-zero",
+          adgroupId: "grp-shopping",
+          type: "SHOPPING_PRODUCT_AD",
+          inspectStatus: "APPROVED",
+          status: "ELIGIBLE",
+          statusReason: null,
+          userLock: false,
+          referenceKey: "zero-product",
+        },
+        stats: result.results[0]!,
+      });
+
+    deepStrictEqual(
+      zeroRows.map((row) => ({
+        date: row.date,
+        impressions: row.impressions,
+        clicks: row.clicks,
+        cost: row.cost,
+        conversions: row.conversions,
+        revenue: row.revenue,
+      })),
+      ["2026-05-01", "2026-05-02"].map(
+        (date) => ({
+          date,
+          impressions: 0,
+          clicks: 0,
+          cost: 0,
+          conversions: 0,
+          revenue: 0,
+        }),
+      ),
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+async function verifyUnexpectedBatchIdFailsClosed(): Promise<void> {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async (): Promise<Response> =>
+    jsonResponse({
+      compTm: "202609030148",
+      cycleBaseTm: "202609030145",
+      data: [
+        {
+          id: "ad-unexpected",
+          impCnt: 0,
+          clkCnt: 0,
+          salesAmt: 0,
+          ccnt: 0,
+          convAmt: 0,
+        },
+      ],
+    });
+
+  try {
+    await rejects(
+      () =>
+        fetchNaverSearchAdsEntityDailyStatsBatch({
+          credentials: CREDENTIALS,
+          entityIds: ["ad-1", "ad-2"],
+          entityType: "ad",
+          dateFrom: DATE,
+          dateTo: DATE,
+        }),
+      (error: unknown) =>
+        error instanceof NaverSearchAdsApiError &&
+        error.code === "INVALID_RESPONSE",
     );
   } finally {
     globalThis.fetch = originalFetch;
@@ -638,6 +843,16 @@ async function main(): Promise<void> {
   await verifyMultiDayBatchContract();
   console.log(
     "PASS: multi-day batch responses require explicit daily records",
+  );
+
+  await verifyOmittedZeroMetricIdsContract();
+  console.log(
+    "PASS: omitted and empty zero-metric IDs preserve one zero row per requested date",
+  );
+
+  await verifyUnexpectedBatchIdFailsClosed();
+  console.log(
+    "PASS: unexpected batch entity IDs remain fail-closed",
   );
 
   await verifyCollectorBatchAndTail();
