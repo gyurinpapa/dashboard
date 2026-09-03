@@ -1110,11 +1110,7 @@ function logStage(input: {
   const detail = input.detail ? ` ${input.detail}` : "";
 
   console.log(
-    `[media-sync-worker] job ${input.job.id} stage ${input.stage}${detail}`,
-  );
-
-  console.log(
-    `[media-sync-worker] report ${input.job.report_id} date ${input.job.date_from}..${input.job.date_to} level ${input.job.data_level}`,
+    `[media-sync-worker] job ${input.job.id} stage ${input.stage}${detail} report=${input.job.report_id} date=${input.job.date_from}..${input.job.date_to} level=${input.job.data_level}`,
   );
 }
 
@@ -1174,6 +1170,41 @@ function shouldLogCollectorProgress(
   event: NaverKeywordStatsCollectorProgressEvent,
 ): boolean {
   if (
+    event.stage === "adgroup:start" ||
+    event.stage === "adgroup:done"
+  ) {
+    return false;
+  }
+
+  if (
+    event.stage === "keyword_page:start"
+  ) {
+    return (
+      event.keywordPagesRead === 0 ||
+      event.keywordPagesRead % 50 === 0
+    );
+  }
+
+  if (
+    event.stage === "keyword_page:done"
+  ) {
+    return (
+      event.keywordPagesRead === 1 ||
+      event.keywordPagesRead % 50 === 0
+    );
+  }
+
+  if (
+    event.stage === "keyword_chunk:start" ||
+    event.stage === "keyword_chunk:done"
+  ) {
+    return (
+      event.keywordsCompletedInRun === 0 ||
+      event.keywordsCompletedInRun % 1_000 === 0
+    );
+  }
+
+  if (
     event.stage !== "keyword_stats:start" &&
     event.stage !== "keyword_stats:done"
   ) {
@@ -1183,11 +1214,17 @@ function shouldLogCollectorProgress(
   const completed =
     event.keywordsCompletedInRun;
 
-  if (completed <= 1) {
-    return true;
+  if (event.stage === "keyword_stats:start") {
+    return (
+      completed === 0 ||
+      (completed + 1) % 1_000 === 0
+    );
   }
 
-  return completed % 25 === 0;
+  return (
+    completed === 1 ||
+    completed % 1_000 === 0
+  );
 }
 
 function formatCollectorProgressDetail(

@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 
 import type { NaverSearchAdsCredentials } from "../src/lib/media-sync/connection-credentials";
 import {
+  fetchNaverSearchAdsStatReportKeywordDailyStatsBatch,
   fetchNaverSearchAdsStatReportAdgroupDailyStats,
   fetchNaverSearchAdsStatReportKeywordDailyStats,
 } from "../src/lib/media-sync/naver-searchads-stat-report-daily-metrics";
@@ -254,12 +255,14 @@ async function verifySharedReadyCache(): Promise<void> {
           STAT_DATE,
       });
 
-    const missingKeyword =
-      await fetchNaverSearchAdsStatReportKeywordDailyStats({
+    const keywordBatch =
+      await fetchNaverSearchAdsStatReportKeywordDailyStatsBatch({
         credentials:
           SUCCESS_CREDENTIALS,
-        keywordId:
+        keywordIds: [
+          "nkw-1",
           "nkw-missing",
+        ],
         dateFrom:
           STAT_DATE,
         dateTo:
@@ -272,7 +275,15 @@ async function verifySharedReadyCache(): Promise<void> {
     equal(keyword.records.length, 1);
     equal(adgroup.records.length, 1);
     equal(
-      missingKeyword.records.length,
+      keywordBatch.length,
+      2,
+    );
+    equal(
+      keywordBatch[0]?.records.length,
+      1,
+    );
+    equal(
+      keywordBatch[1]?.records.length,
       0,
     );
 
@@ -565,6 +576,41 @@ async function main(): Promise<void> {
   );
   console.log(
     "PASS: production claims run up to eight reconciliation steps and preserve bounded release",
+  );
+
+  const keywordCollectorSource = readFileSync(
+    new URL(
+      "../src/lib/media-sync/naver-searchads-keyword-stats-collector.ts",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  ok(
+    /NAVER_WEB_SITE_KEYWORD_PAGE_RECORD_SIZE\s*=\s*1_000/.test(
+      keywordCollectorSource,
+    ) &&
+      /fetchStatReportKeywordDailyStatsBatch/.test(
+        keywordCollectorSource,
+      ) &&
+      /NAVER_WEB_SITE_STATS_MAX_CONCURRENCY\s*=\s*4/.test(
+        keywordCollectorSource,
+      ) &&
+      /NAVER_WEB_SITE_STATS_REQUEST_INTERVAL_MS\s*=\s*250/.test(
+        keywordCollectorSource,
+      ),
+    "The WEB_SITE StatReport fast page must batch 1000 keywords while exact /stats fallback remains bounded at four starts and 250ms.",
+  );
+  ok(
+    /completed % 1_000/.test(
+      workerOrchestrationSource,
+    ) &&
+      /report=\$\{input\.job\.report_id\}/.test(
+        workerOrchestrationSource,
+      ),
+    "High-volume keyword progress logs must remain milestone-bounded and single-line.",
+  );
+  console.log(
+    "PASS: WEB_SITE fast pages, StatReport batches, exact fallback bounds, and milestone logs remain separated",
   );
 
   console.log(

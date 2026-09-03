@@ -18,6 +18,7 @@ import {
   resolveNaverSearchAdsCampaignCollectionContract,
 } from "./naver-searchads-authoritative-grain";
 import {
+  fetchNaverSearchAdsStatReportKeywordDailyStatsBatch,
   fetchNaverSearchAdsStatReportKeywordDailyStats,
 } from "./naver-searchads-stat-report-daily-metrics";
 import {
@@ -42,6 +43,8 @@ import {
 } from "./naver-searchads-keyword-stats-state";
 
 const NAVER_KEYWORD_STATS_HIERARCHY_RECORD_SIZE = 100;
+const NAVER_WEB_SITE_KEYWORD_PAGE_RECORD_SIZE = 1_000;
+const NAVER_WEB_SITE_STAT_REPORT_BATCH_SIZE = 1_000;
 
 const NAVER_KEYWORD_STATS_MAX_CAMPAIGN_PAGES = 10_000;
 const NAVER_KEYWORD_STATS_MAX_ADGROUP_PAGES = 10_000;
@@ -210,6 +213,8 @@ export type NaverKeywordStatsCollectorDependencies = {
     typeof fetchNaverSearchAdsKeywordDailyStats;
   fetchStatReportKeywordDailyStats?:
     typeof fetchNaverSearchAdsStatReportKeywordDailyStats;
+  fetchStatReportKeywordDailyStatsBatch?:
+    typeof fetchNaverSearchAdsStatReportKeywordDailyStatsBatch;
 
   sleep: NaverKeywordStatsCollectorSleep;
   now: () => number;
@@ -295,10 +300,13 @@ type NormalizedCollectorOptions = {
 type ResolvedCollectorDependencies =
   Omit<
     NaverKeywordStatsCollectorDependencies,
-    "fetchStatReportKeywordDailyStats"
+    | "fetchStatReportKeywordDailyStats"
+    | "fetchStatReportKeywordDailyStatsBatch"
   > & {
     fetchStatReportKeywordDailyStats:
       typeof fetchNaverSearchAdsStatReportKeywordDailyStats;
+    fetchStatReportKeywordDailyStatsBatch:
+      typeof fetchNaverSearchAdsStatReportKeywordDailyStatsBatch;
   };
 
 type CollectorRuntimeState = {
@@ -392,6 +400,9 @@ const DEFAULT_COLLECTOR_DEPENDENCIES:
     fetchStatReportKeywordDailyStats:
       fetchNaverSearchAdsStatReportKeywordDailyStats,
 
+    fetchStatReportKeywordDailyStatsBatch:
+      fetchNaverSearchAdsStatReportKeywordDailyStatsBatch,
+
     sleep: async (
       milliseconds: number,
       signal?: AbortSignal,
@@ -481,7 +492,7 @@ function normalizeCollectorOptions(
         : normalizePositiveInteger(
             input.keywordChunkSize,
             "keywordChunkSize",
-            NAVER_KEYWORD_STATS_HIERARCHY_RECORD_SIZE,
+            NAVER_WEB_SITE_KEYWORD_PAGE_RECORD_SIZE,
           ),
 
     chunkPauseMs:
@@ -535,6 +546,29 @@ function resolveCollectorDependencies(
       ...dependencies,
     };
 
+  if (
+    dependencies?.fetchStatReportKeywordDailyStats &&
+    !dependencies.fetchStatReportKeywordDailyStatsBatch
+  ) {
+    const fetchSingle =
+      dependencies.fetchStatReportKeywordDailyStats;
+
+    resolvedDependencies.fetchStatReportKeywordDailyStatsBatch =
+      async (input) =>
+        Promise.all(
+          input.keywordIds.map(
+            (keywordId) =>
+              fetchSingle({
+                credentials: input.credentials,
+                keywordId,
+                dateFrom: input.dateFrom,
+                dateTo: input.dateTo,
+                signal: input.signal,
+              }),
+          ),
+        );
+  }
+
   const dependencyEntries: Array<
     [
       keyof ResolvedCollectorDependencies,
@@ -560,6 +594,10 @@ function resolveCollectorDependencies(
     [
       "fetchStatReportKeywordDailyStats",
       resolvedDependencies.fetchStatReportKeywordDailyStats,
+    ],
+    [
+      "fetchStatReportKeywordDailyStatsBatch",
+      resolvedDependencies.fetchStatReportKeywordDailyStatsBatch,
     ],
     [
       "sleep",
@@ -1819,6 +1857,194 @@ async function consumeWebSiteKeywordChunkBounded(input: {
   signal: AbortSignal | undefined;
   dependencies: ResolvedCollectorDependencies;
 }): Promise<CollectorTraversalResult> {
+  const statReportKeywords =
+    input.chunk.slice(
+      input.startIndex,
+      Math.min(
+        input.chunk.length,
+        input.startIndex +
+          NAVER_WEB_SITE_STAT_REPORT_BATCH_SIZE,
+      ),
+    );
+
+  let statReportResults:
+    NaverSearchAdsKeywordDailyStatsResult[] |
+    null = null;
+
+  if (statReportKeywords.length > 0) {
+    try {
+      statReportResults =
+        await input.dependencies
+          .fetchStatReportKeywordDailyStatsBatch({
+            credentials:
+              input.credentials,
+            keywordIds:
+              statReportKeywords.map(
+                (keyword) => keyword.id,
+              ),
+            dateFrom:
+              input.state.cursor.dateFrom,
+            dateTo:
+              input.state.cursor.dateTo,
+            signal:
+              input.signal,
+          });
+    } catch {
+      assertNotAborted(
+        input.signal,
+        input.state.cursor,
+      );
+
+      statReportResults = null;
+    }
+  }
+
+  if (statReportResults !== null) {
+    if (
+      statReportResults.length !==
+      statReportKeywords.length
+    ) {
+      throw new NaverKeywordStatsCollectorError(
+        "INVALID_INPUT",
+        "The WEB_SITE StatReport batch returned an unexpected result count.",
+        {
+          cursor:
+            input.state.cursor,
+        },
+      );
+    }
+
+    let cursor =
+      cloneCursor(input.state.cursor);
+
+    for (
+      let offset = 0;
+      offset < statReportResults.length;
+      offset += 1
+    ) {
+      const keyword =
+        statReportKeywords[offset];
+      const stats =
+        statReportResults[offset];
+      const keywordIndex =
+        input.startIndex + offset;
+
+      if (
+        !keyword ||
+        !stats ||
+        stats.keywordId !== keyword.id
+      ) {
+        throw new NaverKeywordStatsCollectorError(
+          "INVALID_INPUT",
+          "The WEB_SITE StatReport batch returned an out-of-order or invalid item.",
+          {
+            cursor:
+              input.state.cursor,
+          },
+        );
+      }
+
+      const cursorBefore =
+        cloneCursor(cursor);
+      const cursorAfter =
+        markNaverKeywordStatsKeywordCompleted({
+          cursor:
+            cursorBefore,
+          keywordId:
+            keyword.id,
+          keywordIndexInChunk:
+            keywordIndex,
+        });
+
+      await notifyProgress({
+        callback:
+          input.onProgress,
+        stage:
+          "keyword_stats:start",
+        state:
+          input.state,
+        campaignId:
+          input.campaign.id,
+        adgroupId:
+          input.adgroup.id,
+        keywordId:
+          keyword.id,
+        chunkIndex:
+          input.chunkIndex,
+        chunkSize:
+          input.chunk.length,
+        keywordIndexInChunk:
+          keywordIndex,
+      });
+
+      input.state.statsRequestsAttempted +=
+        1;
+      input.state.statsRequestsSucceeded +=
+        1;
+
+      try {
+        await input.onKeywordStats({
+          campaign:
+            input.campaign,
+          adgroup:
+            input.adgroup,
+          keyword,
+          stats,
+          cursorBefore,
+          cursorAfter:
+            cloneCursor(cursorAfter),
+          requestAttemptCount:
+            1,
+        });
+      } catch (error) {
+        throw new NaverKeywordStatsCollectorError(
+          "CONSUMER_FAILED",
+          "The batched WEB_SITE StatReport consumer failed.",
+          {
+            cursor:
+              cursorBefore,
+            cause:
+              error,
+          },
+        );
+      }
+
+      cursor =
+        cloneCursor(cursorAfter);
+      input.state.cursor =
+        cloneCursor(cursorAfter);
+      input.state.keywordsCompletedInRun +=
+        1;
+
+      await notifyProgress({
+        callback:
+          input.onProgress,
+        stage:
+          "keyword_stats:done",
+        state:
+          input.state,
+        campaignId:
+          input.campaign.id,
+        adgroupId:
+          input.adgroup.id,
+        keywordId:
+          keyword.id,
+        chunkIndex:
+          input.chunkIndex,
+        chunkSize:
+          input.chunk.length,
+        keywordIndexInChunk:
+          keywordIndex,
+        recordsRead:
+          stats.records.length,
+        attemptCount:
+          1,
+      });
+    }
+
+    return CONTINUE_TRAVERSAL;
+  }
+
   const waitForFallbackStart =
     createWebSiteStatsStartGate({
       state:
@@ -2694,6 +2920,13 @@ async function collectKeywordPages(input: {
 
   dependencies: ResolvedCollectorDependencies;
 }): Promise<CollectorTraversalResult> {
+  const pageRecordSize =
+    isWebSiteFastPathCampaign(
+      input.campaign,
+    )
+      ? NAVER_WEB_SITE_KEYWORD_PAGE_RECORD_SIZE
+      : NAVER_KEYWORD_STATS_HIERARCHY_RECORD_SIZE;
+
   let keywordBaseSearchId:
     | string
     | null =
@@ -2768,7 +3001,7 @@ async function collectKeywordPages(input: {
                 pageBaseSearchId,
 
               recordSize:
-                NAVER_KEYWORD_STATS_HIERARCHY_RECORD_SIZE,
+                pageRecordSize,
 
               selector:
                 "NEXT",
@@ -2905,7 +3138,7 @@ async function collectKeywordPages(input: {
 
     if (
       keywordPage.records.length <
-      NAVER_KEYWORD_STATS_HIERARCHY_RECORD_SIZE
+      pageRecordSize
     ) {
       return CONTINUE_TRAVERSAL;
     }
@@ -2921,7 +3154,7 @@ async function collectKeywordPages(input: {
         keywordPage.records.length,
 
       recordSize:
-        NAVER_KEYWORD_STATS_HIERARCHY_RECORD_SIZE,
+        pageRecordSize,
 
       cursor:
         input.state.cursor,

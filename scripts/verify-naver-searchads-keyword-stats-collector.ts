@@ -255,6 +255,9 @@ function createBaseDependencies(input: {
   fetchStatReportKeywordDailyStats?: NonNullable<
     NaverKeywordStatsCollectorDependencies["fetchStatReportKeywordDailyStats"]
   >;
+  fetchStatReportKeywordDailyStatsBatch?: NonNullable<
+    NaverKeywordStatsCollectorDependencies["fetchStatReportKeywordDailyStatsBatch"]
+  >;
 }): NaverKeywordStatsCollectorDependencies {
   const clock =
     input.clock ??
@@ -383,6 +386,9 @@ function createBaseDependencies(input: {
         }
       ),
 
+    fetchStatReportKeywordDailyStatsBatch:
+      input.fetchStatReportKeywordDailyStatsBatch,
+
     sleep:
       async (
         milliseconds: number,
@@ -415,6 +421,9 @@ function createOneHierarchyDependencies(input: {
   fetchStatReportKeywordDailyStats?: NonNullable<
     NaverKeywordStatsCollectorDependencies["fetchStatReportKeywordDailyStats"]
   >;
+  fetchStatReportKeywordDailyStatsBatch?: NonNullable<
+    NaverKeywordStatsCollectorDependencies["fetchStatReportKeywordDailyStatsBatch"]
+  >;
 }): NaverKeywordStatsCollectorDependencies {
   return createBaseDependencies({
     clock:
@@ -441,7 +450,131 @@ function createOneHierarchyDependencies(input: {
 
     fetchStatReportKeywordDailyStats:
       input.fetchStatReportKeywordDailyStats,
+
+    fetchStatReportKeywordDailyStatsBatch:
+      input.fetchStatReportKeywordDailyStatsBatch,
   });
+}
+
+async function verifyStatReportBatchesWholeFastPage(): Promise<void> {
+  const keywords = Array.from(
+    { length: 1_000 },
+    (_, index) =>
+      createKeyword(
+        `keyword-batch-${index + 1}`,
+        "adgroup-1",
+      ),
+  );
+  const consumedKeywordIds: string[] = [];
+  const requestedKeywordPageSizes: number[] = [];
+  let batchCalls = 0;
+  let exactStatsCalls = 0;
+  let singleStatReportCalls = 0;
+
+  const dependencies =
+    createOneHierarchyDependencies({
+      keywords,
+      fetchKeywordDailyStats:
+        async (): Promise<NaverSearchAdsKeywordDailyStatsResult> => {
+          exactStatsCalls += 1;
+          throw new Error(
+            "EXACT_STATS_MUST_NOT_RUN_ON_BATCH_SUCCESS",
+          );
+        },
+      fetchStatReportKeywordDailyStats:
+        async (): Promise<NaverSearchAdsKeywordDailyStatsResult> => {
+          singleStatReportCalls += 1;
+          throw new Error(
+            "SINGLE_STAT_REPORT_LOOKUP_MUST_NOT_RUN",
+          );
+        },
+      fetchStatReportKeywordDailyStatsBatch:
+        async (input) => {
+          batchCalls += 1;
+          equal(input.keywordIds.length, 1_000);
+
+          return input.keywordIds.map(
+            (keywordId) =>
+              createStatsResult(
+                keywordId,
+                input.dateFrom,
+                input.dateTo,
+              ),
+          );
+        },
+    });
+
+  dependencies.fetchKeywordPage =
+    async (input) => {
+      requestedKeywordPageSizes.push(
+        input.recordSize ?? 0,
+      );
+
+      if (
+        input.baseSearchId === null ||
+        input.baseSearchId === undefined
+      ) {
+        return createListPage(
+          keywords,
+          {
+            recordSize:
+              input.recordSize ?? 100,
+            baseSearchId:
+              null,
+            nextBaseSearchId:
+              keywords[keywords.length - 1]?.id ?? null,
+          },
+        );
+      }
+
+      return createListPage(
+        [],
+        {
+          recordSize:
+            input.recordSize ?? 100,
+          baseSearchId:
+            input.baseSearchId,
+          nextBaseSearchId:
+            null,
+        },
+      );
+    };
+
+  const result =
+    await collectNaverKeywordDailyStats({
+      credentials:
+        FAKE_CREDENTIALS,
+      cursor:
+        createInitialCursor(),
+      requestIntervalMs:
+        0,
+      keywordChunkSize:
+        1_000,
+      chunkPauseMs:
+        0,
+      dependencies,
+      onKeywordStats:
+        async (item): Promise<void> => {
+          consumedKeywordIds.push(
+            item.keyword.id,
+          );
+        },
+    });
+
+  equal(result.status, "completed");
+  deepStrictEqual(
+    requestedKeywordPageSizes,
+    [1_000, 1_000],
+  );
+  equal(batchCalls, 1);
+  equal(singleStatReportCalls, 0);
+  equal(exactStatsCalls, 0);
+  equal(result.statsRequestsAttempted, 1_000);
+  equal(result.statsRequestsSucceeded, 1_000);
+  deepStrictEqual(
+    consumedKeywordIds,
+    keywords.map((keyword) => keyword.id),
+  );
 }
 
 async function verifyBoundedFallbackAndOrder(): Promise<void> {
@@ -753,7 +886,7 @@ async function verifyKeywordPagination(): Promise<void> {
   const firstPageKeywords =
     Array.from(
       {
-        length: 100,
+        length: 1_000,
       },
       (_, index) =>
         createKeyword(
@@ -764,7 +897,7 @@ async function verifyKeywordPagination(): Promise<void> {
 
   const secondPageKeyword =
     createKeyword(
-      "keyword-101",
+      "keyword-1001",
       adgroup.id,
     );
 
@@ -833,20 +966,20 @@ async function verifyKeywordPagination(): Promise<void> {
               firstPageKeywords,
               {
                 recordSize:
-                  100,
+                  1_000,
 
                 baseSearchId:
                   null,
 
                 nextBaseSearchId:
-                  "keyword-100",
+                  "keyword-1000",
               },
             );
           }
 
           equal(
             input.baseSearchId,
-            "keyword-100",
+            "keyword-1000",
           );
 
           return createListPage(
@@ -855,13 +988,13 @@ async function verifyKeywordPagination(): Promise<void> {
             ],
             {
               recordSize:
-                100,
+                1_000,
 
               baseSearchId:
-                "keyword-100",
+                "keyword-1000",
 
               nextBaseSearchId:
-                "keyword-101",
+                "keyword-1001",
             },
           );
         },
@@ -880,6 +1013,13 @@ async function verifyKeywordPagination(): Promise<void> {
 
       fetchStatReportKeywordDailyStats:
         async (): Promise<NaverSearchAdsKeywordDailyStatsResult> => {
+          throw new Error(
+            "STAT_REPORT_UNAVAILABLE_FOR_VERIFICATION",
+          );
+        },
+
+      fetchStatReportKeywordDailyStatsBatch:
+        async (): Promise<NaverSearchAdsKeywordDailyStatsResult[]> => {
           throw new Error(
             "STAT_REPORT_UNAVAILABLE_FOR_VERIFICATION",
           );
@@ -944,12 +1084,12 @@ async function verifyKeywordPagination(): Promise<void> {
 
   equal(
     result.keywordsCompletedInRun,
-    101,
+    1_001,
   );
 
   equal(
     consumedKeywordIds.length,
-    101,
+    1_001,
   );
 
   equal(
@@ -958,8 +1098,8 @@ async function verifyKeywordPagination(): Promise<void> {
   );
 
   equal(
-    consumedKeywordIds[100],
-    "keyword-101",
+    consumedKeywordIds[1_000],
+    "keyword-1001",
   );
 }
 
@@ -1462,6 +1602,13 @@ async function verifyRetryExhaustionPreservesFailureState(): Promise<void> {
 
 const tests:
   AsyncVerificationTest[] = [
+    {
+      name:
+        "StatReport batches one full 1000-keyword WEB_SITE page",
+
+      run:
+        verifyStatReportBatchesWholeFastPage,
+    },
     {
       name:
         "StatReport hits bypass exact fallback run budgets",

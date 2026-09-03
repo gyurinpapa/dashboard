@@ -45,7 +45,7 @@ const DEFAULT_STAGING_BATCH_SIZE = 1_000;
 
 const DEFAULT_REQUEST_INTERVAL_MS = 1_000;
 
-const DEFAULT_KEYWORD_CHUNK_SIZE = 100;
+const DEFAULT_KEYWORD_CHUNK_SIZE = 1_000;
 
 const DEFAULT_CHUNK_PAUSE_MS = 10_000;
 
@@ -846,7 +846,7 @@ export async function runNaverSearchAdsStagingOrchestrator(
       : normalizePositiveInteger(
           input.keywordChunkSize,
           "keywordChunkSize",
-          100,
+          1_000,
         );
 
   const chunkPauseMs =

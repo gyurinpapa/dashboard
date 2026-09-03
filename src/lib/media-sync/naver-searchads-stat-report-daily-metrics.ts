@@ -76,6 +76,14 @@ export type NaverSearchAdsStatReportDailyMetricsErrorCode =
   | "REPORT_POLL_LIMIT_EXCEEDED"
   | "INVALID_REPORT_SCHEMA";
 
+export type FetchNaverSearchAdsStatReportKeywordDailyStatsBatchInput = {
+  credentials: NaverSearchAdsCredentials;
+  keywordIds: readonly string[];
+  dateFrom: string;
+  dateTo: string;
+  signal?: AbortSignal;
+};
+
 export class NaverSearchAdsStatReportDailyMetricsError extends Error {
   readonly code:
     NaverSearchAdsStatReportDailyMetricsErrorCode;
@@ -963,46 +971,143 @@ function roundRankToOneDecimal(
   ) / 10;
 }
 
+function normalizeKeywordIds(
+  values: readonly string[],
+): string[] {
+  if (
+    !Array.isArray(values) ||
+    values.length === 0 ||
+    values.length > 1_000
+  ) {
+    throw new NaverSearchAdsStatReportDailyMetricsError(
+      "INVALID_INPUT",
+      "keywordIds must contain between 1 and 1000 items.",
+    );
+  }
+
+  const normalized = values.map(
+    (value, index): string => {
+      if (
+        typeof value !== "string" ||
+        !value.trim() ||
+        value.trim().length > 200
+      ) {
+        throw new NaverSearchAdsStatReportDailyMetricsError(
+          "INVALID_INPUT",
+          `keywordIds[${index}] must be a non-empty string of at most 200 characters.`,
+        );
+      }
+
+      return value.trim();
+    },
+  );
+
+  if (
+    new Set(normalized).size !==
+    normalized.length
+  ) {
+    throw new NaverSearchAdsStatReportDailyMetricsError(
+      "INVALID_INPUT",
+      "keywordIds must not contain duplicates.",
+    );
+  }
+
+  return normalized;
+}
+
+export async function fetchNaverSearchAdsStatReportKeywordDailyStatsBatch(
+  input: FetchNaverSearchAdsStatReportKeywordDailyStatsBatchInput,
+): Promise<NaverSearchAdsKeywordDailyStatsResult[]> {
+  const keywordIds =
+    normalizeKeywordIds(input.keywordIds);
+  const dateFrom = normalizeIsoDate(
+    input.dateFrom,
+    "dateFrom",
+  );
+  const dateTo = normalizeIsoDate(
+    input.dateTo,
+    "dateTo",
+  );
+  const dates = enumerateDates({
+    dateFrom,
+    dateTo,
+  });
+  const index = await getDailyMetricsIndex({
+    credentials: input.credentials,
+    dateFrom,
+    dateTo,
+    signal: input.signal,
+  });
+
+  return keywordIds.map(
+    (keywordId): NaverSearchAdsKeywordDailyStatsResult => {
+      const byDate =
+        index.keyword.get(keywordId);
+      const records:
+        NaverSearchAdsKeywordDailyStatsRecord[] = [];
+
+      if (byDate) {
+        for (const date of dates) {
+          const metrics = byDate.get(date);
+
+          if (
+            !metrics ||
+            (!metrics.hasPerformanceRow &&
+              !metrics.hasConversionRow)
+          ) {
+            continue;
+          }
+
+          records.push({
+            keywordId,
+            date,
+            periodStart: date,
+            periodEnd: date,
+            impCnt: metrics.impCnt,
+            clkCnt: metrics.clkCnt,
+            salesAmt: metrics.salesAmt,
+            ccnt: metrics.ccnt,
+            convAmt: metrics.convAmt,
+            avgRnk: roundRankToOneDecimal(
+              metrics.sumRank,
+              metrics.impCnt,
+            ),
+          });
+        }
+      }
+
+      return {
+        keywordId,
+        dateFrom,
+        dateTo,
+        records,
+      };
+    },
+  );
+}
+
 export async function fetchNaverSearchAdsStatReportKeywordDailyStats(
   input: FetchNaverSearchAdsKeywordDailyStatsInput & {
     signal?: AbortSignal;
   },
 ): Promise<NaverSearchAdsKeywordDailyStatsResult> {
-  const index = await getDailyMetricsIndex({
-    credentials: input.credentials,
-    dateFrom: input.dateFrom,
-    dateTo: input.dateTo,
-    signal: input.signal,
-  });
-
-  const records: NaverSearchAdsKeywordDailyStatsRecord[] =
-    getMetricsRecords({
-      index: index.keyword,
-      entityId: input.keywordId,
+  const [result] =
+    await fetchNaverSearchAdsStatReportKeywordDailyStatsBatch({
+      credentials: input.credentials,
+      keywordIds: [input.keywordId],
       dateFrom: input.dateFrom,
       dateTo: input.dateTo,
-    }).map(({ date, metrics }) => ({
-      keywordId: input.keywordId,
-      date,
-      periodStart: date,
-      periodEnd: date,
-      impCnt: metrics.impCnt,
-      clkCnt: metrics.clkCnt,
-      salesAmt: metrics.salesAmt,
-      ccnt: metrics.ccnt,
-      convAmt: metrics.convAmt,
-      avgRnk: roundRankToOneDecimal(
-        metrics.sumRank,
-        metrics.impCnt,
-      ),
-    }));
+      signal: input.signal,
+    });
 
-  return {
-    keywordId: input.keywordId,
-    dateFrom: input.dateFrom,
-    dateTo: input.dateTo,
-    records,
-  };
+  if (!result) {
+    throw new NaverSearchAdsStatReportDailyMetricsError(
+      "INVALID_REPORT_SCHEMA",
+      "The StatReport keyword lookup returned no result.",
+    );
+  }
+
+  return result;
 }
 
 export async function fetchNaverSearchAdsStatReportAdgroupDailyStats(
