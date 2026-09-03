@@ -13,6 +13,7 @@ import {
   createNaverSearchAdsStatReport,
   downloadNaverSearchAdsStatReport,
   getNaverSearchAdsStatReport,
+  listNaverSearchAdsStatReports,
   type NaverSearchAdsStatReportRecord,
   type NaverSearchAdsStatReportType,
 } from "./naver-searchads-stat-reports-api";
@@ -239,9 +240,42 @@ async function waitForReadyReport(input: {
   credentials: NaverSearchAdsCredentials;
   statDate: string;
   reportType: NaverSearchAdsStatReportType;
+  reusableReports: readonly NaverSearchAdsStatReportRecord[];
   signal?: AbortSignal;
-}): Promise<NaverSearchAdsStatReportRecord> {
+}): Promise<{
+  report: NaverSearchAdsStatReportRecord;
+  reused: boolean;
+}> {
   assertNotAborted(input.signal);
+
+  const compactStatDate =
+    input.statDate.replaceAll("-", "");
+
+  const reusableReport =
+    input.reusableReports
+      .filter(
+        (report) =>
+          report.reportType ===
+            input.reportType &&
+          report.statDate ===
+            compactStatDate &&
+          Boolean(report.downloadUrl) &&
+          !isFailureStatus(
+            report.status,
+          ),
+      )
+      .sort(
+        (left, right) =>
+          right.reportJobId -
+          left.reportJobId,
+      )[0];
+
+  if (reusableReport) {
+    return {
+      report: reusableReport,
+      reused: true,
+    };
+  }
 
   let report =
     await createNaverSearchAdsStatReport({
@@ -258,7 +292,10 @@ async function waitForReadyReport(input: {
     assertNotAborted(input.signal);
 
     if (report.downloadUrl) {
-      return report;
+      return {
+        report,
+        reused: false,
+      };
     }
 
     if (isFailureStatus(report.status)) {
@@ -300,12 +337,42 @@ async function loadReportText(input: {
   credentials: NaverSearchAdsCredentials;
   statDate: string;
   reportType: NaverSearchAdsStatReportType;
+  reusableReports: readonly NaverSearchAdsStatReportRecord[];
   signal?: AbortSignal;
 }): Promise<string> {
-  const report =
+  let ready =
     await waitForReadyReport(input);
 
-  if (!report.downloadUrl) {
+  if (!ready.report.downloadUrl) {
+    throw new NaverSearchAdsStatReportDailyMetricsError(
+      "REPORT_FAILED",
+      `Naver Search Ads ${input.reportType} StatReport is missing its download URL.`,
+    );
+  }
+
+  try {
+    const downloaded =
+      await downloadNaverSearchAdsStatReport({
+        credentials: input.credentials,
+        downloadUrl:
+          ready.report.downloadUrl,
+      });
+
+    return downloaded.text;
+  } catch (error) {
+    assertNotAborted(input.signal);
+
+    if (!ready.reused) {
+      throw error;
+    }
+  }
+
+  ready = await waitForReadyReport({
+    ...input,
+    reusableReports: [],
+  });
+
+  if (!ready.report.downloadUrl) {
     throw new NaverSearchAdsStatReportDailyMetricsError(
       "REPORT_FAILED",
       `Naver Search Ads ${input.reportType} StatReport is missing its download URL.`,
@@ -315,10 +382,27 @@ async function loadReportText(input: {
   const downloaded =
     await downloadNaverSearchAdsStatReport({
       credentials: input.credentials,
-      downloadUrl: report.downloadUrl,
+      downloadUrl:
+        ready.report.downloadUrl,
     });
 
   return downloaded.text;
+}
+
+async function loadReusableReports(input: {
+  credentials: NaverSearchAdsCredentials;
+  signal?: AbortSignal;
+}): Promise<NaverSearchAdsStatReportRecord[]> {
+  assertNotAborted(input.signal);
+
+  try {
+    return await listNaverSearchAdsStatReports({
+      credentials: input.credentials,
+    });
+  } catch {
+    assertNotAborted(input.signal);
+    return [];
+  }
 }
 
 function parseReportRows(input: {
@@ -585,6 +669,13 @@ async function buildDailyMetricsIndex(input: {
   );
 
   try {
+    const reusableReports =
+      await loadReusableReports({
+        credentials: input.credentials,
+        signal:
+          buildAbortController.signal,
+      });
+
     for (const date of dates) {
       assertNotAborted(
         buildAbortController.signal,
@@ -596,6 +687,7 @@ async function buildDailyMetricsIndex(input: {
             credentials: input.credentials,
             statDate: date,
             reportType: "AD",
+            reusableReports,
             signal:
               buildAbortController.signal,
           }),
@@ -603,6 +695,7 @@ async function buildDailyMetricsIndex(input: {
             credentials: input.credentials,
             statDate: date,
             reportType: "AD_CONVERSION",
+            reusableReports,
             signal:
               buildAbortController.signal,
           }),

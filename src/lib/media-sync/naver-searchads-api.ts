@@ -163,6 +163,21 @@ export type FetchNaverSearchAdsEntityDailyStatsInput = {
   dateTo: string;
 };
 
+export type FetchNaverSearchAdsEntityDailyStatsBatchInput = {
+  credentials: NaverSearchAdsCredentials;
+  entityIds: string[];
+  entityType: NaverSearchAdsStatsEntityType;
+  dateFrom: string;
+  dateTo: string;
+};
+
+export type NaverSearchAdsEntityDailyStatsBatchResult = {
+  entityType: NaverSearchAdsStatsEntityType;
+  dateFrom: string;
+  dateTo: string;
+  results: NaverSearchAdsEntityDailyStatsResult[];
+};
+
 export type NaverSearchAdsKeywordDailyStatsRecord = {
   keywordId: string;
   date: string;
@@ -476,13 +491,14 @@ function normalizeStatsEntityType(
   return value;
 }
 
-function normalizeKeywordIdBatch(
+function normalizeStatsEntityIdBatch(
   value: unknown,
+  fieldName: string,
 ): string[] {
   if (!Array.isArray(value)) {
     throw new NaverSearchAdsApiError(
       "INVALID_INPUT",
-      "keywordIds must be an array.",
+      `${fieldName} must be an array.`,
     );
   }
 
@@ -494,33 +510,42 @@ function normalizeKeywordIdBatch(
   ) {
     throw new NaverSearchAdsApiError(
       "INVALID_INPUT",
-      `keywordIds must contain between ${MIN_NAVER_SEARCH_ADS_STATS_BATCH_SIZE} and ${MAX_NAVER_SEARCH_ADS_STATS_BATCH_SIZE} items.`,
+      `${fieldName} must contain between ${MIN_NAVER_SEARCH_ADS_STATS_BATCH_SIZE} and ${MAX_NAVER_SEARCH_ADS_STATS_BATCH_SIZE} items.`,
     );
   }
 
-  const normalizedKeywordIds =
-    value.map((keywordId, index) =>
+  const normalizedEntityIds =
+    value.map((entityId, index) =>
       normalizeRequiredString(
-        keywordId,
-        `keywordIds[${index}]`,
+        entityId,
+        `${fieldName}[${index}]`,
         200,
       ),
     );
 
-  const uniqueKeywordIds =
-    new Set(normalizedKeywordIds);
+  const uniqueEntityIds =
+    new Set(normalizedEntityIds);
 
   if (
-    uniqueKeywordIds.size !==
-    normalizedKeywordIds.length
+    uniqueEntityIds.size !==
+    normalizedEntityIds.length
   ) {
     throw new NaverSearchAdsApiError(
       "INVALID_INPUT",
-      "keywordIds must not contain duplicates.",
+      `${fieldName} must not contain duplicates.`,
     );
   }
 
-  return normalizedKeywordIds;
+  return normalizedEntityIds;
+}
+
+function normalizeKeywordIdBatch(
+  value: unknown,
+): string[] {
+  return normalizeStatsEntityIdBatch(
+    value,
+    "keywordIds",
+  );
 }
 
 function getSafeResponseShapeKind(
@@ -1032,6 +1057,174 @@ function parseEntityDailyStatsResponse(
   );
 
   return records;
+}
+
+function parseEntityDailyStatsBatchResponse(
+  value: unknown,
+  entityIds: readonly string[],
+  entityType: NaverSearchAdsStatsEntityType,
+  dateFrom: string,
+  dateTo: string,
+): NaverSearchAdsEntityDailyStatsResult[] {
+  if (!isPlainObject(value)) {
+    throw new NaverSearchAdsApiError(
+      "INVALID_RESPONSE",
+      "Naver Search Ads batch stats response must be an object.",
+    );
+  }
+
+  requireResponseString(
+    value.compTm,
+    "stats.compTm",
+  );
+
+  requireResponseString(
+    value.cycleBaseTm,
+    "stats.cycleBaseTm",
+  );
+
+  if (!Array.isArray(value.data)) {
+    throw new NaverSearchAdsApiError(
+      "INVALID_RESPONSE",
+      "Naver Search Ads batch stats data must be an array.",
+    );
+  }
+
+  const expectedIds = new Set(entityIds);
+  const recordsByEntityId = new Map<
+    string,
+    NaverSearchAdsEntityDailyStatsRecord[]
+  >();
+
+  for (const item of value.data) {
+    if (!isPlainObject(item)) {
+      throw new NaverSearchAdsApiError(
+        "INVALID_RESPONSE",
+        "Naver Search Ads batch stats data record is invalid.",
+      );
+    }
+
+    const entityId = requireResponseString(
+      item.id,
+      "stats.data.id",
+    );
+
+    if (!expectedIds.has(entityId)) {
+      throw new NaverSearchAdsApiError(
+        "INVALID_RESPONSE",
+        "Naver Search Ads batch stats response contains an unexpected entity ID.",
+      );
+    }
+
+    const parsedRecords = Array.isArray(item.data)
+      ? item.data.map((record) =>
+          parseEntityDailyStatsDataRecord(
+            record,
+            entityId,
+            entityType,
+            dateFrom,
+            dateTo,
+          ),
+        )
+      : hasOwnProperty(item, "dateStart") ||
+          hasOwnProperty(item, "dateEnd")
+        ? [
+            parseEntityDailyStatsDataRecord(
+              item,
+              entityId,
+              entityType,
+              dateFrom,
+              dateTo,
+            ),
+          ]
+        : dateFrom === dateTo
+          ? [
+              {
+                entityId,
+                entityType,
+                date: dateFrom,
+                periodStart: dateFrom,
+                periodEnd: dateTo,
+                impCnt:
+                  readRequiredNullableResponseNumber(
+                    item,
+                    "impCnt",
+                  ),
+                clkCnt:
+                  readRequiredNullableResponseNumber(
+                    item,
+                    "clkCnt",
+                  ),
+                salesAmt:
+                  readRequiredNullableResponseNumber(
+                    item,
+                    "salesAmt",
+                  ),
+                ccnt:
+                  readRequiredNullableResponseNumber(
+                    item,
+                    "ccnt",
+                  ),
+                convAmt:
+                  readRequiredNullableResponseNumber(
+                    item,
+                    "convAmt",
+                  ),
+              },
+            ]
+          : (() => {
+              throw new NaverSearchAdsApiError(
+                "INVALID_RESPONSE",
+                "Naver Search Ads multi-day batch stats response does not contain daily records.",
+              );
+            })();
+
+    const existingRecords =
+      recordsByEntityId.get(entityId) ?? [];
+
+    existingRecords.push(...parsedRecords);
+    recordsByEntityId.set(
+      entityId,
+      existingRecords,
+    );
+  }
+
+  return entityIds.map((entityId) => {
+    const records =
+      recordsByEntityId.get(entityId);
+
+    if (!records) {
+      throw new NaverSearchAdsApiError(
+        "INVALID_RESPONSE",
+        "Naver Search Ads batch stats response is missing a requested entity ID.",
+      );
+    }
+
+    const seenDates = new Set<string>();
+
+    for (const record of records) {
+      if (seenDates.has(record.date)) {
+        throw new NaverSearchAdsApiError(
+          "INVALID_RESPONSE",
+          "Naver Search Ads batch stats response contains a duplicate entity date.",
+        );
+      }
+
+      seenDates.add(record.date);
+    }
+
+    records.sort((left, right) =>
+      left.date.localeCompare(right.date),
+    );
+
+    return {
+      entityId,
+      entityType,
+      dateFrom,
+      dateTo,
+      records,
+    };
+  });
 }
 
 function parseKeywordDailyStatsDataRecord(
@@ -2016,6 +2209,83 @@ export async function fetchNaverSearchAdsEntityDailyStats(
       parseEntityDailyStatsResponse(
         response,
         entityId,
+        entityType,
+        dateFrom,
+        dateTo,
+      ),
+  };
+}
+
+export async function fetchNaverSearchAdsEntityDailyStatsBatch(
+  input: FetchNaverSearchAdsEntityDailyStatsBatchInput,
+): Promise<NaverSearchAdsEntityDailyStatsBatchResult> {
+  const entityIds =
+    normalizeStatsEntityIdBatch(
+      input.entityIds,
+      "entityIds",
+    );
+
+  const entityType =
+    normalizeStatsEntityType(
+      input.entityType,
+    );
+
+  const dateFrom = normalizeIsoDate(
+    input.dateFrom,
+    "dateFrom",
+  );
+
+  const dateTo = normalizeIsoDate(
+    input.dateTo,
+    "dateTo",
+  );
+
+  assertDateRange(dateFrom, dateTo);
+
+  const response =
+    await requestNaverSearchAdsJson(
+      input.credentials,
+      NAVER_SEARCH_ADS_STATS_URI,
+      [
+        ...entityIds.map(
+          (entityId) =>
+            [
+              "ids",
+              entityId,
+            ] as const,
+        ),
+        [
+          "fields",
+          JSON.stringify(
+            NAVER_SEARCH_ADS_ENTITY_STATS_FIELDS,
+          ),
+        ],
+        [
+          "timeRange",
+          JSON.stringify({
+            since: dateFrom,
+            until: dateTo,
+          }),
+        ],
+        ...(dateFrom === dateTo
+          ? []
+          : [
+              [
+                "timeIncrement",
+                NAVER_SEARCH_ADS_DAILY_STATS_TIME_INCREMENT.toString(),
+              ] as const,
+            ]),
+      ],
+    );
+
+  return {
+    entityType,
+    dateFrom,
+    dateTo,
+    results:
+      parseEntityDailyStatsBatchResponse(
+        response,
+        entityIds,
         entityType,
         dateFrom,
         dateTo,

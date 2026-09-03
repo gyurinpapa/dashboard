@@ -94,6 +94,10 @@ export type GetNaverSearchAdsStatReportInput = {
   reportJobId: number;
 };
 
+export type ListNaverSearchAdsStatReportsInput = {
+  credentials: NaverSearchAdsCredentials;
+};
+
 export type ProbeNaverSearchAdsStatReportDownloadInput = {
   credentials: NaverSearchAdsCredentials;
   downloadUrl: string;
@@ -824,6 +828,35 @@ export async function createNaverSearchAdsStatReport(
   }
 
   return report;
+}
+
+export async function listNaverSearchAdsStatReports(
+  input: ListNaverSearchAdsStatReportsInput,
+): Promise<NaverSearchAdsStatReportRecord[]> {
+  const response =
+    await requestNaverSearchAdsJson({
+      credentials: input.credentials,
+      method: "GET",
+      uri: NAVER_SEARCH_ADS_STAT_REPORTS_URI,
+    });
+
+  if (!Array.isArray(response)) {
+    throw new NaverSearchAdsStatReportApiError(
+      "INVALID_RESPONSE",
+      "Naver Search Ads stat report list response must be an array.",
+    );
+  }
+
+  if (response.length > 10_000) {
+    throw new NaverSearchAdsStatReportApiError(
+      "INVALID_RESPONSE",
+      "Naver Search Ads stat report list response exceeds the safety limit.",
+    );
+  }
+
+  return response.map((report) =>
+    parseStatReportResponse(report),
+  );
 }
 
 export async function getNaverSearchAdsStatReport(

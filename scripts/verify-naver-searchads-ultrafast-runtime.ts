@@ -31,6 +31,16 @@ const FAILURE_CREDENTIALS:
       "verification-secret-key",
   };
 
+const CREATE_CREDENTIALS:
+  NaverSearchAdsCredentials = {
+    customerId:
+      "ultrafast-create-customer",
+    accessLicense:
+      "verification-access-license",
+    secretKey:
+      "verification-secret-key",
+  };
+
 const STAT_DATE =
   "2025-01-01";
 
@@ -87,9 +97,14 @@ async function verifySharedReadyCache(): Promise<void> {
   const originalFetch =
     globalThis.fetch;
   let fetchCount = 0;
+  let listCount = 0;
+  let createCount = 0;
   let nextJobId = 1;
   const reportTypes =
-    new Map<number, string>();
+    new Map<number, string>([
+      [101, "AD"],
+      [102, "AD_CONVERSION"],
+    ]);
 
   globalThis.fetch =
     async (
@@ -107,8 +122,43 @@ async function verifySharedReadyCache(): Promise<void> {
       if (
         url.pathname ===
           "/stat-reports" &&
+        init?.method === "GET"
+      ) {
+        listCount += 1;
+
+        return jsonResponse([
+          {
+            reportJobId: 101,
+            reportTp: "AD",
+            statDt:
+              STAT_DATE,
+            status: "BUILT",
+            downloadUrl:
+              "https://api.searchad.naver.com/report-download?fileversion=101",
+            updateTm:
+              "2025-01-02T06:00:00+09:00",
+          },
+          {
+            reportJobId: 102,
+            reportTp:
+              "AD_CONVERSION",
+            statDt:
+              STAT_DATE,
+            status: "BUILT",
+            downloadUrl:
+              "https://api.searchad.naver.com/report-download?fileversion=102",
+            updateTm:
+              "2025-01-02T06:00:00+09:00",
+          },
+        ]);
+      }
+
+      if (
+        url.pathname ===
+          "/stat-reports" &&
         init?.method === "POST"
       ) {
+        createCount += 1;
         const body = JSON.parse(
           String(init.body ?? "{}"),
         ) as {
@@ -215,7 +265,9 @@ async function verifySharedReadyCache(): Promise<void> {
           STAT_DATE,
       });
 
-    equal(fetchCount, 4);
+    equal(fetchCount, 3);
+    equal(listCount, 1);
+    equal(createCount, 0);
     equal(keyword.records.length, 1);
     equal(adgroup.records.length, 1);
     equal(
@@ -342,6 +394,120 @@ async function verifyFailedCacheCooldown(): Promise<void> {
   }
 }
 
+async function verifyMissingReportsAreCreated(): Promise<void> {
+  const originalFetch =
+    globalThis.fetch;
+  let listCount = 0;
+  let createCount = 0;
+  let downloadCount = 0;
+  let nextJobId = 201;
+  const reportTypes =
+    new Map<number, string>();
+
+  globalThis.fetch =
+    async (
+      input: string | URL | Request,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      const url = new URL(
+        input instanceof Request
+          ? input.url
+          : input.toString(),
+      );
+
+      if (
+        url.pathname ===
+          "/stat-reports" &&
+        init?.method === "GET"
+      ) {
+        listCount += 1;
+        return jsonResponse([]);
+      }
+
+      if (
+        url.pathname ===
+          "/stat-reports" &&
+        init?.method === "POST"
+      ) {
+        createCount += 1;
+        const body = JSON.parse(
+          String(init.body ?? "{}"),
+        ) as {
+          reportTp: string;
+          statDt: string;
+        };
+        const reportJobId =
+          nextJobId;
+
+        nextJobId += 1;
+        reportTypes.set(
+          reportJobId,
+          body.reportTp,
+        );
+
+        return jsonResponse(
+          {
+            reportJobId,
+            reportTp:
+              body.reportTp,
+            statDt:
+              body.statDt,
+            status: "BUILT",
+            downloadUrl:
+              `https://api.searchad.naver.com/report-download?fileversion=${reportJobId}`,
+            updateTm:
+              "2025-01-02T06:00:00+09:00",
+          },
+          201,
+        );
+      }
+
+      if (
+        url.pathname ===
+          "/report-download"
+      ) {
+        downloadCount += 1;
+        const reportJobId = Number(
+          url.searchParams.get(
+            "fileversion",
+          ),
+        );
+
+        return new Response(
+          reportTypes.get(
+            reportJobId,
+          ) === "AD_CONVERSION"
+            ? CONVERSION_ROW
+            : AD_ROW,
+          { status: 200 },
+        );
+      }
+
+      throw new Error(
+        `UNEXPECTED_FETCH:${url.pathname}`,
+      );
+    };
+
+  try {
+    const result =
+      await fetchNaverSearchAdsStatReportKeywordDailyStats({
+        credentials:
+          CREATE_CREDENTIALS,
+        keywordId: "nkw-1",
+        dateFrom: STAT_DATE,
+        dateTo: STAT_DATE,
+      });
+
+    equal(result.records.length, 1);
+    equal(listCount, 1);
+    equal(createCount, 2);
+    equal(downloadCount, 2);
+  } finally {
+    globalThis.fetch =
+      originalFetch;
+  }
+}
+
 async function main(): Promise<void> {
   console.log(
     "Naver ultrafast runtime verification started.",
@@ -358,12 +524,17 @@ async function main(): Promise<void> {
 
   await verifySharedReadyCache();
   console.log(
-    "PASS: StatReport metrics are shared across keyword and adgroup lookups",
+    "PASS: completed StatReports are reused and shared across keyword and adgroup lookups",
   );
 
   await verifyFailedCacheCooldown();
   console.log(
     "PASS: failed StatReport build is logged once and cooldown-cached",
+  );
+
+  await verifyMissingReportsAreCreated();
+  console.log(
+    "PASS: missing reusable StatReports still use the bounded create path",
   );
 
   console.log(

@@ -6,10 +6,12 @@ import {
   fetchNaverSearchAdsAdgroupPage,
   fetchNaverSearchAdsCampaignPage,
   fetchNaverSearchAdsEntityDailyStats,
+  fetchNaverSearchAdsEntityDailyStatsBatch,
   NaverSearchAdsApiError,
   type NaverSearchAdsAdRecord,
   type NaverSearchAdsAdgroupRecord,
   type NaverSearchAdsCampaignRecord,
+  type NaverSearchAdsEntityDailyStatsBatchResult,
   type NaverSearchAdsEntityDailyStatsResult,
   type NaverSearchAdsListPage,
 } from "./naver-searchads-api";
@@ -48,6 +50,7 @@ const MAX_DISCOVERY_PAGES_PER_RUN = 1_000_000;
 const MAX_JITTER_MS = 500;
 const AUTHORITATIVE_STATS_MAX_CONCURRENCY = 4;
 const AUTHORITATIVE_STATS_REQUEST_INTERVAL_MS = 250;
+const AUTHORITATIVE_STATS_MAX_BATCH_SIZE = 5;
 
 export type NaverAuthoritativeEntityStatsCollectorErrorCode =
   | "INVALID_INPUT"
@@ -164,6 +167,8 @@ export type NaverAuthoritativeEntityStatsCollectorDependencies = {
   fetchAdgroupPage: typeof fetchNaverSearchAdsAdgroupPage;
   fetchAdPage: typeof fetchNaverSearchAdsAdPage;
   fetchEntityDailyStats: typeof fetchNaverSearchAdsEntityDailyStats;
+  fetchEntityDailyStatsBatch?:
+    typeof fetchNaverSearchAdsEntityDailyStatsBatch;
   fetchStatReportAdgroupDailyStats?:
     typeof fetchNaverSearchAdsStatReportAdgroupDailyStats;
   sleep: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
@@ -174,8 +179,12 @@ export type NaverAuthoritativeEntityStatsCollectorDependencies = {
 type ResolvedNaverAuthoritativeEntityStatsCollectorDependencies =
   Omit<
     NaverAuthoritativeEntityStatsCollectorDependencies,
-    "fetchStatReportAdgroupDailyStats"
+    | "fetchEntityDailyStatsBatch"
+    | "fetchStatReportAdgroupDailyStats"
   > & {
+    fetchEntityDailyStatsBatch:
+      | typeof fetchNaverSearchAdsEntityDailyStatsBatch
+      | null;
     fetchStatReportAdgroupDailyStats:
       typeof fetchNaverSearchAdsStatReportAdgroupDailyStats;
   };
@@ -282,6 +291,8 @@ const DEFAULT_DEPENDENCIES:
   fetchAdgroupPage: fetchNaverSearchAdsAdgroupPage,
   fetchAdPage: fetchNaverSearchAdsAdPage,
   fetchEntityDailyStats: fetchNaverSearchAdsEntityDailyStats,
+  fetchEntityDailyStatsBatch:
+    fetchNaverSearchAdsEntityDailyStatsBatch,
   fetchStatReportAdgroupDailyStats:
     fetchNaverSearchAdsStatReportAdgroupDailyStats,
   sleep: async (milliseconds, signal) => {
@@ -372,9 +383,21 @@ function resolveDependencies(
     ResolvedNaverAuthoritativeEntityStatsCollectorDependencies = {
       ...DEFAULT_DEPENDENCIES,
       ...dependencies,
+      fetchEntityDailyStatsBatch:
+        dependencies?.fetchEntityDailyStatsBatch ??
+        (dependencies?.fetchEntityDailyStats
+          ? null
+          : DEFAULT_DEPENDENCIES.fetchEntityDailyStatsBatch),
     };
 
   for (const [name, dependency] of Object.entries(resolved)) {
+    if (
+      name === "fetchEntityDailyStatsBatch" &&
+      dependency === null
+    ) {
+      continue;
+    }
+
     if (typeof dependency !== "function") {
       throw new Error(`${name} dependency must be a function.`);
     }
@@ -716,6 +739,28 @@ function isShoppingBoundedStatsPath(input: {
   );
 }
 
+function isBatchContractFallbackError(
+  error: unknown,
+): boolean {
+  if (
+    !(error instanceof NaverAuthoritativeEntityStatsCollectorError) ||
+    !(error.cause instanceof NaverSearchAdsApiError)
+  ) {
+    return false;
+  }
+
+  return (
+    error.cause.code === "INVALID_RESPONSE" ||
+    (
+      error.cause.code === "HTTP_ERROR" &&
+      (
+        error.cause.status === 400 ||
+        error.cause.status === 404
+      )
+    )
+  );
+}
+
 function isBrandSearchBoundedStatsPath(input: {
   campaign: NaverSearchAdsCampaignRecord;
   grain: "adgroup" | "ad";
@@ -1050,6 +1095,241 @@ async function consumeEntityPageBounded<
   return CONTINUE;
 }
 
+async function consumeShoppingEntityPageBatched<
+  T extends NaverSearchAdsAdgroupRecord | NaverSearchAdsAdRecord,
+>(
+  input: EntityPageInput<T>,
+  startIndex: number,
+): Promise<TraversalResult> {
+  const fetchBatch =
+    input.dependencies.fetchEntityDailyStatsBatch;
+
+  if (!fetchBatch) {
+    return consumeEntityPageBounded(
+      input,
+      startIndex,
+    );
+  }
+
+  const waitForBatchStart = createBoundedStatsStartGate({
+    state: input.state,
+    options: input.options,
+    signal: input.signal,
+    dependencies: input.dependencies,
+  });
+
+  let index = startIndex;
+
+  while (index < input.entities.length) {
+    const beforeReason = currentPartialReason(
+      input.state,
+      input.options,
+    );
+
+    if (beforeReason) {
+      return {
+        status: "partial",
+        reason: beforeReason,
+      };
+    }
+
+    const batchSize = Math.min(
+      AUTHORITATIVE_STATS_MAX_BATCH_SIZE,
+      input.entities.length - index,
+      remainingEntityStatsBudget(
+        input.state,
+        input.options,
+      ),
+    );
+
+    if (batchSize < 2) {
+      return consumeEntityPageBounded(
+        input,
+        index,
+      );
+    }
+
+    const batchEntities =
+      input.entities.slice(
+        index,
+        index + batchSize,
+      );
+
+    for (const entity of batchEntities) {
+      await notifyProgress(
+        input.onProgress,
+        "entity_stats:start",
+        input.state,
+        {
+          campaignId: input.campaign.id,
+          adgroupId: input.adgroup.id,
+          entityId: entity.id,
+          authoritativeGrain: input.grain,
+        },
+      );
+    }
+
+    let batchRequest:
+      ApiRequestResult<NaverSearchAdsEntityDailyStatsBatchResult>;
+
+    try {
+      batchRequest = await executeApiRequestWithRetry({
+        operation: "entity_stats",
+        entityId:
+          batchEntities[0]?.id ?? null,
+        state: input.state,
+        options: input.options,
+        signal: input.signal,
+        onRetry: input.onRetry,
+        dependencies: input.dependencies,
+        beforeAttempt: waitForBatchStart,
+        request: () =>
+          fetchBatch({
+            credentials: input.credentials,
+            entityIds:
+              batchEntities.map(
+                (entity) => entity.id,
+              ),
+            entityType: input.grain,
+            dateFrom:
+              input.state.cursor.dateFrom,
+            dateTo:
+              input.state.cursor.dateTo,
+          }),
+      });
+    } catch (error) {
+      if (!isBatchContractFallbackError(error)) {
+        throw error;
+      }
+
+      input.dependencies.fetchEntityDailyStatsBatch =
+        null;
+
+      return consumeEntityPageBounded(
+        input,
+        index,
+      );
+    }
+
+    if (
+      batchRequest.value.results.length !==
+        batchEntities.length ||
+      batchRequest.value.results.some(
+        (stats, offset) => {
+          const entity =
+            batchEntities[offset];
+
+          return (
+            !entity ||
+            stats.entityId !== entity.id ||
+            stats.entityType !== input.grain ||
+            stats.dateFrom !==
+              input.state.cursor.dateFrom ||
+            stats.dateTo !==
+              input.state.cursor.dateTo
+          );
+        },
+      )
+    ) {
+      input.dependencies.fetchEntityDailyStatsBatch =
+        null;
+
+      return consumeEntityPageBounded(
+        input,
+        index,
+      );
+    }
+
+    for (
+      let offset = 0;
+      offset < batchEntities.length;
+      offset += 1
+    ) {
+      const entity = batchEntities[offset];
+      const stats =
+        batchRequest.value.results[offset];
+
+      if (!entity || !stats) {
+        throw new NaverAuthoritativeEntityStatsCollectorError(
+          "INVALID_INPUT",
+          "The authoritative batch result is missing an entity.",
+          { cursor: input.state.cursor },
+        );
+      }
+
+      const entityIndex = index + offset;
+      const cursorBefore = cloneCursor(
+        input.state.cursor,
+      );
+      const cursorAfter =
+        markNaverAuthoritativeEntityStatsEntityCompleted({
+          cursor: cursorBefore,
+          entityId: entity.id,
+          entityIndexInPage: entityIndex,
+        });
+
+      try {
+        await input.onEntityStats({
+          campaign: input.campaign,
+          adgroup: input.adgroup,
+          entity,
+          authoritativeGrain: input.grain,
+          stats,
+          cursorBefore,
+          cursorAfter:
+            cloneCursor(cursorAfter),
+          requestAttemptCount:
+            batchRequest.attemptCount,
+        });
+      } catch (error) {
+        throw new NaverAuthoritativeEntityStatsCollectorError(
+          "CONSUMER_FAILED",
+          "The authoritative entity stats consumer failed.",
+          {
+            cursor: cursorBefore,
+            cause: error,
+          },
+        );
+      }
+
+      input.state.cursor = cursorAfter;
+      input.state.entitiesCompletedInRun += 1;
+
+      await notifyProgress(
+        input.onProgress,
+        "entity_stats:done",
+        input.state,
+        {
+          campaignId: input.campaign.id,
+          adgroupId: input.adgroup.id,
+          entityId: entity.id,
+          authoritativeGrain: input.grain,
+          recordsRead:
+            stats.records.length,
+          attemptCount:
+            batchRequest.attemptCount,
+        },
+      );
+    }
+
+    const afterReason = currentPartialReason(
+      input.state,
+      input.options,
+    );
+
+    if (afterReason) {
+      return {
+        status: "partial",
+        reason: afterReason,
+      };
+    }
+
+    index += batchSize;
+  }
+
+  return CONTINUE;
+}
+
 async function consumeEntityPage<
   T extends NaverSearchAdsAdgroupRecord | NaverSearchAdsAdRecord,
 >(input: EntityPageInput<T>): Promise<TraversalResult> {
@@ -1070,6 +1350,20 @@ async function consumeEntityPage<
 
   setDiscoveredLowerBound(input.state, input.entities.length - startIndex);
   input.state.entitiesDiscoveredInRun += input.entities.length - startIndex;
+
+  if (
+    isShoppingBoundedStatsPath({
+      campaign: input.campaign,
+      grain: input.grain,
+      options: input.options,
+    }) &&
+    input.dependencies.fetchEntityDailyStatsBatch
+  ) {
+    return consumeShoppingEntityPageBatched(
+      input,
+      startIndex,
+    );
+  }
 
   if (
     isShoppingBoundedStatsPath({
