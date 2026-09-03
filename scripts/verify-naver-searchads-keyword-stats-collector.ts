@@ -745,6 +745,109 @@ async function verifyBoundedFallbackAndOrder(): Promise<void> {
   );
 }
 
+async function verifyKeywordHierarchyOrderedPrefetch(): Promise<void> {
+  const campaign =
+    createCampaign("campaign-prefetch");
+  const adgroups =
+    Array.from(
+      { length: 8 },
+      (_, index) =>
+        createAdgroup(
+          `adgroup-prefetch-${index + 1}`,
+          campaign.id,
+        ),
+    );
+  const keywords =
+    adgroups.map((adgroup, index) =>
+      createKeyword(
+        `keyword-prefetch-${index + 1}`,
+        adgroup.id,
+      ),
+    );
+
+  const run = async (
+    maxKeywordDiscoveryPagesPerRun?: number,
+  ): Promise<{
+    consumedKeywordIds: string[];
+    maxActiveKeywordPages: number;
+  }> => {
+    let activeKeywordPages = 0;
+    let maxActiveKeywordPages = 0;
+    const consumedKeywordIds: string[] = [];
+    const dependencies =
+      createBaseDependencies({
+        campaigns: [campaign],
+        adgroups,
+        keywords,
+      });
+
+    dependencies.fetchKeywordPage =
+      async (input) => {
+        activeKeywordPages += 1;
+        maxActiveKeywordPages =
+          Math.max(
+            maxActiveKeywordPages,
+            activeKeywordPages,
+          );
+
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 0);
+        });
+
+        activeKeywordPages -= 1;
+
+        return createListPage(
+          keywords.filter(
+            (keyword) =>
+              keyword.adgroupId === input.adgroupId,
+          ),
+          {
+            recordSize: input.recordSize ?? 100,
+            baseSearchId: input.baseSearchId ?? null,
+          },
+        );
+      };
+
+    const result =
+      await collectNaverKeywordDailyStats({
+        credentials: FAKE_CREDENTIALS,
+        cursor: createInitialCursor(),
+        requestIntervalMs: 0,
+        chunkPauseMs: 0,
+        ...(maxKeywordDiscoveryPagesPerRun === undefined
+          ? {}
+          : { maxKeywordDiscoveryPagesPerRun }),
+        dependencies,
+        onKeywordStats: async (item) => {
+          consumedKeywordIds.push(item.keyword.id);
+        },
+      });
+
+    equal(result.status, "completed");
+
+    return {
+      consumedKeywordIds,
+      maxActiveKeywordPages,
+    };
+  };
+
+  const prefetched = await run();
+
+  equal(prefetched.maxActiveKeywordPages, 4);
+  deepStrictEqual(
+    prefetched.consumedKeywordIds,
+    keywords.map((keyword) => keyword.id),
+  );
+
+  const capped = await run(100);
+
+  equal(capped.maxActiveKeywordPages, 1);
+  deepStrictEqual(
+    capped.consumedKeywordIds,
+    keywords.map((keyword) => keyword.id),
+  );
+}
+
 async function verifyStatReportDoesNotConsumeExactFallbackBudget(): Promise<void> {
   const keywords = Array.from(
     { length: 5 },
@@ -1629,6 +1732,13 @@ const tests:
 
       run:
         verifyBoundedFallbackAndOrder,
+    },
+    {
+      name:
+        "collector prefetches WEB_SITE hierarchy pages four-wide while preserving order and capped fallback",
+
+      run:
+        verifyKeywordHierarchyOrderedPrefetch,
     },
     {
       name:

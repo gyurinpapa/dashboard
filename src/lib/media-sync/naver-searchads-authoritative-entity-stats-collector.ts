@@ -51,6 +51,7 @@ const MAX_JITTER_MS = 500;
 const AUTHORITATIVE_STATS_MAX_CONCURRENCY = 4;
 const AUTHORITATIVE_STATS_REQUEST_INTERVAL_MS = 250;
 const AUTHORITATIVE_STATS_MAX_BATCH_SIZE = 5;
+const HIERARCHY_PREFETCH_MAX_CONCURRENCY = 4;
 
 export type NaverAuthoritativeEntityStatsCollectorErrorCode =
   | "INVALID_INPUT"
@@ -280,6 +281,13 @@ type BoundedEntityStatsTaskResult<
   cursorBefore: NaverAuthoritativeEntityStatsCursor;
   cursorAfter: NaverAuthoritativeEntityStatsCursor;
   statsRequest: ApiRequestResult<NaverSearchAdsEntityDailyStatsResult>;
+  requestState: RuntimeState;
+};
+
+type PrefetchedShoppingPage = {
+  request: ApiRequestResult<
+    NaverSearchAdsListPage<NaverSearchAdsAdRecord>
+  >;
   requestState: RuntimeState;
 };
 
@@ -1911,6 +1919,7 @@ async function collectShoppingAds(input: {
   campaignBaseSearchId: string | null;
   adgroup: NaverSearchAdsAdgroupRecord;
   adgroupBaseSearchId: string | null;
+  prefetchedFirstPage?: PrefetchedShoppingPage;
   state: RuntimeState;
   options: Options;
   credentials: NaverSearchAdsCredentials;
@@ -1936,25 +1945,43 @@ async function collectShoppingAds(input: {
       pageNumber,
     });
 
-    const request = await executeApiRequestWithRetry<
-      NaverSearchAdsListPage<NaverSearchAdsAdRecord>
-    >({
-      operation: "ad_page",
-      entityId: null,
-      state: input.state,
-      options: input.options,
-      signal: input.signal,
-      onRetry: input.onRetry,
-      dependencies: input.dependencies,
-      request: () =>
-        input.dependencies.fetchAdPage({
-          credentials: input.credentials,
-          adgroupId: input.adgroup.id,
-          baseSearchId: pageBaseSearchId,
-          recordSize: HIERARCHY_RECORD_SIZE,
-          selector: "NEXT",
-        }),
-    });
+    let request:
+      ApiRequestResult<
+        NaverSearchAdsListPage<NaverSearchAdsAdRecord>
+      >;
+
+    if (
+      pageNumber === 1 &&
+      pageBaseSearchId === null &&
+      input.prefetchedFirstPage
+    ) {
+      mergeBoundedRequestState(
+        input.state,
+        input.prefetchedFirstPage.requestState,
+      );
+      request =
+        input.prefetchedFirstPage.request;
+    } else {
+      request = await executeApiRequestWithRetry<
+        NaverSearchAdsListPage<NaverSearchAdsAdRecord>
+      >({
+        operation: "ad_page",
+        entityId: null,
+        state: input.state,
+        options: input.options,
+        signal: input.signal,
+        onRetry: input.onRetry,
+        dependencies: input.dependencies,
+        request: () =>
+          input.dependencies.fetchAdPage({
+            credentials: input.credentials,
+            adgroupId: input.adgroup.id,
+            baseSearchId: pageBaseSearchId,
+            recordSize: HIERARCHY_RECORD_SIZE,
+            selector: "NEXT",
+          }),
+      });
+    }
 
     input.state.entityPagesRead += 1;
 
@@ -2139,6 +2166,48 @@ async function collectShoppingAds(input: {
   );
 }
 
+async function prefetchShoppingFirstPage(input: {
+  adgroup: NaverSearchAdsAdgroupRecord;
+  state: RuntimeState;
+  options: Options;
+  credentials: NaverSearchAdsCredentials;
+  onRetry: NaverAuthoritativeEntityStatsCollectorInput["onRetry"];
+  signal: AbortSignal | undefined;
+  dependencies:
+    ResolvedNaverAuthoritativeEntityStatsCollectorDependencies;
+}): Promise<PrefetchedShoppingPage> {
+  const requestState =
+    createBoundedRequestState(
+      input.state,
+      input.state.cursor,
+    );
+  const request =
+    await executeApiRequestWithRetry<
+      NaverSearchAdsListPage<NaverSearchAdsAdRecord>
+    >({
+      operation: "ad_page",
+      entityId: null,
+      state: requestState,
+      options: input.options,
+      signal: input.signal,
+      onRetry: input.onRetry,
+      dependencies: input.dependencies,
+      request: () =>
+        input.dependencies.fetchAdPage({
+          credentials: input.credentials,
+          adgroupId: input.adgroup.id,
+          baseSearchId: null,
+          recordSize: HIERARCHY_RECORD_SIZE,
+          selector: "NEXT",
+        }),
+    });
+
+  return {
+    request,
+    requestState,
+  };
+}
+
 async function collectCampaignAdgroups(input: {
   campaign: NaverSearchAdsCampaignRecord;
   campaignBaseSearchId: string | null;
@@ -2277,87 +2346,132 @@ async function collectCampaignAdgroups(input: {
         startIndex = found;
       }
 
-      for (let index = startIndex; index < request.value.records.length; index += 1) {
-        const adgroup = request.value.records[index];
+      const prefetchConcurrency =
+        !isResumingAdgroupPage &&
+        input.shoppingBatchAccumulator !== null &&
+        input.options.maxDiscoveryPagesPerRun === null
+          ? HIERARCHY_PREFETCH_MAX_CONCURRENCY
+          : 1;
 
-        if (!adgroup) {
-          throw new NaverAuthoritativeEntityStatsCollectorError(
-            "INVALID_INPUT",
-            "The adgroup page contains an invalid item.",
-            { cursor: input.state.cursor },
+      for (
+        let windowStart = startIndex;
+        windowStart < request.value.records.length;
+        windowStart += prefetchConcurrency
+      ) {
+        const adgroupWindow =
+          request.value.records.slice(
+            windowStart,
+            windowStart + prefetchConcurrency,
           );
-        }
+        const prefetchedPages =
+          prefetchConcurrency > 1
+            ? await Promise.all(
+                adgroupWindow.map((adgroup) =>
+                  prefetchShoppingFirstPage({
+                    adgroup,
+                    state: input.state,
+                    options: input.options,
+                    credentials: input.credentials,
+                    onRetry: input.onRetry,
+                    signal: input.signal,
+                    dependencies: input.dependencies,
+                  }),
+                ),
+              )
+            : adgroupWindow.map(() => undefined);
 
-        if (
-          !input.shoppingBatchAccumulator &&
-          input.state.cursor.adgroupId !== adgroup.id
+        for (
+          let windowIndex = 0;
+          windowIndex < adgroupWindow.length;
+          windowIndex += 1
         ) {
-          input.state.cursor = setNaverAuthoritativeEntityStatsAdgroupPosition(
-            input.state.cursor,
-            {
-              adgroupBaseSearchId: pageBaseSearchId,
-              adgroupId: adgroup.id,
-            },
-          );
-        }
-        input.state.adgroupsRead += 1;
+          const adgroup =
+            adgroupWindow[windowIndex];
+          const prefetchedFirstPage =
+            prefetchedPages[windowIndex];
 
-        await notifyProgress(input.onProgress, "adgroup:start", input.state, {
-          campaignId: input.campaign.id,
-          adgroupId: adgroup.id,
-          authoritativeGrain: "ad",
-        });
-
-        const result = await collectShoppingAds({
-          campaign: input.campaign,
-          campaignBaseSearchId:
-            input.campaignBaseSearchId,
-          adgroup,
-          adgroupBaseSearchId:
-            pageBaseSearchId,
-          state: input.state,
-          options: input.options,
-          credentials: input.credentials,
-          onEntityStats: input.onEntityStats,
-          onRetry: input.onRetry,
-          onProgress: input.onProgress,
-          signal: input.signal,
-          dependencies: input.dependencies,
-          shoppingBatchAccumulator:
-            input.shoppingBatchAccumulator,
-        });
-
-        if (result.status === "partial") {
-          return result;
-        }
-
-        const completionDeferred =
-          input.shoppingBatchAccumulator
-            ?.markAdgroupComplete({
-              campaignId:
-                input.campaign.id,
-              adgroupId:
-                adgroup.id,
-            }) ?? false;
-
-        if (!completionDeferred) {
-          await notifyProgress(input.onProgress, "adgroup:done", input.state, {
-            campaignId: input.campaign.id,
-            adgroupId: adgroup.id,
-            authoritativeGrain: "ad",
-          });
+          if (!adgroup) {
+            throw new NaverAuthoritativeEntityStatsCollectorError(
+              "INVALID_INPUT",
+              "The adgroup prefetch window contains an invalid item.",
+              { cursor: input.state.cursor },
+            );
+          }
 
           if (
-            input.state.cursor.campaignId === input.campaign.id &&
-            input.state.cursor.adgroupId === adgroup.id
+            !input.shoppingBatchAccumulator &&
+            input.state.cursor.adgroupId !== adgroup.id
           ) {
             input.state.cursor = setNaverAuthoritativeEntityStatsAdgroupPosition(
               input.state.cursor,
               {
                 adgroupBaseSearchId: pageBaseSearchId,
-                adgroupId: null,
+                adgroupId: adgroup.id,
               },
             );
+          }
+          input.state.adgroupsRead += 1;
+
+          await notifyProgress(input.onProgress, "adgroup:start", input.state, {
+            campaignId: input.campaign.id,
+            adgroupId: adgroup.id,
+            authoritativeGrain: "ad",
+          });
+
+          const result = await collectShoppingAds({
+            campaign: input.campaign,
+            campaignBaseSearchId:
+              input.campaignBaseSearchId,
+            adgroup,
+            adgroupBaseSearchId:
+              pageBaseSearchId,
+            ...(prefetchedFirstPage
+              ? { prefetchedFirstPage }
+              : {}),
+            state: input.state,
+            options: input.options,
+            credentials: input.credentials,
+            onEntityStats: input.onEntityStats,
+            onRetry: input.onRetry,
+            onProgress: input.onProgress,
+            signal: input.signal,
+            dependencies: input.dependencies,
+            shoppingBatchAccumulator:
+              input.shoppingBatchAccumulator,
+          });
+
+          if (result.status === "partial") {
+            return result;
+          }
+
+          const completionDeferred =
+            input.shoppingBatchAccumulator
+              ?.markAdgroupComplete({
+                campaignId:
+                  input.campaign.id,
+                adgroupId:
+                  adgroup.id,
+              }) ?? false;
+
+          if (!completionDeferred) {
+            await notifyProgress(input.onProgress, "adgroup:done", input.state, {
+              campaignId: input.campaign.id,
+              adgroupId: adgroup.id,
+              authoritativeGrain: "ad",
+            });
+
+            if (
+              input.state.cursor.campaignId === input.campaign.id &&
+              input.state.cursor.adgroupId === adgroup.id
+            ) {
+              input.state.cursor = setNaverAuthoritativeEntityStatsAdgroupPosition(
+                input.state.cursor,
+                {
+                  adgroupBaseSearchId: pageBaseSearchId,
+                  adgroupId: null,
+                },
+              );
+            }
           }
         }
       }

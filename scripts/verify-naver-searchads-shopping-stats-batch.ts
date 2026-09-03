@@ -726,22 +726,48 @@ async function verifyCrossAdgroupBoundedResume(): Promise<void> {
   );
   const consumedIds: string[] = [];
   const batchScopes: string[][] = [];
+  let activeAdPageRequests = 0;
+  let firstRunMaxActiveAdPages = 0;
+  let secondRunMaxActiveAdPages = 0;
+  let runPhase: "first" | "second" = "first";
   let now = Date.parse("2026-09-03T00:10:00.000Z");
   const dependencies: Partial<NaverAuthoritativeEntityStatsCollectorDependencies> = {
     fetchCampaignPage: async () => page([campaign]),
     fetchAdgroupPage: async () => page(adgroups),
-    fetchAdPage: async (request) => page([
-      {
-        id: `${request.adgroupId}-ad`,
-        adgroupId: request.adgroupId,
-        type: "SHOPPING_PRODUCT_AD",
-        inspectStatus: "APPROVED",
-        status: "ELIGIBLE",
-        statusReason: null,
-        userLock: false,
-        referenceKey: `${request.adgroupId}-product`,
-      },
-    ]),
+    fetchAdPage: async (request) => {
+      activeAdPageRequests += 1;
+
+      if (runPhase === "first") {
+        firstRunMaxActiveAdPages = Math.max(
+          firstRunMaxActiveAdPages,
+          activeAdPageRequests,
+        );
+      } else {
+        secondRunMaxActiveAdPages = Math.max(
+          secondRunMaxActiveAdPages,
+          activeAdPageRequests,
+        );
+      }
+
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 0);
+      });
+
+      activeAdPageRequests -= 1;
+
+      return page([
+        {
+          id: `${request.adgroupId}-ad`,
+          adgroupId: request.adgroupId,
+          type: "SHOPPING_PRODUCT_AD",
+          inspectStatus: "APPROVED",
+          status: "ELIGIBLE",
+          statusReason: null,
+          userLock: false,
+          referenceKey: `${request.adgroupId}-product`,
+        },
+      ]);
+    },
     fetchEntityDailyStatsBatch: async (request) => {
       batchScopes.push([...request.entityIds]);
       return {
@@ -782,6 +808,9 @@ async function verifyCrossAdgroupBoundedResume(): Promise<void> {
   equal(first.cursor.adgroupId, "grp-resume-4");
   equal(first.cursor.lastCompletedEntityId, "grp-resume-4-ad");
   deepStrictEqual(consumedIds, expectedIds.slice(0, 4));
+  equal(firstRunMaxActiveAdPages, 4);
+
+  runPhase = "second";
 
   const second = await collectNaverAuthoritativeEntityDailyStats({
     credentials: CREDENTIALS,
@@ -803,6 +832,7 @@ async function verifyCrossAdgroupBoundedResume(): Promise<void> {
   equal(new Set(consumedIds).size, expectedIds.length);
   equal(second.cursor.completedEntityCount, 7);
   equal(second.cursor.campaignId, null);
+  equal(secondRunMaxActiveAdPages, 1);
 }
 
 async function verifyBatchInputGuard(): Promise<void> {
@@ -872,7 +902,7 @@ async function main(): Promise<void> {
 
   await verifyCrossAdgroupBoundedResume();
   console.log(
-    "PASS: bounded cross-adgroup batching resumes after the last committed entity without duplicates",
+    "PASS: Shopping hierarchy pages prefetch four-wide and resume serially without duplicates",
   );
 
   await verifyBatchInputGuard();

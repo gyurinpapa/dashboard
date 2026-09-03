@@ -54,6 +54,7 @@ const NAVER_KEYWORD_STATS_MAX_KEYWORDS_PER_RUN = 1_000_000;
 const NAVER_KEYWORD_STATS_MAX_REQUESTS_PER_RUN = 1_000_000;
 const NAVER_WEB_SITE_STATS_MAX_CONCURRENCY = 4;
 const NAVER_WEB_SITE_STATS_REQUEST_INTERVAL_MS = 250;
+const NAVER_HIERARCHY_PREFETCH_MAX_CONCURRENCY = 4;
 const NAVER_KEYWORD_DISCOVERY_MAX_PAGES_PER_RUN = 1_000_000;
 
 export type NaverKeywordStatsCollectorErrorCode =
@@ -350,6 +351,13 @@ type WebSiteStatsTaskResult = {
   cursorBefore: NaverKeywordStatsCursor;
   cursorAfter: NaverKeywordStatsCursor;
   statsRequest: ApiRequestResult<NaverSearchAdsKeywordDailyStatsResult>;
+  requestState: CollectorRuntimeState;
+};
+
+type PrefetchedKeywordPage = {
+  request: ApiRequestResult<
+    NaverSearchAdsListPage<NaverSearchAdsKeywordRecord>
+  >;
   requestState: CollectorRuntimeState;
 };
 
@@ -2898,6 +2906,7 @@ async function consumeKeywordChunk(input: {
 async function collectKeywordPages(input: {
   campaign: NaverSearchAdsCampaignRecord;
   adgroup: NaverSearchAdsAdgroupRecord;
+  prefetchedFirstPage?: PrefetchedKeywordPage;
 
   state: CollectorRuntimeState;
   options: NormalizedCollectorOptions;
@@ -2958,13 +2967,27 @@ async function collectKeywordPages(input: {
       pageNumber,
     });
 
-    const keywordPageRequest:
+    let keywordPageRequest:
       ApiRequestResult<
         NaverSearchAdsListPage<NaverSearchAdsKeywordRecord>
-      > =
-      await executeApiRequestWithRetry<
-        NaverSearchAdsListPage<NaverSearchAdsKeywordRecord>
-      >({
+      >;
+
+    if (
+      pageNumber === 1 &&
+      pageBaseSearchId === null &&
+      input.prefetchedFirstPage
+    ) {
+      mergeWebSiteRequestState(
+        input.state,
+        input.prefetchedFirstPage.requestState,
+      );
+      keywordPageRequest =
+        input.prefetchedFirstPage.request;
+    } else {
+      keywordPageRequest =
+        await executeApiRequestWithRetry<
+          NaverSearchAdsListPage<NaverSearchAdsKeywordRecord>
+        >({
         operation:
           "keyword_page",
 
@@ -3005,8 +3028,9 @@ async function collectKeywordPages(input: {
 
               selector:
                 "NEXT",
-            }),
-      });
+              }),
+        });
+    }
 
     const keywordPage:
       NaverSearchAdsListPage<NaverSearchAdsKeywordRecord> =
@@ -3219,6 +3243,51 @@ async function collectKeywordPages(input: {
   );
 }
 
+async function prefetchKeywordFirstPage(input: {
+  adgroup: NaverSearchAdsAdgroupRecord;
+  state: CollectorRuntimeState;
+  options: NormalizedCollectorOptions;
+  credentials: NaverSearchAdsCredentials;
+  onRetry:
+    | NaverKeywordStatsCollectorRetryCallback
+    | undefined;
+  signal: AbortSignal | undefined;
+  dependencies: ResolvedCollectorDependencies;
+}): Promise<PrefetchedKeywordPage> {
+  const requestState =
+    createWebSiteRequestState(
+      input.state,
+      input.state.cursor,
+    );
+
+  const request =
+    await executeApiRequestWithRetry<
+      NaverSearchAdsListPage<NaverSearchAdsKeywordRecord>
+    >({
+      operation: "keyword_page",
+      keywordId: null,
+      state: requestState,
+      options: input.options,
+      signal: input.signal,
+      onRetry: input.onRetry,
+      dependencies: input.dependencies,
+      request: () =>
+        input.dependencies.fetchKeywordPage({
+          credentials: input.credentials,
+          adgroupId: input.adgroup.id,
+          baseSearchId: null,
+          recordSize:
+            NAVER_WEB_SITE_KEYWORD_PAGE_RECORD_SIZE,
+          selector: "NEXT",
+        }),
+    });
+
+  return {
+    request,
+    requestState,
+  };
+}
+
 async function collectAdgroupPages(input: {
   campaign: NaverSearchAdsCampaignRecord;
 
@@ -3243,7 +3312,7 @@ async function collectAdgroupPages(input: {
 
   dependencies: ResolvedCollectorDependencies;
 }): Promise<CollectorTraversalResult> {
-    let adgroupBaseSearchId:
+  let adgroupBaseSearchId:
     | string
     | null =
       input.state.cursor.campaignId ===
@@ -3348,10 +3417,12 @@ async function collectAdgroupPages(input: {
         adgroupPageRequest.attemptCount,
     });
 
-    for (
-      const adgroup
-      of adgroupPage.records
-    ) {
+    const resumeWasActive =
+      input.resumeTarget.enabled;
+    const adgroupsToCollect:
+      NaverSearchAdsAdgroupRecord[] = [];
+
+    for (const adgroup of adgroupPage.records) {
       if (
         shouldSkipAdgroupForResume(
           input.resumeTarget,
@@ -3361,85 +3432,150 @@ async function collectAdgroupPages(input: {
         continue;
       }
 
-      await notifyProgress({
-        callback:
-          input.onProgress,
-        stage:
-          "adgroup:start",
-        state:
-          input.state,
-        campaignId:
-          input.campaign.id,
-        adgroupId:
-          adgroup.id,
-      });
+      adgroupsToCollect.push(adgroup);
+    }
 
-      input.state.cursor =
-        setNaverKeywordStatsAdgroupPosition(
-          input.state.cursor,
-          {
-            adgroupBaseSearchId:
-              pageBaseSearchId,
+    const prefetchConcurrency =
+      !resumeWasActive &&
+      isWebSiteBoundedStatsPath({
+        campaign: input.campaign,
+        options: input.options,
+      }) &&
+      input.options.maxKeywordDiscoveryPagesPerRun === null
+        ? NAVER_HIERARCHY_PREFETCH_MAX_CONCURRENCY
+        : 1;
 
-            adgroupId:
-              adgroup.id,
-          },
+    for (
+      let windowStart = 0;
+      windowStart < adgroupsToCollect.length;
+      windowStart += prefetchConcurrency
+    ) {
+      const adgroupWindow =
+        adgroupsToCollect.slice(
+          windowStart,
+          windowStart + prefetchConcurrency,
         );
+      const prefetchedPages =
+        prefetchConcurrency > 1
+          ? await Promise.all(
+              adgroupWindow.map((adgroup) =>
+                prefetchKeywordFirstPage({
+                  adgroup,
+                  state: input.state,
+                  options: input.options,
+                  credentials: input.credentials,
+                  onRetry: input.onRetry,
+                  signal: input.signal,
+                  dependencies: input.dependencies,
+                }),
+              ),
+            )
+          : adgroupWindow.map(() => undefined);
 
-      const keywordPagesResult =
-        await collectKeywordPages({
-          campaign:
-            input.campaign,
+      for (
+        let windowIndex = 0;
+        windowIndex < adgroupWindow.length;
+        windowIndex += 1
+      ) {
+        const adgroup =
+          adgroupWindow[windowIndex];
+        const prefetchedFirstPage =
+          prefetchedPages[windowIndex];
 
-          adgroup,
+        if (!adgroup) {
+          throw new NaverKeywordStatsCollectorError(
+            "INVALID_INPUT",
+            "The adgroup prefetch window contains an invalid item.",
+            {
+              cursor: input.state.cursor,
+            },
+          );
+        }
 
+        await notifyProgress({
+          callback:
+            input.onProgress,
+          stage:
+            "adgroup:start",
           state:
             input.state,
-
-          options:
-            input.options,
-
-          resumeTarget:
-            input.resumeTarget,
-
-          credentials:
-            input.credentials,
-
-          onKeywordStats:
-            input.onKeywordStats,
-
-          onRetry:
-            input.onRetry,
-
-          onProgress:
-            input.onProgress,
-
-          signal:
-            input.signal,
-
-          dependencies:
-            input.dependencies,
+          campaignId:
+            input.campaign.id,
+          adgroupId:
+            adgroup.id,
         });
 
-      if (
-        keywordPagesResult.status ===
-        "partial"
-      ) {
-        return keywordPagesResult;
-      }
+        input.state.cursor =
+          setNaverKeywordStatsAdgroupPosition(
+            input.state.cursor,
+            {
+              adgroupBaseSearchId:
+                pageBaseSearchId,
 
-      await notifyProgress({
-        callback:
-          input.onProgress,
-        stage:
-          "adgroup:done",
-        state:
-          input.state,
-        campaignId:
-          input.campaign.id,
-        adgroupId:
-          adgroup.id,
-      });
+              adgroupId:
+                adgroup.id,
+            },
+          );
+
+        const keywordPagesResult =
+          await collectKeywordPages({
+            campaign:
+              input.campaign,
+
+            adgroup,
+
+            ...(prefetchedFirstPage
+              ? { prefetchedFirstPage }
+              : {}),
+
+            state:
+              input.state,
+
+            options:
+              input.options,
+
+            resumeTarget:
+              input.resumeTarget,
+
+            credentials:
+              input.credentials,
+
+            onKeywordStats:
+              input.onKeywordStats,
+
+            onRetry:
+              input.onRetry,
+
+            onProgress:
+              input.onProgress,
+
+            signal:
+              input.signal,
+
+            dependencies:
+              input.dependencies,
+          });
+
+        if (
+          keywordPagesResult.status ===
+          "partial"
+        ) {
+          return keywordPagesResult;
+        }
+
+        await notifyProgress({
+          callback:
+            input.onProgress,
+          stage:
+            "adgroup:done",
+          state:
+            input.state,
+          campaignId:
+            input.campaign.id,
+          adgroupId:
+            adgroup.id,
+        });
+      }
     }
 
     if (
