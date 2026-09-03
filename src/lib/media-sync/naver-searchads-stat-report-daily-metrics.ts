@@ -1053,7 +1053,8 @@ export async function fetchNaverSearchAdsStatReportKeywordDailyStatsBatch(
           if (
             !metrics ||
             (!metrics.hasPerformanceRow &&
-              !metrics.hasConversionRow)
+              !metrics.hasConversionRow) ||
+            metrics.impCnt <= 0
           ) {
             continue;
           }

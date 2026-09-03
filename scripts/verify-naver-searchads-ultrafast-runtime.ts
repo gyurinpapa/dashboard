@@ -43,6 +43,16 @@ const CREATE_CREDENTIALS:
       "verification-secret-key",
   };
 
+const ZERO_IMPRESSION_CREDENTIALS:
+  NaverSearchAdsCredentials = {
+    customerId:
+      "ultrafast-zero-impression-customer",
+    accessLicense:
+      "verification-access-license",
+    secretKey:
+      "verification-secret-key",
+  };
+
 const STAT_DATE =
   "2025-01-01";
 
@@ -71,6 +81,39 @@ const CONVERSION_ROW = [
   "nkw-1",
   "nad-1",
   "bsn-1",
+  "8750",
+  "M",
+  "1",
+  "1",
+  "3",
+  "400",
+].join("\t");
+
+const ZERO_IMPRESSION_AD_ROW = [
+  "20250103",
+  "1",
+  "cmp-zero",
+  "grp-zero",
+  "nkw-zero",
+  "nad-zero",
+  "bsn-zero",
+  "8750",
+  "M",
+  "0",
+  "2",
+  "300",
+  "0",
+  "0",
+].join("\t");
+
+const ZERO_IMPRESSION_CONVERSION_ROW = [
+  "20250103",
+  "1",
+  "cmp-zero",
+  "grp-zero",
+  "nkw-zero",
+  "nad-zero",
+  "bsn-zero",
   "8750",
   "M",
   "1",
@@ -344,6 +387,124 @@ async function verifySharedReadyCache(): Promise<void> {
   }
 }
 
+async function verifyZeroImpressionKeywordsAreOmitted(): Promise<void> {
+  const originalFetch =
+    globalThis.fetch;
+  const reportTypes =
+    new Map<number, string>([
+      [301, "AD"],
+      [302, "AD_CONVERSION"],
+    ]);
+  let fetchCount = 0;
+
+  globalThis.fetch =
+    async (
+      input: string | URL | Request,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      fetchCount += 1;
+
+      const url = new URL(
+        input instanceof Request
+          ? input.url
+          : input.toString(),
+      );
+
+      if (
+        url.pathname ===
+          "/stat-reports" &&
+        init?.method === "GET"
+      ) {
+        return jsonResponse([
+          {
+            reportJobId: 301,
+            reportTp: "AD",
+            statDt: "2025-01-03",
+            status: "BUILT",
+            downloadUrl:
+              "https://api.searchad.naver.com/report-download?fileversion=301",
+            updateTm:
+              "2025-01-04T06:00:00+09:00",
+          },
+          {
+            reportJobId: 302,
+            reportTp:
+              "AD_CONVERSION",
+            statDt: "2025-01-03",
+            status: "BUILT",
+            downloadUrl:
+              "https://api.searchad.naver.com/report-download?fileversion=302",
+            updateTm:
+              "2025-01-04T06:00:00+09:00",
+          },
+        ]);
+      }
+
+      if (
+        url.pathname ===
+        "/report-download"
+      ) {
+        const reportJobId = Number(
+          url.searchParams.get(
+            "fileversion",
+          ),
+        );
+
+        return new Response(
+          reportTypes.get(reportJobId) ===
+            "AD_CONVERSION"
+            ? ZERO_IMPRESSION_CONVERSION_ROW
+            : ZERO_IMPRESSION_AD_ROW,
+          { status: 200 },
+        );
+      }
+
+      throw new Error(
+        `UNEXPECTED_FETCH:${url.pathname}`,
+      );
+    };
+
+  try {
+    const keyword =
+      await fetchNaverSearchAdsStatReportKeywordDailyStats({
+        credentials:
+          ZERO_IMPRESSION_CREDENTIALS,
+        keywordId:
+          "nkw-zero",
+        dateFrom:
+          "2025-01-03",
+        dateTo:
+          "2025-01-03",
+      });
+
+    const adgroup =
+      await fetchNaverSearchAdsStatReportAdgroupDailyStats({
+        credentials:
+          ZERO_IMPRESSION_CREDENTIALS,
+        entityId:
+          "grp-zero",
+        entityType:
+          "adgroup",
+        dateFrom:
+          "2025-01-03",
+        dateTo:
+          "2025-01-03",
+      });
+
+    equal(fetchCount, 3);
+    equal(keyword.records.length, 0);
+    equal(adgroup.records.length, 1);
+    equal(adgroup.records[0]?.impCnt, 0);
+    equal(adgroup.records[0]?.clkCnt, 2);
+    equal(adgroup.records[0]?.salesAmt, 300);
+    equal(adgroup.records[0]?.ccnt, 3);
+    equal(adgroup.records[0]?.convAmt, 400);
+  } finally {
+    globalThis.fetch =
+      originalFetch;
+  }
+}
+
 async function verifyFailedCacheCooldown(): Promise<void> {
   const originalFetch =
     globalThis.fetch;
@@ -537,6 +698,11 @@ async function main(): Promise<void> {
   await verifySharedReadyCache();
   console.log(
     "PASS: completed StatReports are reused and shared across keyword and adgroup lookups",
+  );
+
+  await verifyZeroImpressionKeywordsAreOmitted();
+  console.log(
+    "PASS: zero-impression WEB_SITE keyword days are omitted before staging while adgroup metrics remain unchanged",
   );
 
   await verifyFailedCacheCooldown();

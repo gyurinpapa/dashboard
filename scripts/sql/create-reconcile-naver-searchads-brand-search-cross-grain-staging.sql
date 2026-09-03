@@ -124,6 +124,7 @@ declare
   v_batch_blank_row_key_rows bigint := 0;
   v_batch_invalid_fingerprint_rows bigint := 0;
   v_batch_canonical_mismatch_rows bigint := 0;
+  v_batch_remaining_overlap_rows bigint := 0;
 
   v_excluded_rows bigint := 0;
   v_retained_rows bigint := 0;
@@ -156,7 +157,6 @@ declare
   v_batch_excluded_conversions numeric := 0;
   v_batch_excluded_revenue numeric := 0;
   v_affected_rows bigint := 0;
-  v_preservation_mismatch_rows bigint := 0;
 
   v_existing_source_rows bigint;
   v_existing_excluded_rows bigint;
@@ -874,36 +874,13 @@ begin
     end if;
 
     if v_cursor = v_source_rows then
-      select
-        count(staging.id)::bigint,
-        min(staging.row_index),
-        max(staging.row_index),
-        count(distinct staging.row_index)::bigint
-      into
-        v_source_rows,
-        v_min_row_index,
-        v_max_row_index,
-        v_distinct_row_indexes
-      from public.media_sync_staging_rows as staging
-      where staging.job_id = v_job_id;
-
-      if v_source_rows <> v_expected_rows
-         or v_distinct_row_indexes <> v_expected_rows
-         or (
-           v_expected_rows = 0
-           and (
-             v_min_row_index is not null
-             or v_max_row_index is not null
-           )
-         )
-         or (
-           v_expected_rows > 0
-           and (
-             v_min_row_index <> 0
-             or v_max_row_index <> v_expected_rows - 1
-           )
-         )
-         or v_source_scope_mismatch_rows <> 0
+      /*
+       * The unique (job_id, row_index) contract plus every bounded batch's
+       * contiguous min/max proof establishes the complete 0..N-1 range.
+       * Recounting and count(distinct) across the whole staging set here made
+       * an otherwise bounded step scale with multi-million-row jobs.
+       */
+      if v_source_scope_mismatch_rows <> 0
          or v_source_blank_row_key_rows <> 0
          or v_source_invalid_fingerprint_rows <> 0
          or v_source_canonical_mismatch_rows <> 0
@@ -1506,23 +1483,11 @@ begin
     if v_expected_rows<>v_source_rows or v_shifted_rows<>v_reindex_required_rows
        or v_deleted_rows<>v_excluded_rows or v_reindexed_rows<>v_reindex_required_rows
     then raise exception using errcode='P0001',message='NSBGR_RECONCILIATION_CONFLICT';end if;
-    select count(staging.id)::bigint,min(staging.row_index),max(staging.row_index),count(distinct staging.row_index)::bigint,
-      count(staging.id) filter(where staging.row_index>=v_reindex_offset)::bigint
-    into v_source_rows,v_min_row_index,v_max_row_index,v_distinct_row_indexes,v_preservation_mismatch_rows
-    from public.media_sync_staging_rows as staging where staging.job_id=v_job_id;
-    select count(*)::bigint into v_remaining_overlap_rows from public.media_sync_staging_rows as keyword_row
-    where keyword_row.job_id=v_job_id and keyword_row.row ->> 'row_level'='keyword' and keyword_row.row ->> 'data_level'='keyword'
-      and keyword_row.row ->> 'row_level_reason'='naver_searchad_registered_keyword_daily_stats'
-      and keyword_row.row #>> '{provider_meta,campaign_type}'='BRAND_SEARCH'
-      and exists(select 1 from public.media_sync_staging_rows as mixed_row where mixed_row.job_id=v_job_id
-        and mixed_row.row ->> 'row_level'='mixed' and mixed_row.row ->> 'data_level'='mixed'
-        and mixed_row.row ->> 'row_level_reason'='naver_searchad_brand_search_adgroup_daily_stats'
-        and mixed_row.row #>> '{provider_meta,campaign_type}'='BRAND_SEARCH'
-        and mixed_row.row #>> '{provider_meta,authoritative_grain}'='adgroup'
-        and nullif(btrim(mixed_row.row ->> 'external_campaign_id'),'')=nullif(btrim(keyword_row.row ->> 'external_campaign_id'),''));
-    if v_source_rows<>v_retained_rows or v_distinct_row_indexes<>v_retained_rows or v_min_row_index<>0
-       or v_max_row_index<>v_retained_rows-1 or v_preservation_mismatch_rows<>0 or v_remaining_overlap_rows<>0
-    then raise exception using errcode='P0001',message='NSBGR_POSTCONDITION_FAILED';end if;
+    /*
+     * The following retained-validation phase rechecks every surviving row in
+     * bounded row_index batches. Avoid a full-table recount and correlated
+     * BRAND_SEARCH overlap scan at this transition.
+     */
     v_work_phase:='retained_validation';v_cursor:=0;v_validated_rows:=0;
     v_work:=jsonb_build_object('kind',v_kind,'version',v_version,'phase',v_work_phase,
       'source_rows',(v_work ->> 'source_rows')::bigint,'excluded_rows',v_excluded_rows,'retained_rows',v_retained_rows,
@@ -1659,6 +1624,42 @@ begin
         message = 'NSBGR_POSTCONDITION_FAILED';
     end if;
 
+    select count(*)::bigint
+    into v_batch_remaining_overlap_rows
+    from (
+      select staging.row
+      from public.media_sync_staging_rows as staging
+      where staging.job_id = v_job_id
+        and staging.row_index >= v_cursor
+      order by staging.row_index, staging.row_key, staging.id
+      limit v_batch_size
+    ) as retained_batch
+    where retained_batch.row ->> 'row_level' = 'keyword'
+      and retained_batch.row ->> 'data_level' = 'keyword'
+      and retained_batch.row ->> 'row_level_reason' =
+          'naver_searchad_registered_keyword_daily_stats'
+      and retained_batch.row #>> '{provider_meta,campaign_type}' =
+          'BRAND_SEARCH'
+      and exists (
+        select 1
+        from jsonb_array_elements_text(
+          v_mixed_campaign_ids
+        ) as mixed_campaign(campaign_id)
+        where mixed_campaign.campaign_id =
+          nullif(
+            btrim(
+              retained_batch.row ->> 'external_campaign_id'
+            ),
+            ''
+          )
+      );
+
+    if v_batch_remaining_overlap_rows <> 0 then
+      raise exception using
+        errcode = 'P0001',
+        message = 'NSBGR_POSTCONDITION_FAILED';
+    end if;
+
     v_cursor :=
       v_cursor + v_batch_rows;
     v_validated_rows :=
@@ -1685,36 +1686,7 @@ begin
     end if;
 
     if v_cursor = v_retained_rows then
-      select
-        count(staging.id)::bigint,
-        min(staging.row_index),
-        max(staging.row_index),
-        count(distinct staging.row_index)::bigint
-      into
-        v_source_rows,
-        v_min_row_index,
-        v_max_row_index,
-        v_distinct_row_indexes
-      from public.media_sync_staging_rows as staging
-      where staging.job_id = v_job_id;
-
-      if v_source_rows <> v_retained_rows
-         or v_distinct_row_indexes <> v_retained_rows
-         or (
-           v_retained_rows = 0
-           and (
-             v_min_row_index is not null
-             or v_max_row_index is not null
-           )
-         )
-         or (
-           v_retained_rows > 0
-           and (
-             v_min_row_index <> 0
-             or v_max_row_index <> v_retained_rows - 1
-           )
-         )
-         or v_retained_scope_mismatch_rows <> 0
+      if v_retained_scope_mismatch_rows <> 0
          or v_retained_blank_row_key_rows <> 0
          or v_retained_invalid_fingerprint_rows <> 0
          or v_retained_canonical_mismatch_rows <> 0
@@ -1870,77 +1842,13 @@ begin
         message = 'NSBGR_POSTCONDITION_FAILED';
     end if;
 
-    select
-      count(staging.id)::bigint,
-      min(staging.row_index),
-      max(staging.row_index),
-      count(distinct staging.row_index)::bigint
-    into
-      v_source_rows,
-      v_min_row_index,
-      v_max_row_index,
-      v_distinct_row_indexes
-    from public.media_sync_staging_rows as staging
-    where staging.job_id = v_job_id;
-
-    select count(*)::bigint
-    into v_remaining_overlap_rows
-    from public.media_sync_staging_rows as keyword_row
-    where keyword_row.job_id = v_job_id
-      and keyword_row.row ->> 'row_level' = 'keyword'
-      and keyword_row.row ->> 'data_level' = 'keyword'
-      and keyword_row.row ->> 'row_level_reason' =
-          'naver_searchad_registered_keyword_daily_stats'
-      and keyword_row.row #>> '{provider_meta,campaign_type}' =
-          'BRAND_SEARCH'
-      and exists (
-        select 1
-        from public.media_sync_staging_rows as mixed_row
-        where mixed_row.job_id = v_job_id
-          and mixed_row.row ->> 'row_level' = 'mixed'
-          and mixed_row.row ->> 'data_level' = 'mixed'
-          and mixed_row.row ->> 'row_level_reason' =
-              'naver_searchad_brand_search_adgroup_daily_stats'
-          and mixed_row.row #>> '{provider_meta,campaign_type}' =
-              'BRAND_SEARCH'
-          and mixed_row.row #>> '{provider_meta,authoritative_grain}' =
-              'adgroup'
-          and nullif(
-                btrim(
-                  mixed_row.row ->> 'external_campaign_id'
-                ),
-                ''
-              ) =
-              nullif(
-                btrim(
-                  keyword_row.row ->> 'external_campaign_id'
-                ),
-                ''
-              )
-      );
-
-    if v_source_rows <> v_retained_rows
-       or v_distinct_row_indexes <> v_retained_rows
-       or (
-         v_retained_rows = 0
-         and (
-           v_min_row_index is not null
-           or v_max_row_index is not null
-         )
-       )
-       or (
-         v_retained_rows > 0
-         and (
-           v_min_row_index <> 0
-           or v_max_row_index <> v_retained_rows - 1
-         )
-       )
-       or v_remaining_overlap_rows <> 0
-    then
-      raise exception using
-        errcode = 'P0001',
-        message = 'NSBGR_POSTCONDITION_FAILED';
-    end if;
+    /*
+     * Source and retained validation already proved every row in bounded
+     * batches, including the absence of a remaining BRAND_SEARCH overlap.
+     * Finalization therefore commits only that completed proof instead of
+     * rescanning the entire staging set under a 60-second statement timeout.
+     */
+    v_remaining_overlap_rows := 0;
 
     v_reconciliation :=
       jsonb_build_object(

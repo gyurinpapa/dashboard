@@ -76,6 +76,28 @@ assert.match(
   "The SQL reconciliation default batch must be 500 rows.",
 );
 
+assert.equal(
+  (
+    reconciliationSql.match(
+      /count\s*\(\s*distinct\s+staging\.row_index\s*\)/gi,
+    ) ?? []
+  ).length,
+  1,
+  "In-progress reconciliation phase transitions must not recount every staging row.",
+);
+
+assert.match(
+  reconciliationSql,
+  /from\s*\([\s\S]*?where\s+staging\.job_id\s*=\s*v_job_id[\s\S]*?limit\s+v_batch_size[\s\S]*?\)\s+as\s+retained_batch[\s\S]*?jsonb_array_elements_text\s*\(\s*v_mixed_campaign_ids\s*\)/i,
+  "Retained BRAND_SEARCH overlap validation must remain batch-bounded.",
+);
+
+assert.match(
+  reconciliationSql,
+  /Finalization therefore commits only that completed proof instead of[\s\S]*?v_remaining_overlap_rows\s*:=\s*0\s*;/i,
+  "Finalization must not repeat the multi-million-row reconciliation scan.",
+);
+
 assert.match(
   reconciliationSql,
   /set\s+search_path\s+to\s+'pg_catalog',\s*'public',\s*'extensions'/i,
