@@ -46,6 +46,40 @@ const reconciliationSql =
     reconciliationSqlPath,
   );
 
+const repositoryPayload =
+  repository.match(
+    /const\s+payload\s*=\s*\{([\s\S]*?)\n\s*\};\n\n\s*const\s+invokeRpc/,
+  );
+
+assert.ok(
+  repositoryPayload,
+  "The reconciliation repository payload could not be located.",
+);
+
+assert.doesNotMatch(
+  repositoryPayload[1],
+  /\breport_id\s*:/,
+  "The worker payload must omit report_id; the locked job is report authority.",
+);
+
+assert.doesNotMatch(
+  reconciliationSql,
+  /p_payload\s*->>\s*'report_id'/i,
+  "The SQL function must not require report_id from the worker payload.",
+);
+
+assert.doesNotMatch(
+  reconciliationSql,
+  /v_report_id\s+is\s+null/i,
+  "The SQL input gate still treats payload report_id as required.",
+);
+
+assert.match(
+  reconciliationSql,
+  /where\s+media_job\.id\s*=\s*v_job_id[\s\S]*?for\s+update\s*;[\s\S]*?v_report_id\s*:=\s*v_job\.report_id\s*;/i,
+  "The SQL function must derive report authority from the locked job row.",
+);
+
 assert.match(
   repository,
   /const\s+DEFAULT_RECONCILIATION_BATCH_SIZE\s*=\s*500\s*;/,

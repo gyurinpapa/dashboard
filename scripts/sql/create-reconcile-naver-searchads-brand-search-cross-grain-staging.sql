@@ -184,12 +184,6 @@ begin
         ''
       )::uuid;
 
-    v_report_id :=
-      nullif(
-        btrim(p_payload ->> 'report_id'),
-        ''
-      )::uuid;
-
     v_workspace_id :=
       nullif(
         btrim(p_payload ->> 'workspace_id'),
@@ -253,7 +247,6 @@ begin
   end;
 
   if v_job_id is null
-     or v_report_id is null
      or v_workspace_id is null
      or v_advertiser_id is null
      or v_connection_id is null
@@ -288,6 +281,14 @@ begin
       errcode = 'P0001',
       message = 'NSBGR_JOB_NOT_FOUND';
   end if;
+
+  /*
+   * The locked job is the report authority. The worker intentionally omits
+   * report_id from the RPC payload so an untrusted duplicate scope value
+   * cannot compete with the authoritative job row.
+   */
+  v_report_id :=
+    v_job.report_id;
 
   if v_job.status <> 'processing' then
     raise exception using
