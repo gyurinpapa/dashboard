@@ -2216,6 +2216,20 @@ function shouldOverlapAuthoritativeCollection(
   }
 
   /*
+   * The production worker always supplies numeric safety defaults for
+   * maxKeywordStatsPerRun and maxAuthoritativeEntityStatsPerRun.
+   *
+   * A caller that has already distinguished those defaults from
+   * operator-specified bounded controls may explicitly opt in.
+   */
+  if (
+    options.enableAuthoritativeOverlap ===
+    true
+  ) {
+    return true;
+  }
+
+  /*
    * Existing dependency-injected fixtures retain the historical
    * serial lifecycle unless a dedicated overlap fixture explicitly
    * opts in.

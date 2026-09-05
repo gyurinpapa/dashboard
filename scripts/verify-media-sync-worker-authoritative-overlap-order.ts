@@ -720,6 +720,12 @@ async function runSuccessfulOverlapCase(
         enableAuthoritativeOverlap:
           true,
 
+        maxKeywordStatsPerRun:
+          1_000_000,
+
+        maxAuthoritativeEntityStatsPerRun:
+          1_000_000,
+
         orchestrationDependencies:
           orchestrationDependencies as
             never,
@@ -983,6 +989,12 @@ async function runKeywordPartialCancellationCase(
       {
         enableAuthoritativeOverlap:
           true,
+
+        maxKeywordStatsPerRun:
+          1_000_000,
+
+        maxAuthoritativeEntityStatsPerRun:
+          1_000_000,
 
         orchestrationDependencies:
           orchestrationDependencies as

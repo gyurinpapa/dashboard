@@ -145,6 +145,14 @@ type WorkerRuntimeOptions = {
   maxAuthoritativeEntityStatsPerRun?: number;
   maxAuthoritativeStatsRequestsPerRun?: number;
   maxAuthoritativeDiscoveryPagesPerRun?: number;
+
+  /**
+   * True only when no bounded-run environment variable was explicitly
+   * supplied by the operator. Runtime fallback safety limits alone do
+   * not disable authoritative overlap.
+   */
+  enableAuthoritativeOverlap: boolean;
+
   materializationBatchSize?: number;
 };
 
@@ -201,6 +209,30 @@ function readPositiveIntegerEnv(input: {
   }
 
   return numericValue;
+}
+
+function hasExplicitNaverBoundedRunEnvironment(): boolean {
+  const names = [
+    MAX_KEYWORD_STATS_PER_RUN_ENV,
+    MAX_STATS_REQUESTS_PER_RUN_ENV,
+    MAX_KEYWORD_DISCOVERY_PAGES_PER_RUN_ENV,
+    MAX_AUTHORITATIVE_ENTITY_STATS_PER_RUN_ENV,
+    MAX_AUTHORITATIVE_STATS_REQUESTS_PER_RUN_ENV,
+    MAX_AUTHORITATIVE_DISCOVERY_PAGES_PER_RUN_ENV,
+  ] as const;
+
+  return names.some(
+    (
+      name,
+    ) =>
+      String(
+        process.env[name] ??
+        "",
+      )
+        .trim()
+        .length >
+      0,
+  );
 }
 
 function readOptionalPositiveIntegerEnv(input: {
@@ -378,6 +410,9 @@ function readRuntimeOptions():
         MAX_AUTHORITATIVE_DISCOVERY_PAGES_PER_RUN_UPPER_BOUND,
     });
 
+  const enableAuthoritativeOverlap =
+    !hasExplicitNaverBoundedRunEnvironment();
+
   const materializationBatchSize =
     readOptionalPositiveIntegerEnv({
       name:
@@ -405,6 +440,7 @@ function readRuntimeOptions():
     maxAuthoritativeEntityStatsPerRun,
     maxAuthoritativeStatsRequestsPerRun,
     maxAuthoritativeDiscoveryPagesPerRun,
+    enableAuthoritativeOverlap,
     materializationBatchSize,
   };
 }
@@ -571,6 +607,12 @@ function logWorkerStart(
   console.log(
     `[${WORKER_NAME}] max authoritative discovery pages per run: ${
       formatOptionalLimit(options.maxAuthoritativeDiscoveryPagesPerRun)
+    }`,
+  );
+
+  console.log(
+    `[${WORKER_NAME}] authoritative overlap enabled: ${
+      options.enableAuthoritativeOverlap
     }`,
   );
 
@@ -896,6 +938,9 @@ async function processSingleJob(
 
       maxAuthoritativeDiscoveryPagesPerRun:
         options.maxAuthoritativeDiscoveryPagesPerRun,
+
+      enableAuthoritativeOverlap:
+        options.enableAuthoritativeOverlap,
 
       materializationBatchSize:
         options.materializationBatchSize,
