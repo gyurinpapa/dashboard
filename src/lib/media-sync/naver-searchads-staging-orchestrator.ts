@@ -117,6 +117,8 @@ export type NaverSearchAdsStagingOrchestratorInput = {
 
   maxKeywordDiscoveryPagesPerRun?: number;
 
+  deadlineAtMs?: number;
+
   signal?: AbortSignal;
 
   onRetry?:
@@ -997,6 +999,9 @@ export async function runNaverSearchAdsStagingOrchestrator(
       maxStatsRequestsPerRun,
 
       maxKeywordDiscoveryPagesPerRun,
+
+      deadlineAtMs:
+        input.deadlineAtMs,
 
       signal:
         input.signal,

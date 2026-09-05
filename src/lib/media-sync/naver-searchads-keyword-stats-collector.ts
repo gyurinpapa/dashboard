@@ -239,6 +239,8 @@ export type NaverKeywordStatsCollectorInput = {
   maxStatsRequestsPerRun?: number;
   maxKeywordDiscoveryPagesPerRun?: number;
 
+  deadlineAtMs?: number;
+
   signal?: AbortSignal;
 
   dependencies?: Partial<NaverKeywordStatsCollectorDependencies>;
@@ -247,7 +249,8 @@ export type NaverKeywordStatsCollectorInput = {
 export type NaverKeywordStatsCollectorPartialReason =
   | "max_keyword_stats_per_run_reached"
   | "max_stats_requests_per_run_reached"
-  | "max_keyword_discovery_pages_per_run_reached";
+  | "max_keyword_discovery_pages_per_run_reached"
+  | "claim_time_budget_reached";
 
 export type NaverKeywordStatsCollectorBaseResult = {
   cursor: NaverKeywordStatsCursor;
@@ -296,6 +299,8 @@ type NormalizedCollectorOptions = {
   maxKeywordStatsPerRun: number | null;
   maxStatsRequestsPerRun: number | null;
   maxKeywordDiscoveryPagesPerRun: number | null;
+  deadlineAtMs: number | null;
+  now: () => number;
 };
 
 type ResolvedCollectorDependencies =
@@ -540,6 +545,19 @@ function normalizeCollectorOptions(
         "maxKeywordDiscoveryPagesPerRun",
         NAVER_KEYWORD_DISCOVERY_MAX_PAGES_PER_RUN,
       ),
+
+    deadlineAtMs:
+      input.deadlineAtMs ===
+      undefined
+        ? null
+        : normalizeNonNegativeInteger(
+            input.deadlineAtMs,
+            "deadlineAtMs",
+          ),
+
+    now:
+      input.dependencies?.now ??
+      DEFAULT_COLLECTOR_DEPENDENCIES.now,
   };
 }
 
@@ -742,6 +760,15 @@ function getDiscoveryPagePartialReasonForCurrentRun(
   options: NormalizedCollectorOptions,
 ): NaverKeywordStatsCollectorPartialReason | null {
   if (
+    options.deadlineAtMs !==
+      null &&
+    options.now() >=
+      options.deadlineAtMs
+  ) {
+    return "claim_time_budget_reached";
+  }
+
+  if (
     options.maxKeywordDiscoveryPagesPerRun !== null &&
     getKeywordDiscoveryPagesRead(state) >=
       options.maxKeywordDiscoveryPagesPerRun
@@ -847,6 +874,15 @@ function getPartialReasonForCurrentRun(
   state: CollectorRuntimeState,
   options: NormalizedCollectorOptions,
 ): NaverKeywordStatsCollectorPartialReason | null {
+  if (
+    options.deadlineAtMs !==
+      null &&
+    options.now() >=
+      options.deadlineAtMs
+  ) {
+    return "claim_time_budget_reached";
+  }
+
   if (
     options.maxKeywordStatsPerRun !== null &&
     state.exactKeywordStatsCompletedInRun >=

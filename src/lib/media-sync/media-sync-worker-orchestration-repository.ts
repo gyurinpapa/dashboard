@@ -222,6 +222,22 @@ export type ProcessNaverMediaSyncJobOptions = {
   reconciliationStepsPerClaim?: number;
   materializationBatchSize?: number;
   jobTimeoutMs?: number;
+
+  /**
+   * Soft work budget for one claimed Naver execution.
+   *
+   * This is intentionally shorter than the hard watchdog.
+   * When reached, collectors return an ordinary resumable
+   * partial result at their next safe boundary.
+   */
+  claimWorkBudgetMs?: number;
+
+  /**
+   * Internal absolute deadline shared by keyword and
+   * authoritative collectors in the same claim.
+   */
+  claimWorkDeadlineAtMs?: number;
+
   signal?: AbortSignal;
 
   /**
@@ -570,6 +586,65 @@ function normalizeTimeoutMs(
     throw new MediaSyncWorkerOrchestrationError(
       "INVALID_INPUT",
       `jobTimeoutMs must be an integer between ${MIN_JOB_TIMEOUT_MS} and ${MAX_JOB_TIMEOUT_MS}.`,
+    );
+  }
+
+  return numericValue;
+}
+
+function normalizeClaimWorkBudgetMs(
+  value: unknown,
+  jobTimeoutMs: number,
+): number | null {
+  if (
+    value === undefined ||
+    value === null
+  ) {
+    return null;
+  }
+
+  const numericValue =
+    Number(value);
+
+  if (
+    !Number.isSafeInteger(
+      numericValue,
+    ) ||
+    numericValue < 1 ||
+    numericValue >=
+      jobTimeoutMs
+  ) {
+    throw new MediaSyncWorkerOrchestrationError(
+      "INVALID_INPUT",
+      `claimWorkBudgetMs must be a positive integer below jobTimeoutMs (${jobTimeoutMs}).`,
+    );
+  }
+
+  return numericValue;
+}
+
+function normalizeClaimWorkDeadlineAtMs(
+  value: unknown,
+): number | undefined {
+  if (
+    value === undefined ||
+    value === null
+  ) {
+    return undefined;
+  }
+
+  const numericValue =
+    Number(value);
+
+  if (
+    !Number.isSafeInteger(
+      numericValue,
+    ) ||
+    numericValue < 0
+  ) {
+    throw new MediaSyncWorkerOrchestrationError(
+      "INVALID_INPUT",
+      "claimWorkDeadlineAtMs must be a non-negative safe integer.",
     );
   }
 
@@ -2285,6 +2360,11 @@ export async function processClaimedNaverMediaSyncJob(
     job,
   );
 
+  const claimWorkDeadlineAtMs =
+    normalizeClaimWorkDeadlineAtMs(
+      options.claimWorkDeadlineAtMs,
+    );
+
   const dependencies =
     resolveOrchestrationDependencies(
       options.orchestrationDependencies,
@@ -2452,6 +2532,9 @@ export async function processClaimedNaverMediaSyncJob(
             maxDiscoveryPagesPerRun:
               options.maxAuthoritativeDiscoveryPagesPerRun,
 
+            deadlineAtMs:
+              claimWorkDeadlineAtMs,
+
             signal:
               abort.controller.signal,
 
@@ -2588,6 +2671,8 @@ export async function processClaimedNaverMediaSyncJob(
             options.maxStatsRequestsPerRun,
           maxKeywordDiscoveryPagesPerRun:
             options.maxKeywordDiscoveryPagesPerRun,
+          deadlineAtMs:
+            claimWorkDeadlineAtMs,
           signal:
             options.signal,
           onRetry:
@@ -2798,6 +2883,8 @@ export async function processClaimedNaverMediaSyncJob(
                 options.maxStatsRequestsPerRun,
               maxDiscoveryPagesPerRun:
                 options.maxAuthoritativeDiscoveryPagesPerRun,
+              deadlineAtMs:
+                claimWorkDeadlineAtMs,
               signal:
                 options.signal,
               onRetry:
@@ -3653,16 +3740,47 @@ export async function processNextNaverMediaSyncJob(
     return null;
   }
 
-  const timeoutMs = normalizeTimeoutMs(input.jobTimeoutMs);
-  const abortController = input.signal ? null : new AbortController();
+  const timeoutMs =
+    normalizeTimeoutMs(
+      input.jobTimeoutMs,
+    );
 
-  const processingInput: ProcessNaverMediaSyncJobOptions = {
-    ...input,
-    reconciliationStepsPerClaim:
-      input.reconciliationStepsPerClaim ??
-      DEFAULT_RECONCILIATION_STEPS_PER_CLAIM,
-    signal: input.signal ?? abortController?.signal,
-  };
+  const claimWorkBudgetMs =
+    normalizeClaimWorkBudgetMs(
+      input.claimWorkBudgetMs,
+      timeoutMs,
+    );
+
+  const claimWorkDeadlineAtMs =
+    input.claimWorkDeadlineAtMs ===
+    undefined
+      ? (
+          claimWorkBudgetMs ===
+          null
+            ? undefined
+            : Date.now() +
+              claimWorkBudgetMs
+        )
+      : normalizeClaimWorkDeadlineAtMs(
+          input.claimWorkDeadlineAtMs,
+        );
+
+  const abortController =
+    input.signal
+      ? null
+      : new AbortController();
+
+  const processingInput:
+    ProcessNaverMediaSyncJobOptions = {
+      ...input,
+      claimWorkDeadlineAtMs,
+      reconciliationStepsPerClaim:
+        input.reconciliationStepsPerClaim ??
+        DEFAULT_RECONCILIATION_STEPS_PER_CLAIM,
+      signal:
+        input.signal ??
+        abortController?.signal,
+    };
 
   try {
     return await withJobTimeout({

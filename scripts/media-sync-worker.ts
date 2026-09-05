@@ -37,6 +37,9 @@ const IDLE_EXIT_ENV =
 const JOB_TIMEOUT_MS_ENV =
   "MEDIA_SYNC_WORKER_JOB_TIMEOUT_MS";
 
+const CLAIM_WORK_BUDGET_MS_ENV =
+  "MEDIA_SYNC_WORKER_CLAIM_WORK_BUDGET_MS";
+
 const STALE_PROCESSING_MS_ENV =
   "MEDIA_SYNC_WORKER_STALE_PROCESSING_MS";
 
@@ -100,6 +103,15 @@ const MIN_JOB_TIMEOUT_MS =
 const MAX_JOB_TIMEOUT_MS =
   60 * 60 * 1_000;
 
+const MIN_CLAIM_WORK_BUDGET_MS =
+  5_000;
+
+const CLAIM_WORK_BUDGET_DEFAULT_RATIO =
+  2 / 3;
+
+const CLAIM_WORK_BUDGET_MAX_RATIO =
+  0.9;
+
 const MIN_STALE_PROCESSING_MS =
   5 * 60 * 1_000;
 
@@ -137,6 +149,7 @@ type WorkerRuntimeOptions = {
   pollIntervalMs: number;
   exitWhenIdle: boolean;
   jobTimeoutMs: number;
+  claimWorkBudgetMs: number;
   staleProcessingMs: number;
   requestIntervalMs: number;
   maxKeywordStatsPerRun?: number;
@@ -209,6 +222,38 @@ function readPositiveIntegerEnv(input: {
   }
 
   return numericValue;
+}
+
+function readClaimWorkBudgetMs(
+  jobTimeoutMs: number,
+): number {
+  const fallback =
+    Math.max(
+      MIN_CLAIM_WORK_BUDGET_MS,
+      Math.floor(
+        jobTimeoutMs *
+        CLAIM_WORK_BUDGET_DEFAULT_RATIO,
+      ),
+    );
+
+  const maximum =
+    Math.max(
+      MIN_CLAIM_WORK_BUDGET_MS,
+      Math.floor(
+        jobTimeoutMs *
+        CLAIM_WORK_BUDGET_MAX_RATIO,
+      ),
+    );
+
+  return readPositiveIntegerEnv({
+    name:
+      CLAIM_WORK_BUDGET_MS_ENV,
+    fallback,
+    min:
+      MIN_CLAIM_WORK_BUDGET_MS,
+    max:
+      maximum,
+  });
 }
 
 function hasExplicitNaverBoundedRunEnvironment(): boolean {
@@ -324,6 +369,11 @@ function readRuntimeOptions():
         MAX_JOB_TIMEOUT_MS,
     });
 
+  const claimWorkBudgetMs =
+    readClaimWorkBudgetMs(
+      jobTimeoutMs,
+    );
+
   const staleProcessingMs =
     readPositiveIntegerEnv({
       name:
@@ -432,6 +482,7 @@ function readRuntimeOptions():
     pollIntervalMs,
     exitWhenIdle,
     jobTimeoutMs,
+    claimWorkBudgetMs,
     staleProcessingMs,
     requestIntervalMs,
     maxKeywordStatsPerRun,
@@ -564,6 +615,10 @@ function logWorkerStart(
 
   console.log(
     `[${WORKER_NAME}] job timeout ms: ${options.jobTimeoutMs}`,
+  );
+
+  console.log(
+    `[${WORKER_NAME}] claim work budget ms: ${options.claimWorkBudgetMs}`,
   );
 
   console.log(
@@ -917,6 +972,9 @@ async function processSingleJob(
     await processNextNaverMediaSyncJob({
       jobTimeoutMs:
         options.jobTimeoutMs,
+
+      claimWorkBudgetMs:
+        options.claimWorkBudgetMs,
 
       requestIntervalMs:
         options.requestIntervalMs,

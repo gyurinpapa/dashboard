@@ -201,6 +201,7 @@ export type NaverAuthoritativeEntityStatsCollectorInput = {
   maxEntityStatsPerRun?: number;
   maxStatsRequestsPerRun?: number;
   maxDiscoveryPagesPerRun?: number;
+  deadlineAtMs?: number;
   signal?: AbortSignal;
   dependencies?: Partial<NaverAuthoritativeEntityStatsCollectorDependencies>;
 };
@@ -208,7 +209,8 @@ export type NaverAuthoritativeEntityStatsCollectorInput = {
 export type NaverAuthoritativeEntityStatsCollectorPartialReason =
   | "max_entity_stats_per_run_reached"
   | "max_stats_requests_per_run_reached"
-  | "max_discovery_pages_per_run_reached";
+  | "max_discovery_pages_per_run_reached"
+  | "claim_time_budget_reached";
 
 export type NaverAuthoritativeEntityStatsCollectorResult = {
   status: "completed" | "partial";
@@ -241,6 +243,8 @@ type Options = {
   maxEntityStatsPerRun: number | null;
   maxStatsRequestsPerRun: number | null;
   maxDiscoveryPagesPerRun: number | null;
+  deadlineAtMs: number | null;
+  now: () => number;
 };
 
 type ApiRequestResult<T> = {
@@ -404,6 +408,16 @@ function normalizeOptions(
       "maxDiscoveryPagesPerRun",
       MAX_DISCOVERY_PAGES_PER_RUN,
     ),
+    deadlineAtMs:
+      input.deadlineAtMs === undefined
+        ? null
+        : normalizeNonNegativeInteger(
+            input.deadlineAtMs,
+            "deadlineAtMs",
+          ),
+    now:
+      input.dependencies?.now ??
+      DEFAULT_DEPENDENCIES.now,
   };
 }
 
@@ -678,6 +692,15 @@ function currentPartialReason(
   options: Options,
 ): NaverAuthoritativeEntityStatsCollectorPartialReason | null {
   if (
+    options.deadlineAtMs !==
+      null &&
+    options.now() >=
+      options.deadlineAtMs
+  ) {
+    return "claim_time_budget_reached";
+  }
+
+  if (
     options.maxEntityStatsPerRun !== null &&
     state.entitiesCompletedInRun >= options.maxEntityStatsPerRun
   ) {
@@ -698,6 +721,15 @@ function discoveryPartialReason(
   state: RuntimeState,
   options: Options,
 ): NaverAuthoritativeEntityStatsCollectorPartialReason | null {
+  if (
+    options.deadlineAtMs !==
+      null &&
+    options.now() >=
+      options.deadlineAtMs
+  ) {
+    return "claim_time_budget_reached";
+  }
+
   if (
     options.maxDiscoveryPagesPerRun !== null &&
     state.campaignPagesRead + state.adgroupPagesRead + state.entityPagesRead >=

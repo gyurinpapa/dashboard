@@ -228,95 +228,177 @@ begin
       message = 'MSMM_SCOPE_MISMATCH: connection scope does not match the job';
   end if;
 
-  select
-    count(*)::bigint,
-    count(distinct s.row_index)::bigint,
+  /*
+   * Naver combined staging authority.
+   *
+   * Immediately before materialization, the Naver worker has already:
+   *
+   * 1) loaded a row-index-only whole-job base summary,
+   * 2) validated every staging row in bounded 2,000-row batches,
+   * 3) verified scope / row key / fingerprint / canonical grain,
+   * 4) loaded the base summary again,
+   * 5) rejected the result if the before/after summaries differ.
+   *
+   * append_media_sync_staging_batch() serializes on the same job row and
+   * staging append is service-role authority only. Once any snapshot or
+   * projection is established, append refuses further writes.
+   *
+   * Repeating the complete heap validation here therefore adds another O(n)
+   * scan after the exact combined validation has already succeeded.
+   *
+   * For Naver keep only indexed boundary witnesses. Because:
+   *
+   * - (job_id, row_index) is unique,
+   * - combined validation already proved totalRows = expectedRows,
+   * - combined validation already proved min = 0 / max = expectedRows - 1,
+   * - an additional successful append cannot create another in-range
+   *   row_index after that complete set exists,
+   *
+   * any newly inserted row would necessarily move the maximum boundary and
+   * fail this check.
+   *
+   * Google keeps the legacy complete validation below unchanged.
+   */
+  if v_provider = 'naver_searchad' then
+    select s.row_index
+      into v_min_row_index
+      from public.media_sync_staging_rows as s
+     where s.job_id = v_job_id
+     order by s.row_index asc
+     limit 1;
 
-    count(*) filter (
-      where s.row_index >= 0
-        and s.row_index < v_expected_rows
-    )::bigint,
+    select s.row_index
+      into v_max_row_index
+      from public.media_sync_staging_rows as s
+     where s.job_id = v_job_id
+     order by s.row_index desc
+     limit 1;
 
-    count(*) filter (
-      where s.report_id <> v_job.report_id
-         or s.workspace_id <> v_workspace_id
-         or s.advertiser_id <> v_advertiser_id
-         or s.connection_id <> v_connection_id
-         or s.provider <> v_provider
-         or s.external_account_id <> v_external_account_id
-         or s.date_from <> v_date_from
-         or s.date_to <> v_date_to
-         or s.date < v_date_from
-         or s.date > v_date_to
-    )::bigint,
+    if v_min_row_index is distinct from 0
+       or v_max_row_index
+            is distinct from
+            v_expected_rows - 1 then
+      raise exception using
+        message =
+          'MSMM_STAGING_INCOMPLETE: Naver staging boundary authority changed after combined validation';
+    end if;
 
-    count(*) filter (
-      where btrim(s.row_key) = ''
-    )::bigint,
+    v_total_rows :=
+      v_expected_rows;
 
-    count(*) filter (
-      where s.row_fingerprint is null
-         or s.row_fingerprint !~ '^[0-9a-f]{64}$'
-    )::bigint,
+    v_distinct_row_indexes :=
+      v_expected_rows;
 
-    count(*) filter (
-      where case
-        when v_provider = 'naver_searchad' then false
-        else (
-          jsonb_typeof(s.row) <> 'object'
-          or coalesce(s.row->>'date', '') <> s.date::text
-          or coalesce(s.row->>'report_date', '') <> s.date::text
-          or coalesce(s.row->>'day', '') <> s.date::text
-          or coalesce(s.row->>'ymd', '') <> s.date::text
-          or coalesce(s.row->>'channel', '') <> coalesce(s.channel, '')
-          or coalesce(s.row->>'device', '') <> coalesce(s.device, '')
-          or coalesce(s.row->>'source', '') <> coalesce(s.source, '')
-          or coalesce(s.row->>'provider', '') <> v_provider
-          or coalesce(s.row->>'external_account_id', '') <> v_external_account_id
-          or coalesce(s.row->>'ingestion_source', '') <> 'api'
-          or encode(
-               extensions.digest(
-                 pg_catalog.convert_to(s.row::text, 'UTF8'),
-                 'sha256'
-               ),
-               'hex'
-             ) <> s.row_fingerprint
-        )
-      end
-    )::bigint,
+    v_rows_in_expected_range :=
+      v_expected_rows;
 
-    min(s.row_index),
-    max(s.row_index),
+    v_scope_mismatch_rows := 0;
+    v_blank_row_key_rows := 0;
+    v_missing_fingerprint_rows := 0;
+    v_canonical_mismatch_rows := 0;
+    v_oversized_row_index_rows := 0;
 
-    count(*) filter (
-      where s.row_index > 2147483647
-    )::bigint
-  into
-    v_total_rows,
-    v_distinct_row_indexes,
-    v_rows_in_expected_range,
-    v_scope_mismatch_rows,
-    v_blank_row_key_rows,
-    v_missing_fingerprint_rows,
-    v_canonical_mismatch_rows,
-    v_min_row_index,
-    v_max_row_index,
-    v_oversized_row_index_rows
-  from public.media_sync_staging_rows as s
-  where s.job_id = v_job_id;
+  else
+    select
+      count(*)::bigint,
+      count(distinct s.row_index)::bigint,
 
-  if v_total_rows <> v_expected_rows
-     or v_distinct_row_indexes <> v_expected_rows
-     or v_rows_in_expected_range <> v_expected_rows
-     or v_scope_mismatch_rows <> 0
-     or v_blank_row_key_rows <> 0
-     or v_missing_fingerprint_rows <> 0
-     or v_canonical_mismatch_rows <> 0
-     or v_min_row_index <> 0
-     or v_max_row_index <> v_expected_rows - 1
-     or v_oversized_row_index_rows <> 0 then
-    raise exception using
-      message = 'MSMM_STAGING_INCOMPLETE: staging completeness verification failed';
+      count(*) filter (
+        where s.row_index >= 0
+          and s.row_index < v_expected_rows
+      )::bigint,
+
+      count(*) filter (
+        where s.report_id <> v_job.report_id
+           or s.workspace_id <> v_workspace_id
+           or s.advertiser_id <> v_advertiser_id
+           or s.connection_id <> v_connection_id
+           or s.provider <> v_provider
+           or s.external_account_id <> v_external_account_id
+           or s.date_from <> v_date_from
+           or s.date_to <> v_date_to
+           or s.date < v_date_from
+           or s.date > v_date_to
+      )::bigint,
+
+      count(*) filter (
+        where btrim(s.row_key) = ''
+      )::bigint,
+
+      count(*) filter (
+        where s.row_fingerprint is null
+           or s.row_fingerprint !~ '^[0-9a-f]{64}$'
+      )::bigint,
+
+      count(*) filter (
+        where case
+          when v_provider = 'naver_searchad' then false
+          else (
+            jsonb_typeof(s.row) <> 'object'
+            or coalesce(s.row->>'date', '') <> s.date::text
+            or coalesce(s.row->>'report_date', '') <> s.date::text
+            or coalesce(s.row->>'day', '') <> s.date::text
+            or coalesce(s.row->>'ymd', '') <> s.date::text
+            or coalesce(s.row->>'channel', '') <> coalesce(s.channel, '')
+            or coalesce(s.row->>'device', '') <> coalesce(s.device, '')
+            or coalesce(s.row->>'source', '') <> coalesce(s.source, '')
+            or coalesce(s.row->>'provider', '') <> v_provider
+            or coalesce(
+                 s.row->>'external_account_id',
+                 ''
+               ) <> v_external_account_id
+            or coalesce(
+                 s.row->>'ingestion_source',
+                 ''
+               ) <> 'api'
+            or encode(
+                 extensions.digest(
+                   pg_catalog.convert_to(
+                     s.row::text,
+                     'UTF8'
+                   ),
+                   'sha256'
+                 ),
+                 'hex'
+               ) <> s.row_fingerprint
+          )
+        end
+      )::bigint,
+
+      min(s.row_index),
+      max(s.row_index),
+
+      count(*) filter (
+        where s.row_index > 2147483647
+      )::bigint
+    into
+      v_total_rows,
+      v_distinct_row_indexes,
+      v_rows_in_expected_range,
+      v_scope_mismatch_rows,
+      v_blank_row_key_rows,
+      v_missing_fingerprint_rows,
+      v_canonical_mismatch_rows,
+      v_min_row_index,
+      v_max_row_index,
+      v_oversized_row_index_rows
+    from public.media_sync_staging_rows as s
+    where s.job_id = v_job_id;
+
+    if v_total_rows <> v_expected_rows
+       or v_distinct_row_indexes <> v_expected_rows
+       or v_rows_in_expected_range <> v_expected_rows
+       or v_scope_mismatch_rows <> 0
+       or v_blank_row_key_rows <> 0
+       or v_missing_fingerprint_rows <> 0
+       or v_canonical_mismatch_rows <> 0
+       or v_min_row_index <> 0
+       or v_max_row_index <> v_expected_rows - 1
+       or v_oversized_row_index_rows <> 0 then
+      raise exception using
+        message =
+          'MSMM_STAGING_INCOMPLETE: staging completeness verification failed';
+    end if;
   end if;
 
   /*

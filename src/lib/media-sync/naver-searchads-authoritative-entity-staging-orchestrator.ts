@@ -151,6 +151,9 @@ export type NaverSearchAdsAuthoritativeEntityStagingOrchestratorInput = {
   maxDiscoveryPagesPerRun?:
     number;
 
+  deadlineAtMs?:
+    number;
+
   dimensions?:
     NaverSearchAdsCanonicalDimensions;
 
@@ -867,6 +870,9 @@ export async function runNaverSearchAdsAuthoritativeEntityStagingOrchestrator(
       maxStatsRequestsPerRun,
 
       maxDiscoveryPagesPerRun,
+
+      deadlineAtMs:
+        input.deadlineAtMs,
 
       signal:
         input.signal,
