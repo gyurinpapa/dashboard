@@ -499,8 +499,8 @@ const verificationCases:
 
         assertEqual(
           rows.length,
-          2,
-          "SHOPPING canonical row count mismatch",
+          1,
+          "SHOPPING all-zero metric row must be omitted",
         );
 
         assertDeepEqual(
@@ -509,9 +509,8 @@ const verificationCases:
           ),
           [
             "2026-05-01",
-            "2026-05-02",
           ],
-          "SHOPPING rows must be sorted by date",
+          "SHOPPING all-zero date must be omitted",
         );
 
         const firstRow =
@@ -636,37 +635,69 @@ const verificationCases:
           "SHOPPING provider_meta grain mismatch",
         );
 
-        const nullMetricRow =
-          rows[1];
+      },
+    },
+    {
+      name:
+        "preserves SHOPPING zero-impression rows when another metric is non-zero",
+      run: () => {
+        const stats =
+          cloneFixture(
+            SHOPPING_STATS,
+          );
 
-        assertTrue(
-          nullMetricRow !== undefined,
-          "SHOPPING null metric row is missing.",
-        );
+        const metricRow =
+          getFirstRecord(
+            stats,
+          );
+
+        metricRow.impCnt = 0;
+        metricRow.clkCnt = 1;
+        metricRow.salesAmt = 0;
+        metricRow.ccnt = 0;
+        metricRow.convAmt = 0;
+
+        const rows =
+          convertNaverShoppingAdDailyStatsToCanonicalRows({
+            externalAccountId:
+              EXTERNAL_ACCOUNT_ID,
+            campaign:
+              cloneFixture(
+                SHOPPING_CAMPAIGN,
+              ),
+            adgroup:
+              cloneFixture(
+                SHOPPING_ADGROUP,
+              ),
+            ad:
+              cloneFixture(
+                SHOPPING_AD,
+              ),
+            stats,
+          });
+
         assertEqual(
-          nullMetricRow.impressions,
-          0,
-          "SHOPPING null impCnt must map to zero",
+          rows.length,
+          2,
+          "SHOPPING meaningful zero-impression row must be preserved",
         );
+
+        const preserved =
+          rows.find(
+            (row) =>
+              row.date === metricRow.date,
+          );
+
         assertEqual(
-          nullMetricRow.clicks,
+          preserved?.impressions,
           0,
-          "SHOPPING null clkCnt must map to zero",
+          "SHOPPING preserved row impressions mismatch",
         );
+
         assertEqual(
-          nullMetricRow.cost,
-          0,
-          "SHOPPING null salesAmt must map to zero",
-        );
-        assertEqual(
-          nullMetricRow.conversions,
-          0,
-          "SHOPPING null ccnt must map to zero",
-        );
-        assertEqual(
-          nullMetricRow.revenue,
-          0,
-          "SHOPPING null convAmt must map to zero",
+          preserved?.clicks,
+          1,
+          "SHOPPING preserved row clicks mismatch",
         );
       },
     },
@@ -1353,6 +1384,111 @@ const verificationCases:
             },
           );
         }
+      },
+    },
+    {
+      name:
+        "omits only completely empty BRAND_SEARCH rows",
+      run: () => {
+        const allZeroStats =
+          cloneFixture(
+            BRAND_SEARCH_STATS,
+          );
+
+        const allZeroRecord =
+          getFirstRecord(
+            allZeroStats,
+          );
+
+        allZeroRecord.impCnt = 0;
+        allZeroRecord.clkCnt = 0;
+        allZeroRecord.salesAmt = 0;
+        allZeroRecord.ccnt = 0;
+        allZeroRecord.convAmt = 0;
+
+        const omittedRows =
+          convertNaverBrandSearchAdgroupDailyStatsToCanonicalRows({
+            externalAccountId:
+              EXTERNAL_ACCOUNT_ID,
+            campaign:
+              cloneFixture(
+                BRAND_SEARCH_CAMPAIGN,
+              ),
+            adgroup:
+              cloneFixture(
+                BRAND_SEARCH_ADGROUP,
+              ),
+            stats:
+              allZeroStats,
+          });
+
+        assertEqual(
+          omittedRows.length,
+          1,
+          "BRAND_SEARCH completely empty row must be omitted",
+        );
+
+        assertTrue(
+          !omittedRows.some(
+            (row) =>
+              row.date ===
+              allZeroRecord.date,
+          ),
+          "BRAND_SEARCH omitted zero row must not remain",
+        );
+
+        const meaningfulStats =
+          cloneFixture(
+            BRAND_SEARCH_STATS,
+          );
+
+        const meaningfulRecord =
+          getFirstRecord(
+            meaningfulStats,
+          );
+
+        meaningfulRecord.impCnt = 0;
+
+        const preservedRows =
+          convertNaverBrandSearchAdgroupDailyStatsToCanonicalRows({
+            externalAccountId:
+              EXTERNAL_ACCOUNT_ID,
+            campaign:
+              cloneFixture(
+                BRAND_SEARCH_CAMPAIGN,
+              ),
+            adgroup:
+              cloneFixture(
+                BRAND_SEARCH_ADGROUP,
+              ),
+            stats:
+              meaningfulStats,
+          });
+
+        assertEqual(
+          preservedRows.length,
+          2,
+          "BRAND_SEARCH meaningful zero-impression row must be preserved",
+        );
+
+        const preserved =
+          preservedRows.find(
+            (row) =>
+              row.date ===
+              meaningfulRecord.date,
+          );
+
+        assertEqual(
+          preserved?.impressions,
+          0,
+          "BRAND_SEARCH preserved row impressions mismatch",
+        );
+
+        assertEqual(
+          preserved?.clicks,
+          meaningfulRecord.clkCnt,
+          "BRAND_SEARCH preserved row clicks changed",
+        );
       },
     },
     {

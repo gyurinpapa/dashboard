@@ -1124,7 +1124,7 @@ export function convertNaverShoppingAdDailyStatsToCanonicalRows(
     new Set<string>();
 
   const rows =
-    input.stats.records.map(
+    input.stats.records.flatMap(
       (record) => {
         const metrics =
           normalizeEntityStatsRecord({
@@ -1152,7 +1152,21 @@ export function convertNaverShoppingAdDailyStatsToCanonicalRows(
           metrics.date,
         );
 
-        return {
+        /*
+         * Preserve every meaningful metric row.
+         * Omit only a completely empty authoritative daily row.
+         */
+        if (
+          metrics.impressions === 0 &&
+          metrics.clicks === 0 &&
+          metrics.cost === 0 &&
+          metrics.conversions === 0 &&
+          metrics.revenue === 0
+        ) {
+          return [];
+        }
+
+        return [{
           date:
             metrics.date,
           report_date:
@@ -1238,7 +1252,7 @@ export function convertNaverShoppingAdDailyStatsToCanonicalRows(
               periodEnd:
                 record.periodEnd,
             }),
-        } satisfies EtrylueNormalizedMediaRow;
+        } satisfies EtrylueNormalizedMediaRow];
       },
     );
 
@@ -1318,7 +1332,7 @@ export function convertNaverBrandSearchAdgroupDailyStatsToCanonicalRows(
     new Set<string>();
 
   const rows =
-    input.stats.records.map(
+    input.stats.records.flatMap(
       (record) => {
         const metrics =
           normalizeEntityStatsRecord({
@@ -1346,7 +1360,21 @@ export function convertNaverBrandSearchAdgroupDailyStatsToCanonicalRows(
           metrics.date,
         );
 
-        return {
+        /*
+         * Preserve every meaningful metric row.
+         * Omit only a completely empty authoritative daily row.
+         */
+        if (
+          metrics.impressions === 0 &&
+          metrics.clicks === 0 &&
+          metrics.cost === 0 &&
+          metrics.conversions === 0 &&
+          metrics.revenue === 0
+        ) {
+          return [];
+        }
+
+        return [{
           date:
             metrics.date,
           report_date:
@@ -1428,7 +1456,7 @@ export function convertNaverBrandSearchAdgroupDailyStatsToCanonicalRows(
               periodEnd:
                 record.periodEnd,
             }),
-        } satisfies EtrylueNormalizedMediaRow;
+        } satisfies EtrylueNormalizedMediaRow];
       },
     );
 
