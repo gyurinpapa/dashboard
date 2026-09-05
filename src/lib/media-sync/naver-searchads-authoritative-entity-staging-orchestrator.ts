@@ -113,6 +113,20 @@ export type NaverSearchAdsAuthoritativeEntityStagingOrchestratorInput = {
   rowStartIndex:
     number;
 
+  /**
+   * Optional in-process authority gate for overlapped collection.
+   *
+   * Collection and canonical buffering may start immediately, but no
+   * authoritative staging row is written until this promise resolves
+   * to the exact absolute rowStartIndex established by the completed
+   * keyword checkpoint.
+   *
+   * Existing callers omit this field and retain the exact current
+   * synchronous rowStartIndex behavior.
+   */
+  deferredRowStartIndex?:
+    Promise<number>;
+
   dateWindowIndex?:
     number;
 
@@ -665,11 +679,38 @@ export async function runNaverSearchAdsAuthoritativeEntityStagingOrchestrator(
     input.job.external_account_id,
   );
 
-  const rowStartIndex =
+  const immediateRowStartIndex =
     normalizeNonNegativeInteger(
       input.rowStartIndex,
       "rowStartIndex",
     );
+
+  let rowStartIndexAuthority:
+    Promise<number> |
+    null =
+      null;
+
+  const resolveRowStartIndex =
+    (): Promise<number> => {
+      if (!rowStartIndexAuthority) {
+        rowStartIndexAuthority =
+          input.deferredRowStartIndex
+            ? input.deferredRowStartIndex.then(
+                (
+                  value,
+                ) =>
+                  normalizeNonNegativeInteger(
+                    value,
+                    "deferredRowStartIndex",
+                  ),
+              )
+            : Promise.resolve(
+                immediateRowStartIndex,
+              );
+      }
+
+      return rowStartIndexAuthority;
+    };
 
   const dateWindowIndex =
     input.dateWindowIndex ===
@@ -758,9 +799,22 @@ export async function runNaverSearchAdsAuthoritativeEntityStagingOrchestrator(
           rows,
           flushContext,
         ): Promise<void> => {
+          /*
+           * This await is the bounded backpressure seam.
+           *
+           * Until keyword staging has established its final row boundary,
+           * a full authoritative canonical batch remains buffered and the
+           * collector consumer does not return. Because the collector
+           * advances its cursor only after the consumer resolves, cursor
+           * authority cannot outrun confirmed staging.
+           */
+          const resolvedRowStartIndex =
+            await resolveRowStartIndex();
+
           const absoluteFlushContext =
             createAbsoluteFlushContext({
-              rowStartIndex,
+              rowStartIndex:
+                resolvedRowStartIndex,
               flushContext,
             });
 
@@ -877,6 +931,14 @@ export async function runNaverSearchAdsAuthoritativeEntityStagingOrchestrator(
       "The authoritative entity staging pipeline contains inconsistent buffer or append counts.",
     );
   }
+
+  /*
+   * Resolve the same authority even when the final batch contains fewer
+   * rows than stagingBatchSize. This keeps the result rowStartIndex and
+   * nextRowIndex bound to the exact keyword-completed boundary.
+   */
+  const rowStartIndex =
+    await resolveRowStartIndex();
 
   if (
     rowStartIndex >

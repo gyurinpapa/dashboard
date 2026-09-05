@@ -224,6 +224,19 @@ export type ProcessNaverMediaSyncJobOptions = {
   jobTimeoutMs?: number;
   signal?: AbortSignal;
 
+  /**
+   * Internal worker overlap switch.
+   *
+   * undefined:
+   * - production/default repositories => enabled when no explicit
+   *   bounded collector caps are supplied
+   * - dependency-injected verification => disabled
+   *
+   * This keeps existing DI/partial-resume fixtures byte-for-behavior
+   * compatible while allowing the real worker to overlap Naver reads.
+   */
+  enableAuthoritativeOverlap?: boolean;
+
   onRetry?:
     NaverSearchAdsStagingOrchestratorInput["onRetry"];
 
@@ -2046,6 +2059,196 @@ async function releaseCombinedPartial(input: {
   };
 }
 
+type DeferredAuthoritativeRowStartGate = {
+  promise:
+    Promise<number>;
+
+  resolve:
+    (value: number) => void;
+
+  reject:
+    (error: unknown) => void;
+};
+
+type LinkedAuthoritativeAbortController = {
+  controller:
+    AbortController;
+
+  cleanup:
+    () => void;
+};
+
+function createDeferredAuthoritativeRowStartGate():
+  DeferredAuthoritativeRowStartGate {
+  let settled =
+    false;
+
+  let resolvePromise:
+    ((value: number) => void) |
+    null =
+      null;
+
+  let rejectPromise:
+    ((reason?: unknown) => void) |
+    null =
+      null;
+
+  const promise =
+    new Promise<number>(
+      (
+        resolve,
+        reject,
+      ) => {
+        resolvePromise =
+          resolve;
+
+        rejectPromise =
+          reject;
+      },
+    );
+
+  /*
+   * A rejection handler is attached immediately so a fail-closed
+   * cancellation cannot surface as an unhandled rejection before
+   * the worker reaches the authoritative await boundary.
+   *
+   * Awaiting the original promise still receives the rejection.
+   */
+  void promise.catch(
+    () => undefined,
+  );
+
+  return {
+    promise,
+
+    resolve:
+      (
+        value,
+      ): void => {
+        if (settled) {
+          return;
+        }
+
+        settled =
+          true;
+
+        resolvePromise?.(
+          value,
+        );
+      },
+
+    reject:
+      (
+        error,
+      ): void => {
+        if (settled) {
+          return;
+        }
+
+        settled =
+          true;
+
+        rejectPromise?.(
+          error instanceof Error
+            ? error
+            : new Error(
+                "The deferred authoritative row start was cancelled.",
+              ),
+        );
+      },
+  };
+}
+
+function createLinkedAuthoritativeAbortController(
+  parentSignal:
+    AbortSignal |
+    undefined,
+): LinkedAuthoritativeAbortController {
+  const controller =
+    new AbortController();
+
+  const handleParentAbort =
+    (): void => {
+      if (
+        !controller.signal.aborted
+      ) {
+        controller.abort();
+      }
+    };
+
+  if (parentSignal) {
+    if (parentSignal.aborted) {
+      handleParentAbort();
+    } else {
+      parentSignal.addEventListener(
+        "abort",
+        handleParentAbort,
+        {
+          once:
+            true,
+        },
+      );
+    }
+  }
+
+  return {
+    controller,
+
+    cleanup:
+      (): void => {
+        parentSignal?.removeEventListener(
+          "abort",
+          handleParentAbort,
+        );
+      },
+  };
+}
+
+function shouldOverlapAuthoritativeCollection(
+  options:
+    ProcessNaverMediaSyncJobOptions,
+): boolean {
+  if (
+    options.enableAuthoritativeOverlap ===
+    false
+  ) {
+    return false;
+  }
+
+  /*
+   * Existing dependency-injected fixtures retain the historical
+   * serial lifecycle unless a dedicated overlap fixture explicitly
+   * opts in.
+   */
+  if (
+    options.enableAuthoritativeOverlap ===
+      undefined &&
+    options.orchestrationDependencies !==
+      undefined
+  ) {
+    return false;
+  }
+
+  /*
+   * Explicit bounded-run controls own partial/resume semantics.
+   * Do not perform speculative authoritative work in those runs.
+   */
+  return (
+    options.maxKeywordStatsPerRun ===
+      undefined &&
+    options.maxStatsRequestsPerRun ===
+      undefined &&
+    options.maxKeywordDiscoveryPagesPerRun ===
+      undefined &&
+    options.maxAuthoritativeEntityStatsPerRun ===
+      undefined &&
+    options.maxAuthoritativeStatsRequestsPerRun ===
+      undefined &&
+    options.maxAuthoritativeDiscoveryPagesPerRun ===
+      undefined
+  );
+}
+
 /**
  * 이미 processing으로 점유된 Naver media_sync_job 1개를 처리한다.
  *
@@ -2137,10 +2340,206 @@ export async function processClaimedNaverMediaSyncJob(
     null =
       null;
 
+  const authoritativeOverlapState:
+    {
+      current:
+        {
+          gate:
+            DeferredAuthoritativeRowStartGate;
+
+          abort:
+            LinkedAuthoritativeAbortController;
+
+          promise:
+            Promise<
+              NaverSearchAdsAuthoritativeEntityStagingOrchestratorResult
+            >;
+        } |
+        null;
+    } = {
+      current:
+        null,
+    };
+
+  const startAuthoritativeOverlap =
+    (): void => {
+      if (
+        authoritativeOverlapState.current ||
+        checkpoint.phase !==
+          "keyword" ||
+        !shouldOverlapAuthoritativeCollection(
+          options,
+        )
+      ) {
+        return;
+      }
+
+      const gate =
+        createDeferredAuthoritativeRowStartGate();
+
+      const abort =
+        createLinkedAuthoritativeAbortController(
+          options.signal,
+        );
+
+      logStage({
+        job:
+          checkpointJob,
+        stage:
+          "staging:authoritative:prefetch-start",
+        detail:
+          `rowStart=deferred seed=${checkpoint.nextRowIndex}`,
+      });
+
+      const promise =
+        dependencies
+          .runAuthoritativeStaging({
+            job:
+              checkpointJob,
+            credentials:
+              context.credentials,
+
+            /*
+             * The immediate value is only a validated seed.
+             * The authoritative orchestrator must use
+             * deferredRowStartIndex before its first staging write
+             * and again for its returned row boundary.
+             */
+            rowStartIndex:
+              checkpoint.nextRowIndex,
+
+            deferredRowStartIndex:
+              gate.promise,
+
+            dateWindowIndex:
+              checkpoint.dateWindowIndex,
+
+            cursor:
+              checkpoint.authoritative
+                .cursor ??
+              undefined,
+
+            stagingBatchSize:
+              options.stagingBatchSize,
+
+            requestIntervalMs:
+              options.requestIntervalMs,
+
+            maxRetryCount:
+              options.maxRetryCount,
+
+            maxEntityStatsPerRun:
+              options.maxAuthoritativeEntityStatsPerRun,
+
+            maxStatsRequestsPerRun:
+              options.maxAuthoritativeStatsRequestsPerRun ??
+              options.maxStatsRequestsPerRun,
+
+            maxDiscoveryPagesPerRun:
+              options.maxAuthoritativeDiscoveryPagesPerRun,
+
+            signal:
+              abort.controller.signal,
+
+            onRetry:
+              options.onAuthoritativeRetry,
+
+            onCollectorProgress:
+              async (
+                event:
+                  NaverAuthoritativeEntityStatsCollectorProgressEvent,
+              ): Promise<void> => {
+                logAuthoritativeCollectorProgress({
+                  job:
+                    checkpointJob,
+                  event,
+                });
+              },
+
+            collectorDependencies:
+              options.authoritativeDependencies,
+
+            stagingRepositoryDependencies:
+              options.authoritativeStagingRepositoryDependencies,
+          });
+
+      /*
+       * Attach handling immediately; the original promise remains
+       * awaitable and retains its success/failure semantics.
+       */
+      void promise.catch(
+        () => undefined,
+      );
+
+      authoritativeOverlapState.current = {
+        gate,
+        abort,
+        promise,
+      };
+    };
+
+  const stopAuthoritativeOverlap =
+    async (
+      reason:
+        unknown,
+    ): Promise<void> => {
+      const active =
+        authoritativeOverlapState.current;
+
+      if (!active) {
+        return;
+      }
+
+      if (
+        !active.abort.controller.signal.aborted
+      ) {
+        active.abort.controller.abort();
+      }
+
+      active.gate.reject(
+        reason,
+      );
+
+      await active.promise.catch(
+        () => undefined,
+      );
+
+      active.abort.cleanup();
+
+      if (
+        authoritativeOverlapState.current ===
+        active
+      ) {
+        authoritativeOverlapState.current =
+          null;
+      }
+    };
+
+  const completeAuthoritativeOverlap =
+    (): void => {
+      const active =
+        authoritativeOverlapState.current;
+
+      if (!active) {
+        return;
+      }
+
+      active.abort.cleanup();
+
+      if (
+        authoritativeOverlapState.current ===
+        active
+      ) {
+        authoritativeOverlapState.current =
+          null;
+      }
+    };
+
   if (
     checkpoint.phase ===
     "keyword"
   ) {
+    startAuthoritativeOverlap();
     try {
       logStage({
         job:
@@ -2194,6 +2593,10 @@ export async function processClaimedNaverMediaSyncJob(
             options.dependencies,
         });
     } catch (error) {
+      await stopAuthoritativeOverlap(
+        error,
+      );
+
       if (
         error instanceof
         NaverSearchAdsStagingOrchestratorError
@@ -2212,15 +2615,23 @@ export async function processClaimedNaverMediaSyncJob(
       );
     }
 
-    checkpoint =
-      createCombinedCheckpointFromKeywordResult({
-        job:
-          checkpointJob,
-        previous:
-          checkpoint,
-        result:
-          keyword,
-      });
+    try {
+      checkpoint =
+        createCombinedCheckpointFromKeywordResult({
+          job:
+            checkpointJob,
+          previous:
+            checkpoint,
+          result:
+            keyword,
+        });
+    } catch (error) {
+      await stopAuthoritativeOverlap(
+        error,
+      );
+
+      throw error;
+    }
 
     try {
       checkpointJob =
@@ -2234,6 +2645,10 @@ export async function processClaimedNaverMediaSyncJob(
             options.combinedCheckpointDependencies,
           );
     } catch (error) {
+      await stopAuthoritativeOverlap(
+        error,
+      );
+
       if (
         error instanceof
         MediaSyncCombinedProcessingCheckpointError
@@ -2252,6 +2667,21 @@ export async function processClaimedNaverMediaSyncJob(
       );
     }
 
+    const pendingAuthoritativeOverlap =
+      authoritativeOverlapState.current;
+
+    if (
+      pendingAuthoritativeOverlap &&
+      keyword.status !==
+        "partial"
+    ) {
+      pendingAuthoritativeOverlap
+        .gate
+        .resolve(
+          checkpoint.nextRowIndex,
+        );
+    }
+
     logStage({
       job:
         checkpointJob,
@@ -2268,6 +2698,12 @@ export async function processClaimedNaverMediaSyncJob(
       keyword.status ===
       "partial"
     ) {
+      await stopAuthoritativeOverlap(
+        new Error(
+          "Keyword staging returned partial; authoritative overlap was cancelled before staging authority.",
+        ),
+      );
+
       return releaseCombinedPartial({
         job:
           context.job,
@@ -2290,64 +2726,90 @@ export async function processClaimedNaverMediaSyncJob(
     "authoritative"
   ) {
     try {
-      logStage({
-        job:
-          checkpointJob,
-        stage:
-          "staging:authoritative:start",
-        detail:
-          `rowStart=${checkpoint.nextRowIndex}`,
-      });
+      const activeAuthoritativeOverlap =
+        authoritativeOverlapState.current;
 
-      authoritative =
-        await dependencies
-          .runAuthoritativeStaging({
-            job:
-              checkpointJob,
-            credentials:
-              context.credentials,
-            rowStartIndex:
-              checkpoint.nextRowIndex,
-            dateWindowIndex:
-              checkpoint.dateWindowIndex,
-            cursor:
-              checkpoint.authoritative
-                .cursor ??
-              undefined,
-            stagingBatchSize:
-              options.stagingBatchSize,
-            requestIntervalMs:
-              options.requestIntervalMs,
-            maxRetryCount:
-              options.maxRetryCount,
-            maxEntityStatsPerRun:
-              options.maxAuthoritativeEntityStatsPerRun,
-            maxStatsRequestsPerRun:
-              options.maxAuthoritativeStatsRequestsPerRun ??
-              options.maxStatsRequestsPerRun,
-            maxDiscoveryPagesPerRun:
-              options.maxAuthoritativeDiscoveryPagesPerRun,
-            signal:
-              options.signal,
-            onRetry:
-              options.onAuthoritativeRetry,
-            onCollectorProgress:
-              async (
-                event:
-                  NaverAuthoritativeEntityStatsCollectorProgressEvent,
-              ): Promise<void> => {
-                logAuthoritativeCollectorProgress({
-                  job:
-                    checkpointJob,
-                  event,
-                });
-              },
-            collectorDependencies:
-              options.authoritativeDependencies,
-            stagingRepositoryDependencies:
-              options.authoritativeStagingRepositoryDependencies,
-          });
+      if (
+        activeAuthoritativeOverlap
+      ) {
+        logStage({
+          job:
+            checkpointJob,
+          stage:
+            "staging:authoritative:start",
+          detail:
+            `rowStart=${checkpoint.nextRowIndex} overlap=true`,
+        });
+
+        authoritative =
+          await activeAuthoritativeOverlap
+            .promise;
+
+        completeAuthoritativeOverlap();
+      } else {
+        logStage({
+          job:
+            checkpointJob,
+          stage:
+            "staging:authoritative:start",
+          detail:
+            `rowStart=${checkpoint.nextRowIndex}`,
+        });
+
+        authoritative =
+          await dependencies
+            .runAuthoritativeStaging({
+              job:
+                checkpointJob,
+              credentials:
+                context.credentials,
+              rowStartIndex:
+                checkpoint.nextRowIndex,
+              dateWindowIndex:
+                checkpoint.dateWindowIndex,
+              cursor:
+                checkpoint.authoritative
+                  .cursor ??
+                undefined,
+              stagingBatchSize:
+                options.stagingBatchSize,
+              requestIntervalMs:
+                options.requestIntervalMs,
+              maxRetryCount:
+                options.maxRetryCount,
+              maxEntityStatsPerRun:
+                options.maxAuthoritativeEntityStatsPerRun,
+              maxStatsRequestsPerRun:
+                options.maxAuthoritativeStatsRequestsPerRun ??
+                options.maxStatsRequestsPerRun,
+              maxDiscoveryPagesPerRun:
+                options.maxAuthoritativeDiscoveryPagesPerRun,
+              signal:
+                options.signal,
+              onRetry:
+                options.onAuthoritativeRetry,
+              onCollectorProgress:
+                async (
+                  event:
+                    NaverAuthoritativeEntityStatsCollectorProgressEvent,
+                ): Promise<void> => {
+                  logAuthoritativeCollectorProgress({
+                    job:
+                      checkpointJob,
+                    event,
+                  });
+                },
+              collectorDependencies:
+                options.authoritativeDependencies,
+              stagingRepositoryDependencies:
+                options.authoritativeStagingRepositoryDependencies,
+            });
+      }
     } catch (error) {
+      await stopAuthoritativeOverlap(
+        error,
+      );
+
       if (
         error instanceof
         NaverSearchAdsAuthoritativeEntityStagingOrchestratorError
@@ -2363,6 +2825,13 @@ export async function processClaimedNaverMediaSyncJob(
         "STAGING_FAILED",
         "The Naver authoritative staging phase failed unexpectedly.",
         error,
+      );
+    }
+
+    if (!authoritative) {
+      throw new MediaSyncWorkerOrchestrationError(
+        "STAGING_FAILED",
+        "The Naver authoritative staging phase completed without a result.",
       );
     }
 
