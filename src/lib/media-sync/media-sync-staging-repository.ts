@@ -40,8 +40,8 @@ const MAX_BATCH_SIZE = 10_000;
 const STAGING_RPC_STATEMENT_TIMEOUT_POSTGRES_CODE =
   "57014" as const;
 
-const STAGING_RPC_STATEMENT_TIMEOUT_RETRY_DELAY_MS =
-  250;
+const STAGING_RPC_RETRY_DELAY_MS =
+  500;
 
 const FORBIDDEN_SECRET_KEY_PATTERN =
   /secret|token|credential|ciphertext|accesslicense|authorization|password|api[_-]?key/i;
@@ -149,7 +149,7 @@ function isPlainObject(
   );
 }
 
-function isPostgresStatementTimeout(
+function isRetryableStagingRpcFailure(
   error: unknown,
 ): boolean {
   if (!isPlainObject(error)) {
@@ -175,12 +175,23 @@ function isPostgresStatementTimeout(
     .join(" ")
     .toLowerCase();
 
-  return (
-    postgresCode ===
-      STAGING_RPC_STATEMENT_TIMEOUT_POSTGRES_CODE &&
+  const postgresStatementTimeout =
+    (
+      postgresCode ===
+        STAGING_RPC_STATEMENT_TIMEOUT_POSTGRES_CODE &&
+      message.includes(
+        "statement timeout",
+      )
+    );
+
+  const upstreamRequestTimeout =
     message.includes(
-      "statement timeout",
-    )
+      "upstream request timeout",
+    );
+
+  return (
+    postgresStatementTimeout ||
+    upstreamRequestTimeout
   );
 }
 
@@ -1273,7 +1284,7 @@ function resolveRetryWait(
   return dependencies.wait;
 }
 
-async function invokeStagingRpcWithStatementTimeoutRetry(input: {
+async function invokeStagingRpcWithTransientRetry(input: {
   invokeRpc: MediaSyncStagingRepositoryRpcInvoker;
   wait: MediaSyncStagingRepositoryWait;
   args: {
@@ -1282,7 +1293,7 @@ async function invokeStagingRpcWithStatementTimeoutRetry(input: {
 }): Promise<MediaSyncStagingRepositoryRpcResult> {
   for (
     let attempt = 0;
-    attempt < 2;
+    attempt < 3;
     attempt += 1
   ) {
     let result:
@@ -1295,13 +1306,13 @@ async function invokeStagingRpcWithStatementTimeoutRetry(input: {
       );
     } catch (error) {
       if (
-        attempt === 0 &&
-        isPostgresStatementTimeout(
+        attempt < 2 &&
+        isRetryableStagingRpcFailure(
           error,
         )
       ) {
         await input.wait(
-          STAGING_RPC_STATEMENT_TIMEOUT_RETRY_DELAY_MS,
+          STAGING_RPC_RETRY_DELAY_MS,
         );
 
         continue;
@@ -1315,13 +1326,13 @@ async function invokeStagingRpcWithStatementTimeoutRetry(input: {
     }
 
     if (
-      attempt === 0 &&
-      isPostgresStatementTimeout(
+      attempt < 2 &&
+      isRetryableStagingRpcFailure(
         result.error,
       )
     ) {
       await input.wait(
-        STAGING_RPC_STATEMENT_TIMEOUT_RETRY_DELAY_MS,
+        STAGING_RPC_RETRY_DELAY_MS,
       );
 
       continue;
@@ -1491,7 +1502,7 @@ export async function appendMediaSyncStagingBatch(
   };
 
   const result =
-    await invokeStagingRpcWithStatementTimeoutRetry({
+    await invokeStagingRpcWithTransientRetry({
       invokeRpc,
       wait,
       args:
