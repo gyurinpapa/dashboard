@@ -17,6 +17,15 @@ const VALIDATE_NAVER_SEARCH_ADS_COMBINED_STAGING_BATCH_RPC =
 const NAVER_SEARCH_ADS_COMBINED_VALIDATION_BATCH_SIZE =
   2_000;
 
+const NAVER_SEARCH_ADS_COMBINED_READ_RPC_MAX_ATTEMPTS =
+  3;
+
+const NAVER_SEARCH_ADS_COMBINED_READ_RPC_RETRY_DELAY_MS =
+  500;
+
+const POSTGRES_STATEMENT_TIMEOUT_CODE =
+  "57014" as const;
+
 const NAVER_SEARCH_ADS_PROVIDER =
   "naver_searchad" as const;
 
@@ -114,6 +123,10 @@ export type NaverSearchAdsCombinedStagingSummaryDependencies = {
     data: unknown;
     error: unknown;
   }>;
+
+  wait?: (
+    delayMs: number,
+  ) => Promise<void>;
 };
 
 const defaultNaverSearchAdsCombinedStagingSummaryDependencies:
@@ -236,6 +249,175 @@ function isPlainObject(
   return (
     prototype === Object.prototype ||
     prototype === null
+  );
+}
+
+function getCombinedReadRpcFailureText(
+  error: unknown,
+): {
+  code: string;
+  message: string;
+} {
+  const record =
+    error !== null &&
+    typeof error === "object"
+      ? error as Record<string, unknown>
+      : null;
+
+  const code =
+    record &&
+    typeof record.code === "string"
+      ? record.code
+      : "";
+
+  const messageParts = [
+    error instanceof Error
+      ? error.message
+      : "",
+    record &&
+    typeof record.message === "string"
+      ? record.message
+      : "",
+    record &&
+    typeof record.details === "string"
+      ? record.details
+      : "",
+    record &&
+    typeof record.hint === "string"
+      ? record.hint
+      : "",
+  ];
+
+  return {
+    code,
+    message:
+      messageParts
+        .join(" ")
+        .toLowerCase(),
+  };
+}
+
+function isRetryableCombinedReadRpcFailure(
+  error: unknown,
+): boolean {
+  const {
+    code,
+    message,
+  } =
+    getCombinedReadRpcFailureText(
+      error,
+    );
+
+  const postgresStatementTimeout =
+    code ===
+      POSTGRES_STATEMENT_TIMEOUT_CODE &&
+    message.includes(
+      "statement timeout",
+    );
+
+  const upstreamRequestTimeout =
+    message.includes(
+      "upstream request timeout",
+    );
+
+  return (
+    postgresStatementTimeout ||
+    upstreamRequestTimeout
+  );
+}
+
+async function waitForCombinedReadRpcRetry(
+  dependencies:
+    NaverSearchAdsCombinedStagingSummaryDependencies,
+): Promise<void> {
+  if (dependencies.wait) {
+    await dependencies.wait(
+      NAVER_SEARCH_ADS_COMBINED_READ_RPC_RETRY_DELAY_MS,
+    );
+
+    return;
+  }
+
+  await new Promise<void>(
+    (resolve) => {
+      setTimeout(
+        resolve,
+        NAVER_SEARCH_ADS_COMBINED_READ_RPC_RETRY_DELAY_MS,
+      );
+    },
+  );
+}
+
+async function invokeNaverCombinedReadRpcWithTransientRetry(
+  dependencies:
+    NaverSearchAdsCombinedStagingSummaryDependencies,
+  functionName: string,
+  args: {
+    p_payload:
+      Record<string, unknown>;
+  },
+): Promise<{
+  data: unknown;
+  error: unknown;
+}> {
+  for (
+    let attempt = 0;
+    attempt <
+      NAVER_SEARCH_ADS_COMBINED_READ_RPC_MAX_ATTEMPTS;
+    attempt += 1
+  ) {
+    let result: {
+      data: unknown;
+      error: unknown;
+    };
+
+    try {
+      result =
+        await dependencies.invokeRpc(
+          functionName,
+          args,
+        );
+    } catch (error) {
+      if (
+        attempt <
+          NAVER_SEARCH_ADS_COMBINED_READ_RPC_MAX_ATTEMPTS -
+            1 &&
+        isRetryableCombinedReadRpcFailure(
+          error,
+        )
+      ) {
+        await waitForCombinedReadRpcRetry(
+          dependencies,
+        );
+
+        continue;
+      }
+
+      throw error;
+    }
+
+    if (
+      result.error &&
+      attempt <
+        NAVER_SEARCH_ADS_COMBINED_READ_RPC_MAX_ATTEMPTS -
+          1 &&
+      isRetryableCombinedReadRpcFailure(
+        result.error,
+      )
+    ) {
+      await waitForCombinedReadRpcRetry(
+        dependencies,
+      );
+
+      continue;
+    }
+
+    return result;
+  }
+
+  throw new MediaSyncStagingSummaryError(
+    "DATABASE_ERROR",
+    "The combined Naver Search Ads read RPC retry loop terminated unexpectedly.",
   );
 }
 
@@ -1620,7 +1802,8 @@ export async function getNaverSearchAdsCombinedStagingSummary(
 
       try {
         result =
-          await dependencies.invokeRpc(
+          await invokeNaverCombinedReadRpcWithTransientRetry(
+            dependencies,
             SUMMARIZE_NAVER_SEARCH_ADS_COMBINED_STAGING_BASE_RPC,
             {
               p_payload:
@@ -1710,7 +1893,8 @@ export async function getNaverSearchAdsCombinedStagingSummary(
 
     try {
       result =
-        await dependencies.invokeRpc(
+        await invokeNaverCombinedReadRpcWithTransientRetry(
+          dependencies,
           VALIDATE_NAVER_SEARCH_ADS_COMBINED_STAGING_BATCH_RPC,
           {
             p_payload:

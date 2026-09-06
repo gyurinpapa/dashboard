@@ -22,6 +22,15 @@ const PROCESSING_STATUS =
 const DONE_STATUS =
   "done" as const;
 
+const NAVER_LIFECYCLE_TRANSIENT_MAX_ATTEMPTS =
+  3;
+
+const NAVER_LIFECYCLE_TRANSIENT_RETRY_DELAY_MS =
+  500;
+
+const POSTGRES_STATEMENT_TIMEOUT_CODE =
+  "57014" as const;
+
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -59,9 +68,29 @@ export class MediaSyncFinalizationError extends Error {
   }
 }
 
+export type MediaSyncFinalizationDependencies = {
+  invokeRpc?: (
+    functionName: string,
+    args: {
+      p_payload:
+        Record<string, unknown>;
+    },
+  ) => Promise<{
+    data: unknown;
+    error: unknown;
+  }>;
+
+  wait?: (
+    delayMs: number,
+  ) => Promise<void>;
+};
+
 export type FinalizeMediaSyncJobInput = {
   job: MediaSyncJobRecord;
   expectedRows: number;
+
+  dependencies?:
+    MediaSyncFinalizationDependencies;
 };
 
 export type MediaSyncFinalizationResult = {
@@ -663,6 +692,197 @@ function parseRpcResult(
   };
 }
 
+function readFinalizationTransientFailure(
+  error: unknown,
+): {
+  code: string;
+  message: string;
+} {
+  const record =
+    error !== null &&
+    typeof error === "object"
+      ? error as Record<string, unknown>
+      : null;
+
+  const code =
+    record &&
+    typeof record.code === "string"
+      ? record.code
+      : "";
+
+  const message = [
+    error instanceof Error
+      ? error.message
+      : "",
+    record &&
+    typeof record.message === "string"
+      ? record.message
+      : "",
+    record &&
+    typeof record.details === "string"
+      ? record.details
+      : "",
+    record &&
+    typeof record.hint === "string"
+      ? record.hint
+      : "",
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  return {
+    code,
+    message,
+  };
+}
+
+function isRetryableFinalizationFailure(
+  error: unknown,
+): boolean {
+  const {
+    code,
+    message,
+  } =
+    readFinalizationTransientFailure(
+      error,
+    );
+
+  return (
+    (
+      code ===
+        POSTGRES_STATEMENT_TIMEOUT_CODE &&
+      message.includes(
+        "statement timeout",
+      )
+    ) ||
+    message.includes(
+      "upstream request timeout",
+    )
+  );
+}
+
+async function waitForFinalizationRetry(
+  dependencies:
+    MediaSyncFinalizationDependencies |
+    undefined,
+): Promise<void> {
+  if (dependencies?.wait) {
+    await dependencies.wait(
+      NAVER_LIFECYCLE_TRANSIENT_RETRY_DELAY_MS,
+    );
+
+    return;
+  }
+
+  await new Promise<void>(
+    (resolve) => {
+      setTimeout(
+        resolve,
+        NAVER_LIFECYCLE_TRANSIENT_RETRY_DELAY_MS,
+      );
+    },
+  );
+}
+
+async function callFinalizationRpcWithTransientRetry(
+  payload:
+    Record<string, unknown>,
+  provider:
+    MediaSyncJobRecord["provider"],
+  dependencies?:
+    MediaSyncFinalizationDependencies,
+): Promise<unknown> {
+  const maxAttempts =
+    provider === NAVER_PROVIDER
+      ? NAVER_LIFECYCLE_TRANSIENT_MAX_ATTEMPTS
+      : 1;
+
+  for (
+    let attempt = 0;
+    attempt < maxAttempts;
+    attempt += 1
+  ) {
+    let result: {
+      data: unknown;
+      error: unknown;
+    };
+
+    try {
+      if (dependencies?.invokeRpc) {
+        result =
+          await dependencies.invokeRpc(
+            FINALIZE_MEDIA_SYNC_JOB_RPC,
+            {
+              p_payload:
+                payload,
+            },
+          );
+      } else {
+        const supabase =
+          getSupabaseAdmin();
+
+        result =
+          await supabase.rpc(
+            FINALIZE_MEDIA_SYNC_JOB_RPC,
+            {
+              p_payload:
+                payload,
+            },
+          );
+      }
+    } catch (error) {
+      if (
+        provider === NAVER_PROVIDER &&
+        attempt <
+          maxAttempts - 1 &&
+        isRetryableFinalizationFailure(
+          error,
+        )
+      ) {
+        await waitForFinalizationRetry(
+          dependencies,
+        );
+
+        continue;
+      }
+
+      throw new MediaSyncFinalizationError(
+        "DATABASE_ERROR",
+        "The sync finalization repository could not access the database.",
+        { cause: error },
+      );
+    }
+
+    if (result.error) {
+      if (
+        provider === NAVER_PROVIDER &&
+        attempt <
+          maxAttempts - 1 &&
+        isRetryableFinalizationFailure(
+          result.error,
+        )
+      ) {
+        await waitForFinalizationRetry(
+          dependencies,
+        );
+
+        continue;
+      }
+
+      throw mapRpcError(
+        result.error,
+      );
+    }
+
+    return result.data;
+  }
+
+  throw new MediaSyncFinalizationError(
+    "DATABASE_ERROR",
+    "The sync finalization transient retry loop terminated unexpectedly.",
+  );
+}
+
 export async function finalizeMediaSyncJob(
   input: FinalizeMediaSyncJobInput,
 ): Promise<MediaSyncFinalizationResult> {
@@ -699,33 +919,12 @@ export async function finalizeMediaSyncJob(
     expected_rows: expectedRows,
   };
 
-  const supabase =
-    getSupabaseAdmin();
-
-  let result;
-
-  try {
-    result =
-      await supabase.rpc(
-        FINALIZE_MEDIA_SYNC_JOB_RPC,
-        {
-          p_payload: payload,
-        },
-      );
-  } catch (error) {
-    throw new MediaSyncFinalizationError(
-      "DATABASE_ERROR",
-      "The sync finalization repository could not access the database.",
-      { cause: error },
+  const data =
+    await callFinalizationRpcWithTransientRetry(
+      payload,
+      input.job.provider,
+      input.dependencies,
     );
-  }
-
-  const { data, error } =
-    result;
-
-  if (error) {
-    throw mapRpcError(error);
-  }
 
   return parseRpcResult(
     data,

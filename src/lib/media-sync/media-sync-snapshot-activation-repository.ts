@@ -19,6 +19,15 @@ const GOOGLE_ADS_PROVIDER =
 const PROCESSING_STATUS =
   "processing" as const;
 
+const NAVER_LIFECYCLE_TRANSIENT_MAX_ATTEMPTS =
+  3;
+
+const NAVER_LIFECYCLE_TRANSIENT_RETRY_DELAY_MS =
+  500;
+
+const POSTGRES_STATEMENT_TIMEOUT_CODE =
+  "57014" as const;
+
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -63,9 +72,29 @@ export type MediaSyncSnapshotActivationProjectionAuthority = {
   snapshotIngestionId: string;
 };
 
+export type MediaSyncSnapshotActivationDependencies = {
+  invokeRpc?: (
+    functionName: string,
+    args: {
+      p_payload:
+        Record<string, unknown>;
+    },
+  ) => Promise<{
+    data: unknown;
+    error: unknown;
+  }>;
+
+  wait?: (
+    delayMs: number,
+  ) => Promise<void>;
+};
+
 export type ActivateMediaSyncSnapshotInput = {
   job: MediaSyncJobRecord;
   expectedRows: number;
+
+  dependencies?:
+    MediaSyncSnapshotActivationDependencies;
 
   /**
    * Projection-local pointer authority.
@@ -630,6 +659,197 @@ function parseRpcResult(
   };
 }
 
+function readActivationTransientFailure(
+  error: unknown,
+): {
+  code: string;
+  message: string;
+} {
+  const record =
+    error !== null &&
+    typeof error === "object"
+      ? error as Record<string, unknown>
+      : null;
+
+  const code =
+    record &&
+    typeof record.code === "string"
+      ? record.code
+      : "";
+
+  const message = [
+    error instanceof Error
+      ? error.message
+      : "",
+    record &&
+    typeof record.message === "string"
+      ? record.message
+      : "",
+    record &&
+    typeof record.details === "string"
+      ? record.details
+      : "",
+    record &&
+    typeof record.hint === "string"
+      ? record.hint
+      : "",
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  return {
+    code,
+    message,
+  };
+}
+
+function isRetryableActivationFailure(
+  error: unknown,
+): boolean {
+  const {
+    code,
+    message,
+  } =
+    readActivationTransientFailure(
+      error,
+    );
+
+  return (
+    (
+      code ===
+        POSTGRES_STATEMENT_TIMEOUT_CODE &&
+      message.includes(
+        "statement timeout",
+      )
+    ) ||
+    message.includes(
+      "upstream request timeout",
+    )
+  );
+}
+
+async function waitForActivationRetry(
+  dependencies:
+    MediaSyncSnapshotActivationDependencies |
+    undefined,
+): Promise<void> {
+  if (dependencies?.wait) {
+    await dependencies.wait(
+      NAVER_LIFECYCLE_TRANSIENT_RETRY_DELAY_MS,
+    );
+
+    return;
+  }
+
+  await new Promise<void>(
+    (resolve) => {
+      setTimeout(
+        resolve,
+        NAVER_LIFECYCLE_TRANSIENT_RETRY_DELAY_MS,
+      );
+    },
+  );
+}
+
+async function callActivationRpcWithTransientRetry(
+  payload:
+    Record<string, unknown>,
+  provider:
+    MediaSyncJobRecord["provider"],
+  dependencies?:
+    MediaSyncSnapshotActivationDependencies,
+): Promise<unknown> {
+  const maxAttempts =
+    provider === NAVER_PROVIDER
+      ? NAVER_LIFECYCLE_TRANSIENT_MAX_ATTEMPTS
+      : 1;
+
+  for (
+    let attempt = 0;
+    attempt < maxAttempts;
+    attempt += 1
+  ) {
+    let result: {
+      data: unknown;
+      error: unknown;
+    };
+
+    try {
+      if (dependencies?.invokeRpc) {
+        result =
+          await dependencies.invokeRpc(
+            ACTIVATE_MEDIA_SYNC_SNAPSHOT_RPC,
+            {
+              p_payload:
+                payload,
+            },
+          );
+      } else {
+        const supabase =
+          getSupabaseAdmin();
+
+        result =
+          await supabase.rpc(
+            ACTIVATE_MEDIA_SYNC_SNAPSHOT_RPC,
+            {
+              p_payload:
+                payload,
+            },
+          );
+      }
+    } catch (error) {
+      if (
+        provider === NAVER_PROVIDER &&
+        attempt <
+          maxAttempts - 1 &&
+        isRetryableActivationFailure(
+          error,
+        )
+      ) {
+        await waitForActivationRetry(
+          dependencies,
+        );
+
+        continue;
+      }
+
+      throw new MediaSyncSnapshotActivationError(
+        "DATABASE_ERROR",
+        "The snapshot activation repository could not access the database.",
+        { cause: error },
+      );
+    }
+
+    if (result.error) {
+      if (
+        provider === NAVER_PROVIDER &&
+        attempt <
+          maxAttempts - 1 &&
+        isRetryableActivationFailure(
+          result.error,
+        )
+      ) {
+        await waitForActivationRetry(
+          dependencies,
+        );
+
+        continue;
+      }
+
+      throw mapRpcError(
+        result.error,
+      );
+    }
+
+    return result.data;
+  }
+
+  throw new MediaSyncSnapshotActivationError(
+    "DATABASE_ERROR",
+    "The snapshot activation transient retry loop terminated unexpectedly.",
+  );
+}
+
 export async function activateMediaSyncSnapshot(
   input: ActivateMediaSyncSnapshotInput,
 ): Promise<MediaSyncSnapshotActivationResult> {
@@ -672,33 +892,12 @@ export async function activateMediaSyncSnapshot(
     expected_rows: expectedRows,
   };
 
-  const supabase =
-    getSupabaseAdmin();
-
-  let result;
-
-  try {
-    result =
-      await supabase.rpc(
-        ACTIVATE_MEDIA_SYNC_SNAPSHOT_RPC,
-        {
-          p_payload: payload,
-        },
-      );
-  } catch (error) {
-    throw new MediaSyncSnapshotActivationError(
-      "DATABASE_ERROR",
-      "The snapshot activation repository could not access the database.",
-      { cause: error },
+  const data =
+    await callActivationRpcWithTransientRetry(
+      payload,
+      input.job.provider,
+      input.dependencies,
     );
-  }
-
-  const { data, error } =
-    result;
-
-  if (error) {
-    throw mapRpcError(error);
-  }
 
   return parseRpcResult(
     data,

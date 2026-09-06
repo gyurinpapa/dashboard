@@ -37,6 +37,15 @@ const MIN_MATERIALIZATION_BATCH_SIZE =
 const MAX_MATERIALIZATION_BATCH_SIZE =
   5_000;
 
+const MATERIALIZATION_TRANSIENT_MAX_ATTEMPTS =
+  3;
+
+const MATERIALIZATION_TRANSIENT_RETRY_DELAY_MS =
+  500;
+
+const POSTGRES_STATEMENT_TIMEOUT_CODE =
+  "57014" as const;
+
 const SHA256_PATTERN =
   /^[0-9a-f]{64}$/;
 
@@ -75,9 +84,29 @@ export class MediaSyncSnapshotMaterializationError
   }
 }
 
+export type MediaSyncSnapshotMaterializationDependencies = {
+  invokeRpc?: (
+    functionName: string,
+    args: {
+      p_payload:
+        Record<string, unknown>;
+    },
+  ) => Promise<{
+    data: unknown;
+    error: unknown;
+  }>;
+
+  wait?: (
+    delayMs: number,
+  ) => Promise<void>;
+};
+
 export type MaterializeMediaSyncSnapshotInput = {
   job: MediaSyncJobRecord;
   summary: MediaSyncStagingSummary;
+
+  dependencies?:
+    MediaSyncSnapshotMaterializationDependencies;
 
   /**
    * Projection target report.
@@ -1090,25 +1119,175 @@ function parseCompleteResult(
   };
 }
 
+function collectMaterializationFailureText(
+  error: unknown,
+): {
+  code: string;
+  message: string;
+} {
+  const codes: string[] = [];
+  const messages: string[] = [];
+
+  let current:
+    unknown =
+      error;
+
+  for (
+    let depth = 0;
+    depth < 6 &&
+    current !== null &&
+    current !== undefined;
+    depth += 1
+  ) {
+    if (current instanceof Error) {
+      messages.push(
+        current.message,
+      );
+
+      current =
+        current.cause;
+
+      continue;
+    }
+
+    if (
+      typeof current === "object" &&
+      !Array.isArray(current)
+    ) {
+      const record =
+        current as
+          Record<string, unknown>;
+
+      if (
+        typeof record.code ===
+        "string"
+      ) {
+        codes.push(
+          record.code,
+        );
+      }
+
+      for (
+        const key
+        of [
+          "message",
+          "details",
+          "hint",
+        ] as const
+      ) {
+        if (
+          typeof record[key] ===
+          "string"
+        ) {
+          messages.push(
+            record[key] as string,
+          );
+        }
+      }
+
+      current =
+        record.cause;
+
+      continue;
+    }
+
+    break;
+  }
+
+  return {
+    code:
+      codes.join(" "),
+    message:
+      messages
+        .join(" ")
+        .toLowerCase(),
+  };
+}
+
+function isRetryableMaterializationFailure(
+  error: unknown,
+): boolean {
+  const {
+    code,
+    message,
+  } =
+    collectMaterializationFailureText(
+      error,
+    );
+
+  return (
+    (
+      code.includes(
+        POSTGRES_STATEMENT_TIMEOUT_CODE,
+      ) &&
+      message.includes(
+        "statement timeout",
+      )
+    ) ||
+    message.includes(
+      "upstream request timeout",
+    )
+  );
+}
+
+async function waitForMaterializationRetry(
+  dependencies:
+    MediaSyncSnapshotMaterializationDependencies |
+    undefined,
+): Promise<void> {
+  if (dependencies?.wait) {
+    await dependencies.wait(
+      MATERIALIZATION_TRANSIENT_RETRY_DELAY_MS,
+    );
+
+    return;
+  }
+
+  await new Promise<void>(
+    (resolve) => {
+      setTimeout(
+        resolve,
+        MATERIALIZATION_TRANSIENT_RETRY_DELAY_MS,
+      );
+    },
+  );
+}
+
 async function callMaterializationRpc(
   rpcName: string,
   payload: Record<string, unknown>,
   operationName: string,
+  dependencies?:
+    MediaSyncSnapshotMaterializationDependencies,
 ): Promise<unknown> {
-  const supabase =
-    getSupabaseAdmin();
-
-  let result;
+  let result: {
+    data: unknown;
+    error: unknown;
+  };
 
   try {
-    result =
-      await supabase.rpc(
-        rpcName,
-        {
-          p_payload:
-            payload,
-        },
-      );
+    if (dependencies?.invokeRpc) {
+      result =
+        await dependencies.invokeRpc(
+          rpcName,
+          {
+            p_payload:
+              payload,
+          },
+        );
+    } else {
+      const supabase =
+        getSupabaseAdmin();
+
+      result =
+        await supabase.rpc(
+          rpcName,
+          {
+            p_payload:
+              payload,
+          },
+        );
+    }
   } catch (error) {
     throw new MediaSyncSnapshotMaterializationError(
       "DATABASE_ERROR",
@@ -1142,6 +1321,7 @@ async function prepareMaterialization(
         scope,
       ),
       "snapshot materialization preparation",
+      input.dependencies,
     );
 
   return parsePrepareResult(
@@ -1189,6 +1369,7 @@ async function materializeBatch(
       MATERIALIZE_MEDIA_SYNC_SNAPSHOT_BATCH_RPC,
       payload,
       "snapshot materialization batch",
+      input.originalInput.dependencies,
     );
 
   return parseBatchResult(
@@ -1215,7 +1396,280 @@ async function materializeBatch(
   );
 }
 
-async function completeMaterialization(
+async function prepareMaterializationWithTransientRetry(
+  input:
+    MaterializeMediaSyncSnapshotInput,
+  scope:
+    MaterializationScope,
+): Promise<PrepareMaterializationResult> {
+  if (
+    scope.provider !==
+      NAVER_PROVIDER
+  ) {
+    return await prepareMaterialization(
+      input,
+      scope,
+    );
+  }
+
+  let lastError:
+    unknown =
+      null;
+
+  for (
+    let attempt = 0;
+    attempt <
+      MATERIALIZATION_TRANSIENT_MAX_ATTEMPTS;
+    attempt += 1
+  ) {
+    try {
+      return await prepareMaterialization(
+        input,
+        scope,
+      );
+    } catch (error) {
+      lastError =
+        error;
+
+      if (
+        !isRetryableMaterializationFailure(
+          error,
+        ) ||
+        attempt >=
+          MATERIALIZATION_TRANSIENT_MAX_ATTEMPTS -
+            1
+      ) {
+        throw error;
+      }
+
+      await waitForMaterializationRetry(
+        input.dependencies,
+      );
+    }
+  }
+
+  throw (
+    lastError ??
+    new MediaSyncSnapshotMaterializationError(
+      "DATABASE_ERROR",
+      "Snapshot materialization preparation retry terminated unexpectedly.",
+    )
+  );
+}
+
+type MaterializationBatchCommitState =
+  | "COMMITTED_EXPECTED"
+  | "NOT_COMMITTED_EXPECTED";
+
+async function reconcileMaterializationBatchCommitState(
+  input: {
+    originalInput:
+      MaterializeMediaSyncSnapshotInput;
+
+    scope:
+      MaterializationScope;
+
+    snapshotIngestionId:
+      string;
+
+    batchStart:
+      number;
+
+    batchEndExclusive:
+      number;
+  },
+): Promise<{
+  state:
+    MaterializationBatchCommitState;
+
+  preparation:
+    PrepareMaterializationResult;
+}> {
+  const preparation =
+    await prepareMaterializationWithTransientRetry(
+      input.originalInput,
+      input.scope,
+    );
+
+  if (
+    preparation.snapshotIngestionId !==
+      input.snapshotIngestionId ||
+    preparation.expectedRows !==
+      input.scope.expectedRows
+  ) {
+    throw new MediaSyncSnapshotMaterializationError(
+      "MATERIALIZATION_CONFLICT",
+      "Materialization transient reconciliation found a different snapshot authority.",
+    );
+  }
+
+  if (
+    preparation.idempotent
+  ) {
+    throw new MediaSyncSnapshotMaterializationError(
+      "MATERIALIZATION_CONFLICT",
+      "Materialization transient reconciliation found an already-completed snapshot during a batch operation.",
+    );
+  }
+
+  if (
+    preparation.nextRowIndex ===
+      input.batchStart
+  ) {
+    return {
+      state:
+        "NOT_COMMITTED_EXPECTED",
+      preparation,
+    };
+  }
+
+  if (
+    preparation.nextRowIndex ===
+      input.batchEndExclusive
+  ) {
+    return {
+      state:
+        "COMMITTED_EXPECTED",
+      preparation,
+    };
+  }
+
+  throw new MediaSyncSnapshotMaterializationError(
+    "MATERIALIZATION_CONFLICT",
+    `Materialization transient reconciliation found an unexpected checkpoint ${preparation.nextRowIndex}; expected ${input.batchStart} or ${input.batchEndExclusive}.`,
+  );
+}
+
+async function materializeBatchWithTransientReconciliation(
+  input: {
+    originalInput:
+      MaterializeMediaSyncSnapshotInput;
+
+    scope:
+      MaterializationScope;
+
+    snapshotIngestionId:
+      string;
+
+    batchStart:
+      number;
+
+    batchSize:
+      number;
+  },
+): Promise<MaterializationBatchResult> {
+  if (
+    input.scope.provider !==
+      NAVER_PROVIDER
+  ) {
+    return await materializeBatch(
+      input,
+    );
+  }
+
+  const batchEndExclusive =
+    Math.min(
+      input.batchStart +
+        input.batchSize,
+      input.scope.expectedRows,
+    );
+
+  const expectedBatchRows =
+    batchEndExclusive -
+    input.batchStart;
+
+  let lastError:
+    unknown =
+      null;
+
+  for (
+    let attempt = 0;
+    attempt <
+      MATERIALIZATION_TRANSIENT_MAX_ATTEMPTS;
+    attempt += 1
+  ) {
+    try {
+      return await materializeBatch(
+        input,
+      );
+    } catch (error) {
+      lastError =
+        error;
+
+      if (
+        !isRetryableMaterializationFailure(
+          error,
+        )
+      ) {
+        throw error;
+      }
+
+      const reconciliation =
+        await reconcileMaterializationBatchCommitState({
+          originalInput:
+            input.originalInput,
+          scope:
+            input.scope,
+          snapshotIngestionId:
+            input.snapshotIngestionId,
+          batchStart:
+            input.batchStart,
+          batchEndExclusive,
+        });
+
+      if (
+        reconciliation.state ===
+        "COMMITTED_EXPECTED"
+      ) {
+        return {
+          job:
+            reconciliation
+              .preparation.job,
+          snapshotIngestionId:
+            input.snapshotIngestionId,
+          batchStart:
+            input.batchStart,
+          batchEndExclusive,
+          expectedBatchRows,
+          insertedRows:
+            expectedBatchRows,
+          materializedBatchRows:
+            expectedBatchRows,
+          nextRowIndex:
+            batchEndExclusive,
+          complete:
+            batchEndExclusive >=
+            input.scope.expectedRows,
+          idempotent:
+            false,
+        };
+      }
+
+      if (
+        attempt >=
+          MATERIALIZATION_TRANSIENT_MAX_ATTEMPTS -
+            1
+      ) {
+        throw error;
+      }
+
+      await waitForMaterializationRetry(
+        input.originalInput
+          .dependencies,
+      );
+    }
+  }
+
+  throw (
+    lastError ??
+    new MediaSyncSnapshotMaterializationError(
+      "DATABASE_ERROR",
+      "Snapshot materialization batch retry terminated unexpectedly.",
+    )
+  );
+}
+
+async function completeMaterializationOnce(
   input: MaterializeMediaSyncSnapshotInput,
   scope: MaterializationScope,
   snapshotIngestionId: string,
@@ -1234,6 +1688,7 @@ async function completeMaterialization(
       COMPLETE_MEDIA_SYNC_SNAPSHOT_MATERIALIZATION_RPC,
       payload,
       "snapshot materialization completion",
+      input.dependencies,
     );
 
   return parseCompleteResult(
@@ -1241,6 +1696,71 @@ async function completeMaterialization(
     input,
     scope,
     snapshotIngestionId,
+  );
+}
+
+async function completeMaterialization(
+  input:
+    MaterializeMediaSyncSnapshotInput,
+  scope:
+    MaterializationScope,
+  snapshotIngestionId:
+    string,
+): Promise<MediaSyncSnapshotMaterializationResult> {
+  if (
+    scope.provider !==
+      NAVER_PROVIDER
+  ) {
+    return await completeMaterializationOnce(
+      input,
+      scope,
+      snapshotIngestionId,
+    );
+  }
+
+  let lastError:
+    unknown =
+      null;
+
+  for (
+    let attempt = 0;
+    attempt <
+      MATERIALIZATION_TRANSIENT_MAX_ATTEMPTS;
+    attempt += 1
+  ) {
+    try {
+      return await completeMaterializationOnce(
+        input,
+        scope,
+        snapshotIngestionId,
+      );
+    } catch (error) {
+      lastError =
+        error;
+
+      if (
+        !isRetryableMaterializationFailure(
+          error,
+        ) ||
+        attempt >=
+          MATERIALIZATION_TRANSIENT_MAX_ATTEMPTS -
+            1
+      ) {
+        throw error;
+      }
+
+      await waitForMaterializationRetry(
+        input.dependencies,
+      );
+    }
+  }
+
+  throw (
+    lastError ??
+    new MediaSyncSnapshotMaterializationError(
+      "DATABASE_ERROR",
+      "Snapshot materialization completion retry terminated unexpectedly.",
+    )
   );
 }
 
@@ -1294,7 +1814,7 @@ export async function materializeMediaSyncSnapshot(
 
   try {
     preparation =
-      await prepareMaterialization(
+      await prepareMaterializationWithTransientRetry(
         input,
         scope,
       );
@@ -1382,7 +1902,7 @@ export async function materializeMediaSyncSnapshot(
 
     try {
       batch =
-        await materializeBatch({
+        await materializeBatchWithTransientReconciliation({
           originalInput:
             input,
 
