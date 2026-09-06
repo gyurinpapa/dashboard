@@ -28,6 +28,7 @@ CREATE OR REPLACE FUNCTION public.summarize_naver_searchads_combined_staging_bas
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO 'pg_catalog', 'public', 'extensions'
+ SET statement_timeout TO '2min'
 AS $function$
 declare
   v_job public.media_sync_jobs%rowtype;
@@ -201,37 +202,97 @@ begin
   end if;
 
   /*
-   * Row-index-only whole-job base summary.
+   * Constant-time combined base authority.
    *
-   * This RPC intentionally reads only (job_id, row_index), allowing the
-   * media_sync_staging_rows_job_row_index_unique index to satisfy the scan.
-   * The unique constraint guarantees distinct row indexes equal total rows.
+   * The collector/checkpoint contract already persists the authoritative
+   * inserted row count on media_sync_jobs.
    *
-   * Scope, row-key, fingerprint, canonical JSON, SHA-256, and date-window
-   * validation are accumulated by the independently bounded v2 batch RPC.
+   * Database schema authority guarantees:
+   * - UNIQUE (job_id, row_index)
+   * - CHECK (row_index >= 0)
+   *
+   * Therefore this base RPC does not rescan every staging row.
+   *
+   * It uses:
+   * - job checkpoint counts as the expected persisted cardinality,
+   * - one indexed ascending boundary probe,
+   * - one indexed descending boundary probe.
+   *
+   * Exact row coverage is still independently proven immediately afterward
+   * by validate_naver_searchads_combined_staging_batch_v3(), which walks every
+   * row in bounded 2,000-row batches. The repository also requires the
+   * validated row total to equal this base total and reloads the base summary
+   * after validation.
+   *
+   * Fail-closed reasoning:
+   * - duplicate row indexes are impossible by UNIQUE authority;
+   * - negative row indexes are impossible by CHECK authority;
+   * - an extra row outside the expected range moves max_row_index;
+   * - a missing row makes bounded validation cover fewer rows than total_rows;
+   * - count/checkpoint disagreement forces rows_in_expected_range to zero.
+   *
+   * This removes the O(n) whole-job index scan that reached ~7 seconds at
+   * 1,709,290 rows and previously inherited the PostgREST 8-second timeout.
    */
-  select
-    count(*)::bigint,
-    min(staging.row_index),
-    max(staging.row_index),
-    count(*)::bigint,
-    count(*) filter (
-      where staging.row_index >= 0
-        and staging.row_index < v_expected_rows
-    )::bigint,
-    count(*) filter (
-      where staging.row_index < 0
-         or staging.row_index >= v_expected_rows
-    )::bigint
-  into
-    v_total_rows,
-    v_min_row_index,
-    v_max_row_index,
-    v_distinct_row_indexes,
-    v_rows_in_expected_range,
-    v_out_of_range_rows
+
+  v_total_rows :=
+    coalesce(
+      v_job.inserted_rows,
+      0
+    );
+
+  v_distinct_row_indexes :=
+    v_total_rows;
+
+  select staging.row_index
+  into v_min_row_index
   from public.media_sync_staging_rows as staging
-  where staging.job_id = v_job_id;
+  where staging.job_id = v_job_id
+  order by staging.row_index asc
+  limit 1;
+
+  select staging.row_index
+  into v_max_row_index
+  from public.media_sync_staging_rows as staging
+  where staging.job_id = v_job_id
+  order by staging.row_index desc
+  limit 1;
+
+  /*
+   * Return an exact complete-looking range only when every checkpoint count
+   * agrees and the indexed boundaries prove all possible row indexes are
+   * inside the requested range.
+   *
+   * Any disagreement deliberately returns a conservative incomplete summary.
+   */
+  if v_job.raw_rows = v_total_rows
+     and v_job.normalized_rows = v_total_rows
+     and v_job.failed_rows = 0
+     and (
+       (
+         v_total_rows = 0
+         and v_min_row_index is null
+         and v_max_row_index is null
+       )
+       or
+       (
+         v_total_rows > 0
+         and v_min_row_index = 0
+         and v_max_row_index = v_total_rows - 1
+         and v_max_row_index < v_expected_rows
+       )
+     )
+  then
+    v_rows_in_expected_range :=
+      v_total_rows;
+
+    v_out_of_range_rows := 0;
+  else
+    v_rows_in_expected_range := 0;
+
+    v_out_of_range_rows :=
+      v_total_rows;
+  end if;
 
   v_missing_expected_rows :=
     greatest(
@@ -280,6 +341,7 @@ CREATE OR REPLACE FUNCTION public.validate_naver_searchads_combined_staging_batc
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO 'pg_catalog', 'public', 'extensions'
+ SET statement_timeout TO '2min'
 AS $function$
 declare
   v_job public.media_sync_jobs%rowtype;
