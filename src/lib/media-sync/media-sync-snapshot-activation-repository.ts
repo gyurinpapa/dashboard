@@ -350,11 +350,15 @@ function validateExpectedRows(
   if (
     typeof value !== "number" ||
     !Number.isSafeInteger(value) ||
-    value <= 0
+    value < 0 ||
+    (
+      value === 0 &&
+      job.provider !== NAVER_PROVIDER
+    )
   ) {
     throw new MediaSyncSnapshotActivationError(
       "INVALID_INPUT",
-      "expectedRows must be a positive safe integer.",
+      "expectedRows must be positive, except zero for Naver Search Ads.",
     );
   }
 

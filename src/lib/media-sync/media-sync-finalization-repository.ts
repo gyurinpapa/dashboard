@@ -219,15 +219,20 @@ function normalizeNullableUuid(
 function normalizePositiveInteger(
   value: unknown,
   fieldName: string,
+  allowZero = false,
 ): number {
   if (
     typeof value !== "number" ||
     !Number.isSafeInteger(value) ||
-    value <= 0
+    value < 0 ||
+    (
+      value === 0 &&
+      !allowZero
+    )
   ) {
     throw new MediaSyncFinalizationError(
       "INVALID_INPUT",
-      `${fieldName} must be a positive safe integer.`,
+      `${fieldName} must be ${allowZero ? "a non-negative" : "a positive"} safe integer.`,
     );
   }
 
@@ -424,6 +429,7 @@ function validateExpectedRows(
     normalizePositiveInteger(
       value,
       "expectedRows",
+      job.provider === NAVER_PROVIDER,
     );
 
   if (

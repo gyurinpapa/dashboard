@@ -509,7 +509,10 @@ function validateCompleteSummary(
     );
   }
 
-  if (totalRows === 0) {
+  if (
+    totalRows === 0 &&
+    job.provider !== NAVER_PROVIDER
+  ) {
     throw new MediaSyncSnapshotMaterializationError(
       "EMPTY_STAGING",
       "Zero-row staging snapshots are not materialized.",
@@ -808,7 +811,7 @@ function parsePrepareResult(
     );
 
   const expectedRows =
-    normalizePositiveInteger(
+    normalizeNonNegativeInteger(
       record.expected_rows,
       "expected_rows",
     );
@@ -1041,7 +1044,7 @@ function parseCompleteResult(
     );
 
   const rowCount =
-    normalizePositiveInteger(
+    normalizeNonNegativeInteger(
       record.row_count,
       "row_count",
     );

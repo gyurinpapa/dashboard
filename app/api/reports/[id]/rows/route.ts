@@ -349,6 +349,7 @@ export async function GET(req: Request, ctx: Ctx) {
     let ranked: any[] = [];
     let rawRows: any[] = [];
     let rowsCount = 0;
+    let authoritativeZeroRowCurrentIngestion = false;
 
     /**
      * ✅ metaOnly/includeRows=0 경량 응답
@@ -364,13 +365,108 @@ export async function GET(req: Request, ctx: Ctx) {
     }
 
     /**
+     * Authoritative Naver zero-row snapshot containment.
+     *
+     * A successful current media-sync ingestion with row_count=0 is valid,
+     * not missing. Suppress legacy fallback only after exact projection and
+     * Naver job lineage is confirmed. CSV and unrelated API ingestions keep
+     * the existing fallback behavior.
+     */
+    if (
+      currentIngestionId &&
+      rowsCount === 0
+    ) {
+      const {
+        data: currentIngestion,
+        error: currentIngestionError,
+      } = await admin
+        .from("report_ingestions")
+        .select(
+          "id, workspace_id, report_id, kind, status, row_count, csv_path, error"
+        )
+        .eq("id", currentIngestionId)
+        .eq("report_id", reportId)
+        .eq("workspace_id", workspaceId)
+        .maybeSingle();
+
+      if (currentIngestionError) {
+        throw new Error(currentIngestionError.message);
+      }
+
+      const ingestionIsSuccessfulZeroApi =
+        (currentIngestion as any)?.id === currentIngestionId &&
+        (currentIngestion as any)?.kind === "api" &&
+        (currentIngestion as any)?.status === "success" &&
+        (currentIngestion as any)?.row_count === 0 &&
+        (currentIngestion as any)?.csv_path == null &&
+        (currentIngestion as any)?.error == null;
+
+      if (ingestionIsSuccessfulZeroApi) {
+        const {
+          data: projection,
+          error: projectionError,
+        } = await admin
+          .from("media_sync_report_projections")
+          .select(
+            "media_sync_job_id, report_id, workspace_id, snapshot_ingestion_id"
+          )
+          .eq("report_id", reportId)
+          .eq("workspace_id", workspaceId)
+          .eq("snapshot_ingestion_id", currentIngestionId)
+          .maybeSingle();
+
+        if (projectionError) {
+          throw new Error(projectionError.message);
+        }
+
+        const mediaSyncJobId =
+          asStr((projection as any)?.media_sync_job_id);
+
+        if (mediaSyncJobId) {
+          const {
+            data: mediaSyncJob,
+            error: mediaSyncJobError,
+          } = await admin
+            .from("media_sync_jobs")
+            .select(
+              "id, provider, mode, status, inserted_rows, normalized_rows, failed_rows"
+            )
+            .eq("id", mediaSyncJobId)
+            .maybeSingle();
+
+          if (mediaSyncJobError) {
+            throw new Error(mediaSyncJobError.message);
+          }
+
+          const mediaSyncStatus =
+            asStr((mediaSyncJob as any)?.status);
+
+          authoritativeZeroRowCurrentIngestion =
+            (mediaSyncJob as any)?.id === mediaSyncJobId &&
+            (mediaSyncJob as any)?.provider === "naver_searchad" &&
+            (mediaSyncJob as any)?.mode === "snapshot_replace" &&
+            (
+              mediaSyncStatus === "processing" ||
+              mediaSyncStatus === "done"
+            ) &&
+            (mediaSyncJob as any)?.inserted_rows === 0 &&
+            (mediaSyncJob as any)?.normalized_rows === 0 &&
+            (mediaSyncJob as any)?.failed_rows === 0;
+        }
+      }
+    }
+
+    /**
      * ✅ 대용량 rows 조회 최적화
      * - 정상 케이스에서는 reports.current_ingestion_id 기준으로 바로 rows를 조회한다.
      * - current_ingestion_id rows가 존재하면 전체 report_rows를 다시 훑지 않는다.
      * - current_ingestion_id가 비어 있거나 rows가 없을 때만 legacy/fallback 탐색을 수행한다.
      * - metaOnly=1/includeRows=0에서도 count가 0이면 legacy/fallback 탐색을 수행한다.
      */
-    if (!rowsCount) {
+    if (
+      !rowsCount &&
+      !authoritativeZeroRowCurrentIngestion
+    ) {
       const fallback = await findBestIngestionIdByRows(admin, reportId);
 
       ranked = fallback.ranked;
