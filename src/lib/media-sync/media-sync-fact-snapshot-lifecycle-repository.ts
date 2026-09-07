@@ -12,6 +12,8 @@ const COMPLETE_RPC =
   "complete_naver_fact_snapshot_materialization" as const;
 const ACTIVATE_RPC =
   "activate_naver_fact_snapshot" as const;
+const FANOUT_ACTIVATE_RPC =
+  "activate_naver_fact_snapshot_fanout" as const;
 const FINALIZE_RPC =
   "finalize_naver_fact_snapshot_job" as const;
 
@@ -166,6 +168,35 @@ export type ActivateNaverFactSnapshotResult = {
   projectionEnd: string;
   rowCount: number;
   completionFingerprint: string;
+  idempotent: boolean;
+};
+
+export type NaverFactSnapshotFanoutActivationProjection = {
+  reportId: string;
+  previousIngestionId: string | null;
+  snapshotIngestionId: string;
+  projectionStart: string;
+  projectionEnd: string;
+  expectedRows: number;
+};
+
+export type ActivateNaverFactSnapshotFanoutInput = {
+  job: MediaSyncJobRecord;
+  projections:
+    NaverFactSnapshotFanoutActivationProjection[];
+  dependencies?:
+    NaverFactSnapshotLifecycleDependencies;
+};
+
+export type ActivateNaverFactSnapshotFanoutResult = {
+  job: MediaSyncJobRecord;
+  projectionCount: number;
+  primaryReportId: string;
+  primaryPreviousIngestionId: string | null;
+  primarySnapshotIngestionId: string;
+  primaryCurrentIngestionId: string;
+  primaryPublishedIngestionId: string | null;
+  primaryRowCount: number;
   idempotent: boolean;
 };
 
@@ -1268,6 +1299,226 @@ export async function activateNaverFactSnapshot(
         record.completion_fingerprint,
         "completion_fingerprint",
       ),
+    idempotent:
+      requiredBoolean(
+        record.idempotent,
+        "idempotent",
+      ),
+  };
+}
+
+export async function activateNaverFactSnapshotFanout(
+  input: ActivateNaverFactSnapshotFanoutInput,
+): Promise<ActivateNaverFactSnapshotFanoutResult> {
+  validateProcessingJob(
+    input.job,
+  );
+
+  if (
+    !Array.isArray(
+      input.projections,
+    ) ||
+    input.projections.length === 0
+  ) {
+    throw new NaverFactSnapshotLifecycleError(
+      "INVALID_INPUT",
+      "At least one fanout projection is required.",
+    );
+  }
+
+  const seenReportIds =
+    new Set<string>();
+
+  const projections =
+    input.projections.map(
+      (projection, index) => {
+        const reportId =
+          validateUuidInput(
+            projection.reportId,
+            `projections[${index}].reportId`,
+          );
+
+        if (
+          seenReportIds.has(
+            reportId,
+          )
+        ) {
+          throw new NaverFactSnapshotLifecycleError(
+            "INVALID_INPUT",
+            "Fanout projection report IDs must be unique.",
+          );
+        }
+
+        seenReportIds.add(
+          reportId,
+        );
+
+        const previousIngestionId =
+          validateNullableUuidInput(
+            projection.previousIngestionId,
+            `projections[${index}].previousIngestionId`,
+          );
+
+        const snapshotIngestionId =
+          validateUuidInput(
+            projection.snapshotIngestionId,
+            `projections[${index}].snapshotIngestionId`,
+          );
+
+        const projectionStart =
+          validateDateInput(
+            projection.projectionStart,
+            `projections[${index}].projectionStart`,
+          );
+
+        const projectionEnd =
+          validateDateInput(
+            projection.projectionEnd,
+            `projections[${index}].projectionEnd`,
+          );
+
+        if (
+          Date.parse(
+            `${projectionEnd}T00:00:00.000Z`,
+          ) <
+          Date.parse(
+            `${projectionStart}T00:00:00.000Z`,
+          )
+        ) {
+          throw new NaverFactSnapshotLifecycleError(
+            "INVALID_INPUT",
+            "Fanout projection end precedes its start.",
+          );
+        }
+
+        return {
+          report_id:
+            reportId,
+          previous_ingestion_id:
+            previousIngestionId,
+          snapshot_ingestion_id:
+            snapshotIngestionId,
+          projection_start:
+            projectionStart,
+          projection_end:
+            projectionEnd,
+          expected_rows:
+            validateCountInput(
+              projection.expectedRows,
+              `projections[${index}].expectedRows`,
+              {
+                max:
+                  2_147_483_647,
+              },
+            ),
+        };
+      },
+    );
+
+  const record =
+    await invoke(
+      FANOUT_ACTIVATE_RPC,
+      {
+        ...commonPayload(
+          input.job,
+        ),
+        projections,
+      },
+      input.dependencies,
+    );
+
+  const job =
+    parseReturnedJob(
+      record.job,
+      input.job,
+      "processing",
+    );
+
+  const projectionCount =
+    nonNegativeSafeInteger(
+      record.projection_count,
+      "projection_count",
+    );
+
+  const primaryReportId =
+    requiredUuid(
+      record.primary_report_id,
+      "primary_report_id",
+    );
+
+  const primaryPreviousIngestionId =
+    nullableUuid(
+      record.primary_previous_ingestion_id,
+      "primary_previous_ingestion_id",
+    );
+
+  const primarySnapshotIngestionId =
+    requiredUuid(
+      record.primary_snapshot_ingestion_id,
+      "primary_snapshot_ingestion_id",
+    );
+
+  const primaryCurrentIngestionId =
+    requiredUuid(
+      record.primary_current_ingestion_id,
+      "primary_current_ingestion_id",
+    );
+
+  const primaryPublishedIngestionId =
+    nullableUuid(
+      record.primary_published_ingestion_id,
+      "primary_published_ingestion_id",
+    );
+
+  const primaryRowCount =
+    nonNegativeSafeInteger(
+      record.primary_row_count,
+      "primary_row_count",
+    );
+
+  const primaryInput =
+    input.projections.find(
+      (projection) =>
+        projection.reportId ===
+        input.job.report_id,
+    );
+
+  if (!primaryInput) {
+    throw new NaverFactSnapshotLifecycleError(
+      "RESULT_CONFLICT",
+      "Primary job report is missing from fanout activation input.",
+    );
+  }
+
+  if (
+    projectionCount !==
+      projections.length ||
+    primaryReportId !==
+      input.job.report_id ||
+    primaryPreviousIngestionId !==
+      primaryInput.previousIngestionId ||
+    primarySnapshotIngestionId !==
+      primaryInput.snapshotIngestionId ||
+    primaryCurrentIngestionId !==
+      primarySnapshotIngestionId ||
+    primaryRowCount !==
+      primaryInput.expectedRows
+  ) {
+    throw new NaverFactSnapshotLifecycleError(
+      "RESULT_CONFLICT",
+      "Atomic fanout activation result violates projection authority.",
+    );
+  }
+
+  return {
+    job,
+    projectionCount,
+    primaryReportId,
+    primaryPreviousIngestionId,
+    primarySnapshotIngestionId,
+    primaryCurrentIngestionId,
+    primaryPublishedIngestionId,
+    primaryRowCount,
     idempotent:
       requiredBoolean(
         record.idempotent,
