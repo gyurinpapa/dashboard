@@ -5433,6 +5433,11 @@ async function main():
         continue;
       }
 
+      if (result.status === "fact_only_completed") {
+        throw new Error(
+          "PRODUCTION_CUTOVER_FACT_ONLY_RESULT_UNSUPPORTED",
+        );
+      }
       completedResult =
         result;
       activationCommitted =

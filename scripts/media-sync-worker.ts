@@ -746,6 +746,43 @@ function logCompletedJob(input: {
   );
 }
 
+function logFactOnlyCompletedJob(input: {
+  jobId: string;
+  reportId: string;
+  workspaceId: string;
+  advertiserId: string;
+  connectionId: string;
+  expectedRows: number;
+}): void {
+  console.log(
+    `[${WORKER_NAME}] fact-only completed job: ${input.jobId}`,
+  );
+
+  console.log(
+    `[${WORKER_NAME}] report: ${input.reportId}`,
+  );
+
+  console.log(
+    `[${WORKER_NAME}] workspace: ${input.workspaceId}`,
+  );
+
+  console.log(
+    `[${WORKER_NAME}] advertiser: ${input.advertiserId}`,
+  );
+
+  console.log(
+    `[${WORKER_NAME}] connection: ${input.connectionId}`,
+  );
+
+  console.log(
+    `[${WORKER_NAME}] snapshot ingestion: none`,
+  );
+
+  console.log(
+    `[${WORKER_NAME}] canonical rows: ${input.expectedRows}`,
+  );
+}
+
 function logPartialJob(input: {
   jobId: string;
   reportId: string;
@@ -1078,6 +1115,30 @@ async function processSingleJob(
         readOptionalNumber(
           partialResult.staging?.runCanonicalRowCount,
         ),
+    });
+
+    return true;
+  }
+
+  if (result.status === "fact_only_completed") {
+    logFactOnlyCompletedJob({
+      jobId:
+        result.jobId,
+
+      reportId:
+        result.reportId,
+
+      workspaceId:
+        result.workspaceId,
+
+      advertiserId:
+        result.advertiserId,
+
+      connectionId:
+        result.connectionId,
+
+      expectedRows:
+        result.expectedRows,
     });
 
     return true;

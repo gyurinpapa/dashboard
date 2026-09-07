@@ -486,8 +486,38 @@ export type ProcessNaverMediaSyncJobPartialResult = {
     number;
 };
 
+export type ProcessNaverMediaSyncJobFactOnlyCompletedResult = {
+  status:
+    "fact_only_completed";
+
+  jobId:
+    string;
+
+  reportId:
+    string;
+
+  workspaceId:
+    string;
+
+  advertiserId:
+    string;
+
+  connectionId:
+    string;
+
+  checkpointJob:
+    MediaSyncJobRecord;
+
+  snapshotIngestionId:
+    null;
+
+  expectedRows:
+    number;
+};
+
 export type ProcessNaverMediaSyncJobResult =
   | ProcessNaverMediaSyncJobCompletedResult
+  | ProcessNaverMediaSyncJobFactOnlyCompletedResult
   | ProcessNaverMediaSyncJobPartialResult;
 
 export type ProcessNextNaverMediaSyncJobInput =
