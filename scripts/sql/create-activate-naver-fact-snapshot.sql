@@ -1,0 +1,431 @@
+-- Etrylue Performance
+-- Option B canonical fact -> snapshot projection.
+--
+-- LOCAL IMPLEMENTATION CANDIDATE ONLY.
+-- DO NOT APPLY TO PRODUCTION.
+--
+-- Activate one completed Naver fact-backed snapshot ingestion.
+--
+-- This RPC:
+--   - supports Naver Search Ads + snapshot_replace only
+--   - does NOT compare projection expected_rows with chunk job row counts
+--   - requires the prepared projection identity to match exactly
+--   - requires the report period to remain unchanged
+--   - requires the projection ingestion to be successful with expected_rows
+--   - revalidates canonical partition/fact cardinality
+--   - atomically advances only reports.current_ingestion_id
+--   - preserves reports.published_ingestion_id
+--   - does not finish the media sync job
+--   - does not update media_connections.last_sync_at
+--   - supports idempotent activation retry
+
+begin;
+
+CREATE OR REPLACE FUNCTION public.activate_naver_fact_snapshot(
+  p_payload jsonb
+)
+RETURNS TABLE(
+  job jsonb,
+  report_id uuid,
+  previous_ingestion_id uuid,
+  snapshot_ingestion_id uuid,
+  current_ingestion_id uuid,
+  published_ingestion_id uuid,
+  projection_start date,
+  projection_end date,
+  row_count bigint,
+  completion_fingerprint text,
+  idempotent boolean
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'pg_catalog', 'public', 'extensions'
+AS $function$
+declare
+  v_job public.media_sync_jobs%rowtype;
+  v_report public.reports%rowtype;
+  v_projection public.media_sync_report_projections%rowtype;
+  v_ingestion public.report_ingestions%rowtype;
+
+  v_job_id uuid;
+  v_report_id uuid;
+  v_workspace_id uuid;
+  v_advertiser_id uuid;
+  v_connection_id uuid;
+
+  v_external_account_id text;
+
+  v_previous_ingestion_id uuid;
+  v_snapshot_ingestion_id uuid;
+
+  v_projection_start date;
+  v_projection_end date;
+  v_expected_rows bigint;
+
+  v_expected_dates bigint;
+  v_partition_dates bigint;
+  v_partition_rows bigint;
+  v_fact_rows bigint;
+
+  v_published_ingestion_before uuid;
+  v_is_primary_projection boolean;
+
+  v_completion_fingerprint text;
+  v_idempotent boolean := false;
+begin
+  if p_payload is null
+     or jsonb_typeof(p_payload) <> 'object' then
+    raise exception using
+      message = 'MSFA_INVALID_INPUT: payload must be a JSON object';
+  end if;
+
+  if coalesce(p_payload->>'job_id', '') !~*
+       '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+     or coalesce(p_payload->>'report_id', '') !~*
+       '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+     or coalesce(p_payload->>'workspace_id', '') !~*
+       '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+     or coalesce(p_payload->>'advertiser_id', '') !~*
+       '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+     or coalesce(p_payload->>'connection_id', '') !~*
+       '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+     or coalesce(p_payload->>'snapshot_ingestion_id', '') !~*
+       '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+  then
+    raise exception using
+      message = 'MSFA_INVALID_INPUT: invalid UUID input';
+  end if;
+
+  if p_payload ? 'previous_ingestion_id'
+     and p_payload->'previous_ingestion_id' <> 'null'::jsonb
+     and coalesce(p_payload->>'previous_ingestion_id', '') !~*
+       '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+  then
+    raise exception using
+      message = 'MSFA_INVALID_INPUT: previous_ingestion_id is invalid';
+  end if;
+
+  if coalesce(btrim(p_payload->>'external_account_id'), '') = ''
+     or coalesce(p_payload->>'projection_start', '') !~ '^\d{4}-\d{2}-\d{2}$'
+     or coalesce(p_payload->>'projection_end', '') !~ '^\d{4}-\d{2}-\d{2}$'
+     or coalesce(p_payload->>'expected_rows', '') !~ '^[0-9]+$'
+  then
+    raise exception using
+      message = 'MSFA_INVALID_INPUT: activation inputs are invalid';
+  end if;
+
+  begin
+    v_job_id := (p_payload->>'job_id')::uuid;
+    v_report_id := (p_payload->>'report_id')::uuid;
+    v_workspace_id := (p_payload->>'workspace_id')::uuid;
+    v_advertiser_id := (p_payload->>'advertiser_id')::uuid;
+    v_connection_id := (p_payload->>'connection_id')::uuid;
+
+    v_external_account_id := btrim(p_payload->>'external_account_id');
+
+    v_previous_ingestion_id :=
+      nullif(p_payload->>'previous_ingestion_id', '')::uuid;
+    v_snapshot_ingestion_id :=
+      (p_payload->>'snapshot_ingestion_id')::uuid;
+
+    v_projection_start := (p_payload->>'projection_start')::date;
+    v_projection_end := (p_payload->>'projection_end')::date;
+    v_expected_rows := (p_payload->>'expected_rows')::bigint;
+  exception
+    when others then
+      raise exception using
+        message = 'MSFA_INVALID_INPUT: payload value could not be parsed';
+  end;
+
+  if v_projection_start > v_projection_end
+     or v_expected_rows < 0
+     or v_expected_rows > 2147483647
+  then
+    raise exception using
+      message = 'MSFA_INVALID_INPUT: activation values are invalid';
+  end if;
+
+  /*
+   * Preserve the same lock order used by the fact snapshot lifecycle:
+   *   JOB -> REPORT -> PROJECTION -> INGESTION.
+   */
+  select *
+    into v_job
+    from public.media_sync_jobs as j
+   where j.id = v_job_id
+   for update;
+
+  if not found then
+    raise exception using
+      message = 'MSFA_JOB_NOT_FOUND: media sync job was not found';
+  end if;
+
+  if v_job.status <> 'processing' then
+    raise exception using
+      message = 'MSFA_JOB_NOT_PROCESSING: media sync job must remain processing';
+  end if;
+
+  if v_job.provider <> 'naver_searchad'
+     or v_job.mode <> 'snapshot_replace'
+  then
+    raise exception using
+      message = 'MSFA_UNSUPPORTED_JOB: only Naver snapshot_replace is supported';
+  end if;
+
+  if v_job.workspace_id <> v_workspace_id
+     or v_job.advertiser_id <> v_advertiser_id
+     or v_job.connection_id <> v_connection_id
+     or v_job.external_account_id <> v_external_account_id
+     or v_job.finished_at is not null
+     or v_job.failed_rows is distinct from 0
+     or v_job.raw_rows is distinct from v_job.normalized_rows
+     or v_job.normalized_rows is distinct from v_job.inserted_rows
+  then
+    raise exception using
+      message = 'MSFA_SCOPE_MISMATCH: job scope is not projection-safe';
+  end if;
+
+  select *
+    into v_report
+    from public.reports as r
+   where r.id = v_report_id
+   for update;
+
+  if not found then
+    raise exception using
+      message = 'MSFA_REPORT_NOT_FOUND: report was not found';
+  end if;
+
+  if v_report.workspace_id <> v_workspace_id
+     or v_report.advertiser_id is distinct from v_advertiser_id
+  then
+    raise exception using
+      message = 'MSFA_SCOPE_MISMATCH: report scope does not match the job';
+  end if;
+
+  if coalesce(v_report.draft_period_start, v_report.period_start)
+       is distinct from v_projection_start
+     or coalesce(v_report.draft_period_end, v_report.period_end)
+       is distinct from v_projection_end
+  then
+    raise exception using
+      message = 'MSFA_PERIOD_CHANGED: report projection period changed before activation';
+  end if;
+
+  v_published_ingestion_before := v_report.published_ingestion_id;
+  v_is_primary_projection := v_job.report_id = v_report_id;
+
+  select *
+    into v_projection
+    from public.media_sync_report_projections as p
+   where p.media_sync_job_id = v_job_id
+     and p.report_id = v_report_id
+   for share;
+
+  if not found then
+    raise exception using
+      message = 'MSFA_PROJECTION_NOT_FOUND: report projection was not prepared';
+  end if;
+
+  if v_projection.workspace_id <> v_workspace_id
+     or v_projection.advertiser_id <> v_advertiser_id
+     or v_projection.report_id <> v_report_id
+     or v_projection.previous_ingestion_id
+          is distinct from v_previous_ingestion_id
+     or v_projection.snapshot_ingestion_id
+          is distinct from v_snapshot_ingestion_id
+     or v_projection.created_by is distinct from v_job.created_by
+  then
+    raise exception using
+      message = 'MSFA_PROJECTION_CONFLICT: report projection authority does not match the request';
+  end if;
+
+  if v_is_primary_projection
+     and (
+       v_job.previous_ingestion_id
+         is distinct from v_previous_ingestion_id
+       or v_job.snapshot_ingestion_id
+         is distinct from v_snapshot_ingestion_id
+     )
+  then
+    raise exception using
+      message = 'MSFA_PROJECTION_CONFLICT: primary projection no longer matches job mirrors';
+  end if;
+
+  if v_report.current_ingestion_id
+       is not distinct from v_snapshot_ingestion_id
+  then
+    v_idempotent := true;
+  elsif v_report.current_ingestion_id
+          is not distinct from v_previous_ingestion_id
+  then
+    v_idempotent := false;
+  else
+    raise exception using
+      message = 'MSFA_ACTIVATION_CONFLICT: report current pointer no longer matches projection baseline';
+  end if;
+
+  /*
+   * Revalidate durable zero-row-aware canonical cardinality.
+   */
+  v_expected_dates :=
+    (v_projection_end - v_projection_start)::bigint + 1;
+
+  select
+    count(*)::bigint,
+    coalesce(sum(p.row_count), 0)::bigint
+    into
+      v_partition_dates,
+      v_partition_rows
+    from public.media_sync_fact_partitions as p
+   where p.workspace_id = v_workspace_id
+     and p.advertiser_id = v_advertiser_id
+     and p.provider = 'naver_searchad'
+     and p.external_account_id = v_external_account_id
+     and p.date >= v_projection_start
+     and p.date <= v_projection_end;
+
+  if v_partition_dates <> v_expected_dates
+     or v_partition_rows <> v_expected_rows
+  then
+    raise exception using
+      message = 'MSFA_FACT_COVERAGE_CHANGED: canonical partition authority changed before activation';
+  end if;
+
+  select count(*)::bigint
+    into v_fact_rows
+    from public.media_sync_fact_rows as f
+   where f.workspace_id = v_workspace_id
+     and f.advertiser_id = v_advertiser_id
+     and f.provider = 'naver_searchad'
+     and f.external_account_id = v_external_account_id
+     and f.date >= v_projection_start
+     and f.date <= v_projection_end;
+
+  if v_fact_rows <> v_expected_rows then
+    raise exception using
+      message = 'MSFA_FACT_COUNT_MISMATCH: canonical fact row count changed before activation';
+  end if;
+
+  select *
+    into v_ingestion
+    from public.report_ingestions as ri
+   where ri.id = v_snapshot_ingestion_id
+   for share;
+
+  if not found then
+    raise exception using
+      message = 'MSFA_SNAPSHOT_NOT_MATERIALIZED: projection ingestion was not found';
+  end if;
+
+  if v_ingestion.workspace_id <> v_workspace_id
+     or v_ingestion.report_id <> v_report_id
+     or v_ingestion.kind <> 'api'
+     or v_ingestion.status <> 'success'
+     or v_ingestion.row_count is distinct from v_expected_rows::integer
+     or v_ingestion.csv_path is not null
+     or v_ingestion.error is not null
+     or v_ingestion.created_by is distinct from v_job.created_by
+  then
+    raise exception using
+      message = 'MSFA_SNAPSHOT_INVALID: completed projection ingestion is invalid';
+  end if;
+
+  v_completion_fingerprint :=
+    encode(
+      extensions.digest(
+        pg_catalog.convert_to(
+          v_job_id::text || ':' ||
+          v_report_id::text || ':' ||
+          v_snapshot_ingestion_id::text || ':' ||
+          v_projection_start::text || ':' ||
+          v_projection_end::text || ':' ||
+          v_expected_rows::text,
+          'UTF8'
+        ),
+        'sha256'
+      ),
+      'hex'
+    );
+
+  if not v_idempotent then
+    update public.reports as r
+       set current_ingestion_id = v_snapshot_ingestion_id
+     where r.id = v_report_id
+       and r.workspace_id = v_workspace_id
+       and r.advertiser_id is not distinct from v_advertiser_id
+       and r.current_ingestion_id is not distinct from v_previous_ingestion_id
+       and r.published_ingestion_id is not distinct from v_published_ingestion_before;
+
+    if not found then
+      raise exception using
+        message = 'MSFA_ACTIVATION_CONFLICT: report pointer changed during activation';
+    end if;
+  end if;
+
+  select *
+    into v_report
+    from public.reports as r
+   where r.id = v_report_id;
+
+  if v_report.current_ingestion_id
+       is distinct from v_snapshot_ingestion_id
+     or v_report.published_ingestion_id
+       is distinct from v_published_ingestion_before
+  then
+    raise exception using
+      message = 'MSFA_ACTIVATION_CONFLICT: report pointers violate the activation contract';
+  end if;
+
+  select *
+    into v_job
+    from public.media_sync_jobs as j
+   where j.id = v_job_id;
+
+  if v_job.status <> 'processing'
+     or v_job.finished_at is not null
+     or v_job.failed_rows is distinct from 0
+  then
+    raise exception using
+      message = 'MSFA_JOB_STATE_CHANGED: protected media sync job state changed unexpectedly';
+  end if;
+
+  return query
+  select
+    to_jsonb(v_job),
+    v_report_id,
+    v_previous_ingestion_id,
+    v_snapshot_ingestion_id,
+    v_report.current_ingestion_id,
+    v_report.published_ingestion_id,
+    v_projection_start,
+    v_projection_end,
+    v_expected_rows,
+    v_completion_fingerprint,
+    v_idempotent;
+end;
+$function$;
+
+ALTER FUNCTION public.activate_naver_fact_snapshot(jsonb)
+  OWNER TO postgres;
+
+REVOKE ALL ON FUNCTION
+  public.activate_naver_fact_snapshot(jsonb)
+FROM PUBLIC;
+
+REVOKE ALL ON FUNCTION
+  public.activate_naver_fact_snapshot(jsonb)
+FROM anon;
+
+REVOKE ALL ON FUNCTION
+  public.activate_naver_fact_snapshot(jsonb)
+FROM authenticated;
+
+GRANT EXECUTE ON FUNCTION
+  public.activate_naver_fact_snapshot(jsonb)
+TO service_role;
+
+notify pgrst, 'reload schema';
+
+commit;
+
