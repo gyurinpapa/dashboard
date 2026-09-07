@@ -293,6 +293,7 @@ export type ProcessNaverMediaSyncJobOptions = {
   reconciliationBatchSize?: number;
   reconciliationStepsPerClaim?: number;
   materializationBatchSize?: number;
+  enableNaverFactProjection?: boolean;
   jobTimeoutMs?: number;
 
   /**
@@ -1334,6 +1335,7 @@ function assertFanoutTargetsUnchanged(input: {
     readonly MediaSyncReportFanoutTarget[];
 
   stageCode:
+    "MATERIALIZATION_FAILED" |
     "ACTIVATION_FAILED" |
     "FINALIZATION_FAILED";
 
@@ -2504,6 +2506,753 @@ function shouldOverlapAuthoritativeCollection(
  * 두 phase가 모두 completed이고 combined staging summary가 정확할 때만
  * materialization → activation → finalization을 실행한다.
  */
+function enumerateInclusiveUtcDates(
+  startDate: string,
+  endDate: string,
+): string[] {
+  const datePattern =
+    /^\d{4}-\d{2}-\d{2}$/;
+
+  if (
+    !datePattern.test(startDate) ||
+    !datePattern.test(endDate)
+  ) {
+    throw new MediaSyncWorkerOrchestrationError(
+      "INVALID_JOB",
+      "The media sync job date range is invalid.",
+    );
+  }
+
+  const startMs =
+    Date.parse(
+      `${startDate}T00:00:00.000Z`,
+    );
+
+  const endMs =
+    Date.parse(
+      `${endDate}T00:00:00.000Z`,
+    );
+
+  if (
+    !Number.isFinite(startMs) ||
+    !Number.isFinite(endMs) ||
+    endMs < startMs
+  ) {
+    throw new MediaSyncWorkerOrchestrationError(
+      "INVALID_JOB",
+      "The media sync job date range is invalid.",
+    );
+  }
+
+  const dates: string[] =
+    [];
+
+  for (
+    let currentMs = startMs;
+    currentMs <= endMs;
+    currentMs += 86_400_000
+  ) {
+    dates.push(
+      new Date(currentMs)
+        .toISOString()
+        .slice(0, 10),
+    );
+  }
+
+  if (dates.length === 0) {
+    throw new MediaSyncWorkerOrchestrationError(
+      "INVALID_JOB",
+      "The media sync job date range is empty.",
+    );
+  }
+
+  return dates;
+}
+
+async function processNaverFactProjectionAfterStaging(
+  input: {
+    checkpointJob:
+      MediaSyncJobRecord;
+    staging:
+      ProcessNaverMediaSyncJobCompletedResult["staging"];
+    options:
+      ProcessNaverMediaSyncJobOptions;
+    dependencies:
+      ResolvedMediaSyncWorkerOrchestrationDependencies;
+  },
+): Promise<
+  | ProcessNaverMediaSyncJobFactOnlyCompletedResult
+  | ProcessNaverMediaSyncJobFactSnapshotCompletedResult
+> {
+  let factJob =
+    input.checkpointJob;
+
+  const replacementDates =
+    enumerateInclusiveUtcDates(
+      factJob.date_from,
+      factJob.date_to,
+    );
+
+  for (
+    const date
+    of replacementDates
+  ) {
+    try {
+      logStage({
+        job:
+          factJob,
+        stage:
+          "fact-replacement:start",
+        detail:
+          `date=${date}`,
+      });
+
+      const replacement =
+        await input.dependencies
+          .replaceFactDate({
+            job:
+              factJob,
+            date,
+          });
+
+      factJob =
+        replacement.job;
+
+      logStage({
+        job:
+          factJob,
+        stage:
+          "fact-replacement:done",
+        detail:
+          `date=${date} rows=${replacement.factRows}`,
+      });
+    } catch (error) {
+      throw wrapStageError(
+        "MATERIALIZATION_FAILED",
+        `Canonical Naver fact replacement failed for ${date}.`,
+        error,
+      );
+    }
+  }
+
+  let fanoutTargets:
+    MediaSyncReportFanoutTarget[];
+
+  try {
+    logStage({
+      job:
+        factJob,
+      stage:
+        "fact-fanout-targets:start",
+    });
+
+    fanoutTargets =
+      await input.dependencies
+        .loadFanoutTargets(
+          factJob,
+        );
+  } catch (error) {
+    throw wrapStageError(
+      "MATERIALIZATION_FAILED",
+      "The Naver fact projection fanout targets could not be loaded.",
+      error,
+    );
+  }
+
+  logStage({
+    job:
+      factJob,
+    stage:
+      "fact-fanout-targets:done",
+    detail:
+      `reports=${fanoutTargets.length}`,
+  });
+
+  const coverageByReportId =
+    new Map<
+      string,
+      Awaited<
+        ReturnType<
+          typeof loadMediaSyncFactProjectionCoverage
+        >
+      >
+    >();
+
+  for (
+    const target
+    of fanoutTargets
+  ) {
+    try {
+      const coverage =
+        await input.dependencies
+          .loadFactProjectionCoverage({
+            job:
+              factJob,
+            reportId:
+              target.reportId,
+          });
+
+      coverageByReportId.set(
+        target.reportId,
+        coverage,
+      );
+
+      logStage({
+        job:
+          factJob,
+        stage:
+          "fact-coverage:done",
+        detail:
+          `targetReport=${target.reportId} complete=${coverage.complete} covered=${coverage.coveredDates}/${coverage.expectedDates} rows=${coverage.factRows}`,
+      });
+    } catch (error) {
+      throw wrapStageError(
+        "MATERIALIZATION_FAILED",
+        `Canonical fact projection coverage failed for report ${target.reportId}.`,
+        error,
+      );
+    }
+  }
+
+  const incompleteCoverage =
+    fanoutTargets.filter(
+      (target) =>
+        !coverageByReportId
+          .get(
+            target.reportId,
+          )
+          ?.complete,
+    );
+
+  if (
+    incompleteCoverage.length > 0
+  ) {
+    try {
+      logStage({
+        job:
+          factJob,
+        stage:
+          "fact-only-finalization:start",
+        detail:
+          `incompleteReports=${incompleteCoverage.length}`,
+      });
+
+      const completion =
+        await input.dependencies
+          .completeFactOnly({
+            job:
+              factJob,
+          });
+
+      logStage({
+        job:
+          completion.job,
+        stage:
+          "fact-only-finalization:done",
+        detail:
+          `coveredDates=${completion.coveredDates} rows=${completion.factRows}`,
+      });
+
+      return {
+        status:
+          "fact_only_completed",
+        jobId:
+          completion.job.id,
+        reportId:
+          completion.job.report_id,
+        workspaceId:
+          completion.job.workspace_id,
+        advertiserId:
+          completion.job.advertiser_id,
+        connectionId:
+          completion.job.connection_id,
+        checkpointJob:
+          input.checkpointJob,
+        snapshotIngestionId:
+          null,
+        expectedRows:
+          completion.partitionRows,
+      };
+    } catch (error) {
+      throw wrapStageError(
+        "FINALIZATION_FAILED",
+        "The Naver canonical fact-only job could not be completed.",
+        error,
+      );
+    }
+  }
+
+  const preMaterializationTargets =
+    await input.dependencies
+      .loadFanoutTargets(
+        factJob,
+      );
+
+  assertFanoutTargetsUnchanged({
+    expected:
+      fanoutTargets,
+    actual:
+      preMaterializationTargets,
+    stageCode:
+      "MATERIALIZATION_FAILED",
+    phase:
+      "before fact snapshot materialization",
+  });
+
+  const batchSize =
+    input.options
+      .materializationBatchSize ??
+    2_000;
+
+  if (
+    !Number.isSafeInteger(batchSize) ||
+    batchSize <= 0 ||
+    batchSize > 5_000
+  ) {
+    throw new MediaSyncWorkerOrchestrationError(
+      "INVALID_INPUT",
+      "Fact snapshot materialization batch size must be an integer from 1 through 5000.",
+    );
+  }
+
+  type PreparedProjection = {
+    target:
+      MediaSyncReportFanoutTarget;
+    previousIngestionId:
+      string | null;
+    snapshotIngestionId:
+      string;
+    projectionStart:
+      string;
+    projectionEnd:
+      string;
+    expectedRows:
+      number;
+  };
+
+  const preparedProjections:
+    PreparedProjection[] =
+      [];
+
+  const preparationOrder = [
+    ...fanoutTargets.filter(
+      (target) =>
+        target.primary,
+    ),
+    ...fanoutTargets.filter(
+      (target) =>
+        !target.primary,
+    ),
+  ];
+
+  for (
+    const target
+    of preparationOrder
+  ) {
+    const coverage =
+      coverageByReportId.get(
+        target.reportId,
+      );
+
+    if (
+      !coverage ||
+      !coverage.complete
+    ) {
+      throw new MediaSyncWorkerOrchestrationError(
+        "MATERIALIZATION_FAILED",
+        "A complete fact projection coverage result is missing before snapshot preparation.",
+      );
+    }
+
+    let preparation:
+      Awaited<
+        ReturnType<
+          typeof prepareNaverFactSnapshotMaterialization
+        >
+      >;
+
+    try {
+      logStage({
+        job:
+          factJob,
+        stage:
+          "fact-snapshot-prepare:start",
+        detail:
+          `targetReport=${target.reportId} primary=${target.primary}`,
+      });
+
+      preparation =
+        await input.dependencies
+          .prepareFactSnapshot({
+            job:
+              factJob,
+            reportId:
+              target.reportId,
+          });
+
+      factJob =
+        preparation.job;
+    } catch (error) {
+      throw wrapStageError(
+        "MATERIALIZATION_FAILED",
+        `The Naver fact snapshot could not be prepared for report ${target.reportId}.`,
+        error,
+      );
+    }
+
+    if (
+      preparation.projectionStart !==
+        coverage.projectionStart ||
+      preparation.projectionEnd !==
+        coverage.projectionEnd ||
+      preparation.expectedRows !==
+        coverage.factRows
+    ) {
+      throw new MediaSyncWorkerOrchestrationError(
+        "MATERIALIZATION_FAILED",
+        "Prepared fact snapshot authority differs from the verified coverage result.",
+      );
+    }
+
+    if (
+      preparation.expectedRows > 0
+    ) {
+      if (preparation.idempotent) {
+        for (
+          let batchStart = 0;
+          batchStart <
+            preparation.expectedRows;
+          batchStart +=
+            batchSize
+        ) {
+          try {
+            const batch =
+              await input.dependencies
+                .materializeFactSnapshotBatch({
+                  job:
+                    factJob,
+                  reportId:
+                    target.reportId,
+                  snapshotIngestionId:
+                    preparation.snapshotIngestionId,
+                  projectionStart:
+                    preparation.projectionStart,
+                  projectionEnd:
+                    preparation.projectionEnd,
+                  expectedRows:
+                    preparation.expectedRows,
+                  batchStart,
+                  batchSize,
+                });
+
+            factJob =
+              batch.job;
+          } catch (error) {
+            throw wrapStageError(
+              "MATERIALIZATION_FAILED",
+              `Idempotent Naver fact snapshot batch verification failed for report ${target.reportId}.`,
+              error,
+            );
+          }
+        }
+      } else {
+        let nextRowIndex =
+          preparation.nextRowIndex;
+
+        while (
+          nextRowIndex <
+          preparation.expectedRows
+        ) {
+          let batch:
+            Awaited<
+              ReturnType<
+                typeof materializeNaverFactSnapshotBatch
+              >
+            >;
+
+          try {
+            batch =
+              await input.dependencies
+                .materializeFactSnapshotBatch({
+                  job:
+                    factJob,
+                  reportId:
+                    target.reportId,
+                  snapshotIngestionId:
+                    preparation.snapshotIngestionId,
+                  projectionStart:
+                    preparation.projectionStart,
+                  projectionEnd:
+                    preparation.projectionEnd,
+                  expectedRows:
+                    preparation.expectedRows,
+                  batchStart:
+                    nextRowIndex,
+                  batchSize,
+                });
+          } catch (error) {
+            throw wrapStageError(
+              "MATERIALIZATION_FAILED",
+              `Naver fact snapshot batch materialization failed for report ${target.reportId}.`,
+              error,
+            );
+          }
+
+          factJob =
+            batch.job;
+
+          if (
+            batch.nextRowIndex <=
+              nextRowIndex
+          ) {
+            throw new MediaSyncWorkerOrchestrationError(
+              "MATERIALIZATION_FAILED",
+              "Fact snapshot materialization checkpoint did not advance.",
+            );
+          }
+
+          nextRowIndex =
+            batch.nextRowIndex;
+        }
+      }
+    }
+
+    try {
+      const completion =
+        await input.dependencies
+          .completeFactSnapshot({
+            job:
+              factJob,
+            reportId:
+              target.reportId,
+            snapshotIngestionId:
+              preparation.snapshotIngestionId,
+            projectionStart:
+              preparation.projectionStart,
+            projectionEnd:
+              preparation.projectionEnd,
+            expectedRows:
+              preparation.expectedRows,
+          });
+
+      factJob =
+        completion.job;
+    } catch (error) {
+      throw wrapStageError(
+        "MATERIALIZATION_FAILED",
+        `The Naver fact snapshot could not be completed for report ${target.reportId}.`,
+        error,
+      );
+    }
+
+    preparedProjections.push({
+      target,
+      previousIngestionId:
+        preparation.previousIngestionId,
+      snapshotIngestionId:
+        preparation.snapshotIngestionId,
+      projectionStart:
+        preparation.projectionStart,
+      projectionEnd:
+        preparation.projectionEnd,
+      expectedRows:
+        preparation.expectedRows,
+    });
+
+    logStage({
+      job:
+        factJob,
+      stage:
+        "fact-snapshot-materialization:done",
+      detail:
+        `targetReport=${target.reportId} primary=${target.primary} rows=${preparation.expectedRows} batchSize=${batchSize}`,
+    });
+  }
+
+  const primaryProjection =
+    preparedProjections.find(
+      (entry) =>
+        entry.target.primary,
+    );
+
+  if (!primaryProjection) {
+    throw new MediaSyncWorkerOrchestrationError(
+      "MATERIALIZATION_FAILED",
+      "The primary fact snapshot projection was not prepared.",
+    );
+  }
+
+  const preActivationTargets =
+    await input.dependencies
+      .loadFanoutTargets(
+        factJob,
+      );
+
+  assertFanoutTargetsUnchanged({
+    expected:
+      fanoutTargets,
+    actual:
+      preActivationTargets,
+    stageCode:
+      "ACTIVATION_FAILED",
+    phase:
+      "before atomic fact snapshot activation",
+  });
+
+  let activation:
+    Awaited<
+      ReturnType<
+        typeof activateNaverFactSnapshotFanout
+      >
+    >;
+
+  try {
+    logStage({
+      job:
+        factJob,
+      stage:
+        "fact-snapshot-activation:start",
+      detail:
+        `fanoutReports=${preparedProjections.length}`,
+    });
+
+    activation =
+      await input.dependencies
+        .activateFactSnapshotFanout({
+          job:
+            factJob,
+          projections:
+            preparedProjections.map(
+              (entry) => ({
+                reportId:
+                  entry.target.reportId,
+                previousIngestionId:
+                  entry.previousIngestionId,
+                snapshotIngestionId:
+                  entry.snapshotIngestionId,
+                projectionStart:
+                  entry.projectionStart,
+                projectionEnd:
+                  entry.projectionEnd,
+                expectedRows:
+                  entry.expectedRows,
+              }),
+            ),
+        });
+
+    factJob =
+      activation.job;
+  } catch (error) {
+    throw wrapStageError(
+      "ACTIVATION_FAILED",
+      "The Naver fact snapshot fanout could not be activated atomically.",
+      error,
+    );
+  }
+
+  logStage({
+    job:
+      factJob,
+    stage:
+      "fact-snapshot-activation:done",
+    detail:
+      `fanoutReports=${activation.projectionCount} primarySnapshot=${activation.primarySnapshotIngestionId}`,
+  });
+
+  const preFinalizationTargets =
+    await input.dependencies
+      .loadFanoutTargets(
+        factJob,
+      );
+
+  assertFanoutTargetsUnchanged({
+    expected:
+      fanoutTargets,
+    actual:
+      preFinalizationTargets,
+    stageCode:
+      "FINALIZATION_FAILED",
+    phase:
+      "before fact snapshot finalization",
+  });
+
+  let finalization:
+    Awaited<
+      ReturnType<
+        typeof finalizeNaverFactSnapshotJob
+      >
+    >;
+
+  try {
+    logStage({
+      job:
+        factJob,
+      stage:
+        "fact-snapshot-finalization:start",
+      detail:
+        `fanoutReports=${preparedProjections.length}`,
+    });
+
+    finalization =
+      await input.dependencies
+        .finalizeFactSnapshot({
+          job:
+            factJob,
+          projections:
+            preparedProjections.map(
+              (entry) => ({
+                reportId:
+                  entry.target.reportId,
+                snapshotIngestionId:
+                  entry.snapshotIngestionId,
+                projectionStart:
+                  entry.projectionStart,
+                projectionEnd:
+                  entry.projectionEnd,
+                expectedRows:
+                  entry.expectedRows,
+              }),
+            ),
+        });
+  } catch (error) {
+    throw wrapStageError(
+      "FINALIZATION_FAILED",
+      "The Naver fact snapshot job could not be finalized.",
+      error,
+    );
+  }
+
+  logStage({
+    job:
+      finalization.job,
+    stage:
+      "fact-snapshot-finalization:done",
+    detail:
+      `fanoutReports=${finalization.projectionCount} lastSync=${finalization.connectionLastSyncAt}`,
+  });
+
+  return {
+    status:
+      "fact_snapshot_completed",
+    jobId:
+      finalization.job.id,
+    reportId:
+      finalization.job.report_id,
+    workspaceId:
+      finalization.job.workspace_id,
+    advertiserId:
+      finalization.job.advertiser_id,
+    connectionId:
+      finalization.job.connection_id,
+    checkpointJob:
+      input.checkpointJob,
+    snapshotIngestionId:
+      primaryProjection.snapshotIngestionId,
+    expectedRows:
+      primaryProjection.expectedRows,
+  };
+}
+
 export async function processClaimedNaverMediaSyncJob(
   job:
     MediaSyncJobRecord,
@@ -3373,6 +4122,18 @@ export async function processClaimedNaverMediaSyncJob(
     detail:
       `rows=${staging.canonicalRowCount}`,
   });
+
+  if (
+    options.enableNaverFactProjection ===
+      true
+  ) {
+    return await processNaverFactProjectionAfterStaging({
+      checkpointJob,
+      staging,
+      options,
+      dependencies,
+    });
+  }
 
   let fanoutTargets:
     MediaSyncReportFanoutTarget[];
