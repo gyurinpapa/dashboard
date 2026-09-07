@@ -203,9 +203,27 @@ begin
       message = 'MSFA_SCOPE_MISMATCH: report scope does not match the job';
   end if;
 
-  if coalesce(v_report.draft_period_start, v_report.period_start)
+  if coalesce(
+      v_report.draft_period_start,
+      v_report.period_start,
+      nullif(
+        btrim(
+          v_report.meta #>> '{media_sync,date_from}'
+        ),
+        ''
+      )::date
+    )
        is distinct from v_projection_start
-     or coalesce(v_report.draft_period_end, v_report.period_end)
+     or coalesce(
+      v_report.draft_period_end,
+      v_report.period_end,
+      nullif(
+        btrim(
+          v_report.meta #>> '{media_sync,date_to}'
+        ),
+        ''
+      )::date
+    )
        is distinct from v_projection_end
   then
     raise exception using

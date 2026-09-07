@@ -85,6 +85,7 @@ type ReportPeriodRecord = {
   draft_period_end: unknown;
   period_start: unknown;
   period_end: unknown;
+  meta: unknown;
 };
 
 type PartitionRecord = {
@@ -356,7 +357,7 @@ async function loadReportRecord(
       await supabase
         .from(REPORTS_TABLE)
         .select(
-          "id, workspace_id, advertiser_id, draft_period_start, draft_period_end, period_start, period_end",
+          "id, workspace_id, advertiser_id, draft_period_start, draft_period_end, period_start, period_end, meta",
         )
         .eq("id", reportId)
         .eq(
@@ -462,11 +463,37 @@ function parseProjectionPeriod(
       "report.period_end",
     );
 
+  const reportMeta =
+    isPlainObject(record.meta)
+      ? record.meta
+      : {};
+
+  const mediaSync =
+    isPlainObject(reportMeta.media_sync)
+      ? reportMeta.media_sync
+      : {};
+
+  const mediaSyncStart =
+    normalizeNullableDate(
+      mediaSync.date_from,
+      "report.meta.media_sync.date_from",
+    );
+
+  const mediaSyncEnd =
+    normalizeNullableDate(
+      mediaSync.date_to,
+      "report.meta.media_sync.date_to",
+    );
+
   const projectionStart =
-    draftStart ?? periodStart;
+    draftStart ??
+    periodStart ??
+    mediaSyncStart;
 
   const projectionEnd =
-    draftEnd ?? periodEnd;
+    draftEnd ??
+    periodEnd ??
+    mediaSyncEnd;
 
   if (
     !projectionStart ||

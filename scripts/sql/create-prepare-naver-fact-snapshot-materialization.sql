@@ -215,21 +215,33 @@ begin
 
   /*
    * Current projection authority:
-   *   COALESCE(draft_period_start, period_start)
-   *   COALESCE(draft_period_end, period_end)
+   *   draft_period_start -> period_start -> meta.media_sync.date_from
+   *   draft_period_end   -> period_end   -> meta.media_sync.date_to
    *
    * Job chunk dates are intentionally not a fallback.
    */
   v_projection_start :=
     coalesce(
       v_report.draft_period_start,
-      v_report.period_start
+      v_report.period_start,
+      nullif(
+        btrim(
+          v_report.meta #>> '{media_sync,date_from}'
+        ),
+        ''
+      )::date
     );
 
   v_projection_end :=
     coalesce(
       v_report.draft_period_end,
-      v_report.period_end
+      v_report.period_end,
+      nullif(
+        btrim(
+          v_report.meta #>> '{media_sync,date_to}'
+        ),
+        ''
+      )::date
     );
 
   if v_projection_start is null
