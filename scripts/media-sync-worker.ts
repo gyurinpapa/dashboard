@@ -22,6 +22,9 @@ const ENABLED_ENV =
 const GOOGLE_ADS_ENABLED_ENV =
   "MEDIA_SYNC_WORKER_GOOGLE_ADS_ENABLED";
 
+const NAVER_FACT_PROJECTION_ENABLED_ENV =
+  "MEDIA_SYNC_WORKER_NAVER_FACT_PROJECTION_ENABLED";
+
 const LOOP_ENV =
   "MEDIA_SYNC_WORKER_LOOP";
 
@@ -167,6 +170,8 @@ type WorkerRuntimeOptions = {
   enableAuthoritativeOverlap: boolean;
 
   materializationBatchSize?: number;
+
+  enableNaverFactProjection: boolean;
 };
 
 type SafeErrorLog = {
@@ -472,6 +477,11 @@ function readRuntimeOptions():
         MATERIALIZATION_BATCH_SIZE_UPPER_BOUND,
     });
 
+  const enableNaverFactProjection =
+    readBooleanEnv(
+      NAVER_FACT_PROJECTION_ENABLED_ENV,
+    );
+
   const exitWhenIdle =
     readBooleanEnv(IDLE_EXIT_ENV);
 
@@ -493,6 +503,7 @@ function readRuntimeOptions():
     maxAuthoritativeDiscoveryPagesPerRun,
     enableAuthoritativeOverlap,
     materializationBatchSize,
+    enableNaverFactProjection,
   };
 }
 
@@ -1039,6 +1050,9 @@ async function processSingleJob(
 
       materializationBatchSize:
         options.materializationBatchSize,
+
+      enableNaverFactProjection:
+        options.enableNaverFactProjection,
     });
 
   const result =
