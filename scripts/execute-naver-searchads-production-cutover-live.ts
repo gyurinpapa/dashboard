@@ -5438,6 +5438,12 @@ async function main():
           "PRODUCTION_CUTOVER_FACT_ONLY_RESULT_UNSUPPORTED",
         );
       }
+
+      if (result.status === "fact_snapshot_completed") {
+        throw new Error(
+          "PRODUCTION_CUTOVER_FACT_SNAPSHOT_RESULT_UNSUPPORTED",
+        );
+      }
       completedResult =
         result;
       activationCommitted =

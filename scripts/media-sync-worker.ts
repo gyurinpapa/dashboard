@@ -1144,6 +1144,27 @@ async function processSingleJob(
     return true;
   }
 
+  if (result.status === "fact_snapshot_completed") {
+    logCompletedJob({
+      jobId:
+        result.jobId,
+      reportId:
+        result.reportId,
+      workspaceId:
+        result.workspaceId,
+      advertiserId:
+        result.advertiserId,
+      connectionId:
+        result.connectionId,
+      snapshotIngestionId:
+        result.snapshotIngestionId,
+      expectedRows:
+        result.expectedRows,
+    });
+
+    return true;
+  }
+
   logCompletedJob({
     jobId:
       result.jobId,
