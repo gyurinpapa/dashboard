@@ -73,6 +73,22 @@ import {
   type MediaSyncReportFanoutTarget,
   type MediaSyncReportProjectionAuthority,
 } from "./media-sync-report-fanout-repository";
+import {
+  replaceNaverFactDate,
+} from "./media-sync-fact-replacement-repository";
+import {
+  loadMediaSyncFactProjectionCoverage,
+} from "./media-sync-fact-projection-coverage-repository";
+import {
+  completeNaverFactOnlyJob,
+} from "./media-sync-fact-only-completion-repository";
+import {
+  prepareNaverFactSnapshotMaterialization,
+  materializeNaverFactSnapshotBatch,
+  completeNaverFactSnapshotMaterialization,
+  activateNaverFactSnapshotFanout,
+  finalizeNaverFactSnapshotJob,
+} from "./media-sync-fact-snapshot-lifecycle-repository";
 import type {
   MediaSyncJobRecord,
 } from "./types";
@@ -180,6 +196,30 @@ export type MediaSyncWorkerOrchestrationDependencies = {
   loadProjectionAuthority?:
     typeof loadMediaSyncReportProjectionAuthority;
 
+  replaceFactDate?:
+    typeof replaceNaverFactDate;
+
+  loadFactProjectionCoverage?:
+    typeof loadMediaSyncFactProjectionCoverage;
+
+  completeFactOnly?:
+    typeof completeNaverFactOnlyJob;
+
+  prepareFactSnapshot?:
+    typeof prepareNaverFactSnapshotMaterialization;
+
+  materializeFactSnapshotBatch?:
+    typeof materializeNaverFactSnapshotBatch;
+
+  completeFactSnapshot?:
+    typeof completeNaverFactSnapshotMaterialization;
+
+  activateFactSnapshotFanout?:
+    typeof activateNaverFactSnapshotFanout;
+
+  finalizeFactSnapshot?:
+    typeof finalizeNaverFactSnapshotJob;
+
   materialize:
     typeof materializeMediaSyncSnapshot;
 
@@ -194,13 +234,45 @@ type ResolvedMediaSyncWorkerOrchestrationDependencies =
   Omit<
     MediaSyncWorkerOrchestrationDependencies,
     "loadFanoutTargets" |
-    "loadProjectionAuthority"
+    "loadProjectionAuthority" |
+    "replaceFactDate" |
+    "loadFactProjectionCoverage" |
+    "completeFactOnly" |
+    "prepareFactSnapshot" |
+    "materializeFactSnapshotBatch" |
+    "completeFactSnapshot" |
+    "activateFactSnapshotFanout" |
+    "finalizeFactSnapshot"
   > & {
     loadFanoutTargets:
       typeof loadMediaSyncReportFanoutTargets;
 
     loadProjectionAuthority:
       typeof loadMediaSyncReportProjectionAuthority;
+
+    replaceFactDate:
+      typeof replaceNaverFactDate;
+
+    loadFactProjectionCoverage:
+      typeof loadMediaSyncFactProjectionCoverage;
+
+    completeFactOnly:
+      typeof completeNaverFactOnlyJob;
+
+    prepareFactSnapshot:
+      typeof prepareNaverFactSnapshotMaterialization;
+
+    materializeFactSnapshotBatch:
+      typeof materializeNaverFactSnapshotBatch;
+
+    completeFactSnapshot:
+      typeof completeNaverFactSnapshotMaterialization;
+
+    activateFactSnapshotFanout:
+      typeof activateNaverFactSnapshotFanout;
+
+    finalizeFactSnapshot:
+      typeof finalizeNaverFactSnapshotJob;
   };
 
 export type ProcessNaverMediaSyncJobOptions = {
@@ -1690,6 +1762,38 @@ function resolveOrchestrationDependencies(
     loadProjectionAuthority:
       overrides?.loadProjectionAuthority ??
       loadMediaSyncReportProjectionAuthority,
+
+    replaceFactDate:
+      overrides?.replaceFactDate ??
+      replaceNaverFactDate,
+
+    loadFactProjectionCoverage:
+      overrides?.loadFactProjectionCoverage ??
+      loadMediaSyncFactProjectionCoverage,
+
+    completeFactOnly:
+      overrides?.completeFactOnly ??
+      completeNaverFactOnlyJob,
+
+    prepareFactSnapshot:
+      overrides?.prepareFactSnapshot ??
+      prepareNaverFactSnapshotMaterialization,
+
+    materializeFactSnapshotBatch:
+      overrides?.materializeFactSnapshotBatch ??
+      materializeNaverFactSnapshotBatch,
+
+    completeFactSnapshot:
+      overrides?.completeFactSnapshot ??
+      completeNaverFactSnapshotMaterialization,
+
+    activateFactSnapshotFanout:
+      overrides?.activateFactSnapshotFanout ??
+      activateNaverFactSnapshotFanout,
+
+    finalizeFactSnapshot:
+      overrides?.finalizeFactSnapshot ??
+      finalizeNaverFactSnapshotJob,
 
     materialize:
       overrides?.materialize ??
