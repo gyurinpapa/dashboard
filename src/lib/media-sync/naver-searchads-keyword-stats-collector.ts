@@ -3987,26 +3987,21 @@ export async function collectNaverKeywordDailyStats(
         state.cursor,
       );
 
-      if (hasCandidateStrategy) {
-        await notifyProgress({
-          callback:
-            input.onProgress,
-          stage:
-            "collector:partial",
-          state,
-        });
+      await notifyProgress({
+        callback:
+          input.onProgress,
+        stage:
+          "collector:partial",
+        state,
+      });
 
-        return buildCollectorResult({
-          status:
-            "partial",
-          state,
-          partialReason:
-            "candidate_report_unavailable",
-        });
-      }
-
-      webSiteCandidateIndex =
-        null;
+      return buildCollectorResult({
+        status:
+          "partial",
+        state,
+        partialReason:
+          "candidate_report_unavailable",
+      });
     }
   }
 
