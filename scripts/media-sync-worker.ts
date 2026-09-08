@@ -70,6 +70,12 @@ const MATERIALIZATION_BATCH_SIZE_ENV =
 const MAX_KEYWORD_DISCOVERY_PAGES_PER_RUN_ENV =
   "MEDIA_SYNC_WORKER_MAX_KEYWORD_DISCOVERY_PAGES_PER_RUN";
 
+const RECONCILIATION_BATCH_SIZE_ENV =
+  "MEDIA_SYNC_WORKER_RECONCILIATION_BATCH_SIZE";
+
+const RECONCILIATION_STEPS_PER_CLAIM_ENV =
+  "MEDIA_SYNC_WORKER_RECONCILIATION_STEPS_PER_CLAIM";
+
 const DEFAULT_POLL_INTERVAL_MS =
   15_000;
 
@@ -145,6 +151,24 @@ const MAX_KEYWORD_DISCOVERY_PAGES_PER_RUN_UPPER_BOUND =
 const MATERIALIZATION_BATCH_SIZE_UPPER_BOUND =
   5_000;
 
+const DEFAULT_RECONCILIATION_BATCH_SIZE =
+  500;
+
+const MIN_RECONCILIATION_BATCH_SIZE =
+  100;
+
+const MAX_RECONCILIATION_BATCH_SIZE =
+  10_000;
+
+const DEFAULT_RECONCILIATION_STEPS_PER_CLAIM =
+  8;
+
+const MIN_RECONCILIATION_STEPS_PER_CLAIM =
+  1;
+
+const MAX_RECONCILIATION_STEPS_PER_CLAIM =
+  256;
+
 type WorkerRuntimeOptions = {
   enabled: boolean;
   loop: boolean;
@@ -161,6 +185,8 @@ type WorkerRuntimeOptions = {
   maxAuthoritativeEntityStatsPerRun?: number;
   maxAuthoritativeStatsRequestsPerRun?: number;
   maxAuthoritativeDiscoveryPagesPerRun?: number;
+  reconciliationBatchSize: number;
+  reconciliationStepsPerClaim: number;
 
   /**
    * True only when no bounded-run environment variable was explicitly
@@ -465,6 +491,36 @@ function readRuntimeOptions():
         MAX_AUTHORITATIVE_DISCOVERY_PAGES_PER_RUN_UPPER_BOUND,
     });
 
+  const reconciliationBatchSize =
+    readPositiveIntegerEnv({
+      name:
+        RECONCILIATION_BATCH_SIZE_ENV,
+
+      fallback:
+        DEFAULT_RECONCILIATION_BATCH_SIZE,
+
+      min:
+        MIN_RECONCILIATION_BATCH_SIZE,
+
+      max:
+        MAX_RECONCILIATION_BATCH_SIZE,
+    });
+
+  const reconciliationStepsPerClaim =
+    readPositiveIntegerEnv({
+      name:
+        RECONCILIATION_STEPS_PER_CLAIM_ENV,
+
+      fallback:
+        DEFAULT_RECONCILIATION_STEPS_PER_CLAIM,
+
+      min:
+        MIN_RECONCILIATION_STEPS_PER_CLAIM,
+
+      max:
+        MAX_RECONCILIATION_STEPS_PER_CLAIM,
+    });
+
   const enableAuthoritativeOverlap =
     !hasExplicitNaverBoundedRunEnvironment();
 
@@ -501,6 +557,8 @@ function readRuntimeOptions():
     maxAuthoritativeEntityStatsPerRun,
     maxAuthoritativeStatsRequestsPerRun,
     maxAuthoritativeDiscoveryPagesPerRun,
+    reconciliationBatchSize,
+    reconciliationStepsPerClaim,
     enableAuthoritativeOverlap,
     materializationBatchSize,
     enableNaverFactProjection,
@@ -673,6 +731,18 @@ function logWorkerStart(
   console.log(
     `[${WORKER_NAME}] max authoritative discovery pages per run: ${
       formatOptionalLimit(options.maxAuthoritativeDiscoveryPagesPerRun)
+    }`,
+  );
+
+  console.log(
+    `[${WORKER_NAME}] reconciliation batch size: ${
+      options.reconciliationBatchSize
+    }`,
+  );
+
+  console.log(
+    `[${WORKER_NAME}] reconciliation steps per claim: ${
+      options.reconciliationStepsPerClaim
     }`,
   );
 
@@ -1044,6 +1114,12 @@ async function processSingleJob(
 
       maxAuthoritativeDiscoveryPagesPerRun:
         options.maxAuthoritativeDiscoveryPagesPerRun,
+
+      reconciliationBatchSize:
+        options.reconciliationBatchSize,
+
+      reconciliationStepsPerClaim:
+        options.reconciliationStepsPerClaim,
 
       enableAuthoritativeOverlap:
         options.enableAuthoritativeOverlap,
