@@ -1636,7 +1636,7 @@ const verificationCases:
     },
     {
       name:
-        "keeps the existing keyword canonical output exactly unchanged",
+        "keeps positive and delayed-conversion keyword canonical output semantics",
       run: () => {
         const rows =
           convertNaverKeywordDailyStatsToCanonicalRows({
@@ -1662,8 +1662,15 @@ const verificationCases:
 
         assertDeepEqual(
           rows,
-          EXPECTED_KEYWORD_ROWS,
-          "Existing keyword canonical output changed",
+          EXPECTED_KEYWORD_ROWS.filter(
+            (row) =>
+              row.impressions > 0 ||
+              row.clicks > 0 ||
+              row.cost > 0 ||
+              row.conversions > 0 ||
+              row.revenue > 0,
+          ),
+          "All-zero keyword filtering changed meaningful output",
         );
 
         const firstRow =
@@ -1692,6 +1699,80 @@ const verificationCases:
           firstRow.provider_meta,
           EXPECTED_KEYWORD_ROWS[0]?.provider_meta,
           "Keyword provider_meta changed",
+        );
+
+        const delayedStats =
+          cloneFixture(
+            KEYWORD_STATS,
+          );
+
+        const delayedRecord =
+          delayedStats.records.find(
+            (record) =>
+              record.date ===
+              "2026-05-02",
+          );
+
+        assertTrue(
+          delayedRecord !== undefined,
+          "Delayed keyword conversion fixture is missing",
+        );
+
+        delayedRecord.impCnt = 0;
+        delayedRecord.clkCnt = 0;
+        delayedRecord.salesAmt = 0;
+        delayedRecord.ccnt = 1;
+        delayedRecord.convAmt = 50000;
+        delayedRecord.avgRnk = null;
+
+        const delayedRows =
+          convertNaverKeywordDailyStatsToCanonicalRows({
+            externalAccountId:
+              EXTERNAL_ACCOUNT_ID,
+            campaign:
+              cloneFixture(
+                KEYWORD_CAMPAIGN,
+              ),
+            adgroup:
+              cloneFixture(
+                KEYWORD_ADGROUP,
+              ),
+            keyword:
+              cloneFixture(
+                KEYWORD,
+              ),
+            stats:
+              delayedStats,
+          });
+
+        const delayedRow =
+          delayedRows.find(
+            (row) =>
+              row.date ===
+              "2026-05-02",
+          );
+
+        assertTrue(
+          delayedRow !== undefined,
+          "Delayed keyword conversion row must be preserved",
+        );
+
+        assertEqual(
+          delayedRow.impressions,
+          0,
+          "Delayed keyword conversion impressions changed",
+        );
+
+        assertEqual(
+          delayedRow.conversions,
+          1,
+          "Delayed keyword conversion count changed",
+        );
+
+        assertEqual(
+          delayedRow.revenue,
+          50000,
+          "Delayed keyword conversion revenue changed",
         );
       },
     },
@@ -1758,7 +1839,7 @@ function main(): void {
     `verified one authoritative entity per row: ${verificationPassed}`,
   );
   console.log(
-    `verified existing keyword canonical output unchanged: ${verificationPassed}`,
+    `verified Naver all-zero-only canonical filtering: ${verificationPassed}`,
   );
   console.log(
     `verified input objects unchanged: ${verificationPassed}`,

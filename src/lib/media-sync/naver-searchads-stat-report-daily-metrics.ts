@@ -1054,7 +1054,13 @@ export async function fetchNaverSearchAdsStatReportKeywordDailyStatsBatch(
             !metrics ||
             (!metrics.hasPerformanceRow &&
               !metrics.hasConversionRow) ||
-            metrics.impCnt <= 0
+            (
+              metrics.impCnt === 0 &&
+              metrics.clkCnt === 0 &&
+              metrics.salesAmt === 0 &&
+              metrics.ccnt === 0 &&
+              metrics.convAmt === 0
+            )
           ) {
             continue;
           }

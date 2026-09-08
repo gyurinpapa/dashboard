@@ -202,7 +202,7 @@ const verificationCases:
 
         assertEqual(
           rows.length,
-          3,
+          2,
           "Canonical row count mismatch",
         );
 
@@ -213,7 +213,6 @@ const verificationCases:
           [
             "2026-06-01",
             "2026-06-02",
-            "2026-06-03",
           ],
           "Canonical rows must be sorted by date",
         );
@@ -409,7 +408,7 @@ const verificationCases:
     },
     {
       name:
-        "maps nullable Naver metrics to canonical zero values",
+        "omits only completely empty keyword daily rows",
       run: () => {
         const rows =
           convertNaverKeywordDailyStatsToCanonicalRows({
@@ -433,7 +432,70 @@ const verificationCases:
               ),
           });
 
-        const nullMetricRow =
+        assertEqual(
+          rows.length,
+          2,
+          "All-zero keyword row must be omitted",
+        );
+
+        assertTrue(
+          !rows.some(
+            (row) =>
+              row.date ===
+              "2026-06-03",
+          ),
+          "All-zero keyword date must not remain",
+        );
+      },
+    },
+    {
+      name:
+        "preserves zero-impression keyword rows with delayed conversions",
+      run: () => {
+        const stats =
+          cloneFixture(
+            STATS_FIXTURE,
+          );
+
+        const delayedConversion =
+          stats.records.find(
+            (record) =>
+              record.date ===
+              "2026-06-03",
+          );
+
+        assertTrue(
+          delayedConversion !== undefined,
+          "Delayed-conversion fixture is missing",
+        );
+
+        delayedConversion.impCnt = 0;
+        delayedConversion.clkCnt = 0;
+        delayedConversion.salesAmt = 0;
+        delayedConversion.ccnt = 1;
+        delayedConversion.convAmt = 100000;
+        delayedConversion.avgRnk = null;
+
+        const rows =
+          convertNaverKeywordDailyStatsToCanonicalRows({
+            externalAccountId:
+              "customer-001",
+            campaign:
+              cloneFixture(
+                CAMPAIGN_FIXTURE,
+              ),
+            adgroup:
+              cloneFixture(
+                ADGROUP_FIXTURE,
+              ),
+            keyword:
+              cloneFixture(
+                KEYWORD_FIXTURE,
+              ),
+            stats,
+          });
+
+        const preserved =
           rows.find(
             (row) =>
               row.date ===
@@ -441,44 +503,26 @@ const verificationCases:
           );
 
         assertTrue(
-          nullMetricRow !== undefined,
-          "Null metric canonical row is missing.",
+          preserved !== undefined,
+          "Delayed-conversion row must be preserved",
         );
 
         assertEqual(
-          nullMetricRow.impressions,
+          preserved.impressions,
           0,
-          "Null impCnt must map to zero",
+          "Delayed-conversion impressions changed",
         );
 
         assertEqual(
-          nullMetricRow.clicks,
-          0,
-          "Null clkCnt must map to zero",
+          preserved.conversions,
+          1,
+          "Delayed-conversion count changed",
         );
 
         assertEqual(
-          nullMetricRow.cost,
-          0,
-          "Null salesAmt must map to zero",
-        );
-
-        assertEqual(
-          nullMetricRow.conversions,
-          0,
-          "Null ccnt must map to zero",
-        );
-
-        assertEqual(
-          nullMetricRow.revenue,
-          0,
-          "Null convAmt must map to zero",
-        );
-
-        assertEqual(
-          nullMetricRow.rank,
-          0,
-          "Null avgRnk must map to zero",
+          preserved.revenue,
+          100000,
+          "Delayed-conversion revenue changed",
         );
       },
     },

@@ -462,7 +462,7 @@ export function convertNaverKeywordDailyStatsToCanonicalRows(
     new Set<string>();
 
   const rows =
-    input.stats.records.map(
+    input.stats.records.flatMap(
       (record) => {
         const metrics =
           normalizeStatsRecord({
@@ -483,7 +483,21 @@ export function convertNaverKeywordDailyStatsToCanonicalRows(
 
         seenDates.add(metrics.date);
 
-        return {
+        /*
+         * Preserve delayed / indirect conversion rows and any other
+         * meaningful metric row. Omit only a completely empty daily row.
+         */
+        if (
+          metrics.impressions === 0 &&
+          metrics.clicks === 0 &&
+          metrics.cost === 0 &&
+          metrics.conversions === 0 &&
+          metrics.revenue === 0
+        ) {
+          return [];
+        }
+
+        return [{
           date:
             metrics.date,
           report_date:
@@ -563,7 +577,7 @@ export function convertNaverKeywordDailyStatsToCanonicalRows(
               periodEnd:
                 record.periodEnd,
             }),
-        } satisfies EtrylueNormalizedMediaRow;
+        } satisfies EtrylueNormalizedMediaRow];
       },
     );
 
