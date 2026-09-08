@@ -55,6 +55,8 @@ export type NaverKeywordStatsCursor = {
 
   completedKeywordCount: number;
   discoveredKeywordCount: number;
+
+  collectionStrategy?: "candidate_first";
 };
 
 export type NaverKeywordStatsRetryCategory =
@@ -517,6 +519,30 @@ export function normalizeNaverKeywordStatsCursor(
     );
   }
 
+  let collectionStrategy:
+    | "candidate_first"
+    | undefined;
+
+  if (
+    candidate.collectionStrategy !==
+      undefined &&
+    candidate.collectionStrategy !==
+      null
+  ) {
+    if (
+      candidate.collectionStrategy !==
+      "candidate_first"
+    ) {
+      throw new NaverKeywordStatsStateError(
+        "INVALID_CURSOR",
+        "collectionStrategy is invalid.",
+      );
+    }
+
+    collectionStrategy =
+      "candidate_first";
+  }
+
   const normalizedCursor:
     NaverKeywordStatsCursor = {
       version:
@@ -578,6 +604,12 @@ export function normalizeNaverKeywordStatsCursor(
         candidate.completedKeywordCount,
       discoveredKeywordCount:
         candidate.discoveredKeywordCount,
+
+      ...(collectionStrategy
+        ? {
+            collectionStrategy,
+          }
+        : {}),
     };
 
   assertValidNaverKeywordStatsDateWindow({

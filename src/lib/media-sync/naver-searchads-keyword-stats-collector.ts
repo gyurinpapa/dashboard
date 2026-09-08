@@ -18,8 +18,10 @@ import {
   resolveNaverSearchAdsCampaignCollectionContract,
 } from "./naver-searchads-authoritative-grain";
 import {
+  fetchNaverSearchAdsStatReportKeywordCandidates,
   fetchNaverSearchAdsStatReportKeywordDailyStatsBatch,
   fetchNaverSearchAdsStatReportKeywordDailyStats,
+  type NaverSearchAdsStatReportKeywordCandidate,
 } from "./naver-searchads-stat-report-daily-metrics";
 import {
   NAVER_KEYWORD_STATS_DEFAULT_CHUNK_PAUSE_MS,
@@ -216,6 +218,8 @@ export type NaverKeywordStatsCollectorDependencies = {
     typeof fetchNaverSearchAdsStatReportKeywordDailyStats;
   fetchStatReportKeywordDailyStatsBatch?:
     typeof fetchNaverSearchAdsStatReportKeywordDailyStatsBatch;
+  fetchStatReportKeywordCandidates?:
+    typeof fetchNaverSearchAdsStatReportKeywordCandidates;
 
   sleep: NaverKeywordStatsCollectorSleep;
   now: () => number;
@@ -250,7 +254,8 @@ export type NaverKeywordStatsCollectorPartialReason =
   | "max_keyword_stats_per_run_reached"
   | "max_stats_requests_per_run_reached"
   | "max_keyword_discovery_pages_per_run_reached"
-  | "claim_time_budget_reached";
+  | "claim_time_budget_reached"
+  | "candidate_report_unavailable";
 
 export type NaverKeywordStatsCollectorBaseResult = {
   cursor: NaverKeywordStatsCursor;
@@ -308,11 +313,14 @@ type ResolvedCollectorDependencies =
     NaverKeywordStatsCollectorDependencies,
     | "fetchStatReportKeywordDailyStats"
     | "fetchStatReportKeywordDailyStatsBatch"
+    | "fetchStatReportKeywordCandidates"
   > & {
     fetchStatReportKeywordDailyStats:
       typeof fetchNaverSearchAdsStatReportKeywordDailyStats;
     fetchStatReportKeywordDailyStatsBatch:
       typeof fetchNaverSearchAdsStatReportKeywordDailyStatsBatch;
+    fetchStatReportKeywordCandidates:
+      typeof fetchNaverSearchAdsStatReportKeywordCandidates;
   };
 
 type CollectorRuntimeState = {
@@ -415,6 +423,9 @@ const DEFAULT_COLLECTOR_DEPENDENCIES:
 
     fetchStatReportKeywordDailyStatsBatch:
       fetchNaverSearchAdsStatReportKeywordDailyStatsBatch,
+
+    fetchStatReportKeywordCandidates:
+      fetchNaverSearchAdsStatReportKeywordCandidates,
 
     sleep: async (
       milliseconds: number,
@@ -624,6 +635,10 @@ function resolveCollectorDependencies(
     [
       "fetchStatReportKeywordDailyStatsBatch",
       resolvedDependencies.fetchStatReportKeywordDailyStatsBatch,
+    ],
+    [
+      "fetchStatReportKeywordCandidates",
+      resolvedDependencies.fetchStatReportKeywordCandidates,
     ],
     [
       "sleep",
@@ -1695,6 +1710,111 @@ function assertResumeTargetResolved(
       cursor,
     },
   );
+}
+
+
+type WebSiteCandidateIndex = {
+  keywordIdsByAdgroup:
+    Map<string, ReadonlySet<string>>;
+  keywordCount: number;
+};
+
+function buildWebSiteCandidateIndex(
+  candidates:
+    readonly NaverSearchAdsStatReportKeywordCandidate[],
+  cursor: NaverKeywordStatsCursor,
+): WebSiteCandidateIndex {
+  const keywordToAdgroup =
+    new Map<string, string>();
+  const mutableByAdgroup =
+    new Map<string, Set<string>>();
+
+  for (const candidate of candidates) {
+    const keywordId =
+      candidate.keywordId?.trim();
+    const adgroupId =
+      candidate.adgroupId?.trim();
+
+    if (
+      !keywordId?.startsWith("nkw-") ||
+      !adgroupId?.startsWith("grp-")
+    ) {
+      throw new NaverKeywordStatsCollectorError(
+        "INVALID_INPUT",
+        "The StatReport candidate set contains an invalid keyword/adgroup pair.",
+        {
+          cursor,
+        },
+      );
+    }
+
+    const existing =
+      keywordToAdgroup.get(
+        keywordId,
+      );
+
+    if (
+      existing &&
+      existing !== adgroupId
+    ) {
+      throw new NaverKeywordStatsCollectorError(
+        "INVALID_INPUT",
+        "The StatReport candidate set maps one keyword to multiple adgroups.",
+        {
+          cursor,
+        },
+      );
+    }
+
+    if (existing) {
+      continue;
+    }
+
+    keywordToAdgroup.set(
+      keywordId,
+      adgroupId,
+    );
+
+    let keywordIds =
+      mutableByAdgroup.get(
+        adgroupId,
+      );
+
+    if (!keywordIds) {
+      keywordIds =
+        new Set<string>();
+      mutableByAdgroup.set(
+        adgroupId,
+        keywordIds,
+      );
+    }
+
+    keywordIds.add(
+      keywordId,
+    );
+  }
+
+  const keywordIdsByAdgroup =
+    new Map<
+      string,
+      ReadonlySet<string>
+    >();
+
+  for (
+    const [adgroupId, keywordIds]
+    of mutableByAdgroup
+  ) {
+    keywordIdsByAdgroup.set(
+      adgroupId,
+      keywordIds,
+    );
+  }
+
+  return {
+    keywordIdsByAdgroup,
+    keywordCount:
+      keywordToAdgroup.size,
+  };
 }
 
 function isWebSiteFastPathCampaign(
@@ -2943,6 +3063,8 @@ async function collectKeywordPages(input: {
   campaign: NaverSearchAdsCampaignRecord;
   adgroup: NaverSearchAdsAdgroupRecord;
   prefetchedFirstPage?: PrefetchedKeywordPage;
+  webSiteCandidateKeywordIds:
+    ReadonlySet<string> | null;
 
   state: CollectorRuntimeState;
   options: NormalizedCollectorOptions;
@@ -3109,9 +3231,23 @@ async function collectKeywordPages(input: {
           },
         );
 
+      const keywordRecordsToCollect =
+        isWebSiteFastPathCampaign(
+          input.campaign,
+        ) &&
+        input.webSiteCandidateKeywordIds !==
+          null
+          ? keywordPage.records.filter(
+              (keyword) =>
+                input.webSiteCandidateKeywordIds?.has(
+                  keyword.id,
+                ) === true,
+            )
+          : keywordPage.records;
+
       const chunks =
         splitKeywordPageIntoChunks(
-          keywordPage.records,
+          keywordRecordsToCollect,
           input.options.keywordChunkSize,
         );
 
@@ -3326,6 +3462,11 @@ async function prefetchKeywordFirstPage(input: {
 
 async function collectAdgroupPages(input: {
   campaign: NaverSearchAdsCampaignRecord;
+  webSiteCandidateKeywordIdsByAdgroup:
+    ReadonlyMap<
+      string,
+      ReadonlySet<string>
+    > | null;
 
   state: CollectorRuntimeState;
   options: NormalizedCollectorOptions;
@@ -3468,6 +3609,19 @@ async function collectAdgroupPages(input: {
         continue;
       }
 
+      if (
+        isWebSiteFastPathCampaign(
+          input.campaign,
+        ) &&
+        input.webSiteCandidateKeywordIdsByAdgroup !==
+          null &&
+        !input.webSiteCandidateKeywordIdsByAdgroup.has(
+          adgroup.id,
+        )
+      ) {
+        continue;
+      }
+
       adgroupsToCollect.push(adgroup);
     }
 
@@ -3553,6 +3707,17 @@ async function collectAdgroupPages(input: {
             },
           );
 
+        const webSiteCandidateKeywordIds =
+          isWebSiteFastPathCampaign(
+            input.campaign,
+          ) &&
+          input.webSiteCandidateKeywordIdsByAdgroup !==
+            null
+            ? input.webSiteCandidateKeywordIdsByAdgroup.get(
+                adgroup.id,
+              ) ?? null
+            : null;
+
         const keywordPagesResult =
           await collectKeywordPages({
             campaign:
@@ -3563,6 +3728,8 @@ async function collectAdgroupPages(input: {
             ...(prefetchedFirstPage
               ? { prefetchedFirstPage }
               : {}),
+
+            webSiteCandidateKeywordIds,
 
             state:
               input.state,
@@ -3767,7 +3934,83 @@ export async function collectNaverKeywordDailyStats(
     state,
   });
 
-    let campaignBaseSearchId:
+  const hasCandidateStrategy =
+    normalizedCursor.collectionStrategy ===
+      "candidate_first";
+
+  const isFreshCursor =
+    normalizedCursor.completedKeywordCount ===
+      0 &&
+    !resumeTarget.enabled;
+
+  let webSiteCandidateIndex:
+    WebSiteCandidateIndex | null = null;
+
+  if (
+    hasCandidateStrategy ||
+    isFreshCursor
+  ) {
+    try {
+      const candidates =
+        await dependencies
+          .fetchStatReportKeywordCandidates({
+            credentials:
+              input.credentials,
+            dateFrom:
+              normalizedCursor.dateFrom,
+            dateTo:
+              normalizedCursor.dateTo,
+            signal:
+              input.signal,
+          });
+
+      webSiteCandidateIndex =
+        buildWebSiteCandidateIndex(
+          candidates,
+          state.cursor,
+        );
+
+      state.cursor = {
+        ...setNaverKeywordStatsDiscoveredCount(
+          state.cursor,
+          Math.max(
+            state.cursor.discoveredKeywordCount,
+            webSiteCandidateIndex.keywordCount,
+          ),
+        ),
+        collectionStrategy:
+          "candidate_first",
+      };
+    } catch (error) {
+      assertNotAborted(
+        input.signal,
+        state.cursor,
+      );
+
+      if (hasCandidateStrategy) {
+        await notifyProgress({
+          callback:
+            input.onProgress,
+          stage:
+            "collector:partial",
+          state,
+        });
+
+        return buildCollectorResult({
+          status:
+            "partial",
+          state,
+          partialReason:
+            "candidate_report_unavailable",
+        });
+      }
+
+      webSiteCandidateIndex =
+        null;
+    }
+  }
+
+  let campaignBaseSearchId:
     | string
     | null =
       state.cursor.campaignBaseSearchId;
@@ -3914,6 +4157,11 @@ export async function collectNaverKeywordDailyStats(
       const adgroupPagesResult =
         await collectAdgroupPages({
           campaign,
+
+          webSiteCandidateKeywordIdsByAdgroup:
+            webSiteCandidateIndex
+              ?.keywordIdsByAdgroup ??
+            null,
 
           state,
 

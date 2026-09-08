@@ -58,6 +58,8 @@ type DailyMetricsByEntity =
 type DailyMetricsIndex = {
   keyword: DailyMetricsByEntity;
   adgroup: DailyMetricsByEntity;
+  keywordAdgroup: Map<string, string>;
+  keywordAdgroupConflicts: Set<string>;
 };
 
 type CacheEntry = {
@@ -79,6 +81,18 @@ export type NaverSearchAdsStatReportDailyMetricsErrorCode =
 export type FetchNaverSearchAdsStatReportKeywordDailyStatsBatchInput = {
   credentials: NaverSearchAdsCredentials;
   keywordIds: readonly string[];
+  dateFrom: string;
+  dateTo: string;
+  signal?: AbortSignal;
+};
+
+export type NaverSearchAdsStatReportKeywordCandidate = {
+  keywordId: string;
+  adgroupId: string;
+};
+
+export type FetchNaverSearchAdsStatReportKeywordCandidatesInput = {
+  credentials: NaverSearchAdsCredentials;
   dateFrom: string;
   dateTo: string;
   signal?: AbortSignal;
@@ -511,6 +525,39 @@ function getOrCreateMetrics(input: {
   return metrics;
 }
 
+function registerKeywordAdgroup(input: {
+  index: DailyMetricsIndex;
+  keywordId: string;
+  adgroupId: string;
+}): void {
+  if (
+    !input.keywordId.startsWith("nkw-") ||
+    !input.adgroupId.startsWith("grp-")
+  ) {
+    return;
+  }
+
+  const existing =
+    input.index.keywordAdgroup.get(
+      input.keywordId,
+    );
+
+  if (
+    existing &&
+    existing !== input.adgroupId
+  ) {
+    input.index.keywordAdgroupConflicts.add(
+      input.keywordId,
+    );
+    return;
+  }
+
+  input.index.keywordAdgroup.set(
+    input.keywordId,
+    input.adgroupId,
+  );
+}
+
 function aggregatePerformanceRows(input: {
   rows: readonly string[][];
   date: string;
@@ -564,6 +611,12 @@ function aggregatePerformanceRows(input: {
     }
 
     if (keywordId.startsWith("nkw-")) {
+      registerKeywordAdgroup({
+        index: input.index,
+        keywordId,
+        adgroupId,
+      });
+
       const metrics = getOrCreateMetrics({
         index: input.index.keyword,
         entityId: keywordId,
@@ -619,6 +672,12 @@ function aggregateConversionRows(input: {
     }
 
     if (keywordId.startsWith("nkw-")) {
+      registerKeywordAdgroup({
+        index: input.index,
+        keywordId,
+        adgroupId,
+      });
+
       const metrics = getOrCreateMetrics({
         index: input.index.keyword,
         entityId: keywordId,
@@ -646,6 +705,8 @@ async function buildDailyMetricsIndex(input: {
   const index: DailyMetricsIndex = {
     keyword: new Map(),
     adgroup: new Map(),
+    keywordAdgroup: new Map(),
+    keywordAdgroupConflicts: new Set(),
   };
 
   const buildAbortController =
@@ -878,6 +939,8 @@ function getDailyMetricsIndex(input: {
     promise: Promise.resolve({
       keyword: new Map(),
       adgroup: new Map(),
+      keywordAdgroup: new Map(),
+      keywordAdgroupConflicts: new Set(),
     }),
   };
 
@@ -1013,6 +1076,106 @@ function normalizeKeywordIds(
   }
 
   return normalized;
+}
+
+
+function hasMeaningfulKeywordMetrics(
+  byDate: Map<string, DailyMetrics>,
+): boolean {
+  for (const metrics of byDate.values()) {
+    if (
+      metrics.impCnt !== 0 ||
+      metrics.clkCnt !== 0 ||
+      metrics.salesAmt !== 0 ||
+      metrics.ccnt !== 0 ||
+      metrics.convAmt !== 0
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export async function fetchNaverSearchAdsStatReportKeywordCandidates(
+  input: FetchNaverSearchAdsStatReportKeywordCandidatesInput,
+): Promise<NaverSearchAdsStatReportKeywordCandidate[]> {
+  const dateFrom = normalizeIsoDate(
+    input.dateFrom,
+    "dateFrom",
+  );
+  const dateTo = normalizeIsoDate(
+    input.dateTo,
+    "dateTo",
+  );
+
+  enumerateDates({
+    dateFrom,
+    dateTo,
+  });
+
+  const index = await getDailyMetricsIndex({
+    credentials: input.credentials,
+    dateFrom,
+    dateTo,
+    signal: input.signal,
+  });
+
+  const candidates:
+    NaverSearchAdsStatReportKeywordCandidate[] = [];
+
+  for (
+    const [keywordId, byDate]
+    of index.keyword
+  ) {
+    if (
+      !hasMeaningfulKeywordMetrics(
+        byDate,
+      )
+    ) {
+      continue;
+    }
+
+    if (
+      index.keywordAdgroupConflicts.has(
+        keywordId,
+      )
+    ) {
+      throw new NaverSearchAdsStatReportDailyMetricsError(
+        "INVALID_REPORT_SCHEMA",
+        `StatReport keyword ${keywordId} maps to more than one adgroup.`,
+      );
+    }
+
+    const adgroupId =
+      index.keywordAdgroup.get(
+        keywordId,
+      );
+
+    if (!adgroupId) {
+      throw new NaverSearchAdsStatReportDailyMetricsError(
+        "INVALID_REPORT_SCHEMA",
+        `StatReport keyword ${keywordId} is missing its adgroup mapping.`,
+      );
+    }
+
+    candidates.push({
+      keywordId,
+      adgroupId,
+    });
+  }
+
+  candidates.sort(
+    (left, right) =>
+      left.adgroupId.localeCompare(
+        right.adgroupId,
+      ) ||
+      left.keywordId.localeCompare(
+        right.keywordId,
+      ),
+  );
+
+  return candidates;
 }
 
 export async function fetchNaverSearchAdsStatReportKeywordDailyStatsBatch(
