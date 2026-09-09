@@ -3981,27 +3981,14 @@ export async function collectNaverKeywordDailyStats(
         collectionStrategy:
           "candidate_first",
       };
-    } catch (error) {
+    } catch {
       assertNotAborted(
         input.signal,
         state.cursor,
       );
 
-      await notifyProgress({
-        callback:
-          input.onProgress,
-        stage:
-          "collector:partial",
-        state,
-      });
-
-      return buildCollectorResult({
-        status:
-          "partial",
-        state,
-        partialReason:
-          "candidate_report_unavailable",
-      });
+      webSiteCandidateIndex =
+        null;
     }
   }
 
