@@ -258,6 +258,19 @@ function isFailureStatus(
   );
 }
 
+function isTerminalEmptyConversionReport(
+  report: NaverSearchAdsStatReportRecord,
+): boolean {
+  const normalizedStatus =
+    report.status?.trim().toUpperCase() ?? "";
+
+  return (
+    report.reportType === "AD_CONVERSION" &&
+    normalizedStatus === "NONE" &&
+    !report.downloadUrl
+  );
+}
+
 async function waitForReadyReport(input: {
   credentials: NaverSearchAdsCredentials;
   statDate: string;
@@ -281,7 +294,12 @@ async function waitForReadyReport(input: {
             input.reportType &&
           report.statDate ===
             compactStatDate &&
-          Boolean(report.downloadUrl) &&
+          (
+            Boolean(report.downloadUrl) ||
+            isTerminalEmptyConversionReport(
+              report,
+            )
+          ) &&
           !isFailureStatus(
             report.status,
           ),
@@ -313,7 +331,12 @@ async function waitForReadyReport(input: {
   ) {
     assertNotAborted(input.signal);
 
-    if (report.downloadUrl) {
+    if (
+      report.downloadUrl ||
+      isTerminalEmptyConversionReport(
+        report,
+      )
+    ) {
       return {
         report,
         reused: false,
@@ -365,6 +388,14 @@ async function loadReportText(input: {
   let ready =
     await waitForReadyReport(input);
 
+  if (
+    isTerminalEmptyConversionReport(
+      ready.report,
+    )
+  ) {
+    return "";
+  }
+
   if (!ready.report.downloadUrl) {
     throw new NaverSearchAdsStatReportDailyMetricsError(
       "REPORT_FAILED",
@@ -393,6 +424,14 @@ async function loadReportText(input: {
     ...input,
     reusableReports: [],
   });
+
+  if (
+    isTerminalEmptyConversionReport(
+      ready.report,
+    )
+  ) {
+    return "";
+  }
 
   if (!ready.report.downloadUrl) {
     throw new NaverSearchAdsStatReportDailyMetricsError(
