@@ -73,6 +73,9 @@ const DEFAULT_STALE_PROCESSING_JOB_LIMIT =
 
 const POSTGRES_UNIQUE_VIOLATION_CODE = "23505";
 
+const MEDIA_SYNC_JOB_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 export type MediaSyncJobsRepositoryErrorCode =
   | "INVALID_INPUT"
   | "INVALID_RECORD"
@@ -104,6 +107,14 @@ export class MediaSyncJobsRepositoryError extends Error {
 
 export type CreatePendingMediaSyncJobInput = {
   reportId: string;
+
+  /**
+   * Internal-only deterministic identity for scheduler/idempotency callers.
+   *
+   * Public request/route surfaces must never populate this field.
+   * Manual and remediation callers omit it and retain database-generated ids.
+   */
+  jobId?: string;
 
   /**
    * @deprecated Assertion-only compatibility field for direct internal callers.
@@ -939,6 +950,28 @@ export async function createPendingMediaSyncJob(
     200,
   );
 
+  const requestedJobId =
+    input.jobId === undefined ||
+    input.jobId === null
+      ? null
+      : normalizeRequiredString(
+          input.jobId,
+          "jobId",
+          36,
+        );
+
+  if (
+    requestedJobId !== null &&
+    !MEDIA_SYNC_JOB_ID_PATTERN.test(
+      requestedJobId,
+    )
+  ) {
+    throw new MediaSyncJobsRepositoryError(
+      "INVALID_INPUT",
+      "jobId must be a valid UUID.",
+    );
+  }
+
   const expectedConnectionId =
     input.connectionId === undefined ||
     input.connectionId === null
@@ -1121,6 +1154,12 @@ export async function createPendingMediaSyncJob(
   // processing job. Stale processing recovery is owned exclusively by the
   // Railway media sync worker before it claims the next pending job.
   const insertRecord = {
+    ...(
+      requestedJobId === null
+        ? {}
+        : { id: requestedJobId }
+    ),
+
     workspace_id: workspaceId,
     advertiser_id: advertiserId,
     report_id: report.id,
@@ -1163,6 +1202,69 @@ export async function createPendingMediaSyncJob(
 
   if (error) {
     if (isUniqueViolation(error)) {
+      if (requestedJobId !== null) {
+        const {
+          data: existingData,
+          error: existingError,
+        } = await supabase
+          .from(MEDIA_SYNC_JOBS_TABLE)
+          .select("*")
+          .eq("id", requestedJobId)
+          .maybeSingle();
+
+        if (existingError) {
+          throw wrapDatabaseError(
+            "Existing deterministic media sync job could not be loaded.",
+            existingError,
+          );
+        }
+
+        if (existingData) {
+          const existingRecord =
+            parseMediaSyncJobRecord(
+              existingData,
+            );
+
+          const exactReplay =
+            existingRecord.id ===
+              requestedJobId &&
+            existingRecord.report_id ===
+              report.id &&
+            existingRecord.connection_id ===
+              connection.id &&
+            existingRecord.workspace_id ===
+              workspaceId &&
+            existingRecord.advertiser_id ===
+              advertiserId &&
+            existingRecord.provider ===
+              connection.provider &&
+            existingRecord.external_account_id ===
+              connection.external_account_id &&
+            existingRecord.date_from ===
+              dateFrom &&
+            existingRecord.date_to ===
+              dateTo &&
+            existingRecord.data_level ===
+              input.dataLevel &&
+            existingRecord.mode ===
+              MEDIA_SYNC_JOB_MODE &&
+            existingRecord.created_by ===
+              createdBy;
+
+          if (!exactReplay) {
+            throw new MediaSyncJobsRepositoryError(
+              "INVALID_RECORD",
+              "Existing deterministic media sync job id does not match the requested scope.",
+              { cause: error },
+            );
+          }
+
+          return toSafeMediaSyncJob(
+            existingRecord,
+          );
+        }
+      }
+
       throw new MediaSyncJobsRepositoryError(
         "ACTIVE_JOB_ALREADY_EXISTS",
         "An active media sync job already exists for this report.",
@@ -1180,6 +1282,10 @@ export async function createPendingMediaSyncJob(
     parseMediaSyncJobRecord(data);
 
   if (
+    (
+      requestedJobId !== null &&
+      record.id !== requestedJobId
+    ) ||
     record.report_id !== reportId ||
     record.connection_id !==
       connectionId ||
