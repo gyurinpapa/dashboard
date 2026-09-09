@@ -22,6 +22,9 @@ const ADVERTISER_ID_ENV =
 const CREATED_BY_ENV =
   "NAVER_DAILY_SCHEDULER_CREATED_BY";
 
+const CONTINUITY_START_DATE_ENV =
+  "NAVER_DAILY_SCHEDULER_CONTINUITY_START_DATE";
+
 function isEnabled(
   value: unknown,
 ): boolean {
@@ -80,6 +83,11 @@ function readConfig(
     createdBy:
       requireEnv(
         CREATED_BY_ENV,
+      ),
+
+    continuityStartDate:
+      requireEnv(
+        CONTINUITY_START_DATE_ENV,
       ),
   };
 }
@@ -194,4 +202,3 @@ void main().catch(
       1;
   },
 );
-
