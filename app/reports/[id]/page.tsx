@@ -507,6 +507,40 @@ type ReportMediaSyncProviderStatus = {
   };
 };
 
+type ReportAutomaticSyncAuthority = {
+  enabled: boolean;
+  provider: "naver_searchad" | null;
+  contract: "naver_daily_v1" | null;
+};
+
+const EMPTY_REPORT_AUTOMATIC_SYNC:
+  ReportAutomaticSyncAuthority = {
+    enabled: false,
+    provider: null,
+    contract: null,
+  };
+
+function normalizeReportAutomaticSyncAuthority(
+  value: any,
+): ReportAutomaticSyncAuthority {
+  if (
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    value.enabled === true &&
+    value.provider === "naver_searchad" &&
+    value.contract === "naver_daily_v1"
+  ) {
+    return {
+      enabled: true,
+      provider: "naver_searchad",
+      contract: "naver_daily_v1",
+    };
+  }
+
+  return EMPTY_REPORT_AUTOMATIC_SYNC;
+}
+
 function normalizeYmdInput(value: any) {
   const normalized = String(value ?? "").trim();
 
@@ -1975,6 +2009,12 @@ export default function ReportDetailPage() {
   const [mediaSyncJob, setMediaSyncJob] = useState<ReportMediaSyncJob | null>(null);
   const [mediaSyncProviders, setMediaSyncProviders] =
     useState<ReportMediaSyncProviderStatus[]>([]);
+  const [
+    mediaSyncAutomatic,
+    setMediaSyncAutomatic,
+  ] = useState<ReportAutomaticSyncAuthority>(
+    EMPTY_REPORT_AUTOMATIC_SYNC,
+  );
   const [loadingMediaSyncJob, setLoadingMediaSyncJob] = useState(false);
   const [requestingMediaSync, setRequestingMediaSync] = useState(false);
 
@@ -3428,6 +3468,9 @@ export default function ReportDetailPage() {
       if (!reportId || !isApiReport) {
         setMediaSyncJob(null);
         setMediaSyncProviders([]);
+        setMediaSyncAutomatic(
+          EMPTY_REPORT_AUTOMATIC_SYNC,
+        );
         return null;
       }
 
@@ -3464,8 +3507,16 @@ export default function ReportDetailPage() {
           ? (json.provider_sync as ReportMediaSyncProviderStatus[])
           : [];
 
+        const automaticSync =
+          normalizeReportAutomaticSyncAuthority(
+            json?.automatic_sync,
+          );
+
         setMediaSyncJob(nextJob);
         setMediaSyncProviders(providerSync);
+        setMediaSyncAutomatic(
+          automaticSync,
+        );
         return nextJob;
       } catch (e: any) {
         if (!silent) {
@@ -3485,6 +3536,9 @@ export default function ReportDetailPage() {
     if (!reportId || !isApiReport) {
       setMediaSyncJob(null);
       setMediaSyncProviders([]);
+      setMediaSyncAutomatic(
+        EMPTY_REPORT_AUTOMATIC_SYNC,
+      );
       return;
     }
 
@@ -3514,6 +3568,13 @@ export default function ReportDetailPage() {
 
   const handleRequestMediaSync = useCallback(async () => {
     if (!reportId || !isApiReport || requestingMediaSync) return;
+
+    if (mediaSyncAutomatic.enabled) {
+      setMsg(
+        "이 리포트는 새벽 자동 동기화 관리 대상이므로 수동 동기화 요청을 생성할 수 없습니다.",
+      );
+      return;
+    }
 
     if (mediaSyncSettingsDirty) {
       setMsg("API 동기화 기간을 먼저 저장한 뒤 동기화를 요청해 주세요.");
@@ -3560,6 +3621,18 @@ export default function ReportDetailPage() {
 
       if (!res.ok || !json?.ok) {
         const syncError = String(json?.error ?? "").trim();
+
+        if (syncError === "AUTOMATIC_SYNC_MANAGED") {
+          setMediaSyncAutomatic({
+            enabled: true,
+            provider: "naver_searchad",
+            contract: "naver_daily_v1",
+          });
+          setMsg(
+            "이 리포트는 새벽 자동 동기화 관리 대상이므로 수동 동기화 요청을 생성할 수 없습니다.",
+          );
+          return;
+        }
 
         if (syncError === "ACTIVE_JOB_ALREADY_EXISTS") {
           await fetchLatestMediaSyncJob(true);
@@ -3609,6 +3682,7 @@ export default function ReportDetailPage() {
   }, [
     fetchLatestMediaSyncJob,
     isApiReport,
+    mediaSyncAutomatic.enabled,
     mediaSyncJob?.status,
     mediaSyncSettings,
     mediaSyncSettingsDirty,
@@ -4799,8 +4873,17 @@ export default function ReportDetailPage() {
           {isApiReport ? (
             <div className="space-y-4">
               <div>
-                API 연동형 리포트는 사용자가 저장한 기간만 media_sync_jobs의 date_from/date_to로 사용합니다.
-                저장만으로 동기화는 실행되지 않으며, 실제 동기화는 이 화면의 동기화 요청 버튼과 Railway media sync worker가 처리합니다.
+                {mediaSyncAutomatic.enabled ? (
+                  <>
+                    이 리포트는 새벽 자동 동기화 관리 대상입니다.
+                    수동 동기화 요청은 중복 job 방지를 위해 비활성화됩니다.
+                  </>
+                ) : (
+                  <>
+                    API 연동형 리포트는 사용자가 저장한 기간만 media_sync_jobs의 date_from/date_to로 사용합니다.
+                    저장만으로 동기화는 실행되지 않으며, 실제 동기화는 이 화면의 동기화 요청 버튼과 Railway media sync worker가 처리합니다.
+                  </>
+                )}
               </div>
 
               <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(160px,0.6fr)_auto_auto] md:items-end">
@@ -4858,6 +4941,7 @@ export default function ReportDetailPage() {
                   type="button"
                   onClick={handleRequestMediaSync}
                   disabled={
+                    mediaSyncAutomatic.enabled ||
                     requestingMediaSync ||
                     loadingMediaSyncJob ||
                     savingMediaSyncSettings ||
@@ -4867,18 +4951,22 @@ export default function ReportDetailPage() {
                   }
                   className="etrylue-primary-button rounded-xl px-4 py-2.5 text-sm font-black"
                   title={
-                    mediaSyncSettingsDirty
-                      ? "API 동기화 기간을 먼저 저장해 주세요."
-                      : isActiveMediaSyncJobStatus(mediaSyncJob?.status)
-                        ? "이미 대기 또는 처리 중인 API 동기화 job이 있습니다."
-                        : "pending job만 생성하고 실제 동기화는 Railway worker가 처리합니다."
+                    mediaSyncAutomatic.enabled
+                      ? "새벽 자동 동기화 관리 대상입니다. 수동 동기화 요청은 비활성화됩니다."
+                      : mediaSyncSettingsDirty
+                        ? "API 동기화 기간을 먼저 저장해 주세요."
+                        : isActiveMediaSyncJobStatus(mediaSyncJob?.status)
+                          ? "이미 대기 또는 처리 중인 API 동기화 job이 있습니다."
+                          : "pending job만 생성하고 실제 동기화는 Railway worker가 처리합니다."
                   }
                 >
-                  {requestingMediaSync
-                    ? "요청 중..."
-                    : isActiveMediaSyncJobStatus(mediaSyncJob?.status)
-                      ? getMediaSyncJobStatusText(mediaSyncJob)
-                      : "동기화 요청"}
+                  {mediaSyncAutomatic.enabled
+                    ? "자동 동기화"
+                    : requestingMediaSync
+                      ? "요청 중..."
+                      : isActiveMediaSyncJobStatus(mediaSyncJob?.status)
+                        ? getMediaSyncJobStatusText(mediaSyncJob)
+                        : "동기화 요청"}
                 </button>
               </div>
 
@@ -5015,7 +5103,11 @@ export default function ReportDetailPage() {
                 ) : mediaSyncSettingsError ? (
                   <span className="font-extrabold text-[#ffb2c0]">{mediaSyncSettingsError}</span>
                 ) : (
-                  <span>저장된 기간으로만 pending job을 생성합니다.</span>
+                  <span>
+                    {mediaSyncAutomatic.enabled
+                      ? "새벽 자동 동기화 관리 대상입니다."
+                      : "저장된 기간으로만 pending job을 생성합니다."}
+                  </span>
                 )}
               </div>
 

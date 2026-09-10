@@ -87,6 +87,10 @@ export type MediaConnectionMeta = JsonObject & {
   sourceOwnership?: "api";
   dataLevel?: MediaSyncDataLevel;
   displayName?: string;
+  autoSync?: {
+    enabled: boolean;
+    contract: "naver_daily_v1";
+  };
 };
 
 /**

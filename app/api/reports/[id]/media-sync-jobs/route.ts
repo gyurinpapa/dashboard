@@ -35,7 +35,13 @@ import {
 import {
   buildMediaSyncProviderDashboard,
 } from "@/src/lib/media-sync/media-sync-provider-dashboard";
-import type { SafeMediaSyncJob } from "@/src/lib/media-sync/types";
+import {
+  getMediaSyncAutomaticAuthority,
+} from "@/src/lib/media-sync/media-sync-automation";
+import type {
+  SafeMediaConnection,
+  SafeMediaSyncJob,
+} from "@/src/lib/media-sync/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -191,6 +197,95 @@ function mediaSyncSettingMismatchResponse() {
   );
 }
 
+async function loadAutomaticSyncReportPeriod(
+  input: {
+    reportId: string;
+    workspaceId: string;
+    advertiserId: string;
+  },
+) {
+  const {
+    data,
+    error,
+  } = await supabaseAdmin
+    .from("reports")
+    .select(
+      "id, workspace_id, advertiser_id, draft_period_start, draft_period_end, period_start, period_end, meta",
+    )
+    .eq(
+      "id",
+      input.reportId,
+    )
+    .eq(
+      "workspace_id",
+      input.workspaceId,
+    )
+    .eq(
+      "advertiser_id",
+      input.advertiserId,
+    )
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new MediaSyncJobsRepositoryError(
+      "REPORT_NOT_FOUND",
+      "The automatic sync report period could not be loaded.",
+    );
+  }
+
+  return data;
+}
+
+async function loadMappedConnectionsForReport(
+  input: {
+    reportId: string;
+    workspaceId: string;
+    advertiserId: string;
+  },
+): Promise<SafeMediaConnection[]> {
+  const [
+    mappedConnectionIds,
+    advertiserConnections,
+  ] = await Promise.all([
+    listReportMediaConnectionIds({
+      reportId: input.reportId,
+      workspaceId: input.workspaceId,
+      advertiserId: input.advertiserId,
+    }),
+    listSafeMediaConnections({
+      workspaceId: input.workspaceId,
+      advertiserId: input.advertiserId,
+    }),
+  ]);
+
+  const mappedConnectionIdSet =
+    new Set(mappedConnectionIds);
+
+  const mappedConnections =
+    advertiserConnections.filter(
+      (connection) =>
+        mappedConnectionIdSet.has(
+          connection.id,
+        ),
+    );
+
+  if (
+    mappedConnections.length !==
+    mappedConnectionIds.length
+  ) {
+    throw new MediaSyncJobsRepositoryError(
+      "INVALID_RECORD",
+      "A report media connection mapping could not be resolved safely.",
+    );
+  }
+
+  return mappedConnections;
+}
+
 /**
  * media sync job 상태를 조회한다.
  *
@@ -218,8 +313,8 @@ export async function GET(
 
     const [
       jobs,
-      mappedConnectionIds,
-      advertiserConnections,
+      mappedConnections,
+      automaticSyncReport,
     ] = await Promise.all([
       listRecentMediaSyncJobsForReport({
         reportId: access.reportId,
@@ -227,29 +322,17 @@ export async function GET(
         advertiserId: access.advertiserId,
         limit: 20,
       }),
-      listReportMediaConnectionIds({
+      loadMappedConnectionsForReport({
         reportId: access.reportId,
         workspaceId: access.workspaceId,
         advertiserId: access.advertiserId,
       }),
-      listSafeMediaConnections({
+      loadAutomaticSyncReportPeriod({
+        reportId: access.reportId,
         workspaceId: access.workspaceId,
         advertiserId: access.advertiserId,
       }),
     ]);
-
-    const mappedConnectionIdSet =
-      new Set(mappedConnectionIds);
-    const mappedConnections = advertiserConnections.filter(
-      (connection) => mappedConnectionIdSet.has(connection.id),
-    );
-
-    if (mappedConnections.length !== mappedConnectionIds.length) {
-      throw new MediaSyncJobsRepositoryError(
-        "INVALID_RECORD",
-        "A report media connection mapping could not be resolved safely.",
-      );
-    }
 
     const activeJob =
       jobs.find(isActiveMediaSyncJob) ?? null;
@@ -266,6 +349,13 @@ export async function GET(
         connections: mappedConnections,
         jobs,
       }),
+      automatic_sync:
+        getMediaSyncAutomaticAuthority({
+          connections:
+            mappedConnections,
+          report:
+            automaticSyncReport,
+        }),
     };
 
     assertSafeMediaSyncJobPayload(response);
@@ -358,6 +448,37 @@ export async function POST(
         reportId: id,
         action: "run_sync",
       });
+
+    const [
+      mappedConnections,
+      automaticSyncReport,
+    ] = await Promise.all([
+      loadMappedConnectionsForReport({
+        reportId: access.reportId,
+        workspaceId: access.workspaceId,
+        advertiserId: access.advertiserId,
+      }),
+      loadAutomaticSyncReportPeriod({
+        reportId: access.reportId,
+        workspaceId: access.workspaceId,
+        advertiserId: access.advertiserId,
+      }),
+    ]);
+
+    const automaticSync =
+      getMediaSyncAutomaticAuthority({
+        connections:
+          mappedConnections,
+        report:
+          automaticSyncReport,
+      });
+
+    if (automaticSync.enabled) {
+      return jsonError(
+        409,
+        "AUTOMATIC_SYNC_MANAGED",
+      );
+    }
 
     let body: unknown;
 
