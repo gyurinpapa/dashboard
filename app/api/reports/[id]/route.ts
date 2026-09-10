@@ -54,6 +54,143 @@ function isPlainObject(v: any) {
   return !!v && typeof v === "object" && !Array.isArray(v);
 }
 
+type CanonicalSourceType = "api" | "csv";
+
+type CanonicalReportType =
+  | "traffic"
+  | "db_acquisition"
+  | "commerce";
+
+type CanonicalPeriodType =
+  | "daily"
+  | "weekly"
+  | "monthly"
+  | "quarterly"
+  | "yearly"
+  | "cumulative";
+
+type CanonicalPublicIdentity = {
+  source_type: CanonicalSourceType;
+  report_type: CanonicalReportType;
+  period_type: CanonicalPeriodType;
+  period_key: string;
+};
+
+function normalizeCanonicalSourceType(
+  value: any,
+): CanonicalSourceType | null {
+  const normalized = String(
+    value ?? "",
+  ).trim().toLowerCase();
+
+  if (normalized === "api") return "api";
+  if (normalized === "csv") return "csv";
+
+  return null;
+}
+
+function mapDbReportTypeKey(
+  value: any,
+): CanonicalReportType | null {
+  const key = String(
+    value ?? "",
+  ).trim().toLowerCase();
+
+  if (key === "traffic") {
+    return "traffic";
+  }
+
+  if (
+    key === "db" ||
+    key === "db_acquisition"
+  ) {
+    return "db_acquisition";
+  }
+
+  if (key === "commerce") {
+    return "commerce";
+  }
+
+  return null;
+}
+
+function isValidCanonicalPublicSlug(value: any) {
+  const slug = String(
+    value ?? "",
+  ).trim();
+
+  return /^[a-z0-9][a-z0-9-]{1,58}[a-z0-9]$/.test(
+    slug,
+  );
+}
+
+function isCanonicalPeriodType(
+  value: string,
+): value is CanonicalPeriodType {
+  return (
+    value === "daily" ||
+    value === "weekly" ||
+    value === "monthly" ||
+    value === "quarterly" ||
+    value === "yearly" ||
+    value === "cumulative"
+  );
+}
+
+function isValidDailyCanonicalPeriodKey(
+  value: string,
+) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+
+  const date = new Date(
+    `${value}T00:00:00.000Z`,
+  );
+
+  if (Number.isNaN(date.getTime())) {
+    return false;
+  }
+
+  return date.toISOString().slice(0, 10) === value;
+}
+
+function isValidCanonicalPeriodKey(
+  periodType: CanonicalPeriodType,
+  periodKey: string,
+) {
+  switch (periodType) {
+    case "daily":
+      return isValidDailyCanonicalPeriodKey(
+        periodKey,
+      );
+
+    case "weekly":
+      return /^\d{4}-W(?:0[1-9]|[1-4]\d|5[0-3])$/.test(
+        periodKey,
+      );
+
+    case "monthly":
+      return /^\d{4}-(?:0[1-9]|1[0-2])$/.test(
+        periodKey,
+      );
+
+    case "quarterly":
+      return /^\d{4}-Q[1-4]$/.test(
+        periodKey,
+      );
+
+    case "yearly":
+      return /^\d{4}$/.test(periodKey);
+
+    case "cumulative":
+      return periodKey === "all";
+
+    default:
+      return false;
+  }
+}
+
 function normalizeMonthGoal(v: any) {
   if (!isPlainObject(v)) return null;
 
@@ -367,6 +504,7 @@ export async function GET(_req: Request, ctx: Ctx) {
           "published_period_start",
           "published_period_end",
           "published_at",
+          "published_ingestion_id",
           "meta",
           "created_at",
           "updated_at",
@@ -424,7 +562,9 @@ export async function PATCH(req: Request, ctx: Ctx) {
 
     const { data: report, error: rErr } = await supabaseAdmin
       .from("reports")
-      .select("id, workspace_id, advertiser_id, report_type_id, created_by, meta")
+      .select(
+        "id, workspace_id, advertiser_id, report_type_id, created_by, status, published_at, published_ingestion_id, meta"
+      )
       .eq("id", id)
       .maybeSingle();
 
@@ -474,6 +614,22 @@ export async function PATCH(req: Request, ctx: Ctx) {
 
     const title = typeof body.title === "string" ? body.title.trim() : undefined;
 
+    const hasCanonicalPeriodTypeInput =
+      Object.prototype.hasOwnProperty.call(
+        body,
+        "period_type",
+      );
+
+    const hasCanonicalPeriodKeyInput =
+      Object.prototype.hasOwnProperty.call(
+        body,
+        "period_key",
+      );
+
+    const wantsCanonicalIdentityUpdate =
+      hasCanonicalPeriodTypeInput ||
+      hasCanonicalPeriodKeyInput;
+
     const hasPeriodStart =
       Object.prototype.hasOwnProperty.call(body, "period_start") ||
       Object.prototype.hasOwnProperty.call(body, "draft_period_start");
@@ -493,6 +649,221 @@ export async function PATCH(req: Request, ctx: Ctx) {
     const existingMeta = isPlainObject(report?.meta) ? report.meta : {};
 
     const incomingMeta = isPlainObject(body.meta) ? body.meta : undefined;
+
+    if (
+      incomingMeta &&
+      (
+        Object.prototype.hasOwnProperty.call(
+          incomingMeta,
+          "public_identity",
+        ) ||
+        Object.prototype.hasOwnProperty.call(
+          incomingMeta,
+          "url_contract_version",
+        )
+      )
+    ) {
+      return jsonError(
+        400,
+        "V2_CANONICAL_META_DIRECT_WRITE_FORBIDDEN",
+      );
+    }
+
+    if (
+      wantsCanonicalIdentityUpdate &&
+      incomingMeta &&
+      Object.prototype.hasOwnProperty.call(
+        incomingMeta,
+        "data_source",
+      )
+    ) {
+      return jsonError(
+        400,
+        "V2_CANONICAL_DATA_SOURCE_DIRECT_WRITE_FORBIDDEN",
+      );
+    }
+
+    let canonicalPublicIdentity:
+      | CanonicalPublicIdentity
+      | undefined;
+
+    if (wantsCanonicalIdentityUpdate) {
+      if (
+        !hasCanonicalPeriodTypeInput ||
+        !hasCanonicalPeriodKeyInput
+      ) {
+        return jsonError(
+          400,
+          "V2_CANONICAL_PERIOD_INCOMPLETE",
+        );
+      }
+
+      const normalizedPeriodType = String(
+        body.period_type ?? "",
+      ).trim().toLowerCase();
+
+      const canonicalPeriodKey = String(
+        body.period_key ?? "",
+      ).trim();
+
+      if (
+        !isCanonicalPeriodType(
+          normalizedPeriodType,
+        )
+      ) {
+        return jsonError(
+          400,
+          "V2_INVALID_PERIOD_TYPE",
+        );
+      }
+
+      if (
+        !canonicalPeriodKey ||
+        !isValidCanonicalPeriodKey(
+          normalizedPeriodType,
+          canonicalPeriodKey,
+        )
+      ) {
+        return jsonError(
+          400,
+          "V2_INVALID_PERIOD_KEY",
+        );
+      }
+
+      if (
+        asString(
+          (report as any).published_at,
+        ) ||
+        asString(
+          (report as any).published_ingestion_id,
+        )
+      ) {
+        return jsonError(
+          409,
+          "REPORT_PUBLIC_IDENTITY_LOCKED",
+        );
+      }
+
+      const advertiserId = asString(
+        (report as any).advertiser_id,
+      );
+
+      const reportTypeId = asString(
+        (report as any).report_type_id,
+      );
+
+      if (!advertiserId) {
+        return jsonError(
+          400,
+          "V2_ADVERTISER_REQUIRED",
+        );
+      }
+
+      if (!reportTypeId) {
+        return jsonError(
+          400,
+          "V2_REPORT_TYPE_REQUIRED",
+        );
+      }
+
+      const {
+        data: advertiser,
+        error: advertiserError,
+      } = await supabaseAdmin
+        .from("advertisers")
+        .select(
+          "id, workspace_id, public_slug",
+        )
+        .eq("id", advertiserId)
+        .eq("workspace_id", workspaceId)
+        .maybeSingle();
+
+      if (advertiserError) {
+        return jsonError(
+          500,
+          "V2_ADVERTISER_LOOKUP_FAILED",
+          {
+            detail: advertiserError.message,
+          },
+        );
+      }
+
+      if (
+        !advertiser ||
+        !isValidCanonicalPublicSlug(
+          (advertiser as any).public_slug,
+        )
+      ) {
+        return jsonError(
+          400,
+          "V2_ADVERTISER_PUBLIC_SLUG_REQUIRED",
+        );
+      }
+
+      const {
+        data: reportType,
+        error: reportTypeError,
+      } = await supabaseAdmin
+        .from("report_types")
+        .select("id, key")
+        .eq("id", reportTypeId)
+        .maybeSingle();
+
+      if (reportTypeError) {
+        return jsonError(
+          500,
+          "V2_REPORT_TYPE_LOOKUP_FAILED",
+          {
+            detail: reportTypeError.message,
+          },
+        );
+      }
+
+      if (!reportType) {
+        return jsonError(
+          400,
+          "V2_REPORT_TYPE_NOT_FOUND",
+        );
+      }
+
+      const canonicalReportType =
+        mapDbReportTypeKey(
+          (reportType as any).key,
+        );
+
+      if (!canonicalReportType) {
+        return jsonError(
+          400,
+          "V2_UNSUPPORTED_REPORT_TYPE",
+        );
+      }
+
+      const dataSource =
+        isPlainObject(
+          (existingMeta as any).data_source,
+        )
+          ? (existingMeta as any).data_source
+          : {};
+
+      const canonicalSourceType =
+        normalizeCanonicalSourceType(
+          (dataSource as any).kind,
+        );
+
+      if (!canonicalSourceType) {
+        return jsonError(
+          400,
+          "V2_CANONICAL_SOURCE_TYPE_INVALID",
+        );
+      }
+
+      canonicalPublicIdentity = {
+        source_type: canonicalSourceType,
+        report_type: canonicalReportType,
+        period_type: normalizedPeriodType,
+        period_key: canonicalPeriodKey,
+      };
+    }
 
     const hasReportTheme =
       incomingMeta
@@ -547,7 +918,8 @@ export async function PATCH(req: Request, ctx: Ctx) {
       incomingReportTheme !== undefined ||
       incomingMonthGoal !== undefined ||
       incomingBrandSearchContracts !== undefined ||
-      incomingMediaSyncSettings !== undefined
+      incomingMediaSyncSettings !== undefined ||
+      canonicalPublicIdentity !== undefined
         ? {
             ...existingMeta,
             ...(incomingMeta ?? {}),
@@ -562,6 +934,13 @@ export async function PATCH(req: Request, ctx: Ctx) {
               : {}),
             ...(incomingMediaSyncSettings !== undefined
               ? { media_sync: incomingMediaSyncSettings }
+              : {}),
+            ...(canonicalPublicIdentity !== undefined
+              ? {
+                  url_contract_version: 2,
+                  public_identity:
+                    canonicalPublicIdentity,
+                }
               : {}),
           }
         : undefined;
@@ -605,13 +984,51 @@ export async function PATCH(req: Request, ctx: Ctx) {
           "published_period_start",
           "published_period_end",
           "published_at",
+          "published_ingestion_id",
           "meta",
           "updated_at",
         ].join(", ")
       )
       .maybeSingle();
 
-    if (uErr) return jsonError(400, uErr.message);
+    if (uErr) {
+      const errorCode = String(
+        (uErr as any)?.code ?? "",
+      );
+
+      const errorMessage = String(
+        uErr.message ?? "",
+      );
+
+      if (
+        errorCode === "23505" ||
+        errorMessage.includes(
+          "reports_public_identity_uq",
+        )
+      ) {
+        return jsonError(
+          409,
+          "V2_CANONICAL_IDENTITY_CONFLICT",
+        );
+      }
+
+      if (
+        errorMessage.includes(
+          "REPORT_PUBLIC_IDENTITY_LOCKED",
+        )
+      ) {
+        return jsonError(
+          409,
+          "REPORT_PUBLIC_IDENTITY_LOCKED",
+        );
+      }
+
+      return jsonError(
+        400,
+        errorMessage,
+      );
+    }
+
     if (!updated) return jsonError(404, "Report not found");
 
     const enrichedUpdated = await enrichReport(updated);

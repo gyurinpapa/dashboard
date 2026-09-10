@@ -632,6 +632,8 @@ export async function POST(req: Request) {
 
     // ✅ 3-1) advertiser_id가 들어오면 같은 workspace 소속 광고주인지 최종 재검증
     // - staff는 report-builder 목록 계약과 동일하게 본인이 생성한 광고주만 허용
+    let canonicalAdvertiserPublicSlug = "";
+
     if (advertiser_id) {
       const { data: adv, error: advErr } =
         await supabaseAdmin
@@ -663,9 +665,14 @@ export async function POST(req: Request) {
         );
       }
 
+      canonicalAdvertiserPublicSlug =
+        asString(adv.public_slug);
+
       if (
         wantsCanonicalIdentity &&
-        !isValidCanonicalPublicSlug(adv.public_slug)
+        !isValidCanonicalPublicSlug(
+          canonicalAdvertiserPublicSlug,
+        )
       ) {
         return jsonError(
           400,
@@ -674,8 +681,19 @@ export async function POST(req: Request) {
       }
     }
 
-    if (wantsCanonicalIdentity) {
-      if (!canonicalPeriodType) {
+    const hasCanonicalAdvertiserSlug =
+      isValidCanonicalPublicSlug(
+        canonicalAdvertiserPublicSlug,
+      );
+
+    if (
+      wantsCanonicalIdentity ||
+      hasCanonicalAdvertiserSlug
+    ) {
+      if (
+        wantsCanonicalIdentity &&
+        !canonicalPeriodType
+      ) {
         return jsonError(
           500,
           "V2_CANONICAL_PERIOD_STATE_INVALID",
@@ -701,32 +719,55 @@ export async function POST(req: Request) {
         );
       }
 
-      if (!canonicalReportTypeRow) {
+      const canonicalReportType =
+        canonicalReportTypeRow
+          ? mapDbReportTypeKey(
+              canonicalReportTypeRow.key,
+            )
+          : null;
+
+      if (
+        wantsCanonicalIdentity &&
+        !canonicalReportTypeRow
+      ) {
         return jsonError(
           400,
           "V2_REPORT_TYPE_NOT_FOUND",
         );
       }
 
-      const canonicalReportType =
-        mapDbReportTypeKey(canonicalReportTypeRow.key);
-
-      if (!canonicalReportType) {
+      if (
+        wantsCanonicalIdentity &&
+        !canonicalReportType
+      ) {
         return jsonError(
           400,
           "V2_UNSUPPORTED_REPORT_TYPE",
         );
       }
 
-      meta = {
-        ...meta,
-        public_identity: {
-          source_type: dataSourceKind,
-          report_type: canonicalReportType,
-          period_type: canonicalPeriodType,
-          period_key: canonicalPeriodKey,
-        },
-      };
+      if (
+        hasCanonicalAdvertiserSlug &&
+        canonicalReportType
+      ) {
+        meta = {
+          ...meta,
+          url_contract_version: 2,
+          ...(wantsCanonicalIdentity
+            ? {
+                public_identity: {
+                  source_type: dataSourceKind,
+                  report_type:
+                    canonicalReportType,
+                  period_type:
+                    canonicalPeriodType,
+                  period_key:
+                    canonicalPeriodKey,
+                },
+              }
+            : {}),
+        };
+      }
     }
 
     // ✅ 4) period 자동세팅 (없을 때만)

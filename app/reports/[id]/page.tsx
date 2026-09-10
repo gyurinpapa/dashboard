@@ -144,6 +144,7 @@ type ReportDetail = {
   published_period_start?: string | null;
   published_period_end?: string | null;
   published_at?: string | null;
+  published_ingestion_id?: string | null;
 
   created_at?: string | null;
   updated_at?: string | null;
@@ -177,6 +178,282 @@ function getReportDataSourceDescription(kind: ReportDataSourceKind) {
   }
 
   return "CSV 파일 업로드로 데이터를 구성하는 리포트입니다. 기준 기간은 업로드된 CSV 데이터 기준으로 자동 산정됩니다.";
+}
+
+type CanonicalSourceType =
+  | "api"
+  | "csv";
+
+type CanonicalReportType =
+  | "traffic"
+  | "db_acquisition"
+  | "commerce";
+
+type CanonicalPeriodType =
+  | "daily"
+  | "weekly"
+  | "monthly"
+  | "quarterly"
+  | "yearly"
+  | "cumulative";
+
+type CanonicalQuarter =
+  | ""
+  | "Q1"
+  | "Q2"
+  | "Q3"
+  | "Q4";
+
+type CanonicalPublicIdentity = {
+  source_type: CanonicalSourceType;
+  report_type: CanonicalReportType;
+  period_type: CanonicalPeriodType;
+  period_key: string;
+};
+
+const CANONICAL_MONTH_OPTIONS = Array.from(
+  { length: 12 },
+  (_, index) =>
+    String(index + 1).padStart(2, "0"),
+);
+
+const CANONICAL_WEEK_OPTIONS = Array.from(
+  { length: 53 },
+  (_, index) =>
+    String(index + 1).padStart(2, "0"),
+);
+
+function normalizeCanonicalSourceType(
+  value: any,
+): CanonicalSourceType | null {
+  const kind = String(
+    value ?? "",
+  ).trim().toLowerCase();
+
+  if (kind === "api") return "api";
+  if (kind === "csv") return "csv";
+
+  return null;
+}
+
+function normalizeCanonicalReportTypeKey(
+  value: any,
+): CanonicalReportType | null {
+  const key = String(
+    value ?? "",
+  ).trim().toLowerCase();
+
+  if (key === "traffic") {
+    return "traffic";
+  }
+
+  if (
+    key === "db" ||
+    key === "db_acquisition"
+  ) {
+    return "db_acquisition";
+  }
+
+  if (key === "commerce") {
+    return "commerce";
+  }
+
+  return null;
+}
+
+function isValidCanonicalPublicSlug(
+  value: any,
+) {
+  const slug = String(
+    value ?? "",
+  ).trim();
+
+  return /^[a-z0-9][a-z0-9-]{1,58}[a-z0-9]$/.test(
+    slug,
+  );
+}
+
+function normalizeCanonicalYearInput(
+  value: string,
+) {
+  return String(value ?? "")
+    .replace(/\D/g, "")
+    .slice(0, 4);
+}
+
+function isValidDailyCanonicalPeriodKey(
+  value: string,
+) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+
+  const date = new Date(
+    `${value}T00:00:00.000Z`,
+  );
+
+  if (Number.isNaN(date.getTime())) {
+    return false;
+  }
+
+  return (
+    date.toISOString().slice(0, 10) ===
+    value
+  );
+}
+
+function isValidCanonicalPeriodKey(
+  periodType: CanonicalPeriodType,
+  periodKey: string,
+) {
+  switch (periodType) {
+    case "daily":
+      return isValidDailyCanonicalPeriodKey(
+        periodKey,
+      );
+
+    case "weekly":
+      return /^\d{4}-W(?:0[1-9]|[1-4]\d|5[0-3])$/.test(
+        periodKey,
+      );
+
+    case "monthly":
+      return /^\d{4}-(?:0[1-9]|1[0-2])$/.test(
+        periodKey,
+      );
+
+    case "quarterly":
+      return /^\d{4}-Q[1-4]$/.test(
+        periodKey,
+      );
+
+    case "yearly":
+      return /^\d{4}$/.test(
+        periodKey,
+      );
+
+    case "cumulative":
+      return periodKey === "all";
+
+    default:
+      return false;
+  }
+}
+
+function buildCanonicalPeriodKey(
+  periodType: CanonicalPeriodType,
+  value: string,
+  week: string,
+  month: string,
+  quarter: CanonicalQuarter,
+) {
+  const base = String(
+    value ?? "",
+  ).trim();
+
+  if (periodType === "daily") {
+    return base;
+  }
+
+  if (periodType === "weekly") {
+    return base && week
+      ? `${base}-W${week}`
+      : "";
+  }
+
+  if (periodType === "monthly") {
+    return base && month
+      ? `${base}-${month}`
+      : "";
+  }
+
+  if (periodType === "quarterly") {
+    return base && quarter
+      ? `${base}-${quarter}`
+      : "";
+  }
+
+  if (periodType === "yearly") {
+    return base;
+  }
+
+  return "all";
+}
+
+function normalizeCanonicalPublicIdentity(
+  value: any,
+): CanonicalPublicIdentity | null {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value)
+  ) {
+    return null;
+  }
+
+  const sourceType =
+    normalizeCanonicalSourceType(
+      value.source_type,
+    );
+
+  const reportType =
+    normalizeCanonicalReportTypeKey(
+      value.report_type,
+    );
+
+  const periodType = String(
+    value.period_type ?? "",
+  ).trim().toLowerCase();
+
+  const periodKey = String(
+    value.period_key ?? "",
+  ).trim();
+
+  if (
+    !sourceType ||
+    !reportType
+  ) {
+    return null;
+  }
+
+  if (
+    periodType !== "daily" &&
+    periodType !== "weekly" &&
+    periodType !== "monthly" &&
+    periodType !== "quarterly" &&
+    periodType !== "yearly" &&
+    periodType !== "cumulative"
+  ) {
+    return null;
+  }
+
+  if (
+    !isValidCanonicalPeriodKey(
+      periodType,
+      periodKey,
+    )
+  ) {
+    return null;
+  }
+
+  return {
+    source_type: sourceType,
+    report_type: reportType,
+    period_type: periodType,
+    period_key: periodKey,
+  };
+}
+
+function getCanonicalPeriodTypeLabel(
+  value: CanonicalPeriodType,
+) {
+  if (value === "daily") return "일간";
+  if (value === "weekly") return "주간";
+  if (value === "monthly") return "월간";
+  if (value === "quarterly") return "분기";
+  if (value === "yearly") return "연간";
+
+  return "누적";
 }
 
 type MediaSyncSettingsDraft = {
@@ -1596,6 +1873,23 @@ export default function ReportDetailPage() {
   const [reportTitleSavedText, setReportTitleSavedText] =
     useState<string>("");
 
+  const [selectedCanonicalPeriodType, setSelectedCanonicalPeriodType] =
+    useState<CanonicalPeriodType>("monthly");
+  const [canonicalPeriodBase, setCanonicalPeriodBase] =
+    useState("");
+  const [selectedCanonicalWeek, setSelectedCanonicalWeek] =
+    useState("");
+  const [selectedCanonicalMonth, setSelectedCanonicalMonth] =
+    useState("");
+  const [selectedCanonicalQuarter, setSelectedCanonicalQuarter] =
+    useState<CanonicalQuarter>("");
+  const [savingCanonicalPeriod, setSavingCanonicalPeriod] =
+    useState(false);
+  const [canonicalPeriodSavedText, setCanonicalPeriodSavedText] =
+    useState("");
+  const lastLoadedCanonicalIdentityKeyRef =
+    useRef<string>("");
+
   const currentReportTitle = asStr(report?.title);
   const resolvedReportTitleDraft =
     reportTitleDraft ?? currentReportTitle;
@@ -1697,6 +1991,116 @@ export default function ReportDetailPage() {
   const [publishing, setPublishing] = useState(false);
   const [sharePath, setSharePath] = useState<string>("");
   const [advertiserPublicSlug, setAdvertiserPublicSlug] = useState<string>("");
+
+  const canonicalIdentity = useMemo(
+    () =>
+      normalizeCanonicalPublicIdentity(
+        (report as any)?.meta
+          ?.public_identity,
+      ),
+    [report?.meta],
+  );
+
+  const canonicalSourceType = useMemo(
+    () =>
+      normalizeCanonicalSourceType(
+        (report as any)?.meta
+          ?.data_source?.kind,
+      ),
+    [report?.meta],
+  );
+
+  const canonicalReportType = useMemo(
+    () =>
+      normalizeCanonicalReportTypeKey(
+        (report as any)
+          ?.report_type_key ||
+          (report as any)
+            ?.reportTypeKey,
+      ),
+    [
+      report?.report_type_key,
+      report?.reportTypeKey,
+    ],
+  );
+
+  const canonicalLifecycleMarked =
+    String(
+      (report as any)?.meta
+        ?.url_contract_version ?? "",
+    ).trim() === "2" ||
+    Boolean(canonicalIdentity);
+
+  const canonicalEditorEligible =
+    Boolean(
+      canonicalSourceType &&
+        canonicalReportType &&
+        isValidCanonicalPublicSlug(
+          advertiserPublicSlug,
+        ),
+    );
+
+  const canonicalIdentityLocked =
+    Boolean(
+      report?.published_at ||
+        report?.published_ingestion_id ||
+        report?.status === "ready",
+    );
+
+  const canonicalPeriodKey =
+    useMemo(
+      () =>
+        buildCanonicalPeriodKey(
+          selectedCanonicalPeriodType,
+          canonicalPeriodBase,
+          selectedCanonicalWeek,
+          selectedCanonicalMonth,
+          selectedCanonicalQuarter,
+        ),
+      [
+        selectedCanonicalPeriodType,
+        canonicalPeriodBase,
+        selectedCanonicalWeek,
+        selectedCanonicalMonth,
+        selectedCanonicalQuarter,
+      ],
+    );
+
+  const canonicalPeriodValid =
+    isValidCanonicalPeriodKey(
+      selectedCanonicalPeriodType,
+      canonicalPeriodKey,
+    );
+
+  const canonicalPeriodDirty =
+    Boolean(
+      canonicalEditorEligible &&
+        !canonicalIdentityLocked &&
+        canonicalPeriodValid &&
+        (
+          canonicalIdentity
+            ?.period_type !==
+            selectedCanonicalPeriodType ||
+          canonicalIdentity
+            ?.period_key !==
+            canonicalPeriodKey
+        ),
+    );
+
+  const canSaveCanonicalPeriod =
+    Boolean(
+      reportId &&
+        canonicalPeriodDirty &&
+        !savingCanonicalPeriod,
+    );
+
+  const canonicalPreviewPath =
+    canonicalEditorEligible &&
+    canonicalSourceType &&
+    canonicalReportType &&
+    canonicalPeriodValid
+      ? `/${advertiserPublicSlug}/${canonicalSourceType}/${canonicalReportType}/${selectedCanonicalPeriodType}/${canonicalPeriodKey}`
+      : "";
 
   const csvInputRef = useRef<HTMLInputElement | null>(null);
   const [csvFile, setCsvFile] = useState<File | null>(null);
@@ -1940,6 +2344,125 @@ export default function ReportDetailPage() {
 
     setAdvertiserPublicSlug(fromReport);
   }, [report]);
+
+  useEffect(() => {
+    if (!reportId || !report) return;
+
+    const identity =
+      normalizeCanonicalPublicIdentity(
+        (report as any)?.meta
+          ?.public_identity,
+      );
+
+    const loadKey = JSON.stringify({
+      reportId,
+      identity,
+      marker:
+        (report as any)?.meta
+          ?.url_contract_version ??
+        null,
+    });
+
+    if (
+      loadKey ===
+      lastLoadedCanonicalIdentityKeyRef
+        .current
+    ) {
+      return;
+    }
+
+    lastLoadedCanonicalIdentityKeyRef
+      .current = loadKey;
+
+    setCanonicalPeriodSavedText("");
+    setCanonicalPeriodBase("");
+    setSelectedCanonicalWeek("");
+    setSelectedCanonicalMonth("");
+    setSelectedCanonicalQuarter("");
+
+    if (!identity) {
+      setSelectedCanonicalPeriodType(
+        "monthly",
+      );
+      return;
+    }
+
+    setSelectedCanonicalPeriodType(
+      identity.period_type,
+    );
+
+    if (
+      identity.period_type === "daily"
+    ) {
+      setCanonicalPeriodBase(
+        identity.period_key,
+      );
+      return;
+    }
+
+    if (
+      identity.period_type === "weekly"
+    ) {
+      const [year, week] =
+        identity.period_key.split("-W");
+
+      setCanonicalPeriodBase(
+        year || "",
+      );
+      setSelectedCanonicalWeek(
+        week || "",
+      );
+      return;
+    }
+
+    if (
+      identity.period_type === "monthly"
+    ) {
+      const [year, month] =
+        identity.period_key.split("-");
+
+      setCanonicalPeriodBase(
+        year || "",
+      );
+      setSelectedCanonicalMonth(
+        month || "",
+      );
+      return;
+    }
+
+    if (
+      identity.period_type ===
+      "quarterly"
+    ) {
+      const [year, quarter] =
+        identity.period_key.split("-");
+
+      setCanonicalPeriodBase(
+        year || "",
+      );
+
+      if (
+        quarter === "Q1" ||
+        quarter === "Q2" ||
+        quarter === "Q3" ||
+        quarter === "Q4"
+      ) {
+        setSelectedCanonicalQuarter(
+          quarter,
+        );
+      }
+
+      return;
+    }
+
+    if (
+      identity.period_type === "yearly"
+    ) {
+      setCanonicalPeriodBase(
+        identity.period_key,
+      );
+    }
+  }, [report, reportId]);
 
   useEffect(() => {
     if (!reportId || typeof window === "undefined") return;
@@ -2694,6 +3217,125 @@ export default function ReportDetailPage() {
     normalizedReportTitleDraft,
     reportId,
   ]);
+
+  const handleSaveCanonicalPeriod =
+    useCallback(async () => {
+      if (!reportId || !report) {
+        return;
+      }
+
+      if (!canonicalEditorEligible) {
+        setCanonicalPeriodSavedText("");
+        setMsg(
+          "이 리포트는 정규 URL 기간 설정 대상이 아닙니다.",
+        );
+        return;
+      }
+
+      if (canonicalIdentityLocked) {
+        setCanonicalPeriodSavedText("");
+        setMsg(
+          "최초 발행이 완료된 리포트의 정규 URL 기간은 변경할 수 없습니다.",
+        );
+        return;
+      }
+
+      if (!canonicalPeriodValid) {
+        setCanonicalPeriodSavedText("");
+        setMsg(
+          "정규 URL 기간을 올바르게 선택해 주세요.",
+        );
+        return;
+      }
+
+      setSavingCanonicalPeriod(true);
+      setCanonicalPeriodSavedText("");
+      setMsg("");
+
+      try {
+        const res = await authFetch(
+          `/api/reports/${encodeURIComponent(
+            reportId,
+          )}`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              period_type:
+                selectedCanonicalPeriodType,
+              period_key:
+                canonicalPeriodKey,
+            }),
+          },
+        );
+
+        const json = await safeJson(res);
+
+        if (!res.ok || !json?.ok) {
+          throw new Error(
+            String(
+              json?.error ||
+                json?.message ||
+                `정규 URL 기간 저장 실패 (${res.status})`,
+            ),
+          );
+        }
+
+        const updatedReport =
+          json?.report &&
+          typeof json.report === "object"
+            ? json.report
+            : null;
+
+        if (updatedReport) {
+          setReport((prev) => ({
+            ...(prev ?? {}),
+            ...updatedReport,
+          }));
+
+          lastLoadedCanonicalIdentityKeyRef
+            .current = JSON.stringify({
+            reportId,
+            identity:
+              normalizeCanonicalPublicIdentity(
+                updatedReport?.meta
+                  ?.public_identity,
+              ),
+            marker:
+              updatedReport?.meta
+                ?.url_contract_version ??
+              null,
+          });
+        }
+
+        setCanonicalPeriodSavedText(
+          "저장 완료",
+        );
+
+        setMsg(
+          "정규 URL 기간이 저장되었습니다. 리포트 조회 기간과 API 동기화 기간은 변경되지 않습니다.",
+        );
+      } catch (e: any) {
+        setCanonicalPeriodSavedText("");
+        setMsg(
+          e?.message ||
+            "정규 URL 기간 저장 실패",
+        );
+      } finally {
+        setSavingCanonicalPeriod(false);
+      }
+    }, [
+      canonicalEditorEligible,
+      canonicalIdentityLocked,
+      canonicalPeriodKey,
+      canonicalPeriodValid,
+      report,
+      reportId,
+      selectedCanonicalPeriodType,
+    ]);
 
   const handleSaveMonthGoal = useCallback(async () => {
     if (!reportId) return;
@@ -3730,6 +4372,402 @@ export default function ReportDetailPage() {
           {reportTitleSavedText ||
             "발행된 리포트도 이름만 변경할 수 있으며 공유 URL과 발행 데이터는 그대로 유지됩니다."}
         </div>
+
+        {canonicalEditorEligible ||
+        canonicalLifecycleMarked ||
+        canonicalIdentity ? (
+          <div className="mt-5 border-t border-white/[0.12] pt-5">
+            <div className="text-[13px] font-extrabold text-white/70">
+              정규 URL 기간
+            </div>
+
+            <div className="mt-1.5 text-xs leading-5 text-white/55">
+              리포트의 정규 주소를 결정하는
+              기간입니다. 리포트 조회 기간과
+              API 동기화 기간에는 영향을 주지
+              않습니다.
+            </div>
+
+            <div className="mt-4 grid gap-3 lg:grid-cols-[150px_minmax(0,1fr)_auto] lg:items-end">
+              <label className="block">
+                <span className="text-xs font-extrabold text-[#bbb8d4]">
+                  기간 유형
+                </span>
+
+                <select
+                  value={
+                    selectedCanonicalPeriodType
+                  }
+                  onChange={(event) => {
+                    setSelectedCanonicalPeriodType(
+                      event.target
+                        .value as CanonicalPeriodType,
+                    );
+                    setCanonicalPeriodBase("");
+                    setSelectedCanonicalWeek("");
+                    setSelectedCanonicalMonth("");
+                    setSelectedCanonicalQuarter("");
+                    setCanonicalPeriodSavedText("");
+                  }}
+                  disabled={
+                    canonicalIdentityLocked ||
+                    savingCanonicalPeriod
+                  }
+                  className="etrylue-field mt-1 w-full rounded-xl px-3.5 py-2.5 text-sm"
+                >
+                  <option value="daily">
+                    일간
+                  </option>
+                  <option value="weekly">
+                    주간
+                  </option>
+                  <option value="monthly">
+                    월간
+                  </option>
+                  <option value="quarterly">
+                    분기
+                  </option>
+                  <option value="yearly">
+                    연간
+                  </option>
+                  <option value="cumulative">
+                    누적
+                  </option>
+                </select>
+              </label>
+
+              <div>
+                <div className="text-xs font-extrabold text-[#bbb8d4]">
+                  기간 값
+                </div>
+
+                <div className="mt-1">
+                  {selectedCanonicalPeriodType ===
+                  "daily" ? (
+                    <input
+                      type="date"
+                      value={
+                        canonicalPeriodBase
+                      }
+                      onChange={(event) => {
+                        setCanonicalPeriodBase(
+                          event.target.value,
+                        );
+                        setCanonicalPeriodSavedText(
+                          "",
+                        );
+                      }}
+                      disabled={
+                        canonicalIdentityLocked ||
+                        savingCanonicalPeriod
+                      }
+                      className="etrylue-field w-full rounded-xl px-3.5 py-2.5 text-sm"
+                    />
+                  ) : selectedCanonicalPeriodType ===
+                    "weekly" ? (
+                    <div className="grid grid-cols-[minmax(0,1fr)_140px] gap-2">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={4}
+                        placeholder="연도 · 2026"
+                        value={
+                          canonicalPeriodBase
+                        }
+                        onChange={(event) => {
+                          setCanonicalPeriodBase(
+                            normalizeCanonicalYearInput(
+                              event.target.value,
+                            ),
+                          );
+                          setCanonicalPeriodSavedText(
+                            "",
+                          );
+                        }}
+                        disabled={
+                          canonicalIdentityLocked ||
+                          savingCanonicalPeriod
+                        }
+                        className="etrylue-field w-full rounded-xl px-3.5 py-2.5 text-sm"
+                      />
+
+                      <select
+                        value={
+                          selectedCanonicalWeek
+                        }
+                        onChange={(event) => {
+                          setSelectedCanonicalWeek(
+                            event.target.value,
+                          );
+                          setCanonicalPeriodSavedText(
+                            "",
+                          );
+                        }}
+                        disabled={
+                          canonicalIdentityLocked ||
+                          savingCanonicalPeriod
+                        }
+                        className="etrylue-field w-full rounded-xl px-3.5 py-2.5 text-sm"
+                      >
+                        <option value="">
+                          주차 선택
+                        </option>
+
+                        {CANONICAL_WEEK_OPTIONS.map(
+                          (week) => (
+                            <option
+                              key={week}
+                              value={week}
+                            >
+                              {week}주
+                            </option>
+                          ),
+                        )}
+                      </select>
+                    </div>
+                  ) : selectedCanonicalPeriodType ===
+                    "monthly" ? (
+                    <div className="grid grid-cols-[minmax(0,1fr)_140px] gap-2">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={4}
+                        placeholder="연도 · 2026"
+                        value={
+                          canonicalPeriodBase
+                        }
+                        onChange={(event) => {
+                          setCanonicalPeriodBase(
+                            normalizeCanonicalYearInput(
+                              event.target.value,
+                            ),
+                          );
+                          setCanonicalPeriodSavedText(
+                            "",
+                          );
+                        }}
+                        disabled={
+                          canonicalIdentityLocked ||
+                          savingCanonicalPeriod
+                        }
+                        className="etrylue-field w-full rounded-xl px-3.5 py-2.5 text-sm"
+                      />
+
+                      <select
+                        value={
+                          selectedCanonicalMonth
+                        }
+                        onChange={(event) => {
+                          setSelectedCanonicalMonth(
+                            event.target.value,
+                          );
+                          setCanonicalPeriodSavedText(
+                            "",
+                          );
+                        }}
+                        disabled={
+                          canonicalIdentityLocked ||
+                          savingCanonicalPeriod
+                        }
+                        className="etrylue-field w-full rounded-xl px-3.5 py-2.5 text-sm"
+                      >
+                        <option value="">
+                          월 선택
+                        </option>
+
+                        {CANONICAL_MONTH_OPTIONS.map(
+                          (month) => (
+                            <option
+                              key={month}
+                              value={month}
+                            >
+                              {Number(month)}월
+                            </option>
+                          ),
+                        )}
+                      </select>
+                    </div>
+                  ) : selectedCanonicalPeriodType ===
+                    "quarterly" ? (
+                    <div className="grid grid-cols-[minmax(0,1fr)_140px] gap-2">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={4}
+                        placeholder="연도 · 2026"
+                        value={
+                          canonicalPeriodBase
+                        }
+                        onChange={(event) => {
+                          setCanonicalPeriodBase(
+                            normalizeCanonicalYearInput(
+                              event.target.value,
+                            ),
+                          );
+                          setCanonicalPeriodSavedText(
+                            "",
+                          );
+                        }}
+                        disabled={
+                          canonicalIdentityLocked ||
+                          savingCanonicalPeriod
+                        }
+                        className="etrylue-field w-full rounded-xl px-3.5 py-2.5 text-sm"
+                      />
+
+                      <select
+                        value={
+                          selectedCanonicalQuarter
+                        }
+                        onChange={(event) => {
+                          setSelectedCanonicalQuarter(
+                            event.target
+                              .value as CanonicalQuarter,
+                          );
+                          setCanonicalPeriodSavedText(
+                            "",
+                          );
+                        }}
+                        disabled={
+                          canonicalIdentityLocked ||
+                          savingCanonicalPeriod
+                        }
+                        className="etrylue-field w-full rounded-xl px-3.5 py-2.5 text-sm"
+                      >
+                        <option value="">
+                          분기 선택
+                        </option>
+                        <option value="Q1">
+                          1분기
+                        </option>
+                        <option value="Q2">
+                          2분기
+                        </option>
+                        <option value="Q3">
+                          3분기
+                        </option>
+                        <option value="Q4">
+                          4분기
+                        </option>
+                      </select>
+                    </div>
+                  ) : selectedCanonicalPeriodType ===
+                    "yearly" ? (
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={4}
+                      placeholder="연도 · 2026"
+                      value={
+                        canonicalPeriodBase
+                      }
+                      onChange={(event) => {
+                        setCanonicalPeriodBase(
+                          normalizeCanonicalYearInput(
+                            event.target.value,
+                          ),
+                        );
+                        setCanonicalPeriodSavedText(
+                          "",
+                        );
+                      }}
+                      disabled={
+                        canonicalIdentityLocked ||
+                        savingCanonicalPeriod
+                      }
+                      className="etrylue-field w-full rounded-xl px-3.5 py-2.5 text-sm"
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      value="all"
+                      readOnly
+                      disabled
+                      className="etrylue-field w-full rounded-xl px-3.5 py-2.5 text-sm opacity-80"
+                    />
+                  )}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="subBtn"
+                onClick={() =>
+                  void handleSaveCanonicalPeriod()
+                }
+                disabled={
+                  !canSaveCanonicalPeriod
+                }
+                style={{
+                  minWidth: 156,
+                  height: 44,
+                  padding: "0 16px",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {savingCanonicalPeriod
+                  ? "저장 중..."
+                  : "정규 URL 기간 저장"}
+              </button>
+            </div>
+
+            <div className="mt-3 min-h-5 text-xs leading-5 text-[#bbb8d4]">
+              {canonicalIdentityLocked ? (
+                canonicalIdentity ? (
+                  <span className="font-extrabold text-[#d7d5ec]">
+                    🔒{" "}
+                    {getCanonicalPeriodTypeLabel(
+                      canonicalIdentity.period_type,
+                    )}{" "}
+                    ·{" "}
+                    {
+                      canonicalIdentity.period_key
+                    }{" "}
+                    — 최초 발행 후에는 변경할 수
+                    없습니다.
+                  </span>
+                ) : (
+                  <span className="font-extrabold text-amber-100">
+                    🔒 발행 완료 상태에서는 정규
+                    URL 기간을 변경할 수 없습니다.
+                  </span>
+                )
+              ) : canonicalPeriodSavedText ? (
+                <span className="font-extrabold text-[#78f0ff]">
+                  {canonicalPeriodSavedText}
+                </span>
+              ) : canonicalPeriodDirty ? (
+                <span className="font-extrabold text-amber-100">
+                  저장되지 않은 정규 URL 기간이
+                  있습니다.
+                </span>
+              ) : canonicalIdentity ? (
+                <span className="font-extrabold text-[#d7d5ec]">
+                  저장됨 ·{" "}
+                  {getCanonicalPeriodTypeLabel(
+                    canonicalIdentity.period_type,
+                  )}{" "}
+                  ·{" "}
+                  {
+                    canonicalIdentity.period_key
+                  }
+                </span>
+              ) : (
+                <span>
+                  아직 정규 URL 기간이 설정되지
+                  않았습니다.
+                </span>
+              )}
+            </div>
+
+            {canonicalPreviewPath ? (
+              <div className="mt-2 break-all rounded-xl border border-white/[0.10] bg-[#2a2157]/72 px-3.5 py-2.5 font-mono text-xs text-[#9ef5ff]">
+                예상 공개 정규 경로:{" "}
+                {canonicalPreviewPath}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </section>
 
       <section className="mb-5 rounded-[20px] border border-white/[0.13] bg-[#392b70]/90 p-5 shadow-[0_22px_54px_rgba(8,5,29,0.22)]">
