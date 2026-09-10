@@ -42,6 +42,7 @@ SECURITY DEFINER
 SET search_path TO 'pg_catalog', 'public', 'extensions'
 SET statement_timeout TO '2min'
 AS $function$
+#variable_conflict use_column
 declare
   v_job public.media_sync_jobs%rowtype;
   v_report public.reports%rowtype;
