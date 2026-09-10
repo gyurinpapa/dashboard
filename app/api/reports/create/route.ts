@@ -12,6 +12,19 @@ const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
 
 type ReportDataSourceKind = "csv" | "api";
 
+type CanonicalReportType =
+  | "traffic"
+  | "db_acquisition"
+  | "commerce";
+
+type CanonicalPeriodType =
+  | "daily"
+  | "weekly"
+  | "monthly"
+  | "quarterly"
+  | "yearly"
+  | "cumulative";
+
 type CreateBody = {
   workspace_id?: string;
   advertiser_id?: string | null;
@@ -22,6 +35,11 @@ type CreateBody = {
   meta?: any;
   period_start?: string | null;
   period_end?: string | null;
+
+  // URL Contract V2.
+  // Optional for backward compatibility.
+  period_type?: string | null;
+  period_key?: string | null;
 };
 
 function jsonError(
@@ -113,7 +131,92 @@ function normalizeDataSourceKind(value: any): ReportDataSourceKind {
   return "csv";
 }
 
-function normalizeReportMeta(input: any) {
+function isCanonicalPeriodType(
+  value: string,
+): value is CanonicalPeriodType {
+  return (
+    value === "daily" ||
+    value === "weekly" ||
+    value === "monthly" ||
+    value === "quarterly" ||
+    value === "yearly" ||
+    value === "cumulative"
+  );
+}
+
+function isValidDailyCanonicalPeriodKey(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+
+  const date = new Date(`${value}T00:00:00.000Z`);
+
+  if (Number.isNaN(date.getTime())) {
+    return false;
+  }
+
+  return date.toISOString().slice(0, 10) === value;
+}
+
+function isValidCanonicalPeriodKey(
+  periodType: CanonicalPeriodType,
+  periodKey: string,
+) {
+  switch (periodType) {
+    case "daily":
+      return isValidDailyCanonicalPeriodKey(periodKey);
+
+    case "weekly":
+      return /^\d{4}-W(?:0[1-9]|[1-4]\d|5[0-3])$/.test(
+        periodKey,
+      );
+
+    case "monthly":
+      return /^\d{4}-(?:0[1-9]|1[0-2])$/.test(periodKey);
+
+    case "quarterly":
+      return /^\d{4}-Q[1-4]$/.test(periodKey);
+
+    case "yearly":
+      return /^\d{4}$/.test(periodKey);
+
+    case "cumulative":
+      return periodKey === "all";
+
+    default:
+      return false;
+  }
+}
+
+function mapDbReportTypeKey(
+  value: any,
+): CanonicalReportType | null {
+  const key = asString(value).toLowerCase();
+
+  if (key === "traffic") {
+    return "traffic";
+  }
+
+  if (key === "db") {
+    return "db_acquisition";
+  }
+
+  if (key === "commerce") {
+    return "commerce";
+  }
+
+  return null;
+}
+
+function isValidCanonicalPublicSlug(value: any) {
+  const slug = asString(value);
+
+  return /^[a-z0-9][a-z0-9-]{1,58}[a-z0-9]$/.test(slug);
+}
+
+function normalizeReportMeta(
+  input: any,
+): Record<string, any> {
   const meta = safeObj(input);
   const existingDataSource = isPlainObject(meta.data_source)
     ? meta.data_source
@@ -346,8 +449,71 @@ export async function POST(req: Request) {
 
     const status = "draft";
 
-    const meta = normalizeReportMeta(body.meta);
+    let meta = normalizeReportMeta(body.meta);
     const dataSourceKind = normalizeDataSourceKind(meta?.data_source?.kind);
+
+    const hasCanonicalPeriodTypeInput =
+      Object.prototype.hasOwnProperty.call(
+        body,
+        "period_type",
+      );
+
+    const hasCanonicalPeriodKeyInput =
+      Object.prototype.hasOwnProperty.call(
+        body,
+        "period_key",
+      );
+
+    const wantsCanonicalIdentity =
+      hasCanonicalPeriodTypeInput ||
+      hasCanonicalPeriodKeyInput;
+
+    let canonicalPeriodType: CanonicalPeriodType | null = null;
+    const canonicalPeriodKey = asString(body.period_key);
+
+    if (wantsCanonicalIdentity) {
+      if (
+        !hasCanonicalPeriodTypeInput ||
+        !hasCanonicalPeriodKeyInput
+      ) {
+        return jsonError(
+          400,
+          "V2_CANONICAL_PERIOD_INCOMPLETE",
+        );
+      }
+
+      const normalizedPeriodType =
+        asString(body.period_type).toLowerCase();
+
+      if (!isCanonicalPeriodType(normalizedPeriodType)) {
+        return jsonError(
+          400,
+          "V2_INVALID_PERIOD_TYPE",
+        );
+      }
+
+      if (
+        !canonicalPeriodKey ||
+        !isValidCanonicalPeriodKey(
+          normalizedPeriodType,
+          canonicalPeriodKey,
+        )
+      ) {
+        return jsonError(
+          400,
+          "V2_INVALID_PERIOD_KEY",
+        );
+      }
+
+      if (!advertiser_id) {
+        return jsonError(
+          400,
+          "V2_ADVERTISER_REQUIRED",
+        );
+      }
+
+      canonicalPeriodType = normalizedPeriodType;
+    }
 
     if (dataSourceKind === "api" && !advertiser_id) {
       return jsonError(
@@ -470,7 +636,7 @@ export async function POST(req: Request) {
       const { data: adv, error: advErr } =
         await supabaseAdmin
           .from("advertisers")
-          .select("id, workspace_id, created_by")
+          .select("id, workspace_id, created_by, public_slug")
           .eq("id", advertiser_id)
           .eq("workspace_id", resolved_workspace_id)
           .maybeSingle();
@@ -496,6 +662,71 @@ export async function POST(req: Request) {
           "Invalid advertiser_id for this workspace",
         );
       }
+
+      if (
+        wantsCanonicalIdentity &&
+        !isValidCanonicalPublicSlug(adv.public_slug)
+      ) {
+        return jsonError(
+          400,
+          "V2_ADVERTISER_PUBLIC_SLUG_REQUIRED",
+        );
+      }
+    }
+
+    if (wantsCanonicalIdentity) {
+      if (!canonicalPeriodType) {
+        return jsonError(
+          500,
+          "V2_CANONICAL_PERIOD_STATE_INVALID",
+        );
+      }
+
+      const {
+        data: canonicalReportTypeRow,
+        error: canonicalReportTypeError,
+      } = await supabaseAdmin
+        .from("report_types")
+        .select("id, key")
+        .eq("id", report_type_id)
+        .maybeSingle();
+
+      if (canonicalReportTypeError) {
+        return jsonError(
+          500,
+          "V2_REPORT_TYPE_LOOKUP_FAILED",
+          {
+            detail: canonicalReportTypeError.message,
+          },
+        );
+      }
+
+      if (!canonicalReportTypeRow) {
+        return jsonError(
+          400,
+          "V2_REPORT_TYPE_NOT_FOUND",
+        );
+      }
+
+      const canonicalReportType =
+        mapDbReportTypeKey(canonicalReportTypeRow.key);
+
+      if (!canonicalReportType) {
+        return jsonError(
+          400,
+          "V2_UNSUPPORTED_REPORT_TYPE",
+        );
+      }
+
+      meta = {
+        ...meta,
+        public_identity: {
+          source_type: dataSourceKind,
+          report_type: canonicalReportType,
+          period_type: canonicalPeriodType,
+          period_key: canonicalPeriodKey,
+        },
+      };
     }
 
     // ✅ 4) period 자동세팅 (없을 때만)
