@@ -22,6 +22,29 @@ type CanonicalPeriodType =
   | "yearly"
   | "cumulative";
 
+type CanonicalQuarter =
+  | ""
+  | "Q1"
+  | "Q2"
+  | "Q3"
+  | "Q4";
+
+const CANONICAL_MONTH_OPTIONS = Array.from(
+  { length: 12 },
+  (_, index) => String(index + 1).padStart(2, "0")
+);
+
+const CANONICAL_WEEK_OPTIONS = Array.from(
+  { length: 53 },
+  (_, index) => String(index + 1).padStart(2, "0")
+);
+
+function normalizeCanonicalYearInput(value: string) {
+  return String(value ?? "")
+    .replace(/\D/g, "")
+    .slice(0, 4);
+}
+
 function isV2SupportedReportTypeKey(value: string) {
   const key = String(value ?? "").trim().toLowerCase();
 
@@ -79,12 +102,40 @@ function isValidCanonicalPeriodKey(
 function getCanonicalPeriodKey(
   periodType: CanonicalPeriodType,
   rawValue: string,
+  selectedWeek: string,
+  selectedMonth: string,
+  selectedQuarter: CanonicalQuarter,
 ) {
-  if (periodType === "cumulative") {
-    return "all";
-  }
+  const value = String(rawValue ?? "").trim();
 
-  return String(rawValue ?? "").trim();
+  switch (periodType) {
+    case "daily":
+      return value;
+
+    case "weekly":
+      return value && selectedWeek
+        ? `${value}-W${selectedWeek}`
+        : "";
+
+    case "monthly":
+      return value && selectedMonth
+        ? `${value}-${selectedMonth}`
+        : "";
+
+    case "quarterly":
+      return value && selectedQuarter
+        ? `${value}-${selectedQuarter}`
+        : "";
+
+    case "yearly":
+      return value;
+
+    case "cumulative":
+      return "all";
+
+    default:
+      return "";
+  }
 }
 
 function getCanonicalPeriodKeyExample(
@@ -612,6 +663,12 @@ export default function ReportBuilderPage() {
     useState<CanonicalPeriodType>("monthly");
   const [canonicalPeriodKeyInput, setCanonicalPeriodKeyInput] =
     useState("");
+  const [selectedCanonicalWeek, setSelectedCanonicalWeek] =
+    useState("");
+  const [selectedCanonicalMonth, setSelectedCanonicalMonth] =
+    useState("");
+  const [selectedCanonicalQuarter, setSelectedCanonicalQuarter] =
+    useState<CanonicalQuarter>("");
   const [selectedApiMediaConnectionId, setSelectedApiMediaConnectionId] =
     useState("");
 
@@ -1208,6 +1265,9 @@ export default function ReportBuilderPage() {
 
   useEffect(() => {
     setCanonicalPeriodKeyInput("");
+    setSelectedCanonicalWeek("");
+    setSelectedCanonicalMonth("");
+    setSelectedCanonicalQuarter("");
   }, [selectedAdvertiserId]);
 
   useEffect(() => {
@@ -2481,6 +2541,9 @@ export default function ReportBuilderPage() {
       getCanonicalPeriodKey(
         selectedCanonicalPeriodType,
         canonicalPeriodKeyInput,
+        selectedCanonicalWeek,
+        selectedCanonicalMonth,
+        selectedCanonicalQuarter,
       );
 
     if (
@@ -6506,6 +6569,9 @@ export default function ReportBuilderPage() {
                           event.target.value as CanonicalPeriodType
                         );
                         setCanonicalPeriodKeyInput("");
+                        setSelectedCanonicalWeek("");
+                        setSelectedCanonicalMonth("");
+                        setSelectedCanonicalQuarter("");
                       }}
                       disabled={creating}
                       style={{
@@ -6528,7 +6594,7 @@ export default function ReportBuilderPage() {
                     </select>
                   </label>
 
-                  <label style={{ minWidth: 0 }}>
+                  <div style={{ minWidth: 0 }}>
                     <div
                       style={{
                         marginBottom: 6,
@@ -6537,44 +6603,259 @@ export default function ReportBuilderPage() {
                         color: "#d7d5ec",
                       }}
                     >
-                      기간 키
+                      기간 값
                     </div>
 
-                    <input
-                      value={
-                        selectedCanonicalPeriodType === "cumulative"
-                          ? "all"
-                          : canonicalPeriodKeyInput
-                      }
-                      onChange={(event) =>
-                        setCanonicalPeriodKeyInput(
-                          event.target.value
-                        )
-                      }
-                      disabled={
-                        creating ||
-                        selectedCanonicalPeriodType === "cumulative"
-                      }
-                      placeholder={
-                        getCanonicalPeriodKeyExample(
-                          selectedCanonicalPeriodType
-                        )
-                      }
-                      autoComplete="off"
-                      spellCheck={false}
-                      style={{
-                        width: "100%",
-                        padding: 10,
-                        borderRadius: 10,
-                        border:
-                          "1px solid rgba(255, 255, 255, 0.13)",
-                        background: "rgba(42, 33, 87, 0.90)",
-                        color: "#f7f7ff",
-                        fontSize: 12,
-                        boxSizing: "border-box",
-                      }}
-                    />
-                  </label>
+                    {selectedCanonicalPeriodType === "daily" ? (
+                      <input
+                        type="date"
+                        value={canonicalPeriodKeyInput}
+                        onChange={(event) =>
+                          setCanonicalPeriodKeyInput(
+                            event.target.value
+                          )
+                        }
+                        disabled={creating}
+                        style={{
+                          width: "100%",
+                          padding: 10,
+                          borderRadius: 10,
+                          border:
+                            "1px solid rgba(255, 255, 255, 0.13)",
+                          background: "rgba(42, 33, 87, 0.90)",
+                          color: "#f7f7ff",
+                          fontSize: 12,
+                          boxSizing: "border-box",
+                          colorScheme: "dark",
+                        }}
+                      />
+                    ) : selectedCanonicalPeriodType === "weekly" ? (
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "1fr 1fr",
+                          gap: 8,
+                        }}
+                      >
+                        <input
+                          value={canonicalPeriodKeyInput}
+                          onChange={(event) =>
+                            setCanonicalPeriodKeyInput(
+                              normalizeCanonicalYearInput(
+                                event.target.value
+                              )
+                            )
+                          }
+                          inputMode="numeric"
+                          maxLength={4}
+                          placeholder="연도 · 2026"
+                          disabled={creating}
+                          style={{
+                            width: "100%",
+                            padding: 10,
+                            borderRadius: 10,
+                            border:
+                              "1px solid rgba(255, 255, 255, 0.13)",
+                            background: "rgba(42, 33, 87, 0.90)",
+                            color: "#f7f7ff",
+                            fontSize: 12,
+                            boxSizing: "border-box",
+                          }}
+                        />
+
+                        <select
+                          value={selectedCanonicalWeek}
+                          onChange={(event) =>
+                            setSelectedCanonicalWeek(
+                              event.target.value
+                            )
+                          }
+                          disabled={creating}
+                          style={{
+                            width: "100%",
+                            padding: 10,
+                            borderRadius: 10,
+                            border:
+                              "1px solid rgba(255, 255, 255, 0.13)",
+                            background: "rgba(42, 33, 87, 0.90)",
+                            color: "#f7f7ff",
+                            fontSize: 12,
+                          }}
+                        >
+                          <option value="">주차 선택</option>
+                          {CANONICAL_WEEK_OPTIONS.map((week) => (
+                            <option key={week} value={week}>
+                              {week}주
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : selectedCanonicalPeriodType === "monthly" ? (
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "1fr 1fr",
+                          gap: 8,
+                        }}
+                      >
+                        <input
+                          value={canonicalPeriodKeyInput}
+                          onChange={(event) =>
+                            setCanonicalPeriodKeyInput(
+                              normalizeCanonicalYearInput(
+                                event.target.value
+                              )
+                            )
+                          }
+                          inputMode="numeric"
+                          maxLength={4}
+                          placeholder="연도 · 2026"
+                          disabled={creating}
+                          style={{
+                            width: "100%",
+                            padding: 10,
+                            borderRadius: 10,
+                            border:
+                              "1px solid rgba(255, 255, 255, 0.13)",
+                            background: "rgba(42, 33, 87, 0.90)",
+                            color: "#f7f7ff",
+                            fontSize: 12,
+                            boxSizing: "border-box",
+                          }}
+                        />
+
+                        <select
+                          value={selectedCanonicalMonth}
+                          onChange={(event) =>
+                            setSelectedCanonicalMonth(
+                              event.target.value
+                            )
+                          }
+                          disabled={creating}
+                          style={{
+                            width: "100%",
+                            padding: 10,
+                            borderRadius: 10,
+                            border:
+                              "1px solid rgba(255, 255, 255, 0.13)",
+                            background: "rgba(42, 33, 87, 0.90)",
+                            color: "#f7f7ff",
+                            fontSize: 12,
+                          }}
+                        >
+                          <option value="">월 선택</option>
+                          {CANONICAL_MONTH_OPTIONS.map((month) => (
+                            <option key={month} value={month}>
+                              {Number(month)}월
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : selectedCanonicalPeriodType === "quarterly" ? (
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "1fr 1fr",
+                          gap: 8,
+                        }}
+                      >
+                        <input
+                          value={canonicalPeriodKeyInput}
+                          onChange={(event) =>
+                            setCanonicalPeriodKeyInput(
+                              normalizeCanonicalYearInput(
+                                event.target.value
+                              )
+                            )
+                          }
+                          inputMode="numeric"
+                          maxLength={4}
+                          placeholder="연도 · 2026"
+                          disabled={creating}
+                          style={{
+                            width: "100%",
+                            padding: 10,
+                            borderRadius: 10,
+                            border:
+                              "1px solid rgba(255, 255, 255, 0.13)",
+                            background: "rgba(42, 33, 87, 0.90)",
+                            color: "#f7f7ff",
+                            fontSize: 12,
+                            boxSizing: "border-box",
+                          }}
+                        />
+
+                        <select
+                          value={selectedCanonicalQuarter}
+                          onChange={(event) =>
+                            setSelectedCanonicalQuarter(
+                              event.target.value as CanonicalQuarter
+                            )
+                          }
+                          disabled={creating}
+                          style={{
+                            width: "100%",
+                            padding: 10,
+                            borderRadius: 10,
+                            border:
+                              "1px solid rgba(255, 255, 255, 0.13)",
+                            background: "rgba(42, 33, 87, 0.90)",
+                            color: "#f7f7ff",
+                            fontSize: 12,
+                          }}
+                        >
+                          <option value="">분기 선택</option>
+                          <option value="Q1">1분기</option>
+                          <option value="Q2">2분기</option>
+                          <option value="Q3">3분기</option>
+                          <option value="Q4">4분기</option>
+                        </select>
+                      </div>
+                    ) : selectedCanonicalPeriodType === "yearly" ? (
+                      <input
+                        value={canonicalPeriodKeyInput}
+                        onChange={(event) =>
+                          setCanonicalPeriodKeyInput(
+                            normalizeCanonicalYearInput(
+                              event.target.value
+                            )
+                          )
+                        }
+                        inputMode="numeric"
+                        maxLength={4}
+                        placeholder="연도 · 2026"
+                        disabled={creating}
+                        style={{
+                          width: "100%",
+                          padding: 10,
+                          borderRadius: 10,
+                          border:
+                            "1px solid rgba(255, 255, 255, 0.13)",
+                          background: "rgba(42, 33, 87, 0.90)",
+                          color: "#f7f7ff",
+                          fontSize: 12,
+                          boxSizing: "border-box",
+                        }}
+                      />
+                    ) : (
+                      <input
+                        value="all"
+                        disabled
+                        readOnly
+                        style={{
+                          width: "100%",
+                          padding: 10,
+                          borderRadius: 10,
+                          border:
+                            "1px solid rgba(255, 255, 255, 0.13)",
+                          background: "rgba(42, 33, 87, 0.90)",
+                          color: "#f7f7ff",
+                          fontSize: 12,
+                          boxSizing: "border-box",
+                        }}
+                      />
+                    )}
+                  </div>
                 </div>
 
                 <div
