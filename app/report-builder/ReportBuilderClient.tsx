@@ -14,6 +14,106 @@ type ReportType = {
 
 type ReportDataSourceKind = "csv" | "api";
 
+type CanonicalPeriodType =
+  | "daily"
+  | "weekly"
+  | "monthly"
+  | "quarterly"
+  | "yearly"
+  | "cumulative";
+
+function isV2SupportedReportTypeKey(value: string) {
+  const key = String(value ?? "").trim().toLowerCase();
+
+  return (
+    key === "traffic" ||
+    key === "db" ||
+    key === "commerce"
+  );
+}
+
+function isValidDailyCanonicalPeriodKey(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+
+  const date = new Date(`${value}T00:00:00.000Z`);
+
+  if (Number.isNaN(date.getTime())) {
+    return false;
+  }
+
+  return date.toISOString().slice(0, 10) === value;
+}
+
+function isValidCanonicalPeriodKey(
+  periodType: CanonicalPeriodType,
+  periodKey: string,
+) {
+  switch (periodType) {
+    case "daily":
+      return isValidDailyCanonicalPeriodKey(periodKey);
+
+    case "weekly":
+      return /^\d{4}-W(?:0[1-9]|[1-4]\d|5[0-3])$/.test(
+        periodKey,
+      );
+
+    case "monthly":
+      return /^\d{4}-(?:0[1-9]|1[0-2])$/.test(periodKey);
+
+    case "quarterly":
+      return /^\d{4}-Q[1-4]$/.test(periodKey);
+
+    case "yearly":
+      return /^\d{4}$/.test(periodKey);
+
+    case "cumulative":
+      return periodKey === "all";
+
+    default:
+      return false;
+  }
+}
+
+function getCanonicalPeriodKey(
+  periodType: CanonicalPeriodType,
+  rawValue: string,
+) {
+  if (periodType === "cumulative") {
+    return "all";
+  }
+
+  return String(rawValue ?? "").trim();
+}
+
+function getCanonicalPeriodKeyExample(
+  periodType: CanonicalPeriodType,
+) {
+  switch (periodType) {
+    case "daily":
+      return "2026-09-10";
+
+    case "weekly":
+      return "2026-W37";
+
+    case "monthly":
+      return "2026-09";
+
+    case "quarterly":
+      return "2026-Q3";
+
+    case "yearly":
+      return "2026";
+
+    case "cumulative":
+      return "all";
+
+    default:
+      return "";
+  }
+}
+
 type ReportRow = {
   id: string;
   title: string;
@@ -508,6 +608,10 @@ export default function ReportBuilderPage() {
     useState<ReportDataSourceKind>("csv");
   const [selectedReportTheme, setSelectedReportTheme] =
     useState<ReportTheme>("light");
+  const [selectedCanonicalPeriodType, setSelectedCanonicalPeriodType] =
+    useState<CanonicalPeriodType>("monthly");
+  const [canonicalPeriodKeyInput, setCanonicalPeriodKeyInput] =
+    useState("");
   const [selectedApiMediaConnectionId, setSelectedApiMediaConnectionId] =
     useState("");
 
@@ -1101,6 +1205,10 @@ export default function ReportBuilderPage() {
 
     setPublicSlugInput(selectedAdvertiser?.public_slug ?? "");
   }, [advertisers, selectedAdvertiserId]);
+
+  useEffect(() => {
+    setCanonicalPeriodKeyInput("");
+  }, [selectedAdvertiserId]);
 
   useEffect(() => {
     setGoogleAdsConnectionFormOpen(false);
@@ -2351,6 +2459,45 @@ export default function ReportBuilderPage() {
 
     if (!workspaceId || creating) return;
 
+    const canonicalAdvertiser =
+      selectedAdvertiserId
+        ? advertisers.find(
+            (advertiser) =>
+              advertiser.id === selectedAdvertiserId
+          ) ?? null
+        : null;
+
+    const canonicalAdvertiserPublicSlug =
+      String(
+        canonicalAdvertiser?.public_slug ?? ""
+      ).trim();
+
+    const shouldAttachCanonicalIdentity =
+      isV2SupportedReportTypeKey(type.key) &&
+      Boolean(selectedAdvertiserId) &&
+      Boolean(canonicalAdvertiserPublicSlug);
+
+    const canonicalPeriodKey =
+      getCanonicalPeriodKey(
+        selectedCanonicalPeriodType,
+        canonicalPeriodKeyInput,
+      );
+
+    if (
+      shouldAttachCanonicalIdentity &&
+      !isValidCanonicalPeriodKey(
+        selectedCanonicalPeriodType,
+        canonicalPeriodKey,
+      )
+    ) {
+      setLocalMsg(
+        `정규 URL 기간 키 형식을 확인해 주세요. 예: ${getCanonicalPeriodKeyExample(
+          selectedCanonicalPeriodType,
+        )}`
+      );
+      return;
+    }
+
     if (selectedReportDataSourceKind === "api") {
       if (!selectedAdvertiserId) {
         setLocalMsg("API 연동형 리포트는 광고주를 먼저 선택해야 합니다.");
@@ -2426,6 +2573,12 @@ export default function ReportBuilderPage() {
           : {}),
         report_type_id: type.id,
         title: `${type.name} - Draft`,
+        ...(shouldAttachCanonicalIdentity
+          ? {
+              period_type: selectedCanonicalPeriodType,
+              period_key: canonicalPeriodKey,
+            }
+          : {}),
         meta: {
           ...reportDataSourceMeta,
           report_theme: selectedReportTheme,
@@ -6290,6 +6443,155 @@ export default function ReportBuilderPage() {
                     </div>
                   </>
                 )}
+              </div>
+            ) : null}
+
+            {selectedAdvertiserPublicSlug ? (
+              <div
+                style={{
+                  marginTop: 14,
+                  border: "1px solid rgba(255, 255, 255, 0.13)",
+                  borderRadius: 16,
+                  background: "rgba(53, 40, 103, 0.90)",
+                  padding: 14,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 900,
+                    color: "#f7f7ff",
+                  }}
+                >
+                  정규 URL 기간
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 4,
+                    fontSize: 12,
+                    color: "#d7d5ec",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  트래픽 · DB 획득 · 커머스 리포트 생성 시
+                  정규 URL 식별자에 자동 저장됩니다.
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      "minmax(160px, 0.75fr) minmax(220px, 1.25fr)",
+                    gap: 10,
+                    marginTop: 12,
+                  }}
+                >
+                  <label style={{ minWidth: 0 }}>
+                    <div
+                      style={{
+                        marginBottom: 6,
+                        fontSize: 11,
+                        fontWeight: 800,
+                        color: "#d7d5ec",
+                      }}
+                    >
+                      기간 유형
+                    </div>
+
+                    <select
+                      value={selectedCanonicalPeriodType}
+                      onChange={(event) => {
+                        setSelectedCanonicalPeriodType(
+                          event.target.value as CanonicalPeriodType
+                        );
+                        setCanonicalPeriodKeyInput("");
+                      }}
+                      disabled={creating}
+                      style={{
+                        width: "100%",
+                        padding: 10,
+                        borderRadius: 10,
+                        border:
+                          "1px solid rgba(255, 255, 255, 0.13)",
+                        background: "rgba(42, 33, 87, 0.90)",
+                        color: "#f7f7ff",
+                        fontSize: 12,
+                      }}
+                    >
+                      <option value="daily">일간</option>
+                      <option value="weekly">주간</option>
+                      <option value="monthly">월간</option>
+                      <option value="quarterly">분기</option>
+                      <option value="yearly">연간</option>
+                      <option value="cumulative">누적</option>
+                    </select>
+                  </label>
+
+                  <label style={{ minWidth: 0 }}>
+                    <div
+                      style={{
+                        marginBottom: 6,
+                        fontSize: 11,
+                        fontWeight: 800,
+                        color: "#d7d5ec",
+                      }}
+                    >
+                      기간 키
+                    </div>
+
+                    <input
+                      value={
+                        selectedCanonicalPeriodType === "cumulative"
+                          ? "all"
+                          : canonicalPeriodKeyInput
+                      }
+                      onChange={(event) =>
+                        setCanonicalPeriodKeyInput(
+                          event.target.value
+                        )
+                      }
+                      disabled={
+                        creating ||
+                        selectedCanonicalPeriodType === "cumulative"
+                      }
+                      placeholder={
+                        getCanonicalPeriodKeyExample(
+                          selectedCanonicalPeriodType
+                        )
+                      }
+                      autoComplete="off"
+                      spellCheck={false}
+                      style={{
+                        width: "100%",
+                        padding: 10,
+                        borderRadius: 10,
+                        border:
+                          "1px solid rgba(255, 255, 255, 0.13)",
+                        background: "rgba(42, 33, 87, 0.90)",
+                        color: "#f7f7ff",
+                        fontSize: 12,
+                        boxSizing: "border-box",
+                      }}
+                    />
+                  </label>
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 8,
+                    fontSize: 10,
+                    lineHeight: 1.55,
+                    color: "#bbb8d4",
+                  }}
+                >
+                  예시 ·{" "}
+                  {getCanonicalPeriodKeyExample(
+                    selectedCanonicalPeriodType
+                  )}
+                  {" · "}
+                  영상 조회 리포트는 기존 방식으로 생성됩니다.
+                </div>
               </div>
             ) : null}
 
