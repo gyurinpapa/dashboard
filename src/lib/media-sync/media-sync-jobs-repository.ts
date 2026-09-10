@@ -7,6 +7,9 @@ import {
   getMediaProviderSyncCapability,
 } from "./media-provider-sync-capabilities";
 import {
+  buildInitialMediaSyncSegmentProgressForJob,
+} from "./media-sync-job-segment-activation";
+import {
   isMediaProvider,
   isMediaSyncDataLevel,
   isMediaSyncJobStatus,
@@ -169,6 +172,7 @@ type ReportScopeRecord = {
   workspace_id: string;
   advertiser_id: string;
   current_ingestion_id: string | null;
+  meta: JsonObject | null;
 };
 
 function normalizeRequiredString(
@@ -321,6 +325,38 @@ function isJsonValue(
   return false;
 }
 
+function requireNullableReportMeta(
+  value: unknown,
+): JsonObject | null {
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return null;
+  }
+
+  if (!isPlainObject(value)) {
+    throw new MediaSyncJobsRepositoryError(
+      "INVALID_RECORD",
+      "Report database field meta has an invalid value.",
+    );
+  }
+
+  for (
+    const nestedValue
+    of Object.values(value)
+  ) {
+    if (!isJsonValue(nestedValue)) {
+      throw new MediaSyncJobsRepositoryError(
+        "INVALID_RECORD",
+        "Report database field meta contains an invalid value.",
+      );
+    }
+  }
+
+  return value as JsonObject;
+}
+
 function requireNullableJsonObject(
   value: unknown,
 ): JsonObject | null {
@@ -374,6 +410,11 @@ function parseReportScopeRecord(
       requireNullableString(
         value.current_ingestion_id,
         "report.current_ingestion_id",
+      ),
+
+    meta:
+      requireNullableReportMeta(
+        value.meta,
       ),
   };
 }
@@ -504,6 +545,17 @@ export function parseMediaSyncJobRecord(
         value.error_detail,
       ),
 
+    /*
+     * Backward-compatible while the nullable database column is
+     * rolled out separately. A missing field is equivalent to the
+     * legacy null state.
+     */
+    sync_segment_progress:
+      requireNullableJsonObject(
+        value.sync_segment_progress ??
+          null,
+      ),
+
     created_by: requireString(
       value.created_by,
       "created_by",
@@ -567,7 +619,7 @@ async function requireScopedReport(input: {
   const { data, error } = await supabase
     .from(REPORTS_TABLE)
     .select(
-      "id, workspace_id, advertiser_id, current_ingestion_id",
+      "id, workspace_id, advertiser_id, current_ingestion_id, meta",
     )
     .eq("id", input.reportId)
     .eq("workspace_id", input.workspaceId)
@@ -1150,6 +1202,21 @@ export async function createPendingMediaSyncJob(
     );
   }
 
+  const syncSegmentProgress =
+    buildInitialMediaSyncSegmentProgressForJob({
+      provider:
+        connection.provider,
+
+      reportMeta:
+        report.meta,
+
+      dateFrom,
+      dateTo,
+
+      deterministicJobId:
+        requestedJobId,
+    });
+
   // Stage 8 / Macro 3: request-driven job creation never mutates an existing
   // processing job. Stale processing recovery is owned exclusively by the
   // Railway media sync worker before it claims the next pending job.
@@ -1188,6 +1255,9 @@ export async function createPendingMediaSyncJob(
 
     previous_ingestion_id:
       report.current_ingestion_id,
+
+    sync_segment_progress:
+      syncSegmentProgress,
 
     created_by: createdBy,
   };
@@ -1335,6 +1405,21 @@ export async function createPendingMediaSyncJob(
     throw new MediaSyncJobsRepositoryError(
       "INVALID_RECORD",
       "Created media sync job does not preserve the report current ingestion reference.",
+    );
+  }
+
+  if (
+    JSON.stringify(
+      record.sync_segment_progress ??
+        null,
+    ) !==
+    JSON.stringify(
+      syncSegmentProgress,
+    )
+  ) {
+    throw new MediaSyncJobsRepositoryError(
+      "INVALID_RECORD",
+      "Created media sync job does not preserve the expected segment progress authority.",
     );
   }
 

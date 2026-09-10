@@ -89,6 +89,16 @@ import {
   activateNaverFactSnapshotFanout,
   finalizeNaverFactSnapshotJob,
 } from "./media-sync-fact-snapshot-lifecycle-repository";
+import {
+  buildMediaSyncSegments,
+} from "./media-sync-segment-contract";
+import {
+  parseMediaSyncSegmentProgress,
+  type MediaSyncSegmentProgress,
+} from "./media-sync-segment-progress";
+import {
+  transitionNaverSearchAdsSegment,
+} from "./naver-searchads-segment-transition-repository";
 import type {
   MediaSyncJobRecord,
 } from "./types";
@@ -180,6 +190,9 @@ export type MediaSyncWorkerOrchestrationDependencies = {
 
   saveCombinedCheckpoint:
     typeof saveNaverSearchAdsCombinedProcessingCheckpoint;
+
+  transitionSegment:
+    typeof transitionNaverSearchAdsSegment;
 
   releaseForResume:
     typeof releaseNaverMediaSyncJobForResume;
@@ -1744,6 +1757,10 @@ function resolveOrchestrationDependencies(
     saveCombinedCheckpoint:
       overrides?.saveCombinedCheckpoint ??
       saveNaverSearchAdsCombinedProcessingCheckpoint,
+
+    transitionSegment:
+      overrides?.transitionSegment ??
+      transitionNaverSearchAdsSegment,
 
     releaseForResume:
       overrides?.releaseForResume ??
@@ -3364,6 +3381,110 @@ export async function processClaimedNaverMediaSyncJob(
   let checkpointJob =
     context.job;
 
+  let segmentProgress:
+    MediaSyncSegmentProgress |
+    null =
+      null;
+
+  let segmentExecutionWindow:
+    {
+      dateFrom:
+        string;
+
+      dateTo:
+        string;
+    } |
+    null =
+      null;
+
+  if (
+    checkpointJob
+      .sync_segment_progress !==
+      null &&
+    checkpointJob
+      .sync_segment_progress !==
+      undefined
+  ) {
+    try {
+      segmentProgress =
+        parseMediaSyncSegmentProgress(
+          checkpointJob
+            .sync_segment_progress,
+          {
+            dateFrom:
+              checkpointJob.date_from,
+
+            dateTo:
+              checkpointJob.date_to,
+          },
+        );
+
+      if (
+        segmentProgress.complete
+      ) {
+        if (
+          checkpoint.phase !==
+            "completed" ||
+          checkpoint.dateWindowIndex !==
+            segmentProgress.totalCount -
+              1
+        ) {
+          throw new Error(
+            "Completed segment progress does not match the final combined checkpoint.",
+          );
+        }
+      } else {
+        const currentIndex =
+          segmentProgress.currentIndex;
+
+        if (
+          currentIndex ===
+            null ||
+          checkpoint.dateWindowIndex !==
+            currentIndex
+        ) {
+          throw new Error(
+            "Active segment progress does not match the combined checkpoint window.",
+          );
+        }
+
+        const segments =
+          buildMediaSyncSegments({
+            dateFrom:
+              checkpointJob.date_from,
+
+            dateTo:
+              checkpointJob.date_to,
+          });
+
+        const activeSegment =
+          segments[
+            currentIndex
+          ];
+
+        if (!activeSegment) {
+          throw new Error(
+            "The active media sync segment could not be resolved.",
+          );
+        }
+
+        segmentExecutionWindow = {
+          dateFrom:
+            activeSegment.dateFrom,
+
+          dateTo:
+            activeSegment.dateTo,
+        };
+      }
+    } catch (error) {
+      throw wrapStageError(
+        "CHECKPOINT_FAILED",
+        "The Naver sync segment execution authority is invalid.",
+        error,
+      );
+    }
+  }
+
   let keyword:
     NaverSearchAdsStagingOrchestratorCompletedResult |
     NaverSearchAdsStagingOrchestratorPartialResult |
@@ -3448,6 +3569,14 @@ export async function processClaimedNaverMediaSyncJob(
 
             dateWindowIndex:
               checkpoint.dateWindowIndex,
+
+            executionDateFrom:
+              segmentExecutionWindow
+                ?.dateFrom,
+
+            executionDateTo:
+              segmentExecutionWindow
+                ?.dateTo,
 
             cursor:
               checkpoint.authoritative
@@ -3595,7 +3724,15 @@ export async function processClaimedNaverMediaSyncJob(
           credentials:
             context.credentials,
           dateWindowIndex:
-            options.dateWindowIndex,
+            segmentProgress
+              ? checkpoint.dateWindowIndex
+              : options.dateWindowIndex,
+          executionDateFrom:
+            segmentExecutionWindow
+              ?.dateFrom,
+          executionDateTo:
+            segmentExecutionWindow
+              ?.dateTo,
           stagingBatchSize:
             options.stagingBatchSize,
           requestIntervalMs:
@@ -3807,6 +3944,12 @@ export async function processClaimedNaverMediaSyncJob(
                 checkpoint.nextRowIndex,
               dateWindowIndex:
                 checkpoint.dateWindowIndex,
+              executionDateFrom:
+                segmentExecutionWindow
+                  ?.dateFrom,
+              executionDateTo:
+                segmentExecutionWindow
+                  ?.dateTo,
               cursor:
                 checkpoint.authoritative
                   .cursor ??
@@ -3957,6 +4100,133 @@ export async function processClaimedNaverMediaSyncJob(
       "CHECKPOINT_FAILED",
       "The combined staging phases ended without a completed checkpoint.",
     );
+  }
+
+  if (
+    segmentProgress &&
+    !segmentProgress.complete
+  ) {
+    let segmentTransition;
+
+    try {
+      segmentTransition =
+        await dependencies
+          .transitionSegment({
+            job:
+              checkpointJob,
+
+            progress:
+              segmentProgress,
+
+            checkpoint,
+          });
+    } catch (error) {
+      throw wrapStageError(
+        "CHECKPOINT_FAILED",
+        "The completed Naver sync segment could not transition atomically.",
+        error,
+      );
+    }
+
+    checkpointJob =
+      segmentTransition.job;
+
+    segmentProgress =
+      segmentTransition
+        .transition
+        .progress;
+
+    try {
+      checkpoint =
+        readNaverSearchAdsCombinedProcessingCheckpoint(
+          checkpointJob,
+        );
+    } catch (error) {
+      throw wrapStageError(
+        "CHECKPOINT_FAILED",
+        "The transitioned Naver combined checkpoint could not be read.",
+        error,
+      );
+    }
+
+    if (
+      segmentTransition
+        .transition
+        .kind ===
+      "next_segment"
+    ) {
+      if (
+        segmentProgress.complete ||
+        segmentProgress.currentIndex ===
+          null ||
+        checkpoint.phase !==
+          "keyword" ||
+        checkpoint.dateWindowIndex !==
+          segmentProgress.currentIndex
+      ) {
+        throw new MediaSyncWorkerOrchestrationError(
+          "CHECKPOINT_FAILED",
+          "The next Naver sync segment authority is inconsistent.",
+        );
+      }
+
+      logStage({
+        job:
+          checkpointJob,
+        stage:
+          "sync-segment:transition",
+        detail:
+          `completed=${segmentProgress.completedCount}/${segmentProgress.totalCount} nextIndex=${segmentProgress.currentIndex} rows=${checkpoint.totalRows}`,
+      });
+
+      return releaseCombinedPartial({
+        job:
+          context.job,
+
+        checkpointJob,
+
+        checkpoint,
+
+        partialReason:
+          "sync_segment_complete",
+
+        resultPhase:
+          "keyword",
+
+        keyword:
+          null,
+
+        authoritative:
+          null,
+
+        dependencies,
+      });
+    }
+
+    if (
+      !segmentProgress.complete ||
+      segmentProgress.currentIndex !==
+        null ||
+      checkpoint.phase !==
+        "completed" ||
+      checkpoint.dateWindowIndex !==
+        segmentProgress.totalCount -
+          1
+    ) {
+      throw new MediaSyncWorkerOrchestrationError(
+        "CHECKPOINT_FAILED",
+        "The final Naver sync segment authority is inconsistent.",
+      );
+    }
+
+    logStage({
+      job:
+        checkpointJob,
+      stage:
+        "sync-segment:complete",
+      detail:
+        `completed=${segmentProgress.completedCount}/${segmentProgress.totalCount} rows=${checkpoint.totalRows}`,
+    });
   }
 
   let reconciliation:

@@ -189,6 +189,18 @@ export type MediaSyncJobRecord = {
   error: string | null;
   error_detail: JsonObject | null;
 
+  /**
+   * Provider-neutral durable sync segment progress.
+   *
+   * null:
+   * - legacy jobs
+   * - jobs that do not use segmented execution
+   *
+   * Non-null values must be parsed through the sync segment
+   * progress contract before being used as execution authority.
+   */
+  sync_segment_progress?: JsonObject | null;
+
   created_by: string;
   created_at: string;
   started_at: string | null;

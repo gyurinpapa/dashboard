@@ -29,6 +29,9 @@ import {
   normalizeNaverKeywordStatsCursor,
   type NaverKeywordStatsCursor,
 } from "./naver-searchads-keyword-stats-state";
+import {
+  resolveMediaSyncSegmentExecutionWindow,
+} from "./media-sync-segment-execution-window";
 import type {
   MediaSyncJobRecord,
 } from "./types";
@@ -100,6 +103,10 @@ export type NaverSearchAdsStagingOrchestratorInput = {
     NaverSearchAdsCredentials;
 
   dateWindowIndex?: number;
+
+  executionDateFrom?: string;
+
+  executionDateTo?: string;
 
   stagingBatchSize?: number;
 
@@ -712,7 +719,8 @@ function getCheckpointSeed(
 
 function createFreshCursor(input: {
   dateWindowIndex: number;
-  job: MediaSyncJobRecord;
+  executionDateFrom: string;
+  executionDateTo: string;
 }): NaverKeywordStatsCursor {
   return createNaverKeywordStatsCursor({
     dateWindow: {
@@ -720,10 +728,10 @@ function createFreshCursor(input: {
         input.dateWindowIndex,
 
       dateFrom:
-        input.job.date_from,
+        input.executionDateFrom,
 
       dateTo:
-        input.job.date_to,
+        input.executionDateTo,
     },
   });
 }
@@ -731,6 +739,8 @@ function createFreshCursor(input: {
 function resolveStartCursor(input: {
   job: MediaSyncJobRecord;
   dateWindowIndex: number;
+  executionDateFrom: string;
+  executionDateTo: string;
 }): NaverKeywordStatsCursor {
   const checkpoint =
     getProcessingCheckpoint(
@@ -744,11 +754,14 @@ function resolveStartCursor(input: {
 
   if (!checkpointCursor) {
     return createFreshCursor({
-      job:
-        input.job,
-
       dateWindowIndex:
         input.dateWindowIndex,
+
+      executionDateFrom:
+        input.executionDateFrom,
+
+      executionDateTo:
+        input.executionDateTo,
     });
   }
 
@@ -756,9 +769,9 @@ function resolveStartCursor(input: {
     checkpointCursor.dateWindowIndex !==
       input.dateWindowIndex ||
     checkpointCursor.dateFrom !==
-      input.job.date_from ||
+      input.executionDateFrom ||
     checkpointCursor.dateTo !==
-      input.job.date_to
+      input.executionDateTo
   ) {
     throw new NaverSearchAdsStagingOrchestratorError(
       "INVALID_JOB",
@@ -824,6 +837,36 @@ export async function runNaverSearchAdsStagingOrchestrator(
           input.dateWindowIndex,
           "dateWindowIndex",
         );
+
+  let executionWindow;
+
+  try {
+    executionWindow =
+      resolveMediaSyncSegmentExecutionWindow({
+        jobDateFrom:
+          input.job.date_from,
+
+        jobDateTo:
+          input.job.date_to,
+
+        dateWindowIndex,
+
+        executionDateFrom:
+          input.executionDateFrom,
+
+        executionDateTo:
+          input.executionDateTo,
+      });
+  } catch (error) {
+    throw new NaverSearchAdsStagingOrchestratorError(
+      "INVALID_INPUT",
+      "The Naver keyword execution date window is invalid.",
+      {
+        cause:
+          error,
+      },
+    );
+  }
 
   const stagingBatchSize =
     input.stagingBatchSize === undefined
@@ -969,6 +1012,12 @@ export async function runNaverSearchAdsStagingOrchestrator(
         input.job,
 
       dateWindowIndex,
+
+      executionDateFrom:
+        executionWindow.dateFrom,
+
+      executionDateTo:
+        executionWindow.dateTo,
     });
 
   /*

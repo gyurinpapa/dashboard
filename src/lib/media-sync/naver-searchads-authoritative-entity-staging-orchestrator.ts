@@ -26,6 +26,9 @@ import {
   normalizeNaverAuthoritativeEntityStatsCursor,
   type NaverAuthoritativeEntityStatsCursor,
 } from "./naver-searchads-authoritative-entity-stats-state";
+import {
+  resolveMediaSyncSegmentExecutionWindow,
+} from "./media-sync-segment-execution-window";
 import type {
   NaverSearchAdsCanonicalDimensions,
 } from "./naver-searchads-canonical-row";
@@ -129,6 +132,12 @@ export type NaverSearchAdsAuthoritativeEntityStagingOrchestratorInput = {
 
   dateWindowIndex?:
     number;
+
+  executionDateFrom?:
+    string;
+
+  executionDateTo?:
+    string;
 
   cursor?:
     NaverAuthoritativeEntityStatsCursor;
@@ -505,8 +514,10 @@ function resolveStartCursor(input: {
     NaverAuthoritativeEntityStatsCursor | undefined;
   dateWindowIndex:
     number;
-  job:
-    MediaSyncJobRecord;
+  executionDateFrom:
+    string;
+  executionDateTo:
+    string;
 }): NaverAuthoritativeEntityStatsCursor {
   if (!input.cursor) {
     return createNaverAuthoritativeEntityStatsCursor({
@@ -514,9 +525,9 @@ function resolveStartCursor(input: {
         index:
           input.dateWindowIndex,
         dateFrom:
-          input.job.date_from,
+          input.executionDateFrom,
         dateTo:
-          input.job.date_to,
+          input.executionDateTo,
       },
     });
   }
@@ -544,9 +555,9 @@ function resolveStartCursor(input: {
     normalizedCursor.dateWindowIndex !==
       input.dateWindowIndex ||
     normalizedCursor.dateFrom !==
-      input.job.date_from ||
+      input.executionDateFrom ||
     normalizedCursor.dateTo !==
-      input.job.date_to
+      input.executionDateTo
   ) {
     throw new NaverSearchAdsAuthoritativeEntityStagingOrchestratorError(
       "CURSOR_SCOPE_MISMATCH",
@@ -724,6 +735,36 @@ export async function runNaverSearchAdsAuthoritativeEntityStagingOrchestrator(
           "dateWindowIndex",
         );
 
+  let executionWindow;
+
+  try {
+    executionWindow =
+      resolveMediaSyncSegmentExecutionWindow({
+        jobDateFrom:
+          input.job.date_from,
+
+        jobDateTo:
+          input.job.date_to,
+
+        dateWindowIndex,
+
+        executionDateFrom:
+          input.executionDateFrom,
+
+        executionDateTo:
+          input.executionDateTo,
+      });
+  } catch (error) {
+    throw new NaverSearchAdsAuthoritativeEntityStagingOrchestratorError(
+      "INVALID_INPUT",
+      "The Naver authoritative execution date window is invalid.",
+      {
+        cause:
+          error,
+      },
+    );
+  }
+
   const stagingBatchSize =
     input.stagingBatchSize ===
     undefined
@@ -778,9 +819,14 @@ export async function runNaverSearchAdsAuthoritativeEntityStagingOrchestrator(
     resolveStartCursor({
       cursor:
         input.cursor,
+
       dateWindowIndex,
-      job:
-        input.job,
+
+      executionDateFrom:
+        executionWindow.dateFrom,
+
+      executionDateTo:
+        executionWindow.dateTo,
     });
 
   let callbackCount =
