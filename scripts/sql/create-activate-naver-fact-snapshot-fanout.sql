@@ -19,7 +19,7 @@
 --   - all reports must be uniformly at previous pointers OR uniformly at
 --     snapshot pointers; mixed state fails closed
 --   - each ingestion must already be success with its own expected_rows
---   - each projection period must still match draft -> period authority
+--   - each projection period must match stored report authority with the job.date_to MTD cap
 --   - durable fact partitions + fact row count are revalidated per report
 --   - published_ingestion_id is never changed
 --   - media_sync_jobs state is never changed
@@ -357,17 +357,31 @@ begin
       )::date
     )
          is distinct from v_projection_start
-       or coalesce(
-      v_report.draft_period_end,
-      v_report.period_end,
-      nullif(
-        btrim(
-          v_report.meta #>> '{media_sync,date_to}'
-        ),
-        ''
-      )::date
-    )
-         is distinct from v_projection_end
+       or (
+         coalesce(
+           v_report.draft_period_end,
+           v_report.period_end,
+           nullif(
+             btrim(
+               v_report.meta #>> '{media_sync,date_to}'
+             ),
+             ''
+           )::date
+         ) is null
+         or least(
+           coalesce(
+             v_report.draft_period_end,
+             v_report.period_end,
+             nullif(
+               btrim(
+                 v_report.meta #>> '{media_sync,date_to}'
+               ),
+               ''
+             )::date
+           ),
+           v_job.date_to
+         ) is distinct from v_projection_end
+       )
     then
       raise exception using
         message = 'MSFX_PERIOD_CHANGED: report projection period changed before fanout activation';

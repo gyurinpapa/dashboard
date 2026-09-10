@@ -231,17 +231,31 @@ begin
       )::date
     )
        is distinct from v_projection_start
-     or coalesce(
-      v_report.draft_period_end,
-      v_report.period_end,
-      nullif(
-        btrim(
-          v_report.meta #>> '{media_sync,date_to}'
-        ),
-        ''
-      )::date
-    )
-       is distinct from v_projection_end
+     or (
+       coalesce(
+         v_report.draft_period_end,
+         v_report.period_end,
+         nullif(
+           btrim(
+             v_report.meta #>> '{media_sync,date_to}'
+           ),
+           ''
+         )::date
+       ) is null
+       or least(
+         coalesce(
+           v_report.draft_period_end,
+           v_report.period_end,
+           nullif(
+             btrim(
+               v_report.meta #>> '{media_sync,date_to}'
+             ),
+             ''
+           )::date
+         ),
+         v_job.date_to
+       ) is distinct from v_projection_end
+     )
   then
     raise exception using
       message = 'MSFB_PERIOD_CHANGED: report projection period changed after prepare';

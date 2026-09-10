@@ -218,7 +218,8 @@ begin
    *   draft_period_start -> period_start -> meta.media_sync.date_from
    *   draft_period_end   -> period_end   -> meta.media_sync.date_to
    *
-   * Job chunk dates are intentionally not a fallback.
+   * Job chunk dates are never a fallback for report period authority.
+ * job.date_to only bounds an in-progress report's execution end for MTD.
    */
   v_projection_start :=
     coalesce(
@@ -243,6 +244,19 @@ begin
         ''
       )::date
     );
+
+  /*
+   * Preserve the stored report period.
+   * Only the execution projection end is bounded to the canonical
+   * daily job authority for an in-progress month.
+   */
+  if v_projection_end is not null then
+    v_projection_end :=
+      least(
+        v_projection_end,
+        v_job.date_to
+      );
+  end if;
 
   if v_projection_start is null
      or v_projection_end is null

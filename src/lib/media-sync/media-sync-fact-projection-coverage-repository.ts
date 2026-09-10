@@ -490,10 +490,42 @@ function parseProjectionPeriod(
     periodStart ??
     mediaSyncStart;
 
-  const projectionEnd =
+  const reportProjectionEnd =
     draftEnd ??
     periodEnd ??
     mediaSyncEnd;
+
+  const jobDateTo =
+    normalizeRequiredString(
+      input.job.date_to,
+      "job.date_to",
+      "INVALID_INPUT",
+    );
+
+  if (
+    !isValidDate(jobDateTo)
+  ) {
+    throw new MediaSyncFactProjectionCoverageError(
+      "INVALID_INPUT",
+      "job.date_to must be a valid YYYY-MM-DD date.",
+    );
+  }
+
+  /*
+   * Current-month MTD projection:
+   *
+   * - report period authority itself is never changed
+   * - an already-started report is bounded by the current job date_to
+   * - a future report is intentionally left at its stored period so the
+   *   worker can classify it as a non-overlapping secondary target
+   */
+  const projectionEnd =
+    projectionStart &&
+    reportProjectionEnd &&
+    projectionStart <= jobDateTo &&
+    jobDateTo < reportProjectionEnd
+      ? jobDateTo
+      : reportProjectionEnd;
 
   if (
     !projectionStart ||

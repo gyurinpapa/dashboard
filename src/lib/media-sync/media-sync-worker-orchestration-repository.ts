@@ -2714,8 +2714,44 @@ async function processNaverFactProjectionAfterStaging(
     }
   }
 
-  const incompleteCoverage =
+  const eligibleFanoutTargets =
     fanoutTargets.filter(
+      (target) => {
+        if (
+          target.primary
+        ) {
+          return true;
+        }
+
+        const coverage =
+          coverageByReportId.get(
+            target.reportId,
+          );
+
+        if (!coverage) {
+          return false;
+        }
+
+        return (
+          coverage.projectionStart <=
+            factJob.date_to &&
+          coverage.projectionEnd >=
+            factJob.date_from
+        );
+      },
+    );
+
+  logStage({
+    job:
+      factJob,
+    stage:
+      "fact-fanout-eligibility:done",
+    detail:
+      `eligible=${eligibleFanoutTargets.length} excluded=${fanoutTargets.length - eligibleFanoutTargets.length}`,
+  });
+
+  const incompleteCoverage =
+    eligibleFanoutTargets.filter(
       (target) =>
         !coverageByReportId
           .get(
@@ -2835,11 +2871,11 @@ async function processNaverFactProjectionAfterStaging(
       [];
 
   const preparationOrder = [
-    ...fanoutTargets.filter(
+    ...eligibleFanoutTargets.filter(
       (target) =>
         target.primary,
     ),
-    ...fanoutTargets.filter(
+    ...eligibleFanoutTargets.filter(
       (target) =>
         !target.primary,
     ),
