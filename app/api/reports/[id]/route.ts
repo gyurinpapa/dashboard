@@ -3,6 +3,18 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
 import { isTrueMasterUser } from "@/src/lib/true-master-access";
 import { normalizeReportTheme } from "@/src/lib/report/theme";
+import {
+  listSafeMediaConnections,
+} from "@/src/lib/media-sync/media-connections-repository";
+import {
+  listReportMediaConnectionIds,
+} from "@/src/lib/media-sync/media-sync-jobs-repository";
+import {
+  isMediaSyncSegmentEligibleReport,
+} from "@/src/lib/media-sync/media-sync-segment-eligibility";
+import type {
+  MediaProvider,
+} from "@/src/lib/media-sync/types";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -287,10 +299,25 @@ function getInclusiveDateWindowDays(dateFrom: string, dateTo: string) {
   return Math.floor((toMs - fromMs) / 86_400_000) + 1;
 }
 
-function isMediaSyncDateWindowAllowed(dateFrom: string, dateTo: string) {
-  const days = getInclusiveDateWindowDays(dateFrom, dateTo);
+function isMediaSyncDateWindowAllowed(
+  dateFrom: string,
+  dateTo: string,
+  allowLongRange = false,
+) {
+  const days =
+    getInclusiveDateWindowDays(
+      dateFrom,
+      dateTo,
+    );
 
-  return days >= 1 && days <= MAX_MEDIA_SYNC_DATE_WINDOW_DAYS;
+  return (
+    days >= 1 &&
+    (
+      allowLongRange ||
+      days <=
+        MAX_MEDIA_SYNC_DATE_WINDOW_DAYS
+    )
+  );
 }
 
 function normalizeMediaSyncDataLevel(v: any) {
@@ -308,7 +335,10 @@ function normalizeMediaSyncDataLevel(v: any) {
   return "keyword";
 }
 
-function normalizeMediaSyncSettings(v: any) {
+function normalizeMediaSyncSettings(
+  v: any,
+  allowLongRange = false,
+) {
   if (!isPlainObject(v)) return null;
 
   const dateFrom = normalizeYmdOrNull((v as any).date_from ?? (v as any).dateFrom);
@@ -318,7 +348,13 @@ function normalizeMediaSyncSettings(v: any) {
     return null;
   }
 
-  if (!isMediaSyncDateWindowAllowed(dateFrom, dateTo)) {
+  if (
+    !isMediaSyncDateWindowAllowed(
+      dateFrom,
+      dateTo,
+      allowLongRange,
+    )
+  ) {
     return null;
   }
 
@@ -329,6 +365,52 @@ function normalizeMediaSyncSettings(v: any) {
     mode: "snapshot_replace",
     updated_at: new Date().toISOString(),
   };
+}
+
+async function resolveSingleMappedMediaSyncProvider(
+  input: {
+    reportId: string;
+    workspaceId: string;
+    advertiserId: string;
+  },
+): Promise<MediaProvider | null> {
+  const [
+    mappedConnectionIds,
+    advertiserConnections,
+  ] = await Promise.all([
+    listReportMediaConnectionIds({
+      reportId:
+        input.reportId,
+      workspaceId:
+        input.workspaceId,
+      advertiserId:
+        input.advertiserId,
+    }),
+    listSafeMediaConnections({
+      workspaceId:
+        input.workspaceId,
+      advertiserId:
+        input.advertiserId,
+    }),
+  ]);
+
+  if (
+    mappedConnectionIds.length !==
+      1
+  ) {
+    return null;
+  }
+
+  const mappedConnection =
+    advertiserConnections.find(
+      (connection) =>
+        connection.id ===
+        mappedConnectionIds[0],
+    ) ?? null;
+
+  return mappedConnection
+    ?.provider ??
+    null;
 }
 
 async function getUserFromSbAuth() {
@@ -905,9 +987,71 @@ export async function PATCH(req: Request, ctx: Ctx) {
         ? Object.prototype.hasOwnProperty.call(incomingMeta, "media_sync")
         : false);
 
-    const incomingMediaSyncSettings = hasMediaSyncSettings
-      ? normalizeMediaSyncSettings(body.media_sync ?? incomingMeta?.media_sync)
-      : undefined;
+    const rawIncomingMediaSyncSettings =
+      body.media_sync ??
+      incomingMeta?.media_sync;
+
+    let allowSegmentedLongRange =
+      false;
+
+    if (hasMediaSyncSettings) {
+      const standardRange =
+        normalizeMediaSyncSettings(
+          rawIncomingMediaSyncSettings,
+        );
+
+      if (standardRange === null) {
+        const longRangeCandidate =
+          normalizeMediaSyncSettings(
+            rawIncomingMediaSyncSettings,
+            true,
+          );
+
+        if (longRangeCandidate !== null) {
+          const mappedProvider =
+            await resolveSingleMappedMediaSyncProvider({
+              reportId:
+                id,
+              workspaceId,
+              advertiserId:
+                asString(
+                  (report as any)
+                    .advertiser_id,
+                ) ??
+                "",
+            });
+
+          const segmentEligibilityMeta =
+            canonicalPublicIdentity !==
+              undefined
+              ? {
+                  ...existingMeta,
+                  url_contract_version:
+                    2,
+                  public_identity:
+                    canonicalPublicIdentity,
+                }
+              : existingMeta;
+
+          allowSegmentedLongRange =
+            isMediaSyncSegmentEligibleReport({
+              provider:
+                mappedProvider,
+
+              reportMeta:
+                segmentEligibilityMeta,
+            });
+        }
+      }
+    }
+
+    const incomingMediaSyncSettings =
+      hasMediaSyncSettings
+        ? normalizeMediaSyncSettings(
+            rawIncomingMediaSyncSettings,
+            allowSegmentedLongRange,
+          )
+        : undefined;
 
     if (hasMediaSyncSettings && incomingMediaSyncSettings === null) {
       return jsonError(400, "Invalid media_sync settings");

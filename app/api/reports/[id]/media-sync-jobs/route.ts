@@ -38,7 +38,11 @@ import {
 import {
   getMediaSyncAutomaticAuthority,
 } from "@/src/lib/media-sync/media-sync-automation";
+import {
+  isMediaSyncSegmentEligibleReport,
+} from "@/src/lib/media-sync/media-sync-segment-eligibility";
 import type {
+  MediaProvider,
   SafeMediaConnection,
   SafeMediaSyncJob,
 } from "@/src/lib/media-sync/types";
@@ -120,10 +124,25 @@ function getInclusiveDateWindowDays(dateFrom: string, dateTo: string) {
   return Math.floor((toMs - fromMs) / 86_400_000) + 1;
 }
 
-function isMediaSyncDateWindowAllowed(dateFrom: string, dateTo: string) {
-  const days = getInclusiveDateWindowDays(dateFrom, dateTo);
+function isMediaSyncDateWindowAllowed(
+  dateFrom: string,
+  dateTo: string,
+  allowLongRange = false,
+) {
+  const days =
+    getInclusiveDateWindowDays(
+      dateFrom,
+      dateTo,
+    );
 
-  return days >= 1 && days <= MAX_MEDIA_SYNC_DATE_WINDOW_DAYS;
+  return (
+    days >= 1 &&
+    (
+      allowLongRange ||
+      days <=
+        MAX_MEDIA_SYNC_DATE_WINDOW_DAYS
+    )
+  );
 }
 
 function normalizeDataLevelOrDefault(value: unknown) {
@@ -145,6 +164,7 @@ async function getStoredMediaSyncSettings(input: {
   reportId: string;
   workspaceId: string;
   advertiserId: string;
+  provider: MediaProvider | null;
 }) {
   const { data, error } = await supabaseAdmin
     .from("reports")
@@ -178,7 +198,22 @@ async function getStoredMediaSyncSettings(input: {
     return null;
   }
 
-  if (!isMediaSyncDateWindowAllowed(dateFrom, dateTo)) {
+  const segmentLongRangeAllowed =
+    isMediaSyncSegmentEligibleReport({
+      provider:
+        input.provider,
+
+      reportMeta:
+        meta,
+    });
+
+  if (
+    !isMediaSyncDateWindowAllowed(
+      dateFrom,
+      dateTo,
+      segmentLongRangeAllowed,
+    )
+  ) {
     return null;
   }
 
@@ -513,6 +548,12 @@ export async function POST(
       reportId: access.reportId,
       workspaceId: access.workspaceId,
       advertiserId: access.advertiserId,
+      provider:
+        mappedConnections.length === 1
+          ? mappedConnections[0]
+              ?.provider ??
+            null
+          : null,
     });
 
     if (!storedSettings) {

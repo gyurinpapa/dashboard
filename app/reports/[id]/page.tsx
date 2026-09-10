@@ -31,6 +31,17 @@ import {
   getRowsDateRange,
   resolvePresetPeriod,
 } from "@/src/lib/report/period";
+import {
+  buildMediaSyncSegments,
+  getMediaSyncSegmentDisplayNumber,
+} from "@/src/lib/media-sync/media-sync-segment-contract";
+import {
+  getMediaSyncSegmentCompletionPercent,
+  parseMediaSyncSegmentProgress,
+} from "@/src/lib/media-sync/media-sync-segment-progress";
+import {
+  isMediaSyncSegmentEligibleReport,
+} from "@/src/lib/media-sync/media-sync-segment-eligibility";
 import { extractAdvertiserName } from "@/src/lib/report/utils";
 
 import ReportTemplate from "../../components/ReportTemplate";
@@ -465,9 +476,19 @@ type MediaSyncSettingsDraft = {
 
 type ReportMediaSyncJob = {
   id?: string | null;
+  provider?: "naver_searchad" | "google_ads" | "meta_ads" | null;
+  date_from?: string | null;
+  date_to?: string | null;
   status?: string | null;
   progress?: number | null;
+  sync_segment_progress?: Record<string, unknown> | null;
 };
+
+type ReportMediaSyncSegmentUiStatus =
+  | "완료"
+  | "동기화 중"
+  | "실패"
+  | "대기";
 
 type ReportMediaSyncProviderProduct = {
   key: string;
@@ -572,10 +593,25 @@ function getInclusiveDateWindowDays(dateFrom: string, dateTo: string) {
   return Math.floor((toMs - fromMs) / 86_400_000) + 1;
 }
 
-function isMediaSyncDateWindowAllowed(dateFrom: string, dateTo: string) {
-  const days = getInclusiveDateWindowDays(dateFrom, dateTo);
+function isMediaSyncDateWindowAllowed(
+  dateFrom: string,
+  dateTo: string,
+  allowLongRange = false,
+) {
+  const days =
+    getInclusiveDateWindowDays(
+      dateFrom,
+      dateTo,
+    );
 
-  return days >= 1 && days <= MAX_MEDIA_SYNC_DATE_WINDOW_DAYS;
+  return (
+    days >= 1 &&
+    (
+      allowLongRange ||
+      days <=
+        MAX_MEDIA_SYNC_DATE_WINDOW_DAYS
+    )
+  );
 }
 
 function isActiveMediaSyncJobStatus(status: any) {
@@ -593,6 +629,148 @@ function getMediaSyncJobStatusText(job: ReportMediaSyncJob | null) {
   if (job.status === "failed") return "실패";
   if (job.status === "cancelled") return "취소됨";
   return String(job.status ?? "상태 확인");
+}
+
+function getMediaSyncSegmentUiState(
+  job: ReportMediaSyncJob | null,
+) {
+  if (
+    !job ||
+    job.provider !==
+      "naver_searchad" ||
+    !job.sync_segment_progress
+  ) {
+    return null;
+  }
+
+  const dateFrom =
+    normalizeYmdInput(
+      job.date_from,
+    );
+
+  const dateTo =
+    normalizeYmdInput(
+      job.date_to,
+    );
+
+  if (
+    !dateFrom ||
+    !dateTo ||
+    dateFrom >
+      dateTo
+  ) {
+    return null;
+  }
+
+  try {
+    const progress =
+      parseMediaSyncSegmentProgress(
+        job.sync_segment_progress,
+        {
+          dateFrom,
+          dateTo,
+        },
+      );
+
+    const segments =
+      buildMediaSyncSegments({
+        dateFrom,
+        dateTo,
+      });
+
+    if (
+      segments.length !==
+        progress.totalCount
+    ) {
+      return null;
+    }
+
+    const completionPercent =
+      getMediaSyncSegmentCompletionPercent(
+        progress,
+      );
+
+    const items =
+      segments.map(
+        (
+          segment,
+        ) => {
+          let status:
+            ReportMediaSyncSegmentUiStatus =
+              "대기";
+
+          if (
+            segment.index <
+              progress.completedCount
+          ) {
+            status =
+              "완료";
+          } else if (
+            segment.index ===
+              progress.currentIndex
+          ) {
+            if (
+              job.status ===
+                "failed"
+            ) {
+              status =
+                "실패";
+            } else if (
+              job.status ===
+                "processing"
+            ) {
+              status =
+                "동기화 중";
+            }
+          }
+
+          return {
+            index:
+              segment.index,
+
+            displayNumber:
+              getMediaSyncSegmentDisplayNumber(
+                segment.index,
+              ),
+
+            dateFrom:
+              segment.dateFrom,
+
+            dateTo:
+              segment.dateTo,
+
+            status,
+          };
+        },
+      );
+
+    return {
+      completedCount:
+        progress.completedCount,
+
+      totalCount:
+        progress.totalCount,
+
+      completionPercent,
+
+      items,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function formatMediaSyncSegmentDate(
+  value: string,
+) {
+  return value
+    .slice(
+      5,
+    )
+    .replace(
+      "-",
+      "/",
+    );
 }
 
 function getProviderSyncStatusText(
@@ -670,7 +848,10 @@ function mediaSyncSettingsToStableKey(v: MediaSyncSettingsDraft) {
   });
 }
 
-function isValidMediaSyncSettingsDraft(v: MediaSyncSettingsDraft) {
+function isValidMediaSyncSettingsDraft(
+  v: MediaSyncSettingsDraft,
+  allowLongRange = false,
+) {
   const dateFrom = normalizeYmdInput(v.dateFrom);
   const dateTo = normalizeYmdInput(v.dateTo);
 
@@ -678,11 +859,18 @@ function isValidMediaSyncSettingsDraft(v: MediaSyncSettingsDraft) {
     dateFrom &&
       dateTo &&
       dateFrom <= dateTo &&
-      isMediaSyncDateWindowAllowed(dateFrom, dateTo),
+      isMediaSyncDateWindowAllowed(
+        dateFrom,
+        dateTo,
+        allowLongRange,
+      ),
   );
 }
 
-function getMediaSyncSettingsError(v: MediaSyncSettingsDraft) {
+function getMediaSyncSettingsError(
+  v: MediaSyncSettingsDraft,
+  allowLongRange = false,
+) {
   const dateFrom = normalizeYmdInput(v.dateFrom);
   const dateTo = normalizeYmdInput(v.dateTo);
 
@@ -694,7 +882,13 @@ function getMediaSyncSettingsError(v: MediaSyncSettingsDraft) {
     return "API 동기화 시작일은 종료일보다 늦을 수 없습니다.";
   }
 
-  if (!isMediaSyncDateWindowAllowed(dateFrom, dateTo)) {
+  if (
+    !isMediaSyncDateWindowAllowed(
+      dateFrom,
+      dateTo,
+      allowLongRange,
+    )
+  ) {
     return "매체 API 동기화 기간은 31일 이내로 선택해주세요.";
   }
 
@@ -1093,12 +1287,28 @@ async function patchReportBrandSearchContracts(
 async function patchReportMediaSyncSettings(
   reportId: string,
   next: MediaSyncSettingsDraft,
+  allowLongRange = false,
 ): Promise<ReportDetail> {
   const dateFrom = normalizeYmdInput(next.dateFrom);
   const dateTo = normalizeYmdInput(next.dateTo);
 
-  if (!dateFrom || !dateTo || dateFrom > dateTo || !isMediaSyncDateWindowAllowed(dateFrom, dateTo)) {
-    throw new Error(getMediaSyncSettingsError(next) || "API 동기화 기간이 올바르지 않습니다.");
+  if (
+    !dateFrom ||
+    !dateTo ||
+    dateFrom > dateTo ||
+    !isMediaSyncDateWindowAllowed(
+      dateFrom,
+      dateTo,
+      allowLongRange,
+    )
+  ) {
+    throw new Error(
+      getMediaSyncSettingsError(
+        next,
+        allowLongRange,
+      ) ||
+        "API 동기화 기간이 올바르지 않습니다.",
+    );
   }
 
   const res = await authFetch(`/api/reports/${reportId}`, {
@@ -2018,6 +2228,17 @@ export default function ReportDetailPage() {
   const [loadingMediaSyncJob, setLoadingMediaSyncJob] = useState(false);
   const [requestingMediaSync, setRequestingMediaSync] = useState(false);
 
+  const mediaSyncSegmentUi =
+    useMemo(
+      () =>
+        getMediaSyncSegmentUiState(
+          mediaSyncJob,
+        ),
+      [
+        mediaSyncJob,
+      ],
+    );
+
   const [creativesMap, setCreativesMap] = useState<Record<string, string>>({});
   const creativesBatchIdRef = useRef<string | null | undefined>(undefined);
   const creativesMapLoadedAtRef = useRef(0);
@@ -2040,6 +2261,45 @@ export default function ReportDetailPage() {
       ),
     [report?.meta],
   );
+
+  const mediaSyncMappedProvider =
+    useMemo(() => {
+      const mappedProviders =
+        mediaSyncProviders.filter(
+          (provider) =>
+            Array.isArray(
+              provider.connections,
+            ) &&
+            provider.connections
+              .length >
+              0,
+        );
+
+      return mappedProviders.length ===
+        1
+        ? mappedProviders[0]
+            ?.provider ??
+            null
+        : null;
+    }, [
+      mediaSyncProviders,
+    ]);
+
+  const mediaSyncSegmentLongRangeAllowed =
+    useMemo(
+      () =>
+        isMediaSyncSegmentEligibleReport({
+          provider:
+            mediaSyncMappedProvider,
+
+          reportMeta:
+            report?.meta,
+        }),
+      [
+        mediaSyncMappedProvider,
+        report?.meta,
+      ],
+    );
 
   const canonicalSourceType = useMemo(
     () =>
@@ -2320,8 +2580,12 @@ export default function ReportDetailPage() {
 
   const mediaSyncSettingsError = useMemo(() => {
     if (!isApiReport) return "";
-    return getMediaSyncSettingsError(mediaSyncSettings);
-  }, [isApiReport, mediaSyncSettings]);
+    return getMediaSyncSettingsError(mediaSyncSettings, mediaSyncSegmentLongRangeAllowed);
+  }, [
+    isApiReport,
+    mediaSyncSegmentLongRangeAllowed,
+    mediaSyncSettings,
+  ]);
 
   useEffect(() => {
     if (!report) return;
@@ -3428,7 +3692,7 @@ export default function ReportDetailPage() {
   const handleSaveMediaSyncSettings = useCallback(async () => {
     if (!reportId) return;
 
-    const validationMessage = getMediaSyncSettingsError(mediaSyncSettings);
+    const validationMessage = getMediaSyncSettingsError(mediaSyncSettings, mediaSyncSegmentLongRangeAllowed);
     if (validationMessage) {
       setMediaSyncSettingsSavedText("");
       setMsg(validationMessage);
@@ -3443,6 +3707,7 @@ export default function ReportDetailPage() {
       const updated = await patchReportMediaSyncSettings(
         reportId,
         mediaSyncSettings,
+        mediaSyncSegmentLongRangeAllowed,
       );
       setReport((prev) => ({ ...(prev ?? {}), ...(updated ?? {}) }));
 
@@ -3461,7 +3726,11 @@ export default function ReportDetailPage() {
     } finally {
       setSavingMediaSyncSettings(false);
     }
-  }, [mediaSyncSettings, reportId]);
+  }, [
+    mediaSyncSegmentLongRangeAllowed,
+    mediaSyncSettings,
+    reportId,
+  ]);
 
   const fetchLatestMediaSyncJob = useCallback(
     async (silent = false) => {
@@ -3581,7 +3850,7 @@ export default function ReportDetailPage() {
       return;
     }
 
-    const validationMessage = getMediaSyncSettingsError(mediaSyncSettings);
+    const validationMessage = getMediaSyncSettingsError(mediaSyncSettings, mediaSyncSegmentLongRangeAllowed);
     if (validationMessage) {
       setMsg(validationMessage);
       return;
@@ -3684,6 +3953,7 @@ export default function ReportDetailPage() {
     isApiReport,
     mediaSyncAutomatic.enabled,
     mediaSyncJob?.status,
+    mediaSyncSegmentLongRangeAllowed,
     mediaSyncSettings,
     mediaSyncSettingsDirty,
     reportId,
@@ -4930,7 +5200,7 @@ export default function ReportDetailPage() {
                   disabled={
                     savingMediaSyncSettings ||
                     !mediaSyncSettingsDirty ||
-                    !isValidMediaSyncSettingsDraft(mediaSyncSettings)
+                    !isValidMediaSyncSettingsDraft(mediaSyncSettings, mediaSyncSegmentLongRangeAllowed)
                   }
                   className="etrylue-primary-button rounded-xl px-4 py-2.5 text-sm font-black"
                 >
@@ -4946,7 +5216,7 @@ export default function ReportDetailPage() {
                     loadingMediaSyncJob ||
                     savingMediaSyncSettings ||
                     mediaSyncSettingsDirty ||
-                    !isValidMediaSyncSettingsDraft(mediaSyncSettings) ||
+                    !isValidMediaSyncSettingsDraft(mediaSyncSettings, mediaSyncSegmentLongRangeAllowed) ||
                     isActiveMediaSyncJobStatus(mediaSyncJob?.status)
                   }
                   className="etrylue-primary-button rounded-xl px-4 py-2.5 text-sm font-black"
@@ -4982,6 +5252,107 @@ export default function ReportDetailPage() {
                     상품 선택 저장은 다매체 실행 계약 적용 후 활성화됩니다.
                   </div>
                 </div>
+
+                {mediaSyncSegmentUi ? (
+                  <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-black text-white">
+                          API 동기화 진행
+                        </div>
+
+                        <div className="mt-1 text-xs leading-5 text-[#bbb8d4]">
+                          데이터를 시작일 기준 최대 7일 단위로 나누어 순차 동기화합니다.
+                        </div>
+                      </div>
+
+                      <div className="text-sm font-black text-white">
+                        {mediaSyncSegmentUi.completedCount}
+                        {" / "}
+                        {mediaSyncSegmentUi.totalCount}
+                        {" 구간 완료"}
+                      </div>
+                    </div>
+
+                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+                      <div
+                        className="h-full rounded-full bg-[#7FA6C4] transition-[width] duration-300"
+                        style={{
+                          width: `${mediaSyncSegmentUi.completionPercent}%`,
+                        }}
+                      />
+                    </div>
+
+                    <div className="mt-4 grid gap-2">
+                      {mediaSyncSegmentUi.items.map((item) => {
+                        const isDone =
+                          item.status ===
+                          "완료";
+
+                        const isProcessing =
+                          item.status ===
+                          "동기화 중";
+
+                        const isFailed =
+                          item.status ===
+                          "실패";
+
+                        const marker =
+                          isDone
+                            ? "✓"
+                            : isProcessing
+                              ? "●"
+                              : isFailed
+                                ? "!"
+                                : "○";
+
+                        const statusClassName =
+                          isDone
+                            ? "text-emerald-200"
+                            : isProcessing
+                              ? "text-[#B7D7E3]"
+                              : isFailed
+                                ? "text-[#ffb2c0]"
+                                : "text-white/45";
+
+                        return (
+                          <div
+                            key={item.index}
+                            className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-white/[0.07] bg-black/10 px-3 py-2.5 text-xs"
+                          >
+                            <span
+                              className={`w-4 text-center font-black ${statusClassName}`}
+                              aria-hidden="true"
+                            >
+                              {marker}
+                            </span>
+
+                            <span className="min-w-[44px] font-black text-white/90">
+                              {item.displayNumber}
+                              구간
+                            </span>
+
+                            <span className="font-semibold text-white/60">
+                              {formatMediaSyncSegmentDate(
+                                item.dateFrom,
+                              )}
+                              {" ~ "}
+                              {formatMediaSyncSegmentDate(
+                                item.dateTo,
+                              )}
+                            </span>
+
+                            <span
+                              className={`ml-auto font-black ${statusClassName}`}
+                            >
+                              {item.status}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
 
                 <div className="mt-3 grid gap-3 xl:grid-cols-3">
                   {mediaSyncProviders.map((provider) => {
