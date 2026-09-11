@@ -574,7 +574,7 @@ export default function SummaryGoal({
               )}
             </colgroup>
 
-            <thead className="border-b border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/34">
+            <thead className="border-b border-[var(--nature-border-blue)] bg-[var(--nature-table-head-blue)]">
               <tr>
                 <th className={firstHeadClass}>구분</th>
                 <th className={headClass}>Impr</th>
