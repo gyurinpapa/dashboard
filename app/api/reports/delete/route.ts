@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
+import { isTrueMasterUser } from "@/src/lib/true-master-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,7 +10,6 @@ export const dynamic = "force-dynamic";
 const VERIFY_CHUNK_SIZE = 100;
 const DELETE_CHUNK_SIZE = 10;
 const REPORT_ROWS_DELETE_BATCH_SIZE = 10000;
-const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
 
 type FailedItem = {
   id: string;
@@ -42,9 +42,6 @@ function asString(v: any) {
   return String(v).trim();
 }
 
-function normalizeEmail(v: any) {
-  return asString(v).toLowerCase();
-}
 
 function getBearerToken(req: Request) {
   const auth =
@@ -83,24 +80,6 @@ async function resolveUser(req: Request) {
   };
 }
 
-async function getProfileEmailByUserId(userId: string) {
-  const id = asString(userId);
-
-  if (!id) return "";
-
-  const { data, error } = await supabaseAdmin
-    .from("profiles")
-    .select("email")
-    .eq("id", id)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(`PROFILE_EMAIL_FETCH_FAILED:${error.message}`);
-  }
-
-  return normalizeEmail(data?.email);
-}
-
 async function getWorkspaceRole(userId: string, workspaceId: string) {
   const id = asString(userId);
   const wid = asString(workspaceId);
@@ -121,29 +100,12 @@ async function getWorkspaceRole(userId: string, workspaceId: string) {
   return asString((data as any)?.role).toLowerCase();
 }
 
-async function isTrueMasterUser(userId: string, workspaceId: string) {
-  const id = asString(userId);
-  const wid = asString(workspaceId);
-
-  if (!id || !wid) return false;
-
-  const email = await getProfileEmailByUserId(id);
-
-  if (email !== ONLY_MASTER_EMAIL) {
-    return false;
-  }
-
-  const role = await getWorkspaceRole(id, wid);
-
-  return role === "master";
-}
-
 async function resolveDeletePermission(
   userId: string,
   workspaceId: string
 ): Promise<DeletePermission> {
   const role = await getWorkspaceRole(userId, workspaceId);
-  const isTrueMaster = await isTrueMasterUser(userId, workspaceId);
+  const isTrueMaster = await isTrueMasterUser(userId);
 
   if (isTrueMaster) {
     return {
