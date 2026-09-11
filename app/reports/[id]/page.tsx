@@ -32,6 +32,10 @@ import {
   resolvePresetPeriod,
 } from "@/src/lib/report/period";
 import {
+  CANONICAL_MEDIA_SYNC_RANGE_AUTHORITY,
+  deriveCanonicalPeriodDateRange,
+} from "@/src/lib/report/canonical-period-range";
+import {
   buildMediaSyncSegments,
   getMediaSyncSegmentDisplayNumber,
 } from "@/src/lib/media-sync/media-sync-segment-contract";
@@ -2338,6 +2342,43 @@ export default function ReportDetailPage() {
         report?.status === "ready",
     );
 
+  const savedCanonicalMediaSyncRange =
+    canonicalIdentity?.source_type === "api" &&
+    canonicalIdentity.period_type !==
+      "cumulative"
+      ? deriveCanonicalPeriodDateRange(
+          canonicalIdentity.period_type,
+          canonicalIdentity.period_key,
+        )
+      : null;
+
+  const savedMediaSyncDateFrom =
+    normalizeYmdInput(
+      (report as any)?.meta
+        ?.media_sync?.date_from,
+    );
+
+  const savedMediaSyncDateTo =
+    normalizeYmdInput(
+      (report as any)?.meta
+        ?.media_sync?.date_to,
+    );
+
+  const savedMediaSyncRangeAuthority =
+    String(
+      (report as any)?.meta
+        ?.media_sync?.range_authority ??
+        "",
+    ).trim();
+
+  const mediaSyncPeriodManagedByCanonical =
+    Boolean(
+      isApiReport &&
+        savedCanonicalMediaSyncRange &&
+        savedMediaSyncRangeAuthority ===
+          CANONICAL_MEDIA_SYNC_RANGE_AUTHORITY,
+    );
+
   const canonicalPeriodKey =
     useMemo(
       () =>
@@ -2363,6 +2404,32 @@ export default function ReportDetailPage() {
       canonicalPeriodKey,
     );
 
+  const selectedCanonicalMediaSyncRange =
+    canonicalSourceType === "api" &&
+    selectedCanonicalPeriodType !==
+      "cumulative" &&
+    canonicalPeriodValid
+      ? deriveCanonicalPeriodDateRange(
+          selectedCanonicalPeriodType,
+          canonicalPeriodKey,
+        )
+      : null;
+
+  const canonicalPeriodNeedsMediaSyncAlignment =
+    Boolean(
+      selectedCanonicalMediaSyncRange &&
+        (
+          savedMediaSyncRangeAuthority !==
+            CANONICAL_MEDIA_SYNC_RANGE_AUTHORITY ||
+          savedMediaSyncDateFrom !==
+            selectedCanonicalMediaSyncRange
+              .dateFrom ||
+          savedMediaSyncDateTo !==
+            selectedCanonicalMediaSyncRange
+              .dateTo
+        ),
+    );
+
   const canonicalPeriodDirty =
     Boolean(
       canonicalEditorEligible &&
@@ -2374,7 +2441,8 @@ export default function ReportDetailPage() {
             selectedCanonicalPeriodType ||
           canonicalIdentity
             ?.period_key !==
-            canonicalPeriodKey
+            canonicalPeriodKey ||
+          canonicalPeriodNeedsMediaSyncAlignment
         ),
     );
 
@@ -3611,7 +3679,12 @@ export default function ReportDetailPage() {
         );
 
         setMsg(
-          "정규 URL 기간이 저장되었습니다. 리포트 조회 기간과 API 동기화 기간은 변경되지 않습니다.",
+          canonicalSourceType === "api"
+            ? selectedCanonicalPeriodType ===
+                "cumulative"
+              ? "정규 URL 기간이 저장되었습니다. 누적 리포트의 API 동기화 기간은 기존 수동 설정을 유지합니다."
+              : "정규 URL 기간이 저장되었고 API 동기화 기간도 자동 설정되었습니다."
+            : "정규 URL 기간이 저장되었습니다.",
         );
       } catch (e: any) {
         setCanonicalPeriodSavedText("");
@@ -3627,6 +3700,7 @@ export default function ReportDetailPage() {
       canonicalIdentityLocked,
       canonicalPeriodKey,
       canonicalPeriodValid,
+      canonicalSourceType,
       report,
       reportId,
       selectedCanonicalPeriodType,
@@ -3683,6 +3757,16 @@ export default function ReportDetailPage() {
   const handleSaveMediaSyncSettings = useCallback(async () => {
     if (!reportId) return;
 
+    if (
+      mediaSyncPeriodManagedByCanonical
+    ) {
+      setMediaSyncSettingsSavedText("");
+      setMsg(
+        "API 동기화 기간은 정규 URL 기간에서 자동 설정됩니다.",
+      );
+      return;
+    }
+
     const validationMessage = getMediaSyncSettingsError(mediaSyncSettings, mediaSyncSegmentLongRangeAllowed);
     if (validationMessage) {
       setMediaSyncSettingsSavedText("");
@@ -3718,6 +3802,7 @@ export default function ReportDetailPage() {
       setSavingMediaSyncSettings(false);
     }
   }, [
+    mediaSyncPeriodManagedByCanonical,
     mediaSyncSegmentLongRangeAllowed,
     mediaSyncSettings,
     reportId,
@@ -4745,9 +4830,10 @@ export default function ReportDetailPage() {
 
             <div className="mt-1.5 text-xs leading-5 text-white/55">
               리포트의 정규 주소를 결정하는
-              기간입니다. 리포트 조회 기간과
-              API 동기화 기간에는 영향을 주지
-              않습니다.
+              기간입니다. API 연동형 리포트는
+              누적을 제외하고 저장 시 API
+              동기화 기간도 이 기준에서 자동
+              설정됩니다.
             </div>
 
             <div className="mt-4 grid gap-3 lg:grid-cols-[150px_minmax(0,1fr)_auto] lg:items-end">
@@ -5166,6 +5252,11 @@ export default function ReportDetailPage() {
                     이 리포트는 새벽 자동 동기화 관리 대상입니다.
                     수동 동기화 요청은 중복 job 방지를 위해 비활성화됩니다.
                   </>
+                ) : mediaSyncPeriodManagedByCanonical ? (
+                  <>
+                    API 동기화 시작일과 종료일은 저장된 정규 URL 기간에서 자동 설정됩니다.
+                    별도 기간 저장은 사용하지 않으며, 저장만으로 동기화 job이 생성되지는 않습니다.
+                  </>
                 ) : (
                   <>
                     API 연동형 리포트는 사용자가 저장한 기간만 media_sync_jobs의 date_from/date_to로 사용합니다.
@@ -5186,6 +5277,9 @@ export default function ReportDetailPage() {
                         dateFrom: event.target.value,
                       }))
                     }
+                    disabled={
+                      mediaSyncPeriodManagedByCanonical
+                    }
                     className="etrylue-field mt-1 w-full rounded-xl px-3.5 py-2.5 text-sm"
                   />
                 </label>
@@ -5200,6 +5294,9 @@ export default function ReportDetailPage() {
                         ...prev,
                         dateTo: event.target.value,
                       }))
+                    }
+                    disabled={
+                      mediaSyncPeriodManagedByCanonical
                     }
                     className="etrylue-field mt-1 w-full rounded-xl px-3.5 py-2.5 text-sm"
                   />
@@ -5216,13 +5313,18 @@ export default function ReportDetailPage() {
                   type="button"
                   onClick={handleSaveMediaSyncSettings}
                   disabled={
+                    mediaSyncPeriodManagedByCanonical ||
                     savingMediaSyncSettings ||
                     !mediaSyncSettingsDirty ||
                     !isValidMediaSyncSettingsDraft(mediaSyncSettings, mediaSyncSegmentLongRangeAllowed)
                   }
                   className="etrylue-primary-button rounded-xl px-4 py-2.5 text-sm font-black"
                 >
-                  {savingMediaSyncSettings ? "저장 중..." : "기간 저장"}
+                  {mediaSyncPeriodManagedByCanonical
+                    ? "자동 설정"
+                    : savingMediaSyncSettings
+                      ? "저장 중..."
+                      : "기간 저장"}
                 </button>
 
                 <button
@@ -5516,7 +5618,11 @@ export default function ReportDetailPage() {
               </div>
 
               <div className="text-xs text-[#bbb8d4]">
-                {mediaSyncSettingsSavedText ? (
+                {mediaSyncPeriodManagedByCanonical ? (
+                  <span className="font-extrabold text-[#9ef5ff]">
+                    정규 URL 기간에서 자동 설정된 API 동기화 기간입니다.
+                  </span>
+                ) : mediaSyncSettingsSavedText ? (
                   <span className="font-extrabold text-emerald-200">{mediaSyncSettingsSavedText}</span>
                 ) : mediaSyncSettingsDirty ? (
                   <span className="font-extrabold text-amber-100">저장되지 않은 API 동기화 기간이 있습니다.</span>

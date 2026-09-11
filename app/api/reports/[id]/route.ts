@@ -4,6 +4,10 @@ import { sbAuth } from "@/src/lib/supabase/auth-server";
 import { isTrueMasterUser } from "@/src/lib/true-master-access";
 import { normalizeReportTheme } from "@/src/lib/report/theme";
 import {
+  CANONICAL_MEDIA_SYNC_RANGE_AUTHORITY,
+  deriveCanonicalPeriodDateRange,
+} from "@/src/lib/report/canonical-period-range";
+import {
   listSafeMediaConnections,
 } from "@/src/lib/media-sync/media-connections-repository";
 import {
@@ -981,15 +985,160 @@ export async function PATCH(req: Request, ctx: Ctx) {
         )
       : undefined;
 
-    const hasMediaSyncSettings =
+    const hasExplicitMediaSyncSettings =
       Object.prototype.hasOwnProperty.call(body, "media_sync") ||
       (incomingMeta
         ? Object.prototype.hasOwnProperty.call(incomingMeta, "media_sync")
         : false);
 
-    const rawIncomingMediaSyncSettings =
+    const explicitRawIncomingMediaSyncSettings =
       body.media_sync ??
       incomingMeta?.media_sync;
+
+    const existingMediaSyncSettings =
+      isPlainObject(
+        (existingMeta as any).media_sync,
+      )
+        ? (existingMeta as any).media_sync
+        : {};
+
+    const existingMediaSyncRangeAuthority =
+      String(
+        (existingMediaSyncSettings as any)
+          .range_authority ?? "",
+      ).trim();
+
+    const existingPublicIdentity =
+      isPlainObject(
+        (existingMeta as any).public_identity,
+      )
+        ? (existingMeta as any).public_identity
+        : {};
+
+    const existingManagedCanonicalRange =
+      (() => {
+        if (
+          existingMediaSyncRangeAuthority !==
+          CANONICAL_MEDIA_SYNC_RANGE_AUTHORITY
+        ) {
+          return null;
+        }
+
+        const sourceType =
+          normalizeCanonicalSourceType(
+            (existingPublicIdentity as any)
+              .source_type,
+          );
+
+        const periodType =
+          String(
+            (existingPublicIdentity as any)
+              .period_type ?? "",
+          )
+            .trim()
+            .toLowerCase();
+
+        const periodKey =
+          String(
+            (existingPublicIdentity as any)
+              .period_key ?? "",
+          ).trim();
+
+        if (
+          sourceType !== "api" ||
+          !isCanonicalPeriodType(
+            periodType,
+          ) ||
+          periodType === "cumulative" ||
+          !isValidCanonicalPeriodKey(
+            periodType,
+            periodKey,
+          )
+        ) {
+          return null;
+        }
+
+        return deriveCanonicalPeriodDateRange(
+          periodType,
+          periodKey,
+        );
+      })();
+
+    if (
+      canonicalPublicIdentity === undefined &&
+      hasExplicitMediaSyncSettings &&
+      existingMediaSyncRangeAuthority ===
+        CANONICAL_MEDIA_SYNC_RANGE_AUTHORITY &&
+      existingManagedCanonicalRange === null
+    ) {
+      return jsonError(
+        409,
+        "CANONICAL_MEDIA_SYNC_RANGE_AUTHORITY_INVALID",
+      );
+    }
+
+    const shouldDeriveMediaSyncRangeFromCanonical =
+      canonicalPublicIdentity?.source_type === "api" &&
+      canonicalPublicIdentity.period_type !== "cumulative";
+
+    const canonicalMediaSyncRange =
+      shouldDeriveMediaSyncRangeFromCanonical &&
+      canonicalPublicIdentity
+        ? deriveCanonicalPeriodDateRange(
+            canonicalPublicIdentity.period_type,
+            canonicalPublicIdentity.period_key,
+          )
+        : canonicalPublicIdentity === undefined
+          ? existingManagedCanonicalRange
+          : null;
+
+    if (
+      shouldDeriveMediaSyncRangeFromCanonical &&
+      canonicalMediaSyncRange === null
+    ) {
+      return jsonError(
+        400,
+        "V2_CANONICAL_PERIOD_RANGE_INVALID",
+      );
+    }
+
+    const hasMediaSyncSettings =
+      hasExplicitMediaSyncSettings ||
+      canonicalMediaSyncRange !== null;
+
+    let rawIncomingMediaSyncSettings =
+      explicitRawIncomingMediaSyncSettings;
+
+    if (canonicalMediaSyncRange !== null) {
+      const baseMediaSyncSettings =
+        hasExplicitMediaSyncSettings
+          ? explicitRawIncomingMediaSyncSettings
+          : existingMediaSyncSettings;
+
+      if (
+        hasExplicitMediaSyncSettings &&
+        !isPlainObject(
+          baseMediaSyncSettings,
+        )
+      ) {
+        return jsonError(
+          400,
+          "Invalid media_sync settings",
+        );
+      }
+
+      rawIncomingMediaSyncSettings = {
+        ...(isPlainObject(
+          baseMediaSyncSettings,
+        )
+          ? baseMediaSyncSettings
+          : {}),
+        date_from:
+          canonicalMediaSyncRange.dateFrom,
+        date_to:
+          canonicalMediaSyncRange.dateTo,
+      };
+    }
 
     let allowSegmentedLongRange =
       false;
@@ -1057,12 +1206,64 @@ export async function PATCH(req: Request, ctx: Ctx) {
       return jsonError(400, "Invalid media_sync settings");
     }
 
+    let mediaSyncSettingsForMeta =
+      incomingMediaSyncSettings !== undefined
+        ? {
+            ...existingMediaSyncSettings,
+            ...incomingMediaSyncSettings,
+          }
+        : undefined;
+
+    if (
+      canonicalPublicIdentity !== undefined
+    ) {
+      if (
+        canonicalPublicIdentity.source_type ===
+          "api" &&
+        canonicalPublicIdentity.period_type !==
+          "cumulative"
+      ) {
+        if (
+          mediaSyncSettingsForMeta ===
+          undefined
+        ) {
+          return jsonError(
+            400,
+            "V2_CANONICAL_MEDIA_SYNC_RANGE_MISSING",
+          );
+        }
+
+        mediaSyncSettingsForMeta = {
+          ...mediaSyncSettingsForMeta,
+          range_authority:
+            CANONICAL_MEDIA_SYNC_RANGE_AUTHORITY,
+        };
+      } else if (
+        Object.prototype.hasOwnProperty.call(
+          existingMediaSyncSettings,
+          "range_authority",
+        )
+      ) {
+        const nextMediaSyncSettings = {
+          ...existingMediaSyncSettings,
+          ...(incomingMediaSyncSettings ?? {}),
+        };
+
+        delete (
+          nextMediaSyncSettings as any
+        ).range_authority;
+
+        mediaSyncSettingsForMeta =
+          nextMediaSyncSettings;
+      }
+    }
+
     const meta =
       incomingMeta !== undefined ||
       incomingReportTheme !== undefined ||
       incomingMonthGoal !== undefined ||
       incomingBrandSearchContracts !== undefined ||
-      incomingMediaSyncSettings !== undefined ||
+      mediaSyncSettingsForMeta !== undefined ||
       canonicalPublicIdentity !== undefined
         ? {
             ...existingMeta,
@@ -1076,8 +1277,8 @@ export async function PATCH(req: Request, ctx: Ctx) {
             ...(incomingBrandSearchContracts !== undefined
               ? { brand_search_contracts: incomingBrandSearchContracts }
               : {}),
-            ...(incomingMediaSyncSettings !== undefined
-              ? { media_sync: incomingMediaSyncSettings }
+            ...(mediaSyncSettingsForMeta !== undefined
+              ? { media_sync: mediaSyncSettingsForMeta }
               : {}),
             ...(canonicalPublicIdentity !== undefined
               ? {
