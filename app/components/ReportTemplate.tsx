@@ -2000,6 +2000,44 @@ function getBrandSearchDeviceBucket(row: any): "pc" | "mobile" | "" {
 }
 
 function isNaverBrandSearchRow(row: any) {
+  const provider =
+    normalizeBrandSearchText(row?.provider);
+
+  const providerMeta =
+    row?.provider_meta &&
+    typeof row.provider_meta === "object" &&
+    !Array.isArray(row.provider_meta)
+      ? row.provider_meta
+      : row?.providerMeta &&
+          typeof row.providerMeta === "object" &&
+          !Array.isArray(row.providerMeta)
+        ? row.providerMeta
+        : null;
+
+  const campaignType =
+    normalizeBrandSearchText(
+      providerMeta?.campaign_type ??
+        providerMeta?.campaignType,
+    );
+
+  const rowLevelReason =
+    normalizeBrandSearchText(
+      row?.row_level_reason ??
+        row?.rowLevelReason,
+    );
+
+  const isAuthoritativeNaverBrandSearchRow =
+    provider === "naversearchad" &&
+    (
+      campaignType === "brandsearch" ||
+      rowLevelReason ===
+        "naversearchadbrandsearchadgroupdailystats"
+    );
+
+  if (isAuthoritativeNaverBrandSearchRow) {
+    return true;
+  }
+
   const values = [
     row?.source,
     row?.site_source,
