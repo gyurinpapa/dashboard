@@ -3864,6 +3864,8 @@ export default function ReportDetailPage() {
 
     const dateFrom = normalizeYmdInput(mediaSyncSettings.dateFrom);
     const dateTo = normalizeYmdInput(mediaSyncSettings.dateTo);
+    const previousMediaSyncJobId =
+      mediaSyncJob?.id ?? null;
 
     setRequestingMediaSync(true);
     setMsg("API 동기화 요청을 준비합니다...");
@@ -3936,6 +3938,20 @@ export default function ReportDetailPage() {
           return;
         }
 
+        const recoveredJob =
+          await fetchLatestMediaSyncJob(true);
+
+        if (
+          recoveredJob?.id &&
+          recoveredJob.id !==
+            previousMediaSyncJobId
+        ) {
+          setMsg(
+            "API 동기화 job이 확인되어 진행 상태를 갱신했습니다.",
+          );
+          return;
+        }
+
         setMsg(syncError || "API 동기화 요청 실패");
         return;
       }
@@ -3953,6 +3969,7 @@ export default function ReportDetailPage() {
     fetchLatestMediaSyncJob,
     isApiReport,
     mediaSyncAutomatic.enabled,
+    mediaSyncJob?.id,
     mediaSyncJob?.status,
     mediaSyncSegmentLongRangeAllowed,
     mediaSyncSettings,
