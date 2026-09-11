@@ -117,12 +117,48 @@ async function resolveDeletePermission(
   workspaceId: string
 ): Promise<DeletePermission> {
   const roleStartedAt = Date.now();
-  const role = await getWorkspaceRole(userId, workspaceId);
-  logDeleteTiming("permission_workspace_role", roleStartedAt);
+  const rolePromise = getWorkspaceRole(userId, workspaceId).then(
+    (value) => {
+      logDeleteTiming("permission_workspace_role", roleStartedAt);
+      return value;
+    },
+    (error) => {
+      logDeleteTiming("permission_workspace_role", roleStartedAt, {
+        db_error: true,
+      });
+      throw error;
+    }
+  );
 
   const trueMasterStartedAt = Date.now();
-  const isTrueMaster = await isTrueMasterUser(userId);
-  logDeleteTiming("permission_true_master", trueMasterStartedAt);
+  const trueMasterPromise = isTrueMasterUser(userId).then(
+    (value) => {
+      logDeleteTiming("permission_true_master", trueMasterStartedAt);
+      return value;
+    },
+    (error) => {
+      logDeleteTiming("permission_true_master", trueMasterStartedAt, {
+        db_error: true,
+      });
+      throw error;
+    }
+  );
+
+  const [roleResult, trueMasterResult] = await Promise.allSettled([
+    rolePromise,
+    trueMasterPromise,
+  ]);
+
+  if (roleResult.status === "rejected") {
+    throw roleResult.reason;
+  }
+
+  if (trueMasterResult.status === "rejected") {
+    throw trueMasterResult.reason;
+  }
+
+  const role = roleResult.value;
+  const isTrueMaster = trueMasterResult.value;
 
   if (isTrueMaster) {
     return {
