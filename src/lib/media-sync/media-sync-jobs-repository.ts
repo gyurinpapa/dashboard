@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+
 import { getSupabaseAdmin } from "../supabase/admin";
 import {
   getMediaConnectionRecord,
@@ -1409,11 +1411,9 @@ export async function createPendingMediaSyncJob(
   }
 
   if (
-    JSON.stringify(
+    !isDeepStrictEqual(
       record.sync_segment_progress ??
         null,
-    ) !==
-    JSON.stringify(
       syncSegmentProgress,
     )
   ) {
