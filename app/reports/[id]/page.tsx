@@ -2461,6 +2461,12 @@ export default function ReportDetailPage() {
       ? `/${advertiserPublicSlug}/${canonicalSourceType}/${canonicalReportType}/${selectedCanonicalPeriodType}/${canonicalPeriodKey}`
       : "";
 
+  const canonicalPublishedPath =
+    canonicalIdentity &&
+    advertiserPublicSlug
+      ? `/${advertiserPublicSlug}/${canonicalIdentity.source_type}/${canonicalIdentity.report_type}/${canonicalIdentity.period_type}/${canonicalIdentity.period_key}`
+      : "";
+
   const csvInputRef = useRef<HTMLInputElement | null>(null);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvUploading, setCsvUploading] = useState(false);
@@ -2964,6 +2970,25 @@ export default function ReportDetailPage() {
 
     return sharePath;
   }, [advertiserPublicSlug, report?.status, sharePath]);
+
+  const displayFinalReportPath = useMemo(() => {
+    const published =
+      Boolean(sharePath) ||
+      Boolean(report?.published_at) ||
+      Boolean(report?.published_ingestion_id);
+
+    if (published && canonicalPublishedPath) {
+      return canonicalPublishedPath;
+    }
+
+    return displaySharePath;
+  }, [
+    canonicalPublishedPath,
+    displaySharePath,
+    report?.published_at,
+    report?.published_ingestion_id,
+    sharePath,
+  ]);
 
   const hasCsvPublishableRows =
     Math.max(ingestionInfo.inserted, ingestionInfo.validRows) > 0;
@@ -5713,25 +5738,26 @@ export default function ReportDetailPage() {
         </div>
 
         <div className="rounded-xl border border-white/[0.10] bg-[#2a2157]/72 p-3">
-          <div className="text-xs text-[#bbb8d4]">공유 URL</div>
+          <div className="text-xs text-[#bbb8d4]">최종 보고서 URL</div>
           <div className="mt-1 text-sm text-[#f7f7ff]">
-            {displaySharePath ? (
+            {displayFinalReportPath ? (
               <a
-                href={fullUrl(displaySharePath)}
+                href={fullUrl(displayFinalReportPath)}
                 target="_blank"
                 rel="noreferrer"
                 className="break-all font-semibold text-[#7defff] underline decoration-[#7defff]/50 underline-offset-2 hover:text-white"
               >
-                {fullUrl(displaySharePath)}
+                {fullUrl(displayFinalReportPath)}
               </a>
             ) : (
               "-"
             )}
           </div>
 
-          {advertiserPublicSlug ? (
+          {canonicalPublishedPath &&
+          displayFinalReportPath === canonicalPublishedPath ? (
             <div className="mt-2 text-[11px] text-[#aaa6c9]">
-              광고주 고정 URL 사용 중
+              발행된 정규 URL로 연결됩니다.
             </div>
           ) : null}
         </div>
