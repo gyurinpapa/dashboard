@@ -432,8 +432,9 @@ export function buildWeekOptions(rows: Row[], selectedMonth: string | "all") {
   const weekKeySet = new Set<string>();
   for (const x of valid) weekKeySet.add(toYMDLocal(startOfWeekMonday(x.d)));
 
-  let weekKeys = Array.from(weekKeySet).sort((a, b) => b.localeCompare(a));
-  if (selectedMonth === "all") weekKeys = weekKeys.slice(0, 5);
+  const weekKeys = Array.from(weekKeySet).sort((a, b) =>
+    b.localeCompare(a)
+  );
 
   return weekKeys
     .map((wk) => {
@@ -556,16 +557,23 @@ export function groupByWeekRecent5(filteredRows: Row[]) {
 
   if (!valid.length) return [];
 
+  const minTime = Math.min(...valid.map((x) => x.d.getTime()));
   const maxTime = Math.max(...valid.map((x) => x.d.getTime()));
-  const maxDate = new Date(maxTime);
-  const latestWeekStart = startOfWeekMonday(maxDate);
+
+  const firstWeekStart = startOfWeekMonday(
+    new Date(minTime)
+  );
+  const latestWeekStart = startOfWeekMonday(
+    new Date(maxTime)
+  );
 
   const weekStarts: Date[] = [];
-  for (let i = 4; i >= 0; i--) {
-    const ws = new Date(latestWeekStart);
-    ws.setDate(ws.getDate() - i * 7);
-    ws.setHours(0, 0, 0, 0);
-    weekStarts.push(ws);
+  const cursor = new Date(firstWeekStart);
+  cursor.setHours(0, 0, 0, 0);
+
+  while (cursor <= latestWeekStart) {
+    weekStarts.push(new Date(cursor));
+    cursor.setDate(cursor.getDate() + 7);
   }
 
   const map = new Map<
@@ -647,8 +655,7 @@ export function groupByMonthRecent3(args: {
       const rep = pickRepresentativeRow(list as any[]);
       return attachRepresentativeFields(base, rep);
     })
-    .sort((a, b) => b.month.localeCompare(a.month))
-    .slice(0, 3);
+    .sort((a, b) => b.month.localeCompare(a.month));
 }
 
 export function getCurrentMonthKeyByData(rows: Row[]) {

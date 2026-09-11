@@ -71,7 +71,7 @@ const FIRST_TD_CLASS =
   "px-4 py-3.5 text-left text-sm font-medium text-slate-900 whitespace-nowrap align-middle";
 
 const TABLE_SURFACE_CLASS =
-  "overflow-x-auto rounded-[20px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] shadow-[0_4px_14px_rgba(127,166,196,0.07)]";
+  "max-h-[360px] overflow-auto rounded-[20px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] shadow-[0_4px_14px_rgba(127,166,196,0.07)]";
 
 const SOURCE_TABLE_SURFACE_CLASS =
   "max-h-[720px] overflow-auto rounded-[20px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] shadow-[0_4px_14px_rgba(127,166,196,0.07)]";
@@ -160,10 +160,10 @@ function getSummaryCopy(reportType?: ReportType): SummaryCopy {
     return {
       kpiTitle: "기간 성과 요약",
       kpiDescription: "현재 필터 조건 기준의 유입 중심 핵심 KPI를 빠르게 확인합니다.",
-      monthTitle: "월별 성과 (최근 3개월)",
-      monthDescription: "최근 월별 유입 성과를 비교합니다.",
+      monthTitle: "월별 성과",
+      monthDescription: "기간 내 월별 유입 성과를 비교합니다.",
       weeklyTitle: "주차별 성과",
-      weeklyDescription: "최근 주차별 유입 흐름과 전주 대비 변화량을 빠르게 확인합니다.",
+      weeklyDescription: "기간 내 주차별 유입 흐름과 전주 대비 변화량을 빠르게 확인합니다.",
       chartTitle: "주차별 추이",
       chartDescription:
         "유입 중심 핵심 성과 흐름을 시각적으로 비교해 변화 구간을 빠르게 파악합니다.",
@@ -181,11 +181,11 @@ function getSummaryCopy(reportType?: ReportType): SummaryCopy {
       kpiTitle: "기간 성과 요약",
       kpiDescription:
         "현재 필터 조건 기준의 DB 확보·전환 효율 중심 핵심 KPI를 빠르게 확인합니다.",
-      monthTitle: "월별 DB 확보 성과 (최근 3개월)",
-      monthDescription: "최근 월별 DB 확보·리드 확보 성과를 비교합니다.",
+      monthTitle: "월별 DB 확보 성과",
+      monthDescription: "기간 내 월별 DB 확보·리드 확보 성과를 비교합니다.",
       weeklyTitle: "주차별 DB 확보 성과",
       weeklyDescription:
-        "최근 주차별 전환 흐름과 전주 대비 변화량을 빠르게 확인합니다.",
+        "기간 내 주차별 전환 흐름과 전주 대비 변화량을 빠르게 확인합니다.",
       chartTitle: "주차별 전환 추이",
       chartDescription:
         "전환·CPA 중심 핵심 성과 흐름을 시각적으로 비교해 변화 구간을 빠르게 파악합니다.",
@@ -201,10 +201,10 @@ function getSummaryCopy(reportType?: ReportType): SummaryCopy {
   return {
     kpiTitle: "기간 성과 요약",
     kpiDescription: "현재 필터 조건 기준의 핵심 KPI를 빠르게 확인합니다.",
-    monthTitle: "월별 성과 (최근 3개월)",
-    monthDescription: "최근 월별 핵심 성과를 비교합니다.",
+    monthTitle: "월별 성과",
+    monthDescription: "기간 내 월별 핵심 성과를 비교합니다.",
     weeklyTitle: "주차별 성과",
-    weeklyDescription: "최근 주차 흐름과 전주 대비 변화량을 빠르게 확인합니다.",
+    weeklyDescription: "기간 내 주차 흐름과 전주 대비 변화량을 빠르게 확인합니다.",
     chartTitle: "주차별 추이",
     chartDescription:
       "핵심 성과 흐름을 시각적으로 비교해 변화 구간을 빠르게 파악합니다.",
@@ -3068,8 +3068,24 @@ function SummarySectionComponent(props: Props) {
                 maxRev={trendDerived.maxRev}
               />
 
-              <div data-summary-weekly-trend-chart="true" className={CHART_SURFACE_CLASS}>
-                <SummaryChart reportType={reportType} data={stableWeekChartData} />
+              <div
+                data-summary-weekly-trend-chart="true"
+                className={`${CHART_SURFACE_CLASS} overflow-x-auto overscroll-x-contain [scrollbar-width:thin]`}
+              >
+                <div
+                  style={{
+                    width:
+                      stableWeekChartData.length > 5
+                        ? `${(stableWeekChartData.length / 5) * 100}%`
+                        : "100%",
+                    minWidth: "100%",
+                  }}
+                >
+                  <SummaryChart
+                    reportType={reportType}
+                    data={stableWeekChartData}
+                  />
+                </div>
               </div>
             </div>
           </div>

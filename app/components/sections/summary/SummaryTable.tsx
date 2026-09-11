@@ -135,7 +135,7 @@ const TD_BAR_CLASS =
   "whitespace-nowrap border-l border-slate-200/65 px-3 py-3.5 text-center text-[15px] font-medium align-middle tabular-nums";
 
 const WRAPPER_CLASS_NAME =
-  "overflow-auto rounded-[20px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] shadow-[0_4px_14px_rgba(127,166,196,0.07)]";
+  "max-h-[260px] overflow-auto rounded-[20px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] shadow-[0_4px_14px_rgba(127,166,196,0.07)]";
 const TRAFFIC_TABLE_CLASS_NAME = "w-full min-w-[760px] text-sm";
 const DB_ACQUISITION_TABLE_CLASS_NAME = "w-full min-w-[980px] text-sm";
 const COMMERCE_TABLE_CLASS_NAME = "w-full min-w-[1120px] text-sm";
