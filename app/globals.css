@@ -15,6 +15,10 @@
   --nature-surface-soft: #f3e4d2;
   --nature-border: #d9cdbc;
   --nature-border-blue: #b7d7e3;
+
+  /* Opaque equivalents of the previous translucent table headers. */
+  --nature-table-head-blue: #e7eeee;
+  --nature-table-head-cream: #f5e7d7;
 }
 
 @theme inline {
@@ -55,6 +59,10 @@ body {
   --nature-blue: #21dff3;
   --nature-blue-light: #12395c;
   --nature-cream: #172744;
+
+  /* Opaque equivalents of the previous translucent table headers. */
+  --nature-table-head-blue: #0f2542;
+  --nature-table-head-cream: #162542;
 }
 
 [data-report-theme="studio"] section[aria-label="Executive Performance Cockpit"] {

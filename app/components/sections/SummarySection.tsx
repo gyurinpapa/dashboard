@@ -80,7 +80,7 @@ const DAILY_TABLE_SURFACE_CLASS =
   "overflow-x-auto rounded-[20px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] shadow-[0_4px_14px_rgba(127,166,196,0.07)]";
 
 const TABLE_HEAD_CLASS =
-  "sticky top-0 z-10 border-b border-[var(--nature-border)] bg-[var(--nature-cream)]/85";
+  "sticky top-0 z-10 border-b border-[var(--nature-border)] bg-[var(--nature-table-head-cream)]";
 
 const EMPTY_STATE_CLASS =
   "px-4 py-10 text-center text-sm font-medium text-slate-500";
@@ -476,7 +476,7 @@ const MetricColGroup = memo(function MetricColGroup({
 });
 
 const SLIDE2_TABLE_HEAD_CLASS =
-  "border-b border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/34";
+  "border-b border-[var(--nature-border-blue)] bg-[var(--nature-table-head-blue)]";
 const SLIDE2_TH_CLASS =
   "whitespace-nowrap border-l border-[var(--nature-border-blue)]/45 px-3 py-3.5 text-center text-[13px] font-bold uppercase tracking-[0.03em] text-slate-700";
 const SLIDE2_FIRST_TH_CLASS =

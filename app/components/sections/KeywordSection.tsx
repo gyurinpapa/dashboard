@@ -1326,7 +1326,7 @@ export default function KeywordSection({
             className="overflow-auto rounded-[20px] border border-[var(--nature-border-blue)] bg-[var(--nature-surface)] shadow-[0_4px_14px_rgba(127,166,196,0.07)]"
           >
             <table className="w-full border-collapse text-sm">
-              <thead className="sticky top-0 z-10 border-b border-[var(--nature-border-blue)] bg-[var(--nature-blue-light)]/34">
+              <thead className="sticky top-0 z-10 border-b border-[var(--nature-border-blue)] bg-[var(--nature-table-head-blue)]">
                 <tr>
                   <SortHeaderCell
                     k="keyword"
