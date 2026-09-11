@@ -2556,17 +2556,27 @@ export default function ReportDetailPage() {
 
   const brandSearchMonthKeys = useMemo(() => {
     return buildRecentBrandSearchMonthKeys(
-      reportPeriod.endDate ||
+      selectedCanonicalMediaSyncRange?.dateTo ||
+        mediaSyncSettings.dateTo ||
+        savedCanonicalMediaSyncRange?.dateTo ||
+        savedMediaSyncDateTo ||
+        reportPeriod.endDate ||
         report?.draft_period_end ||
         report?.published_period_end ||
         report?.period_end ||
+        rowsMetaMaxDate ||
         "",
     );
   }, [
+    mediaSyncSettings.dateTo,
     report?.draft_period_end,
     report?.period_end,
     report?.published_period_end,
     reportPeriod.endDate,
+    rowsMetaMaxDate,
+    savedCanonicalMediaSyncRange?.dateTo,
+    savedMediaSyncDateTo,
+    selectedCanonicalMediaSyncRange?.dateTo,
   ]);
 
   const ingestionStatusLabel = useMemo(() => {
@@ -3896,6 +3906,30 @@ export default function ReportDetailPage() {
         setMediaSyncAutomatic(
           automaticSync,
         );
+
+        if (nextJob?.status === "done") {
+          try {
+            const meta =
+              await fetchRowsMeta(reportId);
+
+            setRowsMetaCount(
+              meta.rowsCount,
+            );
+            setRowsMetaMinDate(
+              meta.minDate,
+            );
+            setRowsMetaMaxDate(
+              meta.maxDate,
+            );
+            setRowsMetaLoaded(true);
+          } catch (rowsMetaError) {
+            console.error(
+              "[media-sync:done rows-meta refresh] failed",
+              rowsMetaError,
+            );
+          }
+        }
+
         return nextJob;
       } catch (e: any) {
         if (!silent) {
