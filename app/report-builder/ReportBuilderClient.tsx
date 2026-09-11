@@ -2934,7 +2934,7 @@ export default function ReportBuilderPage() {
         prev.filter((id) => !deletedSet.has(id))
       );
 
-      await fetchReports();
+      void fetchReports();
 
       if (failedItems.length > 0 || notFoundIds.length > 0) {
         console.warn("[reports/delete] batch partial result", {
