@@ -295,35 +295,6 @@ async function fetchDeletableReports(params: {
     .filter(Boolean) as DeletableReportRow[];
 }
 
-async function deleteOptionalTableByReportId(
-  tableName: string,
-  reportId: string,
-  step: string
-) {
-  const startedAt = Date.now();
-
-  const { error } = await supabaseAdmin
-    .from(tableName)
-    .delete()
-    .eq("report_id", reportId);
-
-  logDeleteTiming(step, startedAt, {
-    db_error: Boolean(error),
-  });
-
-  if (error && !isMissingTableError(error.message || "")) {
-    return {
-      ok: false as const,
-      step,
-      error: error.message || `${step}_FAILED`,
-    };
-  }
-
-  return {
-    ok: true as const,
-  };
-}
-
 async function deleteRequiredTableByReportId(
   tableName: string,
   reportId: string,
@@ -452,38 +423,7 @@ async function deleteSingleReport(workspaceId: string, reportId: string) {
    *
    * 따라서 report_creatives는 먼저 수동 삭제하지 않는다.
    * reports 삭제 시 DB cascade에 맡기는 것이 더 안전하다.
-   *
-   * upload 기록은 FK cascade가 없을 수 있으므로 기존처럼 선삭제하되,
-   * 테이블이 없는 경우에는 optional로 통과시킨다.
    */
-  const steps = [
-    () =>
-      deleteOptionalTableByReportId(
-        "report_csv_uploads",
-        reportId,
-        "delete_report_csv_uploads"
-      ),
-
-    () =>
-      deleteOptionalTableByReportId(
-        "report_image_uploads",
-        reportId,
-        "delete_report_image_uploads"
-      ),
-  ];
-
-  for (const run of steps) {
-    const result = await run();
-
-    if (!result.ok) {
-      return {
-        ok: false as const,
-        step: result.step,
-        error: result.error,
-      };
-    }
-  }
-
   const reportDeleteStartedAt = Date.now();
 
   const { error: reportDeleteError } = await supabaseAdmin
