@@ -354,6 +354,16 @@ function fmtDate(iso?: string | null) {
   return d.toLocaleString();
 }
 
+function isVerifiedNaverConnection(
+  connection: SafeMediaConnection,
+) {
+  return (
+    connection.status === "active" &&
+    connection.has_credentials &&
+    Boolean(connection.last_verified_at)
+  );
+}
+
 function isActiveMediaSyncJobStatus(status?: string | null) {
   return status === "pending" || status === "processing";
 }
@@ -2004,6 +2014,18 @@ export default function ReportBuilderPage() {
           setNaverMediaConnectionFormError(
             "대상 연결을 찾을 수 없습니다. 연결 상태를 다시 불러오세요."
           );
+        } else if (errorCode === "NAVER_CUSTOMER_ID_MISMATCH") {
+          setNaverMediaConnectionFormError(
+            "Customer ID와 외부 광고계정 ID가 일치하지 않습니다."
+          );
+        } else if (errorCode === "NAVER_AUTHENTICATION_FAILED") {
+          setNaverMediaConnectionFormError(
+            "Naver Search Ads 인증에 실패했습니다. Customer ID, Access License, Secret Key를 확인하세요."
+          );
+        } else if (errorCode === "NAVER_VERIFICATION_FAILED") {
+          setNaverMediaConnectionFormError(
+            "Naver Search Ads API 인증 확인을 완료하지 못했습니다. 잠시 후 다시 시도하세요."
+          );
         } else if (errorCode === "INVALID_INPUT") {
           setNaverMediaConnectionFormError(
             "입력값을 확인하세요. 저장되지 않았습니다."
@@ -2057,8 +2079,8 @@ export default function ReportBuilderPage() {
       setMediaConnectionsRefreshVersion((prev) => prev + 1);
       setLocalMsg(
         completedMode === "create"
-          ? "Naver Search Ads 연결 정보를 안전하게 저장했습니다."
-          : "Naver Search Ads 자격증명을 안전하게 교체했습니다."
+          ? "Naver Search Ads 인증을 확인하고 연결 정보를 안전하게 저장했습니다."
+          : "Naver Search Ads 인증을 확인하고 자격증명을 안전하게 교체했습니다."
       );
     } catch (error) {
       console.warn(
@@ -3072,14 +3094,21 @@ export default function ReportBuilderPage() {
       (connection) => connection.provider === "meta_ads"
     );
 
-  const usableNaverConnections = selectedAdvertiserNaverConnections.filter(
-    (connection) =>
-      connection.status === "active" && connection.has_credentials
-  );
+  const usableNaverConnections =
+    selectedAdvertiserNaverConnections.filter(
+      isVerifiedNaverConnection
+    );
   const naverConnectionWithoutCredentials =
     selectedAdvertiserNaverConnections.find(
       (connection) =>
         connection.status === "active" && !connection.has_credentials
+    ) ?? null;
+  const naverUnverifiedConnection =
+    selectedAdvertiserNaverConnections.find(
+      (connection) =>
+        connection.status === "active" &&
+        connection.has_credentials &&
+        !connection.last_verified_at
     ) ?? null;
   const naverErrorConnection =
     selectedAdvertiserNaverConnections.find(
@@ -4450,6 +4479,8 @@ export default function ReportBuilderPage() {
                             ? "● 연결됨"
                             : naverConnectionWithoutCredentials
                             ? "자격증명 필요"
+                            : naverUnverifiedConnection
+                            ? "인증 확인 필요"
                             : naverErrorConnection
                             ? "오류"
                             : "○ 미연결"}
@@ -4488,6 +4519,12 @@ export default function ReportBuilderPage() {
                           </>
                         ) : naverConnectionWithoutCredentials ? (
                           <>활성 연결은 있지만 저장된 자격증명이 없습니다.</>
+                        ) : naverUnverifiedConnection ? (
+                          <>
+                            저장된 자격증명은 있지만 Naver API 인증이 확인되지 않았습니다.
+                            <br />
+                            자격증명을 다시 확인해 주세요.
+                          </>
                         ) : naverErrorConnection ? (
                           <>
                             연결 상태가 오류입니다.
@@ -5319,7 +5356,7 @@ export default function ReportBuilderPage() {
                         }}
                       >
                         Secret Key와 Access License는 저장 후 다시 표시하지 않습니다.
-                        입력값은 Server API에서 다시 검증한 뒤 암호화 저장됩니다.
+                        Naver Search Ads API 인증에 성공한 경우에만 암호화 저장됩니다.
                       </div>
 
                       {naverMediaConnectionFormError ? (
@@ -5923,7 +5960,9 @@ export default function ReportBuilderPage() {
                               ? "● 선택됨"
                               : usableNaverConnections.length > 0
                                 ? "선택 가능"
-                                : "연결 필요"}
+                                : naverUnverifiedConnection
+                                  ? "인증 확인 필요"
+                                  : "연결 필요"}
                           </span>
                         </div>
 
@@ -5964,8 +6003,9 @@ export default function ReportBuilderPage() {
                             {selectedAdvertiserNaverConnections.map(
                               (connection) => {
                                 const selectable =
-                                  connection.status === "active" &&
-                                  connection.has_credentials;
+                                  isVerifiedNaverConnection(
+                                    connection
+                                  );
 
                                 const statusLabel =
                                   connection.status === "disconnected"
@@ -5974,7 +6014,9 @@ export default function ReportBuilderPage() {
                                       ? "오류"
                                       : !connection.has_credentials
                                         ? "자격증명 필요"
-                                        : "사용 가능";
+                                        : !connection.last_verified_at
+                                          ? "인증 확인 필요"
+                                          : "사용 가능";
 
                                 return (
                                   <option
@@ -6018,7 +6060,9 @@ export default function ReportBuilderPage() {
                                 selectedNaverApiReportConnection.external_account_id
                               }`
                             : usableNaverConnections.length === 0
-                              ? "현재 사용할 수 있는 Naver Search Ads 연결이 없습니다."
+                              ? naverUnverifiedConnection
+                                ? "Naver API 인증이 확인되지 않아 이 연결을 사용할 수 없습니다."
+                                : "현재 사용할 수 있는 Naver Search Ads 연결이 없습니다."
                               : "사용할 연결을 선택하세요."}
                         </div>
                       </div>

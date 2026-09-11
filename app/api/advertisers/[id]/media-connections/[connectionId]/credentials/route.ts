@@ -19,8 +19,13 @@ import {
 } from "@/src/lib/media-sync/media-connection-request";
 import {
   MediaConnectionsRepositoryError,
+  requireMediaConnectionRecord,
   updateNaverSearchAdsCredentials,
 } from "@/src/lib/media-sync/media-connections-repository";
+import {
+  NaverSearchAdsApiError,
+  validateNaverSearchAdsCredentials,
+} from "@/src/lib/media-sync/naver-searchads-api";
 import {
   getUnexpectedMediaConnectionsRouteError,
   mapMediaConnectionAccessRouteError,
@@ -68,8 +73,9 @@ function routeErrorResponse(
  *   createdBy 등 임의 scope 값은 신뢰하지 않는다.
  * - workspaceId와 authorized advertiserId는 access resolver 결과만 사용한다.
  * - manage_connections 권한이 있는 사용자만 허용한다.
- * - credential은 서버에서 암호화한 뒤 저장한다.
- * - 네이버 API 호출, sync job 생성, ingestion 변경은 수행하지 않는다.
+ * - credential은 저장 전에 Naver Search Ads API로 최소 인증 검증한다.
+ * - 인증에 실패하면 기존 credential을 변경하지 않는다.
+ * - sync job 생성, ingestion 변경은 수행하지 않는다.
  */
 export async function PATCH(
   request: Request,
@@ -121,10 +127,78 @@ export async function PATCH(
         routeRequest,
       );
 
-    const connection =
-      await updateNaverSearchAdsCredentials(
-        repositoryInput,
+    const existingConnection =
+      await requireMediaConnectionRecord({
+        connectionId:
+          repositoryInput.connectionId,
+        workspaceId:
+          repositoryInput.workspaceId,
+        advertiserId:
+          repositoryInput.advertiserId,
+      });
+
+    if (
+      existingConnection.provider !==
+      "naver_searchad"
+    ) {
+      return jsonError(
+        400,
+        "UNSUPPORTED_PROVIDER",
       );
+    }
+
+    if (
+      repositoryInput.credentials.customerId !==
+      existingConnection.external_account_id
+    ) {
+      return jsonError(
+        400,
+        "NAVER_CUSTOMER_ID_MISMATCH",
+      );
+    }
+
+    let verification;
+
+    try {
+      verification =
+        await validateNaverSearchAdsCredentials(
+          repositoryInput.credentials,
+        );
+    } catch (error) {
+      if (
+        error instanceof
+        NaverSearchAdsApiError
+      ) {
+        return jsonError(
+          502,
+          "NAVER_VERIFICATION_FAILED",
+        );
+      }
+
+      throw error;
+    }
+
+    if (!verification.ok) {
+      const authenticationFailure =
+        verification.status === 401 ||
+        verification.status === 403;
+
+      return jsonError(
+        authenticationFailure ? 422 : 502,
+        authenticationFailure
+          ? "NAVER_AUTHENTICATION_FAILED"
+          : "NAVER_VERIFICATION_FAILED",
+      );
+    }
+
+    const verifiedAt =
+      new Date().toISOString();
+
+    const connection =
+      await updateNaverSearchAdsCredentials({
+        ...repositoryInput,
+        verifiedAt,
+      });
 
     const result =
       buildMediaConnectionCredentialsRouteSuccessResponse(

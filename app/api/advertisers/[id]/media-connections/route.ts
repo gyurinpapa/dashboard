@@ -15,6 +15,10 @@ import {
   MediaConnectionsRepositoryError,
 } from "@/src/lib/media-sync/media-connections-repository";
 import {
+  NaverSearchAdsApiError,
+  validateNaverSearchAdsCredentials,
+} from "@/src/lib/media-sync/naver-searchads-api";
+import {
   buildCreateMediaConnectionSuccessResponse,
   buildCreateNaverSearchAdsRepositoryInput,
   MediaConnectionsPostPolicyError,
@@ -241,10 +245,58 @@ export async function POST(
         parsedRequest,
       );
 
-    const connection =
-      await createNaverSearchAdsConnection(
-        repositoryInput,
+    if (
+      repositoryInput.credentials.customerId !==
+      repositoryInput.externalAccountId
+    ) {
+      return jsonError(
+        400,
+        "NAVER_CUSTOMER_ID_MISMATCH",
       );
+    }
+
+    let verification;
+
+    try {
+      verification =
+        await validateNaverSearchAdsCredentials(
+          repositoryInput.credentials,
+        );
+    } catch (error) {
+      if (
+        error instanceof
+        NaverSearchAdsApiError
+      ) {
+        return jsonError(
+          502,
+          "NAVER_VERIFICATION_FAILED",
+        );
+      }
+
+      throw error;
+    }
+
+    if (!verification.ok) {
+      const authenticationFailure =
+        verification.status === 401 ||
+        verification.status === 403;
+
+      return jsonError(
+        authenticationFailure ? 422 : 502,
+        authenticationFailure
+          ? "NAVER_AUTHENTICATION_FAILED"
+          : "NAVER_VERIFICATION_FAILED",
+      );
+    }
+
+    const verifiedAt =
+      new Date().toISOString();
+
+    const connection =
+      await createNaverSearchAdsConnection({
+        ...repositoryInput,
+        verifiedAt,
+      });
 
     const response =
       buildCreateMediaConnectionSuccessResponse(

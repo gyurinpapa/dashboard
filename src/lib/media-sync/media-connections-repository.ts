@@ -89,6 +89,7 @@ export type CreateNaverSearchAdsConnectionInput = {
   credentials: NaverSearchAdsCredentials;
   createdBy: string;
   meta?: MediaConnectionMeta;
+  verifiedAt?: string;
 };
 
 export type UpdateNaverSearchAdsCredentialsInput = {
@@ -96,6 +97,7 @@ export type UpdateNaverSearchAdsCredentialsInput = {
   workspaceId: string;
   advertiserId: string;
   credentials: NaverSearchAdsCredentials;
+  verifiedAt?: string;
 };
 
 export type UpdateMediaConnectionStatusInput = {
@@ -205,6 +207,28 @@ function normalizeOptionalString(
 
 function normalizeLastError(value: unknown): string | null {
   return normalizeOptionalString(value, "lastError", 2000);
+}
+
+function normalizeVerifiedAt(value: unknown): string {
+  const normalized = normalizeRequiredString(
+    value,
+    "verifiedAt",
+    100,
+  );
+
+  const timestamp = Date.parse(normalized);
+
+  if (
+    !Number.isFinite(timestamp) ||
+    new Date(timestamp).toISOString() !== normalized
+  ) {
+    throw new MediaConnectionsRepositoryError(
+      "INVALID_INPUT",
+      "verifiedAt must be an ISO timestamp.",
+    );
+  }
+
+  return normalized;
 }
 
 function isPlainObject(value: unknown): value is UnknownRecord {
@@ -751,7 +775,9 @@ export async function createVerifiedGoogleAdsConnection(
 }
 
 export async function createNaverSearchAdsConnection(
-  input: CreateNaverSearchAdsConnectionInput,
+  input: CreateNaverSearchAdsConnectionInput & {
+    verifiedAt: string;
+  },
 ): Promise<SafeMediaConnection> {
   const id = randomUUID();
 
@@ -781,7 +807,10 @@ export async function createNaverSearchAdsConnection(
     200,
   );
   const meta = normalizeSafeMeta(input.meta);
-  const now = new Date().toISOString();
+  const verifiedAt = normalizeVerifiedAt(
+    input.verifiedAt,
+  );
+  const now = verifiedAt;
 
   const credentialContext: MediaConnectionCredentialContext = {
     connectionId: id,
@@ -822,7 +851,7 @@ export async function createNaverSearchAdsConnection(
     status: "active" satisfies MediaConnectionStatus,
 
     connected_at: now,
-    last_verified_at: null,
+    last_verified_at: verifiedAt,
     last_sync_at: null,
     last_error: null,
 
@@ -864,7 +893,9 @@ export async function createNaverSearchAdsConnection(
 }
 
 export async function updateNaverSearchAdsCredentials(
-  input: UpdateNaverSearchAdsCredentialsInput,
+  input: UpdateNaverSearchAdsCredentialsInput & {
+    verifiedAt: string;
+  },
 ): Promise<SafeMediaConnection> {
   const existingRecord =
     await requireMediaConnectionRecord({
@@ -879,6 +910,10 @@ export async function updateNaverSearchAdsCredentials(
       "Only Naver Search Ads credentials can be updated at this stage.",
     );
   }
+
+  const verifiedAt = normalizeVerifiedAt(
+    input.verifiedAt,
+  );
 
   const credentialContext =
     createCredentialContext(existingRecord);
@@ -899,7 +934,7 @@ export async function updateNaverSearchAdsCredentials(
     );
   }
 
-  const now = new Date().toISOString();
+  const now = verifiedAt;
   const supabase = getSupabaseAdmin();
 
   const { data, error } = await supabase
@@ -909,7 +944,7 @@ export async function updateNaverSearchAdsCredentials(
       credential_version: CURRENT_CREDENTIAL_VERSION,
       status: "active",
       connected_at: existingRecord.connected_at ?? now,
-      last_verified_at: null,
+      last_verified_at: verifiedAt,
       last_error: null,
       updated_at: now,
     })

@@ -23,6 +23,9 @@ const TEST_CREDENTIALS = {
   secretKey: "synthetic-repository-secret-key",
 };
 
+const TEST_VERIFIED_AT =
+  "2026-09-12T00:00:00.000Z";
+
 type TestContext = {
   workspaceId: string;
   advertiserId: string;
@@ -67,7 +70,9 @@ function createTestContext(): TestContext {
 
 function createConnectionInput(
   context: TestContext,
-): CreateNaverSearchAdsConnectionInput {
+): CreateNaverSearchAdsConnectionInput & {
+  verifiedAt: string;
+} {
   return {
     workspaceId: context.workspaceId,
     advertiserId: context.advertiserId,
@@ -77,6 +82,7 @@ function createConnectionInput(
       ...TEST_CREDENTIALS,
     },
     createdBy: context.createdBy,
+    verifiedAt: TEST_VERIFIED_AT,
     meta: {
       timezone: "Asia/Seoul",
       currency: "KRW",
@@ -169,6 +175,11 @@ function assertSafeConnectionMatchesContext(
   assertCondition(
     connection.has_credentials === true,
     "Safe connection does not indicate stored credentials.",
+  );
+
+  assertCondition(
+    connection.last_verified_at === TEST_VERIFIED_AT,
+    "Verified media connection did not preserve verification authority.",
   );
 
   assertSafeConnectionDoesNotExposeSecrets(connection);
