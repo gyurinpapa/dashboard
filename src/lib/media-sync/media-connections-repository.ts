@@ -96,6 +96,8 @@ export type UpdateNaverSearchAdsCredentialsInput = {
   connectionId: string;
   workspaceId: string;
   advertiserId: string;
+  externalAccountId: string;
+  externalAccountName: string | null;
   credentials: NaverSearchAdsCredentials;
   verifiedAt?: string;
 };
@@ -911,12 +913,34 @@ export async function updateNaverSearchAdsCredentials(
     );
   }
 
+  const externalAccountId =
+    normalizeRequiredString(
+      input.externalAccountId,
+      "externalAccountId",
+      300,
+    );
+
+  const externalAccountName =
+    normalizeOptionalString(
+      input.externalAccountName,
+      "externalAccountName",
+      500,
+    );
+
   const verifiedAt = normalizeVerifiedAt(
     input.verifiedAt,
   );
 
+  const externalAccountChanged =
+    existingRecord.external_account_id !==
+    externalAccountId;
+
   const credentialContext =
-    createCredentialContext(existingRecord);
+    createCredentialContext({
+      ...existingRecord,
+      external_account_id:
+        externalAccountId,
+    });
 
   let credentialCiphertext: string;
 
@@ -940,11 +964,25 @@ export async function updateNaverSearchAdsCredentials(
   const { data, error } = await supabase
     .from(MEDIA_CONNECTIONS_TABLE)
     .update({
-      credential_ciphertext: credentialCiphertext,
-      credential_version: CURRENT_CREDENTIAL_VERSION,
+      external_account_id:
+        externalAccountId,
+      external_account_name:
+        externalAccountName,
+      credential_ciphertext:
+        credentialCiphertext,
+      credential_version:
+        CURRENT_CREDENTIAL_VERSION,
       status: "active",
-      connected_at: existingRecord.connected_at ?? now,
-      last_verified_at: verifiedAt,
+      connected_at:
+        externalAccountChanged
+          ? now
+          : existingRecord.connected_at ?? now,
+      last_verified_at:
+        verifiedAt,
+      last_sync_at:
+        externalAccountChanged
+          ? null
+          : existingRecord.last_sync_at,
       last_error: null,
       updated_at: now,
     })
@@ -957,8 +995,16 @@ export async function updateNaverSearchAdsCredentials(
   credentialCiphertext = "";
 
   if (error) {
+    if (isUniqueViolation(error)) {
+      throw new MediaConnectionsRepositoryError(
+        "CONNECTION_ALREADY_EXISTS",
+        "A media connection already exists for this advertiser, provider, and account.",
+        { cause: error },
+      );
+    }
+
     throw wrapDatabaseError(
-      "Media connection credentials could not be updated.",
+      "Media connection account and credentials could not be updated.",
       error,
     );
   }

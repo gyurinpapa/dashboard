@@ -45,6 +45,10 @@ function createRequest(
     advertiserId: ADVERTISER_ID,
     connectionId: CONNECTION_ID,
     provider: "naver_searchad",
+    externalAccountId:
+      "fixture-customer-id",
+    externalAccountName:
+      "Fixture Naver Search Ads",
     credentials: {
       customerId: "fixture-customer-id",
       accessLicense:
@@ -155,6 +159,10 @@ function assertRepositoryInputForAllowedRole(
       connectionId: CONNECTION_ID,
       workspaceId: WORKSPACE_ID,
       advertiserId: ADVERTISER_ID,
+      externalAccountId:
+        request.externalAccountId,
+      externalAccountName:
+        request.externalAccountName,
       credentials:
         request.credentials,
     },

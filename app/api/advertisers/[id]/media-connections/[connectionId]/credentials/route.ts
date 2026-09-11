@@ -73,8 +73,8 @@ function routeErrorResponse(
  *   createdBy 등 임의 scope 값은 신뢰하지 않는다.
  * - workspaceId와 authorized advertiserId는 access resolver 결과만 사용한다.
  * - manage_connections 권한이 있는 사용자만 허용한다.
- * - credential은 저장 전에 Naver Search Ads API로 최소 인증 검증한다.
- * - 인증에 실패하면 기존 credential을 변경하지 않는다.
+ * - 외부 광고계정 ID와 credential은 저장 전에 Naver Search Ads API로 최소 인증 검증한다.
+ * - 인증에 실패하면 기존 계정 ID와 credential을 변경하지 않는다.
  * - sync job 생성, ingestion 변경은 수행하지 않는다.
  */
 export async function PATCH(
@@ -149,7 +149,7 @@ export async function PATCH(
 
     if (
       repositoryInput.credentials.customerId !==
-      existingConnection.external_account_id
+      repositoryInput.externalAccountId
     ) {
       return jsonError(
         400,

@@ -86,6 +86,8 @@ export type ReplaceNaverSearchAdsCredentialsRequest = {
   advertiserId: string;
   connectionId: string;
   provider: typeof NAVER_SEARCH_ADS_PROVIDER;
+  externalAccountId: string;
+  externalAccountName: string | null;
   credentials: NaverSearchAdsCredentials;
 };
 
@@ -440,6 +442,16 @@ export function parseReplaceMediaConnectionCredentialsRequest(
       ),
     provider: normalizeSupportedProvider(
       body.provider,
+    ),
+    externalAccountId: normalizeRequiredString(
+      body.externalAccountId,
+      "externalAccountId",
+      MAX_EXTERNAL_ACCOUNT_ID_LENGTH,
+    ),
+    externalAccountName: normalizeOptionalString(
+      body.externalAccountName,
+      "externalAccountName",
+      MAX_EXTERNAL_ACCOUNT_NAME_LENGTH,
     ),
     credentials: normalizeCredentials(
       body.credentials,

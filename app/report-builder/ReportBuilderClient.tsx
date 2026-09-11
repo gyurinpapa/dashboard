@@ -1820,9 +1820,15 @@ export default function ReportBuilderPage() {
     closeGoogleAdsConnectionForm();
     setNaverMediaConnectionFormMode("replace");
     setNaverMediaConnectionTargetId(connection.id);
-    setNaverExternalAccountIdInput("");
-    setNaverExternalAccountNameInput("");
-    setNaverCustomerIdInput("");
+    setNaverExternalAccountIdInput(
+      connection.external_account_id
+    );
+    setNaverExternalAccountNameInput(
+      connection.external_account_name ?? ""
+    );
+    setNaverCustomerIdInput(
+      connection.external_account_id
+    );
     setNaverAccessLicenseInput("");
     setNaverSecretKeyInput("");
     setNaverCustomerIdUnlocked(false);
@@ -1870,9 +1876,33 @@ export default function ReportBuilderPage() {
         connection.provider === "naver_searchad"
     );
 
-    const customerId = naverCustomerIdInput.trim();
-    const accessLicense = naverAccessLicenseInput.trim();
-    const secretKey = naverSecretKeyInput.trim();
+    const externalAccountId =
+      naverExternalAccountIdInput.trim();
+    const externalAccountName =
+      naverExternalAccountNameInput.trim();
+    const customerId =
+      naverCustomerIdInput.trim();
+    const accessLicense =
+      naverAccessLicenseInput.trim();
+    const secretKey =
+      naverSecretKeyInput.trim();
+
+    if (!externalAccountId) {
+      setNaverMediaConnectionFormError(
+        "외부 광고계정 ID를 입력하세요."
+      );
+      return;
+    }
+
+    if (
+      externalAccountId.length > 300 ||
+      externalAccountName.length > 500
+    ) {
+      setNaverMediaConnectionFormError(
+        "광고계정 식별값 길이가 허용 범위를 초과했습니다."
+      );
+      return;
+    }
 
     if (!customerId || !accessLicense || !secretKey) {
       setNaverMediaConnectionFormError(
@@ -1892,6 +1922,13 @@ export default function ReportBuilderPage() {
       return;
     }
 
+    if (customerId !== externalAccountId) {
+      setNaverMediaConnectionFormError(
+        "Customer ID와 외부 광고계정 ID가 일치해야 합니다."
+      );
+      return;
+    }
+
     let requestUrl =
       `/api/advertisers/${encodeURIComponent(advertiserId)}/media-connections`;
     let method: "POST" | "PATCH" = "POST";
@@ -1901,21 +1938,6 @@ export default function ReportBuilderPage() {
       if (scopedNaverConnections.length !== 0) {
         setNaverMediaConnectionFormError(
           "기존 Naver Search Ads 연결 기록이 있어 새 연결을 자동 생성하지 않습니다."
-        );
-        return;
-      }
-
-      const externalAccountId = naverExternalAccountIdInput.trim();
-      const externalAccountName = naverExternalAccountNameInput.trim();
-
-      if (!externalAccountId) {
-        setNaverMediaConnectionFormError("외부 광고계정 ID를 입력하세요.");
-        return;
-      }
-
-      if (externalAccountId.length > 300 || externalAccountName.length > 500) {
-        setNaverMediaConnectionFormError(
-          "광고계정 식별값 길이가 허용 범위를 초과했습니다."
         );
         return;
       }
@@ -1957,6 +1979,9 @@ export default function ReportBuilderPage() {
         `/media-connections/${encodeURIComponent(targetConnection.id)}/credentials`;
       requestBody = {
         provider: "naver_searchad",
+        externalAccountId,
+        externalAccountName:
+          externalAccountName || null,
         credentials: {
           customerId,
           accessLicense,
@@ -2061,6 +2086,8 @@ export default function ReportBuilderPage() {
         responseConnection.advertiser_id !== advertiserId ||
         responseConnection.workspace_id !== currentWorkspaceId ||
         responseConnection.provider !== "naver_searchad" ||
+        responseConnection.external_account_id !==
+          externalAccountId ||
         (naverMediaConnectionFormMode === "replace" &&
           responseConnection.id !== naverMediaConnectionTargetId)
       ) {
@@ -2080,7 +2107,7 @@ export default function ReportBuilderPage() {
       setLocalMsg(
         completedMode === "create"
           ? "Naver Search Ads 인증을 확인하고 연결 정보를 안전하게 저장했습니다."
-          : "Naver Search Ads 인증을 확인하고 자격증명을 안전하게 교체했습니다."
+          : "Naver Search Ads 인증을 확인하고 연결 계정과 자격증명을 안전하게 변경했습니다."
       );
     } catch (error) {
       console.warn(
@@ -4570,8 +4597,8 @@ export default function ReportBuilderPage() {
                             style={{ padding: "8px 10px", fontSize: 11 }}
                           >
                             {singleNaverConnection?.has_credentials
-                              ? "자격증명 변경"
-                              : "자격증명 등록"}
+                              ? "연결 정보 변경"
+                              : "연결 정보 등록"}
                           </button>
                         ) : null}
 
@@ -5106,7 +5133,7 @@ export default function ReportBuilderPage() {
                           >
                             {naverMediaConnectionFormMode === "create"
                               ? "Naver Search Ads 연결"
-                              : "Naver Search Ads 자격증명 변경"}
+                              : "Naver Search Ads 연결 정보 변경"}
                           </div>
                           <div
                             style={{
@@ -5118,7 +5145,7 @@ export default function ReportBuilderPage() {
                           >
                             {naverMediaConnectionFormMode === "create"
                               ? "선택한 광고주에 새 Naver Search Ads connection을 저장합니다."
-                              : "기존 secret은 표시하지 않습니다. 새 자격증명 3개를 모두 다시 입력합니다."}
+                              : "외부 광고계정 ID와 계정 표시명을 수정할 수 있습니다. Secret은 다시 표시하지 않으므로 새 자격증명 3개를 모두 입력합니다."}
                           </div>
                         </div>
 
@@ -5147,9 +5174,9 @@ export default function ReportBuilderPage() {
                             color: "#c9c6df",
                           }}
                         >
-                          대상 계정: {naverFormTargetConnection.external_account_name || "-"}
+                          현재 등록 계정: {naverFormTargetConnection.external_account_name || "-"}
                           <br />
-                          외부 광고계정 ID: {naverFormTargetConnection.external_account_id}
+                          현재 외부 광고계정 ID: {naverFormTargetConnection.external_account_id}
                         </div>
                       ) : null}
 
@@ -5161,8 +5188,7 @@ export default function ReportBuilderPage() {
                           marginTop: 12,
                         }}
                       >
-                        {naverMediaConnectionFormMode === "create" ? (
-                          <>
+                        <>
                             <label style={{ minWidth: 0 }}>
                               <div
                                 style={{
@@ -5226,8 +5252,7 @@ export default function ReportBuilderPage() {
                                 }}
                               />
                             </label>
-                          </>
-                        ) : null}
+                        </>
 
                         <label style={{ minWidth: 0 }}>
                           <div
@@ -5403,7 +5428,7 @@ export default function ReportBuilderPage() {
                             ? "저장 중..."
                             : naverMediaConnectionFormMode === "create"
                             ? "안전하게 연결"
-                            : "자격증명 교체"}
+                            : "연결 정보 변경"}
                         </button>
                       </div>
                     </div>

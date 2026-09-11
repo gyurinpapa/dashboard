@@ -85,7 +85,7 @@ function normalizeRequiredContextString(
  * 안전 원칙:
  * - workspaceId는 request body가 아닌 access 결과에서만 가져온다.
  * - advertiserId는 URL 검증 결과와 access 결과가 일치해야 한다.
- * - connectionId와 credential은 검증된 request parser 결과만 사용한다.
+ * - connectionId, 외부 광고계정 ID, credential은 검증된 request parser 결과만 사용한다.
  * - createdBy 또는 임의 userId는 repository 입력에 전달하지 않는다.
  * - manage_connections 권한이 없으면 repository 입력을 생성하지 않는다.
  */
@@ -143,6 +143,10 @@ export function buildReplaceNaverSearchAdsCredentialsRepositoryInput(
     connectionId,
     workspaceId,
     advertiserId: accessAdvertiserId,
+    externalAccountId:
+      request.externalAccountId,
+    externalAccountName:
+      request.externalAccountName,
     credentials: request.credentials,
   };
 }
