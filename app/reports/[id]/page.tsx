@@ -2217,6 +2217,8 @@ export default function ReportDetailPage() {
     useState<string>("");
   const lastLoadedMediaSyncSettingsKeyRef = useRef<string>("");
   const [mediaSyncJob, setMediaSyncJob] = useState<ReportMediaSyncJob | null>(null);
+  const [mediaSyncJobs, setMediaSyncJobs] =
+    useState<ReportMediaSyncJob[]>([]);
   const [mediaSyncProviders, setMediaSyncProviders] =
     useState<ReportMediaSyncProviderStatus[]>([]);
   const [
@@ -2227,17 +2229,6 @@ export default function ReportDetailPage() {
   );
   const [loadingMediaSyncJob, setLoadingMediaSyncJob] = useState(false);
   const [requestingMediaSync, setRequestingMediaSync] = useState(false);
-
-  const mediaSyncSegmentUi =
-    useMemo(
-      () =>
-        getMediaSyncSegmentUiState(
-          mediaSyncJob,
-        ),
-      [
-        mediaSyncJob,
-      ],
-    );
 
   const [creativesMap, setCreativesMap] = useState<Record<string, string>>({});
   const creativesBatchIdRef = useRef<string | null | undefined>(undefined);
@@ -3736,6 +3727,7 @@ export default function ReportDetailPage() {
     async (silent = false) => {
       if (!reportId || !isApiReport) {
         setMediaSyncJob(null);
+        setMediaSyncJobs([]);
         setMediaSyncProviders([]);
         setMediaSyncAutomatic(
           EMPTY_REPORT_AUTOMATIC_SYNC,
@@ -3764,12 +3756,19 @@ export default function ReportDetailPage() {
           return null;
         }
 
+        const recentJobs =
+          Array.isArray(json?.jobs)
+            ? (json.jobs as ReportMediaSyncJob[])
+            : [];
+
         const activeJob =
           (json?.active_job as ReportMediaSyncJob | null) ?? null;
+
         const latestJob =
-          Array.isArray(json?.jobs) && json.jobs.length > 0
-            ? (json.jobs[0] as ReportMediaSyncJob)
+          recentJobs.length > 0
+            ? recentJobs[0]
             : null;
+
         const nextJob = activeJob ?? latestJob;
 
         const providerSync = Array.isArray(json?.provider_sync)
@@ -3782,6 +3781,7 @@ export default function ReportDetailPage() {
           );
 
         setMediaSyncJob(nextJob);
+        setMediaSyncJobs(recentJobs);
         setMediaSyncProviders(providerSync);
         setMediaSyncAutomatic(
           automaticSync,
@@ -3804,6 +3804,7 @@ export default function ReportDetailPage() {
   useEffect(() => {
     if (!reportId || !isApiReport) {
       setMediaSyncJob(null);
+      setMediaSyncJobs([]);
       setMediaSyncProviders([]);
       setMediaSyncAutomatic(
         EMPTY_REPORT_AUTOMATIC_SYNC,
@@ -5253,106 +5254,6 @@ export default function ReportDetailPage() {
                   </div>
                 </div>
 
-                {mediaSyncSegmentUi ? (
-                  <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <div className="text-sm font-black text-white">
-                          API 동기화 진행
-                        </div>
-
-                        <div className="mt-1 text-xs leading-5 text-[#bbb8d4]">
-                          데이터를 시작일 기준 최대 7일 단위로 나누어 순차 동기화합니다.
-                        </div>
-                      </div>
-
-                      <div className="text-sm font-black text-white">
-                        {mediaSyncSegmentUi.completedCount}
-                        {" / "}
-                        {mediaSyncSegmentUi.totalCount}
-                        {" 구간 완료"}
-                      </div>
-                    </div>
-
-                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
-                      <div
-                        className="h-full rounded-full bg-[#7FA6C4] transition-[width] duration-300"
-                        style={{
-                          width: `${mediaSyncSegmentUi.completionPercent}%`,
-                        }}
-                      />
-                    </div>
-
-                    <div className="mt-4 grid gap-2">
-                      {mediaSyncSegmentUi.items.map((item) => {
-                        const isDone =
-                          item.status ===
-                          "완료";
-
-                        const isProcessing =
-                          item.status ===
-                          "동기화 중";
-
-                        const isFailed =
-                          item.status ===
-                          "실패";
-
-                        const marker =
-                          isDone
-                            ? "✓"
-                            : isProcessing
-                              ? "●"
-                              : isFailed
-                                ? "!"
-                                : "○";
-
-                        const statusClassName =
-                          isDone
-                            ? "text-emerald-200"
-                            : isProcessing
-                              ? "text-[#B7D7E3]"
-                              : isFailed
-                                ? "text-[#ffb2c0]"
-                                : "text-white/45";
-
-                        return (
-                          <div
-                            key={item.index}
-                            className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-white/[0.07] bg-black/10 px-3 py-2.5 text-xs"
-                          >
-                            <span
-                              className={`w-4 text-center font-black ${statusClassName}`}
-                              aria-hidden="true"
-                            >
-                              {marker}
-                            </span>
-
-                            <span className="min-w-[44px] font-black text-white/90">
-                              {item.displayNumber}
-                              구간
-                            </span>
-
-                            <span className="font-semibold text-white/60">
-                              {formatMediaSyncSegmentDate(
-                                item.dateFrom,
-                              )}
-                              {" ~ "}
-                              {formatMediaSyncSegmentDate(
-                                item.dateTo,
-                              )}
-                            </span>
-
-                            <span
-                              className={`ml-auto font-black ${statusClassName}`}
-                            >
-                              {item.status}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : null}
 
                 <div className="mt-3 grid gap-3 xl:grid-cols-3">
                   {mediaSyncProviders.map((provider) => {
@@ -5365,6 +5266,19 @@ export default function ReportDetailPage() {
                       0,
                       Math.min(100, Number(job?.progress ?? 0)),
                     );
+
+                    const providerSegmentJob =
+                      job?.id
+                        ? mediaSyncJobs.find(
+                            (candidate) =>
+                              candidate.id === job.id,
+                          ) ?? null
+                        : null;
+
+                    const providerSegmentUi =
+                      getMediaSyncSegmentUiState(
+                        providerSegmentJob,
+                      );
 
                     return (
                       <div
@@ -5415,12 +5329,130 @@ export default function ReportDetailPage() {
                           </div>
                         </div>
 
-                        <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#15112f]">
-                          <div
-                            className="h-full rounded-full bg-gradient-to-r from-[#21dff3] to-[#7c5cff] transition-all"
-                            style={{ width: `${progress}%` }}
-                          />
-                        </div>
+                        {providerSegmentUi ? (
+                          <div className="mt-3 rounded-xl border border-white/[0.08] bg-black/10 p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="text-xs font-black text-[#f7f7ff]">
+                                동기화 구간
+                              </div>
+
+                              <div className="text-xs font-black text-[#f7f7ff]">
+                                {providerSegmentUi.completedCount}
+                                {" / "}
+                                {providerSegmentUi.totalCount}
+                                {" 구간 완료"}
+                              </div>
+                            </div>
+
+                            <div className="mt-1 text-[11px] leading-5 text-[#8f8ca8]">
+                              데이터를 시작일 기준 최대 7일 단위로 나누어 순차 동기화합니다.
+                            </div>
+
+                            <div className="mt-2.5 h-2 overflow-hidden rounded-full bg-[#15112f]">
+                              <div
+                                className="h-full rounded-full bg-[#7FA6C4] transition-[width] duration-300"
+                                style={{
+                                  width: `${providerSegmentUi.completionPercent}%`,
+                                }}
+                              />
+                            </div>
+
+                            <div className="mt-3 grid gap-1.5">
+                              {providerSegmentUi.items.map((item) => {
+                                const isDone =
+                                  item.status === "완료";
+
+                                const isProcessing =
+                                  item.status === "동기화 중";
+
+                                const isFailed =
+                                  item.status === "실패";
+
+                                const marker =
+                                  isDone
+                                    ? "✓"
+                                    : isProcessing
+                                      ? "●"
+                                      : isFailed
+                                        ? "!"
+                                        : "○";
+
+                                const statusClassName =
+                                  isDone
+                                    ? "text-emerald-200"
+                                    : isProcessing
+                                      ? "text-[#B7D7E3]"
+                                      : isFailed
+                                        ? "text-[#ffb2c0]"
+                                        : "text-white/45";
+
+                                return (
+                                  <div
+                                    key={item.index}
+                                    className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-white/[0.06] bg-white/[0.025] px-2.5 py-2 text-[11px]"
+                                  >
+                                    <span
+                                      className={`w-3 text-center font-black ${statusClassName}`}
+                                      aria-hidden="true"
+                                    >
+                                      {marker}
+                                    </span>
+
+                                    <span className="min-w-[38px] font-black text-white/90">
+                                      {item.displayNumber}
+                                      구간
+                                    </span>
+
+                                    <span className="font-semibold text-white/55">
+                                      {formatMediaSyncSegmentDate(
+                                        item.dateFrom,
+                                      )}
+                                      {" ~ "}
+                                      {formatMediaSyncSegmentDate(
+                                        item.dateTo,
+                                      )}
+                                    </span>
+
+                                    <span
+                                      className={`ml-auto font-black ${statusClassName}`}
+                                    >
+                                      {item.status}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            <div className="mt-3 flex items-center justify-between border-t border-white/[0.07] pt-2 text-[11px]">
+                              <span className="font-extrabold text-[#8f8ca8]">
+                                최종 처리
+                              </span>
+
+                              <span
+                                className={
+                                  job?.status === "done"
+                                    ? "font-black text-emerald-200"
+                                    : job?.status === "failed"
+                                      ? "font-black text-[#ffb2c0]"
+                                      : "font-black text-[#f7f7ff]"
+                                }
+                              >
+                                {getProviderSyncStatusText(
+                                  provider,
+                                )}
+                              </span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#15112f]">
+                            <div
+                              className="h-full rounded-full bg-gradient-to-r from-[#21dff3] to-[#7c5cff] transition-all"
+                              style={{
+                                width: `${progress}%`,
+                              }}
+                            />
+                          </div>
+                        )}
 
                         <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                           <div>
