@@ -37,6 +37,18 @@ function jsonError(status: number, message: string, extra?: Record<string, any>)
   );
 }
 
+function logDeleteTiming(
+  step: string,
+  startedAt: number,
+  extra?: Record<string, any>
+) {
+  console.info("[reports/delete][timing]", {
+    step,
+    duration_ms: Date.now() - startedAt,
+    ...(extra ?? {}),
+  });
+}
+
 function asString(v: any) {
   if (v == null) return "";
   return String(v).trim();
@@ -104,8 +116,13 @@ async function resolveDeletePermission(
   userId: string,
   workspaceId: string
 ): Promise<DeletePermission> {
+  const roleStartedAt = Date.now();
   const role = await getWorkspaceRole(userId, workspaceId);
+  logDeleteTiming("permission_workspace_role", roleStartedAt);
+
+  const trueMasterStartedAt = Date.now();
   const isTrueMaster = await isTrueMasterUser(userId);
+  logDeleteTiming("permission_true_master", trueMasterStartedAt);
 
   if (isTrueMaster) {
     return {
@@ -247,10 +264,16 @@ async function deleteOptionalTableByReportId(
   reportId: string,
   step: string
 ) {
+  const startedAt = Date.now();
+
   const { error } = await supabaseAdmin
     .from(tableName)
     .delete()
     .eq("report_id", reportId);
+
+  logDeleteTiming(step, startedAt, {
+    db_error: Boolean(error),
+  });
 
   if (error && !isMissingTableError(error.message || "")) {
     return {
@@ -307,6 +330,8 @@ async function deleteReportRowsByReportIdInBatches(reportId: string) {
   let deletedCount = 0;
 
   for (let guard = 0; guard < 1000; guard += 1) {
+    const batchStartedAt = Date.now();
+
     const { data, error } = await supabaseAdmin.rpc(
       "delete_report_rows_batch",
       {
@@ -314,6 +339,11 @@ async function deleteReportRowsByReportIdInBatches(reportId: string) {
         p_limit: REPORT_ROWS_DELETE_BATCH_SIZE,
       }
     );
+
+    logDeleteTiming("delete_report_rows_batch", batchStartedAt, {
+      batch_index: guard,
+      db_error: Boolean(error),
+    });
 
     if (error) {
       if (isMissingTableError(error.message || "")) {
@@ -418,11 +448,17 @@ async function deleteSingleReport(workspaceId: string, reportId: string) {
     }
   }
 
+  const reportDeleteStartedAt = Date.now();
+
   const { error: reportDeleteError } = await supabaseAdmin
     .from("reports")
     .delete()
     .eq("id", reportId)
     .eq("workspace_id", workspaceId);
+
+  logDeleteTiming("delete_reports", reportDeleteStartedAt, {
+    db_error: Boolean(reportDeleteError),
+  });
 
   if (reportDeleteError) {
     return {
@@ -439,7 +475,13 @@ async function deleteSingleReport(workspaceId: string, reportId: string) {
 
 export async function POST(req: Request) {
   try {
+    const requestStartedAt = Date.now();
+
+    const authStartedAt = Date.now();
     const { user, error: authErr } = await resolveUser(req);
+    logDeleteTiming("auth", authStartedAt, {
+      ok: !authErr && Boolean(user),
+    });
 
     if (authErr || !user) {
       return jsonError(401, "UNAUTHORIZED");
@@ -463,7 +505,12 @@ export async function POST(req: Request) {
       return jsonError(400, "REPORT_IDS_REQUIRED");
     }
 
+    const permissionStartedAt = Date.now();
     const permission = await resolveDeletePermission(user.id, workspace_id);
+    logDeleteTiming("permission_total", permissionStartedAt, {
+      allowed: permission.allowed,
+      scope: permission.scope,
+    });
 
     if (!permission.allowed) {
       return jsonError(403, "FORBIDDEN_DELETE_PERMISSION", {
@@ -472,12 +519,23 @@ export async function POST(req: Request) {
       });
     }
 
+    const fetchDeletableStartedAt = Date.now();
+
     const deletableReports = await fetchDeletableReports({
       workspaceId: workspace_id,
       requestedIds: report_ids,
       actorUserId: asString(user.id),
       permission,
     });
+
+    logDeleteTiming(
+      "fetch_deletable_reports",
+      fetchDeletableStartedAt,
+      {
+        requested_count: report_ids.length,
+        matched_count: deletableReports.length,
+      }
+    );
 
     const deletableIds = deletableReports.map((report) => report.id);
 
@@ -493,7 +551,16 @@ export async function POST(req: Request) {
 
     for (const idsChunk of chunkArray(deletableIds, DELETE_CHUNK_SIZE)) {
       for (const reportId of idsChunk) {
+        const singleReportStartedAt = Date.now();
         const result = await deleteSingleReport(workspace_id, reportId);
+
+        logDeleteTiming(
+          "delete_single_report_total",
+          singleReportStartedAt,
+          {
+            ok: result.ok,
+          }
+        );
 
         if (result.ok) {
           deletedIds.push(reportId);
@@ -516,6 +583,12 @@ export async function POST(req: Request) {
       if (deletedSet.has(id)) return false;
       if (failedSet.has(id)) return false;
       return true;
+    });
+
+    logDeleteTiming("request_total", requestStartedAt, {
+      requested_count: report_ids.length,
+      deleted_count: deletedIds.length,
+      failed_count: failed.length,
     });
 
     return NextResponse.json({
