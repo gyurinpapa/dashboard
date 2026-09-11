@@ -1935,12 +1935,83 @@ function reportPeriodToStableKey(v: ReportPeriod | null | undefined) {
   });
 }
 
+function buildApiAuthoritativeReportPeriod(
+  report: ReportDetail | null | undefined,
+): ReportPeriod | null {
+  if (getReportDataSourceKind(report) !== "api") {
+    return null;
+  }
+
+  const meta =
+    report?.meta && typeof report.meta === "object"
+      ? report.meta
+      : {};
+
+  const canonicalIdentity =
+    normalizeCanonicalPublicIdentity(
+      meta?.public_identity,
+    );
+
+  if (
+    canonicalIdentity?.source_type === "api" &&
+    canonicalIdentity.period_type !== "cumulative"
+  ) {
+    const canonicalRange =
+      deriveCanonicalPeriodDateRange(
+        canonicalIdentity.period_type,
+        canonicalIdentity.period_key,
+      );
+
+    if (
+      canonicalRange?.dateFrom &&
+      canonicalRange?.dateTo
+    ) {
+      return {
+        preset: "custom",
+        startDate: canonicalRange.dateFrom,
+        endDate: canonicalRange.dateTo,
+      };
+    }
+  }
+
+  const mediaSyncDateFrom =
+    normalizeYmdInput(
+      meta?.media_sync?.date_from,
+    );
+
+  const mediaSyncDateTo =
+    normalizeYmdInput(
+      meta?.media_sync?.date_to,
+    );
+
+  if (
+    mediaSyncDateFrom &&
+    mediaSyncDateTo &&
+    mediaSyncDateFrom <= mediaSyncDateTo
+  ) {
+    return {
+      preset: "custom",
+      startDate: mediaSyncDateFrom,
+      endDate: mediaSyncDateTo,
+    };
+  }
+
+  return null;
+}
+
 function buildInitialReportPeriod(args: {
   report: ReportDetail | null;
   reportId: string;
   rowsRange: { startDate: string; endDate: string } | null;
 }): ReportPeriod | null {
   const { report, reportId, rowsRange } = args;
+
+  const apiAuthoritativePeriod =
+    buildApiAuthoritativeReportPeriod(report);
+
+  if (apiAuthoritativePeriod) {
+    return apiAuthoritativePeriod;
+  }
 
   const meta =
     report?.meta && typeof report.meta === "object" ? report.meta : {};
