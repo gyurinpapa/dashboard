@@ -221,9 +221,12 @@ function getHeaderLabels(reportType?: ReportType): HeaderLabels {
 const SummaryTableHeader = memo(function SummaryTableHeader({
   mode,
   labels,
-}: HeaderProps) {
+  deltaRowModel,
+}: HeaderProps & {
+  deltaRowModel: DeltaRowModel | null;
+}) {
   return (
-    <thead className="sticky top-0 z-10 border-b border-[var(--nature-border-blue)] bg-[var(--nature-table-head-blue)]">
+    <thead className="sticky top-0 z-20 border-b border-[var(--nature-border-blue)] bg-[var(--nature-table-head-blue)]">
       <tr>
         <th className={TABLE_HEAD_FIRST_TH_CLASS}>{labels.month}</th>
         <th className={TABLE_HEAD_TH_CLASS}>{labels.impressions}</th>
@@ -243,6 +246,10 @@ const SummaryTableHeader = memo(function SummaryTableHeader({
           <th className={TABLE_HEAD_TH_CLASS}>{labels.roas}</th>
         )}
       </tr>
+
+      <SummaryTableDeltaRow
+        model={deltaRowModel}
+      />
     </thead>
   );
 });
@@ -582,11 +589,13 @@ function SummaryTableComponent({ reportType = "commerce", byMonth }: Props) {
   return (
     <div className={WRAPPER_CLASS_NAME}>
       <table className={mode.tableClassName}>
-        <SummaryTableHeader mode={mode} labels={headerLabels} />
+        <SummaryTableHeader
+          mode={mode}
+          labels={headerLabels}
+          deltaRowModel={deltaRowModel}
+        />
 
         <tbody>
-          <SummaryTableDeltaRow model={deltaRowModel} />
-
           {monthRowModels.map((model) => (
             <SummaryTableMonthRow key={model.rowKey} model={model} />
           ))}

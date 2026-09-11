@@ -490,11 +490,17 @@ const SLIDE3_TABLE_HEAD_CLASS =
 
 const WeeklyTableHead = memo(function WeeklyTableHead({
   mode,
+  prevRow,
+  lastRow,
 }: {
   mode: MetricMode;
+  prevRow: any;
+  lastRow: any;
 }) {
   return (
-    <thead className={SLIDE2_TABLE_HEAD_CLASS}>
+    <thead
+      className={`${SLIDE2_TABLE_HEAD_CLASS} sticky top-0 z-20`}
+    >
       <tr>
         <th className={SLIDE2_FIRST_TH_CLASS}>Week</th>
         <th className={SLIDE2_TH_CLASS}>Impr</th>
@@ -508,6 +514,12 @@ const WeeklyTableHead = memo(function WeeklyTableHead({
         {mode.showRevenue && <th className={SLIDE2_TH_CLASS}>Revenue</th>}
         {mode.showRoas && <th className={SLIDE2_TH_CLASS}>ROAS</th>}
       </tr>
+
+      <WeeklyDeltaRow
+        mode={mode}
+        prevRow={prevRow}
+        lastRow={lastRow}
+      />
     </thead>
   );
 });
@@ -793,11 +805,13 @@ const WeeklyPerformanceTable = memo(function WeeklyPerformanceTable({
     <div className={TABLE_SURFACE_CLASS}>
       <table className={mode.tableClassName}>
         <MetricColGroup mode={mode} />
-        <WeeklyTableHead mode={mode} />
+        <WeeklyTableHead
+          mode={mode}
+          prevRow={prevRow}
+          lastRow={lastRow}
+        />
 
         <tbody>
-          <WeeklyDeltaRow mode={mode} prevRow={prevRow} lastRow={lastRow} />
-
           {rows.map((row) => (
             <WeeklyPerformanceRow
               key={row.key}
@@ -1880,7 +1894,11 @@ function SummarySectionComponent(props: Props) {
     const sortedWeeks = [...weeks].sort((a, b) =>
       weekSortKey(a).localeCompare(weekSortKey(b))
     );
-    const weeklyDisplayRows = buildWeeklyDisplayRows(sortedWeeks);
+
+    const weeklyDisplayRows =
+      buildWeeklyDisplayRows(
+        [...sortedWeeks].reverse(),
+      );
 
     return {
       prevWeekSorted: sortedWeeks.at(-2) ?? null,
@@ -3070,22 +3088,12 @@ function SummarySectionComponent(props: Props) {
 
               <div
                 data-summary-weekly-trend-chart="true"
-                className={`${CHART_SURFACE_CLASS} overflow-x-auto overscroll-x-contain [scrollbar-width:thin]`}
+                className={CHART_SURFACE_CLASS}
               >
-                <div
-                  style={{
-                    width:
-                      stableWeekChartData.length > 5
-                        ? `${(stableWeekChartData.length / 5) * 100}%`
-                        : "100%",
-                    minWidth: "100%",
-                  }}
-                >
-                  <SummaryChart
-                    reportType={reportType}
-                    data={stableWeekChartData}
-                  />
-                </div>
+                <SummaryChart
+                  reportType={reportType}
+                  data={stableWeekChartData}
+                />
               </div>
             </div>
           </div>
