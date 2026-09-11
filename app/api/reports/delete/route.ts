@@ -36,19 +36,6 @@ function jsonError(status: number, message: string, extra?: Record<string, any>)
     { status }
   );
 }
-
-function logDeleteTiming(
-  step: string,
-  startedAt: number,
-  extra?: Record<string, any>
-) {
-  console.info("[reports/delete][timing]", {
-    step,
-    duration_ms: Date.now() - startedAt,
-    ...(extra ?? {}),
-  });
-}
-
 function asString(v: any) {
   if (v == null) return "";
   return String(v).trim();
@@ -116,33 +103,8 @@ async function resolveDeletePermission(
   userId: string,
   workspaceId: string
 ): Promise<DeletePermission> {
-  const roleStartedAt = Date.now();
-  const rolePromise = getWorkspaceRole(userId, workspaceId).then(
-    (value) => {
-      logDeleteTiming("permission_workspace_role", roleStartedAt);
-      return value;
-    },
-    (error) => {
-      logDeleteTiming("permission_workspace_role", roleStartedAt, {
-        db_error: true,
-      });
-      throw error;
-    }
-  );
-
-  const trueMasterStartedAt = Date.now();
-  const trueMasterPromise = isTrueMasterUser(userId).then(
-    (value) => {
-      logDeleteTiming("permission_true_master", trueMasterStartedAt);
-      return value;
-    },
-    (error) => {
-      logDeleteTiming("permission_true_master", trueMasterStartedAt, {
-        db_error: true,
-      });
-      throw error;
-    }
-  );
+  const rolePromise = getWorkspaceRole(userId, workspaceId);
+  const trueMasterPromise = isTrueMasterUser(userId);
 
   const [roleResult, trueMasterResult] = await Promise.allSettled([
     rolePromise,
@@ -337,8 +299,6 @@ async function deleteReportRowsByReportIdInBatches(reportId: string) {
   let deletedCount = 0;
 
   for (let guard = 0; guard < 1000; guard += 1) {
-    const batchStartedAt = Date.now();
-
     const { data, error } = await supabaseAdmin.rpc(
       "delete_report_rows_batch",
       {
@@ -346,11 +306,6 @@ async function deleteReportRowsByReportIdInBatches(reportId: string) {
         p_limit: REPORT_ROWS_DELETE_BATCH_SIZE,
       }
     );
-
-    logDeleteTiming("delete_report_rows_batch", batchStartedAt, {
-      batch_index: guard,
-      db_error: Boolean(error),
-    });
 
     if (error) {
       if (isMissingTableError(error.message || "")) {
@@ -424,17 +379,11 @@ async function deleteSingleReport(workspaceId: string, reportId: string) {
    * 따라서 report_creatives는 먼저 수동 삭제하지 않는다.
    * reports 삭제 시 DB cascade에 맡기는 것이 더 안전하다.
    */
-  const reportDeleteStartedAt = Date.now();
-
   const { error: reportDeleteError } = await supabaseAdmin
     .from("reports")
     .delete()
     .eq("id", reportId)
     .eq("workspace_id", workspaceId);
-
-  logDeleteTiming("delete_reports", reportDeleteStartedAt, {
-    db_error: Boolean(reportDeleteError),
-  });
 
   if (reportDeleteError) {
     return {
@@ -451,13 +400,7 @@ async function deleteSingleReport(workspaceId: string, reportId: string) {
 
 export async function POST(req: Request) {
   try {
-    const requestStartedAt = Date.now();
-
-    const authStartedAt = Date.now();
     const { user, error: authErr } = await resolveUser(req);
-    logDeleteTiming("auth", authStartedAt, {
-      ok: !authErr && Boolean(user),
-    });
 
     if (authErr || !user) {
       return jsonError(401, "UNAUTHORIZED");
@@ -481,12 +424,7 @@ export async function POST(req: Request) {
       return jsonError(400, "REPORT_IDS_REQUIRED");
     }
 
-    const permissionStartedAt = Date.now();
     const permission = await resolveDeletePermission(user.id, workspace_id);
-    logDeleteTiming("permission_total", permissionStartedAt, {
-      allowed: permission.allowed,
-      scope: permission.scope,
-    });
 
     if (!permission.allowed) {
       return jsonError(403, "FORBIDDEN_DELETE_PERMISSION", {
@@ -495,23 +433,12 @@ export async function POST(req: Request) {
       });
     }
 
-    const fetchDeletableStartedAt = Date.now();
-
     const deletableReports = await fetchDeletableReports({
       workspaceId: workspace_id,
       requestedIds: report_ids,
       actorUserId: asString(user.id),
       permission,
     });
-
-    logDeleteTiming(
-      "fetch_deletable_reports",
-      fetchDeletableStartedAt,
-      {
-        requested_count: report_ids.length,
-        matched_count: deletableReports.length,
-      }
-    );
 
     const deletableIds = deletableReports.map((report) => report.id);
 
@@ -527,16 +454,7 @@ export async function POST(req: Request) {
 
     for (const idsChunk of chunkArray(deletableIds, DELETE_CHUNK_SIZE)) {
       for (const reportId of idsChunk) {
-        const singleReportStartedAt = Date.now();
         const result = await deleteSingleReport(workspace_id, reportId);
-
-        logDeleteTiming(
-          "delete_single_report_total",
-          singleReportStartedAt,
-          {
-            ok: result.ok,
-          }
-        );
 
         if (result.ok) {
           deletedIds.push(reportId);
@@ -559,12 +477,6 @@ export async function POST(req: Request) {
       if (deletedSet.has(id)) return false;
       if (failedSet.has(id)) return false;
       return true;
-    });
-
-    logDeleteTiming("request_total", requestStartedAt, {
-      requested_count: report_ids.length,
-      deleted_count: deletedIds.length,
-      failed_count: failed.length,
     });
 
     return NextResponse.json({
