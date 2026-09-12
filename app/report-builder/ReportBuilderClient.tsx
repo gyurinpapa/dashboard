@@ -1889,7 +1889,7 @@ export default function ReportBuilderPage() {
 
     if (!externalAccountId) {
       setNaverMediaConnectionFormError(
-        "외부 광고계정 ID를 입력하세요."
+        "Naver 광고계정 Customer ID를 입력하세요."
       );
       return;
     }
@@ -1924,7 +1924,7 @@ export default function ReportBuilderPage() {
 
     if (customerId !== externalAccountId) {
       setNaverMediaConnectionFormError(
-        "Customer ID와 외부 광고계정 ID가 일치해야 합니다."
+        "Naver 광고계정 Customer ID를 다시 확인하세요."
       );
       return;
     }
@@ -2041,7 +2041,7 @@ export default function ReportBuilderPage() {
           );
         } else if (errorCode === "NAVER_CUSTOMER_ID_MISMATCH") {
           setNaverMediaConnectionFormError(
-            "Customer ID와 외부 광고계정 ID가 일치하지 않습니다."
+            "Naver 광고계정 Customer ID를 다시 확인하세요."
           );
         } else if (errorCode === "NAVER_AUTHENTICATION_FAILED") {
           setNaverMediaConnectionFormError(
@@ -5145,7 +5145,7 @@ export default function ReportBuilderPage() {
                           >
                             {naverMediaConnectionFormMode === "create"
                               ? "선택한 광고주에 새 Naver Search Ads connection을 저장합니다."
-                              : "외부 광고계정 ID와 계정 표시명을 수정할 수 있습니다. Secret은 다시 표시하지 않으므로 새 자격증명 3개를 모두 입력합니다."}
+                              : "Naver 광고계정 Customer ID와 계정 표시명을 수정할 수 있습니다. Secret은 다시 표시하지 않으므로 Access License와 Secret Key를 다시 입력합니다."}
                           </div>
                         </div>
 
@@ -5176,7 +5176,7 @@ export default function ReportBuilderPage() {
                         >
                           현재 등록 계정: {naverFormTargetConnection.external_account_name || "-"}
                           <br />
-                          현재 외부 광고계정 ID: {naverFormTargetConnection.external_account_id}
+                          현재 Naver Customer ID: {naverFormTargetConnection.external_account_id}
                         </div>
                       ) : null}
 
@@ -5198,17 +5198,24 @@ export default function ReportBuilderPage() {
                                   color: "#d7d5ec",
                                 }}
                               >
-                                외부 광고계정 ID *
+                                Naver 광고계정 Customer ID *
                               </div>
                               <input
                                 value={naverExternalAccountIdInput}
-                                onChange={(event) =>
-                                  setNaverExternalAccountIdInput(event.target.value)
-                                }
-                                maxLength={300}
+                                onChange={(event) => {
+                                  const value = event.target.value;
+                                  setNaverExternalAccountIdInput(value);
+                                  setNaverCustomerIdInput(value);
+                                }}
+                                maxLength={200}
+                                name={`naver-searchads-customer-id-${selectedAdvertiserId || "none"}`}
                                 autoComplete="off"
+                                autoCapitalize="none"
+                                spellCheck={false}
+                                readOnly={!naverCustomerIdUnlocked}
+                                onFocus={() => setNaverCustomerIdUnlocked(true)}
                                 disabled={savingNaverMediaConnection}
-                                placeholder="Naver 외부 광고계정 ID"
+                                placeholder="Naver Customer ID"
                                 style={{
                                   width: "100%",
                                   padding: 10,
@@ -5253,43 +5260,6 @@ export default function ReportBuilderPage() {
                               />
                             </label>
                         </>
-
-                        <label style={{ minWidth: 0 }}>
-                          <div
-                            style={{
-                              marginBottom: 6,
-                              fontSize: 11,
-                              fontWeight: 800,
-                              color: "#d7d5ec",
-                            }}
-                          >
-                            Customer ID *
-                          </div>
-                          <input
-                            value={naverCustomerIdInput}
-                            onChange={(event) =>
-                              setNaverCustomerIdInput(event.target.value)
-                            }
-                            maxLength={200}
-                            name={`naver-searchads-customer-id-${selectedAdvertiserId || "none"}`}
-                            autoComplete="off"
-                            autoCapitalize="none"
-                            spellCheck={false}
-                            readOnly={!naverCustomerIdUnlocked}
-                            onFocus={() => setNaverCustomerIdUnlocked(true)}
-                            disabled={savingNaverMediaConnection}
-                            placeholder="Naver Customer ID"
-                            style={{
-                              width: "100%",
-                              padding: 10,
-                              borderRadius: 10,
-                              border: "1px solid rgba(255, 255, 255, 0.13)",
-                              background: "rgba(42, 33, 87, 0.90)",
-                              color: "#f7f7ff",
-                              fontSize: 12,
-                            }}
-                          />
-                        </label>
 
                         <label style={{ minWidth: 0 }}>
                           <div
@@ -5380,6 +5350,7 @@ export default function ReportBuilderPage() {
                           color: "#8f8bad",
                         }}
                       >
+                        Customer ID는 Naver Search Ads 광고계정 번호입니다.
                         Secret Key와 Access License는 저장 후 다시 표시하지 않습니다.
                         Naver Search Ads API 인증에 성공한 경우에만 암호화 저장됩니다.
                       </div>
