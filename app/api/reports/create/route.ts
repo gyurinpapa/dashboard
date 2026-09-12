@@ -32,6 +32,11 @@ type CreateBody = {
   workspace_id?: string;
   advertiser_id?: string | null;
   connection_id?: string | null;
+
+  // Additive V2 multi-media creation contract.
+  // Existing Builder continues to use connection_id until V2-B.
+  connection_ids?: string[] | null;
+
   report_type_id?: string;
   title?: string;
   status?: string;
@@ -105,6 +110,94 @@ function normalizeYmdInput(
   }
 
   return normalized;
+}
+
+const UUID_INPUT_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function normalizeConnectionIdsInput(
+  value: unknown,
+): string[] | null {
+  if (
+    !Array.isArray(value) ||
+    value.length < 1 ||
+    value.length > 16
+  ) {
+    return null;
+  }
+
+  const normalized =
+    value.map((item) =>
+      asString(item),
+    );
+
+  if (
+    normalized.some(
+      (id) =>
+        !UUID_INPUT_PATTERN.test(id),
+    )
+  ) {
+    return null;
+  }
+
+  if (
+    new Set(normalized).size !==
+    normalized.length
+  ) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function normalizeReturnedStringArray(
+  value: unknown,
+): string[] | null {
+  if (
+    !Array.isArray(value) ||
+    value.length < 1
+  ) {
+    return null;
+  }
+
+  const normalized =
+    value.map((item) =>
+      asString(item),
+    );
+
+  if (
+    normalized.some(
+      (item) => !item,
+    )
+  ) {
+    return null;
+  }
+
+  if (
+    new Set(normalized).size !==
+    normalized.length
+  ) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function equalSortedStrings(
+  left: readonly string[],
+  right: readonly string[],
+) {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  const a = [...left].sort();
+  const b = [...right].sort();
+
+  return a.every(
+    (value, index) =>
+      value === b[index],
+  );
 }
 
 function isOnlyMasterEmail(email: any) {
@@ -395,6 +488,113 @@ function buildSafeAtomicApiReportResponse(
   };
 }
 
+function buildSafeAtomicApiReportV2Response(
+  value: any,
+  expected: {
+    workspaceId: string;
+    advertiserId: string;
+    connectionIds: readonly string[];
+    reportTypeId: string;
+  },
+) {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const id = asString(value.id);
+  const workspaceId =
+    asString(value.workspace_id);
+  const advertiserId =
+    asString(value.advertiser_id);
+  const reportTypeId =
+    asString(value.report_type_id);
+  const status =
+    asString(value.status);
+
+  const connectionIds =
+    normalizeReturnedStringArray(
+      value.connection_ids,
+    );
+
+  const providers =
+    normalizeReturnedStringArray(
+      value.providers,
+    );
+
+  const meta = safeObj(value.meta);
+
+  const dataSource =
+    isPlainObject(meta.data_source)
+      ? meta.data_source
+      : {};
+
+  if (
+    !id ||
+    workspaceId !== expected.workspaceId ||
+    advertiserId !== expected.advertiserId ||
+    reportTypeId !== expected.reportTypeId ||
+    status !== "draft" ||
+    !connectionIds ||
+    !providers ||
+    !equalSortedStrings(
+      connectionIds,
+      expected.connectionIds,
+    ) ||
+    asString(dataSource.kind) !== "api"
+  ) {
+    return null;
+  }
+
+  if (providers.length === 1) {
+    if (
+      asString(dataSource.provider) !==
+        providers[0] ||
+      Object.prototype.hasOwnProperty.call(
+        dataSource,
+        "providers",
+      )
+    ) {
+      return null;
+    }
+  } else {
+    const metaProviders =
+      normalizeReturnedStringArray(
+        dataSource.providers,
+      );
+
+    if (
+      asString(dataSource.provider) ||
+      !metaProviders ||
+      !equalSortedStrings(
+        metaProviders,
+        providers,
+      )
+    ) {
+      return null;
+    }
+  }
+
+  return {
+    id,
+    workspace_id: workspaceId,
+    advertiser_id: advertiserId,
+    report_type_id: reportTypeId,
+    title: asString(value.title),
+    status,
+    period_start:
+      value.period_start ?? null,
+    period_end:
+      value.period_end ?? null,
+    created_at:
+      value.created_at ?? null,
+    meta,
+    connection_ids:
+      [...connectionIds].sort(),
+    providers:
+      [...providers].sort(),
+  };
+}
+
 /**
  * ✅ Bearer 우선 + 쿠키(session) fallback
  * - 프론트에서 Authorization: Bearer ... 를 보내면 이걸 먼저 검증
@@ -474,7 +674,41 @@ export async function POST(req: Request) {
 
     const advertiser_id = advertiser_id_raw || null;
 
-    const connection_id = asString(body.connection_id);
+    const connection_id =
+      asString(body.connection_id);
+
+    const hasConnectionIdsInput =
+      Object.prototype.hasOwnProperty.call(
+        body,
+        "connection_ids",
+      );
+
+    const connection_ids =
+      hasConnectionIdsInput
+        ? normalizeConnectionIdsInput(
+            body.connection_ids,
+          )
+        : null;
+
+    if (
+      hasConnectionIdsInput &&
+      !connection_ids
+    ) {
+      return jsonError(
+        400,
+        "INVALID_CONNECTION_IDS",
+      );
+    }
+
+    if (
+      hasConnectionIdsInput &&
+      connection_id
+    ) {
+      return jsonError(
+        400,
+        "API_REPORT_CONNECTION_INPUT_CONFLICT",
+      );
+    }
 
     const report_type_id = asString(body.report_type_id);
 
@@ -527,6 +761,28 @@ export async function POST(req: Request) {
       return jsonError(
         400,
         "INVALID_DAILY_AUTO_SYNC_CONTRACT",
+      );
+    }
+
+    // V1 Daily automation remains deliberately single-provider.
+    // Multi-media Daily policy is introduced later as daily_report_v2.
+    if (
+      wantsNaverDailyReportAutoSync &&
+      hasConnectionIdsInput
+    ) {
+      return jsonError(
+        400,
+        "INVALID_DAILY_AUTO_SYNC_CONTRACT",
+      );
+    }
+
+    if (
+      dataSourceKind !== "api" &&
+      hasConnectionIdsInput
+    ) {
+      return jsonError(
+        400,
+        "CONNECTION_IDS_REQUIRE_API_REPORT",
       );
     }
 
@@ -600,10 +856,14 @@ export async function POST(req: Request) {
       );
     }
 
-    if (dataSourceKind === "api" && !connection_id) {
+    if (
+      dataSourceKind === "api" &&
+      !connection_id &&
+      !connection_ids
+    ) {
       return jsonError(
         400,
-        "API linked reports require connection_id",
+        "API linked reports require connection_id or connection_ids",
       );
     }
 
@@ -1029,42 +1289,133 @@ export async function POST(req: Request) {
       }
     }
 
-    // ✅ 5-A) API report는 report + connection mapping을 하나의 DB transaction으로 생성
+    // ✅ 5-A) API report creation
+    //
+    // V1 remains the exact current single-connection authority.
+    // V2 is additive and is entered only when the caller explicitly
+    // supplies connection_ids. Report Builder does not use V2 yet.
     if (dataSourceKind === "api") {
-      if (!advertiser_id || !connection_id) {
+      if (!advertiser_id) {
         return jsonError(
           400,
-          "API linked reports require advertiser_id and connection_id",
+          "API linked reports require advertiser_id",
         );
       }
 
-      const { data, error } = await supabaseAdmin.rpc(
-        "create_api_report_with_media_connection_v1",
-        {
-          p_workspace_id: resolved_workspace_id,
-          p_advertiser_id: advertiser_id,
-          p_connection_id: connection_id,
-          p_report_type_id: report_type_id,
-          p_title: title || "New Report - Draft",
-          p_period_start: period_start,
-          p_period_end: period_end,
-          p_created_by: created_by,
-          p_meta: meta,
-        },
-      );
+      if (connection_ids) {
+        const {
+          data,
+          error,
+        } = await supabaseAdmin.rpc(
+          "create_api_report_with_media_connections_v2",
+          {
+            p_workspace_id:
+              resolved_workspace_id,
+            p_advertiser_id:
+              advertiser_id,
+            p_connection_ids:
+              connection_ids,
+            p_report_type_id:
+              report_type_id,
+            p_title:
+              title ||
+              "New Report - Draft",
+            p_period_start:
+              period_start,
+            p_period_end:
+              period_end,
+            p_created_by:
+              created_by,
+            p_meta:
+              meta,
+          },
+        );
+
+        if (error) {
+          return mapAtomicApiReportRpcError(
+            error,
+          );
+        }
+
+        const safeReport =
+          buildSafeAtomicApiReportV2Response(
+            data,
+            {
+              workspaceId:
+                resolved_workspace_id,
+              advertiserId:
+                advertiser_id,
+              connectionIds:
+                connection_ids,
+              reportTypeId:
+                report_type_id,
+            },
+          );
+
+        if (!safeReport) {
+          return jsonError(
+            500,
+            "API_REPORT_V2_ATOMIC_CREATION_INVALID_RESULT",
+          );
+        }
+
+        return NextResponse.json({
+          ok: true,
+          report: safeReport,
+        });
+      }
+
+      if (!connection_id) {
+        return jsonError(
+          400,
+          "API linked reports require connection_id",
+        );
+      }
+
+      const { data, error } =
+        await supabaseAdmin.rpc(
+          "create_api_report_with_media_connection_v1",
+          {
+            p_workspace_id:
+              resolved_workspace_id,
+            p_advertiser_id:
+              advertiser_id,
+            p_connection_id:
+              connection_id,
+            p_report_type_id:
+              report_type_id,
+            p_title:
+              title ||
+              "New Report - Draft",
+            p_period_start:
+              period_start,
+            p_period_end:
+              period_end,
+            p_created_by:
+              created_by,
+            p_meta:
+              meta,
+          },
+        );
 
       if (error) {
-        return mapAtomicApiReportRpcError(error);
+        return mapAtomicApiReportRpcError(
+          error,
+        );
       }
 
       const safeReport =
         buildSafeAtomicApiReportResponse(
           data,
           {
-            workspaceId: resolved_workspace_id,
-            advertiserId: advertiser_id,
-            connectionId: connection_id,
-            reportTypeId: report_type_id,
+            workspaceId:
+              resolved_workspace_id,
+            advertiserId:
+              advertiser_id,
+            connectionId:
+              connection_id,
+            reportTypeId:
+              report_type_id,
           },
         );
 
