@@ -523,6 +523,12 @@ export default function ReportBuilderPage() {
     useState<ReportTheme>("light");
   const [selectedApiMediaConnectionId, setSelectedApiMediaConnectionId] =
     useState("");
+  const [selectedApiDailyAutoSync, setSelectedApiDailyAutoSync] =
+    useState(false);
+  const [dailyAutoPeriodStart, setDailyAutoPeriodStart] =
+    useState("");
+  const [dailyAutoPeriodEnd, setDailyAutoPeriodEnd] =
+    useState("");
 
   const [googleAdsConnectionFormOpen, setGoogleAdsConnectionFormOpen] =
     useState(false);
@@ -2403,6 +2409,16 @@ export default function ReportBuilderPage() {
 
     if (!workspaceId || creating) return;
 
+    const normalizedDailyAutoPeriodStart =
+      selectedApiDailyAutoSync
+        ? normalizeYmdOrNull(dailyAutoPeriodStart)
+        : null;
+
+    const normalizedDailyAutoPeriodEnd =
+      selectedApiDailyAutoSync
+        ? normalizeYmdOrNull(dailyAutoPeriodEnd)
+        : null;
+
     if (selectedReportDataSourceKind === "api") {
       if (!selectedAdvertiserId) {
         setLocalMsg("API 연동형 리포트는 광고주를 먼저 선택해야 합니다.");
@@ -2433,6 +2449,27 @@ export default function ReportBuilderPage() {
         );
         return;
       }
+
+      if (selectedApiDailyAutoSync) {
+        if (!selectedNaverApiReportConnection) {
+          setLocalMsg(
+            "데일리 자동 수집 보고서는 검증된 Naver Search Ads 연결만 사용할 수 있습니다."
+          );
+          return;
+        }
+
+        if (
+          !normalizedDailyAutoPeriodStart ||
+          !normalizedDailyAutoPeriodEnd ||
+          normalizedDailyAutoPeriodStart >
+            normalizedDailyAutoPeriodEnd
+        ) {
+          setLocalMsg(
+            "데일리 자동 수집 보고서의 시작일과 종료일을 정확히 입력해 주세요."
+          );
+          return;
+        }
+      }
     }
 
     setCreating(true);
@@ -2454,6 +2491,17 @@ export default function ReportBuilderPage() {
               data_level: "keyword",
               mode: "snapshot_replace",
             },
+            ...(selectedApiDailyAutoSync
+              ? {
+                  media_sync: {
+                    auto_sync: {
+                      enabled: true,
+                      contract:
+                        "naver_daily_report_v1",
+                    },
+                  },
+                }
+              : {}),
           }
         : {
             data_source: {
@@ -2474,6 +2522,14 @@ export default function ReportBuilderPage() {
         ...(selectedReportDataSourceKind === "api"
           ? {
               connection_id: selectedApiReportConnection?.id ?? null,
+            }
+          : {}),
+        ...(selectedApiDailyAutoSync
+          ? {
+              period_start:
+                normalizedDailyAutoPeriodStart,
+              period_end:
+                normalizedDailyAutoPeriodEnd,
             }
           : {}),
         report_type_id: type.id,
@@ -2509,6 +2565,25 @@ export default function ReportBuilderPage() {
         setMediaConnectionsRefreshVersion((prev) => prev + 1);
         setLocalMsg(
           "선택한 API 연결 상태가 변경되었습니다. 연결 상태를 다시 확인한 뒤 선택해 주세요."
+        );
+        return;
+      }
+
+      if (
+        selectedApiDailyAutoSync &&
+        (
+          createError ===
+            "INVALID_DAILY_AUTO_SYNC_CONTRACT" ||
+          createError ===
+            "DAILY_AUTO_SYNC_PERIOD_REQUIRED" ||
+          createError ===
+            "DAILY_AUTO_SYNC_NAVER_CONNECTION_REQUIRED" ||
+          createError ===
+            "DAILY_AUTO_SYNC_CONNECTION_UNVERIFIED"
+        )
+      ) {
+        setLocalMsg(
+          "데일리 자동 수집 보고서 설정을 다시 확인해 주세요."
         );
         return;
       }
@@ -3167,6 +3242,19 @@ export default function ReportBuilderPage() {
     selectedApiReportConnection?.provider === "google_ads"
       ? selectedApiReportConnection
       : null;
+
+  useEffect(() => {
+    if (
+      selectedApiDailyAutoSync &&
+      !selectedNaverApiReportConnection
+    ) {
+      setSelectedApiDailyAutoSync(false);
+    }
+  }, [
+    selectedApiDailyAutoSync,
+    selectedNaverApiReportConnection,
+  ]);
+
   const canManageSelectedAdvertiserMediaConnections =
     hasCurrentAdvertiserMediaConnectionSnapshot &&
     !selectedAdvertiserMediaConnectionsError &&
@@ -5769,6 +5857,9 @@ export default function ReportBuilderPage() {
 
                         if (kind !== "api") {
                           setSelectedApiMediaConnectionId("");
+                          setSelectedApiDailyAutoSync(false);
+                          setDailyAutoPeriodStart("");
+                          setDailyAutoPeriodEnd("");
                         }
                       }}
                       disabled={disabled || creating}
@@ -6064,6 +6155,145 @@ export default function ReportBuilderPage() {
                                 : "현재 사용할 수 있는 Naver Search Ads 연결이 없습니다."
                               : "사용할 연결을 선택하세요."}
                         </div>
+
+                        <button
+                          type="button"
+                          className="subBtn"
+                          aria-pressed={
+                            selectedApiDailyAutoSync
+                          }
+                          disabled={
+                            creating ||
+                            !selectedNaverApiReportConnection
+                          }
+                          onClick={() =>
+                            setSelectedApiDailyAutoSync(
+                              (current) => !current
+                            )
+                          }
+                          style={{
+                            width: "100%",
+                            marginTop: 14,
+                            padding: "10px 12px",
+                            borderColor:
+                              selectedApiDailyAutoSync
+                                ? "#21dff3"
+                                : "rgba(255, 255, 255, 0.13)",
+                            background:
+                              selectedApiDailyAutoSync
+                                ? "rgba(33, 223, 243, 0.10)"
+                                : "rgba(46, 35, 94, 0.72)",
+                            color:
+                              selectedApiDailyAutoSync
+                                ? "#a7f3d0"
+                                : "#f7f7ff",
+                          }}
+                          title={
+                            selectedNaverApiReportConnection
+                              ? "이 리포트를 Naver Search Ads 데일리 자동 수집 대상으로 생성합니다."
+                              : "검증된 Naver Search Ads 연결을 먼저 선택해 주세요."
+                          }
+                        >
+                          {selectedApiDailyAutoSync
+                            ? "● 데일리 자동 수집 보고서"
+                            : "데일리 자동 수집 보고서"}
+                        </button>
+
+                        <div
+                          style={{
+                            marginTop: 8,
+                            fontSize: 11,
+                            lineHeight: 1.55,
+                            color: "#bbb8d4",
+                          }}
+                        >
+                          활성화하면 지정 기간을 기준으로 완료되지 않은
+                          가장 오래된 날짜부터 하루씩 자동 수집합니다.
+                        </div>
+
+                        {selectedApiDailyAutoSync ? (
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns:
+                                "repeat(2, minmax(0, 1fr))",
+                              gap: 10,
+                              marginTop: 12,
+                            }}
+                          >
+                            <label
+                              style={{
+                                display: "grid",
+                                gap: 6,
+                                fontSize: 11,
+                                color: "#d7d5ec",
+                              }}
+                            >
+                              시작일
+                              <input
+                                type="date"
+                                value={dailyAutoPeriodStart}
+                                max={
+                                  dailyAutoPeriodEnd ||
+                                  undefined
+                                }
+                                onChange={(e) =>
+                                  setDailyAutoPeriodStart(
+                                    e.target.value
+                                  )
+                                }
+                                disabled={creating}
+                                style={{
+                                  width: "100%",
+                                  minWidth: 0,
+                                  padding: "9px 10px",
+                                  borderRadius: 10,
+                                  border:
+                                    "1px solid rgba(255, 255, 255, 0.13)",
+                                  background:
+                                    "rgba(42, 33, 87, 0.92)",
+                                  color: "#f7f7ff",
+                                }}
+                              />
+                            </label>
+
+                            <label
+                              style={{
+                                display: "grid",
+                                gap: 6,
+                                fontSize: 11,
+                                color: "#d7d5ec",
+                              }}
+                            >
+                              종료일
+                              <input
+                                type="date"
+                                value={dailyAutoPeriodEnd}
+                                min={
+                                  dailyAutoPeriodStart ||
+                                  undefined
+                                }
+                                onChange={(e) =>
+                                  setDailyAutoPeriodEnd(
+                                    e.target.value
+                                  )
+                                }
+                                disabled={creating}
+                                style={{
+                                  width: "100%",
+                                  minWidth: 0,
+                                  padding: "9px 10px",
+                                  borderRadius: 10,
+                                  border:
+                                    "1px solid rgba(255, 255, 255, 0.13)",
+                                  background:
+                                    "rgba(42, 33, 87, 0.92)",
+                                  color: "#f7f7ff",
+                                }}
+                              />
+                            </label>
+                          </div>
+                        ) : null}
                       </div>
 
                       <div

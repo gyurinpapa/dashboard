@@ -8,11 +8,15 @@ import type {
 export const NAVER_DAILY_AUTO_SYNC_CONTRACT =
   "naver_daily_v1" as const;
 
+export const NAVER_DAILY_REPORT_AUTO_SYNC_CONTRACT =
+  "naver_daily_report_v1" as const;
+
 export type MediaSyncAutomaticAuthority = {
   enabled: boolean;
   provider: "naver_searchad" | null;
   contract:
     | typeof NAVER_DAILY_AUTO_SYNC_CONTRACT
+    | typeof NAVER_DAILY_REPORT_AUTO_SYNC_CONTRACT
     | null;
 };
 
@@ -152,6 +156,81 @@ export function isAutomaticMediaSyncConnection(
   );
 }
 
+type ReportScopedAutomaticState = {
+  declared: boolean;
+  enabled: boolean;
+};
+
+function getReportScopedAutomaticState(
+  report:
+    MediaSyncAutomaticReportPeriod,
+): ReportScopedAutomaticState {
+  const meta =
+    isPlainObject(report.meta)
+      ? report.meta
+      : {};
+
+  const mediaSync =
+    isPlainObject(meta.media_sync)
+      ? meta.media_sync
+      : {};
+
+  const declared =
+    Object.prototype.hasOwnProperty.call(
+      mediaSync,
+      "auto_sync",
+    );
+
+  if (!declared) {
+    return {
+      declared: false,
+      enabled: false,
+    };
+  }
+
+  const autoSync =
+    isPlainObject(
+      mediaSync.auto_sync,
+    )
+      ? mediaSync.auto_sync
+      : null;
+
+  return {
+    declared: true,
+    enabled:
+      autoSync?.enabled === true &&
+      autoSync?.contract ===
+        NAVER_DAILY_REPORT_AUTO_SYNC_CONTRACT,
+  };
+}
+
+export function isAutomaticReportScopedMediaSync(
+  report:
+    MediaSyncAutomaticReportPeriod,
+): boolean {
+  return getReportScopedAutomaticState(
+    report,
+  ).enabled;
+}
+
+function isVerifiedReportScopedNaverConnection(
+  connection:
+    SafeMediaConnection,
+): boolean {
+  return (
+    connection.provider ===
+      "naver_searchad" &&
+    connection.status ===
+      "active" &&
+    connection.has_credentials ===
+      true &&
+    Boolean(
+      connection.last_verified_at ||
+      connection.last_sync_at,
+    )
+  );
+}
+
 export function isAutomaticReportPeriodActive(
   report:
     MediaSyncAutomaticReportPeriod,
@@ -182,6 +261,46 @@ export function getMediaSyncAutomaticAuthority(
     targetDate?: string;
   },
 ): MediaSyncAutomaticAuthority {
+  const periodActive =
+    isAutomaticReportPeriodActive(
+      input.report,
+      input.targetDate,
+    );
+
+  const reportScoped =
+    getReportScopedAutomaticState(
+      input.report,
+    );
+
+  if (reportScoped.declared) {
+    const reportConnection =
+      input.connections.length === 1
+        ? input.connections[0]
+        : null;
+
+    if (
+      !reportScoped.enabled ||
+      !periodActive ||
+      !reportConnection ||
+      !isVerifiedReportScopedNaverConnection(
+        reportConnection,
+      )
+    ) {
+      return {
+        enabled: false,
+        provider: null,
+        contract: null,
+      };
+    }
+
+    return {
+      enabled: true,
+      provider: "naver_searchad",
+      contract:
+        NAVER_DAILY_REPORT_AUTO_SYNC_CONTRACT,
+    };
+  }
+
   const automaticConnection =
     input.connections.find(
       isAutomaticMediaSyncConnection,
@@ -189,10 +308,7 @@ export function getMediaSyncAutomaticAuthority(
 
   if (
     !automaticConnection ||
-    !isAutomaticReportPeriodActive(
-      input.report,
-      input.targetDate,
-    )
+    !periodActive
   ) {
     return {
       enabled: false,

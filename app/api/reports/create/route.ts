@@ -7,6 +7,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { normalizeReportTheme } from "@/src/lib/report/theme";
+import {
+  NAVER_DAILY_REPORT_AUTO_SYNC_CONTRACT,
+} from "@/src/lib/media-sync/media-sync-automation";
 
 const ONLY_MASTER_EMAIL = "gyurinpapakimdh@gmail.com";
 
@@ -72,6 +75,36 @@ function isPlainObject(v: any): v is Record<string, any> {
 
 function safeObj(v: any) {
   return isPlainObject(v) ? v : {};
+}
+
+function normalizeYmdInput(
+  value: any,
+): string | null {
+  const normalized = asString(value);
+
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(
+      normalized,
+    )
+  ) {
+    return null;
+  }
+
+  const parsed = new Date(
+    `${normalized}T00:00:00.000Z`,
+  );
+
+  if (
+    Number.isNaN(
+      parsed.getTime(),
+    ) ||
+    parsed.toISOString().slice(0, 10) !==
+      normalized
+  ) {
+    return null;
+  }
+
+  return normalized;
 }
 
 function isOnlyMasterEmail(email: any) {
@@ -452,6 +485,51 @@ export async function POST(req: Request) {
     let meta = normalizeReportMeta(body.meta);
     const dataSourceKind = normalizeDataSourceKind(meta?.data_source?.kind);
 
+    const mediaSyncMeta =
+      isPlainObject(meta.media_sync)
+        ? meta.media_sync
+        : {};
+
+    const hasDailyAutoSyncDeclaration =
+      Object.prototype.hasOwnProperty.call(
+        mediaSyncMeta,
+        "auto_sync",
+      );
+
+    const dailyAutoSyncMeta =
+      isPlainObject(
+        mediaSyncMeta.auto_sync,
+      )
+        ? mediaSyncMeta.auto_sync
+        : null;
+
+    const wantsNaverDailyReportAutoSync =
+      dailyAutoSyncMeta?.enabled === true &&
+      asString(
+        dailyAutoSyncMeta.contract,
+      ) ===
+        NAVER_DAILY_REPORT_AUTO_SYNC_CONTRACT;
+
+    if (
+      hasDailyAutoSyncDeclaration &&
+      !wantsNaverDailyReportAutoSync
+    ) {
+      return jsonError(
+        400,
+        "INVALID_DAILY_AUTO_SYNC_CONTRACT",
+      );
+    }
+
+    if (
+      wantsNaverDailyReportAutoSync &&
+      dataSourceKind !== "api"
+    ) {
+      return jsonError(
+        400,
+        "INVALID_DAILY_AUTO_SYNC_CONTRACT",
+      );
+    }
+
     const hasCanonicalPeriodTypeInput =
       Object.prototype.hasOwnProperty.call(
         body,
@@ -532,6 +610,35 @@ export async function POST(req: Request) {
     // period는 "들어오면 우선", 없으면 자동세팅
     const period_start_in = body.period_start ?? null;
     const period_end_in = body.period_end ?? null;
+
+    const dailyAutoPeriodStart =
+      wantsNaverDailyReportAutoSync
+        ? normalizeYmdInput(
+            period_start_in,
+          )
+        : null;
+
+    const dailyAutoPeriodEnd =
+      wantsNaverDailyReportAutoSync
+        ? normalizeYmdInput(
+            period_end_in,
+          )
+        : null;
+
+    if (
+      wantsNaverDailyReportAutoSync &&
+      (
+        !dailyAutoPeriodStart ||
+        !dailyAutoPeriodEnd ||
+        dailyAutoPeriodStart >
+          dailyAutoPeriodEnd
+      )
+    ) {
+      return jsonError(
+        400,
+        "DAILY_AUTO_SYNC_PERIOD_REQUIRED",
+      );
+    }
 
     if (!report_type_id) {
       return jsonError(400, "report_type_id is required");
@@ -767,6 +874,117 @@ export async function POST(req: Request) {
               }
             : {}),
         };
+      }
+    }
+
+    if (
+      wantsNaverDailyReportAutoSync
+    ) {
+      const {
+        data:
+          dailyAutoConnection,
+        error:
+          dailyAutoConnectionError,
+      } =
+        await supabaseAdmin
+          .from(
+            "media_connections",
+          )
+          .select(
+            [
+              "id",
+              "workspace_id",
+              "advertiser_id",
+              "provider",
+              "status",
+              "credential_ciphertext",
+              "last_verified_at",
+              "last_sync_at",
+            ].join(","),
+          )
+          .eq(
+            "id",
+            connection_id,
+          )
+          .eq(
+            "workspace_id",
+            resolved_workspace_id,
+          )
+          .eq(
+            "advertiser_id",
+            advertiser_id,
+          )
+          .maybeSingle();
+
+      if (
+        dailyAutoConnectionError
+      ) {
+        return jsonError(
+          500,
+          dailyAutoConnectionError.message,
+        );
+      }
+
+      const dailyAutoConnectionRecord:
+        Record<string, unknown> | null =
+        isPlainObject(
+          dailyAutoConnection as unknown,
+        )
+          ? (
+              dailyAutoConnection as unknown as
+                Record<string, unknown>
+            )
+          : null;
+
+      if (
+        !dailyAutoConnectionRecord ||
+        asString(
+          dailyAutoConnectionRecord.provider,
+        ) !== "naver_searchad"
+      ) {
+        return jsonError(
+          400,
+          "DAILY_AUTO_SYNC_NAVER_CONNECTION_REQUIRED",
+        );
+      }
+
+      if (
+        asString(
+          dailyAutoConnectionRecord.status,
+        ) !== "active"
+      ) {
+        return jsonError(
+          400,
+          "CONNECTION_NOT_ACTIVE",
+        );
+      }
+
+      if (
+        !asString(
+          dailyAutoConnectionRecord
+            .credential_ciphertext,
+        )
+      ) {
+        return jsonError(
+          400,
+          "CONNECTION_CREDENTIALS_MISSING",
+        );
+      }
+
+      if (
+        !asString(
+          dailyAutoConnectionRecord
+            .last_verified_at,
+        ) &&
+        !asString(
+          dailyAutoConnectionRecord
+            .last_sync_at,
+        )
+      ) {
+        return jsonError(
+          400,
+          "DAILY_AUTO_SYNC_CONNECTION_UNVERIFIED",
+        );
       }
     }
 
