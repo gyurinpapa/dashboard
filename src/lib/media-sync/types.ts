@@ -190,6 +190,22 @@ export type MediaSyncJobRecord = {
   error_detail: JsonObject | null;
 
   /**
+   * Internal automation routing authority.
+   *
+   * null:
+   * - manual jobs
+   * - legacy jobs
+   * - provider-native automatic jobs
+   *
+   * daily_report_v2:
+   * - report-scoped Daily Report V2 scheduler jobs only
+   *
+   * This is distinct from execution_contract, which selects
+   * provider execution behavior such as google_all_data_v1.
+   */
+  automation_contract?: "daily_report_v2" | null;
+
+  /**
    * Provider-neutral durable sync segment progress.
    *
    * null:

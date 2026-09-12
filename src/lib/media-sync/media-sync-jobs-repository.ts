@@ -547,6 +547,19 @@ export function parseMediaSyncJobRecord(
         value.error_detail,
       ),
 
+    automation_contract:
+      value.automation_contract === undefined ||
+      value.automation_contract === null
+        ? null
+        : value.automation_contract === "daily_report_v2"
+          ? "daily_report_v2"
+          : (() => {
+              throw new MediaSyncJobsRepositoryError(
+                "INVALID_RECORD",
+                "Media sync job contains an unsupported automation_contract value.",
+              );
+            })(),
+
     /*
      * Backward-compatible while the nullable database column is
      * rolled out separately. A missing field is equivalent to the
