@@ -360,7 +360,10 @@ function isVerifiedNaverConnection(
   return (
     connection.status === "active" &&
     connection.has_credentials &&
-    Boolean(connection.last_verified_at)
+    Boolean(
+      connection.last_verified_at ||
+      connection.last_sync_at
+    )
   );
 }
 
