@@ -21,7 +21,9 @@ import {
   fetchNaverSearchAdsStatReportKeywordCandidates,
   fetchNaverSearchAdsStatReportKeywordDailyStatsBatch,
   fetchNaverSearchAdsStatReportKeywordDailyStats,
+  fetchNaverSearchAdsStatReportKeywordDailyStatsBestEffort,
   type NaverSearchAdsStatReportKeywordCandidate,
+  type NaverSearchAdsStatReportKeywordDailyStatsBestEffortResult,
 } from "./naver-searchads-stat-report-daily-metrics";
 import {
   NAVER_KEYWORD_STATS_DEFAULT_CHUNK_PAUSE_MS,
@@ -218,6 +220,8 @@ export type NaverKeywordStatsCollectorDependencies = {
     typeof fetchNaverSearchAdsStatReportKeywordDailyStats;
   fetchStatReportKeywordDailyStatsBatch?:
     typeof fetchNaverSearchAdsStatReportKeywordDailyStatsBatch;
+  fetchStatReportKeywordDailyStatsBestEffort?:
+    typeof fetchNaverSearchAdsStatReportKeywordDailyStatsBestEffort;
   fetchStatReportKeywordCandidates?:
     typeof fetchNaverSearchAdsStatReportKeywordCandidates;
 
@@ -313,12 +317,16 @@ type ResolvedCollectorDependencies =
     NaverKeywordStatsCollectorDependencies,
     | "fetchStatReportKeywordDailyStats"
     | "fetchStatReportKeywordDailyStatsBatch"
+    | "fetchStatReportKeywordDailyStatsBestEffort"
     | "fetchStatReportKeywordCandidates"
   > & {
     fetchStatReportKeywordDailyStats:
       typeof fetchNaverSearchAdsStatReportKeywordDailyStats;
     fetchStatReportKeywordDailyStatsBatch:
       typeof fetchNaverSearchAdsStatReportKeywordDailyStatsBatch;
+    fetchStatReportKeywordDailyStatsBestEffort:
+      | typeof fetchNaverSearchAdsStatReportKeywordDailyStatsBestEffort
+      | null;
     fetchStatReportKeywordCandidates:
       typeof fetchNaverSearchAdsStatReportKeywordCandidates;
   };
@@ -423,6 +431,9 @@ const DEFAULT_COLLECTOR_DEPENDENCIES:
 
     fetchStatReportKeywordDailyStatsBatch:
       fetchNaverSearchAdsStatReportKeywordDailyStatsBatch,
+
+    fetchStatReportKeywordDailyStatsBestEffort:
+      fetchNaverSearchAdsStatReportKeywordDailyStatsBestEffort,
 
     fetchStatReportKeywordCandidates:
       fetchNaverSearchAdsStatReportKeywordCandidates,
@@ -577,10 +588,27 @@ function resolveCollectorDependencies(
     | Partial<NaverKeywordStatsCollectorDependencies>
     | undefined,
 ): ResolvedCollectorDependencies {
+  const hasExplicitStatReportOverride =
+    Boolean(
+      dependencies?.fetchStatReportKeywordDailyStats ||
+      dependencies?.fetchStatReportKeywordDailyStatsBatch ||
+      dependencies?.fetchStatReportKeywordCandidates
+    );
+
   const resolvedDependencies:
     ResolvedCollectorDependencies = {
       ...DEFAULT_COLLECTOR_DEPENDENCIES,
       ...dependencies,
+
+      fetchStatReportKeywordDailyStatsBestEffort:
+        dependencies
+          ?.fetchStatReportKeywordDailyStatsBestEffort ??
+        (
+          hasExplicitStatReportOverride
+            ? null
+            : DEFAULT_COLLECTOR_DEPENDENCIES
+                .fetchStatReportKeywordDailyStatsBestEffort
+        ),
     };
 
   if (
@@ -663,6 +691,19 @@ function resolveCollectorDependencies(
         `${dependencyName} dependency must be a function.`,
       );
     }
+  }
+
+  if (
+    resolvedDependencies
+      .fetchStatReportKeywordDailyStatsBestEffort !==
+      null &&
+    typeof resolvedDependencies
+      .fetchStatReportKeywordDailyStatsBestEffort !==
+      "function"
+  ) {
+    throw new Error(
+      "fetchStatReportKeywordDailyStatsBestEffort dependency must be a function or null.",
+    );
   }
 
   return resolvedDependencies;
@@ -2002,12 +2043,158 @@ function mergeWebSiteRequestState(
   }
 }
 
+function resolveSingleContiguousDateRange(
+  dates: readonly string[],
+): {
+  dateFrom: string;
+  dateTo: string;
+} | null {
+  if (dates.length === 0) {
+    return null;
+  }
+
+  const normalizedDates =
+    Array.from(
+      new Set(dates),
+    ).sort();
+
+  for (
+    let index = 1;
+    index < normalizedDates.length;
+    index += 1
+  ) {
+    const previous =
+      normalizedDates[index - 1];
+    const current =
+      normalizedDates[index];
+
+    if (!previous || !current) {
+      return null;
+    }
+
+    const previousTime =
+      Date.parse(
+        `${previous}T00:00:00.000Z`,
+      );
+    const currentTime =
+      Date.parse(
+        `${current}T00:00:00.000Z`,
+      );
+
+    if (
+      !Number.isFinite(previousTime) ||
+      !Number.isFinite(currentTime) ||
+      currentTime - previousTime !==
+        24 * 60 * 60 * 1_000
+    ) {
+      return null;
+    }
+  }
+
+  const dateFrom =
+    normalizedDates[0];
+  const dateTo =
+    normalizedDates[
+      normalizedDates.length - 1
+    ];
+
+  if (!dateFrom || !dateTo) {
+    return null;
+  }
+
+  return {
+    dateFrom,
+    dateTo,
+  };
+}
+
+function mergeHybridKeywordDailyStats(input: {
+  ready:
+    NaverSearchAdsKeywordDailyStatsResult;
+  exact:
+    NaverSearchAdsKeywordDailyStatsResult;
+  unavailableDates:
+    ReadonlySet<string>;
+  dateFrom:
+    string;
+  dateTo:
+    string;
+}): NaverSearchAdsKeywordDailyStatsResult {
+  if (
+    input.ready.keywordId !==
+    input.exact.keywordId
+  ) {
+    throw new Error(
+      "Hybrid Naver keyword stats results contain different keyword ids.",
+    );
+  }
+
+  const recordsByDate =
+    new Map<
+      string,
+      NaverSearchAdsKeywordDailyStatsResult[
+        "records"
+      ][number]
+    >();
+
+  for (
+    const record
+    of input.ready.records
+  ) {
+    if (
+      !input.unavailableDates.has(
+        record.date,
+      )
+    ) {
+      recordsByDate.set(
+        record.date,
+        record,
+      );
+    }
+  }
+
+  for (
+    const record
+    of input.exact.records
+  ) {
+    if (
+      input.unavailableDates.has(
+        record.date,
+      )
+    ) {
+      recordsByDate.set(
+        record.date,
+        record,
+      );
+    }
+  }
+
+  return {
+    keywordId:
+      input.ready.keywordId,
+    dateFrom:
+      input.dateFrom,
+    dateTo:
+      input.dateTo,
+    records:
+      Array.from(
+        recordsByDate.values(),
+      ).sort(
+        (left, right) =>
+          left.date.localeCompare(
+            right.date,
+          ),
+      ),
+  };
+}
+
 async function consumeWebSiteKeywordChunkBounded(input: {
   campaign: NaverSearchAdsCampaignRecord;
   adgroup: NaverSearchAdsAdgroupRecord;
   chunk: readonly NaverSearchAdsKeywordRecord[];
   chunkIndex: number;
   startIndex: number;
+  preferBestEffortStatReport: boolean;
   state: CollectorRuntimeState;
   options: NormalizedCollectorOptions;
   credentials: NaverSearchAdsCredentials;
@@ -2035,31 +2222,84 @@ async function consumeWebSiteKeywordChunkBounded(input: {
     NaverSearchAdsKeywordDailyStatsResult[] |
     null = null;
 
-  if (statReportKeywords.length > 0) {
-    try {
-      statReportResults =
-        await input.dependencies
-          .fetchStatReportKeywordDailyStatsBatch({
-            credentials:
-              input.credentials,
-            keywordIds:
-              statReportKeywords.map(
-                (keyword) => keyword.id,
-              ),
-            dateFrom:
-              input.state.cursor.dateFrom,
-            dateTo:
-              input.state.cursor.dateTo,
-            signal:
-              input.signal,
-          });
-    } catch {
-      assertNotAborted(
-        input.signal,
-        input.state.cursor,
-      );
+  let bestEffortResult:
+    NaverSearchAdsStatReportKeywordDailyStatsBestEffortResult |
+    null = null;
 
-      statReportResults = null;
+  if (statReportKeywords.length > 0) {
+    if (
+      !input.preferBestEffortStatReport ||
+      input.dependencies
+        .fetchStatReportKeywordDailyStatsBestEffort ===
+        null
+    ) {
+      try {
+        statReportResults =
+          await input.dependencies
+            .fetchStatReportKeywordDailyStatsBatch({
+              credentials:
+                input.credentials,
+              keywordIds:
+                statReportKeywords.map(
+                  (keyword) => keyword.id,
+                ),
+              dateFrom:
+                input.state.cursor.dateFrom,
+              dateTo:
+                input.state.cursor.dateTo,
+              signal:
+                input.signal,
+            });
+      } catch {
+        assertNotAborted(
+          input.signal,
+          input.state.cursor,
+        );
+
+        statReportResults = null;
+      }
+    }
+
+    if (
+      statReportResults === null &&
+      input.dependencies
+        .fetchStatReportKeywordDailyStatsBestEffort !==
+        null
+    ) {
+      try {
+        bestEffortResult =
+          await input.dependencies
+            .fetchStatReportKeywordDailyStatsBestEffort({
+              credentials:
+                input.credentials,
+              keywordIds:
+                statReportKeywords.map(
+                  (keyword) => keyword.id,
+                ),
+              dateFrom:
+                input.state.cursor.dateFrom,
+              dateTo:
+                input.state.cursor.dateTo,
+              signal:
+                input.signal,
+            });
+
+        if (
+          bestEffortResult
+            .unavailableDates.length ===
+          0
+        ) {
+          statReportResults =
+            bestEffortResult.results;
+        }
+      } catch {
+        assertNotAborted(
+          input.signal,
+          input.state.cursor,
+        );
+
+        bestEffortResult = null;
+      }
     }
   }
 
@@ -2209,6 +2449,62 @@ async function consumeWebSiteKeywordChunkBounded(input: {
     return CONTINUE_TRAVERSAL;
   }
 
+  let hybridReadyResults:
+    NaverSearchAdsKeywordDailyStatsResult[] |
+    null = null;
+
+  let hybridFallbackRange:
+    {
+      dateFrom: string;
+      dateTo: string;
+    } |
+    null = null;
+
+  let hybridUnavailableDates:
+    ReadonlySet<string> |
+    null = null;
+
+  if (bestEffortResult !== null) {
+    if (
+      bestEffortResult.results.length !==
+      statReportKeywords.length
+    ) {
+      throw new NaverKeywordStatsCollectorError(
+        "INVALID_INPUT",
+        "The WEB_SITE best-effort StatReport batch returned an unexpected result count.",
+        {
+          cursor:
+            input.state.cursor,
+        },
+      );
+    }
+
+    const fallbackRange =
+      resolveSingleContiguousDateRange(
+        bestEffortResult
+          .unavailableDates,
+      );
+
+    if (
+      bestEffortResult
+        .unavailableDates.length >
+        0 &&
+      fallbackRange !== null
+    ) {
+      hybridReadyResults =
+        bestEffortResult.results;
+
+      hybridFallbackRange =
+        fallbackRange;
+
+      hybridUnavailableDates =
+        new Set(
+          bestEffortResult
+            .unavailableDates,
+        );
+    }
+  }
+
   const waitForFallbackStart =
     createWebSiteStatsStartGate({
       state:
@@ -2334,6 +2630,111 @@ async function consumeWebSiteKeywordChunkBounded(input: {
 
       tasks.push(
         (async (): Promise<WebSiteStatsTaskResult> => {
+          if (
+            hybridReadyResults !==
+              null &&
+            hybridFallbackRange !==
+              null &&
+            hybridUnavailableDates !==
+              null
+          ) {
+            const readyStats =
+              hybridReadyResults[
+                currentKeywordIndex -
+                input.startIndex
+              ];
+
+            if (
+              !readyStats ||
+              readyStats.keywordId !==
+                keyword.id
+            ) {
+              throw new NaverKeywordStatsCollectorError(
+                "INVALID_INPUT",
+                "The WEB_SITE hybrid StatReport result does not match the keyword.",
+                {
+                  cursor:
+                    cursorBefore,
+                },
+              );
+            }
+
+            const exactStatsRequest =
+              await executeApiRequestWithRetry<
+                NaverSearchAdsKeywordDailyStatsResult
+              >({
+                operation:
+                  "keyword_stats",
+                keywordId:
+                  keyword.id,
+                state:
+                  requestState,
+                options:
+                  input.options,
+                signal:
+                  input.signal,
+                onRetry:
+                  input.onRetry,
+                dependencies:
+                  input.dependencies,
+                request:
+                  async (): Promise<NaverSearchAdsKeywordDailyStatsResult> => {
+                    await waitForFallbackStart();
+
+                    return input.dependencies
+                      .fetchKeywordDailyStats({
+                        credentials:
+                          input.credentials,
+                        keywordId:
+                          keyword.id,
+                        dateFrom:
+                          hybridFallbackRange.dateFrom,
+                        dateTo:
+                          hybridFallbackRange.dateTo,
+                      });
+                  },
+              });
+
+            requestState
+              .exactKeywordStatsCompletedInRun +=
+              1;
+
+            requestState
+              .exactStatsRequestsAttemptedInRun +=
+              exactStatsRequest
+                .attemptCount;
+
+            const mergedStats =
+              mergeHybridKeywordDailyStats({
+                ready:
+                  readyStats,
+                exact:
+                  exactStatsRequest.value,
+                unavailableDates:
+                  hybridUnavailableDates,
+                dateFrom:
+                  cursorBefore.dateFrom,
+                dateTo:
+                  cursorBefore.dateTo,
+              });
+
+            return {
+              keyword,
+              keywordIndex:
+                currentKeywordIndex,
+              cursorBefore,
+              cursorAfter,
+              statsRequest: {
+                value:
+                  mergedStats,
+                attemptCount:
+                  exactStatsRequest
+                    .attemptCount,
+              },
+              requestState,
+            };
+          }
+
           let statReportUnavailable =
             false;
           let usedStatReport =
@@ -2620,6 +3021,9 @@ async function consumeKeywordChunk(input: {
     );
   }
 
+  const resumedChunk =
+    input.resumeTarget.enabled;
+
   markResumeCompleted(
     input.resumeTarget,
   );
@@ -2675,6 +3079,8 @@ async function consumeKeywordChunk(input: {
         chunkIndex:
           input.chunkIndex,
         startIndex,
+        preferBestEffortStatReport:
+          resumedChunk,
         state:
           input.state,
         options:

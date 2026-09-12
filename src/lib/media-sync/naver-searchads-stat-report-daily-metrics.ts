@@ -294,12 +294,6 @@ async function waitForReadyReport(input: {
             input.reportType &&
           report.statDate ===
             compactStatDate &&
-          (
-            Boolean(report.downloadUrl) ||
-            isTerminalEmptyConversionReport(
-              report,
-            )
-          ) &&
           !isFailureStatus(
             report.status,
           ),
@@ -310,14 +304,26 @@ async function waitForReadyReport(input: {
           left.reportJobId,
       )[0];
 
-  if (reusableReport) {
+  if (
+    reusableReport &&
+    (
+      Boolean(reusableReport.downloadUrl) ||
+      isTerminalEmptyConversionReport(
+        reusableReport,
+      )
+    )
+  ) {
     return {
       report: reusableReport,
       reused: true,
     };
   }
 
+  const reused =
+    Boolean(reusableReport);
+
   let report =
+    reusableReport ??
     await createNaverSearchAdsStatReport({
       credentials: input.credentials,
       statDate: input.statDate,
@@ -339,7 +345,7 @@ async function waitForReadyReport(input: {
     ) {
       return {
         report,
-        reused: false,
+        reused,
       };
     }
 
@@ -1215,6 +1221,340 @@ export async function fetchNaverSearchAdsStatReportKeywordCandidates(
   );
 
   return candidates;
+}
+
+export type NaverSearchAdsStatReportKeywordDailyStatsBestEffortResult = {
+  results:
+    NaverSearchAdsKeywordDailyStatsResult[];
+  unavailableDates:
+    string[];
+};
+
+type ReadyReusableDailyMetricsIndex = {
+  index:
+    DailyMetricsIndex;
+  unavailableDates:
+    string[];
+};
+
+function findReadyReusableReport(input: {
+  reports:
+    readonly NaverSearchAdsStatReportRecord[];
+  statDate:
+    string;
+  reportType:
+    NaverSearchAdsStatReportType;
+}): NaverSearchAdsStatReportRecord | null {
+  const compactStatDate =
+    input.statDate.replaceAll("-", "");
+
+  return (
+    input.reports
+      .filter(
+        (report) =>
+          report.reportType ===
+            input.reportType &&
+          report.statDate ===
+            compactStatDate &&
+          !isFailureStatus(
+            report.status,
+          ) &&
+          (
+            Boolean(
+              report.downloadUrl,
+            ) ||
+            isTerminalEmptyConversionReport(
+              report,
+            )
+          ),
+      )
+      .sort(
+        (left, right) =>
+          right.reportJobId -
+          left.reportJobId,
+      )[0] ??
+    null
+  );
+}
+
+async function buildReadyReusableDailyMetricsIndex(input: {
+  credentials:
+    NaverSearchAdsCredentials;
+  dateFrom:
+    string;
+  dateTo:
+    string;
+  signal?:
+    AbortSignal;
+}): Promise<ReadyReusableDailyMetricsIndex> {
+  const dates =
+    enumerateDates({
+      dateFrom:
+        input.dateFrom,
+      dateTo:
+        input.dateTo,
+    });
+
+  const index:
+    DailyMetricsIndex = {
+      keyword:
+        new Map(),
+      adgroup:
+        new Map(),
+      keywordAdgroup:
+        new Map(),
+      keywordAdgroupConflicts:
+        new Set(),
+    };
+
+  const unavailableDates:
+    string[] = [];
+
+  const reusableReports =
+    await loadReusableReports({
+      credentials:
+        input.credentials,
+      signal:
+        input.signal,
+    });
+
+  for (const date of dates) {
+    assertNotAborted(
+      input.signal,
+    );
+
+    const adReport =
+      findReadyReusableReport({
+        reports:
+          reusableReports,
+        statDate:
+          date,
+        reportType:
+          "AD",
+      });
+
+    const conversionReport =
+      findReadyReusableReport({
+        reports:
+          reusableReports,
+        statDate:
+          date,
+        reportType:
+          "AD_CONVERSION",
+      });
+
+    if (
+      !adReport ||
+      !conversionReport ||
+      !adReport.downloadUrl ||
+      (
+        !isTerminalEmptyConversionReport(
+          conversionReport,
+        ) &&
+        !conversionReport.downloadUrl
+      )
+    ) {
+      unavailableDates.push(
+        date,
+      );
+
+      continue;
+    }
+
+    try {
+      const [
+        downloadedAd,
+        downloadedConversion,
+      ] =
+        await Promise.all([
+          downloadNaverSearchAdsStatReport({
+            credentials:
+              input.credentials,
+            downloadUrl:
+              adReport.downloadUrl,
+          }),
+
+          isTerminalEmptyConversionReport(
+            conversionReport,
+          )
+            ? Promise.resolve(
+                null,
+              )
+            : downloadNaverSearchAdsStatReport({
+                credentials:
+                  input.credentials,
+                downloadUrl:
+                  conversionReport.downloadUrl!,
+              }),
+        ]);
+
+      const adRows =
+        parseReportRows({
+          text:
+            downloadedAd.text,
+          expectedColumns:
+            AD_COLUMN_COUNT,
+          reportType:
+            "AD",
+        });
+
+      const conversionRows =
+        downloadedConversion
+          ? parseReportRows({
+              text:
+                downloadedConversion.text,
+              expectedColumns:
+                AD_CONVERSION_COLUMN_COUNT,
+              reportType:
+                "AD_CONVERSION",
+            })
+          : [];
+
+      aggregatePerformanceRows({
+        rows:
+          adRows,
+        date,
+        index,
+      });
+
+      aggregateConversionRows({
+        rows:
+          conversionRows,
+        date,
+        index,
+      });
+    } catch {
+      assertNotAborted(
+        input.signal,
+      );
+
+      unavailableDates.push(
+        date,
+      );
+    }
+  }
+
+  return {
+    index,
+    unavailableDates,
+  };
+}
+
+export async function fetchNaverSearchAdsStatReportKeywordDailyStatsBestEffort(
+  input:
+    FetchNaverSearchAdsStatReportKeywordDailyStatsBatchInput,
+): Promise<NaverSearchAdsStatReportKeywordDailyStatsBestEffortResult> {
+  const keywordIds =
+    normalizeKeywordIds(
+      input.keywordIds,
+    );
+
+  const dateFrom =
+    normalizeIsoDate(
+      input.dateFrom,
+      "dateFrom",
+    );
+
+  const dateTo =
+    normalizeIsoDate(
+      input.dateTo,
+      "dateTo",
+    );
+
+  const dates =
+    enumerateDates({
+      dateFrom,
+      dateTo,
+    });
+
+  const ready =
+    await buildReadyReusableDailyMetricsIndex({
+      credentials:
+        input.credentials,
+      dateFrom,
+      dateTo,
+      signal:
+        input.signal,
+    });
+
+  const results =
+    keywordIds.map(
+      (
+        keywordId,
+      ): NaverSearchAdsKeywordDailyStatsResult => {
+        const byDate =
+          ready.index.keyword.get(
+            keywordId,
+          );
+
+        const records:
+          NaverSearchAdsKeywordDailyStatsRecord[] =
+          [];
+
+        if (byDate) {
+          for (const date of dates) {
+            const metrics =
+              byDate.get(
+                date,
+              );
+
+            if (
+              !metrics ||
+              (
+                !metrics.hasPerformanceRow &&
+                !metrics.hasConversionRow
+              ) ||
+              (
+                metrics.impCnt === 0 &&
+                metrics.clkCnt === 0 &&
+                metrics.salesAmt === 0 &&
+                metrics.ccnt === 0 &&
+                metrics.convAmt === 0
+              )
+            ) {
+              continue;
+            }
+
+            records.push({
+              keywordId,
+              date,
+              periodStart:
+                date,
+              periodEnd:
+                date,
+              impCnt:
+                metrics.impCnt,
+              clkCnt:
+                metrics.clkCnt,
+              salesAmt:
+                metrics.salesAmt,
+              ccnt:
+                metrics.ccnt,
+              convAmt:
+                metrics.convAmt,
+              avgRnk:
+                roundRankToOneDecimal(
+                  metrics.sumRank,
+                  metrics.impCnt,
+                ),
+            });
+          }
+        }
+
+        return {
+          keywordId,
+          dateFrom,
+          dateTo,
+          records,
+        };
+      },
+    );
+
+  return {
+    results,
+    unavailableDates:
+      [...ready.unavailableDates],
+  };
 }
 
 export async function fetchNaverSearchAdsStatReportKeywordDailyStatsBatch(
