@@ -53,6 +53,9 @@ const GOOGLE_ADS_PROVIDER =
 const GOOGLE_ADS_ALL_DATA_EXECUTION_CONTRACT =
   "google_all_data_v1" as const;
 
+const DAILY_REPORT_V2_AUTOMATION_CONTRACT =
+  "daily_report_v2" as const;
+
 export function buildPendingMediaSyncJobExecutionContractFields(
   provider: MediaProvider,
 ) {
@@ -138,6 +141,35 @@ export type CreatePendingMediaSyncJobInput = {
   dataLevel: MediaSyncDataLevel;
   mode: MediaSyncMode;
 };
+
+type CreatePendingMediaSyncJobInternalInput =
+  CreatePendingMediaSyncJobInput &
+  Readonly<{
+    automationContract?:
+      typeof DAILY_REPORT_V2_AUTOMATION_CONTRACT;
+    useExplicitMappedConnection?:
+      boolean;
+  }>;
+
+export type CreatePendingDailyReportV2MediaSyncJobInput =
+  Omit<
+    CreatePendingMediaSyncJobInput,
+    "jobId" | "connectionId"
+  > &
+  Readonly<{
+    /**
+     * Required deterministic identity.
+     * Daily Report V2 never creates anonymous scheduler jobs.
+     */
+    jobId: string;
+
+    /**
+     * Explicit participating connection selected from the
+     * report_media_connections mapping set.
+     */
+    connectionId: string;
+  }>;
+
 
 export type ListRecentMediaSyncJobsForReportInput = {
   reportId: string;
@@ -750,6 +782,100 @@ async function resolveReportConnectionId(input: {
 }
 
 
+
+async function requireExplicitReportMappedConnectionId(input: {
+  reportId: string;
+  workspaceId: string;
+  advertiserId: string;
+  connectionId: string;
+}): Promise<string> {
+  const supabase = getSupabaseAdmin();
+
+  const {
+    data,
+    error,
+  } = await supabase
+    .from(REPORT_MEDIA_CONNECTIONS_TABLE)
+    .select(
+      "workspace_id, advertiser_id, report_id, connection_id",
+    )
+    .eq(
+      "report_id",
+      input.reportId,
+    )
+    .eq(
+      "workspace_id",
+      input.workspaceId,
+    )
+    .eq(
+      "advertiser_id",
+      input.advertiserId,
+    )
+    .eq(
+      "connection_id",
+      input.connectionId,
+    )
+    .limit(2);
+
+  if (error) {
+    throw wrapDatabaseError(
+      "Explicit report media connection mapping could not be loaded.",
+      error,
+    );
+  }
+
+  if (!Array.isArray(data)) {
+    throw new MediaSyncJobsRepositoryError(
+      "INVALID_RECORD",
+      "Explicit report media connection mapping query returned an invalid result.",
+    );
+  }
+
+  if (data.length === 0) {
+    throw new MediaSyncJobsRepositoryError(
+      "REPORT_CONNECTION_NOT_MAPPED",
+      "The requested connection is not mapped to the report.",
+    );
+  }
+
+  if (data.length !== 1) {
+    throw new MediaSyncJobsRepositoryError(
+      "INVALID_RECORD",
+      "Explicit report media connection mapping query returned duplicate rows.",
+    );
+  }
+
+  const row = data[0];
+
+  if (
+    !isPlainObject(row) ||
+    requireString(
+      row.report_id,
+      "mapping.report_id",
+    ) !== input.reportId ||
+    requireString(
+      row.workspace_id,
+      "mapping.workspace_id",
+    ) !== input.workspaceId ||
+    requireString(
+      row.advertiser_id,
+      "mapping.advertiser_id",
+    ) !== input.advertiserId ||
+    requireString(
+      row.connection_id,
+      "mapping.connection_id",
+    ) !== input.connectionId
+  ) {
+    throw new MediaSyncJobsRepositoryError(
+      "INVALID_RECORD",
+      "Explicit report media connection mapping does not match the requested scope.",
+    );
+  }
+
+  return input.connectionId;
+}
+
+
 function normalizeStaleProcessingJobMs(
   value: unknown,
 ): number {
@@ -1008,8 +1134,8 @@ export async function recoverStaleProcessingNaverMediaSyncJobs(
 }
 
 
-export async function createPendingMediaSyncJob(
-  input: CreatePendingMediaSyncJobInput,
+async function createPendingMediaSyncJobInternal(
+  input: CreatePendingMediaSyncJobInternalInput,
 ): Promise<SafeMediaSyncJob> {
   const reportId = normalizeRequiredString(
     input.reportId,
@@ -1048,6 +1174,50 @@ export async function createPendingMediaSyncJob(
           "connectionId",
           200,
         );
+
+  const automationContract =
+    input.automationContract ===
+      undefined ||
+    input.automationContract ===
+      null
+      ? null
+      : input.automationContract ===
+          DAILY_REPORT_V2_AUTOMATION_CONTRACT
+        ? DAILY_REPORT_V2_AUTOMATION_CONTRACT
+        : (() => {
+            throw new MediaSyncJobsRepositoryError(
+              "INVALID_INPUT",
+              "automationContract is invalid.",
+            );
+          })();
+
+  const useExplicitMappedConnection =
+    input.useExplicitMappedConnection === true;
+
+  if (
+    useExplicitMappedConnection &&
+    (
+      automationContract !==
+        DAILY_REPORT_V2_AUTOMATION_CONTRACT ||
+      requestedJobId === null ||
+      expectedConnectionId === null
+    )
+  ) {
+    throw new MediaSyncJobsRepositoryError(
+      "INVALID_INPUT",
+      "Daily Report V2 job creation requires a deterministic job id and an explicit mapped connection.",
+    );
+  }
+
+  if (
+    !useExplicitMappedConnection &&
+    automationContract !== null
+  ) {
+    throw new MediaSyncJobsRepositoryError(
+      "INVALID_INPUT",
+      "Automation routing authority requires the explicit mapped-connection creator.",
+    );
+  }
 
   const workspaceId =
     normalizeRequiredString(
@@ -1125,11 +1295,19 @@ export async function createPendingMediaSyncJob(
   });
 
   const connectionId =
-    await resolveReportConnectionId({
-      reportId: report.id,
-      workspaceId,
-      advertiserId,
-    });
+    useExplicitMappedConnection
+      ? await requireExplicitReportMappedConnectionId({
+          reportId: report.id,
+          workspaceId,
+          advertiserId,
+          connectionId:
+            expectedConnectionId as string,
+        })
+      : await resolveReportConnectionId({
+          reportId: report.id,
+          workspaceId,
+          advertiserId,
+        });
 
   if (
     expectedConnectionId !== null &&
@@ -1254,6 +1432,15 @@ export async function createPendingMediaSyncJob(
       connection.provider,
     ),
 
+    ...(
+      automationContract === null
+        ? {}
+        : {
+            automation_contract:
+              automationContract,
+          }
+    ),
+
     external_account_id:
       connection.external_account_id,
 
@@ -1333,6 +1520,11 @@ export async function createPendingMediaSyncJob(
               input.dataLevel &&
             existingRecord.mode ===
               MEDIA_SYNC_JOB_MODE &&
+            (
+              existingRecord.automation_contract ??
+                null
+            ) ===
+              automationContract &&
             existingRecord.created_by ===
               createdBy;
 
@@ -1380,6 +1572,11 @@ export async function createPendingMediaSyncJob(
       advertiserId ||
     record.provider !==
       connection.provider ||
+    (
+      record.automation_contract ??
+        null
+    ) !==
+      automationContract ||
     record.external_account_id !==
       connection.external_account_id ||
     record.created_by !== createdBy
@@ -1438,6 +1635,47 @@ export async function createPendingMediaSyncJob(
 
   return toSafeMediaSyncJob(record);
 }
+
+
+/**
+ * Existing public/manual/internal single-mapping creator.
+ *
+ * Its historical mapping semantics remain unchanged:
+ * connectionId is assertion-only and exactly one report mapping
+ * must resolve through resolveReportConnectionId().
+ */
+export async function createPendingMediaSyncJob(
+  input: CreatePendingMediaSyncJobInput,
+): Promise<SafeMediaSyncJob> {
+  return createPendingMediaSyncJobInternal(
+    input,
+  );
+}
+
+/**
+ * Internal Daily Report V2 creator.
+ *
+ * This is intentionally not exposed through the public POST route.
+ * It requires:
+ * - deterministic job id
+ * - explicit connection id
+ * - an existing exact report_media_connections mapping
+ * - durable automation_contract=daily_report_v2
+ */
+export async function createPendingDailyReportV2MediaSyncJob(
+  input: CreatePendingDailyReportV2MediaSyncJobInput,
+): Promise<SafeMediaSyncJob> {
+  return createPendingMediaSyncJobInternal({
+    ...input,
+
+    automationContract:
+      DAILY_REPORT_V2_AUTOMATION_CONTRACT,
+
+    useExplicitMappedConnection:
+      true,
+  });
+}
+
 
 export async function listRecentMediaSyncJobsForReport(
   input: ListRecentMediaSyncJobsForReportInput,
