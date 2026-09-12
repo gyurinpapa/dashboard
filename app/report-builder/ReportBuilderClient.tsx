@@ -521,14 +521,8 @@ export default function ReportBuilderPage() {
     useState<ReportDataSourceKind>("csv");
   const [selectedReportTheme, setSelectedReportTheme] =
     useState<ReportTheme>("light");
-  const [selectedApiMediaConnectionId, setSelectedApiMediaConnectionId] =
-    useState("");
-  const [selectedApiDailyAutoSync, setSelectedApiDailyAutoSync] =
-    useState(false);
-  const [dailyAutoPeriodStart, setDailyAutoPeriodStart] =
-    useState("");
-  const [dailyAutoPeriodEnd, setDailyAutoPeriodEnd] =
-    useState("");
+  const [selectedApiMediaConnectionIds, setSelectedApiMediaConnectionIds] =
+    useState<string[]>([]);
 
   const [googleAdsConnectionFormOpen, setGoogleAdsConnectionFormOpen] =
     useState(false);
@@ -1175,7 +1169,7 @@ export default function ReportBuilderPage() {
     mediaConnectionScopeKeyRef.current = scopeKey;
 
     setSelectedAdvertiserMediaConnections([]);
-    setSelectedApiMediaConnectionId("");
+    setSelectedApiMediaConnectionIds([]);
     setSelectedAdvertiserMediaAccessScope(null);
     setSelectedAdvertiserMediaConnectionsError("");
     setResolvedAdvertiserMediaConnectionScopeKey("");
@@ -1747,7 +1741,7 @@ export default function ReportBuilderPage() {
     setReportFilter("all");
     setSelectedAdvertiserId("");
     setSelectedReportDataSourceKind("csv");
-    setSelectedApiMediaConnectionId("");
+    setSelectedApiMediaConnectionIds([]);
     setNewAdvertiserName("");
     setPublicSlugInput("");
     setSavingPublicSlug(false);
@@ -2398,7 +2392,9 @@ export default function ReportBuilderPage() {
 
   async function createReport(type: ReportType) {
     if (isAllWorkspaceMode) {
-      setLocalMsg("전체 workspace 보기에서는 리포트를 생성할 수 없습니다. 특정 workspace를 선택해 주세요.");
+      setLocalMsg(
+        "전체 workspace 보기에서는 리포트를 생성할 수 없습니다. 특정 workspace를 선택해 주세요."
+      );
       return;
     }
 
@@ -2409,19 +2405,11 @@ export default function ReportBuilderPage() {
 
     if (!workspaceId || creating) return;
 
-    const normalizedDailyAutoPeriodStart =
-      selectedApiDailyAutoSync
-        ? normalizeYmdOrNull(dailyAutoPeriodStart)
-        : null;
-
-    const normalizedDailyAutoPeriodEnd =
-      selectedApiDailyAutoSync
-        ? normalizeYmdOrNull(dailyAutoPeriodEnd)
-        : null;
-
     if (selectedReportDataSourceKind === "api") {
       if (!selectedAdvertiserId) {
-        setLocalMsg("API 연동형 리포트는 광고주를 먼저 선택해야 합니다.");
+        setLocalMsg(
+          "API 연동형 리포트는 광고주를 먼저 선택해야 합니다."
+        );
         return;
       }
 
@@ -2429,46 +2417,41 @@ export default function ReportBuilderPage() {
         loadingSelectedAdvertiserMediaConnections ||
         !hasCurrentAdvertiserMediaConnectionSnapshot
       ) {
-        setLocalMsg("현재 광고주의 매체 연결 상태를 확인한 뒤 다시 시도해 주세요.");
-        return;
-      }
-
-      if (selectedAdvertiserMediaConnectionsError) {
-        setLocalMsg("현재 광고주의 매체 연결 상태를 안전하게 확인할 수 없습니다.");
-        return;
-      }
-
-      if (!selectedApiMediaConnectionId) {
-        setLocalMsg("API 연동형 리포트에 사용할 매체 연결을 선택해 주세요.");
-        return;
-      }
-
-      if (!selectedApiReportConnection) {
         setLocalMsg(
-          "선택한 매체 연결을 API 리포트에 사용할 수 없습니다. 연결 상태를 다시 확인해 주세요."
+          "현재 광고주의 매체 연결 상태를 확인한 뒤 다시 시도해 주세요."
         );
         return;
       }
 
-      if (selectedApiDailyAutoSync) {
-        if (!selectedNaverApiReportConnection) {
-          setLocalMsg(
-            "데일리 자동 수집 보고서는 검증된 Naver Search Ads 연결만 사용할 수 있습니다."
-          );
-          return;
-        }
+      if (selectedAdvertiserMediaConnectionsError) {
+        setLocalMsg(
+          "현재 광고주의 매체 연결 상태를 안전하게 확인할 수 없습니다."
+        );
+        return;
+      }
 
-        if (
-          !normalizedDailyAutoPeriodStart ||
-          !normalizedDailyAutoPeriodEnd ||
-          normalizedDailyAutoPeriodStart >
-            normalizedDailyAutoPeriodEnd
-        ) {
-          setLocalMsg(
-            "데일리 자동 수집 보고서의 시작일과 종료일을 정확히 입력해 주세요."
-          );
-          return;
-        }
+      if (
+        selectedApiMediaConnectionIds.length < 1 ||
+        selectedApiMediaConnectionIds.length > 16
+      ) {
+        setLocalMsg(
+          "API 연동형 리포트에는 사용할 연결을 1개 이상 16개 이하로 선택해 주세요."
+        );
+        return;
+      }
+
+      if (
+        selectedApiReportConnections.length !==
+        selectedApiMediaConnectionIds.length
+      ) {
+        setSelectedApiMediaConnectionIds([]);
+        setMediaConnectionsRefreshVersion(
+          (prev) => prev + 1
+        );
+        setLocalMsg(
+          "선택한 API 연결 상태가 변경되었습니다. 연결 상태를 다시 확인한 뒤 선택해 주세요."
+        );
+        return;
       }
     }
 
@@ -2476,13 +2459,16 @@ export default function ReportBuilderPage() {
     setLocalMsg("");
 
     const token = await getAccessToken();
+
     if (!token) {
       setCreating(false);
       setLocalMsg("로그인 세션이 없습니다.");
       return;
     }
 
-    const advertiserId = selectedAdvertiserId || null;
+    const advertiserId =
+      selectedAdvertiserId || null;
+
     const reportDataSourceMeta =
       selectedReportDataSourceKind === "api"
         ? {
@@ -2491,17 +2477,6 @@ export default function ReportBuilderPage() {
               data_level: "keyword",
               mode: "snapshot_replace",
             },
-            ...(selectedApiDailyAutoSync
-              ? {
-                  media_sync: {
-                    auto_sync: {
-                      enabled: true,
-                      contract:
-                        "naver_daily_report_v1",
-                    },
-                  },
-                }
-              : {}),
           }
         : {
             data_source: {
@@ -2509,82 +2484,98 @@ export default function ReportBuilderPage() {
             },
           };
 
-    const res = await fetch("/api/reports/create", {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        workspace_id: workspaceId,
-        advertiser_id: advertiserId,
-        ...(selectedReportDataSourceKind === "api"
-          ? {
-              connection_id: selectedApiReportConnection?.id ?? null,
-            }
-          : {}),
-        ...(selectedApiDailyAutoSync
-          ? {
-              period_start:
-                normalizedDailyAutoPeriodStart,
-              period_end:
-                normalizedDailyAutoPeriodEnd,
-            }
-          : {}),
-        report_type_id: type.id,
-        title: `${type.name} - Draft`,
-        meta: {
-          ...reportDataSourceMeta,
-          report_theme: selectedReportTheme,
+    const res = await fetch(
+      "/api/reports/create",
+      {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type":
+            "application/json",
+          Authorization:
+            `Bearer ${token}`,
         },
-        status: "draft",
-      }),
-    });
+        body: JSON.stringify({
+          workspace_id:
+            workspaceId,
 
-    const json = await safeReadJson(res);
-    const reportId = (json as any)?.report?.id;
+          advertiser_id:
+            advertiserId,
+
+          ...(selectedReportDataSourceKind === "api"
+            ? {
+                connection_ids:
+                  selectedApiReportConnections.map(
+                    (connection) =>
+                      connection.id
+                  ),
+              }
+            : {}),
+
+          report_type_id:
+            type.id,
+
+          title:
+            `${type.name} - Draft`,
+
+          meta: {
+            ...reportDataSourceMeta,
+            report_theme:
+              selectedReportTheme,
+          },
+
+          status:
+            "draft",
+        }),
+      }
+    );
+
+    const json =
+      await safeReadJson(res);
+
+    const reportId =
+      (json as any)?.report?.id;
 
     setCreating(false);
 
     if (!res.ok || !reportId) {
-      console.warn("[reports/create] failed", res.status, json);
+      console.warn(
+        "[reports/create] failed",
+        res.status,
+        json
+      );
 
-      const createError = String((json as any)?.error ?? "").trim();
+      const createError =
+        String(
+          (json as any)?.error ?? ""
+        ).trim();
 
       if (
         selectedReportDataSourceKind === "api" &&
         (
+          createError === "INVALID_CONNECTION_IDS" ||
+          createError ===
+            "API_REPORT_CONNECTION_INPUT_CONFLICT" ||
           createError === "CONNECTION_NOT_FOUND" ||
-          createError === "CONNECTION_SCOPE_MISMATCH" ||
-          createError === "CONNECTION_NOT_ACTIVE" ||
-          createError === "CONNECTION_CREDENTIALS_MISSING"
+          createError ===
+            "CONNECTION_SCOPE_MISMATCH" ||
+          createError ===
+            "CONNECTION_NOT_ACTIVE" ||
+          createError ===
+            "CONNECTION_CREDENTIALS_MISSING" ||
+          createError === "INVALID_INPUT"
         )
       ) {
-        setSelectedApiMediaConnectionId("");
-        setMediaConnectionsRefreshVersion((prev) => prev + 1);
+        setSelectedApiMediaConnectionIds([]);
+
+        setMediaConnectionsRefreshVersion(
+          (prev) => prev + 1
+        );
+
         setLocalMsg(
           "선택한 API 연결 상태가 변경되었습니다. 연결 상태를 다시 확인한 뒤 선택해 주세요."
         );
-        return;
-      }
 
-      if (
-        selectedApiDailyAutoSync &&
-        (
-          createError ===
-            "INVALID_DAILY_AUTO_SYNC_CONTRACT" ||
-          createError ===
-            "DAILY_AUTO_SYNC_PERIOD_REQUIRED" ||
-          createError ===
-            "DAILY_AUTO_SYNC_NAVER_CONNECTION_REQUIRED" ||
-          createError ===
-            "DAILY_AUTO_SYNC_CONNECTION_UNVERIFIED"
-        )
-      ) {
-        setLocalMsg(
-          "데일리 자동 수집 보고서 설정을 다시 확인해 주세요."
-        );
         return;
       }
 
@@ -2593,7 +2584,10 @@ export default function ReportBuilderPage() {
     }
 
     await fetchReports();
-    router.push(`/reports/${reportId}`);
+
+    router.push(
+      `/reports/${reportId}`
+    );
   }
 
   async function updateExistingReportTheme(
@@ -3123,7 +3117,7 @@ export default function ReportBuilderPage() {
 
     setSelectedAdvertiserId("");
     setSelectedReportDataSourceKind("csv");
-    setSelectedApiMediaConnectionId("");
+    setSelectedApiMediaConnectionIds([]);
     setPublicSlugInput("");
     setSavingPublicSlug(false);
     setSelectedAdvertiserIds([]);
@@ -3225,35 +3219,57 @@ export default function ReportBuilderPage() {
     selectedAdvertiserNaverConnections.length === 1
       ? selectedAdvertiserNaverConnections[0]
       : null;
-  const selectedApiReportConnection =
+  const usableApiReportConnections =
     hasCurrentAdvertiserMediaConnectionSnapshot &&
     !selectedAdvertiserMediaConnectionsError
-      ? [...usableNaverConnections, ...usableGoogleConnections].find(
-          (connection) => connection.id === selectedApiMediaConnectionId
-        ) ?? null
-      : null;
+      ? [
+          ...usableNaverConnections,
+          ...usableGoogleConnections,
+        ]
+      : [];
 
-  const selectedNaverApiReportConnection =
-    selectedApiReportConnection?.provider === "naver_searchad"
-      ? selectedApiReportConnection
-      : null;
+  const selectedApiReportConnections =
+    usableApiReportConnections.filter(
+      (connection) =>
+        selectedApiMediaConnectionIds.includes(
+          connection.id
+        )
+    );
 
-  const selectedGoogleApiReportConnection =
-    selectedApiReportConnection?.provider === "google_ads"
-      ? selectedApiReportConnection
-      : null;
+  const selectedNaverApiReportConnections =
+    selectedApiReportConnections.filter(
+      (connection) =>
+        connection.provider === "naver_searchad"
+    );
 
-  useEffect(() => {
-    if (
-      selectedApiDailyAutoSync &&
-      !selectedNaverApiReportConnection
-    ) {
-      setSelectedApiDailyAutoSync(false);
-    }
-  }, [
-    selectedApiDailyAutoSync,
-    selectedNaverApiReportConnection,
-  ]);
+  const selectedGoogleApiReportConnections =
+    selectedApiReportConnections.filter(
+      (connection) =>
+        connection.provider === "google_ads"
+    );
+
+  function toggleApiReportConnection(
+    connectionId: string
+  ) {
+    setSelectedApiMediaConnectionIds(
+      (current) => {
+        if (current.includes(connectionId)) {
+          return current.filter(
+            (id) => id !== connectionId
+          );
+        }
+
+        if (current.length >= 16) {
+          return current;
+        }
+
+        return [
+          ...current,
+          connectionId,
+        ];
+      }
+    );
+  }
 
   const canManageSelectedAdvertiserMediaConnections =
     hasCurrentAdvertiserMediaConnectionSnapshot &&
@@ -5856,10 +5872,7 @@ export default function ReportBuilderPage() {
                         setSelectedReportDataSourceKind(kind);
 
                         if (kind !== "api") {
-                          setSelectedApiMediaConnectionId("");
-                          setSelectedApiDailyAutoSync(false);
-                          setDailyAutoPeriodStart("");
-                          setDailyAutoPeriodEnd("");
+                          setSelectedApiMediaConnectionIds([]);
                         }
                       }}
                       disabled={disabled || creating}
@@ -5879,7 +5892,7 @@ export default function ReportBuilderPage() {
                       </div>
                       <div className="dataSourceDescription">
                         {kind === "api"
-                          ? "기간을 설정한 뒤 매체 API로 데이터를 가져옵니다."
+                          ? "이 리포트에 사용할 매체 API 연결을 선택합니다."
                           : "CSV 파일을 업로드해 데이터 기간을 자동 산정합니다."}
                       </div>
                     </button>
@@ -5926,16 +5939,19 @@ export default function ReportBuilderPage() {
                   <span
                     style={{
                       borderRadius: 999,
-                      border: selectedApiReportConnection
+                      border: selectedApiReportConnections.length > 0
                         ? "1px solid rgba(110, 231, 183, 0.28)"
                         : "1px solid rgba(255, 255, 255, 0.12)",
-                      background: selectedApiReportConnection
+                      background: selectedApiReportConnections.length > 0
                         ? "rgba(110, 231, 183, 0.10)"
                         : "rgba(255, 255, 255, 0.05)",
                       padding: "5px 9px",
                       fontSize: 10,
                       fontWeight: 900,
-                      color: selectedApiReportConnection ? "#a7f3d0" : "#bbb8d4",
+                      color:
+                        selectedApiReportConnections.length > 0
+                          ? "#a7f3d0"
+                          : "#bbb8d4",
                       whiteSpace: "nowrap",
                     }}
                   >
@@ -5944,8 +5960,8 @@ export default function ReportBuilderPage() {
                       ? "연결 확인 중"
                       : selectedAdvertiserMediaConnectionsError
                       ? "확인 불가"
-                      : selectedApiReportConnection
-                      ? "● 선택 완료"
+                      : selectedApiReportConnections.length > 0
+                      ? `● ${selectedApiReportConnections.length}개 선택`
                       : "연결 선택 필요"}
                   </span>
                 </div>
@@ -6031,23 +6047,26 @@ export default function ReportBuilderPage() {
                             style={{
                               flexShrink: 0,
                               borderRadius: 999,
-                              border: selectedNaverApiReportConnection
-                                ? "1px solid rgba(110, 231, 183, 0.28)"
-                                : "1px solid rgba(255, 255, 255, 0.12)",
-                              background: selectedNaverApiReportConnection
-                                ? "rgba(110, 231, 183, 0.10)"
-                                : "rgba(255, 255, 255, 0.05)",
+                              border:
+                                selectedNaverApiReportConnections.length > 0
+                                  ? "1px solid rgba(110, 231, 183, 0.28)"
+                                  : "1px solid rgba(255, 255, 255, 0.12)",
+                              background:
+                                selectedNaverApiReportConnections.length > 0
+                                  ? "rgba(110, 231, 183, 0.10)"
+                                  : "rgba(255, 255, 255, 0.05)",
                               padding: "4px 8px",
                               fontSize: 10,
                               fontWeight: 900,
-                              color: selectedNaverApiReportConnection
-                                ? "#a7f3d0"
-                                : "#bbb8d4",
+                              color:
+                                selectedNaverApiReportConnections.length > 0
+                                  ? "#a7f3d0"
+                                  : "#bbb8d4",
                               whiteSpace: "nowrap",
                             }}
                           >
-                            {selectedNaverApiReportConnection
-                              ? "● 선택됨"
+                            {selectedNaverApiReportConnections.length > 0
+                              ? `● ${selectedNaverApiReportConnections.length}개 선택`
                               : usableNaverConnections.length > 0
                                 ? "선택 가능"
                                 : naverUnverifiedConnection
@@ -6064,37 +6083,28 @@ export default function ReportBuilderPage() {
                             color: "#bbb8d4",
                           }}
                         >
-                          리포트 생성에 사용할 Naver Search Ads 연결을
+                          이 리포트에 포함할 Naver Search Ads 연결을
                           선택합니다.
                         </div>
 
                         <div
-                          className="advertiserSelectWrap"
-                          style={{ marginTop: 12 }}
+                          style={{
+                            display: "grid",
+                            gap: 8,
+                            marginTop: 12,
+                          }}
                         >
-                          <select
-                            value={
-                              selectedNaverApiReportConnection
-                                ? selectedApiMediaConnectionId
-                                : ""
-                            }
-                            onChange={(e) =>
-                              setSelectedApiMediaConnectionId(e.target.value)
-                            }
-                            disabled={
-                              creating || usableNaverConnections.length === 0
-                            }
-                            className="advertiserSelect"
-                          >
-                            <option value="">
-                              Naver Search Ads 연결을 선택하세요
-                            </option>
-
-                            {selectedAdvertiserNaverConnections.map(
+                          {selectedAdvertiserNaverConnections.length > 0 ? (
+                            selectedAdvertiserNaverConnections.map(
                               (connection) => {
                                 const selectable =
                                   isVerifiedNaverConnection(
                                     connection
+                                  );
+
+                                const checked =
+                                  selectedApiMediaConnectionIds.includes(
+                                    connection.id
                                   );
 
                                 const statusLabel =
@@ -6104,196 +6114,86 @@ export default function ReportBuilderPage() {
                                       ? "오류"
                                       : !connection.has_credentials
                                         ? "자격증명 필요"
-                                        : !connection.last_verified_at
+                                        : !connection.last_verified_at &&
+                                            !connection.last_sync_at
                                           ? "인증 확인 필요"
                                           : "사용 가능";
 
                                 return (
-                                  <option
+                                  <label
                                     key={connection.id}
-                                    value={connection.id}
-                                    disabled={!selectable}
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: 9,
+                                      border:
+                                        checked
+                                          ? "1px solid rgba(110, 231, 183, 0.28)"
+                                          : "1px solid rgba(255, 255, 255, 0.10)",
+                                      borderRadius: 10,
+                                      background:
+                                        checked
+                                          ? "rgba(110, 231, 183, 0.08)"
+                                          : "rgba(42, 33, 87, 0.72)",
+                                      padding: "9px 10px",
+                                      cursor:
+                                        selectable && !creating
+                                          ? "pointer"
+                                          : "not-allowed",
+                                      opacity:
+                                        selectable
+                                          ? 1
+                                          : 0.58,
+                                    }}
                                   >
-                                    {connection.external_account_name ||
-                                      connection.external_account_id}{" "}
-                                    · {connection.external_account_id} ·{" "}
-                                    {statusLabel}
-                                  </option>
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      disabled={
+                                        creating ||
+                                        !selectable
+                                      }
+                                      onChange={() =>
+                                        toggleApiReportConnection(
+                                          connection.id
+                                        )
+                                      }
+                                    />
+
+                                    <span
+                                      style={{
+                                        minWidth: 0,
+                                        fontSize: 11,
+                                        lineHeight: 1.5,
+                                        color:
+                                          checked
+                                            ? "#a7f3d0"
+                                            : "#d7d5ec",
+                                      }}
+                                    >
+                                      {connection.external_account_name ||
+                                        connection.external_account_id}
+                                      {" · "}
+                                      {connection.external_account_id}
+                                      {" · "}
+                                      {statusLabel}
+                                    </span>
+                                  </label>
                                 );
                               },
-                            )}
-                          </select>
-
-                          <span
-                            className="advertiserSelectArrow"
-                            aria-hidden="true"
-                          >
-                            ⌄
-                          </span>
-                        </div>
-
-                        <div
-                          style={{
-                            marginTop: 10,
-                            fontSize: 11,
-                            lineHeight: 1.55,
-                            color: selectedNaverApiReportConnection
-                              ? "#a7f3d0"
-                              : "#bbb8d4",
-                          }}
-                        >
-                          {selectedNaverApiReportConnection
-                            ? `선택됨 · ${
-                                selectedNaverApiReportConnection.external_account_name ||
-                                selectedNaverApiReportConnection.external_account_id
-                              } · ${
-                                selectedNaverApiReportConnection.external_account_id
-                              }`
-                            : usableNaverConnections.length === 0
-                              ? naverUnverifiedConnection
-                                ? "Naver API 인증이 확인되지 않아 이 연결을 사용할 수 없습니다."
-                                : "현재 사용할 수 있는 Naver Search Ads 연결이 없습니다."
-                              : "사용할 연결을 선택하세요."}
-                        </div>
-
-                        <button
-                          type="button"
-                          className="subBtn"
-                          aria-pressed={
-                            selectedApiDailyAutoSync
-                          }
-                          disabled={
-                            creating ||
-                            !selectedNaverApiReportConnection
-                          }
-                          onClick={() =>
-                            setSelectedApiDailyAutoSync(
-                              (current) => !current
                             )
-                          }
-                          style={{
-                            width: "100%",
-                            marginTop: 14,
-                            padding: "10px 12px",
-                            borderColor:
-                              selectedApiDailyAutoSync
-                                ? "#21dff3"
-                                : "rgba(255, 255, 255, 0.13)",
-                            background:
-                              selectedApiDailyAutoSync
-                                ? "rgba(33, 223, 243, 0.10)"
-                                : "rgba(46, 35, 94, 0.72)",
-                            color:
-                              selectedApiDailyAutoSync
-                                ? "#a7f3d0"
-                                : "#f7f7ff",
-                          }}
-                          title={
-                            selectedNaverApiReportConnection
-                              ? "이 리포트를 Naver Search Ads 데일리 자동 수집 대상으로 생성합니다."
-                              : "검증된 Naver Search Ads 연결을 먼저 선택해 주세요."
-                          }
-                        >
-                          {selectedApiDailyAutoSync
-                            ? "● 데일리 자동 수집 보고서"
-                            : "데일리 자동 수집 보고서"}
-                        </button>
-
-                        <div
-                          style={{
-                            marginTop: 8,
-                            fontSize: 11,
-                            lineHeight: 1.55,
-                            color: "#bbb8d4",
-                          }}
-                        >
-                          활성화하면 지정 기간을 기준으로 완료되지 않은
-                          가장 오래된 날짜부터 하루씩 자동 수집합니다.
+                          ) : (
+                            <div
+                              style={{
+                                fontSize: 11,
+                                lineHeight: 1.55,
+                                color: "#bbb8d4",
+                              }}
+                            >
+                              등록된 Naver Search Ads 연결이 없습니다.
+                            </div>
+                          )}
                         </div>
-
-                        {selectedApiDailyAutoSync ? (
-                          <div
-                            style={{
-                              display: "grid",
-                              gridTemplateColumns:
-                                "repeat(2, minmax(0, 1fr))",
-                              gap: 10,
-                              marginTop: 12,
-                            }}
-                          >
-                            <label
-                              style={{
-                                display: "grid",
-                                gap: 6,
-                                fontSize: 11,
-                                color: "#d7d5ec",
-                              }}
-                            >
-                              시작일
-                              <input
-                                type="date"
-                                value={dailyAutoPeriodStart}
-                                max={
-                                  dailyAutoPeriodEnd ||
-                                  undefined
-                                }
-                                onChange={(e) =>
-                                  setDailyAutoPeriodStart(
-                                    e.target.value
-                                  )
-                                }
-                                disabled={creating}
-                                style={{
-                                  width: "100%",
-                                  minWidth: 0,
-                                  padding: "9px 10px",
-                                  borderRadius: 10,
-                                  border:
-                                    "1px solid rgba(255, 255, 255, 0.13)",
-                                  background:
-                                    "rgba(42, 33, 87, 0.92)",
-                                  color: "#f7f7ff",
-                                }}
-                              />
-                            </label>
-
-                            <label
-                              style={{
-                                display: "grid",
-                                gap: 6,
-                                fontSize: 11,
-                                color: "#d7d5ec",
-                              }}
-                            >
-                              종료일
-                              <input
-                                type="date"
-                                value={dailyAutoPeriodEnd}
-                                min={
-                                  dailyAutoPeriodStart ||
-                                  undefined
-                                }
-                                onChange={(e) =>
-                                  setDailyAutoPeriodEnd(
-                                    e.target.value
-                                  )
-                                }
-                                disabled={creating}
-                                style={{
-                                  width: "100%",
-                                  minWidth: 0,
-                                  padding: "9px 10px",
-                                  borderRadius: 10,
-                                  border:
-                                    "1px solid rgba(255, 255, 255, 0.13)",
-                                  background:
-                                    "rgba(42, 33, 87, 0.92)",
-                                  color: "#f7f7ff",
-                                }}
-                              />
-                            </label>
-                          </div>
-                        ) : null}
                       </div>
 
                       <div
@@ -6343,25 +6243,25 @@ export default function ReportBuilderPage() {
                               flexShrink: 0,
                               borderRadius: 999,
                               border:
-                                usableGoogleConnections.length > 0
+                                selectedGoogleApiReportConnections.length > 0
                                   ? "1px solid rgba(110, 231, 183, 0.28)"
                                   : "1px solid rgba(255, 255, 255, 0.12)",
                               background:
-                                usableGoogleConnections.length > 0
+                                selectedGoogleApiReportConnections.length > 0
                                   ? "rgba(110, 231, 183, 0.10)"
                                   : "rgba(255, 255, 255, 0.05)",
                               padding: "4px 8px",
                               fontSize: 10,
                               fontWeight: 900,
                               color:
-                                usableGoogleConnections.length > 0
+                                selectedGoogleApiReportConnections.length > 0
                                   ? "#a7f3d0"
                                   : "#bbb8d4",
                               whiteSpace: "nowrap",
                             }}
                           >
-                            {selectedGoogleApiReportConnection
-                              ? "● 선택됨"
+                            {selectedGoogleApiReportConnections.length > 0
+                              ? `● ${selectedGoogleApiReportConnections.length}개 선택`
                               : usableGoogleConnections.length > 0
                                 ? "선택 가능"
                                 : "연결 필요"}
@@ -6376,96 +6276,126 @@ export default function ReportBuilderPage() {
                             color: "#bbb8d4",
                           }}
                         >
-                          STEP 1에서 관리한 Google Ads 연결을 사용합니다.
-                          활성 상태이며 자격증명이 있는 연결만 선택할 수 있습니다.
-                          현재 ALL-DATA 계약은 검색(키워드·광고)과 Demand Gen(광고)을 수집합니다.
-                          디스플레이, Performance Max, 쇼핑은 준비 중입니다.
+                          이 리포트에 포함할 Google Ads 연결을 선택합니다.
+                          활성 상태이며 저장된 자격증명이 있는 연결만
+                          선택할 수 있습니다.
                         </div>
 
                         <div
-                          className="advertiserSelectWrap"
-                          style={{ marginTop: 12 }}
+                          style={{
+                            display: "grid",
+                            gap: 8,
+                            marginTop: 12,
+                          }}
                         >
-                          <select
-                            value={
-                              selectedGoogleApiReportConnection
-                                ? selectedApiMediaConnectionId
-                                : ""
-                            }
-                            onChange={(e) =>
-                              setSelectedApiMediaConnectionId(e.target.value)
-                            }
-                            disabled={
-                              creating || usableGoogleConnections.length === 0
-                            }
-                            className="advertiserSelect"
-                          >
-                            <option value="">
-                              {usableGoogleConnections.length > 0
-                                ? "Google Ads 연결을 선택하세요"
-                                : "STEP 1에서 Google Ads 계정을 먼저 연결하세요"}
-                            </option>
-
-                            {selectedAdvertiserGoogleConnections.map(
+                          {selectedAdvertiserGoogleConnections.length > 0 ? (
+                            selectedAdvertiserGoogleConnections.map(
                               (connection) => {
                                 const selectable =
                                   connection.status === "active" &&
                                   connection.has_credentials;
 
+                                const checked =
+                                  selectedApiMediaConnectionIds.includes(
+                                    connection.id
+                                  );
+
                                 const statusLabel =
                                   connection.status === "disconnected"
                                     ? "연결 해제"
                                     : connection.status === "error"
-                                    ? "오류"
-                                    : !connection.has_credentials
-                                    ? "자격증명 필요"
-                                    : "연결됨";
+                                      ? "오류"
+                                      : !connection.has_credentials
+                                        ? "자격증명 필요"
+                                        : "사용 가능";
 
                                 return (
-                                  <option
+                                  <label
                                     key={connection.id}
-                                    value={connection.id}
-                                    disabled={!selectable}
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: 9,
+                                      border:
+                                        checked
+                                          ? "1px solid rgba(110, 231, 183, 0.28)"
+                                          : "1px solid rgba(255, 255, 255, 0.10)",
+                                      borderRadius: 10,
+                                      background:
+                                        checked
+                                          ? "rgba(110, 231, 183, 0.08)"
+                                          : "rgba(42, 33, 87, 0.72)",
+                                      padding: "9px 10px",
+                                      cursor:
+                                        selectable && !creating
+                                          ? "pointer"
+                                          : "not-allowed",
+                                      opacity:
+                                        selectable
+                                          ? 1
+                                          : 0.58,
+                                    }}
                                   >
-                                    {connection.external_account_name ||
-                                      connection.external_account_id}{" "}
-                                    · {connection.external_account_id} ·{" "}
-                                    {statusLabel}
-                                  </option>
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      disabled={
+                                        creating ||
+                                        !selectable
+                                      }
+                                      onChange={() =>
+                                        toggleApiReportConnection(
+                                          connection.id
+                                        )
+                                      }
+                                    />
+
+                                    <span
+                                      style={{
+                                        minWidth: 0,
+                                        fontSize: 11,
+                                        lineHeight: 1.5,
+                                        color:
+                                          checked
+                                            ? "#a7f3d0"
+                                            : "#d7d5ec",
+                                      }}
+                                    >
+                                      {connection.external_account_name ||
+                                        connection.external_account_id}
+                                      {" · "}
+                                      {connection.external_account_id}
+                                      {" · "}
+                                      {statusLabel}
+                                    </span>
+                                  </label>
                                 );
                               },
-                            )}
-                          </select>
-
-                          <span
-                            className="advertiserSelectArrow"
-                            aria-hidden="true"
-                          >
-                            ⌄
-                          </span>
+                            )
+                          ) : (
+                            <div
+                              style={{
+                                fontSize: 11,
+                                lineHeight: 1.55,
+                                color: "#bbb8d4",
+                              }}
+                            >
+                              사용 가능한 Google Ads 연결이 없습니다.
+                              STEP 1에서 연결을 먼저 완료하세요.
+                            </div>
+                          )}
                         </div>
 
                         <div
                           style={{
                             marginTop: 10,
-                            fontSize: 11,
+                            fontSize: 10,
                             lineHeight: 1.55,
-                            color:
-                              usableGoogleConnections.length > 0
-                                ? "#a7f3d0"
-                                : "#bbb8d4",
+                            color: "#8f8bad",
                           }}
                         >
-                          {selectedGoogleApiReportConnection
-                            ? `선택됨 · ${
-                                selectedGoogleApiReportConnection.external_account_name ||
-                                selectedGoogleApiReportConnection.external_account_id
-                              } · ${
-                                selectedGoogleApiReportConnection.external_account_id
-                              }`
-                            : usableGoogleConnections.length > 0
-                              ? "사용할 Google Ads 연결을 선택하세요."
-                              : "사용 가능한 Google Ads 연결이 없습니다. STEP 1에서 연결을 먼저 완료하세요."}
+                          현재 ALL-DATA 계약은 검색(키워드·광고)과
+                          Demand Gen(광고)을 지원합니다.
                         </div>
                       </div>
 
@@ -6828,12 +6758,12 @@ export default function ReportBuilderPage() {
                     !workspaceId ||
                     creating ||
                     (selectedReportDataSourceKind === "api" &&
-                      !selectedApiReportConnection)
+                      selectedApiReportConnections.length === 0)
                   }
                   title={
                     selectedReportDataSourceKind === "api" &&
-                    !selectedApiReportConnection
-                      ? "API 연결을 먼저 선택해 주세요."
+                    selectedApiReportConnections.length === 0
+                      ? "API 연결을 하나 이상 선택해 주세요."
                       : undefined
                   }
                   className="typeCard"
