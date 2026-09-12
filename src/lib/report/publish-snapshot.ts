@@ -46,6 +46,7 @@ export class ReportPublishSnapshotError extends Error {
 }
 
 type CanonicalPeriodType =
+  | "daily_sync"
   | "daily"
   | "weekly"
   | "monthly"
@@ -121,6 +122,7 @@ function normalizeCanonicalPeriodType(
   const normalized = asString(value).toLowerCase();
 
   if (
+    normalized === "daily_sync" ||
     normalized === "daily" ||
     normalized === "weekly" ||
     normalized === "monthly" ||
@@ -153,6 +155,7 @@ function isValidCanonicalPeriodKey(
   periodKey: string,
 ) {
   switch (periodType) {
+    case "daily_sync":
     case "daily":
       return isValidDailyCanonicalPeriodKey(periodKey);
 
@@ -230,6 +233,13 @@ function readCanonicalPublicIdentity(
     !periodType ||
     !periodKey ||
     !isValidCanonicalPeriodKey(periodType, periodKey)
+  ) {
+    return null;
+  }
+
+  if (
+    periodType === "daily_sync" &&
+    sourceType !== "api"
   ) {
     return null;
   }

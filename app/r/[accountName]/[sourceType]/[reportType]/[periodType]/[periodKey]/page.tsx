@@ -14,6 +14,7 @@ type CanonicalReportType =
   | "commerce";
 
 type PeriodType =
+  | "daily_sync"
   | "daily"
   | "weekly"
   | "monthly"
@@ -60,6 +61,7 @@ function isCanonicalReportType(
 
 function isPeriodType(value: string): value is PeriodType {
   return (
+    value === "daily_sync" ||
     value === "daily" ||
     value === "weekly" ||
     value === "monthly" ||
@@ -88,6 +90,7 @@ function isValidPeriodKey(
   periodKey: string,
 ) {
   switch (periodType) {
+    case "daily_sync":
     case "daily":
       return isValidDailyPeriodKey(periodKey);
 
@@ -279,6 +282,13 @@ export default async function CanonicalInternalReportPage({
   }
 
   if (!isValidPeriodKey(periodTypeRaw, periodKey)) {
+    notFound();
+  }
+
+  if (
+    periodTypeRaw === "daily_sync" &&
+    sourceTypeRaw !== "api"
+  ) {
     notFound();
   }
 

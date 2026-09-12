@@ -78,6 +78,7 @@ type CanonicalReportType =
   | "commerce";
 
 type CanonicalPeriodType =
+  | "daily_sync"
   | "daily"
   | "weekly"
   | "monthly"
@@ -144,6 +145,7 @@ function isCanonicalPeriodType(
   value: string,
 ): value is CanonicalPeriodType {
   return (
+    value === "daily_sync" ||
     value === "daily" ||
     value === "weekly" ||
     value === "monthly" ||
@@ -176,6 +178,7 @@ function isValidCanonicalPeriodKey(
   periodKey: string,
 ) {
   switch (periodType) {
+    case "daily_sync":
     case "daily":
       return isValidDailyCanonicalPeriodKey(
         periodKey,
@@ -943,6 +946,17 @@ export async function PATCH(req: Request, ctx: Ctx) {
         );
       }
 
+      if (
+        normalizedPeriodType ===
+          "daily_sync" &&
+        canonicalSourceType !== "api"
+      ) {
+        return jsonError(
+          400,
+          "V2_DAILY_SYNC_API_REQUIRED",
+        );
+      }
+
       canonicalPublicIdentity = {
         source_type: canonicalSourceType,
         report_type: canonicalReportType,
@@ -1015,6 +1029,58 @@ export async function PATCH(req: Request, ctx: Ctx) {
         ? (existingMeta as any).public_identity
         : {};
 
+    const existingDailySyncIdentity =
+      (() => {
+        const sourceType =
+          normalizeCanonicalSourceType(
+            (existingPublicIdentity as any)
+              .source_type,
+          );
+
+        const periodType =
+          String(
+            (existingPublicIdentity as any)
+              .period_type ?? "",
+          )
+            .trim()
+            .toLowerCase();
+
+        const periodKey =
+          String(
+            (existingPublicIdentity as any)
+              .period_key ?? "",
+          ).trim();
+
+        if (
+          sourceType !== "api" ||
+          periodType !== "daily_sync" ||
+          !isValidCanonicalPeriodKey(
+            "daily_sync",
+            periodKey,
+          )
+        ) {
+          return null;
+        }
+
+        return {
+          source_type: "api" as const,
+          period_type:
+            "daily_sync" as const,
+          period_key: periodKey,
+        };
+      })();
+
+    const effectiveDailySyncIdentity =
+      canonicalPublicIdentity
+        ?.source_type === "api" &&
+      canonicalPublicIdentity
+        .period_type === "daily_sync"
+        ? canonicalPublicIdentity
+        : canonicalPublicIdentity ===
+            undefined
+          ? existingDailySyncIdentity
+          : null;
+
     const existingManagedCanonicalRange =
       (() => {
         if (
@@ -1049,6 +1115,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
           !isCanonicalPeriodType(
             periodType,
           ) ||
+          periodType === "daily_sync" ||
           periodType === "cumulative" ||
           !isValidCanonicalPeriodKey(
             periodType,
@@ -1079,11 +1146,17 @@ export async function PATCH(req: Request, ctx: Ctx) {
 
     const shouldDeriveMediaSyncRangeFromCanonical =
       canonicalPublicIdentity?.source_type === "api" &&
-      canonicalPublicIdentity.period_type !== "cumulative";
+      canonicalPublicIdentity.period_type !==
+        "daily_sync" &&
+      canonicalPublicIdentity.period_type !==
+        "cumulative";
 
     const canonicalMediaSyncRange =
-      shouldDeriveMediaSyncRangeFromCanonical &&
-      canonicalPublicIdentity
+      canonicalPublicIdentity?.source_type === "api" &&
+      canonicalPublicIdentity.period_type !==
+        "daily_sync" &&
+      canonicalPublicIdentity.period_type !==
+        "cumulative"
         ? deriveCanonicalPeriodDateRange(
             canonicalPublicIdentity.period_type,
             canonicalPublicIdentity.period_key,
@@ -1099,6 +1172,16 @@ export async function PATCH(req: Request, ctx: Ctx) {
       return jsonError(
         400,
         "V2_CANONICAL_PERIOD_RANGE_INVALID",
+      );
+    }
+
+    if (
+      effectiveDailySyncIdentity &&
+      hasExplicitMediaSyncSettings
+    ) {
+      return jsonError(
+        400,
+        "V2_DAILY_SYNC_MEDIA_SYNC_DIRECT_WRITE_FORBIDDEN",
       );
     }
 
@@ -1217,7 +1300,36 @@ export async function PATCH(req: Request, ctx: Ctx) {
     if (
       canonicalPublicIdentity !== undefined
     ) {
-      if (
+      const isDailySyncIdentity =
+        canonicalPublicIdentity.source_type ===
+          "api" &&
+        canonicalPublicIdentity.period_type ===
+          "daily_sync";
+
+      if (isDailySyncIdentity) {
+        const nextMediaSyncSettings = {
+          ...existingMediaSyncSettings,
+        } as Record<string, any>;
+
+        delete nextMediaSyncSettings.date_from;
+        delete nextMediaSyncSettings.date_to;
+        delete nextMediaSyncSettings.range_authority;
+
+        nextMediaSyncSettings.auto_sync = {
+          enabled: true,
+          contract: "daily_report_v2",
+          start_date:
+            canonicalPublicIdentity.period_key,
+          scope:
+            "all_mapped_supported_media",
+        };
+
+        nextMediaSyncSettings.updated_at =
+          new Date().toISOString();
+
+        mediaSyncSettingsForMeta =
+          nextMediaSyncSettings;
+      } else if (
         canonicalPublicIdentity.source_type ===
           "api" &&
         canonicalPublicIdentity.period_type !==
@@ -1233,28 +1345,81 @@ export async function PATCH(req: Request, ctx: Ctx) {
           );
         }
 
-        mediaSyncSettingsForMeta = {
+        const nextFixedMediaSyncSettings = {
           ...mediaSyncSettingsForMeta,
-          range_authority:
-            CANONICAL_MEDIA_SYNC_RANGE_AUTHORITY,
-        };
-      } else if (
-        Object.prototype.hasOwnProperty.call(
-          existingMediaSyncSettings,
-          "range_authority",
-        )
-      ) {
-        const nextMediaSyncSettings = {
-          ...existingMediaSyncSettings,
-          ...(incomingMediaSyncSettings ?? {}),
-        };
+        } as Record<string, any>;
 
-        delete (
-          nextMediaSyncSettings as any
-        ).range_authority;
+        const staleAutoSync =
+          isPlainObject(
+            nextFixedMediaSyncSettings
+              .auto_sync,
+          )
+            ? nextFixedMediaSyncSettings
+                .auto_sync
+            : null;
+
+        if (
+          staleAutoSync?.enabled === true &&
+          String(
+            staleAutoSync?.contract ?? "",
+          ).trim() ===
+            "daily_report_v2"
+        ) {
+          delete nextFixedMediaSyncSettings
+            .auto_sync;
+        }
+
+        nextFixedMediaSyncSettings
+          .range_authority =
+          CANONICAL_MEDIA_SYNC_RANGE_AUTHORITY;
 
         mediaSyncSettingsForMeta =
-          nextMediaSyncSettings;
+          nextFixedMediaSyncSettings;
+      } else {
+        const existingAutoSync =
+          isPlainObject(
+            (existingMediaSyncSettings as any)
+              .auto_sync,
+          )
+            ? (
+                existingMediaSyncSettings as any
+              ).auto_sync
+            : null;
+
+        const shouldRemoveRangeAuthority =
+          Object.prototype.hasOwnProperty.call(
+            existingMediaSyncSettings,
+            "range_authority",
+          );
+
+        const shouldRemoveDailyReportV2 =
+          existingAutoSync?.enabled === true &&
+          String(
+            existingAutoSync?.contract ?? "",
+          ).trim() === "daily_report_v2";
+
+        if (
+          shouldRemoveRangeAuthority ||
+          shouldRemoveDailyReportV2
+        ) {
+          const nextMediaSyncSettings = {
+            ...existingMediaSyncSettings,
+            ...(incomingMediaSyncSettings ?? {}),
+          } as Record<string, any>;
+
+          if (shouldRemoveRangeAuthority) {
+            delete nextMediaSyncSettings
+              .range_authority;
+          }
+
+          if (shouldRemoveDailyReportV2) {
+            delete nextMediaSyncSettings
+              .auto_sync;
+          }
+
+          mediaSyncSettingsForMeta =
+            nextMediaSyncSettings;
+        }
       }
     }
 
