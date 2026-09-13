@@ -106,6 +106,9 @@ import type {
 const NAVER_PROVIDER =
   "naver_searchad" as const;
 
+const DAILY_REPORT_V2_AUTOMATION_CONTRACT =
+  "daily_report_v2" as const;
+
 const PROCESSING_STATUS =
   "processing" as const;
 
@@ -157,7 +160,8 @@ export type MediaSyncWorkerOrchestrationErrorCode =
   | "RECONCILIATION_FAILED"
   | "MATERIALIZATION_FAILED"
   | "ACTIVATION_FAILED"
-  | "FINALIZATION_FAILED";
+  | "FINALIZATION_FAILED"
+  | "FACT_ONLY_COMPLETION_FAILED";
 
 export class MediaSyncWorkerOrchestrationError extends Error {
   readonly code:
@@ -2604,6 +2608,22 @@ async function processNaverFactProjectionAfterStaging(
   let factJob =
     input.checkpointJob;
 
+  const projectionAutomationContract =
+    input.checkpointJob.automation_contract ??
+    null;
+
+  if (
+    projectionAutomationContract ===
+      DAILY_REPORT_V2_AUTOMATION_CONTRACT &&
+    input.checkpointJob.date_from !==
+      input.checkpointJob.date_to
+  ) {
+    throw new MediaSyncWorkerOrchestrationError(
+      "INVALID_JOB",
+      "Daily Report V2 Naver fact projection requires one exact date.",
+    );
+  }
+
   const replacementDates =
     enumerateInclusiveUtcDates(
       factJob.date_from,
@@ -2635,6 +2655,19 @@ async function processNaverFactProjectionAfterStaging(
       factJob =
         replacement.job;
 
+      if (
+        (
+          factJob.automation_contract ??
+          null
+        ) !==
+          projectionAutomationContract
+      ) {
+        throw new MediaSyncWorkerOrchestrationError(
+          "INVALID_JOB",
+          "The Naver fact replacement result changed automation authority.",
+        );
+      }
+
       logStage({
         job:
           factJob,
@@ -2647,6 +2680,78 @@ async function processNaverFactProjectionAfterStaging(
       throw wrapStageError(
         "MATERIALIZATION_FAILED",
         `Canonical Naver fact replacement failed for ${date}.`,
+        error,
+      );
+    }
+  }
+
+  if (
+    projectionAutomationContract ===
+      DAILY_REPORT_V2_AUTOMATION_CONTRACT
+  ) {
+    try {
+      logStage({
+        job:
+          factJob,
+        stage:
+          "fact-only-finalization:start",
+        detail:
+          "contract=daily_report_v2",
+      });
+
+      const completion =
+        await input.dependencies
+          .completeFactOnly({
+            job:
+              factJob,
+          });
+
+      if (
+        (
+          completion.job.automation_contract ??
+          null
+        ) !==
+          projectionAutomationContract
+      ) {
+        throw new MediaSyncWorkerOrchestrationError(
+          "INVALID_JOB",
+          "The Naver fact-only completion result changed automation authority.",
+        );
+      }
+
+      logStage({
+        job:
+          completion.job,
+        stage:
+          "fact-only-finalization:done",
+        detail:
+          `coveredDates=${completion.coveredDates} rows=${completion.factRows} contract=daily_report_v2`,
+      });
+
+      return {
+        status:
+          "fact_only_completed",
+        jobId:
+          completion.job.id,
+        reportId:
+          completion.job.report_id,
+        workspaceId:
+          completion.job.workspace_id,
+        advertiserId:
+          completion.job.advertiser_id,
+        connectionId:
+          completion.job.connection_id,
+        checkpointJob:
+          input.checkpointJob,
+        snapshotIngestionId:
+          null,
+        expectedRows:
+          completion.partitionRows,
+      };
+    } catch (error) {
+      throw wrapStageError(
+        "FACT_ONLY_COMPLETION_FAILED",
+        "The Daily Report V2 Naver canonical fact-only job could not be completed.",
         error,
       );
     }
@@ -3317,6 +3422,10 @@ export async function processClaimedNaverMediaSyncJob(
   validateProcessingNaverJob(
     job,
   );
+
+  const claimedAutomationContract =
+    job.automation_contract ??
+    null;
 
   const claimWorkDeadlineAtMs =
     normalizeClaimWorkDeadlineAtMs(
@@ -4429,7 +4538,23 @@ export async function processClaimedNaverMediaSyncJob(
       `rows=${staging.canonicalRowCount}`,
   });
 
+  const completedAutomationContract =
+    checkpointJob.automation_contract ??
+    null;
+
   if (
+    completedAutomationContract !==
+      claimedAutomationContract
+  ) {
+    throw new MediaSyncWorkerOrchestrationError(
+      "INVALID_JOB",
+      "The Naver media sync job automation contract changed during processing.",
+    );
+  }
+
+  if (
+    completedAutomationContract ===
+      DAILY_REPORT_V2_AUTOMATION_CONTRACT ||
     options.enableNaverFactProjection ===
       true
   ) {
