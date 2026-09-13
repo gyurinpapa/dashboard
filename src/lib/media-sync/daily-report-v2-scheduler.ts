@@ -6,6 +6,10 @@ import type {
   DailyReportV2ContiguousCoverage,
   DailyReportV2ParticipantCoverage,
 } from "./daily-report-v2-contiguous-coverage-repository";
+import type {
+  DailyReportV2CombinedSnapshotOrchestrationResult,
+} from "./daily-report-v2-combined-snapshot-orchestrator";
+
 import {
   getPreviousCompletedSeoulCalendarDate,
 } from "./naver-searchads-daily-scheduler";
@@ -119,6 +123,17 @@ export type DailyReportV2SchedulerDependencies =
       SafeMediaSyncJob | null
     >;
 
+    runCombinedSnapshot?: (
+      input:
+        DailyReportV2SchedulerCandidate &
+        Readonly<{
+          throughDate:
+            string;
+        }>,
+    ) => Promise<
+      DailyReportV2CombinedSnapshotOrchestrationResult
+    >;
+
     createJob: (
       input:
         DailyReportV2CreateInput,
@@ -132,6 +147,8 @@ export type DailyReportV2SchedulerAction =
   | "noop_all_covered"
   | "noop_active_report_job"
   | "noop_existing_active"
+  | "snapshot_materialized"
+  | "snapshot_activated"
   | "created_or_replayed";
 
 export type DailyReportV2SchedulerResult =
@@ -171,7 +188,8 @@ export type DailyReportV2SchedulerErrorCode =
   | "CONTINUITY_INVALID"
   | "INVALID_JOB_STATUS"
   | "CREATE_RESULT_SCOPE_MISMATCH"
-  | "CREATE_RESULT_FAILED";
+  | "CREATE_RESULT_FAILED"
+  | "SNAPSHOT_RESULT_SCOPE_MISMATCH";
 
 export class DailyReportV2SchedulerError
   extends Error {
@@ -874,6 +892,10 @@ export async function runDailyReportV2SchedulerOnce(
     SchedulerPlan[] =
       [];
 
+  const coveredCandidates:
+    DailyReportV2SchedulerCandidate[] =
+      [];
+
   let activeReportCount =
     0;
 
@@ -938,6 +960,10 @@ export async function runDailyReportV2SchedulerOnce(
     if (
       !missing
     ) {
+      coveredCandidates.push(
+        candidate,
+      );
+
       continue;
     }
 
@@ -971,15 +997,158 @@ export async function runDailyReportV2SchedulerOnce(
     plans.length ===
       0
   ) {
-    return emptyResult({
+    const selectedCovered =
+      coveredCandidates[0] ??
+      null;
+
+    if (
+      !selectedCovered
+    ) {
+      return emptyResult({
+        targetDate,
+        action:
+          activeReportCount >
+            0
+            ? "noop_active_report_job"
+            : "noop_all_covered",
+        candidateCount:
+          candidates.length,
+      });
+    }
+
+    /*
+     * Re-check the same report immediately before snapshot work.
+     * The snapshot layer never owns provider jobs or provider API calls.
+     */
+    const justInTimeActiveJobs =
+      validateActiveJobs(
+        await input.dependencies
+          .listActiveJobsForReport({
+            reportId:
+              selectedCovered.reportId,
+            workspaceId:
+              selectedCovered.workspaceId,
+            advertiserId:
+              selectedCovered.advertiserId,
+          }),
+      );
+
+    if (
+      justInTimeActiveJobs.length >
+        0
+    ) {
+      return Object.freeze({
+        targetDate,
+        action:
+          "noop_active_report_job" as const,
+        candidateCount:
+          candidates.length,
+        reportId:
+          selectedCovered.reportId,
+        connectionId:
+          null,
+        provider:
+          null,
+        date:
+          targetDate,
+        jobId:
+          null,
+        status:
+          justInTimeActiveJobs[0]
+            ?.status ===
+            "processing"
+            ? "processing"
+            : "pending",
+      });
+    }
+
+    const runCombinedSnapshot =
+      input.dependencies
+        .runCombinedSnapshot;
+
+    if (
+      typeof runCombinedSnapshot !==
+        "function"
+    ) {
+      throw new DailyReportV2SchedulerError(
+        "INVALID_INPUT",
+        "Daily Report V2 combined snapshot dependency is required for a fully covered report.",
+      );
+    }
+
+    const snapshot =
+      await runCombinedSnapshot({
+        ...selectedCovered,
+        throughDate:
+          targetDate,
+      });
+
+    const snapshotScopeValid =
+      snapshot.reportId ===
+        selectedCovered.reportId &&
+      Number.isSafeInteger(
+        snapshot.expectedRows,
+      ) &&
+      snapshot.expectedRows >=
+        0 &&
+      Number.isSafeInteger(
+        snapshot.nextRowIndex,
+      ) &&
+      snapshot.nextRowIndex >=
+        0 &&
+      snapshot.nextRowIndex <=
+        snapshot.expectedRows &&
+      (
+        (
+          snapshot.action ===
+            "materialized_batch" &&
+          snapshot.status ===
+            "materializing"
+        ) ||
+        (
+          (
+            snapshot.action ===
+              "activated" ||
+            snapshot.action ===
+              "already_activated"
+          ) &&
+          snapshot.status ===
+            "activated" &&
+          snapshot.nextRowIndex ===
+            snapshot.expectedRows
+        )
+      );
+
+    if (
+      !snapshotScopeValid
+    ) {
+      throw new DailyReportV2SchedulerError(
+        "SNAPSHOT_RESULT_SCOPE_MISMATCH",
+        "Daily Report V2 combined snapshot result does not match the selected report.",
+      );
+    }
+
+    return Object.freeze({
       targetDate,
       action:
-        activeReportCount >
-          0
-          ? "noop_active_report_job"
-          : "noop_all_covered",
+        snapshot.action ===
+          "materialized_batch"
+          ? "snapshot_materialized" as const
+          : "snapshot_activated" as const,
       candidateCount:
         candidates.length,
+      reportId:
+        selectedCovered.reportId,
+      connectionId:
+        null,
+      provider:
+        null,
+      date:
+        targetDate,
+      jobId:
+        null,
+      status:
+        null,
     });
   }
 

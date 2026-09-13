@@ -4,6 +4,10 @@ import {
 import {
   loadDailyReportV2ContiguousCoverage,
 } from "./daily-report-v2-contiguous-coverage-repository";
+import {
+  runDailyReportV2CombinedSnapshotOrchestratorOnce,
+} from "./daily-report-v2-combined-snapshot-orchestrator";
+
 import type {
   DailyReportV2SchedulerCandidate,
   DailyReportV2SchedulerDependencies,
@@ -560,6 +564,25 @@ export function createDailyReportV2SchedulerDatabaseDependencies(
 
     loadCoverage:
       loadDailyReportV2ContiguousCoverage,
+
+    runCombinedSnapshot:
+      async (
+        input,
+      ) =>
+        runDailyReportV2CombinedSnapshotOrchestratorOnce({
+          reportId:
+            input.reportId,
+          workspaceId:
+            input.workspaceId,
+          advertiserId:
+            input.advertiserId,
+          createdBy:
+            input.createdBy,
+          startDate:
+            input.startDate,
+          throughDate:
+            input.throughDate,
+        }),
 
     listActiveJobsForReport:
       async (

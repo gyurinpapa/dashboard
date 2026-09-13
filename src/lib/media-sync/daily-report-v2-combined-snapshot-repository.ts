@@ -1283,3 +1283,203 @@ export async function activateDailyReportV2CombinedSnapshot(
     data[0],
   );
 }
+
+export type LoadDailyReportV2CombinedSnapshotCheckpointInput =
+  Readonly<{
+    snapshotIngestionId:
+      string;
+    reportId:
+      string;
+    expectedRows:
+      number;
+  }>;
+
+export type DailyReportV2CombinedSnapshotCheckpoint =
+  Readonly<{
+    snapshotIngestionId:
+      string;
+    reportId:
+      string;
+    expectedRows:
+      number;
+    nextRowIndex:
+      number;
+    ingestionStatus:
+      "processing" | "success";
+  }>;
+
+export async function loadDailyReportV2CombinedSnapshotCheckpoint(
+  input:
+    LoadDailyReportV2CombinedSnapshotCheckpointInput,
+): Promise<DailyReportV2CombinedSnapshotCheckpoint> {
+  if (
+    !input ||
+    !UUID_PATTERN.test(
+      input.snapshotIngestionId,
+    ) ||
+    !UUID_PATTERN.test(
+      input.reportId,
+    ) ||
+    !Number.isSafeInteger(
+      input.expectedRows,
+    ) ||
+    input.expectedRows <
+      0
+  ) {
+    throw new DailyReportV2CombinedSnapshotRepositoryError(
+      "INVALID_INPUT",
+      "Combined snapshot checkpoint input is invalid.",
+    );
+  }
+
+  const supabase =
+    getSupabaseAdmin();
+
+  const {
+    data,
+    error,
+  } =
+    await supabase
+      .from(
+        "report_ingestions",
+      )
+      .select(
+        [
+          "id",
+          "report_id",
+          "row_count",
+          "status",
+        ].join(","),
+      )
+      .eq(
+        "id",
+        input.snapshotIngestionId,
+      )
+      .limit(
+        2,
+      );
+
+  if (error) {
+    throw new DailyReportV2CombinedSnapshotRepositoryError(
+      "DATABASE_ERROR",
+      "Could not load Daily Report V2 combined snapshot checkpoint.",
+      {
+        cause:
+          error,
+      },
+    );
+  }
+
+  if (
+    !Array.isArray(
+      data,
+    ) ||
+    data.length !==
+      1
+  ) {
+    throw new DailyReportV2CombinedSnapshotRepositoryError(
+      "INVALID_DATABASE_RESULT",
+      "Combined snapshot checkpoint query returned an invalid row count.",
+    );
+  }
+
+  const raw =
+    data[0];
+
+  if (
+    raw === null ||
+    typeof raw !==
+      "object" ||
+    Array.isArray(
+      raw,
+    )
+  ) {
+    throw new DailyReportV2CombinedSnapshotRepositoryError(
+      "INVALID_DATABASE_RESULT",
+      "Combined snapshot checkpoint row is invalid.",
+    );
+  }
+
+  const record =
+    raw as
+      Record<
+        string,
+        unknown
+      >;
+
+  const snapshotIngestionId =
+    requireUuid(
+      record.id,
+      "checkpoint.id",
+    );
+
+  const reportId =
+    requireUuid(
+      record.report_id,
+      "checkpoint.report_id",
+    );
+
+  const nextRowIndex =
+    requireInteger(
+      record.row_count,
+      "checkpoint.row_count",
+      0,
+    );
+
+  const rawStatus =
+    requireString(
+      record.status,
+      "checkpoint.status",
+    );
+
+  if (
+    rawStatus !==
+      "processing" &&
+    rawStatus !==
+      "success"
+  ) {
+    throw new DailyReportV2CombinedSnapshotRepositoryError(
+      "INVALID_DATABASE_RESULT",
+      "Combined snapshot checkpoint ingestion status is invalid.",
+    );
+  }
+
+  const ingestionStatus =
+    rawStatus as
+      "processing" | "success";
+
+  if (
+    snapshotIngestionId !==
+      input.snapshotIngestionId ||
+    reportId !==
+      input.reportId ||
+    nextRowIndex >
+      input.expectedRows
+  ) {
+    throw new DailyReportV2CombinedSnapshotRepositoryError(
+      "INVALID_DATABASE_RESULT",
+      "Combined snapshot checkpoint scope is internally inconsistent.",
+    );
+  }
+
+  if (
+    ingestionStatus ===
+      "success" &&
+    nextRowIndex !==
+      input.expectedRows
+  ) {
+    throw new DailyReportV2CombinedSnapshotRepositoryError(
+      "INVALID_DATABASE_RESULT",
+      "Successful combined snapshot ingestion has an incomplete checkpoint.",
+    );
+  }
+
+  return Object.freeze({
+    snapshotIngestionId,
+    reportId,
+    expectedRows:
+      input.expectedRows,
+    nextRowIndex,
+    ingestionStatus,
+  });
+}

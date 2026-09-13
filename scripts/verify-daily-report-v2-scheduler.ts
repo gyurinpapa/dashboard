@@ -874,6 +874,268 @@ async function main() {
     0,
   );
 
+  let combinedCalls =
+    0;
+
+  let coveredProviderCreates =
+    0;
+
+  const coveredResult =
+    await runDailyReportV2SchedulerOnce({
+      now:
+        NOW,
+      dependencies: {
+        listCandidates:
+          async () => [
+            candidate(
+              REPORT_A,
+            ),
+          ],
+
+        listActiveJobsForReport:
+          async () =>
+            [],
+
+        loadCoverage:
+          async () =>
+            coverage({
+              reportId:
+                REPORT_A,
+              participant:
+                participant({
+                  provider:
+                    "google_ads",
+                  connectionId:
+                    CONNECTION_GOOGLE,
+                  externalAccountId:
+                    "google-account",
+                  firstMissingDate:
+                    null,
+                  completedThrough:
+                    TARGET_DATE,
+                  targetCovered:
+                    true,
+                }),
+              firstMissingDate:
+                null,
+              completedThrough:
+                TARGET_DATE,
+              targetCovered:
+                true,
+            }),
+
+        loadExactJob:
+          async () => {
+            throw new Error(
+              "covered snapshot path must not load deterministic provider job",
+            );
+          },
+
+        runCombinedSnapshot:
+          async (
+            input,
+          ) => {
+            combinedCalls +=
+              1;
+
+            assert.equal(
+              input.reportId,
+              REPORT_A,
+            );
+
+            assert.equal(
+              input.throughDate,
+              TARGET_DATE,
+            );
+
+            return {
+              action:
+                "materialized_batch",
+              reportId:
+                REPORT_A,
+              runId:
+                "99999999-9999-4999-8999-999999999999",
+              snapshotIngestionId:
+                "11111111-1111-4111-8111-111111111111",
+              expectedRows:
+                9000,
+              nextRowIndex:
+                5000,
+              status:
+                "materializing",
+            };
+          },
+
+        createJob:
+          async () => {
+            coveredProviderCreates +=
+              1;
+
+            throw new Error(
+              "covered snapshot path must not create provider job",
+            );
+          },
+      },
+    });
+
+  assert.equal(
+    coveredResult.action,
+    "snapshot_materialized",
+  );
+
+  assert.equal(
+    coveredResult.reportId,
+    REPORT_A,
+  );
+
+  assert.equal(
+    coveredResult.provider,
+    null,
+  );
+
+  assert.equal(
+    coveredResult.jobId,
+    null,
+  );
+
+  assert.equal(
+    combinedCalls,
+    1,
+  );
+
+  assert.equal(
+    coveredProviderCreates,
+    0,
+  );
+
+  let coveredGateReads =
+    0;
+
+  let blockedCombinedCalls =
+    0;
+
+  const coveredBlocked =
+    await runDailyReportV2SchedulerOnce({
+      now:
+        NOW,
+      dependencies: {
+        listCandidates:
+          async () => [
+            candidate(
+              REPORT_A,
+            ),
+          ],
+
+        listActiveJobsForReport:
+          async () => {
+            coveredGateReads +=
+              1;
+
+            if (
+              coveredGateReads ===
+                1
+            ) {
+              return [];
+            }
+
+            return [
+              job({
+                id:
+                  "12121212-1212-4212-8212-121212121212",
+                reportId:
+                  REPORT_A,
+                connectionId:
+                  CONNECTION_GOOGLE,
+                provider:
+                  "google_ads",
+                externalAccountId:
+                  "google-account",
+                date:
+                  TARGET_DATE,
+                status:
+                  "processing",
+              }),
+            ];
+          },
+
+        loadCoverage:
+          async () =>
+            coverage({
+              reportId:
+                REPORT_A,
+              participant:
+                participant({
+                  provider:
+                    "google_ads",
+                  connectionId:
+                    CONNECTION_GOOGLE,
+                  externalAccountId:
+                    "google-account",
+                  firstMissingDate:
+                    null,
+                  completedThrough:
+                    TARGET_DATE,
+                  targetCovered:
+                    true,
+                }),
+              firstMissingDate:
+                null,
+              completedThrough:
+                TARGET_DATE,
+              targetCovered:
+                true,
+            }),
+
+        loadExactJob:
+          async () =>
+            null,
+
+        runCombinedSnapshot:
+          async () => {
+            blockedCombinedCalls +=
+              1;
+
+            throw new Error(
+              "JIT media job gate must block combined snapshot",
+            );
+          },
+
+        createJob:
+          async () => {
+            throw new Error(
+              "JIT media job gate must block provider create",
+            );
+          },
+      },
+    });
+
+  assert.equal(
+    coveredBlocked.action,
+    "noop_active_report_job",
+  );
+
+  assert.equal(
+    coveredGateReads,
+    2,
+  );
+
+  assert.equal(
+    blockedCombinedCalls,
+    0,
+  );
+
+  console.log(
+    "D10K5_TARGET_COVERED_COMBINED_ORCHESTRATION=PASS",
+  );
+
+  console.log(
+    "D10K5_TARGET_COVERED_PROVIDER_JOB_CREATION_ZERO=PASS",
+  );
+
+  console.log(
+    "D10K5_TARGET_COVERED_JIT_ACTIVE_GATE=PASS",
+  );
+
   console.log(
     "D10G_TARGET_PREVIOUS_COMPLETED_SEOUL_DATE=PASS",
   );
