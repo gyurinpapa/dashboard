@@ -1073,3 +1073,213 @@ export async function completeDailyReportV2CombinedSnapshot(
     data[0],
   );
 }
+
+const ACTIVATE_COMBINED_SNAPSHOT_RPC =
+  "activate_daily_report_v2_combined_snapshot" as const;
+
+export type ActivateDailyReportV2CombinedSnapshotInput =
+  Readonly<{
+    runId:
+      string;
+  }>;
+
+export type DailyReportV2CombinedSnapshotActivation =
+  Readonly<{
+    runId:
+      string;
+    reportId:
+      string;
+    previousIngestionId:
+      string | null;
+    snapshotIngestionId:
+      string;
+    currentIngestionId:
+      string;
+    publishedIngestionId:
+      string | null;
+    rowCount:
+      number;
+    sourceFingerprint:
+      string;
+    status:
+      "activated";
+    idempotent:
+      boolean;
+  }>;
+
+function requirePresentNullableUuid(
+  value:
+    unknown,
+  label:
+    string,
+): string | null {
+  if (
+    value === null
+  ) {
+    return null;
+  }
+
+  return requireUuid(
+    value,
+    label,
+  );
+}
+
+function parseActivation(
+  value:
+    unknown,
+): DailyReportV2CombinedSnapshotActivation {
+  if (
+    value === null ||
+    typeof value !==
+      "object" ||
+    Array.isArray(
+      value,
+    )
+  ) {
+    throw new DailyReportV2CombinedSnapshotRepositoryError(
+      "INVALID_DATABASE_RESULT",
+      "Combined snapshot activation row is invalid.",
+    );
+  }
+
+  const record =
+    value as
+      Record<
+        string,
+        unknown
+      >;
+
+  const snapshotIngestionId =
+    requireUuid(
+      record.snapshot_ingestion_id,
+      "snapshot_ingestion_id",
+    );
+
+  const currentIngestionId =
+    requireUuid(
+      record.current_ingestion_id,
+      "current_ingestion_id",
+    );
+
+  const status =
+    requireString(
+      record.status,
+      "status",
+    );
+
+  if (
+    status !==
+      "activated" ||
+    currentIngestionId !==
+      snapshotIngestionId
+  ) {
+    throw new DailyReportV2CombinedSnapshotRepositoryError(
+      "INVALID_DATABASE_RESULT",
+      "Combined snapshot activation result violates pointer/state contract.",
+    );
+  }
+
+  return Object.freeze({
+    runId:
+      requireUuid(
+        record.run_id,
+        "run_id",
+      ),
+    reportId:
+      requireUuid(
+        record.report_id,
+        "report_id",
+      ),
+    previousIngestionId:
+      requirePresentNullableUuid(
+        record.previous_ingestion_id,
+        "previous_ingestion_id",
+      ),
+    snapshotIngestionId,
+    currentIngestionId,
+    publishedIngestionId:
+      requirePresentNullableUuid(
+        record.published_ingestion_id,
+        "published_ingestion_id",
+      ),
+    rowCount:
+      requireInteger(
+        record.row_count,
+        "row_count",
+        0,
+      ),
+    sourceFingerprint:
+      requireSha256Hex(
+        record.source_fingerprint,
+        "source_fingerprint",
+      ),
+    status,
+    idempotent:
+      requireBoolean(
+        record.idempotent,
+        "idempotent",
+      ),
+  });
+}
+
+export async function activateDailyReportV2CombinedSnapshot(
+  input:
+    ActivateDailyReportV2CombinedSnapshotInput,
+): Promise<DailyReportV2CombinedSnapshotActivation> {
+  if (
+    !UUID_PATTERN.test(
+      input.runId,
+    )
+  ) {
+    throw new DailyReportV2CombinedSnapshotRepositoryError(
+      "INVALID_INPUT",
+      "Combined snapshot activation runId must be a UUID.",
+    );
+  }
+
+  const supabase =
+    getSupabaseAdmin();
+
+  const {
+    data,
+    error,
+  } =
+    await supabase.rpc(
+      ACTIVATE_COMBINED_SNAPSHOT_RPC,
+      {
+        p_payload: {
+          run_id:
+            input.runId,
+        },
+      },
+    );
+
+  if (error) {
+    throw new DailyReportV2CombinedSnapshotRepositoryError(
+      "DATABASE_ERROR",
+      "Could not activate Daily Report V2 combined snapshot.",
+      {
+        cause:
+          error,
+      },
+    );
+  }
+
+  if (
+    !Array.isArray(
+      data,
+    ) ||
+    data.length !==
+      1
+  ) {
+    throw new DailyReportV2CombinedSnapshotRepositoryError(
+      "INVALID_DATABASE_RESULT",
+      "Combined snapshot activation RPC returned an invalid row count.",
+    );
+  }
+
+  return parseActivation(
+    data[0],
+  );
+}
