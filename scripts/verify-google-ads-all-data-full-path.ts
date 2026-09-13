@@ -402,6 +402,13 @@ export class OfflineScenario {
         assert.deepEqual(this.completion, ["summary", "materialize", "activate", "finalize"]);
         return result;
       }
+
+      if (result.status !== "partial") {
+        throw new Error(
+          `Legacy Google Ads ALL-DATA full-path fixture returned unexpected result status: ${result.status}`,
+        );
+      }
+
       assert.equal(result.releasedJob.status, "pending");
       assert.ok(result.checkpointRows >= before.nextRowIndex);
       assert.equal(this.completion.length, 0);

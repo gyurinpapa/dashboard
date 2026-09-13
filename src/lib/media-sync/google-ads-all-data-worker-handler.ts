@@ -20,6 +20,10 @@ import type {
   MediaSyncFinalizationResult,
 } from "./media-sync-finalization-repository";
 import type {
+  GoogleAdsDailyV2FactOnlyCompletionResult,
+  GoogleAdsDailyV2FactReplacementResult,
+} from "./google-ads-daily-v2-fact-authority-repository";
+import type {
   MediaSyncJobRecord,
 } from "./types";
 
@@ -28,6 +32,9 @@ const GOOGLE_ADS_PROVIDER =
 
 const GOOGLE_ADS_ALL_DATA_EXECUTION_CONTRACT =
   "google_all_data_v1" as const;
+
+const DAILY_REPORT_V2_AUTOMATION_CONTRACT =
+  "daily_report_v2" as const;
 
 const PROCESSING_STATUS =
   "processing" as const;
@@ -70,7 +77,9 @@ export type GoogleAdsAllDataWorkerHandlerErrorCode =
   | "STAGING_SUMMARY_FAILED"
   | "MATERIALIZATION_FAILED"
   | "ACTIVATION_FAILED"
-  | "FINALIZATION_FAILED";
+  | "FINALIZATION_FAILED"
+  | "FACT_REPLACEMENT_FAILED"
+  | "FACT_ONLY_COMPLETION_FAILED";
 
 export class GoogleAdsAllDataWorkerHandlerError
   extends Error {
@@ -198,6 +207,32 @@ type GoogleAdsAllDataFinalize =
       MediaSyncFinalizationResult
     >;
 
+type GoogleAdsAllDataReplaceDailyV2Fact =
+  (
+    input:
+      Readonly<{
+        job:
+          MediaSyncJobRecord;
+        date:
+          string;
+      }>,
+  ) =>
+    Promise<
+      GoogleAdsDailyV2FactReplacementResult
+    >;
+
+type GoogleAdsAllDataCompleteDailyV2FactOnly =
+  (
+    input:
+      Readonly<{
+        job:
+          MediaSyncJobRecord;
+      }>,
+  ) =>
+    Promise<
+      GoogleAdsDailyV2FactOnlyCompletionResult
+    >;
+
 export type GoogleAdsAllDataWorkerHandlerDependencies =
   Readonly<{
     readCheckpoint?:
@@ -220,6 +255,12 @@ export type GoogleAdsAllDataWorkerHandlerDependencies =
 
     finalize?:
       GoogleAdsAllDataFinalize;
+
+    replaceDailyV2Fact?:
+      GoogleAdsAllDataReplaceDailyV2Fact;
+
+    completeDailyV2FactOnly?:
+      GoogleAdsAllDataCompleteDailyV2FactOnly;
   }>;
 
 export type ProcessGoogleAdsAllDataWorkerPartialResult =
@@ -267,6 +308,37 @@ export type ProcessGoogleAdsAllDataWorkerPartialResult =
     snapshotIngestionId:
       null;
 
+    expectedRows:
+      number;
+  }>;
+
+export type ProcessGoogleAdsAllDataWorkerFactOnlyCompletedResult =
+  Readonly<{
+    status:
+      "fact_only_completed";
+    jobId:
+      string;
+    reportId:
+      string;
+    workspaceId:
+      string;
+    advertiserId:
+      string;
+    connectionId:
+      string;
+    staging:
+      GoogleAdsAllDataProcessingStagingResult |
+      null;
+    checkpointJob:
+      MediaSyncJobRecord;
+    summary:
+      MediaSyncStagingSummary;
+    factReplacement:
+      GoogleAdsDailyV2FactReplacementResult;
+    factOnlyCompletion:
+      GoogleAdsDailyV2FactOnlyCompletionResult;
+    snapshotIngestionId:
+      null;
     expectedRows:
       number;
   }>;
@@ -319,6 +391,7 @@ export type ProcessGoogleAdsAllDataWorkerCompletedResult =
 
 export type ProcessGoogleAdsAllDataWorkerResult =
   | ProcessGoogleAdsAllDataWorkerPartialResult
+  | ProcessGoogleAdsAllDataWorkerFactOnlyCompletedResult
   | ProcessGoogleAdsAllDataWorkerCompletedResult;
 
 function isPlainObject(
@@ -340,6 +413,14 @@ function executionContractValue(
     job as
       MediaSyncJobRecordWithExecutionContract
   ).execution_contract;
+}
+
+function automationContractValue(
+  job:
+    MediaSyncJobRecord,
+): unknown {
+  return job.automation_contract ??
+    null;
 }
 
 function normalizeStableJsonValue(
@@ -825,6 +906,36 @@ const defaultSummarize:
     );
   };
 
+const defaultReplaceDailyV2Fact:
+  GoogleAdsAllDataReplaceDailyV2Fact =
+  async input => {
+    const {
+      replaceGoogleAdsDailyV2FactDate,
+    } =
+      await import(
+        "./google-ads-daily-v2-fact-authority-repository"
+      );
+
+    return await replaceGoogleAdsDailyV2FactDate(
+      input,
+    );
+  };
+
+const defaultCompleteDailyV2FactOnly:
+  GoogleAdsAllDataCompleteDailyV2FactOnly =
+  async input => {
+    const {
+      completeGoogleAdsDailyV2FactOnlyJob,
+    } =
+      await import(
+        "./google-ads-daily-v2-fact-authority-repository"
+      );
+
+    return await completeGoogleAdsDailyV2FactOnlyJob(
+      input,
+    );
+  };
+
 const defaultMaterialize:
   GoogleAdsAllDataMaterialize =
   async input => {
@@ -1045,6 +1156,11 @@ export async function processGoogleAdsAllDataWorkerHandler(
     input,
   );
 
+  const claimedAutomationContract =
+    automationContractValue(
+      input.job,
+    );
+
   const readCheckpoint =
     dependencies.readCheckpoint ??
     readGoogleAdsAllDataProcessingCheckpoint;
@@ -1060,6 +1176,14 @@ export async function processGoogleAdsAllDataWorkerHandler(
   const summarize =
     dependencies.summarize ??
     defaultSummarize;
+
+  const replaceDailyV2Fact =
+    dependencies.replaceDailyV2Fact ??
+    defaultReplaceDailyV2Fact;
+
+  const completeDailyV2FactOnly =
+    dependencies.completeDailyV2FactOnly ??
+    defaultCompleteDailyV2FactOnly;
 
   const materialize =
     dependencies.materialize ??
@@ -1316,6 +1440,160 @@ export async function processGoogleAdsAllDataWorkerHandler(
     checkpointState,
     summary,
   );
+
+  const completedAutomationContract =
+    automationContractValue(
+      checkpointJob,
+    );
+
+  if (
+    completedAutomationContract !==
+      claimedAutomationContract
+  ) {
+    throw new GoogleAdsAllDataWorkerHandlerError(
+      "INVALID_JOB",
+      "The Google Ads ALL-DATA job automation contract changed during processing.",
+    );
+  }
+
+  if (
+    completedAutomationContract ===
+      DAILY_REPORT_V2_AUTOMATION_CONTRACT
+  ) {
+    if (
+      typeof checkpointJob.date_from !==
+        "string" ||
+      checkpointJob.date_from !==
+        checkpointJob.date_to
+    ) {
+      throw new GoogleAdsAllDataWorkerHandlerError(
+        "FACT_REPLACEMENT_FAILED",
+        "Google Daily Report V2 fact routing requires one exact date.",
+      );
+    }
+
+    let factReplacement:
+      GoogleAdsDailyV2FactReplacementResult;
+
+    try {
+      factReplacement =
+        await replaceDailyV2Fact({
+          job:
+            checkpointJob,
+          date:
+            checkpointJob.date_from,
+        });
+    } catch (error) {
+      throw wrapStage(
+        "FACT_REPLACEMENT_FAILED",
+        "The Google Daily Report V2 canonical fact date could not be replaced.",
+        error,
+      );
+    }
+
+    assertSameScope(
+      checkpointJob,
+      factReplacement.job,
+      "FACT_REPLACEMENT_FAILED",
+    );
+
+    if (
+      factReplacement.scopeDate !==
+        checkpointJob.date_from ||
+      factReplacement.sourceRows !==
+        checkpointState.nextRowIndex ||
+      factReplacement.insertedRows !==
+        checkpointState.nextRowIndex ||
+      factReplacement.factRows !==
+        checkpointState.nextRowIndex ||
+      factReplacement.job.status !==
+        PROCESSING_STATUS ||
+      factReplacement.job.snapshot_ingestion_id !==
+        null ||
+      factReplacement.job.finished_at !==
+        null ||
+      factReplacement.job.failed_rows !==
+        0
+    ) {
+      throw new GoogleAdsAllDataWorkerHandlerError(
+        "FACT_REPLACEMENT_FAILED",
+        "The Google Daily Report V2 canonical fact replacement result is inconsistent.",
+      );
+    }
+
+    let factOnlyCompletion:
+      GoogleAdsDailyV2FactOnlyCompletionResult;
+
+    try {
+      factOnlyCompletion =
+        await completeDailyV2FactOnly({
+          job:
+            factReplacement.job,
+        });
+    } catch (error) {
+      throw wrapStage(
+        "FACT_ONLY_COMPLETION_FAILED",
+        "The Google Daily Report V2 fact-only job could not be completed.",
+        error,
+      );
+    }
+
+    assertSameScope(
+      factReplacement.job,
+      factOnlyCompletion.job,
+      "FACT_ONLY_COMPLETION_FAILED",
+    );
+
+    if (
+      factOnlyCompletion.coveredDates !==
+        1 ||
+      factOnlyCompletion.partitionRows !==
+        checkpointState.nextRowIndex ||
+      factOnlyCompletion.factRows !==
+        checkpointState.nextRowIndex ||
+      factOnlyCompletion.job.status !==
+        DONE_STATUS ||
+      factOnlyCompletion.job.progress !==
+        100 ||
+      factOnlyCompletion.job.finished_at ===
+        null ||
+      factOnlyCompletion.job.snapshot_ingestion_id !==
+        null ||
+      factOnlyCompletion.job.failed_rows !==
+        0 ||
+      factOnlyCompletion.job.error !==
+        null
+    ) {
+      throw new GoogleAdsAllDataWorkerHandlerError(
+        "FACT_ONLY_COMPLETION_FAILED",
+        "The Google Daily Report V2 fact-only completion result is inconsistent.",
+      );
+    }
+
+    return Object.freeze({
+      status:
+        "fact_only_completed" as const,
+      jobId:
+        factOnlyCompletion.job.id,
+      reportId:
+        factOnlyCompletion.job.report_id,
+      workspaceId:
+        factOnlyCompletion.job.workspace_id,
+      advertiserId:
+        factOnlyCompletion.job.advertiser_id,
+      connectionId:
+        factOnlyCompletion.job.connection_id,
+      staging,
+      checkpointJob,
+      summary,
+      factReplacement,
+      factOnlyCompletion,
+      snapshotIngestionId:
+        null,
+      expectedRows:
+        checkpointState.nextRowIndex,
+    });
+  }
 
   let materialization:
     MediaSyncSnapshotMaterializationResult;
