@@ -16,6 +16,15 @@ import {
 import {
   isMediaSyncSegmentEligibleReport,
 } from "@/src/lib/media-sync/media-sync-segment-eligibility";
+import {
+  getPreviousCompletedSeoulCalendarDate,
+} from "@/src/lib/media-sync/naver-searchads-daily-scheduler";
+import {
+  runDailyReportV2SchedulerOnce,
+} from "@/src/lib/media-sync/daily-report-v2-scheduler";
+import {
+  createDailyReportV2SchedulerDatabaseDependencies,
+} from "@/src/lib/media-sync/daily-report-v2-scheduler-repository";
 import type {
   MediaProvider,
 } from "@/src/lib/media-sync/types";
@@ -23,6 +32,8 @@ import type {
 type Ctx = { params: Promise<{ id: string }> };
 
 const MAX_MEDIA_SYNC_DATE_WINDOW_DAYS = 31;
+
+const MAX_DAILY_SYNC_IMMEDIATE_SNAPSHOT_STEPS = 64;
 
 function asString(v: any) {
   if (v == null) return undefined;
@@ -1391,7 +1402,8 @@ export async function PATCH(req: Request, ctx: Ctx) {
         delete nextMediaSyncSettings.range_authority;
 
         nextMediaSyncSettings.auto_sync = {
-          enabled: true,
+          enabled: false,
+          start_pending: true,
           contract: "daily_report_v2",
           start_date:
             canonicalPublicIdentity.period_key,
@@ -1498,6 +1510,11 @@ export async function PATCH(req: Request, ctx: Ctx) {
       }
     }
 
+    let dailySyncImmediateThroughDate:
+      | string
+      | null =
+        null;
+
     if (dailySyncAction) {
       const changedAt =
         new Date().toISOString();
@@ -1511,8 +1528,22 @@ export async function PATCH(req: Request, ctx: Ctx) {
       if (dailySyncAction === "stop") {
         nextAutoSync.stopped_at =
           changedAt;
+
+        delete nextAutoSync.start_pending;
+        delete nextAutoSync
+          .immediate_through_date;
       } else {
+        dailySyncImmediateThroughDate =
+          getPreviousCompletedSeoulCalendarDate(
+            new Date(),
+          );
+
         delete nextAutoSync.stopped_at;
+        delete nextAutoSync.start_pending;
+
+        nextAutoSync
+          .immediate_through_date =
+          dailySyncImmediateThroughDate;
       }
 
       mediaSyncSettingsForMeta = {
@@ -1640,9 +1671,236 @@ export async function PATCH(req: Request, ctx: Ctx) {
 
     if (!updated) return jsonError(404, "Report not found");
 
-    const enrichedUpdated = await enrichReport(updated);
+    const enrichedUpdated =
+      await enrichReport(
+        updated,
+      );
 
-    return NextResponse.json({ ok: true, report: enrichedUpdated });
+    let dailySyncKickoff:
+      | Awaited<
+          ReturnType<
+            typeof runDailyReportV2SchedulerOnce
+          >
+        >
+      | null =
+        null;
+
+    if (
+      dailySyncAction === "start" &&
+      dailySyncImmediateThroughDate
+    ) {
+      try {
+        const dependencies =
+          createDailyReportV2SchedulerDatabaseDependencies();
+
+        dailySyncKickoff =
+          await runDailyReportV2SchedulerOnce({
+            targetDate:
+              dailySyncImmediateThroughDate,
+            reportId:
+              id,
+            dependencies,
+          });
+
+        let snapshotSteps =
+          0;
+
+        while (
+          dailySyncKickoff.action ===
+            "snapshot_materialized" &&
+          snapshotSteps <
+            MAX_DAILY_SYNC_IMMEDIATE_SNAPSHOT_STEPS
+        ) {
+          snapshotSteps +=
+            1;
+
+          dailySyncKickoff =
+            await runDailyReportV2SchedulerOnce({
+              targetDate:
+                dailySyncImmediateThroughDate,
+              reportId:
+                id,
+              dependencies,
+            });
+        }
+
+        if (
+          dailySyncKickoff.action ===
+            "noop_no_candidate"
+        ) {
+          throw new Error(
+            "Daily Report V2 immediate kickoff did not resolve the started report.",
+          );
+        }
+      } catch (kickoffError) {
+        const updatedMeta =
+          isPlainObject(
+            (updated as any).meta,
+          )
+            ? {
+                ...(updated as any).meta,
+              }
+            : {};
+
+        const rollbackMediaSync =
+          isPlainObject(
+            (updatedMeta as any)
+              .media_sync,
+          )
+            ? {
+                ...(updatedMeta as any)
+                  .media_sync,
+              }
+            : {};
+
+        const rollbackAutoSync =
+          isPlainObject(
+            (rollbackMediaSync as any)
+              .auto_sync,
+          )
+            ? {
+                ...(rollbackMediaSync as any)
+                  .auto_sync,
+              }
+            : {};
+
+        rollbackAutoSync.enabled =
+          false;
+
+        rollbackAutoSync.start_pending =
+          true;
+
+        delete rollbackAutoSync
+          .immediate_through_date;
+
+        delete rollbackAutoSync
+          .stopped_at;
+
+        rollbackMediaSync.auto_sync =
+          rollbackAutoSync;
+
+        rollbackMediaSync.updated_at =
+          new Date().toISOString();
+
+        const rollbackMeta = {
+          ...updatedMeta,
+          media_sync:
+            rollbackMediaSync,
+        };
+
+        const updatedAt =
+          String(
+            (updated as any)
+              .updated_at ?? "",
+          ).trim();
+
+        if (!updatedAt) {
+          return jsonError(
+            500,
+            "V2_DAILY_SYNC_IMMEDIATE_KICKOFF_ROLLBACK_AUTHORITY_MISSING",
+          );
+        }
+
+        const {
+          data: rolledBack,
+          error: rollbackError,
+        } =
+          await supabaseAdmin
+            .from("reports")
+            .update({
+              meta:
+                rollbackMeta,
+            })
+            .eq(
+              "id",
+              id,
+            )
+            .eq(
+              "updated_at",
+              updatedAt,
+            )
+            .contains(
+              "meta",
+              {
+                media_sync: {
+                  auto_sync: {
+                    enabled:
+                      true,
+                    contract:
+                      "daily_report_v2",
+                    start_date:
+                      existingDailySyncIdentity
+                        ?.period_key,
+                    immediate_through_date:
+                      dailySyncImmediateThroughDate,
+                  },
+                },
+              },
+            )
+            .select(
+              [
+                "id",
+                "workspace_id",
+                "advertiser_id",
+                "report_type_id",
+                "title",
+                "status",
+                "period_start",
+                "period_end",
+                "draft_period_start",
+                "draft_period_end",
+                "published_period_start",
+                "published_period_end",
+                "published_at",
+                "published_ingestion_id",
+                "meta",
+                "updated_at",
+              ].join(", "),
+            )
+            .maybeSingle();
+
+        if (
+          rollbackError ||
+          !rolledBack
+        ) {
+          return jsonError(
+            500,
+            "V2_DAILY_SYNC_IMMEDIATE_KICKOFF_ROLLBACK_FAILED",
+            {
+              detail:
+                rollbackError?.message ??
+                "Rollback compare-and-set did not match the started report.",
+            },
+          );
+        }
+
+        const enrichedRolledBack =
+          await enrichReport(
+            rolledBack,
+          );
+
+        return jsonError(
+          409,
+          "V2_DAILY_SYNC_IMMEDIATE_KICKOFF_FAILED",
+          {
+            report:
+              enrichedRolledBack,
+            detail:
+              kickoffError instanceof Error
+                ? kickoffError.message
+                : "Daily Report V2 immediate kickoff failed.",
+          },
+        );
+      }
+    }
+
+    return NextResponse.json({
+      ok: true,
+      report:
+        enrichedUpdated,
+      daily_sync_kickoff:
+        dailySyncKickoff,
+    });
   } catch (e: any) {
     return jsonError(500, e?.message ?? String(e));
   }

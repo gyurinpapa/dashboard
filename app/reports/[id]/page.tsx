@@ -2389,6 +2389,23 @@ export default function ReportDetailPage() {
           "all_mapped_supported_media",
     );
 
+  const dailySyncAutomationStartPending =
+    Boolean(
+      dailySyncManagedByCanonical &&
+        dailySyncAutoSyncMeta?.enabled === false &&
+        dailySyncAutoSyncMeta?.start_pending === true &&
+        String(
+          dailySyncAutoSyncMeta?.contract ?? "",
+        ).trim() === "daily_report_v2" &&
+        String(
+          dailySyncAutoSyncMeta?.start_date ?? "",
+        ).trim() === canonicalIdentity?.period_key &&
+        String(
+          dailySyncAutoSyncMeta?.scope ?? "",
+        ).trim() ===
+          "all_mapped_supported_media",
+    );
+
   const dailySyncDisplayStartDate =
     dailySyncManagedByCanonical
       ? String(
@@ -2400,7 +2417,9 @@ export default function ReportDetailPage() {
     dailySyncManagedByCanonical
       ? dailySyncAutomationActive
         ? "종료 없음"
-        : "자동 동기화 종료됨"
+        : dailySyncAutomationStartPending
+          ? "시작 대기"
+          : "자동 동기화 종료됨"
       : mediaSyncSettings.dateTo;
 
   const mediaSyncAutomaticManaged =
@@ -3891,7 +3910,7 @@ export default function ReportDetailPage() {
           canonicalSourceType === "api"
             ? selectedCanonicalPeriodType ===
                 "daily_sync"
-              ? "데일리 자동 동기화 정책이 저장되었습니다. 시작일만 고정되며 종료일은 사용하지 않습니다."
+              ? "데일리 자동 동기화 시작일이 저장되었습니다. 자동 동기화 시작 버튼을 누르면 시작일부터 어제까지 누락 데이터를 즉시 수집한 뒤, 이후 매일 새벽 5시(KST)에 전일 데이터를 자동 수집합니다."
               : selectedCanonicalPeriodType ===
                   "cumulative"
                 ? "정규 URL 기간이 저장되었습니다. 누적 리포트의 API 동기화 기간은 기존 수동 설정을 유지합니다."
@@ -4009,7 +4028,7 @@ export default function ReportDetailPage() {
 
           setMsg(
             enabled
-              ? "데일리 자동 동기화를 다시 시작했습니다. 매일 새벽 5시(KST)에 전일 데이터가 자동 수집됩니다."
+              ? "데일리 자동 동기화를 시작했습니다. 시작일부터 어제까지 누락 데이터 수집을 즉시 진행하고, 이후 매일 새벽 5시(KST)에 전일 데이터를 자동 수집합니다."
               : "데일리 자동 동기화를 종료했습니다. 기존 데이터와 snapshot은 유지되고, 이 리포트의 신규 자동 수집만 중단됩니다.",
           );
         } catch (e: any) {
@@ -5622,6 +5641,11 @@ export default function ReportDetailPage() {
                       이 리포트는 데일리 자동 동기화 관리 대상입니다.
                       표시된 시작일부터 매일 새벽 5시(KST)에 전일 데이터를 자동 수집하며, 수동 기간 저장과 수동 동기화 요청은 비활성화됩니다.
                     </>
+                  ) : dailySyncAutomationStartPending ? (
+                    <>
+                      데일리 자동 동기화 시작일이 저장되었습니다.
+                      자동 동기화 시작 버튼을 누르면 시작일부터 어제까지 누락 데이터를 즉시 수집하고, 완료 후 매일 새벽 5시(KST)에 전일 데이터를 자동 수집합니다.
+                    </>
                   ) : (
                     <>
                       이 리포트의 데일리 자동 동기화는 종료된 상태입니다.
@@ -5720,7 +5744,9 @@ export default function ReportDetailPage() {
                     dailySyncManagedByCanonical
                       ? dailySyncAutomationActive
                         ? "이 리포트의 향후 자동 수집만 종료합니다. 기존 데이터와 snapshot은 유지됩니다."
-                        : "이 리포트의 데일리 자동 수집을 다시 시작합니다."
+                        : dailySyncAutomationStartPending
+                          ? "저장한 시작일부터 어제까지 최초 누락 데이터를 즉시 수집하고 데일리 자동 동기화를 시작합니다."
+                          : "이 리포트의 데일리 자동 수집을 다시 시작합니다."
                       : undefined
                   }
                 >
@@ -5731,7 +5757,9 @@ export default function ReportDetailPage() {
                         : "시작 중..."
                       : dailySyncAutomationActive
                         ? "자동 동기화 종료"
-                        : "자동 동기화 다시 시작"
+                        : dailySyncAutomationStartPending
+                          ? "자동 동기화 시작"
+                          : "자동 동기화 다시 시작"
                     : mediaSyncPeriodManagedByCanonical
                       ? "자동 설정"
                       : savingMediaSyncSettings
@@ -5757,7 +5785,9 @@ export default function ReportDetailPage() {
                       ? dailySyncManagedByCanonical
                         ? dailySyncAutomationActive
                           ? "데일리 자동 동기화 관리 대상입니다. 수동 동기화 요청은 비활성화됩니다."
-                          : "데일리 자동 동기화가 종료된 리포트입니다. 수동 동기화 요청은 비활성화됩니다."
+                          : dailySyncAutomationStartPending
+                            ? "자동 동기화 시작 버튼으로 최초 동기화를 시작해 주세요. 별도 수동 job 생성은 비활성화됩니다."
+                            : "데일리 자동 동기화가 종료된 리포트입니다. 수동 동기화 요청은 비활성화됩니다."
                         : "새벽 자동 동기화 관리 대상입니다. 수동 동기화 요청은 비활성화됩니다."
                       : mediaSyncSettingsDirty
                         ? "API 동기화 기간을 먼저 저장해 주세요."
@@ -5769,7 +5799,9 @@ export default function ReportDetailPage() {
                   {dailySyncManagedByCanonical
                     ? dailySyncAutomationActive
                       ? "자동 동기화"
-                      : "자동 동기화 종료됨"
+                      : dailySyncAutomationStartPending
+                        ? "시작 대기"
+                        : "자동 동기화 종료됨"
                     : mediaSyncAutomaticManaged
                       ? "자동 동기화"
                       : requestingMediaSync
