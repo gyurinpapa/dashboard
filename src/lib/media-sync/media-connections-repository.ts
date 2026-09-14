@@ -776,6 +776,218 @@ export async function createVerifiedGoogleAdsConnection(
   );
 }
 
+/**
+ * Persist a freshly verified Google Ads OAuth connection.
+ *
+ * Re-auth contract:
+ * - the natural account identity is
+ *   workspace + advertiser + provider + external account id.
+ * - when that connection already exists, keep its connection id
+ *   and replace only the verified OAuth credential authority.
+ * - report_media_connections mappings therefore remain intact.
+ * - connected_at / last_sync_at / created_by / created_at /
+ *   meta / tenant ownership are preserved for same-account re-auth.
+ * - when no matching connection exists, retain the historical
+ *   createVerifiedGoogleAdsConnection() behavior.
+ */
+export async function persistVerifiedGoogleAdsConnection(
+  input: CreateVerifiedGoogleAdsConnectionInput,
+): Promise<SafeMediaConnection> {
+  const prepared =
+    prepareVerifiedGoogleAdsConnectionPersistence(
+      input,
+    );
+
+  const supabase =
+    getSupabaseAdmin();
+
+  const {
+    data: existingData,
+    error: existingError,
+  } =
+    await supabase
+      .from(
+        MEDIA_CONNECTIONS_TABLE,
+      )
+      .select("*")
+      .eq(
+        "workspace_id",
+        prepared.workspaceId,
+      )
+      .eq(
+        "advertiser_id",
+        prepared.advertiserId,
+      )
+      .eq(
+        "provider",
+        GOOGLE_ADS_PROVIDER,
+      )
+      .eq(
+        "external_account_id",
+        prepared.externalAccountId,
+      )
+      .maybeSingle();
+
+  if (existingError) {
+    throw wrapDatabaseError(
+      "Existing Google Ads media connection could not be loaded for verified OAuth persistence.",
+      existingError,
+    );
+  }
+
+  if (!existingData) {
+    return createVerifiedGoogleAdsConnection(
+      input,
+    );
+  }
+
+  const existingRecord =
+    parseMediaConnectionRecord(
+      existingData,
+    );
+
+  if (
+    existingRecord.provider !==
+      GOOGLE_ADS_PROVIDER ||
+    existingRecord.workspace_id !==
+      prepared.workspaceId ||
+    existingRecord.advertiser_id !==
+      prepared.advertiserId ||
+    existingRecord.external_account_id !==
+      prepared.externalAccountId
+  ) {
+    throw new MediaConnectionsRepositoryError(
+      "INVALID_RECORD",
+      "Existing Google Ads connection authority does not match the verified OAuth account.",
+    );
+  }
+
+  const credentialContext:
+    GoogleAdsCredentialContext = {
+      connectionId:
+        existingRecord.id,
+      workspaceId:
+        existingRecord.workspace_id,
+      advertiserId:
+        existingRecord.advertiser_id,
+      provider:
+        GOOGLE_ADS_PROVIDER,
+      externalAccountId:
+        existingRecord.external_account_id,
+    };
+
+  let credentialCiphertext:
+    string;
+
+  try {
+    credentialCiphertext =
+      encryptGoogleAdsCredentials(
+        prepared.credentials,
+        credentialContext,
+      );
+  } catch (error) {
+    throw new MediaConnectionsRepositoryError(
+      "ENCRYPTION_ERROR",
+      "Google Ads re-auth credentials could not be encrypted.",
+      {
+        cause:
+          error,
+      },
+    );
+  }
+
+  const verifiedAt =
+    prepared.verification.verified_at;
+
+  let data:
+    unknown;
+
+  let error:
+    unknown;
+
+  try {
+    const result =
+      await supabase
+        .from(
+          MEDIA_CONNECTIONS_TABLE,
+        )
+        .update({
+          external_account_name:
+            prepared.externalAccountName,
+
+          credential_ciphertext:
+            credentialCiphertext,
+
+          credential_version:
+            GOOGLE_ADS_CREDENTIAL_VERSION,
+
+          status:
+            "active",
+
+          last_verified_at:
+            verifiedAt,
+
+          last_error:
+            null,
+
+          updated_at:
+            verifiedAt,
+        })
+        .eq(
+          "id",
+          existingRecord.id,
+        )
+        .eq(
+          "workspace_id",
+          existingRecord.workspace_id,
+        )
+        .eq(
+          "advertiser_id",
+          existingRecord.advertiser_id,
+        )
+        .eq(
+          "provider",
+          GOOGLE_ADS_PROVIDER,
+        )
+        .eq(
+          "external_account_id",
+          existingRecord.external_account_id,
+        )
+        .select("*")
+        .maybeSingle();
+
+    data =
+      result.data;
+
+    error =
+      result.error;
+  } finally {
+    credentialCiphertext =
+      "";
+  }
+
+  if (error) {
+    throw wrapDatabaseError(
+      "Google Ads OAuth credentials could not be refreshed.",
+      error,
+    );
+  }
+
+  if (!data) {
+    throw new MediaConnectionsRepositoryError(
+      "CONNECTION_NOT_FOUND",
+      "Google Ads connection was not found during OAuth credential refresh.",
+    );
+  }
+
+  return toSafeMediaConnection(
+    parseMediaConnectionRecord(
+      data,
+    ),
+  );
+}
+
+
 export async function createNaverSearchAdsConnection(
   input: CreateNaverSearchAdsConnectionInput & {
     verifiedAt: string;

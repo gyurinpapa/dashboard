@@ -39,7 +39,7 @@ import {
   parseGoogleAdsOAuthCallbackQuery,
 } from "@/src/lib/media-sync/google-ads-oauth";
 import {
-  createVerifiedGoogleAdsConnection,
+  persistVerifiedGoogleAdsConnection,
 } from "@/src/lib/media-sync/media-connections-repository";
 
 export const runtime = "nodejs";
@@ -198,7 +198,7 @@ export async function GET(
           verifyAccountAccess:
             verifyGoogleAdsAccountAccess,
           persistVerifiedConnection:
-            createVerifiedGoogleAdsConnection,
+            persistVerifiedGoogleAdsConnection,
         },
       );
 
