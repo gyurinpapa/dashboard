@@ -93,6 +93,8 @@ export type DailyReportV2SchedulerDependencies =
       input: Readonly<{
         targetDate:
           string;
+        reportId?:
+          string;
       }>,
     ) => Promise<
       DailyReportV2SchedulerCandidate[]
@@ -797,6 +799,10 @@ export async function runDailyReportV2SchedulerOnce(
     Readonly<{
       now?:
         Date;
+      targetDate?:
+        string;
+      reportId?:
+        string;
       dependencies:
         DailyReportV2SchedulerDependencies;
     }>,
@@ -813,7 +819,52 @@ export async function runDailyReportV2SchedulerOnce(
     );
   }
 
+  const explicitTargetDate =
+    input.targetDate ===
+      undefined
+      ? null
+      : String(
+          input.targetDate,
+        ).trim();
+
+  if (
+    explicitTargetDate !==
+      null &&
+    !isValidYmd(
+      explicitTargetDate,
+    )
+  ) {
+    throw new DailyReportV2SchedulerError(
+      "INVALID_INPUT",
+      "Daily Report V2 explicit targetDate must be YYYY-MM-DD.",
+    );
+  }
+
+  const scopedReportId =
+    input.reportId ===
+      undefined
+      ? null
+      : String(
+          input.reportId,
+        ).trim();
+
+  if (
+    scopedReportId !==
+      null &&
+    (
+      !scopedReportId ||
+      scopedReportId.length >
+        MAX_ID_LENGTH
+    )
+  ) {
+    throw new DailyReportV2SchedulerError(
+      "INVALID_INPUT",
+      "Daily Report V2 scoped reportId is invalid.",
+    );
+  }
+
   const targetDate =
+    explicitTargetDate ??
     getPreviousCompletedSeoulCalendarDate(
       input.now ??
       new Date(),
@@ -823,6 +874,15 @@ export async function runDailyReportV2SchedulerOnce(
     await input.dependencies
       .listCandidates({
         targetDate,
+        ...(
+          scopedReportId ===
+            null
+            ? {}
+            : {
+                reportId:
+                  scopedReportId,
+              }
+        ),
       });
 
   if (

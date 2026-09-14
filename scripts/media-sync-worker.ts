@@ -12,6 +12,9 @@ import {
 import {
   processNextGoogleAdsMediaSyncJob,
 } from "../src/lib/media-sync/google-ads-media-sync-worker-orchestration-repository";
+import {
+  continueDailyReportV2AfterMediaJob,
+} from "../src/lib/media-sync/daily-report-v2-immediate-continuation";
 
 const WORKER_NAME =
   "media-sync-worker";
@@ -1081,6 +1084,75 @@ async function recoverStaleProcessingJobs(
   );
 }
 
+async function continueDailyReportV2ForCompletedJob(
+  input:
+    Readonly<{
+      jobId:
+        string;
+      reportId:
+        string;
+    }>,
+): Promise<void> {
+  try {
+    const continuation =
+      await continueDailyReportV2AfterMediaJob(
+        input,
+      );
+
+    if (
+      continuation
+    ) {
+      console.log(
+        JSON.stringify({
+          worker:
+            WORKER_NAME,
+          continuation:
+            "daily_report_v2",
+          reportId:
+            input.reportId,
+          sourceJobId:
+            input.jobId,
+          targetDate:
+            continuation.targetDate,
+          action:
+            continuation.action,
+          nextJobId:
+            continuation.jobId,
+          provider:
+            continuation.provider,
+          date:
+            continuation.date,
+          status:
+            continuation.status,
+        }),
+      );
+    }
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        worker:
+          WORKER_NAME,
+        continuation:
+          "daily_report_v2",
+        reportId:
+          input.reportId,
+        sourceJobId:
+          input.jobId,
+        ok:
+          false,
+        name:
+          error instanceof Error
+            ? error.name
+            : "UnknownError",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Daily Report V2 continuation failed.",
+      }),
+    );
+  }
+}
+
 async function processSingleJob(
   options: WorkerRuntimeOptions,
 ): Promise<boolean> {
@@ -1231,6 +1303,13 @@ async function processSingleJob(
         result.expectedRows,
     });
 
+    await continueDailyReportV2ForCompletedJob({
+      jobId:
+        result.jobId,
+      reportId:
+        result.reportId,
+    });
+
     return true;
   }
 
@@ -1250,6 +1329,13 @@ async function processSingleJob(
         result.snapshotIngestionId,
       expectedRows:
         result.expectedRows,
+    });
+
+    await continueDailyReportV2ForCompletedJob({
+      jobId:
+        result.jobId,
+      reportId:
+        result.reportId,
     });
 
     return true;
@@ -1276,6 +1362,13 @@ async function processSingleJob(
 
     expectedRows:
       result.expectedRows,
+  });
+
+  await continueDailyReportV2ForCompletedJob({
+    jobId:
+      result.jobId,
+    reportId:
+      result.reportId,
   });
 
   return true;

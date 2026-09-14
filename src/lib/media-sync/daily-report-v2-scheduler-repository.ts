@@ -74,6 +74,8 @@ export type DailyReportV2SchedulerRepositoryGateway =
         Readonly<{
           targetDate:
             string;
+          reportId?:
+            string;
         }>,
     ) => Promise<
       Readonly<{
@@ -336,6 +338,8 @@ async function defaultListReportRows(
     Readonly<{
       targetDate:
         string;
+      reportId?:
+        string;
     }>,
 ) {
   if (
@@ -349,43 +353,66 @@ async function defaultListReportRows(
     );
   }
 
+  const reportId =
+    input.reportId ===
+      undefined
+      ? null
+      : requireString(
+          input.reportId,
+          "reportId",
+        );
+
   const supabase =
     getSupabaseAdmin();
 
-  return await supabase
-    .from(
-      REPORTS_TABLE,
-    )
-    .select(
-      [
-        "id",
-        "workspace_id",
-        "advertiser_id",
-        "created_by",
+  let query =
+    supabase
+      .from(
+        REPORTS_TABLE,
+      )
+      .select(
+        [
+          "id",
+          "workspace_id",
+          "advertiser_id",
+          "created_by",
+          "status",
+          "meta",
+        ].join(","),
+      )
+      .in(
         "status",
+        [
+          "draft",
+          "ready",
+        ],
+      )
+      .contains(
         "meta",
-      ].join(","),
-    )
-    .in(
-      "status",
-      [
-        "draft",
-        "ready",
-      ],
-    )
-    .contains(
-      "meta",
-      {
-        media_sync: {
-          auto_sync: {
-            enabled:
-              true,
-            contract:
-              DAILY_REPORT_V2_AUTOMATION_CONTRACT,
+        {
+          media_sync: {
+            auto_sync: {
+              enabled:
+                true,
+              contract:
+                DAILY_REPORT_V2_AUTOMATION_CONTRACT,
+            },
           },
         },
-      },
-    )
+      );
+
+  if (
+    reportId !==
+      null
+  ) {
+    query =
+      query.eq(
+        "id",
+        reportId,
+      );
+  }
+
+  return await query
     .order(
       "id",
       {
