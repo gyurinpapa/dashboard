@@ -93,6 +93,92 @@ function cleanText(v?: string | null) {
   return s;
 }
 
+const PRODUCT_OPTION_META: Readonly<
+  Record<
+    string,
+    Readonly<{
+      provider: "naver" | "google" | "legacy";
+      providerLabel: string;
+      label: string;
+      order: number;
+    }>
+  >
+> = Object.freeze({
+  "naver_searchad::web_site": Object.freeze({
+    provider: "naver" as const,
+    providerLabel: "Naver",
+    label: "파워링크",
+    order: 10,
+  }),
+  "naver_searchad::shopping": Object.freeze({
+    provider: "naver" as const,
+    providerLabel: "Naver",
+    label: "쇼핑검색",
+    order: 20,
+  }),
+  "naver_searchad::brand_search": Object.freeze({
+    provider: "naver" as const,
+    providerLabel: "Naver",
+    label: "브랜드검색",
+    order: 30,
+  }),
+  "naver_searchad::power_contents": Object.freeze({
+    provider: "naver" as const,
+    providerLabel: "Naver",
+    label: "파워콘텐츠",
+    order: 40,
+  }),
+  "naver_searchad::place": Object.freeze({
+    provider: "naver" as const,
+    providerLabel: "Naver",
+    label: "플레이스",
+    order: 50,
+  }),
+
+  "google_ads::search": Object.freeze({
+    provider: "google" as const,
+    providerLabel: "Google",
+    label: "검색",
+    order: 10,
+  }),
+  "google_ads::shopping": Object.freeze({
+    provider: "google" as const,
+    providerLabel: "Google",
+    label: "쇼핑",
+    order: 20,
+  }),
+  "google_ads::demand_gen": Object.freeze({
+    provider: "google" as const,
+    providerLabel: "Google",
+    label: "Demand Gen",
+    order: 30,
+  }),
+  "google_ads::display": Object.freeze({
+    provider: "google" as const,
+    providerLabel: "Google",
+    label: "디스플레이",
+    order: 40,
+  }),
+  "google_ads::performance_max": Object.freeze({
+    provider: "google" as const,
+    providerLabel: "Google",
+    label: "Performance Max",
+    order: 50,
+  }),
+});
+
+function getProductOptionMeta(productKey: string) {
+  return (
+    PRODUCT_OPTION_META[productKey] ??
+    Object.freeze({
+      provider: "legacy" as const,
+      providerLabel: "기타",
+      label: productKey,
+      order: 999,
+    })
+  );
+}
+
 function tabClass(active: boolean, decision = false) {
   return [
     "relative inline-flex h-9 shrink-0 items-center justify-center whitespace-nowrap rounded-t-[8px] border px-3.5 text-[13px] font-semibold tracking-tight",
@@ -903,25 +989,71 @@ function EditorHeaderBar(props: Props) {
     closeFilter();
   }, [setSelectedProduct, closeFilter]);
 
-  const productOptionNodes = useMemo(() => {
-    return productOptions.map((p) => {
-      const isActive = selectedProduct === p;
+  const productOptionGroups = useMemo(() => {
+    const grouped = new Map<
+      string,
+      {
+        provider: "naver" | "google" | "legacy";
+        providerLabel: string;
+        options: Array<{
+          key: string;
+          label: string;
+          order: number;
+        }>;
+      }
+    >();
 
-      return (
-        <button
-          key={p}
-          type="button"
-          onClick={() => {
-            setSelectedProduct(p);
-            closeFilter();
-          }}
-          className={optionBtnClass(isActive)}
-        >
-          {p}
-        </button>
-      );
-    });
-  }, [productOptions, selectedProduct, setSelectedProduct, closeFilter]);
+    for (const productKey of productOptions) {
+      const meta = getProductOptionMeta(productKey);
+      const groupKey = meta.provider;
+
+      const existing = grouped.get(groupKey);
+
+      if (existing) {
+        existing.options.push({
+          key: productKey,
+          label: meta.label,
+          order: meta.order,
+        });
+        continue;
+      }
+
+      grouped.set(groupKey, {
+        provider: meta.provider,
+        providerLabel: meta.providerLabel,
+        options: [
+          {
+            key: productKey,
+            label: meta.label,
+            order: meta.order,
+          },
+        ],
+      });
+    }
+
+    const providerOrder = {
+      naver: 10,
+      google: 20,
+      legacy: 30,
+    } as const;
+
+    return Array.from(grouped.values())
+      .sort(
+        (left, right) =>
+          providerOrder[left.provider] -
+          providerOrder[right.provider],
+      )
+      .map((group) => ({
+        ...group,
+        options: group.options
+          .slice()
+          .sort(
+            (left, right) =>
+              left.order - right.order ||
+              left.label.localeCompare(right.label),
+          ),
+      }));
+  }, [productOptions]);
 
   return (
     <div
@@ -1076,14 +1208,51 @@ function EditorHeaderBar(props: Props) {
 
       {hasProductOptions && filterKey === "product" && (
         <OptionPopover title="상품 선택" position={filterPopoverPosition}>
-          <button
-            type="button"
-            onClick={handleSelectProductAll}
-            className={optionBtnClass(selectedProduct === "all")}
-          >
-            전체
-          </button>
-          {productOptionNodes}
+          <div className="w-full">
+            <div className="mb-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleSelectProductAll}
+                className={optionBtnClass(selectedProduct === "all")}
+              >
+                전체
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {productOptionGroups.map((group) => (
+                <div
+                  key={group.provider}
+                  className="rounded-lg border border-[var(--nature-border)]/70 bg-white/45 p-2"
+                >
+                  <div className="mb-2 text-[11px] font-extrabold tracking-[0.08em] text-slate-500">
+                    {group.providerLabel}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {group.options.map((option) => {
+                      const isActive =
+                        selectedProduct === option.key;
+
+                      return (
+                        <button
+                          key={option.key}
+                          type="button"
+                          onClick={() => {
+                            setSelectedProduct(option.key);
+                            closeFilter();
+                          }}
+                          className={optionBtnClass(isActive)}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </OptionPopover>
       )}
     </div>

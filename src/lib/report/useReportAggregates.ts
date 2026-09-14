@@ -121,7 +121,83 @@ function asNum(v: any) {
   return Number.isFinite(n) ? n : 0;
 }
 
+const NAVER_PRODUCT_KEY_MAP = Object.freeze({
+  WEB_SITE: "naver_searchad::web_site",
+  SHOPPING: "naver_searchad::shopping",
+  BRAND_SEARCH: "naver_searchad::brand_search",
+  POWER_CONTENTS: "naver_searchad::power_contents",
+  PLACE: "naver_searchad::place",
+} as const);
+
+const GOOGLE_PRODUCT_KEY_MAP = Object.freeze({
+  search: "google_ads::search",
+  shopping: "google_ads::shopping",
+  demand_gen: "google_ads::demand_gen",
+  display: "google_ads::display",
+  performance_max: "google_ads::performance_max",
+} as const);
+
+function readProviderMeta(r: any) {
+  const value = r?.provider_meta;
+
+  return (
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value)
+  )
+    ? value
+    : null;
+}
+
 function normalizeProductValue(r: any) {
+  const provider = asStr(r?.provider)
+    .toLowerCase()
+    .trim();
+
+  const providerMeta = readProviderMeta(r);
+
+  if (provider === "google_ads" && providerMeta) {
+    const productFamily = asStr(
+      providerMeta?.product_family ??
+      providerMeta?.productFamily
+    )
+      .toLowerCase()
+      .trim();
+
+    const canonicalProduct =
+      GOOGLE_PRODUCT_KEY_MAP[
+        productFamily as keyof typeof GOOGLE_PRODUCT_KEY_MAP
+      ];
+
+    if (canonicalProduct) {
+      return canonicalProduct;
+    }
+  }
+
+  if (provider === "naver_searchad" && providerMeta) {
+    const campaignType = asStr(
+      providerMeta?.campaign_type ??
+      providerMeta?.campaignType
+    )
+      .toUpperCase()
+      .trim();
+
+    const canonicalProduct =
+      NAVER_PRODUCT_KEY_MAP[
+        campaignType as keyof typeof NAVER_PRODUCT_KEY_MAP
+      ];
+
+    if (canonicalProduct) {
+      return canonicalProduct;
+    }
+  }
+
+  /**
+   * Legacy / CSV compatibility.
+   *
+   * Authority metadata가 없는 기존 row는 현재 상품 필터 동작을 그대로 유지한다.
+   * API multi-product row만 provider_meta authority로 세분화한다.
+   */
   return (
     asStr(r?.platform) ||
     asStr(r?.media_source) ||
