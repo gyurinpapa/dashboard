@@ -2816,12 +2816,22 @@ export default function ReportDetailPage() {
   }, [mediaSyncSettings]);
 
   const mediaSyncSettingsError = useMemo(() => {
-    if (!isApiReport) return "";
-    return getMediaSyncSettingsError(mediaSyncSettings, mediaSyncSegmentLongRangeAllowed);
+    if (
+      !isApiReport ||
+      mediaSyncSettingsManagedByCanonical
+    ) {
+      return "";
+    }
+
+    return getMediaSyncSettingsError(
+      mediaSyncSettings,
+      mediaSyncSegmentLongRangeAllowed,
+    );
   }, [
     isApiReport,
     mediaSyncSegmentLongRangeAllowed,
     mediaSyncSettings,
+    mediaSyncSettingsManagedByCanonical,
   ]);
 
   useEffect(() => {
