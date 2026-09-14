@@ -2548,10 +2548,68 @@ export default function ReportDetailPage() {
           "all_mapped_supported_media",
     );
 
+  const dailySyncCatchupStartDate =
+    normalizeYmdInput(
+      dailySyncAutoSyncMeta
+        ?.start_date,
+    );
+
   const dailySyncCatchupTargetDate =
     normalizeYmdInput(
       dailySyncAutoSyncMeta
         ?.immediate_through_date,
+    );
+
+  const dailySyncInitialCoverageComplete =
+    Boolean(
+      dailyReportV2ProviderProgress
+        .length > 0 &&
+        dailyReportV2ProviderProgress
+          .every(
+            item =>
+              item.target_covered ===
+                true,
+          ),
+    );
+
+  const dailySyncExpectedSnapshotRows =
+    dailyReportV2ProviderProgress
+      .reduce(
+        (
+          total,
+          item,
+        ) =>
+          total +
+          Math.max(
+            0,
+            Number(
+              item.contiguous_rows ??
+                0,
+            ),
+          ),
+        0,
+      );
+
+  const dailySyncInitialSnapshotReady =
+    Boolean(
+      dailySyncInitialCoverageComplete &&
+        rowsMetaLoaded &&
+        rowsMetaCount >=
+          dailySyncExpectedSnapshotRows &&
+        (
+          dailySyncExpectedSnapshotRows ===
+            0 ||
+          (
+            dailySyncCatchupStartDate &&
+            dailySyncCatchupTargetDate &&
+            rowsMetaMinDate &&
+            rowsMetaMaxDate &&
+            rowsMetaMinDate <=
+              dailySyncCatchupStartDate &&
+            rowsMetaMaxDate >=
+              dailySyncCatchupTargetDate
+          )
+        ),
     );
 
   const dailySyncInitialCatchupPollingActive =
@@ -2559,14 +2617,8 @@ export default function ReportDetailPage() {
       dailySyncAutomationActive &&
         dailySyncCatchupTargetDate &&
         (
-          dailyReportV2ProviderProgress
-            .length === 0 ||
-          dailyReportV2ProviderProgress
-            .some(
-              item =>
-                item.target_covered !==
-                  true,
-            )
+          !dailySyncInitialCoverageComplete ||
+          !dailySyncInitialSnapshotReady
         ),
     );
 
