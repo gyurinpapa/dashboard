@@ -2324,6 +2324,8 @@ export default function ReportDetailPage() {
   );
   const [loadingMediaSyncJob, setLoadingMediaSyncJob] = useState(false);
   const [requestingMediaSync, setRequestingMediaSync] = useState(false);
+  const [updatingDailySyncAutomation, setUpdatingDailySyncAutomation] =
+    useState(false);
 
   const [creativesMap, setCreativesMap] = useState<Record<string, string>>({});
   const creativesBatchIdRef = useRef<string | null | undefined>(undefined);
@@ -2357,6 +2359,49 @@ export default function ReportDetailPage() {
           ?.period_type ===
           "daily_sync",
     );
+
+  const dailySyncAutoSyncMeta =
+    (report as any)?.meta
+      ?.media_sync?.auto_sync &&
+    typeof (report as any)?.meta
+      ?.media_sync?.auto_sync === "object" &&
+    !Array.isArray(
+      (report as any)?.meta
+        ?.media_sync?.auto_sync,
+    )
+      ? (report as any)?.meta
+          ?.media_sync?.auto_sync
+      : null;
+
+  const dailySyncAutomationActive =
+    Boolean(
+      dailySyncManagedByCanonical &&
+        dailySyncAutoSyncMeta?.enabled === true &&
+        String(
+          dailySyncAutoSyncMeta?.contract ?? "",
+        ).trim() === "daily_report_v2" &&
+        String(
+          dailySyncAutoSyncMeta?.start_date ?? "",
+        ).trim() === canonicalIdentity?.period_key &&
+        String(
+          dailySyncAutoSyncMeta?.scope ?? "",
+        ).trim() ===
+          "all_mapped_supported_media",
+    );
+
+  const dailySyncDisplayStartDate =
+    dailySyncManagedByCanonical
+      ? String(
+          canonicalIdentity?.period_key ?? "",
+        ).trim()
+      : mediaSyncSettings.dateFrom;
+
+  const dailySyncDisplayEndDate =
+    dailySyncManagedByCanonical
+      ? dailySyncAutomationActive
+        ? "종료 없음"
+        : "자동 동기화 종료됨"
+      : mediaSyncSettings.dateTo;
 
   const mediaSyncAutomaticManaged =
     Boolean(
@@ -3862,6 +3907,120 @@ export default function ReportDetailPage() {
       reportId,
       selectedCanonicalPeriodType,
     ]);
+
+  const handleSetDailySyncAutomation =
+    useCallback(
+      async (enabled: boolean) => {
+        if (
+          !reportId ||
+          !report ||
+          updatingDailySyncAutomation
+        ) {
+          return;
+        }
+
+        if (!dailySyncManagedByCanonical) {
+          setMsg(
+            "이 리포트는 데일리 자동 동기화 설정 대상이 아닙니다.",
+          );
+          return;
+        }
+
+        if (
+          enabled === dailySyncAutomationActive
+        ) {
+          setMsg(
+            enabled
+              ? "데일리 자동 동기화가 이미 활성화되어 있습니다."
+              : "데일리 자동 동기화가 이미 종료되어 있습니다.",
+          );
+          return;
+        }
+
+        if (
+          !enabled &&
+          !window.confirm(
+            "이 리포트의 데일리 자동 동기화를 종료할까요?\n\n기존 데이터와 현재/발행 snapshot은 유지되며, 다음 새벽 5시부터 이 리포트의 신규 자동 수집만 중단됩니다.",
+          )
+        ) {
+          return;
+        }
+
+        setUpdatingDailySyncAutomation(true);
+        setMsg("");
+
+        try {
+          const res = await authFetch(
+            `/api/reports/${encodeURIComponent(
+              reportId,
+            )}`,
+            {
+              method: "PATCH",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                daily_sync_action:
+                  enabled ? "start" : "stop",
+              }),
+            },
+          );
+
+          const json = await safeJson(res);
+
+          if (!res.ok || !json?.ok) {
+            throw new Error(
+              String(
+                json?.error ||
+                  json?.message ||
+                  `데일리 자동 동기화 ${
+                    enabled ? "시작" : "종료"
+                  } 실패 (${res.status})`,
+              ),
+            );
+          }
+
+          const updatedReport =
+            json?.report &&
+            typeof json.report === "object"
+              ? json.report
+              : null;
+
+          if (!updatedReport) {
+            throw new Error(
+              "데일리 자동 동기화 변경 결과가 올바르지 않습니다.",
+            );
+          }
+
+          setReport((prev) => ({
+            ...(prev ?? {}),
+            ...updatedReport,
+          }));
+
+          setMsg(
+            enabled
+              ? "데일리 자동 동기화를 다시 시작했습니다. 매일 새벽 5시(KST)에 전일 데이터가 자동 수집됩니다."
+              : "데일리 자동 동기화를 종료했습니다. 기존 데이터와 snapshot은 유지되고, 이 리포트의 신규 자동 수집만 중단됩니다.",
+          );
+        } catch (e: any) {
+          setMsg(
+            e?.message ||
+              `데일리 자동 동기화 ${
+                enabled ? "시작" : "종료"
+              } 실패`,
+          );
+        } finally {
+          setUpdatingDailySyncAutomation(false);
+        }
+      },
+      [
+        dailySyncAutomationActive,
+        dailySyncManagedByCanonical,
+        report,
+        reportId,
+        updatingDailySyncAutomation,
+      ],
+    );
 
   const handleSaveMonthGoal = useCallback(async () => {
     if (!reportId) return;
@@ -5448,10 +5607,17 @@ export default function ReportDetailPage() {
             <div className="space-y-4">
               <div>
                 {dailySyncManagedByCanonical ? (
-                  <>
-                    이 리포트는 데일리 자동 동기화 관리 대상입니다.
-                    시작일 이후 자동 수집 정책을 사용하며 수동 기간 저장과 수동 동기화 요청은 비활성화됩니다.
-                  </>
+                  dailySyncAutomationActive ? (
+                    <>
+                      이 리포트는 데일리 자동 동기화 관리 대상입니다.
+                      표시된 시작일부터 매일 새벽 5시(KST)에 전일 데이터를 자동 수집하며, 수동 기간 저장과 수동 동기화 요청은 비활성화됩니다.
+                    </>
+                  ) : (
+                    <>
+                      이 리포트의 데일리 자동 동기화는 종료된 상태입니다.
+                      기존 데이터와 snapshot은 유지되며 자동 동기화를 다시 시작할 수 있습니다.
+                    </>
+                  )
                 ) : mediaSyncAutomatic.enabled ? (
                   <>
                     이 리포트는 새벽 자동 동기화 관리 대상입니다.
@@ -5475,7 +5641,7 @@ export default function ReportDetailPage() {
                   <span className="text-xs font-extrabold text-[#bbb8d4]">API 동기화 시작일</span>
                   <input
                     type="date"
-                    value={mediaSyncSettings.dateFrom}
+                    value={dailySyncDisplayStartDate}
                     onChange={(event) =>
                       setMediaSyncSettings((prev) => ({
                         ...prev,
@@ -5492,8 +5658,12 @@ export default function ReportDetailPage() {
                 <label className="block">
                   <span className="text-xs font-extrabold text-[#bbb8d4]">API 동기화 종료일</span>
                   <input
-                    type="date"
-                    value={mediaSyncSettings.dateTo}
+                    type={
+                      dailySyncManagedByCanonical
+                        ? "text"
+                        : "date"
+                    }
+                    value={dailySyncDisplayEndDate}
                     onChange={(event) =>
                       setMediaSyncSettings((prev) => ({
                         ...prev,
@@ -5516,22 +5686,47 @@ export default function ReportDetailPage() {
 
                 <button
                   type="button"
-                  onClick={handleSaveMediaSyncSettings}
+                  onClick={
+                    dailySyncManagedByCanonical
+                      ? () =>
+                          void handleSetDailySyncAutomation(
+                            !dailySyncAutomationActive,
+                          )
+                      : handleSaveMediaSyncSettings
+                  }
                   disabled={
-                    mediaSyncSettingsManagedByCanonical ||
-                    savingMediaSyncSettings ||
-                    !mediaSyncSettingsDirty ||
-                    !isValidMediaSyncSettingsDraft(mediaSyncSettings, mediaSyncSegmentLongRangeAllowed)
+                    dailySyncManagedByCanonical
+                      ? updatingDailySyncAutomation
+                      : mediaSyncSettingsManagedByCanonical ||
+                        savingMediaSyncSettings ||
+                        !mediaSyncSettingsDirty ||
+                        !isValidMediaSyncSettingsDraft(
+                          mediaSyncSettings,
+                          mediaSyncSegmentLongRangeAllowed,
+                        )
                   }
                   className="etrylue-primary-button rounded-xl px-4 py-2.5 text-sm font-black"
+                  title={
+                    dailySyncManagedByCanonical
+                      ? dailySyncAutomationActive
+                        ? "이 리포트의 향후 자동 수집만 종료합니다. 기존 데이터와 snapshot은 유지됩니다."
+                        : "이 리포트의 데일리 자동 수집을 다시 시작합니다."
+                      : undefined
+                  }
                 >
                   {dailySyncManagedByCanonical
-                    ? "자동 관리"
+                    ? updatingDailySyncAutomation
+                      ? dailySyncAutomationActive
+                        ? "종료 중..."
+                        : "시작 중..."
+                      : dailySyncAutomationActive
+                        ? "자동 동기화 종료"
+                        : "자동 동기화 다시 시작"
                     : mediaSyncPeriodManagedByCanonical
                       ? "자동 설정"
                       : savingMediaSyncSettings
-                      ? "저장 중..."
-                      : "기간 저장"}
+                        ? "저장 중..."
+                        : "기간 저장"}
                 </button>
 
                 <button
@@ -5550,7 +5745,9 @@ export default function ReportDetailPage() {
                   title={
                     mediaSyncAutomaticManaged
                       ? dailySyncManagedByCanonical
-                        ? "데일리 자동 동기화 관리 대상입니다. 수동 동기화 요청은 비활성화됩니다."
+                        ? dailySyncAutomationActive
+                          ? "데일리 자동 동기화 관리 대상입니다. 수동 동기화 요청은 비활성화됩니다."
+                          : "데일리 자동 동기화가 종료된 리포트입니다. 수동 동기화 요청은 비활성화됩니다."
                         : "새벽 자동 동기화 관리 대상입니다. 수동 동기화 요청은 비활성화됩니다."
                       : mediaSyncSettingsDirty
                         ? "API 동기화 기간을 먼저 저장해 주세요."
@@ -5559,9 +5756,13 @@ export default function ReportDetailPage() {
                           : "pending job만 생성하고 실제 동기화는 Railway worker가 처리합니다."
                   }
                 >
-                  {mediaSyncAutomaticManaged
-                    ? "자동 동기화"
-                    : requestingMediaSync
+                  {dailySyncManagedByCanonical
+                    ? dailySyncAutomationActive
+                      ? "자동 동기화"
+                      : "자동 동기화 종료됨"
+                    : mediaSyncAutomaticManaged
+                      ? "자동 동기화"
+                      : requestingMediaSync
                       ? "요청 중..."
                       : isActiveMediaSyncJobStatus(mediaSyncJob?.status)
                         ? getMediaSyncJobStatusText(mediaSyncJob)
@@ -5840,7 +6041,9 @@ export default function ReportDetailPage() {
                 ) : (
                   <span>
                     {dailySyncManagedByCanonical
-                      ? "데일리 자동 동기화 관리 대상입니다."
+                      ? dailySyncAutomationActive
+                        ? "데일리 자동 동기화 관리 대상입니다."
+                        : "데일리 자동 동기화가 종료되었습니다."
                       : mediaSyncAutomatic.enabled
                         ? "새벽 자동 동기화 관리 대상입니다."
                         : "저장된 기간으로만 pending job을 생성합니다."}

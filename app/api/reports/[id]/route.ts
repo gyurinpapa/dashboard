@@ -701,6 +701,39 @@ export async function PATCH(req: Request, ctx: Ctx) {
 
     const body = await req.json().catch(() => ({}));
 
+    const hasDailySyncActionInput =
+      Object.prototype.hasOwnProperty.call(
+        body,
+        "daily_sync_action",
+      );
+
+    const dailySyncAction =
+      hasDailySyncActionInput
+        ? String(
+            body.daily_sync_action ?? "",
+          )
+            .trim()
+            .toLowerCase()
+        : "";
+
+    if (
+      hasDailySyncActionInput &&
+      (
+        (
+          dailySyncAction !== "start" &&
+          dailySyncAction !== "stop"
+        ) ||
+        Object.keys(body).some(
+          key => key !== "daily_sync_action",
+        )
+      )
+    ) {
+      return jsonError(
+        400,
+        "V2_DAILY_SYNC_ACTION_INVALID",
+      );
+    }
+
     const title = typeof body.title === "string" ? body.title.trim() : undefined;
 
     const hasCanonicalPeriodTypeInput =
@@ -1081,6 +1114,48 @@ export async function PATCH(req: Request, ctx: Ctx) {
           ? existingDailySyncIdentity
           : null;
 
+    const existingDailyReportV2AutoSync =
+      isPlainObject(
+        (existingMediaSyncSettings as any)
+          .auto_sync,
+      )
+        ? (
+            existingMediaSyncSettings as any
+          ).auto_sync
+        : null;
+
+    if (dailySyncAction) {
+      if (!existingDailySyncIdentity) {
+        return jsonError(
+          409,
+          "V2_DAILY_SYNC_NOT_CONFIGURED",
+        );
+      }
+
+      if (
+        !existingDailyReportV2AutoSync ||
+        String(
+          existingDailyReportV2AutoSync
+            .contract ?? "",
+        ).trim() !== "daily_report_v2" ||
+        String(
+          existingDailyReportV2AutoSync
+            .start_date ?? "",
+        ).trim() !==
+          existingDailySyncIdentity.period_key ||
+        String(
+          existingDailyReportV2AutoSync
+            .scope ?? "",
+        ).trim() !==
+          "all_mapped_supported_media"
+      ) {
+        return jsonError(
+          409,
+          "V2_DAILY_SYNC_AUTOMATION_AUTHORITY_INVALID",
+        );
+      }
+    }
+
     const existingManagedCanonicalRange =
       (() => {
         if (
@@ -1421,6 +1496,30 @@ export async function PATCH(req: Request, ctx: Ctx) {
             nextMediaSyncSettings;
         }
       }
+    }
+
+    if (dailySyncAction) {
+      const changedAt =
+        new Date().toISOString();
+
+      const nextAutoSync = {
+        ...existingDailyReportV2AutoSync,
+        enabled:
+          dailySyncAction === "start",
+      } as Record<string, any>;
+
+      if (dailySyncAction === "stop") {
+        nextAutoSync.stopped_at =
+          changedAt;
+      } else {
+        delete nextAutoSync.stopped_at;
+      }
+
+      mediaSyncSettingsForMeta = {
+        ...existingMediaSyncSettings,
+        auto_sync: nextAutoSync,
+        updated_at: changedAt,
+      };
     }
 
     const meta =
