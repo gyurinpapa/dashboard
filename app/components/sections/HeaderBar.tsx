@@ -165,6 +165,12 @@ const PRODUCT_OPTION_META: Readonly<
     label: "Performance Max",
     order: 50,
   }),
+  "google_ads::youtube": Object.freeze({
+    provider: "google" as const,
+    providerLabel: "Google",
+    label: "YouTube",
+    order: 60,
+  }),
 });
 
 function getProductOptionMeta(productKey: string) {

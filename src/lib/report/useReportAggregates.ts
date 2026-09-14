@@ -135,6 +135,8 @@ const GOOGLE_PRODUCT_KEY_MAP = Object.freeze({
   demand_gen: "google_ads::demand_gen",
   display: "google_ads::display",
   performance_max: "google_ads::performance_max",
+  video: "google_ads::youtube",
+  youtube: "google_ads::youtube",
 } as const);
 
 function readProviderMeta(r: any) {
@@ -285,6 +287,17 @@ function normalizeProductValue(r: any) {
 
     if (canonicalProduct) {
       return canonicalProduct;
+    }
+
+    const campaignType = asStr(
+      providerMeta?.campaign_type ??
+      providerMeta?.campaignType
+    )
+      .toUpperCase()
+      .trim();
+
+    if (campaignType === "VIDEO") {
+      return "google_ads::youtube";
     }
   }
 
