@@ -1245,7 +1245,9 @@ export async function processGoogleAdsAllDataWorkerHandler(
         routing.productFamily ===
           "demand_gen" ||
         routing.productFamily ===
-          "display"
+          "display" ||
+        routing.productFamily ===
+          "performance_max"
       )
     ) {
       throw new GoogleAdsAllDataWorkerHandlerError(
