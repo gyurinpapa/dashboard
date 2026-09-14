@@ -149,6 +149,120 @@ function readProviderMeta(r: any) {
     : null;
 }
 
+const REPORTING_CHANNEL_SEARCH = "search";
+const REPORTING_CHANNEL_DISPLAY = "display";
+const REPORTING_CHANNEL_SOCIAL = "social";
+
+function normalizeReportingChannelValue(r: any) {
+  const providerMeta = readProviderMeta(r);
+
+  const provider = asStr(
+    r?.provider ??
+    providerMeta?.provider
+  )
+    .toLowerCase()
+    .trim();
+
+  if (provider === "naver_searchad") {
+    return REPORTING_CHANNEL_SEARCH;
+  }
+
+  if (provider === "google_ads") {
+    const productFamily = asStr(
+      providerMeta?.product_family ??
+      providerMeta?.productFamily
+    )
+      .toLowerCase()
+      .trim();
+
+    const campaignType = asStr(
+      providerMeta?.campaign_type ??
+      providerMeta?.campaignType
+    )
+      .toUpperCase()
+      .trim();
+
+    if (
+      productFamily === "search" ||
+      productFamily === "shopping" ||
+      campaignType === "SEARCH" ||
+      campaignType === "SHOPPING"
+    ) {
+      return REPORTING_CHANNEL_SEARCH;
+    }
+
+    if (
+      productFamily === "demand_gen" ||
+      productFamily === "display" ||
+      productFamily === "performance_max" ||
+      productFamily === "video" ||
+      productFamily === "youtube" ||
+      campaignType === "DEMAND_GEN" ||
+      campaignType === "DISPLAY" ||
+      campaignType === "PERFORMANCE_MAX" ||
+      campaignType === "VIDEO"
+    ) {
+      return REPORTING_CHANNEL_DISPLAY;
+    }
+  }
+
+  if (
+    provider === "meta_ads" ||
+    provider === "meta" ||
+    provider === "facebook_ads" ||
+    provider === "tiktok_ads" ||
+    provider === "tiktok"
+  ) {
+    return REPORTING_CHANNEL_SOCIAL;
+  }
+
+  return (
+    asStr(r?.channel) ||
+    asStr(r?.media) ||
+    asStr(r?.ad_channel) ||
+    ""
+  );
+}
+
+function applyReportingChannelFilter(
+  rows: any[],
+  selectedChannel: string | "all" = "all",
+) {
+  if (selectedChannel === "all") {
+    return rows ?? [];
+  }
+
+  return (rows ?? []).filter(
+    (r) =>
+      normalizeReportingChannelValue(r) ===
+      String(selectedChannel),
+  );
+}
+
+function buildReportingChannelOptions(rows: any[]) {
+  const seen = new Set<string>();
+
+  for (const r of rows ?? []) {
+    const channel = normalizeReportingChannelValue(r);
+    if (channel) seen.add(channel);
+  }
+
+  const preferred = [
+    REPORTING_CHANNEL_SEARCH,
+    REPORTING_CHANNEL_DISPLAY,
+    REPORTING_CHANNEL_SOCIAL,
+  ];
+
+  const known = preferred.filter(
+    (channel) => seen.delete(channel),
+  );
+
+  const legacy = Array.from(seen)
+    .sort((left, right) => left.localeCompare(right));
+
+  return [...known, ...legacy];
+}
+
 function normalizeProductValue(r: any) {
   const provider = asStr(r?.provider)
     .toLowerCase()
@@ -259,7 +373,12 @@ function filterRowsFinalFast(args: {
     }
 
     if (selectedChannel !== "all") {
-      if (asStr(r?.channel) !== String(selectedChannel)) return false;
+      if (
+        normalizeReportingChannelValue(r) !==
+        String(selectedChannel)
+      ) {
+        return false;
+      }
     }
 
     if (selectedSource !== "all") {
@@ -632,9 +751,12 @@ export function useReportAggregates({
     return applyProductFilter(sourceFilteredRows, selectedProduct);
   }, [needOptions, baseFilteredRows, selectedSource, selectedProduct]);
 
-  const { channelOptions } = useMemo(() => {
-    if (!needOptions) return EMPTY_OPTIONS_RESULT;
-    return buildOptions(channelBaseRows as any);
+  const channelOptions = useMemo(() => {
+    if (!needOptions) return EMPTY_LIST;
+
+    return buildReportingChannelOptions(
+      channelBaseRows as any[],
+    );
   }, [needOptions, channelBaseRows]);
 
   // ============================================================
@@ -646,13 +768,15 @@ export function useReportAggregates({
     if (!needOptions) return EMPTY_LIST;
 
     const channelFilteredRows =
-      selectedChannel === "all"
-        ? (baseFilteredRows as any[])
-        : (baseFilteredRows as any[]).filter(
-            (r) => asStr(r?.channel) === String(selectedChannel),
-          );
+      applyReportingChannelFilter(
+        baseFilteredRows as any[],
+        selectedChannel,
+      );
 
-    return applyProductFilter(channelFilteredRows, selectedProduct);
+    return applyProductFilter(
+      channelFilteredRows,
+      selectedProduct,
+    );
   }, [needOptions, baseFilteredRows, selectedChannel, selectedProduct]);
 
   const { sourceOptions } = useMemo(() => {
@@ -674,7 +798,7 @@ export function useReportAggregates({
     return (baseFilteredRows as any[]).filter((r) => {
       const channelOk =
         selectedChannel === "all" ||
-        asStr(r?.channel) === String(selectedChannel);
+        normalizeReportingChannelValue(r) === String(selectedChannel);
       if (!channelOk) return false;
 
       return (
@@ -719,7 +843,7 @@ export function useReportAggregates({
         : (baseFilteredRows as any[]).filter((r) => {
             const channelOk =
               selectedChannel === "all" ||
-              asStr(r?.channel) === String(selectedChannel);
+              normalizeReportingChannelValue(r) === String(selectedChannel);
             if (!channelOk) return false;
 
             return (
@@ -1071,7 +1195,7 @@ export function useReportAggregates({
       rows: applyProductFilter(productBaseRows as any[], selectedProduct),
       selectedMonth,
       selectedDevice,
-      selectedChannel,
+      selectedChannel: "all",
       selectedSource,
     } as any);
   }, [

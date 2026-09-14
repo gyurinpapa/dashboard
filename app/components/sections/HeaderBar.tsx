@@ -208,6 +208,28 @@ function optionBtnClass(active: boolean, dim = false, disabled = false) {
   ].join(" ");
 }
 
+function reportingChannelLabel(
+  channel: string,
+) {
+  switch (
+    String(channel ?? "")
+      .trim()
+      .toLowerCase()
+  ) {
+    case "search":
+      return "검색";
+
+    case "display":
+      return "배너";
+
+    case "social":
+      return "SNS";
+
+    default:
+      return String(channel ?? "");
+  }
+}
+
 function periodPresetLabel(preset: ReportPeriodPreset) {
   switch (preset) {
     case "this_month":
@@ -922,13 +944,27 @@ function EditorHeaderBar(props: Props) {
 
   const channelOptionNodes = useMemo(() => {
     return channelOptions.map((c) => {
-      const isDisplay =
-        c === "display" ||
-        c === ("display ad" as any) ||
-        c === ("display_ad" as any);
+      const channelKey =
+        String(c ?? "")
+          .trim()
+          .toLowerCase();
 
-      const disabled = disableDisplayChannel && isDisplay;
-      const isActive = selectedChannel === c;
+      const label =
+        reportingChannelLabel(
+          channelKey,
+        );
+
+      const isDisplay =
+        channelKey === "display" ||
+        channelKey === "display ad" ||
+        channelKey === "display_ad";
+
+      const disabled =
+        disableDisplayChannel &&
+        isDisplay;
+
+      const isActive =
+        selectedChannel === c;
 
       return (
         <button
@@ -942,12 +978,12 @@ function EditorHeaderBar(props: Props) {
           }}
           title={
             disabled
-              ? "키워드 탭에서는 display ad를 선택할 수 없습니다."
-              : String(c)
+              ? "키워드 탭에서는 배너 채널을 선택할 수 없습니다."
+              : label
           }
           className={optionBtnClass(isActive, false, disabled)}
         >
-          {c}
+          {label}
         </button>
       );
     });
