@@ -118,13 +118,19 @@ const PROVIDER_PRODUCTS: Readonly<
     {
       key: "performance_max",
       label: "Performance Max",
-      description: "PERFORMANCE_MAX 수집 런타임 준비 중",
-      state: "preparing" as const,
+      description: "PERFORMANCE_MAX 에셋그룹 일별 성과",
+      state: "enabled" as const,
     },
     {
       key: "shopping",
       label: "쇼핑",
       description: "SHOPPING 수집 계약 준비 중",
+      state: "preparing" as const,
+    },
+    {
+      key: "youtube",
+      label: "YouTube",
+      description: "VIDEO 수집 런타임 준비 중",
       state: "preparing" as const,
     },
   ]),
