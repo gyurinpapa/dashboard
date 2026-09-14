@@ -502,7 +502,22 @@ type ReportMediaSyncJob = {
   date_to?: string | null;
   status?: string | null;
   progress?: number | null;
+  automation_contract?: "daily_report_v2" | null;
   sync_segment_progress?: Record<string, unknown> | null;
+};
+
+type DailyReportV2Progress = {
+  contract: "daily_report_v2";
+  start_date: string;
+  through_date: string;
+  completed_through: string | null;
+  first_missing_date: string | null;
+  total_dates: number;
+  completed_dates: number;
+  progress: number;
+  contiguous_rows: number;
+  participant_count: number;
+  target_covered: boolean;
 };
 
 type ReportMediaSyncSegmentUiStatus =
@@ -2317,6 +2332,12 @@ export default function ReportDetailPage() {
   const [mediaSyncProviders, setMediaSyncProviders] =
     useState<ReportMediaSyncProviderStatus[]>([]);
   const [
+    dailyReportV2Progress,
+    setDailyReportV2Progress,
+  ] = useState<DailyReportV2Progress | null>(
+    null,
+  );
+  const [
     mediaSyncAutomatic,
     setMediaSyncAutomatic,
   ] = useState<ReportAutomaticSyncAuthority>(
@@ -2387,6 +2408,21 @@ export default function ReportDetailPage() {
           dailySyncAutoSyncMeta?.scope ?? "",
         ).trim() ===
           "all_mapped_supported_media",
+    );
+
+  const dailySyncCatchupTargetDate =
+    normalizeYmdInput(
+      dailySyncAutoSyncMeta
+        ?.immediate_through_date,
+    );
+
+  const dailySyncInitialCatchupPollingActive =
+    Boolean(
+      dailySyncAutomationActive &&
+        dailySyncCatchupTargetDate &&
+        dailyReportV2Progress
+          ?.target_covered !==
+          true,
     );
 
   const dailySyncAutomationStartPending =
@@ -4163,6 +4199,9 @@ export default function ReportDetailPage() {
         setMediaSyncJob(null);
         setMediaSyncJobs([]);
         setMediaSyncProviders([]);
+        setDailyReportV2Progress(
+          null,
+        );
         setMediaSyncAutomatic(
           EMPTY_REPORT_AUTOMATIC_SYNC,
         );
@@ -4209,6 +4248,19 @@ export default function ReportDetailPage() {
           ? (json.provider_sync as ReportMediaSyncProviderStatus[])
           : [];
 
+        const dailyV2Progress =
+          json?.daily_report_v2_progress &&
+          typeof json.daily_report_v2_progress ===
+            "object" &&
+          !Array.isArray(
+            json.daily_report_v2_progress,
+          )
+            ? (
+                json.daily_report_v2_progress as
+                  DailyReportV2Progress
+              )
+            : null;
+
         const automaticSync =
           normalizeReportAutomaticSyncAuthority(
             json?.automatic_sync,
@@ -4217,6 +4269,9 @@ export default function ReportDetailPage() {
         setMediaSyncJob(nextJob);
         setMediaSyncJobs(recentJobs);
         setMediaSyncProviders(providerSync);
+        setDailyReportV2Progress(
+          dailyV2Progress,
+        );
         setMediaSyncAutomatic(
           automaticSync,
         );
@@ -4264,6 +4319,9 @@ export default function ReportDetailPage() {
       setMediaSyncJob(null);
       setMediaSyncJobs([]);
       setMediaSyncProviders([]);
+      setDailyReportV2Progress(
+        null,
+      );
       setMediaSyncAutomatic(
         EMPTY_REPORT_AUTOMATIC_SYNC,
       );
@@ -4277,10 +4335,19 @@ export default function ReportDetailPage() {
     if (
       !reportId ||
       !isApiReport ||
-      !isActiveMediaSyncJobStatus(mediaSyncJob?.status)
+      (
+        !isActiveMediaSyncJobStatus(
+          mediaSyncJob?.status,
+        ) &&
+        !dailySyncInitialCatchupPollingActive
+      )
     ) {
       return;
     }
+
+    void fetchLatestMediaSyncJob(
+      true,
+    );
 
     const timer = window.setInterval(() => {
       void fetchLatestMediaSyncJob(true);
@@ -4288,6 +4355,7 @@ export default function ReportDetailPage() {
 
     return () => window.clearInterval(timer);
   }, [
+    dailySyncInitialCatchupPollingActive,
     fetchLatestMediaSyncJob,
     isApiReport,
     mediaSyncJob?.status,
@@ -5825,6 +5893,131 @@ export default function ReportDetailPage() {
                   </div>
                 </div>
 
+                {dailySyncManagedByCanonical &&
+                dailyReportV2Progress ? (
+                  <div className="mt-3 rounded-xl border border-cyan-300/20 bg-cyan-300/[0.06] p-3.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <div className="text-sm font-black text-[#f7f7ff]">
+                          데일리 초기 동기화 진행
+                        </div>
+                        <div className="mt-1 text-xs text-[#bbb8d4]">
+                          시작일부터 최초 동기화 기준일까지 연속 fact coverage를 표시합니다.
+                        </div>
+                      </div>
+
+                      <span className={`rounded-full border px-2.5 py-1 text-[11px] font-black ${
+                        dailyReportV2Progress.target_covered
+                          ? "border-emerald-300/25 bg-emerald-300/10 text-emerald-100"
+                          : "border-cyan-300/25 bg-cyan-300/10 text-cyan-100"
+                      }`}>
+                        {dailyReportV2Progress.target_covered
+                          ? "초기 동기화 완료"
+                          : "초기 동기화 중"}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 flex items-center justify-between gap-3 text-xs">
+                      <span className="font-black text-[#f7f7ff]">
+                        {formatInt(
+                          dailyReportV2Progress.completed_dates,
+                        )}{" "}
+                        /{" "}
+                        {formatInt(
+                          dailyReportV2Progress.total_dates,
+                        )}일
+                      </span>
+
+                      <span className="font-black text-[#9ef5ff]">
+                        {formatInt(
+                          dailyReportV2Progress.progress,
+                        )}%
+                      </span>
+                    </div>
+
+                    <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-[#15112f]">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-[#21dff3] to-[#7c5cff] transition-all"
+                        style={{
+                          width: `${Math.max(
+                            0,
+                            Math.min(
+                              100,
+                              Number(
+                                dailyReportV2Progress.progress ??
+                                  0,
+                              ),
+                            ),
+                          )}%`,
+                        }}
+                      />
+                    </div>
+
+                    <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2 xl:grid-cols-4">
+                      <div className="rounded-lg border border-white/[0.07] bg-[#211b44]/45 px-3 py-2">
+                        <div className="text-[#8f8ca8]">
+                          연속 완료일
+                        </div>
+                        <div className="mt-0.5 font-black text-[#f7f7ff]">
+                          {dailyReportV2Progress.completed_through ||
+                            "-"}
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg border border-white/[0.07] bg-[#211b44]/45 px-3 py-2">
+                        <div className="text-[#8f8ca8]">
+                          현재 처리일
+                        </div>
+                        <div className="mt-0.5 font-black text-[#f7f7ff]">
+                          {isActiveMediaSyncJobStatus(
+                            mediaSyncJob?.status,
+                          ) &&
+                          mediaSyncJob
+                            ?.automation_contract ===
+                            "daily_report_v2"
+                            ? mediaSyncJob.date_from ||
+                              dailyReportV2Progress.first_missing_date ||
+                              "-"
+                            : dailyReportV2Progress.target_covered
+                              ? "완료"
+                              : dailyReportV2Progress.first_missing_date ||
+                                "-"}
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg border border-white/[0.07] bg-[#211b44]/45 px-3 py-2">
+                        <div className="text-[#8f8ca8]">
+                          현재 job
+                        </div>
+                        <div className="mt-0.5 font-black text-[#f7f7ff]">
+                          {isActiveMediaSyncJobStatus(
+                            mediaSyncJob?.status,
+                          ) &&
+                          mediaSyncJob
+                            ?.automation_contract ===
+                            "daily_report_v2"
+                            ? getMediaSyncJobStatusText(
+                                mediaSyncJob,
+                              )
+                            : dailyReportV2Progress.target_covered
+                              ? "완료"
+                              : "다음 job 대기"}
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg border border-white/[0.07] bg-[#211b44]/45 px-3 py-2">
+                        <div className="text-[#8f8ca8]">
+                          연속 수집 행
+                        </div>
+                        <div className="mt-0.5 font-black text-[#f7f7ff]">
+                          {formatInt(
+                            dailyReportV2Progress.contiguous_rows,
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
 
                 <div className="mt-3 grid gap-3 xl:grid-cols-3">
                   {mediaSyncProviders.map((provider) => {

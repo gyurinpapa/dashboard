@@ -41,6 +41,9 @@ import {
 import {
   isMediaSyncSegmentEligibleReport,
 } from "@/src/lib/media-sync/media-sync-segment-eligibility";
+import {
+  loadDailyReportV2ContiguousCoverage,
+} from "@/src/lib/media-sync/daily-report-v2-contiguous-coverage-repository";
 import type {
   MediaProvider,
   SafeMediaConnection,
@@ -275,6 +278,186 @@ async function loadAutomaticSyncReportPeriod(
   return data;
 }
 
+type DailyReportV2ProgressResponse =
+  Readonly<{
+    contract:
+      "daily_report_v2";
+    start_date:
+      string;
+    through_date:
+      string;
+    completed_through:
+      string | null;
+    first_missing_date:
+      string | null;
+    total_dates:
+      number;
+    completed_dates:
+      number;
+    progress:
+      number;
+    contiguous_rows:
+      number;
+    participant_count:
+      number;
+    target_covered:
+      boolean;
+  }>;
+
+async function loadDailyReportV2Progress(
+  input: {
+    reportId:
+      string;
+    workspaceId:
+      string;
+    advertiserId:
+      string;
+  },
+  report:
+    unknown,
+): Promise<
+  DailyReportV2ProgressResponse | null
+> {
+  if (
+    !isPlainObject(
+      report,
+    )
+  ) {
+    return null;
+  }
+
+  const meta =
+    isPlainObject(
+      report.meta,
+    )
+      ? report.meta
+      : null;
+
+  const mediaSync =
+    meta &&
+    isPlainObject(
+      meta.media_sync,
+    )
+      ? meta.media_sync
+      : null;
+
+  const autoSync =
+    mediaSync &&
+    isPlainObject(
+      mediaSync.auto_sync,
+    )
+      ? mediaSync.auto_sync
+      : null;
+
+  if (
+    !autoSync ||
+    autoSync.enabled !==
+      true ||
+    autoSync.contract !==
+      "daily_report_v2" ||
+    autoSync.scope !==
+      "all_mapped_supported_media"
+  ) {
+    return null;
+  }
+
+  const startDate =
+    normalizeYmdOrNull(
+      autoSync.start_date,
+    );
+
+  const throughDate =
+    normalizeYmdOrNull(
+      autoSync.immediate_through_date,
+    );
+
+  if (
+    !startDate ||
+    !throughDate ||
+    throughDate <
+      startDate
+  ) {
+    return null;
+  }
+
+  const coverage =
+    await loadDailyReportV2ContiguousCoverage({
+      reportId:
+        input.reportId,
+      workspaceId:
+        input.workspaceId,
+      advertiserId:
+        input.advertiserId,
+      throughDate,
+    });
+
+  const totalDates =
+    getInclusiveDateWindowDays(
+      coverage.startDate,
+      coverage.throughDate,
+    );
+
+  const completedDates =
+    coverage.completedThrough
+      ? getInclusiveDateWindowDays(
+          coverage.startDate,
+          coverage.completedThrough,
+        )
+      : 0;
+
+  const progress =
+    totalDates > 0
+      ? Math.max(
+          0,
+          Math.min(
+            100,
+            Math.round(
+              (
+                completedDates /
+                totalDates
+              ) *
+                100,
+            ),
+          ),
+        )
+      : 0;
+
+  const contiguousRows =
+    coverage.participants.reduce(
+      (
+        total,
+        participant,
+      ) =>
+        total +
+        participant.contiguousRows,
+      0,
+    );
+
+  return Object.freeze({
+    contract:
+      "daily_report_v2",
+    start_date:
+      coverage.startDate,
+    through_date:
+      coverage.throughDate,
+    completed_through:
+      coverage.completedThrough,
+    first_missing_date:
+      coverage.firstMissingDate,
+    total_dates:
+      totalDates,
+    completed_dates:
+      completedDates,
+    progress,
+    contiguous_rows:
+      contiguousRows,
+    participant_count:
+      coverage.participants.length,
+    target_covered:
+      coverage.targetCovered,
+  });
+}
+
 async function loadMappedConnectionsForReport(
   input: {
     reportId: string;
@@ -372,6 +555,30 @@ export async function GET(
     const activeJob =
       jobs.find(isActiveMediaSyncJob) ?? null;
 
+    let dailyReportV2Progress:
+      DailyReportV2ProgressResponse | null =
+        null;
+
+    try {
+      dailyReportV2Progress =
+        await loadDailyReportV2Progress(
+          {
+            reportId:
+              access.reportId,
+            workspaceId:
+              access.workspaceId,
+            advertiserId:
+              access.advertiserId,
+          },
+          automaticSyncReport,
+        );
+    } catch (progressError) {
+      console.error(
+        "[media-sync-jobs:get] Daily Report V2 progress unavailable",
+        progressError,
+      );
+    }
+
     const response = {
       ok: true as const,
       report_id: access.reportId,
@@ -380,6 +587,8 @@ export async function GET(
       access_scope: access.accessScope,
       active_job: activeJob,
       jobs,
+      daily_report_v2_progress:
+        dailyReportV2Progress,
       provider_sync: buildMediaSyncProviderDashboard({
         connections: mappedConnections,
         jobs,
