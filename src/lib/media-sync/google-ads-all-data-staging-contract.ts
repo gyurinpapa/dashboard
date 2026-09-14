@@ -14,6 +14,9 @@ import {
   GOOGLE_ADS_DISPLAY_AD_ROW_LEVEL_REASON,
 } from "./google-ads-display-ad-canonical-row";
 import {
+  GOOGLE_ADS_PERFORMANCE_MAX_ASSET_GROUP_ROW_LEVEL_REASON,
+} from "./google-ads-performance-max-asset-group-canonical-row";
+import {
   isValidYmd,
   type EtrylueNormalizedMediaRow,
 } from "./types";
@@ -36,7 +39,8 @@ const SEARCH_AUTHORITATIVE_GRAIN =
 
 export type GoogleAdsAllDataSearchEntityType =
   | "keyword"
-  | "ad";
+  | "ad"
+  | "asset_group";
 
 export type GoogleAdsAllDataStagingContractErrorCode =
   | "INVALID_INPUT"
@@ -224,7 +228,7 @@ function buildExpectedAuthorityMeta(
   entityType:
     GoogleAdsAllDataSearchEntityType,
   entityId: string,
-  campaignType: "SEARCH" | "DEMAND_GEN" | "DISPLAY" = "SEARCH",
+  campaignType: "SEARCH" | "DEMAND_GEN" | "DISPLAY" | "PERFORMANCE_MAX" = "SEARCH",
 ) {
   return buildGoogleAdsAuthorityProviderMeta({
     campaignType:
@@ -279,7 +283,7 @@ function withAuthorityMeta(
   entityId: string,
   requireExisting:
     boolean,
-  campaignType: "SEARCH" | "DEMAND_GEN" | "DISPLAY" = "SEARCH",
+  campaignType: "SEARCH" | "DEMAND_GEN" | "DISPLAY" | "PERFORMANCE_MAX" = "SEARCH",
 ): EtrylueNormalizedMediaRow {
   const existing =
     requireProviderMeta(
@@ -567,9 +571,49 @@ function prepareSearchRow(
     );
   }
 
+  if (
+    row.row_level ===
+      "creative" &&
+    base.reason ===
+      GOOGLE_ADS_PERFORMANCE_MAX_ASSET_GROUP_ROW_LEVEL_REASON
+  ) {
+    const assetGroupId =
+      normalizeRequiredString(
+        row.external_creative_id,
+        `${path}.external_creative_id`,
+      );
+
+    const rawKeywordId =
+      (
+        row as unknown as
+          UnknownRecord
+      ).external_keyword_id;
+
+    if (
+      rawKeywordId !==
+        undefined &&
+      rawKeywordId !==
+        null &&
+      String(rawKeywordId).trim()
+    ) {
+      throw new GoogleAdsAllDataStagingContractError(
+        "UNSUPPORTED_ROW_CONTRACT",
+        `${path} Performance Max asset-group row unexpectedly contains a keyword identity.`,
+      );
+    }
+
+    return withAuthorityMeta(
+      row,
+      "asset_group",
+      assetGroupId,
+      true,
+      "PERFORMANCE_MAX",
+    );
+  }
+
   throw new GoogleAdsAllDataStagingContractError(
     "UNSUPPORTED_ROW_CONTRACT",
-    `${path} is not a supported Google Ads Search ALL-DATA staging row.`,
+    `${path} is not a supported Google Ads ALL-DATA staging row.`,
   );
 }
 
@@ -633,18 +677,28 @@ export function buildGoogleAdsAllDataSearchStagingRowKey(
     );
   }
 
-  if (
+  const usesAdAuthority =
     (
-      providerMeta.product_family !== SEARCH_PRODUCT_FAMILY &&
-      providerMeta.product_family !== "demand_gen" &&
-      providerMeta.product_family !== "display"
-    ) ||
-    providerMeta.authoritative_grain !==
-      SEARCH_AUTHORITATIVE_GRAIN
+      providerMeta.product_family === SEARCH_PRODUCT_FAMILY ||
+      providerMeta.product_family === "demand_gen" ||
+      providerMeta.product_family === "display"
+    ) &&
+    providerMeta.authoritative_grain ===
+      SEARCH_AUTHORITATIVE_GRAIN;
+
+  const usesPerformanceMaxAssetGroupAuthority =
+    providerMeta.product_family ===
+      "performance_max" &&
+    providerMeta.authoritative_grain ===
+      "asset_group";
+
+  if (
+    !usesAdAuthority &&
+    !usesPerformanceMaxAssetGroupAuthority
   ) {
     throw new GoogleAdsAllDataStagingContractError(
       "INVALID_AUTHORITY_METADATA",
-      "The ALL-DATA row does not use the Search/ad authority contract.",
+      "The ALL-DATA row does not use a supported Google Ads authority contract.",
     );
   }
 
@@ -686,6 +740,23 @@ export function buildGoogleAdsAllDataSearchStagingRowKey(
         row.row_level_reason === GOOGLE_ADS_DISPLAY_AD_ROW_LEVEL_REASON
       )
     )
+  ) {
+    entityId =
+      normalizeRequiredString(
+        row.external_creative_id,
+        "row.external_creative_id",
+      );
+  } else if (
+    entityType ===
+      "asset_group" &&
+    providerMeta.product_family ===
+      "performance_max" &&
+    providerMeta.authoritative_grain ===
+      "asset_group" &&
+    row.row_level ===
+      "creative" &&
+    row.row_level_reason ===
+      GOOGLE_ADS_PERFORMANCE_MAX_ASSET_GROUP_ROW_LEVEL_REASON
   ) {
     entityId =
       normalizeRequiredString(

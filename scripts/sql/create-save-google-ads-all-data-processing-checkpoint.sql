@@ -274,6 +274,7 @@ begin
        'search_ad',
        'demand_gen_ad',
        'display_ad',
+       'performance_max_asset_group',
        'completed'
      )
      or v_date_window_index is null
@@ -388,6 +389,7 @@ begin
       when 'keyword' then 1
       when 'demand_gen_ad' then 1
       when 'display_ad' then 1
+      when 'performance_max_asset_group' then 1
       when 'search_ad' then 2
       when 'completed' then 3
       else null
@@ -524,7 +526,8 @@ begin
       end if;
     elsif v_phase in (
       'demand_gen_ad',
-      'display_ad'
+      'display_ad',
+      'performance_max_asset_group'
     ) then
       if jsonb_typeof(
         v_phase_cursor
@@ -815,7 +818,8 @@ begin
         when 'product_boundary' then 0
         when 'keyword' then 1
         when 'demand_gen_ad' then 1
-      when 'display_ad' then 1
+        when 'display_ad' then 1
+        when 'performance_max_asset_group' then 1
         when 'search_ad' then 2
         when 'completed' then 3
         else null

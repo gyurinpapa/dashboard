@@ -11,6 +11,10 @@ import type {
 } from "./google-ads-all-data-display-staging-orchestrator";
 
 import type {
+  GoogleAdsAllDataPerformanceMaxStagingCursor,
+} from "./google-ads-all-data-performance-max-staging-orchestrator";
+
+import type {
   GoogleAdsAllDataSearchStagingCursor,
 } from "./google-ads-all-data-search-staging-orchestrator";
 import type {
@@ -44,6 +48,7 @@ export type GoogleAdsAllDataProcessingCheckpointPhase =
   | "search_ad"
   | "demand_gen_ad"
   | "display_ad"
+  | "performance_max_asset_group"
   | "completed";
 
 export type GoogleAdsAllDataDemandGenProcessingCursor =
@@ -98,10 +103,37 @@ export type GoogleAdsAllDataDisplayProcessingCursor =
       GoogleAdsAllDataDisplayStagingCursor;
   }>;
 
+export type GoogleAdsAllDataPerformanceMaxProcessingCursor =
+  Readonly<{
+    version: 1;
+
+    phase:
+      "performance_max_asset_group";
+
+    externalAccountId:
+      string;
+
+    dateWindowIndex:
+      number;
+
+    dateFrom:
+      string;
+
+    dateTo:
+      string;
+
+    expectedRowStartIndex:
+      number;
+
+    phaseCursor:
+      GoogleAdsAllDataPerformanceMaxStagingCursor;
+  }>;
+
 export type GoogleAdsAllDataProcessingCheckpointCursor =
   | GoogleAdsAllDataSearchStagingCursor
   | GoogleAdsAllDataDemandGenProcessingCursor
-  | GoogleAdsAllDataDisplayProcessingCursor;
+  | GoogleAdsAllDataDisplayProcessingCursor
+  | GoogleAdsAllDataPerformanceMaxProcessingCursor;
 
 export type GoogleAdsAllDataProcessingCheckpointErrorCode =
   | "INVALID_JOB"
@@ -507,7 +539,8 @@ function validateCursor(
 
   return cursor as unknown as
     | GoogleAdsAllDataDemandGenProcessingCursor
-    | GoogleAdsAllDataDisplayProcessingCursor;
+    | GoogleAdsAllDataDisplayProcessingCursor
+    | GoogleAdsAllDataPerformanceMaxProcessingCursor;
 }
 
 export function readGoogleAdsAllDataProcessingCheckpoint(
@@ -724,6 +757,8 @@ export function readGoogleAdsAllDataProcessingCheckpoint(
       "demand_gen_ad" &&
     phase !==
       "display_ad" &&
+    phase !==
+      "performance_max_asset_group" &&
     phase !==
       "completed"
   ) {

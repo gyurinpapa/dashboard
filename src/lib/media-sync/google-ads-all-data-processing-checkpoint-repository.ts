@@ -113,7 +113,8 @@ export type GoogleAdsAllDataCheckpointStagingPhase =
   | "keyword"
   | "search_ad"
   | "demand_gen_ad"
-  | "display_ad";
+  | "display_ad"
+  | "performance_max_asset_group";
 
 export type GoogleAdsAllDataCheckpointStagingResult =
   Readonly<{
@@ -511,7 +512,9 @@ function validateResult(
       result.nextPhase !==
         "demand_gen_ad" &&
       result.nextPhase !==
-        "display_ad"
+        "display_ad" &&
+      result.nextPhase !==
+        "performance_max_asset_group"
     ) ||
     !checkpoint.cursor
   ) {

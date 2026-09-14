@@ -180,7 +180,8 @@ export function buildGoogleAdsAllDataExecutableProductRoute(
       productFamily =>
         productFamily === "search" ||
         productFamily === "demand_gen" ||
-        productFamily === "display",
+        productFamily === "display" ||
+        productFamily === "performance_max",
     ),
   );
 }

@@ -829,12 +829,42 @@ begin
             and staging.row #>> '{provider_meta,product_family}'
               is not distinct from 'demand_gen'
           )
+          or
+          (
+            staging.row #>> '{provider_meta,campaign_type}'
+              is not distinct from 'DISPLAY'
+            and staging.row #>> '{provider_meta,product_family}'
+              is not distinct from 'display'
+          )
+          or
+          (
+            staging.row #>> '{provider_meta,campaign_type}'
+              is not distinct from 'PERFORMANCE_MAX'
+            and staging.row #>> '{provider_meta,product_family}'
+              is not distinct from 'performance_max'
+          )
         )
 
-        or staging.row
-             #>> '{provider_meta,authoritative_grain}'
-             is distinct from
-             'ad'
+        or not (
+          (
+            staging.row #>> '{provider_meta,product_family}'
+              in ('search', 'demand_gen', 'display')
+            and staging.row
+                  #>> '{provider_meta,authoritative_grain}'
+                  is not distinct from
+                  'ad'
+          )
+          or
+          (
+            staging.row #>> '{provider_meta,product_family}'
+              is not distinct from
+              'performance_max'
+            and staging.row
+                  #>> '{provider_meta,authoritative_grain}'
+                  is not distinct from
+                  'asset_group'
+          )
+        )
 
         /*
          * Exactly one executable ALL-DATA canonical grain.
@@ -920,6 +950,13 @@ begin
                 and staging.row ->> 'row_level_reason'
                   is not distinct from 'google_ads_demand_gen_ad_daily_stats'
               )
+              or
+              (
+                staging.row #>> '{provider_meta,product_family}'
+                  is not distinct from 'display'
+                and staging.row ->> 'row_level_reason'
+                  is not distinct from 'google_ads_display_ad_daily_stats'
+              )
             )
 
             and nullif(
@@ -953,6 +990,64 @@ begin
                   #>> '{provider_meta,entity_type}'
                   is not distinct from
                   'ad'
+
+            and staging.row
+                  #>> '{provider_meta,entity_id}'
+                  is not distinct from
+                  staging.row
+                    ->> 'external_creative_id'
+          )
+
+          or
+
+          (
+            staging.row ->> 'row_level'
+              is not distinct from
+              'creative'
+
+            and staging.row ->> 'data_level'
+              is not distinct from
+              'creative'
+
+            and staging.row #>> '{provider_meta,product_family}'
+              is not distinct from
+              'performance_max'
+
+            and staging.row ->> 'row_level_reason'
+              is not distinct from
+              'google_ads_performance_max_asset_group_daily_stats'
+
+            and nullif(
+                  btrim(
+                    staging.row
+                      ->> 'external_creative_id'
+                  ),
+                  ''
+                ) is not null
+
+            and nullif(
+                  btrim(
+                    coalesce(
+                      staging.row
+                        ->> 'external_keyword_id',
+                      ''
+                    )
+                  ),
+                  ''
+                ) is null
+
+            and nullif(
+                  btrim(
+                    staging.row
+                      ->> 'creative'
+                  ),
+                  ''
+                ) is not null
+
+            and staging.row
+                  #>> '{provider_meta,entity_type}'
+                  is not distinct from
+                  'asset_group'
 
             and staging.row
                   #>> '{provider_meta,entity_id}'
