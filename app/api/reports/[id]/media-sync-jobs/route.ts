@@ -278,10 +278,10 @@ async function loadAutomaticSyncReportPeriod(
   return data;
 }
 
-type DailyReportV2ProgressResponse =
+type DailyReportV2ProviderProgressResponse =
   Readonly<{
-    contract:
-      "daily_report_v2";
+    provider:
+      MediaProvider;
     start_date:
       string;
     through_date:
@@ -304,7 +304,7 @@ type DailyReportV2ProgressResponse =
       boolean;
   }>;
 
-async function loadDailyReportV2Progress(
+async function loadDailyReportV2ProviderProgress(
   input: {
     reportId:
       string;
@@ -316,14 +316,14 @@ async function loadDailyReportV2Progress(
   report:
     unknown,
 ): Promise<
-  DailyReportV2ProgressResponse | null
+  readonly DailyReportV2ProviderProgressResponse[]
 > {
   if (
     !isPlainObject(
       report,
     )
   ) {
-    return null;
+    return [];
   }
 
   const meta =
@@ -351,14 +351,13 @@ async function loadDailyReportV2Progress(
 
   if (
     !autoSync ||
-    autoSync.enabled !==
-      true ||
+    autoSync.enabled !== true ||
     autoSync.contract !==
       "daily_report_v2" ||
     autoSync.scope !==
       "all_mapped_supported_media"
   ) {
-    return null;
+    return [];
   }
 
   const startDate =
@@ -374,10 +373,9 @@ async function loadDailyReportV2Progress(
   if (
     !startDate ||
     !throughDate ||
-    throughDate <
-      startDate
+    throughDate < startDate
   ) {
-    return null;
+    return [];
   }
 
   const coverage =
@@ -391,71 +389,171 @@ async function loadDailyReportV2Progress(
       throughDate,
     });
 
-  const totalDates =
-    getInclusiveDateWindowDays(
-      coverage.startDate,
-      coverage.throughDate,
+  const byProvider =
+    new Map<
+      MediaProvider,
+      Array<
+        (typeof coverage.participants)[number]
+      >
+    >();
+
+  for (
+    const participant
+    of coverage.participants
+  ) {
+    const current =
+      byProvider.get(
+        participant.provider,
+      ) ?? [];
+
+    current.push(
+      participant,
     );
 
-  const completedDates =
-    coverage.completedThrough
-      ? getInclusiveDateWindowDays(
-          coverage.startDate,
-          coverage.completedThrough,
-        )
-      : 0;
+    byProvider.set(
+      participant.provider,
+      current,
+    );
+  }
 
-  const progress =
-    totalDates > 0
-      ? Math.max(
-          0,
-          Math.min(
-            100,
-            Math.round(
-              (
-                completedDates /
-                totalDates
-              ) *
-                100,
+  const result:
+    DailyReportV2ProviderProgressResponse[] =
+      [];
+
+  for (
+    const [
+      provider,
+      participants,
+    ]
+    of byProvider
+  ) {
+    const targetCovered =
+      participants.every(
+        participant =>
+          participant.targetCovered,
+      );
+
+    const completedValues =
+      participants.map(
+        participant =>
+          participant.completedThrough,
+      );
+
+    const completedThrough =
+      completedValues.some(
+        value =>
+          value === null,
+      )
+        ? null
+        : (
+            completedValues as
+              string[]
+          )
+            .slice()
+            .sort()[0] ??
+          null;
+
+    const missingDates =
+      participants
+        .map(
+          participant =>
+            participant.firstMissingDate,
+        )
+        .filter(
+          (
+            value,
+          ): value is string =>
+            value !== null,
+        )
+        .sort();
+
+    const firstMissingDate =
+      targetCovered
+        ? null
+        : missingDates[0] ??
+          coverage.startDate;
+
+    const totalDates =
+      getInclusiveDateWindowDays(
+        coverage.startDate,
+        coverage.throughDate,
+      );
+
+    const completedDates =
+      completedThrough
+        ? getInclusiveDateWindowDays(
+            coverage.startDate,
+            completedThrough,
+          )
+        : 0;
+
+    const progress =
+      totalDates > 0
+        ? Math.max(
+            0,
+            Math.min(
+              100,
+              Math.round(
+                (
+                  completedDates /
+                  totalDates
+                ) *
+                  100,
+              ),
             ),
-          ),
-        )
-      : 0;
+          )
+        : 0;
 
-  const contiguousRows =
-    coverage.participants.reduce(
-      (
-        total,
-        participant,
-      ) =>
-        total +
-        participant.contiguousRows,
-      0,
+    const contiguousRows =
+      participants.reduce(
+        (
+          total,
+          participant,
+        ) =>
+          total +
+          participant.contiguousRows,
+        0,
+      );
+
+    result.push(
+      Object.freeze({
+        provider,
+        start_date:
+          coverage.startDate,
+        through_date:
+          coverage.throughDate,
+        completed_through:
+          completedThrough,
+        first_missing_date:
+          firstMissingDate,
+        total_dates:
+          totalDates,
+        completed_dates:
+          completedDates,
+        progress,
+        contiguous_rows:
+          contiguousRows,
+        participant_count:
+          participants.length,
+        target_covered:
+          targetCovered,
+      }),
     );
+  }
 
-  return Object.freeze({
-    contract:
-      "daily_report_v2",
-    start_date:
-      coverage.startDate,
-    through_date:
-      coverage.throughDate,
-    completed_through:
-      coverage.completedThrough,
-    first_missing_date:
-      coverage.firstMissingDate,
-    total_dates:
-      totalDates,
-    completed_dates:
-      completedDates,
-    progress,
-    contiguous_rows:
-      contiguousRows,
-    participant_count:
-      coverage.participants.length,
-    target_covered:
-      coverage.targetCovered,
-  });
+  result.sort(
+    (
+      left,
+      right,
+    ) =>
+      left.provider.localeCompare(
+        right.provider,
+      ),
+  );
+
+  return Object.freeze(
+    result,
+  );
 }
 
 async function loadMappedConnectionsForReport(
@@ -555,13 +653,13 @@ export async function GET(
     const activeJob =
       jobs.find(isActiveMediaSyncJob) ?? null;
 
-    let dailyReportV2Progress:
-      DailyReportV2ProgressResponse | null =
-        null;
+    let dailyReportV2ProviderProgress:
+      readonly DailyReportV2ProviderProgressResponse[] =
+        [];
 
     try {
-      dailyReportV2Progress =
-        await loadDailyReportV2Progress(
+      dailyReportV2ProviderProgress =
+        await loadDailyReportV2ProviderProgress(
           {
             reportId:
               access.reportId,
@@ -574,7 +672,7 @@ export async function GET(
         );
     } catch (progressError) {
       console.error(
-        "[media-sync-jobs:get] Daily Report V2 progress unavailable",
+        "[media-sync-jobs:get] Daily Report V2 provider progress unavailable",
         progressError,
       );
     }
@@ -587,8 +685,8 @@ export async function GET(
       access_scope: access.accessScope,
       active_job: activeJob,
       jobs,
-      daily_report_v2_progress:
-        dailyReportV2Progress,
+      daily_report_v2_provider_progress:
+        dailyReportV2ProviderProgress,
       provider_sync: buildMediaSyncProviderDashboard({
         connections: mappedConnections,
         jobs,

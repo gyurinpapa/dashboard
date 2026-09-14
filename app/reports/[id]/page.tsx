@@ -506,8 +506,11 @@ type ReportMediaSyncJob = {
   sync_segment_progress?: Record<string, unknown> | null;
 };
 
-type DailyReportV2Progress = {
-  contract: "daily_report_v2";
+type DailyReportV2ProviderProgress = {
+  provider:
+    "naver_searchad" |
+    "google_ads" |
+    "meta_ads";
   start_date: string;
   through_date: string;
   completed_through: string | null;
@@ -789,6 +792,141 @@ function getMediaSyncSegmentUiState(
 
       completionPercent,
 
+      items,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function getDailyReportV2ProviderSegmentUiState(
+  progress:
+    DailyReportV2ProviderProgress |
+    null,
+  job:
+    ReportMediaSyncJob |
+    null,
+) {
+  if (!progress) {
+    return null;
+  }
+
+  const dateFrom =
+    normalizeYmdInput(
+      progress.start_date,
+    );
+
+  const dateTo =
+    normalizeYmdInput(
+      progress.through_date,
+    );
+
+  if (
+    !dateFrom ||
+    !dateTo ||
+    dateFrom > dateTo
+  ) {
+    return null;
+  }
+
+  try {
+    const segments =
+      buildMediaSyncSegments({
+        dateFrom,
+        dateTo,
+      });
+
+    const completedThrough =
+      normalizeYmdInput(
+        progress.completed_through,
+      );
+
+    const currentJobDate =
+      job &&
+      job.provider ===
+        progress.provider &&
+      job.automation_contract ===
+        "daily_report_v2"
+        ? normalizeYmdInput(
+            job.date_from,
+          )
+        : "";
+
+    const items =
+      segments.map(
+        segment => {
+          let status:
+            ReportMediaSyncSegmentUiStatus =
+              "대기";
+
+          if (
+            progress.target_covered ||
+            (
+              completedThrough &&
+              completedThrough >=
+                segment.dateTo
+            )
+          ) {
+            status =
+              "완료";
+          } else if (
+            currentJobDate &&
+            currentJobDate >=
+              segment.dateFrom &&
+            currentJobDate <=
+              segment.dateTo
+          ) {
+            if (
+              job?.status ===
+                "failed"
+            ) {
+              status =
+                "실패";
+            } else if (
+              job?.status ===
+                "processing"
+            ) {
+              status =
+                "동기화 중";
+            }
+          }
+
+          return {
+            index:
+              segment.index,
+            displayNumber:
+              getMediaSyncSegmentDisplayNumber(
+                segment.index,
+              ),
+            dateFrom:
+              segment.dateFrom,
+            dateTo:
+              segment.dateTo,
+            status,
+          };
+        },
+      );
+
+    return {
+      completedCount:
+        items.filter(
+          item =>
+            item.status ===
+              "완료",
+        ).length,
+      totalCount:
+        items.length,
+      completionPercent:
+        Math.max(
+          0,
+          Math.min(
+            100,
+            Number(
+              progress.progress ??
+                0,
+            ),
+          ),
+        ),
       items,
     };
   } catch {
@@ -2332,11 +2470,11 @@ export default function ReportDetailPage() {
   const [mediaSyncProviders, setMediaSyncProviders] =
     useState<ReportMediaSyncProviderStatus[]>([]);
   const [
-    dailyReportV2Progress,
-    setDailyReportV2Progress,
-  ] = useState<DailyReportV2Progress | null>(
-    null,
-  );
+    dailyReportV2ProviderProgress,
+    setDailyReportV2ProviderProgress,
+  ] = useState<
+    DailyReportV2ProviderProgress[]
+  >([]);
   const [
     mediaSyncAutomatic,
     setMediaSyncAutomatic,
@@ -2420,9 +2558,16 @@ export default function ReportDetailPage() {
     Boolean(
       dailySyncAutomationActive &&
         dailySyncCatchupTargetDate &&
-        dailyReportV2Progress
-          ?.target_covered !==
-          true,
+        (
+          dailyReportV2ProviderProgress
+            .length === 0 ||
+          dailyReportV2ProviderProgress
+            .some(
+              item =>
+                item.target_covered !==
+                  true,
+            )
+        ),
     );
 
   const dailySyncAutomationStartPending =
@@ -4199,8 +4344,8 @@ export default function ReportDetailPage() {
         setMediaSyncJob(null);
         setMediaSyncJobs([]);
         setMediaSyncProviders([]);
-        setDailyReportV2Progress(
-          null,
+        setDailyReportV2ProviderProgress(
+          [],
         );
         setMediaSyncAutomatic(
           EMPTY_REPORT_AUTOMATIC_SYNC,
@@ -4248,18 +4393,15 @@ export default function ReportDetailPage() {
           ? (json.provider_sync as ReportMediaSyncProviderStatus[])
           : [];
 
-        const dailyV2Progress =
-          json?.daily_report_v2_progress &&
-          typeof json.daily_report_v2_progress ===
-            "object" &&
-          !Array.isArray(
-            json.daily_report_v2_progress,
+        const dailyV2ProviderProgress =
+          Array.isArray(
+            json?.daily_report_v2_provider_progress,
           )
             ? (
-                json.daily_report_v2_progress as
-                  DailyReportV2Progress
+                json.daily_report_v2_provider_progress as
+                  DailyReportV2ProviderProgress[]
               )
-            : null;
+            : [];
 
         const automaticSync =
           normalizeReportAutomaticSyncAuthority(
@@ -4269,8 +4411,8 @@ export default function ReportDetailPage() {
         setMediaSyncJob(nextJob);
         setMediaSyncJobs(recentJobs);
         setMediaSyncProviders(providerSync);
-        setDailyReportV2Progress(
-          dailyV2Progress,
+        setDailyReportV2ProviderProgress(
+          dailyV2ProviderProgress,
         );
         setMediaSyncAutomatic(
           automaticSync,
@@ -4319,8 +4461,8 @@ export default function ReportDetailPage() {
       setMediaSyncJob(null);
       setMediaSyncJobs([]);
       setMediaSyncProviders([]);
-      setDailyReportV2Progress(
-        null,
+      setDailyReportV2ProviderProgress(
+        [],
       );
       setMediaSyncAutomatic(
         EMPTY_REPORT_AUTOMATIC_SYNC,
@@ -5893,131 +6035,6 @@ export default function ReportDetailPage() {
                   </div>
                 </div>
 
-                {dailySyncManagedByCanonical &&
-                dailyReportV2Progress ? (
-                  <div className="mt-3 rounded-xl border border-cyan-300/20 bg-cyan-300/[0.06] p-3.5">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <div className="text-sm font-black text-[#f7f7ff]">
-                          데일리 초기 동기화 진행
-                        </div>
-                        <div className="mt-1 text-xs text-[#bbb8d4]">
-                          시작일부터 최초 동기화 기준일까지 연속 fact coverage를 표시합니다.
-                        </div>
-                      </div>
-
-                      <span className={`rounded-full border px-2.5 py-1 text-[11px] font-black ${
-                        dailyReportV2Progress.target_covered
-                          ? "border-emerald-300/25 bg-emerald-300/10 text-emerald-100"
-                          : "border-cyan-300/25 bg-cyan-300/10 text-cyan-100"
-                      }`}>
-                        {dailyReportV2Progress.target_covered
-                          ? "초기 동기화 완료"
-                          : "초기 동기화 중"}
-                      </span>
-                    </div>
-
-                    <div className="mt-3 flex items-center justify-between gap-3 text-xs">
-                      <span className="font-black text-[#f7f7ff]">
-                        {formatInt(
-                          dailyReportV2Progress.completed_dates,
-                        )}{" "}
-                        /{" "}
-                        {formatInt(
-                          dailyReportV2Progress.total_dates,
-                        )}일
-                      </span>
-
-                      <span className="font-black text-[#9ef5ff]">
-                        {formatInt(
-                          dailyReportV2Progress.progress,
-                        )}%
-                      </span>
-                    </div>
-
-                    <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-[#15112f]">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-[#21dff3] to-[#7c5cff] transition-all"
-                        style={{
-                          width: `${Math.max(
-                            0,
-                            Math.min(
-                              100,
-                              Number(
-                                dailyReportV2Progress.progress ??
-                                  0,
-                              ),
-                            ),
-                          )}%`,
-                        }}
-                      />
-                    </div>
-
-                    <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2 xl:grid-cols-4">
-                      <div className="rounded-lg border border-white/[0.07] bg-[#211b44]/45 px-3 py-2">
-                        <div className="text-[#8f8ca8]">
-                          연속 완료일
-                        </div>
-                        <div className="mt-0.5 font-black text-[#f7f7ff]">
-                          {dailyReportV2Progress.completed_through ||
-                            "-"}
-                        </div>
-                      </div>
-
-                      <div className="rounded-lg border border-white/[0.07] bg-[#211b44]/45 px-3 py-2">
-                        <div className="text-[#8f8ca8]">
-                          현재 처리일
-                        </div>
-                        <div className="mt-0.5 font-black text-[#f7f7ff]">
-                          {isActiveMediaSyncJobStatus(
-                            mediaSyncJob?.status,
-                          ) &&
-                          mediaSyncJob
-                            ?.automation_contract ===
-                            "daily_report_v2"
-                            ? mediaSyncJob.date_from ||
-                              dailyReportV2Progress.first_missing_date ||
-                              "-"
-                            : dailyReportV2Progress.target_covered
-                              ? "완료"
-                              : dailyReportV2Progress.first_missing_date ||
-                                "-"}
-                        </div>
-                      </div>
-
-                      <div className="rounded-lg border border-white/[0.07] bg-[#211b44]/45 px-3 py-2">
-                        <div className="text-[#8f8ca8]">
-                          현재 job
-                        </div>
-                        <div className="mt-0.5 font-black text-[#f7f7ff]">
-                          {isActiveMediaSyncJobStatus(
-                            mediaSyncJob?.status,
-                          ) &&
-                          mediaSyncJob
-                            ?.automation_contract ===
-                            "daily_report_v2"
-                            ? getMediaSyncJobStatusText(
-                                mediaSyncJob,
-                              )
-                            : dailyReportV2Progress.target_covered
-                              ? "완료"
-                              : "다음 job 대기"}
-                        </div>
-                      </div>
-
-                      <div className="rounded-lg border border-white/[0.07] bg-[#211b44]/45 px-3 py-2">
-                        <div className="text-[#8f8ca8]">
-                          연속 수집 행
-                        </div>
-                        <div className="mt-0.5 font-black text-[#f7f7ff]">
-                          {formatInt(
-                            dailyReportV2Progress.contiguous_rows,
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
 
                 <div className="mt-3 grid gap-3 xl:grid-cols-3">
                   {mediaSyncProviders.map((provider) => {
@@ -6044,6 +6061,107 @@ export default function ReportDetailPage() {
                         providerSegmentJob,
                       );
 
+                    const dailyV2Progress =
+                      dailyReportV2ProviderProgress
+                        .find(
+                          item =>
+                            item.provider ===
+                              provider.provider,
+                        ) ?? null;
+
+                    const dailyV2SegmentUi =
+                      getDailyReportV2ProviderSegmentUiState(
+                        dailyV2Progress,
+                        providerSegmentJob,
+                      );
+
+                    const effectiveSegmentUi =
+                      dailyV2SegmentUi ??
+                      providerSegmentUi;
+
+                    const displayStatus =
+                      dailyV2Progress
+                        ? dailyV2Progress
+                            .target_covered
+                          ? "done"
+                          : providerSegmentJob
+                              ?.status ===
+                              "failed"
+                            ? "failed"
+                            : providerSegmentJob
+                                ?.status ===
+                                "processing"
+                              ? "processing"
+                              : "pending"
+                        : job?.status ??
+                          null;
+
+                    const displayStatusText =
+                      dailyV2Progress
+                        ? dailyV2Progress
+                            .target_covered
+                          ? "완료"
+                          : providerSegmentJob
+                              ?.status ===
+                              "failed"
+                            ? "실패"
+                            : providerSegmentJob
+                                ?.status ===
+                                "processing"
+                              ? `처리 중 ${
+                                  Math.max(
+                                    0,
+                                    Math.min(
+                                      100,
+                                      Number(
+                                        providerSegmentJob
+                                          ?.progress ??
+                                          0,
+                                      ),
+                                    ),
+                                  )
+                                }%`
+                              : "대기 중"
+                        : getProviderSyncStatusText(
+                            provider,
+                          );
+
+                    const displayCollectedRows =
+                      dailyV2Progress
+                        ? dailyV2Progress
+                            .contiguous_rows
+                        : Number(
+                            job?.collected_rows ??
+                              0,
+                          );
+
+                    const displayCurrentStage =
+                      dailyV2Progress
+                        ? dailyV2Progress
+                            .target_covered
+                          ? "초기 동기화 완료"
+                          : providerSegmentJob
+                              ?.automation_contract ===
+                              "daily_report_v2" &&
+                            providerSegmentJob
+                              ?.date_from
+                            ? `${
+                                providerSegmentJob
+                                  .date_from
+                              } · ${
+                                getMediaSyncJobStatusText(
+                                  providerSegmentJob,
+                                )
+                              }`
+                            : dailyV2Progress
+                                  .first_missing_date
+                              ? `${dailyV2Progress.first_missing_date} 대기`
+                              : "-"
+                        : job
+                            ?.current_product_label ||
+                          job?.phase ||
+                          "-";
+
                     return (
                       <div
                         key={provider.provider}
@@ -6060,16 +6178,16 @@ export default function ReportDetailPage() {
                           </div>
                           <span
                             className={`rounded-full border px-2.5 py-1 text-[11px] font-black ${
-                              job?.status === "done"
+                              displayStatus === "done"
                                 ? "border-emerald-300/25 bg-emerald-300/10 text-emerald-100"
-                                : job?.status === "failed"
+                                : displayStatus === "failed"
                                   ? "border-rose-300/25 bg-rose-300/10 text-rose-100"
-                                  : job?.status === "processing" || job?.status === "pending"
+                                  : displayStatus === "processing" || displayStatus === "pending"
                                     ? "border-cyan-300/25 bg-cyan-300/10 text-cyan-100"
                                     : "border-white/[0.12] bg-white/[0.05] text-[#bbb8d4]"
                             }`}
                           >
-                            {getProviderSyncStatusText(provider)}
+                            {displayStatusText}
                           </span>
                         </div>
 
@@ -6093,7 +6211,7 @@ export default function ReportDetailPage() {
                           </div>
                         </div>
 
-                        {providerSegmentUi ? (
+                        {effectiveSegmentUi ? (
                           <div className="mt-3 rounded-xl border border-white/[0.08] bg-black/10 p-3">
                             <div className="flex flex-wrap items-center justify-between gap-2">
                               <div className="text-xs font-black text-[#f7f7ff]">
@@ -6101,9 +6219,9 @@ export default function ReportDetailPage() {
                               </div>
 
                               <div className="text-xs font-black text-[#f7f7ff]">
-                                {providerSegmentUi.completedCount}
+                                {effectiveSegmentUi.completedCount}
                                 {" / "}
-                                {providerSegmentUi.totalCount}
+                                {effectiveSegmentUi.totalCount}
                                 {" 구간 완료"}
                               </div>
                             </div>
@@ -6116,13 +6234,13 @@ export default function ReportDetailPage() {
                               <div
                                 className="h-full rounded-full bg-[#7FA6C4] transition-[width] duration-300"
                                 style={{
-                                  width: `${providerSegmentUi.completionPercent}%`,
+                                  width: `${effectiveSegmentUi.completionPercent}%`,
                                 }}
                               />
                             </div>
 
                             <div className="mt-3 grid gap-1.5">
-                              {providerSegmentUi.items.map((item) => {
+                              {effectiveSegmentUi.items.map((item) => {
                                 const isDone =
                                   item.status === "완료";
 
@@ -6194,16 +6312,14 @@ export default function ReportDetailPage() {
 
                               <span
                                 className={
-                                  job?.status === "done"
+                                  displayStatus === "done"
                                     ? "font-black text-emerald-200"
-                                    : job?.status === "failed"
+                                    : displayStatus === "failed"
                                       ? "font-black text-[#ffb2c0]"
                                       : "font-black text-[#f7f7ff]"
                                 }
                               >
-                                {getProviderSyncStatusText(
-                                  provider,
-                                )}
+                                {displayStatusText}
                               </span>
                             </div>
                           </div>
@@ -6222,13 +6338,17 @@ export default function ReportDetailPage() {
                           <div>
                             <div className="text-[#8f8ca8]">수집 행</div>
                             <div className="mt-0.5 font-black text-[#f7f7ff]">
-                              {Number(job?.collected_rows ?? 0).toLocaleString("ko-KR")}
+                              {Number(
+                                displayCollectedRows,
+                              ).toLocaleString(
+                                "ko-KR",
+                              )}
                             </div>
                           </div>
                           <div>
                             <div className="text-[#8f8ca8]">현재 단계</div>
                             <div className="mt-0.5 truncate font-black text-[#f7f7ff]">
-                              {job?.current_product_label || job?.phase || "-"}
+                              {displayCurrentStage}
                             </div>
                           </div>
                           <div className="col-span-2">
