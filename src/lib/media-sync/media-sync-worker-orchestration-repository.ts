@@ -2772,6 +2772,10 @@ async function processNaverFactProjectionAfterStaging(
       await input.dependencies
         .loadFanoutTargets(
           factJob,
+          {
+            purpose:
+              "fact_projection",
+          },
         );
   } catch (error) {
     throw wrapStageError(
@@ -2944,6 +2948,10 @@ async function processNaverFactProjectionAfterStaging(
     await input.dependencies
       .loadFanoutTargets(
         factJob,
+        {
+          purpose:
+            "fact_projection",
+        },
       );
 
   assertFanoutTargetsUnchanged({
@@ -3244,6 +3252,10 @@ async function processNaverFactProjectionAfterStaging(
     await input.dependencies
       .loadFanoutTargets(
         factJob,
+        {
+          purpose:
+            "fact_projection",
+        },
       );
 
   assertFanoutTargetsUnchanged({
@@ -3321,6 +3333,10 @@ async function processNaverFactProjectionAfterStaging(
     await input.dependencies
       .loadFanoutTargets(
         factJob,
+        {
+          purpose:
+            "fact_projection",
+        },
       );
 
   assertFanoutTargetsUnchanged({

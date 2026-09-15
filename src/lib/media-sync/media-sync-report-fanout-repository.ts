@@ -6,6 +6,24 @@ import type {
 const REPORT_MEDIA_CONNECTIONS_TABLE =
   "report_media_connections" as const;
 
+const REPORTS_TABLE =
+  "reports" as const;
+
+const DAILY_REPORT_V2_AUTOMATION_CONTRACT =
+  "daily_report_v2" as const;
+
+const DAILY_REPORT_V2_SCOPE =
+  "all_mapped_supported_media" as const;
+
+const DAILY_SYNC_PERIOD_TYPE =
+  "daily_sync" as const;
+
+const API_SOURCE_TYPE =
+  "api" as const;
+
+const YMD_PATTERN =
+  /^\d{4}-\d{2}-\d{2}$/;
+
 const MEDIA_SYNC_REPORT_PROJECTIONS_TABLE =
   "media_sync_report_projections" as const;
 
@@ -50,6 +68,21 @@ export type MediaSyncReportFanoutTarget = {
   reportId: string;
   primary: boolean;
 };
+
+export type MediaSyncReportFanoutLoadPurpose =
+  | "default"
+  | "fact_projection";
+
+export type MediaSyncReportFanoutLoadOptions =
+  Readonly<{
+    purpose?:
+      MediaSyncReportFanoutLoadPurpose;
+  }>;
+
+export type MediaSyncFactProjectionSecondaryEligibility =
+  | "eligible"
+  | "exclude_daily_report_v2"
+  | "exclude_pristine_draft";
 
 export type MediaSyncReportProjectionAuthority = {
   reportId: string;
@@ -344,6 +377,316 @@ function parseProjectionRow(
   };
 }
 
+function isValidYmd(
+  value:
+    string,
+): boolean {
+  if (
+    !YMD_PATTERN.test(
+      value,
+    )
+  ) {
+    return false;
+  }
+
+  const [
+    yearText,
+    monthText,
+    dayText,
+  ] =
+    value.split("-");
+
+  const year =
+    Number(yearText);
+
+  const month =
+    Number(monthText);
+
+  const day =
+    Number(dayText);
+
+  const utcMs =
+    Date.UTC(
+      year,
+      month - 1,
+      day,
+    );
+
+  const date =
+    new Date(
+      utcMs,
+    );
+
+  return (
+    date.getUTCFullYear() ===
+      year &&
+    date.getUTCMonth() ===
+      month - 1 &&
+    date.getUTCDate() ===
+      day
+  );
+}
+
+function normalizeOptionalString(
+  value:
+    unknown,
+): string {
+  return typeof value ===
+    "string"
+    ? value.trim()
+    : "";
+}
+
+function normalizeFanoutLoadPurpose(
+  options:
+    MediaSyncReportFanoutLoadOptions |
+    undefined,
+): MediaSyncReportFanoutLoadPurpose {
+  if (
+    options ===
+      undefined
+  ) {
+    return "default";
+  }
+
+  if (
+    !isPlainObject(
+      options,
+    )
+  ) {
+    throw new MediaSyncReportFanoutError(
+      "INVALID_INPUT",
+      "Media sync report fanout options are invalid.",
+    );
+  }
+
+  const purpose =
+    options.purpose ??
+    "default";
+
+  if (
+    purpose !==
+      "default" &&
+    purpose !==
+      "fact_projection"
+  ) {
+    throw new MediaSyncReportFanoutError(
+      "INVALID_INPUT",
+      "Media sync report fanout purpose is invalid.",
+    );
+  }
+
+  return purpose;
+}
+
+export function classifyMediaSyncFactProjectionSecondaryEligibility(
+  value:
+    unknown,
+): MediaSyncFactProjectionSecondaryEligibility {
+  if (
+    !isPlainObject(
+      value,
+    )
+  ) {
+    throw new MediaSyncReportFanoutError(
+      "INVALID_DATABASE_RESULT",
+      "A fact projection secondary report row is invalid.",
+    );
+  }
+
+  const status =
+    normalizeRequiredString(
+      value.status,
+      "report.status",
+      "INVALID_DATABASE_RESULT",
+    );
+
+  const meta =
+    isPlainObject(
+      value.meta,
+    )
+      ? value.meta
+      : null;
+
+  const dataSource =
+    meta &&
+    isPlainObject(
+      meta.data_source,
+    )
+      ? meta.data_source
+      : null;
+
+  const publicIdentity =
+    meta &&
+    isPlainObject(
+      meta.public_identity,
+    )
+      ? meta.public_identity
+      : null;
+
+  const mediaSync =
+    meta &&
+    isPlainObject(
+      meta.media_sync,
+    )
+      ? meta.media_sync
+      : null;
+
+  const autoSync =
+    mediaSync &&
+    isPlainObject(
+      mediaSync.auto_sync,
+    )
+      ? mediaSync.auto_sync
+      : null;
+
+  const periodKey =
+    normalizeOptionalString(
+      publicIdentity
+        ?.period_key,
+    );
+
+  const automationStartDate =
+    normalizeOptionalString(
+      autoSync
+        ?.start_date,
+    );
+
+  const isCanonicalDailyReportV2 =
+    (
+      status ===
+        "draft" ||
+      status ===
+        "ready"
+    ) &&
+    dataSource
+      ?.kind ===
+      API_SOURCE_TYPE &&
+    publicIdentity
+      ?.source_type ===
+      API_SOURCE_TYPE &&
+    publicIdentity
+      ?.period_type ===
+      DAILY_SYNC_PERIOD_TYPE &&
+    isValidYmd(
+      periodKey,
+    ) &&
+    autoSync
+      ?.enabled ===
+      true &&
+    autoSync
+      ?.contract ===
+      DAILY_REPORT_V2_AUTOMATION_CONTRACT &&
+    autoSync
+      ?.scope ===
+      DAILY_REPORT_V2_SCOPE &&
+    isValidYmd(
+      automationStartDate,
+    ) &&
+    automationStartDate ===
+      periodKey;
+
+  if (
+    isCanonicalDailyReportV2
+  ) {
+    return "exclude_daily_report_v2";
+  }
+
+  const isPristineApiDraft =
+    status ===
+      "draft" &&
+    dataSource
+      ?.kind ===
+      API_SOURCE_TYPE &&
+    publicIdentity ===
+      null &&
+    mediaSync ===
+      null &&
+    value.draft_period_start ===
+      null &&
+    value.draft_period_end ===
+      null &&
+    value.period_start ===
+      null &&
+    value.period_end ===
+      null &&
+    value.current_ingestion_id ===
+      null &&
+    value.published_ingestion_id ===
+      null;
+
+  if (
+    isPristineApiDraft
+  ) {
+    return "exclude_pristine_draft";
+  }
+
+  /*
+   * Fail closed.
+   *
+   * Only an exact dedicated Daily V2 report or an exact
+   * pristine Builder draft is excluded here.
+   *
+   * Anything malformed, partially configured, ready without
+   * projection authority, or otherwise ambiguous continues into
+   * the existing coverage validation path.
+   */
+  return "eligible";
+}
+
+function parseFactProjectionEligibilityReportRow(
+  value:
+    unknown,
+): Readonly<{
+  reportId:
+    string;
+  workspaceId:
+    string;
+  advertiserId:
+    string;
+  eligibility:
+    MediaSyncFactProjectionSecondaryEligibility;
+}> {
+  if (
+    !isPlainObject(
+      value,
+    )
+  ) {
+    throw new MediaSyncReportFanoutError(
+      "INVALID_DATABASE_RESULT",
+      "A fact projection eligibility report row is invalid.",
+    );
+  }
+
+  return {
+    reportId:
+      normalizeUuid(
+        value.id,
+        "report.id",
+        "INVALID_DATABASE_RESULT",
+      ),
+
+    workspaceId:
+      normalizeUuid(
+        value.workspace_id,
+        "report.workspace_id",
+        "INVALID_DATABASE_RESULT",
+      ),
+
+    advertiserId:
+      normalizeUuid(
+        value.advertiser_id,
+        "report.advertiser_id",
+        "INVALID_DATABASE_RESULT",
+      ),
+
+    eligibility:
+      classifyMediaSyncFactProjectionSecondaryEligibility(
+        value,
+      ),
+  };
+}
+
 function normalizeJobCreatedBy(
   job: MediaSyncJobRecord,
 ): string | null {
@@ -360,12 +703,19 @@ function normalizeJobCreatedBy(
 
 export async function loadMediaSyncReportFanoutTargets(
   job: MediaSyncJobRecord,
+  options:
+    MediaSyncReportFanoutLoadOptions = {},
 ): Promise<
   MediaSyncReportFanoutTarget[]
 > {
   validateJobScope(
     job,
   );
+
+  const purpose =
+    normalizeFanoutLoadPurpose(
+      options,
+    );
 
   const supabase =
     getSupabaseAdmin();
@@ -493,7 +843,7 @@ export async function loadMediaSyncReportFanoutTargets(
     );
   }
 
-  const secondaryReportIds =
+  let secondaryReportIds =
     Array.from(
       reportIds,
     )
@@ -513,6 +863,163 @@ export async function loadMediaSyncReportFanoutTargets(
             right,
           ),
       );
+
+  if (
+    purpose ===
+      "fact_projection" &&
+    secondaryReportIds.length >
+      0
+  ) {
+    let reportResult;
+
+    try {
+      reportResult =
+        await supabase
+          .from(
+            REPORTS_TABLE,
+          )
+          .select(
+            [
+              "id",
+              "workspace_id",
+              "advertiser_id",
+              "status",
+              "draft_period_start",
+              "draft_period_end",
+              "period_start",
+              "period_end",
+              "current_ingestion_id",
+              "published_ingestion_id",
+              "meta",
+            ].join(","),
+          )
+          .in(
+            "id",
+            secondaryReportIds,
+          )
+          .order(
+            "id",
+            {
+              ascending:
+                true,
+            },
+          );
+    } catch (error) {
+      throw new MediaSyncReportFanoutError(
+        "DATABASE_ERROR",
+        "The fact projection secondary eligibility repository could not access the database.",
+        {
+          cause:
+            error,
+        },
+      );
+    }
+
+    const {
+      data:
+        reportData,
+      error:
+        reportError,
+    } =
+      reportResult;
+
+    if (
+      reportError
+    ) {
+      throw new MediaSyncReportFanoutError(
+        "DATABASE_ERROR",
+        "The fact projection secondary eligibility rows could not be loaded.",
+        {
+          cause:
+            reportError,
+        },
+      );
+    }
+
+    if (
+      !Array.isArray(
+        reportData,
+      )
+    ) {
+      throw new MediaSyncReportFanoutError(
+        "INVALID_DATABASE_RESULT",
+        "The fact projection secondary eligibility query returned an invalid result.",
+      );
+    }
+
+    const expectedReportIds =
+      new Set(
+        secondaryReportIds,
+      );
+
+    const eligibilityByReportId =
+      new Map<
+        string,
+        MediaSyncFactProjectionSecondaryEligibility
+      >();
+
+    for (
+      const rawReport
+      of reportData
+    ) {
+      const report =
+        parseFactProjectionEligibilityReportRow(
+          rawReport,
+        );
+
+      if (
+        report.workspaceId !==
+          job.workspace_id ||
+        report.advertiserId !==
+          job.advertiser_id
+      ) {
+        throw new MediaSyncReportFanoutError(
+          "SCOPE_MISMATCH",
+          "A fact projection secondary report does not match the media sync execution scope.",
+        );
+      }
+
+      if (
+        !expectedReportIds.has(
+          report.reportId,
+        ) ||
+        eligibilityByReportId.has(
+          report.reportId,
+        )
+      ) {
+        throw new MediaSyncReportFanoutError(
+          "INVALID_DATABASE_RESULT",
+          "The fact projection secondary eligibility query returned an unexpected or duplicate report.",
+        );
+      }
+
+      eligibilityByReportId.set(
+        report.reportId,
+        report.eligibility,
+      );
+    }
+
+    if (
+      eligibilityByReportId.size !==
+        expectedReportIds.size
+    ) {
+      throw new MediaSyncReportFanoutError(
+        "INVALID_DATABASE_RESULT",
+        "One or more mapped secondary reports are missing from fact projection eligibility.",
+      );
+    }
+
+    secondaryReportIds =
+      secondaryReportIds.filter(
+        (
+          reportId,
+        ) =>
+          eligibilityByReportId.get(
+            reportId,
+          ) ===
+          "eligible",
+      );
+  }
 
   return [
     {
