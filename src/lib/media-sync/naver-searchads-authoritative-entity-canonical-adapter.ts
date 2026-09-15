@@ -8,6 +8,7 @@ import {
 import {
   convertNaverBrandSearchAdgroupDailyStatsToCanonicalRows,
   convertNaverShoppingAdDailyStatsToCanonicalRows,
+  convertNaverWebSiteAdDailyStatsToCanonicalRows,
   type NaverSearchAdsCanonicalDimensions,
 } from "./naver-searchads-canonical-row";
 import type {
@@ -160,7 +161,7 @@ function resolveCollectionContract(
   ) {
     throw new NaverSearchAdsAuthoritativeEntityCanonicalAdapterError(
       "UNSUPPORTED_CAMPAIGN_TYPE",
-      "The authoritative entity canonical adapter requires a verified SHOPPING or BRAND_SEARCH campaign type.",
+      "The authoritative entity canonical adapter requires a verified WEB_SITE, SHOPPING, or BRAND_SEARCH campaign type.",
     );
   }
 
@@ -229,13 +230,58 @@ export function convertNaverAuthoritativeEntityCollectorItemToCanonicalRows(
       input.item.campaign?.campaignType,
     );
 
+  /*
+   * WEB_SITE remains keyword-authoritative for KPI totals.
+   * The authoritative-stage collector additionally carries ad-level
+   * detail rows only so the creative tabs can render real Naver ads.
+   */
+  if (
+    contract.campaignType ===
+    "WEB_SITE"
+  ) {
+    if (
+      input.item.authoritativeGrain !==
+      "ad"
+    ) {
+      throw new NaverSearchAdsAuthoritativeEntityCanonicalAdapterError(
+        "AUTHORITATIVE_GRAIN_MISMATCH",
+        "WEB_SITE creative detail items must use ad entity traversal while keyword remains the KPI authority.",
+      );
+    }
+
+    if (
+      !isNaverSearchAdsAdRecord(
+        input.item.entity,
+      )
+    ) {
+      throw new NaverSearchAdsAuthoritativeEntityCanonicalAdapterError(
+        "ENTITY_SHAPE_MISMATCH",
+        "A WEB_SITE creative detail item must contain an ad entity.",
+      );
+    }
+
+    return convertNaverWebSiteAdDailyStatsToCanonicalRows({
+      externalAccountId,
+      campaign:
+        input.item.campaign,
+      adgroup:
+        input.item.adgroup,
+      ad:
+        input.item.entity,
+      stats:
+        input.item.stats,
+      dimensions:
+        input.dimensions,
+    });
+  }
+
   if (
     contract.authoritativeGrain ===
     "keyword"
   ) {
     throw new NaverSearchAdsAuthoritativeEntityCanonicalAdapterError(
       "UNSUPPORTED_CAMPAIGN_TYPE",
-      "WEB_SITE is owned by the existing keyword collector and cannot enter the authoritative entity canonical adapter.",
+      "Keyword-authoritative campaigns other than the verified WEB_SITE creative detail lane cannot enter the entity canonical adapter.",
     );
   }
 

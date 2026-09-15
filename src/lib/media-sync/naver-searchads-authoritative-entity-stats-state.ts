@@ -385,10 +385,20 @@ export function normalizeNaverAuthoritativeEntityStatsCursor(
     );
   }
 
-  if (normalized.campaignType === "WEB_SITE") {
+  /*
+   * WEB_SITE remains keyword-authoritative for KPI totals.
+   *
+   * The entity-stage cursor may use ad only for the additive
+   * creative detail traversal. This does not alter the
+   * WEB_SITE authoritative grain contract.
+   */
+  if (
+    normalized.campaignType === "WEB_SITE" &&
+    normalized.authoritativeGrain !== "ad"
+  ) {
     throw new NaverAuthoritativeEntityStatsStateError(
       "INVALID_CURSOR",
-      "WEB_SITE is owned by the existing keyword collector.",
+      "WEB_SITE entity-detail cursor grain must be ad.",
     );
   }
 
@@ -401,6 +411,7 @@ export function setNaverAuthoritativeEntityStatsCampaignPosition(
     campaignBaseSearchId: string | null;
     campaignId: string | null;
     campaignType:
+      | "WEB_SITE"
       | "SHOPPING"
       | "BRAND_SEARCH"
       | null;

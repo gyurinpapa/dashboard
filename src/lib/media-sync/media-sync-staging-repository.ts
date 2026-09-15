@@ -20,6 +20,12 @@ const APPEND_MEDIA_SYNC_STAGING_BATCH_RPC =
 const NAVER_SEARCH_ADS_PROVIDER =
   "naver_searchad" as const;
 
+const NAVER_SEARCH_ADS_SHOPPING_CREATIVE_ROW_LEVEL_REASON =
+  "naver_searchad_shopping_ad_daily_stats" as const;
+
+const NAVER_SEARCH_ADS_WEB_SITE_CREATIVE_ROW_LEVEL_REASON =
+  "naver_searchad_web_site_ad_daily_stats" as const;
+
 const GOOGLE_ADS_PROVIDER =
   "google_ads" as const;
 
@@ -783,11 +789,13 @@ function validateCanonicalRow(input: {
   ) {
     if (
       typedRow.row_level_reason !==
-      "naver_searchad_shopping_ad_daily_stats"
+        NAVER_SEARCH_ADS_SHOPPING_CREATIVE_ROW_LEVEL_REASON &&
+      typedRow.row_level_reason !==
+        NAVER_SEARCH_ADS_WEB_SITE_CREATIVE_ROW_LEVEL_REASON
     ) {
       throw new MediaSyncStagingRepositoryError(
         "INVALID_INPUT",
-        `${rowPath} has an invalid SHOPPING creative row_level_reason.`,
+        `${rowPath} has an invalid Naver creative row_level_reason.`,
       );
     }
 

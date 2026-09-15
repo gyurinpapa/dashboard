@@ -684,7 +684,7 @@ begin
               /*
                * Exactly one verified canonical grain is allowed per row.
                *
-               * WEB_SITE    -> keyword
+               * WEB_SITE    -> keyword (KPI authority) + creative (detail-only ad)
                * SHOPPING    -> creative (authoritative ad)
                * BRAND_SEARCH -> mixed (authoritative adgroup)
                */
@@ -753,8 +753,10 @@ begin
                     'creative'
 
                   and staging.row ->> 'row_level_reason'
-                    is not distinct from
-                    'naver_searchad_shopping_ad_daily_stats'
+                    in (
+                      'naver_searchad_shopping_ad_daily_stats',
+                      'naver_searchad_web_site_ad_daily_stats'
+                    )
 
                   and nullif(
                     btrim(
@@ -1376,7 +1378,7 @@ begin
               /*
                * Exactly one verified canonical grain is allowed per row.
                *
-               * WEB_SITE    -> keyword
+               * WEB_SITE    -> keyword (KPI authority) + creative (detail-only ad)
                * SHOPPING    -> creative (authoritative ad)
                * BRAND_SEARCH -> mixed (authoritative adgroup)
                */
@@ -1445,8 +1447,10 @@ begin
                     'creative'
 
                   and staging.row ->> 'row_level_reason'
-                    is not distinct from
-                    'naver_searchad_shopping_ad_daily_stats'
+                    in (
+                      'naver_searchad_shopping_ad_daily_stats',
+                      'naver_searchad_web_site_ad_daily_stats'
+                    )
 
                   and nullif(
                     btrim(

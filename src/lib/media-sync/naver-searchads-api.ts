@@ -126,6 +126,19 @@ export type NaverSearchAdsAdRecord = {
   statusReason: string | null;
   userLock: boolean | null;
   referenceKey: string | null;
+
+  /**
+   * Optional creative detail metadata.
+   *
+   * Naver WEB_SITE / MEDICAL_AD returns these below ad.basic.
+   * They are additive display metadata only and never credentials.
+   */
+  headline?: string | null;
+  description?: string | null;
+  imagePath?: string | null;
+  siteName?: string | null;
+  pcFinalUrl?: string | null;
+  mobileFinalUrl?: string | null;
 };
 
 export type NaverSearchAdsStatsEntityType =
@@ -1587,6 +1600,101 @@ function parseKeywordRecord(
 }
 
 
+function readOptionalCreativeResponseString(
+  value: unknown,
+): string | null {
+  if (
+    typeof value !== "string"
+  ) {
+    return null;
+  }
+
+  const normalized =
+    value.trim();
+
+  return normalized || null;
+}
+
+function parseAdCreativeMetadata(
+  value: UnknownRecord,
+): {
+  headline: string | null;
+  description: string | null;
+  imagePath: string | null;
+  siteName: string | null;
+  pcFinalUrl: string | null;
+  mobileFinalUrl: string | null;
+} {
+  /*
+   * Creative payload shape differs by Naver ad type.
+   * Keep this additive/fail-soft so existing SHOPPING parsing
+   * cannot be broken by optional WEB_SITE metadata.
+   */
+  const ad =
+    isPlainObject(
+      value.ad,
+    )
+      ? value.ad
+      : null;
+
+  const basic =
+    ad &&
+    isPlainObject(
+      ad.basic,
+    )
+      ? ad.basic
+      : null;
+
+  const pc =
+    basic &&
+    isPlainObject(
+      basic.pc,
+    )
+      ? basic.pc
+      : null;
+
+  const mobile =
+    basic &&
+    isPlainObject(
+      basic.mobile,
+    )
+      ? basic.mobile
+      : null;
+
+  return {
+    headline:
+      readOptionalCreativeResponseString(
+        basic?.headline,
+      ),
+
+    description:
+      readOptionalCreativeResponseString(
+        basic?.description,
+      ),
+
+    imagePath:
+      readOptionalCreativeResponseString(
+        basic?.image,
+      ),
+
+    siteName:
+      readOptionalCreativeResponseString(
+        basic?.siteName,
+      ),
+
+    pcFinalUrl:
+      readOptionalCreativeResponseString(
+        pc?.final,
+      ),
+
+    mobileFinalUrl:
+      readOptionalCreativeResponseString(
+        mobile?.final,
+      ),
+  };
+}
+
+
 function parseAdRecord(
   value: unknown,
 ): NaverSearchAdsAdRecord {
@@ -1637,6 +1745,10 @@ function parseAdRecord(
         value.referenceKey,
         "ad.referenceKey",
       ),
+
+    ...parseAdCreativeMetadata(
+      value,
+    ),
   };
 }
 

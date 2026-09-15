@@ -54,6 +54,18 @@ const campaigns: NaverSearchAdsCampaignRecord[] = [
   },
 ];
 
+const webAdgroups: NaverSearchAdsAdgroupRecord[] = [
+  {
+    id: "grp-web",
+    campaignId: "cmp-web",
+    name: "WEB_SITE Group",
+    adgroupType: "WEB_SITE",
+    status: "ELIGIBLE",
+    statusReason: null,
+    userLock: false,
+  },
+];
+
 const shoppingAdgroups: NaverSearchAdsAdgroupRecord[] = [
   {
     id: "grp-shopping",
@@ -84,6 +96,25 @@ const brandAdgroups: NaverSearchAdsAdgroupRecord[] = [
     status: "ELIGIBLE",
     statusReason: null,
     userLock: false,
+  },
+];
+
+const webAds: NaverSearchAdsAdRecord[] = [
+  {
+    id: "ad-web-1",
+    adgroupId: "grp-web",
+    type: "MEDICAL_AD",
+    inspectStatus: "APPROVED",
+    status: "ELIGIBLE",
+    statusReason: null,
+    userLock: false,
+    referenceKey: null,
+    headline: "정계정맥류 치료, 민트병원",
+    description: "WEB_SITE creative detail fixture",
+    imagePath: "/fixture/mint.png",
+    siteName: "민트병원",
+    pcFinalUrl: "https://example.com/pc",
+    mobileFinalUrl: "https://example.com/mo",
   },
 ];
 
@@ -186,14 +217,22 @@ async function main(): Promise<void> {
     fetchCampaignPage: async () => page(campaigns),
     fetchAdgroupPage: async (input) =>
       page(
-        input.campaignId === "cmp-shopping"
-          ? shoppingAdgroups
-          : input.campaignId === "cmp-brand"
-            ? brandAdgroups
-            : [],
+        input.campaignId === "cmp-web"
+          ? webAdgroups
+          : input.campaignId === "cmp-shopping"
+            ? shoppingAdgroups
+            : input.campaignId === "cmp-brand"
+              ? brandAdgroups
+              : [],
       ),
     fetchAdPage: async (input) =>
-      page(input.adgroupId === "grp-shopping" ? shoppingAds : []),
+      page(
+        input.adgroupId === "grp-web"
+          ? webAds
+          : input.adgroupId === "grp-shopping"
+            ? shoppingAds
+            : [],
+      ),
     fetchEntityDailyStats: async (input) => {
       const attempt = (attempts.get(input.entityId) ?? 0) + 1;
       attempts.set(input.entityId, attempt);
@@ -251,7 +290,7 @@ async function main(): Promise<void> {
   assert.equal(consumed.length, 2);
   assert.deepEqual(
     consumed.map((item) => item.entity.id),
-    ["ad-shopping-1", "ad-shopping-2"],
+    ["ad-web-1", "ad-shopping-1"],
   );
 
   const persistedCursor = normalizeNaverAuthoritativeEntityStatsCursor(
@@ -280,6 +319,7 @@ async function main(): Promise<void> {
   assert.deepEqual(
     consumed.map((item) => item.entity.id),
     [
+      "ad-web-1",
       "ad-shopping-1",
       "ad-shopping-2",
       "ad-shopping-3",
@@ -287,17 +327,17 @@ async function main(): Promise<void> {
       "grp-brand-2",
     ],
   );
-  assert.equal(new Set(consumed.map((item) => item.entity.id)).size, 5);
+  assert.equal(new Set(consumed.map((item) => item.entity.id)).size, 6);
   assert.deepEqual(
     consumed.map((item) => item.authoritativeGrain),
-    ["ad", "ad", "ad", "adgroup", "adgroup"],
+    ["ad", "ad", "ad", "ad", "adgroup", "adgroup"],
   );
   assert.ok(
     retryEvents.includes("entity_stats:grp-brand-1:rate_limit"),
   );
   assert.equal(attempts.get("grp-brand-1"), 2);
-  assert.equal(second.cursor.completedEntityCount, 5);
-  assert.equal(second.cursor.discoveredEntityCount, 5);
+  assert.equal(second.cursor.completedEntityCount, 6);
+  assert.equal(second.cursor.discoveredEntityCount, 6);
 
   const requestLimited = await collectNaverAuthoritativeEntityDailyStats({
     credentials,
@@ -349,7 +389,7 @@ async function main(): Promise<void> {
 
   console.log("verified SHOPPING authoritative grain: ad");
   console.log("verified BRAND_SEARCH authoritative grain: adgroup");
-  console.log("verified WEB_SITE remains owned by keyword collector: true");
+  console.log("verified WEB_SITE keyword KPI authority + additive ad detail traversal: true");
   console.log("verified bounded partial result: true");
   console.log("verified exact cursor resume without duplicate entities: true");
   console.log("verified stats request bound: true");

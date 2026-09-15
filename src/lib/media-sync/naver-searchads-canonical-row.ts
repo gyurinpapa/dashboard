@@ -590,11 +590,20 @@ export function convertNaverKeywordDailyStatsToCanonicalRows(
   return rows;
 }
 
+const NAVER_SEARCH_ADS_WEB_SITE_CAMPAIGN_TYPE =
+  "WEB_SITE" as const;
+
 const NAVER_SEARCH_ADS_SHOPPING_CAMPAIGN_TYPE =
   "SHOPPING" as const;
 
 const NAVER_SEARCH_ADS_BRAND_SEARCH_CAMPAIGN_TYPE =
   "BRAND_SEARCH" as const;
+
+const NAVER_SEARCH_ADS_WEB_SITE_CREATIVE_ROW_LEVEL =
+  "creative" as const;
+
+const NAVER_SEARCH_ADS_WEB_SITE_CREATIVE_ROW_LEVEL_REASON =
+  "naver_searchad_web_site_ad_daily_stats" as const;
 
 const NAVER_SEARCH_ADS_SHOPPING_ROW_LEVEL =
   "creative" as const;
@@ -607,6 +616,17 @@ const NAVER_SEARCH_ADS_BRAND_SEARCH_ROW_LEVEL =
 
 const NAVER_SEARCH_ADS_BRAND_SEARCH_ROW_LEVEL_REASON =
   "naver_searchad_brand_search_adgroup_daily_stats" as const;
+
+export type ConvertNaverWebSiteAdDailyStatsToCanonicalRowsInput = {
+  externalAccountId: string;
+
+  campaign: NaverSearchAdsCampaignRecord;
+  adgroup: NaverSearchAdsAdgroupRecord;
+  ad: NaverSearchAdsAdRecord;
+  stats: NaverSearchAdsEntityDailyStatsResult;
+
+  dimensions?: NaverSearchAdsCanonicalDimensions;
+};
 
 export type ConvertNaverShoppingAdDailyStatsToCanonicalRowsInput = {
   externalAccountId: string;
@@ -872,6 +892,53 @@ function normalizeEntityStatsRecord(input: {
   };
 }
 
+function assertWebSiteAdHierarchyScope(input: {
+  campaign: NaverSearchAdsCampaignRecord;
+  adgroup: NaverSearchAdsAdgroupRecord;
+  ad: NaverSearchAdsAdRecord;
+  stats: NaverSearchAdsEntityDailyStatsResult;
+  adId: string;
+}): void {
+  if (
+    input.campaign.campaignType !==
+    NAVER_SEARCH_ADS_WEB_SITE_CAMPAIGN_TYPE
+  ) {
+    throw new NaverSearchAdsCanonicalRowError(
+      "SCOPE_MISMATCH",
+      "The WEB_SITE creative detail converter only accepts WEB_SITE campaigns.",
+    );
+  }
+
+  if (
+    input.adgroup.campaignId !==
+    input.campaign.id
+  ) {
+    throw new NaverSearchAdsCanonicalRowError(
+      "SCOPE_MISMATCH",
+      "The Naver adgroup does not belong to the supplied WEB_SITE campaign.",
+    );
+  }
+
+  if (
+    input.ad.adgroupId !==
+    input.adgroup.id
+  ) {
+    throw new NaverSearchAdsCanonicalRowError(
+      "SCOPE_MISMATCH",
+      "The Naver WEB_SITE ad does not belong to the supplied adgroup.",
+    );
+  }
+
+  assertExpectedEntityStatsScope({
+    stats:
+      input.stats,
+    expectedEntityId:
+      input.adId,
+    expectedEntityType:
+      "ad",
+  });
+}
+
 function assertShoppingAdHierarchyScope(input: {
   campaign: NaverSearchAdsCampaignRecord;
   adgroup: NaverSearchAdsAdgroupRecord;
@@ -953,6 +1020,81 @@ function assertBrandSearchAdgroupHierarchyScope(input: {
     expectedEntityType:
       "adgroup",
   });
+}
+
+function buildWebSiteAdProviderMeta(input: {
+  campaign: NaverSearchAdsCampaignRecord;
+  adgroup: NaverSearchAdsAdgroupRecord;
+  ad: NaverSearchAdsAdRecord;
+  periodStart: string;
+  periodEnd: string;
+}): JsonObject {
+  return {
+    provider:
+      NAVER_SEARCH_ADS_PROVIDER,
+
+    /*
+     * WEB_SITE KPI authority remains keyword.
+     * This row only exposes ad-level creative detail.
+     */
+    authoritative_grain:
+      "keyword",
+    entity_type:
+      "ad",
+    entity_id:
+      input.ad.id,
+    detail_only:
+      true,
+
+    period_start:
+      input.periodStart,
+    period_end:
+      input.periodEnd,
+
+    campaign_type:
+      input.campaign.campaignType,
+    campaign_status:
+      input.campaign.status,
+    campaign_status_reason:
+      input.campaign.statusReason,
+    campaign_user_lock:
+      input.campaign.userLock,
+
+    adgroup_type:
+      input.adgroup.adgroupType,
+    adgroup_status:
+      input.adgroup.status,
+    adgroup_status_reason:
+      input.adgroup.statusReason,
+    adgroup_user_lock:
+      input.adgroup.userLock,
+
+    ad_type:
+      input.ad.type,
+    ad_inspect_status:
+      input.ad.inspectStatus,
+    ad_status:
+      input.ad.status,
+    ad_status_reason:
+      input.ad.statusReason,
+    ad_user_lock:
+      input.ad.userLock,
+    ad_reference_key:
+      input.ad.referenceKey,
+
+    ad_headline:
+      input.ad.headline ?? null,
+    ad_description:
+      input.ad.description ?? null,
+    ad_image_path:
+      input.ad.imagePath ?? null,
+    ad_site_name:
+      input.ad.siteName ?? null,
+    ad_pc_final_url:
+      input.ad.pcFinalUrl ?? null,
+    ad_mobile_final_url:
+      input.ad.mobileFinalUrl ?? null,
+  };
 }
 
 function buildShoppingAdProviderMeta(input: {
@@ -1050,6 +1192,263 @@ function buildBrandSearchAdgroupProviderMeta(input: {
       input.adgroup.userLock,
   };
 }
+
+export function convertNaverWebSiteAdDailyStatsToCanonicalRows(
+  input: ConvertNaverWebSiteAdDailyStatsToCanonicalRowsInput,
+): EtrylueNormalizedMediaRow[] {
+  if (
+    !input ||
+    typeof input !== "object"
+  ) {
+    throw new NaverSearchAdsCanonicalRowError(
+      "INVALID_INPUT",
+      "Naver WEB_SITE ad creative detail conversion input is required.",
+    );
+  }
+
+  const externalAccountId =
+    normalizeRequiredString(
+      input.externalAccountId,
+      "externalAccountId",
+      300,
+    );
+
+  const campaignId =
+    normalizeRequiredString(
+      input.campaign?.id,
+      "campaign.id",
+    );
+
+  const campaignName =
+    normalizeRequiredString(
+      input.campaign?.name,
+      "campaign.name",
+    );
+
+  const adgroupId =
+    normalizeRequiredString(
+      input.adgroup?.id,
+      "adgroup.id",
+    );
+
+  const adgroupName =
+    normalizeRequiredString(
+      input.adgroup?.name,
+      "adgroup.name",
+    );
+
+  const adId =
+    normalizeRequiredString(
+      input.ad?.id,
+      "ad.id",
+    );
+
+  normalizeRequiredString(
+    input.ad?.type,
+    "ad.type",
+  );
+
+  assertEntityStatsResultRange(
+    input.stats,
+  );
+
+  assertWebSiteAdHierarchyScope({
+    campaign:
+      input.campaign,
+    adgroup:
+      input.adgroup,
+    ad:
+      input.ad,
+    stats:
+      input.stats,
+    adId,
+  });
+
+  const dimensions =
+    resolveNaverCanonicalDimensions(
+      input.dimensions,
+    );
+
+  /*
+   * WEB_SITE referenceKey is commonly null.
+   * Use the actual Naver headline first, then preserve the old
+   * stable-reference fallback, finally the immutable ad ID.
+   */
+  const creativeName =
+    normalizeOptionalStableString(
+      input.ad.headline,
+      normalizeOptionalStableString(
+        input.ad.referenceKey,
+        adId,
+        "ad.referenceKey",
+      ),
+      "ad.headline",
+    );
+
+  const seenDates =
+    new Set<string>();
+
+  const rows =
+    input.stats.records.flatMap(
+      (record) => {
+        const metrics =
+          normalizeEntityStatsRecord({
+            record,
+            stats:
+              input.stats,
+            expectedEntityId:
+              adId,
+            expectedEntityType:
+              "ad",
+          });
+
+        if (
+          seenDates.has(
+            metrics.date,
+          )
+        ) {
+          throw new NaverSearchAdsCanonicalRowError(
+            "DUPLICATE_DATE",
+            "The Naver WEB_SITE ad stats result contains more than one row for the same ad and date.",
+          );
+        }
+
+        seenDates.add(
+          metrics.date,
+        );
+
+        /*
+         * Detail rows follow the same meaningful-row policy as
+         * existing SHOPPING ad rows.
+         */
+        if (
+          metrics.impressions === 0 &&
+          metrics.clicks === 0 &&
+          metrics.cost === 0 &&
+          metrics.conversions === 0 &&
+          metrics.revenue === 0
+        ) {
+          return [];
+        }
+
+        return [{
+          date:
+            metrics.date,
+          report_date:
+            metrics.date,
+          day:
+            metrics.date,
+          ymd:
+            metrics.date,
+
+          channel:
+            dimensions.channel,
+          source:
+            dimensions.source,
+          platform:
+            dimensions.platform,
+          device:
+            dimensions.device,
+
+          campaign:
+            campaignName,
+          campaign_name:
+            campaignName,
+
+          group:
+            adgroupName,
+          group_name:
+            adgroupName,
+          adgroup_name:
+            adgroupName,
+
+          keyword:
+            "",
+          keyword_name:
+            "",
+
+          creative:
+            creativeName,
+          creative_name:
+            creativeName,
+
+          ...(
+            input.ad.description
+              ? {
+                  creative_description:
+                    input.ad.description,
+                }
+              : {}
+          ),
+
+          ...(
+            input.ad.imagePath
+              ? {
+                  creative_image_path:
+                    input.ad.imagePath,
+                }
+              : {}
+          ),
+
+          impressions:
+            metrics.impressions,
+          clicks:
+            metrics.clicks,
+          cost:
+            metrics.cost,
+          conversions:
+            metrics.conversions,
+          revenue:
+            metrics.revenue,
+
+          row_level:
+            NAVER_SEARCH_ADS_WEB_SITE_CREATIVE_ROW_LEVEL,
+          data_level:
+            NAVER_SEARCH_ADS_WEB_SITE_CREATIVE_ROW_LEVEL,
+          row_level_reason:
+            NAVER_SEARCH_ADS_WEB_SITE_CREATIVE_ROW_LEVEL_REASON,
+
+          provider:
+            NAVER_SEARCH_ADS_PROVIDER,
+          ingestion_source:
+            NAVER_SEARCH_ADS_INGESTION_SOURCE,
+
+          external_account_id:
+            externalAccountId,
+          external_campaign_id:
+            campaignId,
+          external_group_id:
+            adgroupId,
+          external_creative_id:
+            adId,
+
+          provider_meta:
+            buildWebSiteAdProviderMeta({
+              campaign:
+                input.campaign,
+              adgroup:
+                input.adgroup,
+              ad:
+                input.ad,
+              periodStart:
+                record.periodStart,
+              periodEnd:
+                record.periodEnd,
+            }),
+        } satisfies EtrylueNormalizedMediaRow];
+      },
+    );
+
+  rows.sort(
+    (left, right) =>
+      left.date.localeCompare(
+        right.date,
+      ),
+  );
+
+  return rows;
+}
+
 
 export function convertNaverShoppingAdDailyStatsToCanonicalRows(
   input: ConvertNaverShoppingAdDailyStatsToCanonicalRowsInput,
