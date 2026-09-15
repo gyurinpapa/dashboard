@@ -21,6 +21,11 @@ import type {
 } from "./google-ads-shopping-ad-stats-collector";
 
 import type {
+  GoogleAdsYoutubeAdStatsCollectorDependencies,
+  GoogleAdsYoutubeAdStatsCollectorOptions,
+} from "./google-ads-youtube-ad-stats-collector";
+
+import type {
   GoogleAdsPerformanceMaxAssetGroupStatsCollectorDependencies,
   GoogleAdsPerformanceMaxAssetGroupStatsCollectorOptions,
 } from "./google-ads-performance-max-asset-group-stats-collector";
@@ -45,6 +50,13 @@ import {
   type GoogleAdsAllDataShoppingStagingOrchestratorDependencies,
   type GoogleAdsAllDataShoppingStagingOrchestratorResult,
 } from "./google-ads-all-data-shopping-staging-orchestrator";
+
+import {
+  runGoogleAdsAllDataYoutubeStagingOrchestrator,
+  type GoogleAdsAllDataYoutubeStagingCursor,
+  type GoogleAdsAllDataYoutubeStagingOrchestratorDependencies,
+  type GoogleAdsAllDataYoutubeStagingOrchestratorResult,
+} from "./google-ads-all-data-youtube-staging-orchestrator";
 
 import {
   runGoogleAdsAllDataPerformanceMaxStagingOrchestrator,
@@ -105,6 +117,9 @@ export type GoogleAdsAllDataProcessingOrchestratorDependencies =
     runShoppingStaging?:
       typeof runGoogleAdsAllDataShoppingStagingOrchestrator;
 
+    runYoutubeStaging?:
+      typeof runGoogleAdsAllDataYoutubeStagingOrchestrator;
+
     runPerformanceMaxStaging?:
       typeof runGoogleAdsAllDataPerformanceMaxStagingOrchestrator;
 
@@ -122,6 +137,9 @@ export type GoogleAdsAllDataProcessingOrchestratorDependencies =
 
     shoppingStagingDependencies?:
       GoogleAdsAllDataShoppingStagingOrchestratorDependencies;
+
+    youtubeStagingDependencies?:
+      GoogleAdsAllDataYoutubeStagingOrchestratorDependencies;
 
     performanceMaxStagingDependencies?:
       GoogleAdsAllDataPerformanceMaxStagingOrchestratorDependencies;
@@ -154,6 +172,12 @@ export type GoogleAdsAllDataProcessingOrchestratorInput =
 
     shoppingCollectorOptions?:
       GoogleAdsShoppingAdStatsCollectorOptions;
+
+    youtubeCollectorDependencies?:
+      GoogleAdsYoutubeAdStatsCollectorDependencies;
+
+    youtubeCollectorOptions?:
+      GoogleAdsYoutubeAdStatsCollectorOptions;
 
     performanceMaxCollectorDependencies?:
       GoogleAdsPerformanceMaxAssetGroupStatsCollectorDependencies;
@@ -657,6 +681,163 @@ function normalizeShoppingStagingResult(
   });
 }
 
+function resolveYoutubePhaseCursor(
+  value:
+    unknown,
+): unknown {
+  if (
+    value ===
+      undefined ||
+    value ===
+      null
+  ) {
+    return undefined;
+  }
+
+  if (
+    !isPlainObject(
+      value,
+    ) ||
+    value.version !==
+      1 ||
+    value.phase !==
+      "youtube_ad" ||
+    !(
+      "phaseCursor" in
+        value
+    )
+  ) {
+    throw new GoogleAdsAllDataProductRoutingError(
+      "ROUTING_CONFLICT",
+      "Youtube processing requires a durable youtube_ad resume cursor.",
+    );
+  }
+
+  return value.phaseCursor;
+}
+
+function wrapYoutubeCursor(
+  cursor:
+    GoogleAdsAllDataYoutubeStagingCursor,
+) {
+  return Object.freeze({
+    version:
+      1 as const,
+
+    phase:
+      "youtube_ad" as const,
+
+    externalAccountId:
+      cursor.externalAccountId,
+
+    dateWindowIndex:
+      cursor.dateWindowIndex,
+
+    dateFrom:
+      cursor.dateFrom,
+
+    dateTo:
+      cursor.dateTo,
+
+    expectedRowStartIndex:
+      cursor.expectedRowStartIndex,
+
+    phaseCursor:
+      cursor,
+  });
+}
+
+function normalizeYoutubeStagingResult(
+  result:
+    GoogleAdsAllDataYoutubeStagingOrchestratorResult,
+): GoogleAdsAllDataProcessingStagingResult {
+  const nextPhase =
+    result.isComplete
+      ? null
+      : "youtube_ad" as const;
+
+  const rawCursor =
+    result.checkpoint.cursor;
+
+  if (
+    !result.isComplete &&
+    rawCursor ===
+      null
+  ) {
+    throw new GoogleAdsAllDataProductRoutingError(
+      "ROUTING_CONFLICT",
+      "A partial Youtube staging result lost its durable cursor.",
+    );
+  }
+
+  const cursor =
+    rawCursor ===
+      null
+      ? null
+      : wrapYoutubeCursor(
+          rawCursor,
+        );
+
+  return Object.freeze({
+    jobId:
+      result.jobId,
+
+    dateWindowIndex:
+      result.dateWindowIndex,
+
+    phaseRun:
+      "youtube_ad" as const,
+
+    nextPhase,
+
+    rowStartIndex:
+      result.rowStartIndex,
+
+    nextRowIndex:
+      result.nextRowIndex,
+
+    runCanonicalRowCount:
+      result.runCanonicalRowCount,
+
+    status:
+      result.status,
+
+    isComplete:
+      result.isComplete,
+
+    apiPageExecutionCount:
+      1 as const,
+
+    stageResult:
+      result,
+
+    checkpoint:
+      Object.freeze({
+        version:
+          1 as const,
+
+        phaseRun:
+          "youtube_ad" as const,
+
+        nextPhase,
+
+        nextRowIndex:
+          result.checkpoint.nextRowIndex,
+
+        totalRows:
+          result.checkpoint.totalRows,
+
+        failedRows:
+          0 as const,
+
+        complete:
+          result.checkpoint.complete,
+
+        cursor,
+      }),
+  });
+}
+
 function resolvePerformanceMaxPhaseCursor(
   value:
     unknown,
@@ -849,13 +1030,15 @@ export async function runGoogleAdsAllDataProcessingOrchestrator(
         currentRouting.productFamily !==
           "performance_max" &&
         currentRouting.productFamily !==
-          "shopping"
+          "shopping" &&
+        currentRouting.productFamily !==
+          "youtube"
       )
     )
   ) {
     throw new GoogleAdsAllDataProductRoutingError(
       "ROUTING_CONFLICT",
-      "Google Ads ALL-DATA processing requires an incomplete SEARCH, DEMAND_GEN, DISPLAY, PERFORMANCE_MAX, or SHOPPING durable product route.",
+      "Google Ads ALL-DATA processing requires an incomplete SEARCH, DEMAND_GEN, DISPLAY, PERFORMANCE_MAX, SHOPPING, or YOUTUBE durable product route.",
     );
   }
 
@@ -1019,6 +1202,53 @@ export async function runGoogleAdsAllDataProcessingOrchestrator(
     staging =
       normalizeShoppingStagingResult(
         shoppingResult,
+      );
+  } else if (
+    productFamily ===
+      "youtube"
+  ) {
+    const runYoutubeStaging =
+      dependencies.runYoutubeStaging ??
+      runGoogleAdsAllDataYoutubeStagingOrchestrator;
+
+    const youtubeResult =
+      await runYoutubeStaging(
+        {
+          job:
+            input.job,
+
+          accessToken:
+            input.accessToken,
+
+          developerToken:
+            input.developerToken,
+
+          loginCustomerId:
+            input.loginCustomerId,
+
+          dateWindowIndex:
+            input.dateWindowIndex,
+
+          cursor:
+            resolveYoutubePhaseCursor(
+              input.cursor,
+            ),
+
+          collectorDependencies:
+            input.youtubeCollectorDependencies,
+
+          collectorOptions:
+            input.youtubeCollectorOptions,
+
+          stagingRepositoryDependencies:
+            input.stagingRepositoryDependencies,
+        },
+        dependencies.youtubeStagingDependencies,
+      );
+
+    staging =
+      normalizeYoutubeStagingResult(
+        youtubeResult,
       );
   } else if (
     productFamily ===

@@ -115,6 +115,7 @@ export type GoogleAdsAllDataCheckpointStagingPhase =
   | "demand_gen_ad"
   | "display_ad"
   | "shopping_ad"
+  | "youtube_ad"
   | "performance_max_asset_group";
 
 export type GoogleAdsAllDataCheckpointStagingResult =
@@ -516,6 +517,8 @@ function validateResult(
         "display_ad" &&
       result.nextPhase !==
         "shopping_ad" &&
+      result.nextPhase !==
+        "youtube_ad" &&
       result.nextPhase !==
         "performance_max_asset_group"
     ) ||

@@ -15,6 +15,10 @@ import type {
 } from "./google-ads-all-data-shopping-staging-orchestrator";
 
 import type {
+  GoogleAdsAllDataYoutubeStagingCursor,
+} from "./google-ads-all-data-youtube-staging-orchestrator";
+
+import type {
   GoogleAdsAllDataPerformanceMaxStagingCursor,
 } from "./google-ads-all-data-performance-max-staging-orchestrator";
 
@@ -53,6 +57,7 @@ export type GoogleAdsAllDataProcessingCheckpointPhase =
   | "demand_gen_ad"
   | "display_ad"
   | "shopping_ad"
+  | "youtube_ad"
   | "performance_max_asset_group"
   | "completed";
 
@@ -134,6 +139,32 @@ export type GoogleAdsAllDataShoppingProcessingCursor =
       GoogleAdsAllDataShoppingStagingCursor;
   }>;
 
+export type GoogleAdsAllDataYoutubeProcessingCursor =
+  Readonly<{
+    version: 1;
+
+    phase:
+      "youtube_ad";
+
+    externalAccountId:
+      string;
+
+    dateWindowIndex:
+      number;
+
+    dateFrom:
+      string;
+
+    dateTo:
+      string;
+
+    expectedRowStartIndex:
+      number;
+
+    phaseCursor:
+      GoogleAdsAllDataYoutubeStagingCursor;
+  }>;
+
 export type GoogleAdsAllDataPerformanceMaxProcessingCursor =
   Readonly<{
     version: 1;
@@ -165,6 +196,7 @@ export type GoogleAdsAllDataProcessingCheckpointCursor =
   | GoogleAdsAllDataDemandGenProcessingCursor
   | GoogleAdsAllDataDisplayProcessingCursor
   | GoogleAdsAllDataShoppingProcessingCursor
+  | GoogleAdsAllDataYoutubeProcessingCursor
   | GoogleAdsAllDataPerformanceMaxProcessingCursor;
 
 export type GoogleAdsAllDataProcessingCheckpointErrorCode =
@@ -573,6 +605,7 @@ function validateCursor(
     | GoogleAdsAllDataDemandGenProcessingCursor
     | GoogleAdsAllDataDisplayProcessingCursor
     | GoogleAdsAllDataShoppingProcessingCursor
+    | GoogleAdsAllDataYoutubeProcessingCursor
     | GoogleAdsAllDataPerformanceMaxProcessingCursor;
 }
 
@@ -792,6 +825,8 @@ export function readGoogleAdsAllDataProcessingCheckpoint(
       "display_ad" &&
     phase !==
       "shopping_ad" &&
+    phase !==
+      "youtube_ad" &&
     phase !==
       "performance_max_asset_group" &&
     phase !==

@@ -275,6 +275,7 @@ begin
        'demand_gen_ad',
        'display_ad',
        'shopping_ad',
+       'youtube_ad',
        'performance_max_asset_group',
        'completed'
      )
@@ -306,32 +307,64 @@ begin
             '["display"]'::jsonb,
             '["performance_max"]'::jsonb,
             '["shopping"]'::jsonb,
+            '["youtube"]'::jsonb,
             '["search","demand_gen"]'::jsonb,
             '["search","display"]'::jsonb,
             '["search","performance_max"]'::jsonb,
             '["search","shopping"]'::jsonb,
+            '["search","youtube"]'::jsonb,
             '["demand_gen","display"]'::jsonb,
             '["demand_gen","performance_max"]'::jsonb,
             '["demand_gen","shopping"]'::jsonb,
+            '["demand_gen","youtube"]'::jsonb,
             '["display","performance_max"]'::jsonb,
             '["display","shopping"]'::jsonb,
+            '["display","youtube"]'::jsonb,
             '["performance_max","shopping"]'::jsonb,
+            '["performance_max","youtube"]'::jsonb,
+            '["shopping","youtube"]'::jsonb,
             '["search","demand_gen","display"]'::jsonb,
             '["search","demand_gen","performance_max"]'::jsonb,
             '["search","demand_gen","shopping"]'::jsonb,
+            '["search","demand_gen","youtube"]'::jsonb,
             '["search","display","performance_max"]'::jsonb,
             '["search","display","shopping"]'::jsonb,
+            '["search","display","youtube"]'::jsonb,
             '["search","performance_max","shopping"]'::jsonb,
+            '["search","performance_max","youtube"]'::jsonb,
+            '["search","shopping","youtube"]'::jsonb,
             '["demand_gen","display","performance_max"]'::jsonb,
             '["demand_gen","display","shopping"]'::jsonb,
+            '["demand_gen","display","youtube"]'::jsonb,
             '["demand_gen","performance_max","shopping"]'::jsonb,
+            '["demand_gen","performance_max","youtube"]'::jsonb,
+            '["demand_gen","shopping","youtube"]'::jsonb,
             '["display","performance_max","shopping"]'::jsonb,
+            '["display","performance_max","youtube"]'::jsonb,
+            '["display","shopping","youtube"]'::jsonb,
+            '["performance_max","shopping","youtube"]'::jsonb,
             '["search","demand_gen","display","performance_max"]'::jsonb,
             '["search","demand_gen","display","shopping"]'::jsonb,
+            '["search","demand_gen","display","youtube"]'::jsonb,
             '["search","demand_gen","performance_max","shopping"]'::jsonb,
+            '["search","demand_gen","performance_max","youtube"]'::jsonb,
+            '["search","demand_gen","shopping","youtube"]'::jsonb,
             '["search","display","performance_max","shopping"]'::jsonb,
+            '["search","display","performance_max","youtube"]'::jsonb,
+            '["search","display","shopping","youtube"]'::jsonb,
+            '["search","performance_max","shopping","youtube"]'::jsonb,
             '["demand_gen","display","performance_max","shopping"]'::jsonb,
-            '["search","demand_gen","display","performance_max","shopping"]'::jsonb
+            '["demand_gen","display","performance_max","youtube"]'::jsonb,
+            '["demand_gen","display","shopping","youtube"]'::jsonb,
+            '["demand_gen","performance_max","shopping","youtube"]'::jsonb,
+            '["display","performance_max","shopping","youtube"]'::jsonb,
+            '["search","demand_gen","display","performance_max","shopping"]'::jsonb,
+            '["search","demand_gen","display","performance_max","youtube"]'::jsonb,
+            '["search","demand_gen","display","shopping","youtube"]'::jsonb,
+            '["search","demand_gen","performance_max","shopping","youtube"]'::jsonb,
+            '["search","display","performance_max","shopping","youtube"]'::jsonb,
+            '["demand_gen","display","performance_max","shopping","youtube"]'::jsonb,
+            '["search","demand_gen","display","performance_max","shopping","youtube"]'::jsonb
           )
        or v_product_index is null
        or v_product_index < 0
@@ -407,6 +440,7 @@ begin
       when 'demand_gen_ad' then 1
       when 'display_ad' then 1
       when 'shopping_ad' then 1
+      when 'youtube_ad' then 1
       when 'performance_max_asset_group' then 1
       when 'search_ad' then 2
       when 'completed' then 3
@@ -546,6 +580,7 @@ begin
       'demand_gen_ad',
       'display_ad',
       'shopping_ad',
+      'youtube_ad',
       'performance_max_asset_group'
     ) then
       if jsonb_typeof(
@@ -778,32 +813,64 @@ begin
               '["display"]'::jsonb,
               '["performance_max"]'::jsonb,
               '["shopping"]'::jsonb,
+              '["youtube"]'::jsonb,
               '["search","demand_gen"]'::jsonb,
               '["search","display"]'::jsonb,
               '["search","performance_max"]'::jsonb,
               '["search","shopping"]'::jsonb,
+              '["search","youtube"]'::jsonb,
               '["demand_gen","display"]'::jsonb,
               '["demand_gen","performance_max"]'::jsonb,
               '["demand_gen","shopping"]'::jsonb,
+              '["demand_gen","youtube"]'::jsonb,
               '["display","performance_max"]'::jsonb,
               '["display","shopping"]'::jsonb,
+              '["display","youtube"]'::jsonb,
               '["performance_max","shopping"]'::jsonb,
+              '["performance_max","youtube"]'::jsonb,
+              '["shopping","youtube"]'::jsonb,
               '["search","demand_gen","display"]'::jsonb,
               '["search","demand_gen","performance_max"]'::jsonb,
               '["search","demand_gen","shopping"]'::jsonb,
+              '["search","demand_gen","youtube"]'::jsonb,
               '["search","display","performance_max"]'::jsonb,
               '["search","display","shopping"]'::jsonb,
+              '["search","display","youtube"]'::jsonb,
               '["search","performance_max","shopping"]'::jsonb,
+              '["search","performance_max","youtube"]'::jsonb,
+              '["search","shopping","youtube"]'::jsonb,
               '["demand_gen","display","performance_max"]'::jsonb,
               '["demand_gen","display","shopping"]'::jsonb,
+              '["demand_gen","display","youtube"]'::jsonb,
               '["demand_gen","performance_max","shopping"]'::jsonb,
+              '["demand_gen","performance_max","youtube"]'::jsonb,
+              '["demand_gen","shopping","youtube"]'::jsonb,
               '["display","performance_max","shopping"]'::jsonb,
+              '["display","performance_max","youtube"]'::jsonb,
+              '["display","shopping","youtube"]'::jsonb,
+              '["performance_max","shopping","youtube"]'::jsonb,
               '["search","demand_gen","display","performance_max"]'::jsonb,
               '["search","demand_gen","display","shopping"]'::jsonb,
+              '["search","demand_gen","display","youtube"]'::jsonb,
               '["search","demand_gen","performance_max","shopping"]'::jsonb,
+              '["search","demand_gen","performance_max","youtube"]'::jsonb,
+              '["search","demand_gen","shopping","youtube"]'::jsonb,
               '["search","display","performance_max","shopping"]'::jsonb,
+              '["search","display","performance_max","youtube"]'::jsonb,
+              '["search","display","shopping","youtube"]'::jsonb,
+              '["search","performance_max","shopping","youtube"]'::jsonb,
               '["demand_gen","display","performance_max","shopping"]'::jsonb,
-              '["search","demand_gen","display","performance_max","shopping"]'::jsonb
+              '["demand_gen","display","performance_max","youtube"]'::jsonb,
+              '["demand_gen","display","shopping","youtube"]'::jsonb,
+              '["demand_gen","performance_max","shopping","youtube"]'::jsonb,
+              '["display","performance_max","shopping","youtube"]'::jsonb,
+              '["search","demand_gen","display","performance_max","shopping"]'::jsonb,
+              '["search","demand_gen","display","performance_max","youtube"]'::jsonb,
+              '["search","demand_gen","display","shopping","youtube"]'::jsonb,
+              '["search","demand_gen","performance_max","shopping","youtube"]'::jsonb,
+              '["search","display","performance_max","shopping","youtube"]'::jsonb,
+              '["demand_gen","display","performance_max","shopping","youtube"]'::jsonb,
+              '["search","demand_gen","display","performance_max","shopping","youtube"]'::jsonb
             )
          or v_existing_product_index is null
          or v_existing_product_index < 0
@@ -855,6 +922,7 @@ begin
         when 'demand_gen_ad' then 1
         when 'display_ad' then 1
         when 'shopping_ad' then 1
+        when 'youtube_ad' then 1
         when 'performance_max_asset_group' then 1
         when 'search_ad' then 2
         when 'completed' then 3

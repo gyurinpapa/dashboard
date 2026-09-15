@@ -130,8 +130,8 @@ const PROVIDER_PRODUCTS: Readonly<
     {
       key: "youtube",
       label: "YouTube",
-      description: "VIDEO 수집 런타임 준비 중",
-      state: "preparing" as const,
+      description: "VIDEO 광고 일별 성과",
+      state: "enabled" as const,
     },
   ]),
   meta_ads: Object.freeze([
