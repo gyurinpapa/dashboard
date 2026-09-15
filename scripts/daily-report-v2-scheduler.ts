@@ -45,6 +45,7 @@ async function main(
   const [
     scheduler,
     repository,
+    dailyScheduler,
   ] =
     await Promise.all([
       import(
@@ -53,46 +54,131 @@ async function main(
       import(
         "../src/lib/media-sync/daily-report-v2-scheduler-repository"
       ),
+      import(
+        "../src/lib/media-sync/naver-searchads-daily-scheduler"
+      ),
     ]);
 
   const dependencies =
     repository
       .createDailyReportV2SchedulerDatabaseDependencies();
 
-  const result =
-    await scheduler
-      .runDailyReportV2SchedulerOnce({
-        dependencies,
-      });
+  const now =
+    new Date();
 
-  console.log(
-    JSON.stringify({
-      scheduler:
-        CONTRACT,
-      enabled:
-        true,
-      timezone:
-        "Asia/Seoul",
-      targetDate:
-        result.targetDate,
-      candidateCount:
-        result.candidateCount,
-      reportId:
-        result.reportId,
-      connectionId:
-        result.connectionId,
-      provider:
-        result.provider,
-      date:
-        result.date,
-      jobId:
-        result.jobId,
-      action:
-        result.action,
-      status:
-        result.status,
-    }),
-  );
+  const targetDate =
+    dailyScheduler
+      .getPreviousCompletedSeoulCalendarDate(
+        now,
+      );
+
+  const candidates =
+    (
+      await dependencies
+        .listCandidates({
+          targetDate,
+        })
+    )
+      .slice()
+      .sort(
+        (
+          left,
+          right,
+        ) =>
+          left.reportId
+            .localeCompare(
+              right.reportId,
+            ),
+      );
+
+  if (
+    candidates.length ===
+      0
+  ) {
+    const result =
+      await scheduler
+        .runDailyReportV2SchedulerOnce({
+          targetDate,
+          dependencies,
+        });
+
+    console.log(
+      JSON.stringify({
+        scheduler:
+          CONTRACT,
+        enabled:
+          true,
+        timezone:
+          "Asia/Seoul",
+        targetDate:
+          result.targetDate,
+        candidateCount:
+          result.candidateCount,
+        reportId:
+          result.reportId,
+        connectionId:
+          result.connectionId,
+        provider:
+          result.provider,
+        date:
+          result.date,
+        jobId:
+          result.jobId,
+        action:
+          result.action,
+        status:
+          result.status,
+      }),
+    );
+
+    return;
+  }
+
+  for (
+    const candidate
+    of candidates
+  ) {
+    const result =
+      await scheduler
+        .runDailyReportV2SchedulerOnce({
+          targetDate,
+          reportId:
+            candidate.reportId,
+          dependencies,
+        });
+
+    console.log(
+      JSON.stringify({
+        scheduler:
+          CONTRACT,
+        enabled:
+          true,
+        timezone:
+          "Asia/Seoul",
+        targetDate:
+          result.targetDate,
+        candidateCount:
+          candidates.length,
+        scopedCandidateCount:
+          result.candidateCount,
+        reportId:
+          result.reportId ??
+          candidate.reportId,
+        connectionId:
+          result.connectionId,
+        provider:
+          result.provider,
+        date:
+          result.date,
+        jobId:
+          result.jobId,
+        action:
+          result.action,
+        status:
+          result.status,
+      }),
+    );
+  }
 }
 
 void main().catch(
