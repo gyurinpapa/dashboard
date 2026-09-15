@@ -16,6 +16,11 @@ import type {
 } from "./google-ads-display-ad-stats-collector";
 
 import type {
+  GoogleAdsShoppingAdStatsCollectorDependencies,
+  GoogleAdsShoppingAdStatsCollectorOptions,
+} from "./google-ads-shopping-ad-stats-collector";
+
+import type {
   GoogleAdsPerformanceMaxAssetGroupStatsCollectorDependencies,
   GoogleAdsPerformanceMaxAssetGroupStatsCollectorOptions,
 } from "./google-ads-performance-max-asset-group-stats-collector";
@@ -33,6 +38,13 @@ import {
   type GoogleAdsAllDataDisplayStagingOrchestratorDependencies,
   type GoogleAdsAllDataDisplayStagingOrchestratorResult,
 } from "./google-ads-all-data-display-staging-orchestrator";
+
+import {
+  runGoogleAdsAllDataShoppingStagingOrchestrator,
+  type GoogleAdsAllDataShoppingStagingCursor,
+  type GoogleAdsAllDataShoppingStagingOrchestratorDependencies,
+  type GoogleAdsAllDataShoppingStagingOrchestratorResult,
+} from "./google-ads-all-data-shopping-staging-orchestrator";
 
 import {
   runGoogleAdsAllDataPerformanceMaxStagingOrchestrator,
@@ -90,6 +102,9 @@ export type GoogleAdsAllDataProcessingOrchestratorDependencies =
     runDisplayStaging?:
       typeof runGoogleAdsAllDataDisplayStagingOrchestrator;
 
+    runShoppingStaging?:
+      typeof runGoogleAdsAllDataShoppingStagingOrchestrator;
+
     runPerformanceMaxStaging?:
       typeof runGoogleAdsAllDataPerformanceMaxStagingOrchestrator;
 
@@ -104,6 +119,9 @@ export type GoogleAdsAllDataProcessingOrchestratorDependencies =
 
     displayStagingDependencies?:
       GoogleAdsAllDataDisplayStagingOrchestratorDependencies;
+
+    shoppingStagingDependencies?:
+      GoogleAdsAllDataShoppingStagingOrchestratorDependencies;
 
     performanceMaxStagingDependencies?:
       GoogleAdsAllDataPerformanceMaxStagingOrchestratorDependencies;
@@ -130,6 +148,12 @@ export type GoogleAdsAllDataProcessingOrchestratorInput =
 
     displayCollectorOptions?:
       GoogleAdsDisplayAdStatsCollectorOptions;
+
+    shoppingCollectorDependencies?:
+      GoogleAdsShoppingAdStatsCollectorDependencies;
+
+    shoppingCollectorOptions?:
+      GoogleAdsShoppingAdStatsCollectorOptions;
 
     performanceMaxCollectorDependencies?:
       GoogleAdsPerformanceMaxAssetGroupStatsCollectorDependencies;
@@ -476,6 +500,163 @@ function normalizeDisplayStagingResult(
   });
 }
 
+function resolveShoppingPhaseCursor(
+  value:
+    unknown,
+): unknown {
+  if (
+    value ===
+      undefined ||
+    value ===
+      null
+  ) {
+    return undefined;
+  }
+
+  if (
+    !isPlainObject(
+      value,
+    ) ||
+    value.version !==
+      1 ||
+    value.phase !==
+      "shopping_ad" ||
+    !(
+      "phaseCursor" in
+        value
+    )
+  ) {
+    throw new GoogleAdsAllDataProductRoutingError(
+      "ROUTING_CONFLICT",
+      "Shopping processing requires a durable shopping_ad resume cursor.",
+    );
+  }
+
+  return value.phaseCursor;
+}
+
+function wrapShoppingCursor(
+  cursor:
+    GoogleAdsAllDataShoppingStagingCursor,
+) {
+  return Object.freeze({
+    version:
+      1 as const,
+
+    phase:
+      "shopping_ad" as const,
+
+    externalAccountId:
+      cursor.externalAccountId,
+
+    dateWindowIndex:
+      cursor.dateWindowIndex,
+
+    dateFrom:
+      cursor.dateFrom,
+
+    dateTo:
+      cursor.dateTo,
+
+    expectedRowStartIndex:
+      cursor.expectedRowStartIndex,
+
+    phaseCursor:
+      cursor,
+  });
+}
+
+function normalizeShoppingStagingResult(
+  result:
+    GoogleAdsAllDataShoppingStagingOrchestratorResult,
+): GoogleAdsAllDataProcessingStagingResult {
+  const nextPhase =
+    result.isComplete
+      ? null
+      : "shopping_ad" as const;
+
+  const rawCursor =
+    result.checkpoint.cursor;
+
+  if (
+    !result.isComplete &&
+    rawCursor ===
+      null
+  ) {
+    throw new GoogleAdsAllDataProductRoutingError(
+      "ROUTING_CONFLICT",
+      "A partial Shopping staging result lost its durable cursor.",
+    );
+  }
+
+  const cursor =
+    rawCursor ===
+      null
+      ? null
+      : wrapShoppingCursor(
+          rawCursor,
+        );
+
+  return Object.freeze({
+    jobId:
+      result.jobId,
+
+    dateWindowIndex:
+      result.dateWindowIndex,
+
+    phaseRun:
+      "shopping_ad" as const,
+
+    nextPhase,
+
+    rowStartIndex:
+      result.rowStartIndex,
+
+    nextRowIndex:
+      result.nextRowIndex,
+
+    runCanonicalRowCount:
+      result.runCanonicalRowCount,
+
+    status:
+      result.status,
+
+    isComplete:
+      result.isComplete,
+
+    apiPageExecutionCount:
+      1 as const,
+
+    stageResult:
+      result,
+
+    checkpoint:
+      Object.freeze({
+        version:
+          1 as const,
+
+        phaseRun:
+          "shopping_ad" as const,
+
+        nextPhase,
+
+        nextRowIndex:
+          result.checkpoint.nextRowIndex,
+
+        totalRows:
+          result.checkpoint.totalRows,
+
+        failedRows:
+          0 as const,
+
+        complete:
+          result.checkpoint.complete,
+
+        cursor,
+      }),
+  });
+}
+
 function resolvePerformanceMaxPhaseCursor(
   value:
     unknown,
@@ -666,13 +847,15 @@ export async function runGoogleAdsAllDataProcessingOrchestrator(
         currentRouting.productFamily !==
           "display" &&
         currentRouting.productFamily !==
-          "performance_max"
+          "performance_max" &&
+        currentRouting.productFamily !==
+          "shopping"
       )
     )
   ) {
     throw new GoogleAdsAllDataProductRoutingError(
       "ROUTING_CONFLICT",
-      "Google Ads ALL-DATA processing requires an incomplete SEARCH, DEMAND_GEN, DISPLAY, or PERFORMANCE_MAX durable product route.",
+      "Google Ads ALL-DATA processing requires an incomplete SEARCH, DEMAND_GEN, DISPLAY, PERFORMANCE_MAX, or SHOPPING durable product route.",
     );
   }
 
@@ -789,6 +972,53 @@ export async function runGoogleAdsAllDataProcessingOrchestrator(
     staging =
       normalizeDisplayStagingResult(
         displayResult,
+      );
+  } else if (
+    productFamily ===
+      "shopping"
+  ) {
+    const runShoppingStaging =
+      dependencies.runShoppingStaging ??
+      runGoogleAdsAllDataShoppingStagingOrchestrator;
+
+    const shoppingResult =
+      await runShoppingStaging(
+        {
+          job:
+            input.job,
+
+          accessToken:
+            input.accessToken,
+
+          developerToken:
+            input.developerToken,
+
+          loginCustomerId:
+            input.loginCustomerId,
+
+          dateWindowIndex:
+            input.dateWindowIndex,
+
+          cursor:
+            resolveShoppingPhaseCursor(
+              input.cursor,
+            ),
+
+          collectorDependencies:
+            input.shoppingCollectorDependencies,
+
+          collectorOptions:
+            input.shoppingCollectorOptions,
+
+          stagingRepositoryDependencies:
+            input.stagingRepositoryDependencies,
+        },
+        dependencies.shoppingStagingDependencies,
+      );
+
+    staging =
+      normalizeShoppingStagingResult(
+        shoppingResult,
       );
   } else if (
     productFamily ===

@@ -12,6 +12,7 @@ export const GOOGLE_ADS_CAMPAIGN_TYPES = [
   "DEMAND_GEN",
   "DISPLAY",
   "PERFORMANCE_MAX",
+  "SHOPPING",
 ] as const;
 
 export type GoogleAdsCampaignType =
@@ -22,6 +23,7 @@ export const GOOGLE_ADS_PRODUCT_FAMILIES = [
   "demand_gen",
   "display",
   "performance_max",
+  "shopping",
 ] as const;
 
 export type GoogleAdsProductFamily =
@@ -172,6 +174,18 @@ const CAMPAIGN_CONTRACTS:
         authoritativeGrain:
           "asset_group",
       }),
+
+    SHOPPING:
+      Object.freeze({
+        provider:
+          GOOGLE_ADS_PROVIDER,
+        campaignType:
+          "SHOPPING",
+        productFamily:
+          "shopping",
+        authoritativeGrain:
+          "ad",
+      }),
   });
 
 function normalizeRequiredString(
@@ -231,7 +245,8 @@ function isGoogleAdsCampaignType(
     value === "SEARCH" ||
     value === "DEMAND_GEN" ||
     value === "DISPLAY" ||
-    value === "PERFORMANCE_MAX"
+    value === "PERFORMANCE_MAX" ||
+    value === "SHOPPING"
   );
 }
 

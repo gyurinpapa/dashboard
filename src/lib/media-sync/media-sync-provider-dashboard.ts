@@ -124,8 +124,8 @@ const PROVIDER_PRODUCTS: Readonly<
     {
       key: "shopping",
       label: "쇼핑",
-      description: "SHOPPING 수집 계약 준비 중",
-      state: "preparing" as const,
+      description: "SHOPPING 광고 일별 성과",
+      state: "enabled" as const,
     },
     {
       key: "youtube",

@@ -274,6 +274,7 @@ begin
        'search_ad',
        'demand_gen_ad',
        'display_ad',
+       'shopping_ad',
        'performance_max_asset_group',
        'completed'
      )
@@ -304,17 +305,33 @@ begin
             '["demand_gen"]'::jsonb,
             '["display"]'::jsonb,
             '["performance_max"]'::jsonb,
+            '["shopping"]'::jsonb,
             '["search","demand_gen"]'::jsonb,
             '["search","display"]'::jsonb,
             '["search","performance_max"]'::jsonb,
+            '["search","shopping"]'::jsonb,
             '["demand_gen","display"]'::jsonb,
             '["demand_gen","performance_max"]'::jsonb,
+            '["demand_gen","shopping"]'::jsonb,
             '["display","performance_max"]'::jsonb,
+            '["display","shopping"]'::jsonb,
+            '["performance_max","shopping"]'::jsonb,
             '["search","demand_gen","display"]'::jsonb,
             '["search","demand_gen","performance_max"]'::jsonb,
+            '["search","demand_gen","shopping"]'::jsonb,
             '["search","display","performance_max"]'::jsonb,
+            '["search","display","shopping"]'::jsonb,
+            '["search","performance_max","shopping"]'::jsonb,
             '["demand_gen","display","performance_max"]'::jsonb,
-            '["search","demand_gen","display","performance_max"]'::jsonb
+            '["demand_gen","display","shopping"]'::jsonb,
+            '["demand_gen","performance_max","shopping"]'::jsonb,
+            '["display","performance_max","shopping"]'::jsonb,
+            '["search","demand_gen","display","performance_max"]'::jsonb,
+            '["search","demand_gen","display","shopping"]'::jsonb,
+            '["search","demand_gen","performance_max","shopping"]'::jsonb,
+            '["search","display","performance_max","shopping"]'::jsonb,
+            '["demand_gen","display","performance_max","shopping"]'::jsonb,
+            '["search","demand_gen","display","performance_max","shopping"]'::jsonb
           )
        or v_product_index is null
        or v_product_index < 0
@@ -389,6 +406,7 @@ begin
       when 'keyword' then 1
       when 'demand_gen_ad' then 1
       when 'display_ad' then 1
+      when 'shopping_ad' then 1
       when 'performance_max_asset_group' then 1
       when 'search_ad' then 2
       when 'completed' then 3
@@ -527,6 +545,7 @@ begin
     elsif v_phase in (
       'demand_gen_ad',
       'display_ad',
+      'shopping_ad',
       'performance_max_asset_group'
     ) then
       if jsonb_typeof(
@@ -758,17 +777,33 @@ begin
               '["demand_gen"]'::jsonb,
               '["display"]'::jsonb,
               '["performance_max"]'::jsonb,
+              '["shopping"]'::jsonb,
               '["search","demand_gen"]'::jsonb,
               '["search","display"]'::jsonb,
               '["search","performance_max"]'::jsonb,
+              '["search","shopping"]'::jsonb,
               '["demand_gen","display"]'::jsonb,
               '["demand_gen","performance_max"]'::jsonb,
+              '["demand_gen","shopping"]'::jsonb,
               '["display","performance_max"]'::jsonb,
+              '["display","shopping"]'::jsonb,
+              '["performance_max","shopping"]'::jsonb,
               '["search","demand_gen","display"]'::jsonb,
               '["search","demand_gen","performance_max"]'::jsonb,
+              '["search","demand_gen","shopping"]'::jsonb,
               '["search","display","performance_max"]'::jsonb,
+              '["search","display","shopping"]'::jsonb,
+              '["search","performance_max","shopping"]'::jsonb,
               '["demand_gen","display","performance_max"]'::jsonb,
-              '["search","demand_gen","display","performance_max"]'::jsonb
+              '["demand_gen","display","shopping"]'::jsonb,
+              '["demand_gen","performance_max","shopping"]'::jsonb,
+              '["display","performance_max","shopping"]'::jsonb,
+              '["search","demand_gen","display","performance_max"]'::jsonb,
+              '["search","demand_gen","display","shopping"]'::jsonb,
+              '["search","demand_gen","performance_max","shopping"]'::jsonb,
+              '["search","display","performance_max","shopping"]'::jsonb,
+              '["demand_gen","display","performance_max","shopping"]'::jsonb,
+              '["search","demand_gen","display","performance_max","shopping"]'::jsonb
             )
          or v_existing_product_index is null
          or v_existing_product_index < 0
@@ -819,6 +854,7 @@ begin
         when 'keyword' then 1
         when 'demand_gen_ad' then 1
         when 'display_ad' then 1
+        when 'shopping_ad' then 1
         when 'performance_max_asset_group' then 1
         when 'search_ad' then 2
         when 'completed' then 3

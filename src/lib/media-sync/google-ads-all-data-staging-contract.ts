@@ -14,6 +14,9 @@ import {
   GOOGLE_ADS_DISPLAY_AD_ROW_LEVEL_REASON,
 } from "./google-ads-display-ad-canonical-row";
 import {
+  GOOGLE_ADS_SHOPPING_AD_ROW_LEVEL_REASON,
+} from "./google-ads-shopping-ad-canonical-row";
+import {
   GOOGLE_ADS_PERFORMANCE_MAX_ASSET_GROUP_ROW_LEVEL_REASON,
 } from "./google-ads-performance-max-asset-group-canonical-row";
 import {
@@ -228,7 +231,7 @@ function buildExpectedAuthorityMeta(
   entityType:
     GoogleAdsAllDataSearchEntityType,
   entityId: string,
-  campaignType: "SEARCH" | "DEMAND_GEN" | "DISPLAY" | "PERFORMANCE_MAX" = "SEARCH",
+  campaignType: "SEARCH" | "DEMAND_GEN" | "DISPLAY" | "PERFORMANCE_MAX" | "SHOPPING" = "SEARCH",
 ) {
   return buildGoogleAdsAuthorityProviderMeta({
     campaignType:
@@ -283,7 +286,7 @@ function withAuthorityMeta(
   entityId: string,
   requireExisting:
     boolean,
-  campaignType: "SEARCH" | "DEMAND_GEN" | "DISPLAY" | "PERFORMANCE_MAX" = "SEARCH",
+  campaignType: "SEARCH" | "DEMAND_GEN" | "DISPLAY" | "PERFORMANCE_MAX" | "SHOPPING" = "SEARCH",
 ): EtrylueNormalizedMediaRow {
   const existing =
     requireProviderMeta(
@@ -526,7 +529,8 @@ function prepareSearchRow(
     (
       base.reason === GOOGLE_ADS_SEARCH_AD_ROW_LEVEL_REASON ||
       base.reason === GOOGLE_ADS_DEMAND_GEN_AD_ROW_LEVEL_REASON ||
-      base.reason === GOOGLE_ADS_DISPLAY_AD_ROW_LEVEL_REASON
+      base.reason === GOOGLE_ADS_DISPLAY_AD_ROW_LEVEL_REASON ||
+      base.reason === GOOGLE_ADS_SHOPPING_AD_ROW_LEVEL_REASON
     )
   ) {
     const creativeId =
@@ -567,7 +571,9 @@ function prepareSearchRow(
         ? "DEMAND_GEN"
         : base.reason === GOOGLE_ADS_DISPLAY_AD_ROW_LEVEL_REASON
           ? "DISPLAY"
-          : "SEARCH",
+          : base.reason === GOOGLE_ADS_SHOPPING_AD_ROW_LEVEL_REASON
+            ? "SHOPPING"
+            : "SEARCH",
     );
   }
 
@@ -681,7 +687,8 @@ export function buildGoogleAdsAllDataSearchStagingRowKey(
     (
       providerMeta.product_family === SEARCH_PRODUCT_FAMILY ||
       providerMeta.product_family === "demand_gen" ||
-      providerMeta.product_family === "display"
+      providerMeta.product_family === "display" ||
+      providerMeta.product_family === "shopping"
     ) &&
     providerMeta.authoritative_grain ===
       SEARCH_AUTHORITATIVE_GRAIN;
@@ -738,6 +745,10 @@ export function buildGoogleAdsAllDataSearchStagingRowKey(
       (
         providerMeta.product_family === "display" &&
         row.row_level_reason === GOOGLE_ADS_DISPLAY_AD_ROW_LEVEL_REASON
+      ) ||
+      (
+        providerMeta.product_family === "shopping" &&
+        row.row_level_reason === GOOGLE_ADS_SHOPPING_AD_ROW_LEVEL_REASON
       )
     )
   ) {
