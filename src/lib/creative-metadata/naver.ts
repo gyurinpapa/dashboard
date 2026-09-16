@@ -13,7 +13,13 @@ export function normalizeNaver(input: {
   const raw=record(input.ad);
   if (id(raw.nccAdId) !== identity.entityId || id(raw.customerId) !== identity.externalAccountId)
     return {ok:false,reason:"SCOPE_MISMATCH"};
-  const basic=record(record(raw.ad).basic);
+  const ad=record(raw.ad);
+  // NAVER's documented TEXT_45 payload stores text directly under ad.
+  // Preserve existing nested payloads; never mix layouts or infer an unknown type.
+  // TEXT_45 has no documented image field, so only its text fields are selected.
+  const basic=record(raw.type==='TEXT_45'&&(ad.basic===undefined||ad.basic===null)
+    ? {headline:ad.headline,description:ad.description}
+    : ad.basic);
   const headline=text(basic.headline), description=text(basic.description);
   const image=safeImageUrl(basic.image,"naver_searchad");
   const issues: string[]=[];
