@@ -1,6 +1,7 @@
 // app/components/ReportTemplate.tsx
 "use client";
 
+import type {CreativeMetadataSource} from './creative-metadata/CreativeMetadata';
 import type { ReportTheme } from "@/src/lib/report/theme";
 import dynamic from "next/dynamic";
 import {
@@ -291,6 +292,7 @@ const EMPTY_STRING = "";
 const EMPTY_SET = new Set<string>();
 
 type Props = {
+  creativeMetadataSource?: CreativeMetadataSource;
   rows: any[];
   isLoading?: boolean;
   creativesMap?: Record<string, string>;
@@ -3224,6 +3226,7 @@ const HeaderSurface = memo(function HeaderSurface({
 });
 
 export default function ReportTemplate({
+  creativeMetadataSource,
   rows,
   isLoading,
   creativesMap,
@@ -5125,6 +5128,7 @@ export default function ReportTemplate({
                               {...({ reportType } as any)}
                               rows={summaryFilteredRowsWithCreatives as any[]}
                               activeSlide={creativeSlide as 0 | 1}
+                              metadataSource={exportMode ? undefined : creativeMetadataSource}
                             />
                           </div>
                         </div>
@@ -5216,6 +5220,7 @@ export default function ReportTemplate({
                               {...({ reportType } as any)}
                               rows={summaryFilteredRowsWithCreatives as any[]}
                               activeSlide={creativeDetailSlide}
+                              metadataSource={exportMode ? undefined : creativeMetadataSource}
                             />
                           </div>
                         </div>

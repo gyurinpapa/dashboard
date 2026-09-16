@@ -1,6 +1,7 @@
 // app/reports/[id]/page.tsx
 "use client";
 
+import dynamic from 'next/dynamic';
 import {
   memo,
   useCallback,
@@ -49,6 +50,8 @@ import {
 import { extractAdvertiserName } from "@/src/lib/report/utils";
 
 import ReportTemplate from "../../components/ReportTemplate";
+
+const CreativeMetadataAdmin=dynamic(()=>import('@/app/components/creative-metadata/CreativeMetadataAdmin'),{ssr:false});
 
 const CSV_BUCKET = "report_uploads";
 const MAX_MEDIA_SYNC_DATE_WINDOW_DAYS = 31;
@@ -7181,6 +7184,9 @@ export default function ReportDetailPage() {
         />
       </div>
 
+      {process.env.NEXT_PUBLIC_CREATIVE_METADATA_UI_ENABLED==='1' && isApiReport && (
+        <CreativeMetadataAdmin key={reportId} reportId={reportId} rows={deferredDisplayRows} fetcher={authFetch}/>
+      )}
       <div className="mt-3 text-xs leading-5 text-[#bbb8d4]">
         서버 rows(실제):{" "}
         {rowsMetaLoaded ? formatInt(rowsMetaCount) : "-"}개{" "}

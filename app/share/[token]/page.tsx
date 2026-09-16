@@ -483,6 +483,7 @@ export default function ShareReportPage() {
 
   return (
     <MemoReportTemplate
+      creativeMetadataSource={{kind:"share",token}}
       rows={deferredRows}
       isLoading={false}
       creativesMap={deferredCreativesMap}

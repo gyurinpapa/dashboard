@@ -1,5 +1,7 @@
 "use client";
 
+import {CreativeMetadataProvider,CreativeMetadataPanel,CreativeMetadataLabel} from '../creative-metadata/CreativeMetadata';
+import type {CreativeMetadataSource} from '../creative-metadata/CreativeMetadata';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
@@ -32,6 +34,7 @@ type ReportMode = "commerce" | "traffic" | "db_acquisition";
 type CreativeSlideIndex = 0 | 1;
 
 type Props = {
+  metadataSource?: CreativeMetadataSource;
   reportType?: ReportMode;
   rows: any[];
   /**
@@ -485,7 +488,7 @@ const CreativeTableRow = memo(function CreativeTableRow({
             className="cursor-default truncate underline decoration-dotted underline-offset-4"
             title={row.creative || "(empty)"}
           >
-            {row.creative || "(empty)"}
+            {<CreativeMetadataLabel name={row.creative || "(empty)"}/>}
           </span>
 
           {!!row.imagePath ? (
@@ -666,6 +669,7 @@ export default function CreativeSection({
   reportType,
   rows,
   activeSlide,
+  metadataSource,
 }: Props) {
   const reportMode = resolveReportMode(reportType);
   const tableMeta = getCreativeTableMeta(reportMode);
@@ -1635,7 +1639,9 @@ export default function CreativeSection({
   ]);
 
   return (
+    <CreativeMetadataProvider source={metadataSource} rows={rows} kind="creative">
     <section className="mt-2 space-y-6">
+      <CreativeMetadataPanel name={selectedCreative?.creative ?? null}/>
       {shouldRenderRankingSlide ? (
         <div
           className={isRankingSlideActive ? "space-y-4" : "hidden"}
@@ -1808,5 +1814,6 @@ export default function CreativeSection({
         />
       ) : null}
     </section>
+    </CreativeMetadataProvider>
   );
 }

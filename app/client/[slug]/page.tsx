@@ -202,6 +202,7 @@ export default function ClientSlugReportPage() {
 
   const [loading, setLoading] = useState(true);
   const [rowsLoading, setRowsLoading] = useState(false);
+  const [creativeShareToken,setCreativeShareToken] = useState("");
   const [report, setReport] = useState<ReportRow | null>(null);
   const [rows, setRows] = useState<any[]>([]);
   const [creativesMap, setCreativesMap] = useState<Record<string, string>>({});
@@ -360,6 +361,7 @@ export default function ClientSlugReportPage() {
     setRowsLoading(false);
     setError("");
     setReport(null);
+    setCreativeShareToken("");
     setRows([]);
     setCreativesMap({});
     setFallbackRowsRange(null);
@@ -414,6 +416,7 @@ export default function ClientSlugReportPage() {
             ? lightShareJson.creativesMap
             : {};
 
+        setCreativeShareToken(shareToken);
         setReport(lightReport);
         setRows([]);
         setLoading(false);
@@ -515,6 +518,7 @@ export default function ClientSlugReportPage() {
 
   return (
     <MemoReportTemplate
+      creativeMetadataSource={creativeShareToken?{kind:"share",token:creativeShareToken}:undefined}
       rows={deferredRows}
       isLoading={false}
       creativesMap={deferredCreativesMap}

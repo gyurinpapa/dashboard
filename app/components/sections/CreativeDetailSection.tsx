@@ -1,5 +1,7 @@
 "use client";
 
+import {CreativeMetadataProvider,CreativeMetadataPanel,CreativeMetadataLabel} from '../creative-metadata/CreativeMetadata';
+import type {CreativeMetadataSource} from '../creative-metadata/CreativeMetadata';
 import {
   memo,
   useCallback,
@@ -741,6 +743,7 @@ function buildCreativeDetailInsight(args: {
 type CreativeDetailSlideIndex = 0 | 1 | 2;
 
 type Props = {
+  metadataSource?: CreativeMetadataSource;
   reportType?: ReportMode;
   rows: Row[];
   /**
@@ -842,7 +845,7 @@ const CreativeOptionButton = memo(function CreativeOptionButton({
                   active ? "text-slate-900" : "text-slate-800",
                 ].join(" ")}
               >
-                {creative}
+                <CreativeMetadataLabel name={creative}/>
               </div>
               <div className="mt-1 text-[11px] text-slate-500">
                 {previewUrl ? "이미지 미리보기 가능" : "이미지 미리보기 없음"}
@@ -1298,7 +1301,7 @@ const CompactCreativeSelector = memo(function CompactCreativeSelector({
                         : "border-[#CFC2B1]/55 bg-white text-[#27364A] hover:border-[#7FA6C4]/75 hover:bg-[#B7D7E3]/10",
                     ].join(" ")}
                   >
-                    {creative}
+                    <CreativeMetadataLabel name={creative}/>
                   </button>
                 );
               })}
@@ -1314,6 +1317,7 @@ export default function CreativeDetailSection({
   reportType,
   rows,
   activeSlide,
+  metadataSource,
 }: Props) {
   const reportMode = resolveReportMode(reportType);
 
@@ -1540,7 +1544,9 @@ export default function CreativeDetailSection({
         : "다음 운영 액션(클릭 · 전환 · ROAS)";
 
   return (
+    <CreativeMetadataProvider source={metadataSource} rows={rows} kind="detail">
     <section className="w-full min-w-0">
+      <CreativeMetadataPanel name={selectedCreative}/>
       <div
         data-detail-overview-height-match={activeSlide === 0 ? "true" : undefined}
         className="mt-4 grid grid-cols-1 items-start gap-6 lg:grid-cols-[360px_minmax(0,1fr)]"
@@ -1605,7 +1611,7 @@ export default function CreativeDetailSection({
                   Current Selection
                 </div>
                 <div className="mt-1 truncate text-xs font-medium text-slate-700">
-                  {selectedCreative || "선택 없음"}
+                  {<CreativeMetadataLabel name={selectedCreative || "선택 없음"}/>}
                 </div>
               </div>
 
@@ -1804,5 +1810,6 @@ export default function CreativeDetailSection({
         }
       `}</style>
     </section>
+    </CreativeMetadataProvider>
   );
 }
