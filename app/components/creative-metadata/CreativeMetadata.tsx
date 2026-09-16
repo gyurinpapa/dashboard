@@ -1,4 +1,5 @@
 'use client';
+import {refreshErrorMessage} from '../../../src/lib/creative-metadata/refresh-response';
 import {createContext,useContext,useMemo,useState,useEffect,useRef} from 'react';
 import type {ReactNode} from 'react';
 import {groupReferences,refKey,validateViewEntry} from '@/src/lib/creative-metadata/view';
@@ -46,7 +47,7 @@ function Panel({ctx,name,group}:{ctx:State;name:string;group:DisplayGroup}){
   const fetcher=ctx.source.kind==='report'?ctx.source.fetcher:fetch;
   const options={method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(batch),cache:'no-store' as const,credentials:'same-origin' as const,referrerPolicy:'no-referrer' as const,signal:controller.signal};
   try{
-   if(refresh){const response=await fetcher(base+'/refresh',options);const result=await response.json();if(!response.ok||result.status==='disabled'||result.status==='rejected')throw Error('권한 또는 연결 상태를 확인해 주세요.');
+   if(refresh){const response=await fetcher(base+'/refresh',options);const result=await response.json();const message=refreshErrorMessage(response.status,result);if(message)throw Error(message);
     if(typeof result.retryAt==='number')setRetryAt(result.retryAt);
     if(['busy','cooldown','budget'].includes(result.status)){setMessage('다른 조회가 진행 중이거나 잠시 대기해야 합니다.');return;}
    }

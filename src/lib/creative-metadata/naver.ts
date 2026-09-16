@@ -23,7 +23,9 @@ export function normalizeNaver(input: {
   const headline=text(basic.headline), description=text(basic.description);
   const image=safeImageUrl(basic.image,"naver_searchad");
   const issues: string[]=[];
-  if (basic.image && !image) issues.push("IMAGE_URL_UNSUPPORTED");
+  // An unsupported optional image is never published. Valid text can stand alone.
+  // Keep malformed text and image-only failures fail-closed.
+  if (basic.image && !image && !headline && !description) issues.push("IMAGE_URL_UNSUPPORTED");
   if (basic.headline && !headline) issues.push("HEADLINE_INVALID");
   if (basic.description && !description) issues.push("DESCRIPTION_INVALID");
   const assets: Asset[]=image ? [{assetId:`naver-ad-image:${identity.entityId}`,kind:"image",role:"main",

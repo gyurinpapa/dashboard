@@ -6,9 +6,10 @@ import {parseViewRequest} from '../view';
 import type {ViewRequest} from '../view';
 import {readViewMetadata} from './view-service';
 import type {ViewPorts,ViewState} from './view-service';
-import {Session,fail} from './http';
+import {Session,Failure,fail} from './http';
 import {digest} from '../cache/contract';
 import {runExistingCachedMetadata} from './cached-server';
+import {refreshHttpResponse} from '../refresh-response';
 import {recordRefreshDiagnostic} from './refresh-diagnostics';
 
 type Source={kind:'share';token:string}|{kind:'report';id:string};
@@ -86,8 +87,12 @@ export async function handleMetadataRequest(request:Request,source:Source,refres
   const maxHttpRequests=Math.min(40,input.provider==='naver_searchad'?input.entityIds.length:1+2*input.entityIds.length);
   const result=await runExistingCachedMetadata(request,{enabled:true,reportId:source.id,connectionId:state.binding.connectionId,maxHttpRequests,requestTimeoutMs:3000,totalTimeoutMs:Math.min(25000,session.remaining()),signal:session.signal},input.entityIds);
   recordRefreshDiagnostic(result,line=>console.info(line));
-  return json({status:result.status,hasMore:result.hasMore,retryAt:result.retryAt},result.status==='rejected'?403:200);
- }catch{return json({status:'unavailable',entries:[]},403);}finally{session.close();}
+  const response=refreshHttpResponse(result);
+  return json(response.body,response.http);
+ }catch(error){
+  if(refresh&&error instanceof Failure&&error.code==='TIMEOUT')return json({status:'rejected',problem:'TIMEOUT'},504);
+  return json({status:'unavailable',entries:[]},403);
+ }finally{session.close();}
 }
 
 /** Authenticated editor discovery. Reads at most 201 current snapshot rows; never calls a provider. */
