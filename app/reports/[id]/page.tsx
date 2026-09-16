@@ -3397,6 +3397,25 @@ export default function ReportDetailPage() {
     return getPeriodLabel(reportPeriod);
   }, [reportPeriod]);
 
+  // Daily-sync footer describes server rows, not the saved preview/filter period.
+  const footerPeriodLabel = useMemo(() => {
+    if (!dailySyncManagedByCanonical) return previewPeriodLabel;
+    if (!rowsMetaLoaded || rowsMetaCount <= 0) return "";
+
+    const startDate = normalizeYmdInput(rowsMetaMinDate);
+    const endDate = normalizeYmdInput(rowsMetaMaxDate);
+    if (!startDate || !endDate || startDate > endDate) return "";
+
+    return getPeriodLabel({ preset: "custom", startDate, endDate });
+  }, [
+    dailySyncManagedByCanonical,
+    previewPeriodLabel,
+    rowsMetaLoaded,
+    rowsMetaCount,
+    rowsMetaMinDate,
+    rowsMetaMaxDate,
+  ]);
+
   const displaySharePath = useMemo(() => {
     const clientPath = buildClientSharePathFromSlug(advertiserPublicSlug);
 
@@ -7171,7 +7190,7 @@ export default function ReportDetailPage() {
         <span className="text-[#aaa6c9]">·</span> 유형:{" "}
         {effectivePreviewReportTypeName || "-"}{" "}
         <span className="text-[#aaa6c9]">·</span> 기준 기간:{" "}
-        {previewPeriodLabel || "-"} <span className="text-[#aaa6c9]">·</span> 데이터 방식:{" "}
+        {footerPeriodLabel || "-"} <span className="text-[#aaa6c9]">·</span> 데이터 방식:{" "}
         {getReportDataSourceLabel(reportDataSourceKind)}
       </div>
 
