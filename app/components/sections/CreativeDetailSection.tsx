@@ -1,6 +1,6 @@
 "use client";
 
-import {CreativeMetadataProvider,CreativeMetadataPanel,CreativeMetadataLabel} from '../creative-metadata/CreativeMetadata';
+import {CachedCreativeProvider as CreativeMetadataProvider, CachedCreativeLabel as CreativeMetadataLabel, CachedCreativePreview, CachedCreativeThumbnail, CachedCreativeHint} from '../creative-metadata/CachedCreativePreview';
 import type {CreativeMetadataSource} from '../creative-metadata/CreativeMetadata';
 import {
   memo,
@@ -818,21 +818,7 @@ const CreativeOptionButton = memo(function CreativeOptionButton({
       <div className="flex items-start gap-3 px-3.5 py-3.5">
         <div className="shrink-0">
           <div className="overflow-hidden rounded-[10px] border border-slate-200 bg-slate-50">
-            {previewUrl ? (
-              <img
-                src={previewUrl}
-                alt={creative}
-                className="h-12 w-12 object-cover"
-                loading="lazy"
-                decoding="async"
-              />
-            ) : (
-              <div className="flex h-12 w-12 items-center justify-center text-[10px] font-semibold text-slate-400">
-                NO
-                <br />
-                IMG
-              </div>
-            )}
+            <CachedCreativeThumbnail name={creative} fallbackUrl={previewUrl}/>
           </div>
         </div>
 
@@ -848,7 +834,7 @@ const CreativeOptionButton = memo(function CreativeOptionButton({
                 <CreativeMetadataLabel name={creative}/>
               </div>
               <div className="mt-1 text-[11px] text-slate-500">
-                {previewUrl ? "이미지 미리보기 가능" : "이미지 미리보기 없음"}
+                <CachedCreativeHint name={creative} fallbackUrl={previewUrl}/>
               </div>
             </div>
 
@@ -1195,7 +1181,7 @@ const CompactCreativeSelector = memo(function CompactCreativeSelector({
         </span>
 
         <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[#27364A]">
-          {selectedCreative ?? "선택 없음"}
+          <CreativeMetadataLabel name={selectedCreative ?? "선택 없음"}/>
         </span>
 
         <svg
@@ -1220,7 +1206,7 @@ const CompactCreativeSelector = memo(function CompactCreativeSelector({
       {open ? (
         <div className="absolute right-0 top-full z-[70] mt-2 w-full rounded-[16px] border border-[var(--nature-border-blue)] bg-white p-3 shadow-[0_14px_34px_rgba(39,54,74,0.16)]">
           {hoveredCreative ? (
-            <div className="pointer-events-none absolute right-[calc(100%+12px)] top-0 hidden w-[280px] lg:block">
+            <div className="absolute right-[calc(100%+12px)] top-0 hidden w-[280px] lg:block">
               <div className="overflow-hidden rounded-[16px] border border-[var(--nature-border-blue)] bg-white p-3 shadow-[0_14px_34px_rgba(39,54,74,0.16)]">
                 <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#7A8794]">
                   Creative Preview
@@ -1230,22 +1216,11 @@ const CompactCreativeSelector = memo(function CompactCreativeSelector({
                   className="mt-1 truncate text-sm font-semibold text-[#27364A]"
                   title={hoveredCreative}
                 >
-                  {hoveredCreative}
+                  <CreativeMetadataLabel name={hoveredCreative}/>
                 </div>
 
                 <div className="mt-3 flex h-[220px] items-center justify-center overflow-hidden rounded-[12px] border border-slate-200 bg-slate-50/60">
-                  {hoveredPreviewUrl ? (
-                    <img
-                      src={hoveredPreviewUrl}
-                      alt={`${hoveredCreative} preview`}
-                      className="max-h-full max-w-full object-contain"
-                      decoding="async"
-                    />
-                  ) : (
-                    <div className="px-4 text-center text-xs leading-5 text-slate-400">
-                      미리보기 이미지 없음
-                    </div>
-                  )}
+                  <CachedCreativePreview name={hoveredCreative} fallbackUrl={hoveredPreviewUrl}/>
                 </div>
               </div>
             </div>
@@ -1289,9 +1264,9 @@ const CompactCreativeSelector = memo(function CompactCreativeSelector({
                     role="option"
                     aria-selected={active}
                     onMouseEnter={() => setHoveredCreative(creative)}
-                    onMouseLeave={() => setHoveredCreative(null)}
+                    onMouseLeave={() => { /* Keep the preview reachable until another choice or closing. */ }}
                     onFocus={() => setHoveredCreative(creative)}
-                    onBlur={() => setHoveredCreative(null)}
+                    onBlur={() => { /* Focus can move to the preview video link. */ }}
                     onClick={() => handleSelect(creative)}
                     title={creative}
                     className={[
@@ -1546,7 +1521,6 @@ export default function CreativeDetailSection({
   return (
     <CreativeMetadataProvider source={metadataSource} rows={rows} kind="detail">
     <section className="w-full min-w-0">
-      <CreativeMetadataPanel name={selectedCreative}/>
       <div
         data-detail-overview-height-match={activeSlide === 0 ? "true" : undefined}
         className="mt-4 grid grid-cols-1 items-start gap-6 lg:grid-cols-[360px_minmax(0,1fr)]"
@@ -1691,9 +1665,7 @@ export default function CreativeDetailSection({
                   <div className="min-w-0">
                     <h3 className="text-base font-semibold">{insight.title}</h3>
                     <div className="mt-1 truncate text-xs text-gray-500">
-                      {selectedCreative
-                        ? `소재: ${selectedCreative}`
-                        : "소재를 선택하세요"}
+                      {selectedCreative ? <>소재: <CreativeMetadataLabel name={selectedCreative}/></> : "소재를 선택하세요"}
                     </div>
                   </div>
 
@@ -1742,19 +1714,7 @@ export default function CreativeDetailSection({
                   </div>
 
                   <div className="mt-3 overflow-hidden rounded-[12px] border border-gray-200 bg-white">
-                    {selectedPreviewUrl ? (
-                      <img
-                        src={selectedPreviewUrl}
-                        alt={selectedCreative ?? "creative preview"}
-                        className="h-[240px] w-full object-contain bg-white"
-                        loading="eager"
-                        decoding="async"
-                      />
-                    ) : (
-                      <div className="flex h-[240px] items-center justify-center text-sm text-gray-400">
-                        미리보기 이미지 없음
-                      </div>
-                    )}
+                    <CachedCreativePreview name={selectedCreative} fallbackUrl={selectedPreviewUrl}/>
                   </div>
 
                   {sideThumbs.length > 0 && (

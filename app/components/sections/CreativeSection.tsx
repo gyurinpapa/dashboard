@@ -1,6 +1,6 @@
 "use client";
 
-import {CreativeMetadataProvider,CreativeMetadataPanel,CreativeMetadataLabel} from '../creative-metadata/CreativeMetadata';
+import {CachedCreativeProvider as CreativeMetadataProvider, CachedCreativeLabel as CreativeMetadataLabel, CachedCreativePreview, CachedCreativeHint} from '../creative-metadata/CachedCreativePreview';
 import type {CreativeMetadataSource} from '../creative-metadata/CreativeMetadata';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -95,7 +95,7 @@ const SORT_LABEL: Record<SortKey, string> = {
 };
 
 const PREVIEW_CARD_WIDTH = 288;
-const PREVIEW_OPEN_DELAY = 40;
+const PREVIEW_OPEN_DELAY = 0;
 const PREVIEW_CLOSE_DELAY = 140;
 
 function resolveReportMode(reportType?: ReportMode): ReportMode {
@@ -323,8 +323,8 @@ function computePreviewPosition(anchorEl: HTMLElement | null) {
   const viewportWidth = window.innerWidth;
   const viewportHeight = window.innerHeight;
   const gap = 12;
-  const cardWidth = PREVIEW_CARD_WIDTH;
-  const estimatedCardHeight = 280;
+  const cardWidth = Math.min(PREVIEW_CARD_WIDTH, Math.max(160, viewportWidth - 24));
+  const estimatedCardHeight = Math.min(460, viewportHeight - 24);
 
   const enoughRight = rect.right + gap + cardWidth <= viewportWidth - 12;
   const enoughLeft = rect.left - gap - cardWidth >= 12;
@@ -479,6 +479,9 @@ const CreativeTableRow = memo(function CreativeTableRow({
           className="inline-flex max-w-[260px] items-center gap-2"
           onMouseEnter={(e) => onPreviewEnter(row, e.currentTarget as HTMLElement)}
           onMouseLeave={onPreviewLeave}
+          tabIndex={0}
+          onFocus={(e) => onPreviewEnter(row, e.currentTarget)}
+          onBlur={onPreviewLeave}
         >
           <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-[8px] border border-[#CFC2B1]/45 bg-[#F3E4D2]/20 px-2 text-[11px] font-semibold text-[#7A8794]">
             AD
@@ -491,15 +494,9 @@ const CreativeTableRow = memo(function CreativeTableRow({
             {<CreativeMetadataLabel name={row.creative || "(empty)"}/>}
           </span>
 
-          {!!row.imagePath ? (
-            <span className="shrink-0 rounded-full bg-[#B7D7E3]/14 px-2 py-0.5 text-[10px] font-semibold text-[#5F87A3]">
-              Preview
-            </span>
-          ) : (
-            <span className="shrink-0 rounded-full bg-[#F3E4D2]/22 px-2 py-0.5 text-[10px] font-semibold text-[#7A8794]">
-              No image
-            </span>
-          )}
+          <span className="shrink-0 rounded-full bg-[#B7D7E3]/14 px-2 py-0.5 text-[10px] font-semibold text-[#5F87A3]">
+            <CachedCreativeHint name={row.creative} fallbackUrl={row.imagePath}/>
+          </span>
         </div>
       </td>
 
@@ -602,10 +599,14 @@ const CreativePreviewOverlay = memo(function CreativePreviewOverlay({
       style={{
         top: previewPos.top,
         left: previewPos.left,
-        width: PREVIEW_CARD_WIDTH,
+        width: `min(${PREVIEW_CARD_WIDTH}px, calc(100vw - 24px))`,
+        maxHeight: "calc(100vh - 24px)",
+        overflowY: "auto",
       }}
       onMouseEnter={keepPreviewOpen}
       onMouseLeave={closePreview}
+      onFocus={keepPreviewOpen}
+      onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) closePreview(); }}
     >
       <div className="overflow-hidden rounded-[18px] border border-[var(--nature-border-blue)] bg-white shadow-[0_6px_18px_rgba(127,166,196,0.10)]">
         <div className="border-b border-[#CFC2B1]/40 px-4 py-3">
@@ -616,50 +617,17 @@ const CreativePreviewOverlay = memo(function CreativePreviewOverlay({
             className="mt-1 line-clamp-2 text-sm font-semibold text-[#27364A]"
             title={hoveredCreative.creative || "(empty)"}
           >
-            {hoveredCreative.creative || "(empty)"}
+            <CreativeMetadataLabel name={hoveredCreative.creative || "(empty)"}/>
           </div>
         </div>
 
         <div className="bg-[#F3E4D2]/25 p-3">
           <div className="overflow-hidden rounded-[12px] border border-[#CFC2B1]/45 bg-white">
-            {hasPreviewImage ? (
-              <img
-                src={hoveredCreative.imagePath}
-                alt={hoveredCreative.creative || "creative preview"}
-                className="block h-52 w-full object-contain bg-white"
-                loading="lazy"
-                onError={() => onImageError(previewKey)}
-              />
-            ) : (
-              <div className="flex h-52 items-center justify-center bg-[#F3E4D2]/25 px-4 text-center">
-                <div>
-                  <div className="text-sm font-semibold text-[#7A8794]">
-                    미리보기 없음
-                  </div>
-                  <div className="mt-1 text-xs text-[#9A8F81]">
-                    이미지 URL이 없거나 로딩에 실패했습니다.
-                  </div>
-                </div>
-              </div>
-            )}
+            <CachedCreativePreview name={hoveredCreative.creative} fallbackUrl={hasPreviewImage ? hoveredCreative.imagePath : ''}/>
           </div>
         </div>
 
-        <div className="flex items-center justify-between px-4 py-3 text-[11px] text-[#7A8794]">
-          <span className="truncate">
-            {hasPreviewImage ? "이미지 미리보기" : "Fallback preview"}
-          </span>
-          <span
-            className={[
-              "rounded-full px-2 py-0.5 font-semibold",
-              hasPreviewImage
-                ? "bg-[#B7D7E3]/14 text-[#5F87A3]"
-                : "bg-[#F3E4D2]/22 text-[#7A8794]",
-            ].join(" ")}
-          >
-            {hasPreviewImage ? "IMAGE" : "EMPTY"}
-          </span>
-        </div>
+
       </div>
     </div>
   );
@@ -1641,7 +1609,6 @@ export default function CreativeSection({
   return (
     <CreativeMetadataProvider source={metadataSource} rows={rows} kind="creative">
     <section className="mt-2 space-y-6">
-      <CreativeMetadataPanel name={selectedCreative?.creative ?? null}/>
       {shouldRenderRankingSlide ? (
         <div
           className={isRankingSlideActive ? "space-y-4" : "hidden"}
@@ -1691,7 +1658,7 @@ export default function CreativeSection({
             }
             right={
               <span className="inline-flex max-w-[280px] items-center truncate rounded-full border border-[#CFC2B1] bg-[#F3E4D2]/25 px-3 py-1 text-[11px] font-medium text-[#6F7B86]">
-                {tableBadge}
+                <CreativeMetadataLabel name={tableBadge}/>
               </span>
             }
           />
@@ -1701,7 +1668,7 @@ export default function CreativeSection({
               선택한 정렬 기준으로 Top50 소재가 표시됩니다.
             </div>
             <div className="text-xs text-[#9A8F81]">
-              소재명에 마우스를 올리면 이미지 미리보기가 나타납니다.
+              소재명에 마우스를 올리면 문구·이미지·영상 미리보기가 나타납니다.
             </div>
           </div>
 
