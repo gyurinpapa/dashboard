@@ -8,17 +8,19 @@ import {cacheKeys,readyMetadata,TTL_MS} from './contract';
 import type {CacheStore,Claim} from './contract';
 
 export type CachedResult=Readonly<{status:'disabled'|'ready'|'partial'|'busy'|'cooldown'|'budget'|'rejected'|'no_targets';
- problem:ServerProblem|null;entries:readonly Metadata[];counts:Counts;cacheHits:number;pendingTargets:number;hasMore:boolean;retryAt:number|null}>;
+ problem:ServerProblem|null;entries:readonly Metadata[];counts:Counts;cacheHits:number;pendingTargets:number;hasMore:boolean;retryAt:number|null;
+ publication:Readonly<{ready:number;partial:number;notFound:number;unsupported:number;unavailable:number;invalidReady:number;noDisplayContent:number;imageUrlUnsupported:number;headlineInvalid:number;descriptionInvalid:number}>}>;
 const zero:Counts={totalHttpRequests:0,oauthRequests:0,metadataRequests:0};
 /** No waiting followers, polling loop, automatic retry, direct-provider fallback or performance writes. */
 export async function runCachedServerMetadata(input:ServerInput,ports:Ports,store:CacheStore):Promise<CachedResult>{
  let session:Session|undefined,counts=zero,hasMore=false,cacheHits=0,pendingTargets=0;
+ const publication={ready:0,partial:0,notFound:0,unsupported:0,unavailable:0,invalidReady:0,noDisplayContent:0,imageUrlUnsupported:0,headlineInvalid:0,descriptionInvalid:0};
  const validUntil=new Map<string,number>();
  const result=(status:CachedResult['status'],entries:readonly Metadata[]=[],problem:ServerProblem|null=null,retryAt:number|null=null):CachedResult=>{
   const now=Date.now();const valid=entries.filter(e=>(validUntil.get(identityKey(e.identity))??Infinity)>now&&readyMetadata(e,e.identity,now));
   const expired=entries.length-valid.length;
   return Object.freeze({status:status==='ready'&&expired?'partial':status,problem,entries:Object.freeze(valid),counts,cacheHits,
-   pendingTargets:pendingTargets+expired,hasMore,retryAt});
+   pendingTargets:pendingTargets+expired,hasMore,retryAt,publication:Object.freeze({...publication})});
  };
  if(input.enabled!==true)return result('disabled');
  try{
@@ -59,9 +61,20 @@ export async function runCachedServerMetadata(input:ServerInput,ports:Ports,stor
   if(!await session.run(s=>ports.revalidate(chosen.stamp,s)))fail('STALE_CONTEXT');
   const accepted:{key:string;metadata:Metadata}[]=[];
   for(const entry of fetched.collection?.entries??[]){
+   switch(entry.metadata.status){
+    case 'ready':publication.ready++;break;
+    case 'partial':publication.partial++;break;
+    case 'not_found':publication.notFound++;break;
+    case 'unsupported':publication.unsupported++;break;
+    case 'unavailable':publication.unavailable++;break;
+   }
+   if(entry.metadata.issues.includes('NO_DISPLAY_CONTENT'))publication.noDisplayContent++;
+   if(entry.metadata.issues.includes('IMAGE_URL_UNSUPPORTED'))publication.imageUrlUnsupported++;
+   if(entry.metadata.issues.includes('HEADLINE_INVALID'))publication.headlineInvalid++;
+   if(entry.metadata.issues.includes('DESCRIPTION_INVALID'))publication.descriptionInvalid++;
    const index=identities.findIndex(i=>identityKey(i)===identityKey(entry.identity));const key=keyset.keys[index];
    if(!key||!missing.includes(key)||accepted.some(e=>e.key===key))fail('INVALID_CONTEXT');
-   if(entry.publishable){const metadata=readyMetadata(entry.metadata,expected.get(key)!,Date.now());if(metadata)accepted.push({key,metadata});}
+   if(entry.publishable){const metadata=readyMetadata(entry.metadata,expected.get(key)!,Date.now());if(metadata)accepted.push({key,metadata});else publication.invalidReady++;}
   }
   const complete=fetched.status==='completed'&&accepted.length===missing.length;
   const outcome=fetched.problem==='RATE_LIMITED'?'rate_limited':complete?'success':'failure';

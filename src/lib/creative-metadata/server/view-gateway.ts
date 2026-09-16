@@ -9,6 +9,7 @@ import type {ViewPorts,ViewState} from './view-service';
 import {Session,fail} from './http';
 import {digest} from '../cache/contract';
 import {runExistingCachedMetadata} from './cached-server';
+import {recordRefreshDiagnostic} from './refresh-diagnostics';
 
 type Source={kind:'share';token:string}|{kind:'report';id:string};
 type Dependencies={client:SupabaseClient;authorize:(request:Request,id:string)=>Promise<{workspaceId:string;advertiserId:string;userId:string;role:string;canRunSync:boolean}>;googleConfig:()=>{clientId:string;clientSecret:string;developerToken:string;redirectUri:string}};
@@ -84,6 +85,7 @@ export async function handleMetadataRequest(request:Request,source:Source,refres
   if(source.kind!=='report')fail('ACCESS_DENIED');
   const maxHttpRequests=Math.min(40,input.provider==='naver_searchad'?input.entityIds.length:1+2*input.entityIds.length);
   const result=await runExistingCachedMetadata(request,{enabled:true,reportId:source.id,connectionId:state.binding.connectionId,maxHttpRequests,requestTimeoutMs:3000,totalTimeoutMs:Math.min(25000,session.remaining()),signal:session.signal},input.entityIds);
+  recordRefreshDiagnostic(result,line=>console.info(line));
   return json({status:result.status,hasMore:result.hasMore,retryAt:result.retryAt},result.status==='rejected'?403:200);
  }catch{return json({status:'unavailable',entries:[]},403);}finally{session.close();}
 }
