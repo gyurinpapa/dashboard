@@ -16,6 +16,8 @@ declare
   refresh_before timestamptz;
   cached jsonb;
   found_count integer;
+  due_count integer;
+  effective_requests integer;
   state text;
   token uuid;
   retry timestamptz;
@@ -84,6 +86,22 @@ begin
     and cache_key = any(p_keys)
     and expires_at > refresh_before;
 
+  due_count := cardinality(p_keys) - found_count;
+
+  -- Reserve only the provider-call budget proportional to keys that are
+  -- actually missing or due for refresh. For the current collectors this is
+  -- exact: Naver uses N requests, Google uses 1 + 2N requests.
+  effective_requests := case
+    when due_count <= 0 then 0
+    else greatest(
+      1,
+      ceil(
+        (p_max_requests::numeric * due_count::numeric) /
+        cardinality(p_keys)::numeric
+      )::integer
+    )
+  end;
+
   if found_count = cardinality(p_keys) then
     state := 'hit';
   elsif a.lease_until > n then
@@ -98,7 +116,7 @@ begin
       a.reserved_requests := 0;
     end if;
 
-    if a.reserved_requests + p_max_requests > 120 then
+    if a.reserved_requests + effective_requests > 120 then
       state := 'budget';
       retry := a.window_start + interval '1 hour';
     else
@@ -111,7 +129,7 @@ begin
           lease_until = deadline,
           lease_keys = p_keys,
           window_start = a.window_start,
-          reserved_requests = a.reserved_requests + p_max_requests
+          reserved_requests = a.reserved_requests + effective_requests
       where account_key = p_account_key;
     end if;
   end if;
