@@ -45,13 +45,27 @@ export function createViewPorts(request:Request,source:Source,input:ViewRequest,
  }
  async function identities(state:ViewState,input:ViewRequest,signal:AbortSignal):Promise<readonly Identity[]>{
   const b=state.binding,result:Identity[]=[];const reportId=JSON.parse(state.stamp)[0] as string;
-  // One representative canonical row per requested ID; bounded 20 IDs, no history scan loop.
-  for(const id of input.entityIds){
+  // Shared cache reads only: at most four scoped SELECTs in flight per invocation.
+  // Keep editor/refresh reads serial. Do not parallelize authorization or snapshot checks.
+  const width=source.kind==='share'?4:1;
+  for(let offset=0;offset<input.entityIds.length;offset+=width){
    if(signal.aborted)fail('ABORTED');
-   const {data,error}=await sb.from('report_rows').select('row').eq('report_id',reportId).eq('workspace_id',b.workspaceId).eq('advertiser_id',b.advertiserId).eq('ingestion_id',state.ingestionId)
-    .eq('row->>provider',b.provider).eq('row->>external_account_id',b.externalAccountId).eq('row->>external_creative_id',id).eq('row->>row_level','creative').eq('row->provider_meta->>entity_type','ad').order('row_index').limit(1).abortSignal(signal);
-   if(error||!Array.isArray(data))fail('DEPENDENCY_ERROR');
-   const identity=data[0]&&identityForRow(b,data[0].row);if(identity&&identity.entityId===id)result.push(identity);
+   const batch=await Promise.allSettled(input.entityIds.slice(offset,offset+width).map(async id=>{
+    if(signal.aborted)fail('ABORTED');
+    const {data,error}=await sb.from('report_rows').select('row').eq('report_id',reportId).eq('workspace_id',b.workspaceId).eq('advertiser_id',b.advertiserId).eq('ingestion_id',state.ingestionId)
+     .eq('row->>provider',b.provider).eq('row->>external_account_id',b.externalAccountId).eq('row->>external_creative_id',id).eq('row->>row_level','creative').eq('row->provider_meta->>entity_type','ad').order('row_index').limit(1).abortSignal(signal);
+    if(signal.aborted)fail('ABORTED');
+    if(error||!Array.isArray(data))fail('DEPENDENCY_ERROR');
+    const identity=data[0]&&identityForRow(b,data[0].row);
+    return identity&&identity.entityId===id?identity:null;
+   }));
+   if(signal.aborted)fail('ABORTED');
+   // Settle the bounded wave before inspecting failures; never start another wave on error.
+   // allSettled preserves input order even when individual reads finish out of order.
+   for(const entry of batch){
+    if(entry.status==='rejected')throw entry.reason;
+    if(entry.value)result.push(entry.value);
+   }
   }
   return result;
  }
