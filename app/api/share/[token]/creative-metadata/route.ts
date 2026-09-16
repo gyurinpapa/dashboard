@@ -1,6 +1,5 @@
 import {handleMetadataRequest} from '@/src/lib/creative-metadata/server/view-gateway';
 export const runtime='nodejs';
-export const preferredRegion='hnd1';
 export const dynamic='force-dynamic';
 export const maxDuration=40;
 export async function POST(request:Request,ctx:{params:Promise<{token:string}>}){

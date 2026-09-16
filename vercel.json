@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "app/api/share/\\[token\\]/creative-metadata/route.ts": {
+      "regions": [
+        "hnd1"
+      ]
+    }
+  }
+}
