@@ -5,6 +5,11 @@
       "regions": [
         "hnd1"
       ]
+    },
+    "app/api/reports/\\[id\\]/creative-metadata/refresh/route.ts": {
+      "regions": [
+        "hnd1"
+      ]
     }
   }
 }
