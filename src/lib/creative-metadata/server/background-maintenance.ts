@@ -6,6 +6,7 @@ import {
   isMediaConnectionWorkspaceRole,
   resolveMediaConnectionPermissions,
   resolveTrueMasterStatus,
+  type MediaConnectionWorkspaceRole,
 } from '../../media-sync/media-connection-access-policy';
 import { decryptNaverSearchAdsCredentials } from '../../media-sync/connection-credentials';
 import { decryptGoogleAdsCredentials } from '../../media-sync/google-ads-credentials';
@@ -114,7 +115,7 @@ async function resolveBackgroundAccess(input: {
       masterMemberships.length > 0,
   });
 
-  let role: Access['role'] = 'master';
+  let role: MediaConnectionWorkspaceRole = 'master';
 
   if (!isTrueMaster) {
     const { data: membership, error: membershipError } = await sb
