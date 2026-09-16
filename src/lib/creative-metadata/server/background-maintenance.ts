@@ -1,5 +1,3 @@
-import 'server-only';
-
 import { getSupabaseAdmin } from '../../supabase/admin';
 import {
   ONLY_TRUE_MASTER_EMAIL,
@@ -18,7 +16,7 @@ import type { CachedResult } from '../cache/coordinator';
 import type { Scope } from '../contract';
 import type { Access, Ports } from './service';
 import { createReadOnlyDatabasePorts } from './database';
-import { createSupabaseReader } from './existing-server';
+import type { DatabaseDependencies, ReadQuery } from './database';
 import { createSupabaseDueCacheStore } from './background-cache-store';
 import { fail } from './http';
 
@@ -354,6 +352,97 @@ async function discoverTargets(
   } as const;
 }
 
+function createBackgroundReader(
+  client: ReturnType<typeof getSupabaseAdmin>,
+  entityIds: readonly string[],
+): DatabaseDependencies['read'] {
+  if (
+    !entityIds.length ||
+    entityIds.length > MAX_TARGETS ||
+    new Set(entityIds).size !== entityIds.length
+  ) {
+    fail('INVALID_INPUT');
+  }
+
+  return async (
+    query: ReadQuery,
+    signal: AbortSignal,
+  ) => {
+    if (signal.aborted) fail('ABORTED');
+
+    if (query.table === 'report_rows') {
+      const rows: Record<string, unknown>[] = [];
+
+      for (const id of entityIds) {
+        let builder = client
+          .from(query.table)
+          .select(query.columns);
+
+        for (const [key, value] of Object.entries(query.equals)) {
+          builder = builder.eq(key, value);
+        }
+
+        builder = builder.eq(
+          'row->>external_creative_id',
+          id,
+        );
+
+        if (query.order) {
+          builder = builder.order(
+            query.order,
+            { ascending: true },
+          );
+        }
+
+        const { data, error } = await builder
+          .limit(1)
+          .abortSignal(signal);
+
+        if (signal.aborted) fail('ABORTED');
+        if (error || !Array.isArray(data)) {
+          fail('DEPENDENCY_ERROR');
+        }
+
+        rows.push(
+          ...(data as unknown as Record<string, unknown>[]),
+        );
+      }
+
+      return rows.sort(
+        (a, b) =>
+          Number(a.row_index) -
+          Number(b.row_index),
+      );
+    }
+
+    let builder = client
+      .from(query.table)
+      .select(query.columns);
+
+    for (const [key, value] of Object.entries(query.equals)) {
+      builder = builder.eq(key, value);
+    }
+
+    if (query.order) {
+      builder = builder.order(
+        query.order,
+        { ascending: true },
+      );
+    }
+
+    const { data, error } = await builder
+      .limit(query.limit)
+      .abortSignal(signal);
+
+    if (signal.aborted) fail('ABORTED');
+    if (error || !Array.isArray(data)) {
+      fail('DEPENDENCY_ERROR');
+    }
+
+    return data;
+  };
+}
+
 function createBackgroundPorts(
   scope: Awaited<ReturnType<typeof loadMaintenanceScope>>,
   entityIds: readonly string[],
@@ -367,7 +456,7 @@ function createBackgroundPorts(
       }
       return scope.access;
     },
-    read: createSupabaseReader(scope.sb, entityIds),
+    read: createBackgroundReader(scope.sb, entityIds),
     googleConfig: () => readGoogleAdsOAuthConfig(),
     decryptNaver: decryptNaverSearchAdsCredentials,
     decryptGoogle: decryptGoogleAdsCredentials,

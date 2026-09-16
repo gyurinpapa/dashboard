@@ -15,6 +15,9 @@ import {
 import {
   continueDailyReportV2AfterMediaJob,
 } from "../src/lib/media-sync/daily-report-v2-immediate-continuation";
+import {
+  runCreativeMetadataMaintenancePage,
+} from "../src/lib/creative-metadata/server/background-maintenance";
 
 const WORKER_NAME =
   "media-sync-worker";
@@ -27,6 +30,12 @@ const GOOGLE_ADS_ENABLED_ENV =
 
 const NAVER_FACT_PROJECTION_ENABLED_ENV =
   "MEDIA_SYNC_WORKER_NAVER_FACT_PROJECTION_ENABLED";
+
+const CREATIVE_METADATA_AUTO_MAINTENANCE_ENABLED_ENV =
+  "CREATIVE_METADATA_AUTO_MAINTENANCE_ENABLED";
+
+const CREATIVE_METADATA_POST_SYNC_REFRESH_AHEAD_MS =
+  5 * 60 * 1_000;
 
 const LOOP_ENV =
   "MEDIA_SYNC_WORKER_LOOP";
@@ -201,6 +210,7 @@ type WorkerRuntimeOptions = {
   materializationBatchSize?: number;
 
   enableNaverFactProjection: boolean;
+  enableCreativeMetadataAutoMaintenance: boolean;
 };
 
 type SafeErrorLog = {
@@ -541,6 +551,11 @@ function readRuntimeOptions():
       NAVER_FACT_PROJECTION_ENABLED_ENV,
     );
 
+  const enableCreativeMetadataAutoMaintenance =
+    readBooleanEnv(
+      CREATIVE_METADATA_AUTO_MAINTENANCE_ENABLED_ENV,
+    );
+
   const exitWhenIdle =
     readBooleanEnv(IDLE_EXIT_ENV);
 
@@ -565,6 +580,7 @@ function readRuntimeOptions():
     enableAuthoritativeOverlap,
     materializationBatchSize,
     enableNaverFactProjection,
+    enableCreativeMetadataAutoMaintenance,
   };
 }
 
@@ -758,6 +774,12 @@ function logWorkerStart(
   console.log(
     `[${WORKER_NAME}] materialization batch size: ${
       formatOptionalLimit(options.materializationBatchSize)
+    }`,
+  );
+
+  console.log(
+    `[${WORKER_NAME}] creative metadata auto maintenance enabled: ${
+      options.enableCreativeMetadataAutoMaintenance
     }`,
   );
 
@@ -1153,6 +1175,96 @@ async function continueDailyReportV2ForCompletedJob(
   }
 }
 
+async function maintainCreativeMetadataForCompletedJob(
+  options: WorkerRuntimeOptions,
+  input:
+    Readonly<{
+      jobId:
+        string;
+      reportId:
+        string;
+      connectionId:
+        string;
+    }>,
+): Promise<void> {
+  if (
+    !options.enableCreativeMetadataAutoMaintenance
+  ) {
+    return;
+  }
+
+  try {
+    const maintenance =
+      await runCreativeMetadataMaintenancePage({
+        reportId:
+          input.reportId,
+        connectionId:
+          input.connectionId,
+        sourceJobId:
+          input.jobId,
+        refreshAheadMs:
+          CREATIVE_METADATA_POST_SYNC_REFRESH_AHEAD_MS,
+      });
+
+    console.log(
+      JSON.stringify({
+        worker:
+          WORKER_NAME,
+        continuation:
+          "creative_metadata_post_sync",
+        reportId:
+          input.reportId,
+        sourceJobId:
+          input.jobId,
+        connectionId:
+          input.connectionId,
+        ok:
+          true,
+        status:
+          maintenance.status,
+        provider:
+          maintenance.provider,
+        ingestionId:
+          maintenance.ingestionId,
+        selectedTargets:
+          maintenance.selectedTargets,
+        lastRowIndex:
+          maintenance.lastRowIndex,
+        hasMoreRows:
+          maintenance.hasMoreRows,
+        cacheStatus:
+          maintenance.cacheResult?.status ??
+          null,
+      }),
+    );
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        worker:
+          WORKER_NAME,
+        continuation:
+          "creative_metadata_post_sync",
+        reportId:
+          input.reportId,
+        sourceJobId:
+          input.jobId,
+        connectionId:
+          input.connectionId,
+        ok:
+          false,
+        name:
+          error instanceof Error
+            ? error.name
+            : "UnknownError",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Creative metadata post-sync maintenance failed.",
+      }),
+    );
+  }
+}
+
 async function processSingleJob(
   options: WorkerRuntimeOptions,
 ): Promise<boolean> {
@@ -1338,6 +1450,18 @@ async function processSingleJob(
         result.reportId,
     });
 
+    await maintainCreativeMetadataForCompletedJob(
+      options,
+      {
+        jobId:
+          result.jobId,
+        reportId:
+          result.reportId,
+        connectionId:
+          result.connectionId,
+      },
+    );
+
     return true;
   }
 
@@ -1370,6 +1494,18 @@ async function processSingleJob(
     reportId:
       result.reportId,
   });
+
+  await maintainCreativeMetadataForCompletedJob(
+    options,
+    {
+      jobId:
+        result.jobId,
+      reportId:
+        result.reportId,
+      connectionId:
+        result.connectionId,
+    },
+  );
 
   return true;
 }
