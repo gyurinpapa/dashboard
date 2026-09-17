@@ -26,6 +26,15 @@ const READY_CACHE_TTL_MS = 60 * 60 * 1_000;
 const FAILED_CACHE_TTL_MS = 5 * 60 * 1_000;
 const MAX_CACHE_ENTRIES = 4;
 
+const REUSABLE_REPORT_LIST_MAX_ATTEMPTS =
+  3;
+
+const REUSABLE_REPORT_LIST_RETRY_MS =
+  500;
+
+const REUSABLE_REPORT_DOWNLOAD_RETRY_MS =
+  250;
+
 const AD_COLUMN_COUNT = 14;
 const AD_CONVERSION_COLUMN_COUNT = 13;
 
@@ -391,7 +400,7 @@ async function loadReportText(input: {
   reusableReports: readonly NaverSearchAdsStatReportRecord[];
   signal?: AbortSignal;
 }): Promise<string> {
-  let ready =
+  const ready =
     await waitForReadyReport(input);
 
   if (
@@ -412,64 +421,178 @@ async function loadReportText(input: {
   try {
     const downloaded =
       await downloadNaverSearchAdsStatReport({
-        credentials: input.credentials,
+        credentials:
+          input.credentials,
         downloadUrl:
           ready.report.downloadUrl,
       });
 
     return downloaded.text;
   } catch (error) {
-    assertNotAborted(input.signal);
+    assertNotAborted(
+      input.signal,
+    );
 
+    /*
+     * A transient read failure on an already-built reusable report
+     * must not be interpreted as "report missing".
+     *
+     * Refresh the same report metadata once and retry its download.
+     * If that read path still fails, propagate the failure so the
+     * caller may use the existing exact /stats fallback. Do not
+     * create a replacement StatReport merely because a reusable
+     * report read failed.
+     */
     if (!ready.reused) {
       throw error;
     }
   }
 
-  ready = await waitForReadyReport({
-    ...input,
-    reusableReports: [],
-  });
+  await delay(
+    REUSABLE_REPORT_DOWNLOAD_RETRY_MS,
+    undefined,
+    input.signal
+      ? {
+          signal:
+            input.signal,
+        }
+      : undefined,
+  );
+
+  assertNotAborted(
+    input.signal,
+  );
+
+  const refreshedReport =
+    await getNaverSearchAdsStatReport({
+      credentials:
+        input.credentials,
+      reportJobId:
+        ready.report.reportJobId,
+    });
+
+  const expectedStatDate =
+    input.statDate.replaceAll(
+      "-",
+      "",
+    );
+
+  if (
+    refreshedReport.reportType !==
+      input.reportType ||
+    refreshedReport.statDate !==
+      expectedStatDate
+  ) {
+    throw new NaverSearchAdsStatReportDailyMetricsError(
+      "REPORT_FAILED",
+      "The refreshed reusable Naver StatReport no longer matches the requested report type/date.",
+    );
+  }
 
   if (
     isTerminalEmptyConversionReport(
-      ready.report,
+      refreshedReport,
     )
   ) {
     return "";
   }
 
-  if (!ready.report.downloadUrl) {
+  if (!refreshedReport.downloadUrl) {
     throw new NaverSearchAdsStatReportDailyMetricsError(
       "REPORT_FAILED",
-      `Naver Search Ads ${input.reportType} StatReport is missing its download URL.`,
+      `The refreshed reusable Naver Search Ads ${input.reportType} StatReport is missing its download URL.`,
     );
   }
 
-  const downloaded =
+  const retriedDownload =
     await downloadNaverSearchAdsStatReport({
-      credentials: input.credentials,
+      credentials:
+        input.credentials,
       downloadUrl:
-        ready.report.downloadUrl,
+        refreshedReport.downloadUrl,
     });
 
-  return downloaded.text;
+  return retriedDownload.text;
 }
 
 async function loadReusableReports(input: {
   credentials: NaverSearchAdsCredentials;
   signal?: AbortSignal;
 }): Promise<NaverSearchAdsStatReportRecord[]> {
-  assertNotAborted(input.signal);
+  let lastError:
+    unknown =
+      null;
 
-  try {
-    return await listNaverSearchAdsStatReports({
-      credentials: input.credentials,
-    });
-  } catch {
-    assertNotAborted(input.signal);
-    return [];
+  for (
+    let attempt = 1;
+    attempt <=
+      REUSABLE_REPORT_LIST_MAX_ATTEMPTS;
+    attempt += 1
+  ) {
+    assertNotAborted(
+      input.signal,
+    );
+
+    try {
+      return await listNaverSearchAdsStatReports({
+        credentials:
+          input.credentials,
+      });
+    } catch (error) {
+      assertNotAborted(
+        input.signal,
+      );
+
+      lastError =
+        error;
+
+      if (
+        attempt ===
+        REUSABLE_REPORT_LIST_MAX_ATTEMPTS
+      ) {
+        break;
+      }
+
+      const errorCode =
+        error &&
+        typeof error === "object" &&
+        "code" in error &&
+        typeof error.code === "string"
+          ? error.code
+          : "UNKNOWN";
+
+      console.warn(
+        `[media-sync-worker] Naver StatReport reusable list read failed; retrying attempt=${attempt}/${REUSABLE_REPORT_LIST_MAX_ATTEMPTS} code=${errorCode}`,
+      );
+
+      await delay(
+        REUSABLE_REPORT_LIST_RETRY_MS *
+          attempt,
+        undefined,
+        input.signal
+          ? {
+              signal:
+                input.signal,
+            }
+          : undefined,
+      );
+    }
   }
+
+  /*
+   * Fail closed.
+   *
+   * Returning [] here would mean "there are no reusable reports",
+   * which makes waitForReadyReport create fresh provider reports.
+   * A failed list GET is not evidence that reports are absent.
+   */
+  throw (
+    lastError ??
+    new NaverSearchAdsStatReportDailyMetricsError(
+      "REPORT_FAILED",
+      "The reusable Naver StatReport list could not be loaded.",
+    )
+  );
 }
 
 function parseReportRows(input: {
