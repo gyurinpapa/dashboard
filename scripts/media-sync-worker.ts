@@ -18,6 +18,9 @@ import {
 import {
   runCreativeMetadataMaintenancePage,
 } from "../src/lib/creative-metadata/server/background-maintenance";
+import {
+  runCreativeMetadataPeriodicMaintenance,
+} from "../src/lib/creative-metadata/server/periodic-maintenance";
 
 const WORKER_NAME =
   "media-sync-worker";
@@ -36,6 +39,30 @@ const CREATIVE_METADATA_AUTO_MAINTENANCE_ENABLED_ENV =
 
 const CREATIVE_METADATA_POST_SYNC_REFRESH_AHEAD_MS =
   5 * 60 * 1_000;
+
+const CREATIVE_METADATA_PERIODIC_INTERVAL_MS_ENV =
+  "CREATIVE_METADATA_PERIODIC_INTERVAL_MS";
+
+const CREATIVE_METADATA_PERIODIC_REFRESH_AHEAD_MS_ENV =
+  "CREATIVE_METADATA_PERIODIC_REFRESH_AHEAD_MS";
+
+const DEFAULT_CREATIVE_METADATA_PERIODIC_INTERVAL_MS =
+  30 * 60 * 1_000;
+
+const DEFAULT_CREATIVE_METADATA_PERIODIC_REFRESH_AHEAD_MS =
+  2 * 60 * 60 * 1_000;
+
+const MIN_CREATIVE_METADATA_PERIODIC_INTERVAL_MS =
+  5 * 60 * 1_000;
+
+const MAX_CREATIVE_METADATA_PERIODIC_INTERVAL_MS =
+  6 * 60 * 60 * 1_000;
+
+const MIN_CREATIVE_METADATA_PERIODIC_REFRESH_AHEAD_MS =
+  5 * 60 * 1_000;
+
+const MAX_CREATIVE_METADATA_PERIODIC_REFRESH_AHEAD_MS =
+  21_300_000;
 
 const LOOP_ENV =
   "MEDIA_SYNC_WORKER_LOOP";
@@ -211,6 +238,8 @@ type WorkerRuntimeOptions = {
 
   enableNaverFactProjection: boolean;
   enableCreativeMetadataAutoMaintenance: boolean;
+  creativeMetadataPeriodicIntervalMs: number;
+  creativeMetadataPeriodicRefreshAheadMs: number;
 };
 
 type SafeErrorLog = {
@@ -556,6 +585,30 @@ function readRuntimeOptions():
       CREATIVE_METADATA_AUTO_MAINTENANCE_ENABLED_ENV,
     );
 
+  const creativeMetadataPeriodicIntervalMs =
+    readPositiveIntegerEnv({
+      name:
+        CREATIVE_METADATA_PERIODIC_INTERVAL_MS_ENV,
+      fallback:
+        DEFAULT_CREATIVE_METADATA_PERIODIC_INTERVAL_MS,
+      min:
+        MIN_CREATIVE_METADATA_PERIODIC_INTERVAL_MS,
+      max:
+        MAX_CREATIVE_METADATA_PERIODIC_INTERVAL_MS,
+    });
+
+  const creativeMetadataPeriodicRefreshAheadMs =
+    readPositiveIntegerEnv({
+      name:
+        CREATIVE_METADATA_PERIODIC_REFRESH_AHEAD_MS_ENV,
+      fallback:
+        DEFAULT_CREATIVE_METADATA_PERIODIC_REFRESH_AHEAD_MS,
+      min:
+        MIN_CREATIVE_METADATA_PERIODIC_REFRESH_AHEAD_MS,
+      max:
+        MAX_CREATIVE_METADATA_PERIODIC_REFRESH_AHEAD_MS,
+    });
+
   const exitWhenIdle =
     readBooleanEnv(IDLE_EXIT_ENV);
 
@@ -581,6 +634,8 @@ function readRuntimeOptions():
     materializationBatchSize,
     enableNaverFactProjection,
     enableCreativeMetadataAutoMaintenance,
+    creativeMetadataPeriodicIntervalMs,
+    creativeMetadataPeriodicRefreshAheadMs,
   };
 }
 
@@ -780,6 +835,18 @@ function logWorkerStart(
   console.log(
     `[${WORKER_NAME}] creative metadata auto maintenance enabled: ${
       options.enableCreativeMetadataAutoMaintenance
+    }`,
+  );
+
+  console.log(
+    `[${WORKER_NAME}] creative metadata periodic interval ms: ${
+      options.creativeMetadataPeriodicIntervalMs
+    }`,
+  );
+
+  console.log(
+    `[${WORKER_NAME}] creative metadata periodic refresh ahead ms: ${
+      options.creativeMetadataPeriodicRefreshAheadMs
     }`,
   );
 
@@ -1265,6 +1332,68 @@ async function maintainCreativeMetadataForCompletedJob(
   }
 }
 
+async function runPeriodicCreativeMetadataMaintenance(
+  options: WorkerRuntimeOptions,
+): Promise<void> {
+  if (
+    !options.enableCreativeMetadataAutoMaintenance
+  ) {
+    return;
+  }
+
+  try {
+    const summary =
+      await runCreativeMetadataPeriodicMaintenance({
+        refreshAheadMs:
+          options.creativeMetadataPeriodicRefreshAheadMs,
+      });
+
+    console.log(
+      JSON.stringify({
+        worker:
+          WORKER_NAME,
+        continuation:
+          "creative_metadata_periodic",
+        ok:
+          true,
+        scopes:
+          summary.scopes,
+        pagesVisited:
+          summary.pagesVisited,
+        cacheOnlyPages:
+          summary.cacheOnlyPages,
+        providerBatches:
+          summary.providerBatches,
+        providerHttpRequests:
+          summary.providerHttpRequests,
+        readyScopes:
+          summary.readyScopes,
+        stoppedScopes:
+          summary.stoppedScopes,
+      }),
+    );
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        worker:
+          WORKER_NAME,
+        continuation:
+          "creative_metadata_periodic",
+        ok:
+          false,
+        name:
+          error instanceof Error
+            ? error.name
+            : "UnknownError",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Creative metadata periodic maintenance failed.",
+      }),
+    );
+  }
+}
+
 async function processSingleJob(
   options: WorkerRuntimeOptions,
 ): Promise<boolean> {
@@ -1522,6 +1651,9 @@ async function runLoopMode(
   let processedJobs =
     0;
 
+  let nextCreativeMetadataMaintenanceAt =
+    Date.now();
+
   while (
     options.maxJobs === undefined ||
     processedJobs < options.maxJobs
@@ -1532,6 +1664,19 @@ async function runLoopMode(
     if (processed) {
       processedJobs += 1;
       continue;
+    }
+
+    if (
+      options.enableCreativeMetadataAutoMaintenance &&
+      Date.now() >= nextCreativeMetadataMaintenanceAt
+    ) {
+      await runPeriodicCreativeMetadataMaintenance(
+        options,
+      );
+
+      nextCreativeMetadataMaintenanceAt =
+        Date.now() +
+        options.creativeMetadataPeriodicIntervalMs;
     }
 
     if (options.exitWhenIdle) {
