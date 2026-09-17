@@ -138,6 +138,45 @@ function PreviewImage({src, alt, small = false}: {src: string; alt: string; smal
     src={src} alt={alt} loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setFailed(true)}
     className={small ? 'h-12 w-12 object-cover' : 'max-h-60 w-full object-contain'}/>;
 }
+function YouTubePreview({videoId, watchUrl, label}: {videoId: string; watchUrl: string; label: string}) {
+  const [playing, setPlaying] = useState(false);
+  const valid = /^[a-zA-Z0-9_-]{11}$/.test(videoId);
+  if (!valid) return null;
+  const embedUrl = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?autoplay=1&rel=0`;
+  return <div className="space-y-2">
+    {playing ? (
+      <div className="aspect-video w-full overflow-hidden rounded-lg bg-black">
+        <iframe
+          src={embedUrl}
+          title={`${label} 영상`}
+          loading="lazy"
+          allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
+          allowFullScreen
+          referrerPolicy="strict-origin-when-cross-origin"
+          className="h-full w-full border-0"
+        />
+      </div>
+    ) : (
+      <button
+        type="button"
+        onClick={() => setPlaying(true)}
+        className="flex aspect-video w-full items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-600 hover:bg-slate-100"
+        aria-label={`${label} 영상 재생`}
+      >
+        영상 재생
+      </button>
+    )}
+    <a
+      href={watchUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      referrerPolicy="no-referrer"
+      className="inline-block text-xs text-blue-700 underline"
+    >
+      YouTube에서 열기
+    </a>
+  </div>;
+}
 export function CachedCreativeThumbnail({name, fallbackUrl = ''}: {name: string; fallbackUrl?: string}) {
   const {anchor, single} = useVisibleRead(name);
   const image = fallbackUrl || single?.assets.find(a => a.imageUrl)?.imageUrl;
@@ -186,7 +225,13 @@ function EntryContent({entry, fallbackUrl, name, grouped}: {entry: ViewEntry; fa
     {entry.descriptions.map((text, i) => <p key={'d' + i} className="break-words leading-6">{text}</p>)}
     {entry.assets.slice(assetPage * 12, (assetPage + 1) * 12).map((asset, i) => <figure key={asset.assetId + ':' + i} className="space-y-1">
       {asset.imageUrl && asset.imageUrl !== fallbackUrl && <PreviewImage key={asset.imageUrl} src={asset.imageUrl} alt={entry.displayName || name}/>}
-      {asset.kind === 'youtube' && asset.watchUrl && <a href={asset.watchUrl} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" className="text-blue-700 underline">YouTube에서 영상 보기</a>}
+      {asset.kind === 'youtube' && asset.videoId && asset.watchUrl && (
+        <YouTubePreview
+          videoId={asset.videoId}
+          watchUrl={asset.watchUrl}
+          label={entry.displayName || name || entry.ref.entityId}
+        />
+      )}
     </figure>)}
     {entry.assets.length > 12 && <button type="button" onClick={() => setAssetPage(p => (p + 1) % Math.ceil(entry.assets.length / 12))} className="text-xs text-blue-700">다음 자산 ({assetPage + 1}/{Math.ceil(entry.assets.length / 12)})</button>}
   </div>;
