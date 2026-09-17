@@ -39,6 +39,9 @@ import {
   getMediaSyncAutomaticAuthority,
 } from "@/src/lib/media-sync/media-sync-automation";
 import {
+  resolveNaverManualSyncExecutionWindow,
+} from "@/src/lib/media-sync/naver-manual-sync-effective-window";
+import {
   isMediaSyncSegmentEligibleReport,
 } from "@/src/lib/media-sync/media-sync-segment-eligibility";
 import {
@@ -876,10 +879,47 @@ export async function POST(
       return mediaSyncSettingMismatchResponse();
     }
 
+    const executionWindow =
+      resolveNaverManualSyncExecutionWindow({
+        provider:
+          mappedConnections.length ===
+            1
+            ? mappedConnections[0]
+                ?.provider ??
+              null
+            : null,
+        reportMeta:
+          isPlainObject(
+            automaticSyncReport,
+          )
+            ? automaticSyncReport
+                .meta
+            : null,
+        dateFrom:
+          parsedRequest.dateFrom,
+        dateTo:
+          parsedRequest.dateTo,
+      });
+
+    if (!executionWindow) {
+      return jsonError(
+        409,
+        "MEDIA_SYNC_NO_COMPLETED_DATE",
+      );
+    }
+
+    const executionRequest = {
+      ...parsedRequest,
+      dateFrom:
+        executionWindow.dateFrom,
+      dateTo:
+        executionWindow.dateTo,
+    };
+
     const repositoryInput =
       buildCreatePendingMediaSyncJobRepositoryInput(
         accessContext,
-        parsedRequest,
+        executionRequest,
       );
 
     const job =
@@ -890,7 +930,7 @@ export async function POST(
     const result =
       buildCreateMediaSyncJobSuccessResponse(
         accessContext,
-        parsedRequest,
+        executionRequest,
         job,
       );
 
