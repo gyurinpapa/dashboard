@@ -71,7 +71,11 @@ export function select(access:Access,connectionId:string,ctx:Context):{stamp:Sta
   if(row.provider!==binding.provider||row.external_account_id!==binding.externalAccountId)fail('SCOPE_MISMATCH');
   const identity=identityForRow(binding,row);if(!identity)continue;
   if(binding.provider==='naver_searchad'?!/^nad-[a-zA-Z0-9-]{1,100}$/.test(identity.entityId):!/^\d{1,20}$/.test(identity.entityId))fail('INVALID_CONTEXT');
-  unique.set(identityKey(identity),Object.freeze(binding.provider==='naver_searchad'?{identity,campaignType:'WEB_SITE'}:{identity}));
+  if(binding.provider==='naver_searchad'){
+   const campaignType=String(record(row.provider_meta).campaign_type??'').trim();
+   if(campaignType!=='WEB_SITE'&&campaignType!=='SHOPPING')continue;
+   unique.set(identityKey(identity),Object.freeze({identity,campaignType}));
+  }else unique.set(identityKey(identity),Object.freeze({identity}));
  }
  return {stamp,binding,targets:Object.freeze([...unique.values()].slice(0,20)),hasMore:ctx.hasMore||unique.size>20};
 }

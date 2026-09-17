@@ -116,9 +116,9 @@ export async function collectCreativeMetadata(input:CollectInput,transport:ReadT
    if(i.workspaceId!==scope.workspaceId||i.advertiserId!==scope.advertiserId||
     i.provider!==scope.provider||i.externalAccountId!==scope.externalAccountId)fail('SCOPE_MISMATCH');
    if(i.entityType!=='ad'||(i.provider==='google_ads'?!numeric(i.entityId):!/^nad-[a-zA-Z0-9-]{1,100}$/.test(i.entityId)))fail('INVALID_INPUT');
-   if(i.provider==='naver_searchad'&&target.campaignType!=='WEB_SITE')fail('INVALID_INPUT');
+   if(i.provider==='naver_searchad'&&target.campaignType!=='WEB_SITE'&&target.campaignType!=='SHOPPING')fail('INVALID_INPUT');
    const key=identityKey(i);
-   map.set(key,Object.freeze(i.provider==='naver_searchad'?{identity:i,campaignType:'WEB_SITE'}:{identity:i}));
+   map.set(key,Object.freeze(i.provider==='naver_searchad'?{identity:i,campaignType:target.campaignType}:{identity:i}));
   }
   targets=[...map.values()];targetCount=targets.length;
  }catch(e){return result('rejected',e instanceof Stop?e.code:'INVALID_INPUT');}
@@ -165,7 +165,7 @@ export async function collectCreativeMetadata(input:CollectInput,transport:ReadT
     const response=await send({scope,purpose:'creative_metadata',method:'GET',origin:'https://api.searchad.naver.com',
      path:`/ncc/ads/${identity.entityId}`,body:null});
     metadata=accept(response.status===404?unavailable(identity,observation,'not_found'):
-     normalizeNaver({identity,observation,campaignType:'WEB_SITE',ad:response.body}));
+     normalizeNaver({identity,observation,campaignType:target.campaignType ?? '',ad:response.body}));
    }else{
     const response=await googleSearch(adMetadataQuery(identity.entityId));
     const rows=searchRows(response.body,2);

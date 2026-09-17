@@ -310,7 +310,13 @@ async function discoverTargets(
     .limit(MAX_DISCOVERY_ROWS + 1);
 
   if (scope.provider === 'naver_searchad') {
-    query = query.eq('row->provider_meta->>campaign_type', 'WEB_SITE');
+    query = query.in(
+      'row->provider_meta->>campaign_type',
+      [
+        'WEB_SITE',
+        'SHOPPING',
+      ],
+    );
   }
 
   const response = signal ? await query.abortSignal(signal) : await query;

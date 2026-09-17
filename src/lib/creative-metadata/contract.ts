@@ -64,8 +64,18 @@ export function identityForRow(scope: Scope, value: unknown): Identity | null {
     const result = makeIdentity({...scope,entityType:"ad",entityId});
     if (id(row.external_account_id) !== result.externalAccountId) return null;
     if (scope.provider === "naver_searchad") {
-      if (row.row_level_reason !== "naver_searchad_web_site_ad_daily_stats" ||
-          meta.authoritative_grain !== "keyword" || meta.detail_only !== true || meta.campaign_type !== "WEB_SITE") return null;
+      const campaignType = meta.campaign_type;
+      const webSite =
+        campaignType === "WEB_SITE" &&
+        row.row_level_reason === "naver_searchad_web_site_ad_daily_stats" &&
+        meta.authoritative_grain === "keyword" &&
+        meta.detail_only === true;
+      const shopping =
+        campaignType === "SHOPPING" &&
+        row.row_level_reason === "naver_searchad_shopping_ad_daily_stats" &&
+        meta.authoritative_grain === "ad" &&
+        meta.ad_type === "SHOPPING_PRODUCT_AD";
+      if (!webSite && !shopping) return null;
     } else {
       const family = meta.product_family;
       if (family !== "search" && family !== "display" && family !== "demand_gen") return null;

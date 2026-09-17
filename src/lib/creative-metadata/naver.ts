@@ -8,11 +8,28 @@ export function normalizeNaver(input: {
   let identity: Identity;
   try { identity=makeIdentity(input.identity); } catch { return {ok:false,reason:"INVALID_INPUT"}; }
   if (identity.provider !== "naver_searchad") return {ok:false,reason:"SCOPE_MISMATCH"};
-  if (identity.entityType !== "ad" || input.campaignType !== "WEB_SITE")
+  if (identity.entityType !== "ad" ||
+      (input.campaignType !== "WEB_SITE" && input.campaignType !== "SHOPPING"))
     return unavailable(identity,input.observation,"unsupported");
   const raw=record(input.ad);
   if (id(raw.nccAdId) !== identity.entityId || id(raw.customerId) !== identity.externalAccountId)
     return {ok:false,reason:"SCOPE_MISMATCH"};
+
+  if (input.campaignType === "SHOPPING") {
+    if (raw.type !== "SHOPPING_PRODUCT_AD")
+      return unavailable(identity,input.observation,"unsupported");
+    const referenceData=record(raw.referenceData);
+    const title=text(referenceData.productTitle) ?? text(referenceData.productName);
+    const image=safeImageUrl(referenceData.imageUrl,"naver_searchad");
+    const issues:string[]=[];
+    if (referenceData.imageUrl && !image && !title) issues.push("IMAGE_URL_UNSUPPORTED");
+    if ((referenceData.productTitle || referenceData.productName) && !title) issues.push("HEADLINE_INVALID");
+    const assets:Asset[]=image ? [{assetId:`naver-shopping-image:${identity.entityId}`,kind:"image",role:"main",
+      imageUrl:image,videoId:null,watchUrl:null,expiresAt:null}] : [];
+    if (!title && !image) issues.push("NO_DISPLAY_CONTENT");
+    return finish(identity,input.observation,{name:title,headlines:title ? [title] : [],descriptions:[],assets,issues});
+  }
+
   const ad=record(raw.ad);
   // NAVER's documented TEXT_45 payload stores text directly under ad.
   // Preserve existing nested payloads; never mix layouts or infer an unknown type.
