@@ -301,6 +301,29 @@ export function getMediaSyncAutomaticAuthority(
     };
   }
 
+  const reportMeta =
+    isPlainObject(
+      input.report.meta,
+    )
+      ? input.report.meta
+      : {};
+
+  /*
+   * Canonical URL contract v2 reports own sync authority at report scope.
+   * They must never inherit the legacy connection-level naver_daily_v1 flag.
+   * Explicit report-scoped media_sync.auto_sync declarations are handled above.
+   */
+  if (
+    reportMeta.url_contract_version ===
+      2
+  ) {
+    return {
+      enabled: false,
+      provider: null,
+      contract: null,
+    };
+  }
+
   const automaticConnection =
     input.connections.find(
       isAutomaticMediaSyncConnection,
