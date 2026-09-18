@@ -313,11 +313,26 @@ export async function GET(req: Request, ctx: Ctx) {
 
     const admin = getSupabaseAdmin();
 
-    const { data: report, error: rErr } = await admin
-      .from("reports")
-      .select("id, workspace_id, current_ingestion_id")
-      .eq("id", reportId)
-      .maybeSingle();
+    const [
+      reportResult,
+      trueMasterResult,
+    ] = await Promise.allSettled([
+      admin
+        .from("reports")
+        .select("id, workspace_id, current_ingestion_id")
+        .eq("id", reportId)
+        .maybeSingle(),
+      isTrueMasterUser(userId),
+    ]);
+
+    if (reportResult.status === "rejected") {
+      throw reportResult.reason;
+    }
+
+    const {
+      data: report,
+      error: rErr,
+    } = reportResult.value;
 
     if (rErr) return jsonError(500, rErr.message);
     if (!report) return jsonError(404, "REPORT_NOT_FOUND");
@@ -328,7 +343,12 @@ export async function GET(req: Request, ctx: Ctx) {
       return jsonError(500, "REPORT_WORKSPACE_MISSING");
     }
 
-    const actorIsTrueMaster = await isTrueMasterUser(userId);
+    if (trueMasterResult.status === "rejected") {
+      throw trueMasterResult.reason;
+    }
+
+    const actorIsTrueMaster =
+      trueMasterResult.value;
 
     if (!actorIsTrueMaster) {
       const { data: wm, error: wmErr } = await admin
