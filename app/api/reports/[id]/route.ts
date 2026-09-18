@@ -587,32 +587,47 @@ export async function GET(_req: Request, ctx: Ctx) {
       return jsonError(401, "Unauthorized (no session). Please sign in.");
     }
 
-    const { data: report, error: rErr } = await supabaseAdmin
-      .from("reports")
-      .select(
-        [
-          "id",
-          "workspace_id",
-          "advertiser_id",
-          "report_type_id",
-          "title",
-          "status",
-          "period_start",
-          "period_end",
-          "draft_period_start",
-          "draft_period_end",
-          "published_period_start",
-          "published_period_end",
-          "published_at",
-          "published_ingestion_id",
-          "meta",
-          "created_at",
-          "updated_at",
-          "created_by",
-        ].join(", ")
-      )
-      .eq("id", id)
-      .maybeSingle();
+    const [
+      reportResult,
+      trueMasterResult,
+    ] = await Promise.allSettled([
+      supabaseAdmin
+        .from("reports")
+        .select(
+          [
+            "id",
+            "workspace_id",
+            "advertiser_id",
+            "report_type_id",
+            "title",
+            "status",
+            "period_start",
+            "period_end",
+            "draft_period_start",
+            "draft_period_end",
+            "published_period_start",
+            "published_period_end",
+            "published_at",
+            "published_ingestion_id",
+            "meta",
+            "created_at",
+            "updated_at",
+            "created_by",
+          ].join(", ")
+        )
+        .eq("id", id)
+        .maybeSingle(),
+      isTrueMasterUser(user.id),
+    ]);
+
+    if (reportResult.status === "rejected") {
+      throw reportResult.reason;
+    }
+
+    const {
+      data: report,
+      error: rErr,
+    } = reportResult.value;
 
     if (rErr) return jsonError(400, rErr.message);
     if (!report) return jsonError(404, "Report not found");
@@ -622,7 +637,12 @@ export async function GET(_req: Request, ctx: Ctx) {
       return jsonError(500, "Report workspace_id is missing");
     }
 
-    const actorIsTrueMaster = await isTrueMasterUser(user.id);
+    if (trueMasterResult.status === "rejected") {
+      throw trueMasterResult.reason;
+    }
+
+    const actorIsTrueMaster =
+      trueMasterResult.value;
 
     if (!actorIsTrueMaster) {
       const { data: wm, error: wmErr } = await supabaseAdmin
