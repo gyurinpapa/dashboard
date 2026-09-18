@@ -527,6 +527,14 @@ type ReportMediaSyncSegmentUiStatus =
   | "실패"
   | "대기";
 
+type ReportMediaSyncSegmentUiItem = {
+  index: number;
+  displayNumber: number;
+  dateFrom: string;
+  dateTo: string;
+  status: ReportMediaSyncSegmentUiStatus;
+};
+
 type ReportMediaSyncProviderProduct = {
   key: string;
   label: string;
@@ -2338,6 +2346,87 @@ const DownloadPanel = memo(function DownloadPanel({
         </div>
       </div>
     </section>
+  );
+});
+
+const MediaSyncSegmentList = memo(function MediaSyncSegmentList({
+  items,
+}: {
+  items: ReportMediaSyncSegmentUiItem[];
+}) {
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const isScrollable = items.length > 5;
+
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list || !isScrollable) return;
+
+    list.scrollTop = list.scrollHeight;
+  }, [isScrollable, items.length]);
+
+  return (
+    <div
+      ref={listRef}
+      className={`mt-3 grid gap-1.5 ${
+        isScrollable
+          ? "max-h-[204px] overflow-y-auto overscroll-contain pr-1 [scrollbar-gutter:stable]"
+          : ""
+      }`}
+      role={isScrollable ? "region" : undefined}
+      aria-label={isScrollable ? "동기화 구간 목록" : undefined}
+      tabIndex={isScrollable ? 0 : undefined}
+    >
+      {items.map((item) => {
+        const isDone = item.status === "완료";
+        const isProcessing = item.status === "동기화 중";
+        const isFailed = item.status === "실패";
+
+        const marker = isDone
+          ? "✓"
+          : isProcessing
+            ? "●"
+            : isFailed
+              ? "!"
+              : "○";
+
+        const statusClassName = isDone
+          ? "text-emerald-200"
+          : isProcessing
+            ? "text-[#B7D7E3]"
+            : isFailed
+              ? "text-[#ffb2c0]"
+              : "text-white/45";
+
+        return (
+          <div
+            key={item.index}
+            className="flex min-h-9 flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-white/[0.06] bg-white/[0.025] px-2.5 py-2 text-[11px]"
+          >
+            <span
+              className={`w-3 text-center font-black ${statusClassName}`}
+              aria-hidden="true"
+            >
+              {marker}
+            </span>
+
+            <span className="min-w-[38px] font-black text-white/90">
+              {item.displayNumber}
+              구간
+            </span>
+
+            <span className="font-semibold text-white/55">
+              {formatMediaSyncSegmentDate(item.dateFrom)}
+              {" ~ "}
+              {formatMediaSyncSegmentDate(item.dateTo)}
+            </span>
+
+            <span className={`ml-auto font-black ${statusClassName}`}>
+              {item.status}
+            </span>
+          </div>
+        );
+      })}
+    </div>
   );
 });
 
@@ -6383,71 +6472,9 @@ export default function ReportDetailPage() {
                               />
                             </div>
 
-                            <div className="mt-3 grid gap-1.5">
-                              {effectiveSegmentUi.items.map((item) => {
-                                const isDone =
-                                  item.status === "완료";
-
-                                const isProcessing =
-                                  item.status === "동기화 중";
-
-                                const isFailed =
-                                  item.status === "실패";
-
-                                const marker =
-                                  isDone
-                                    ? "✓"
-                                    : isProcessing
-                                      ? "●"
-                                      : isFailed
-                                        ? "!"
-                                        : "○";
-
-                                const statusClassName =
-                                  isDone
-                                    ? "text-emerald-200"
-                                    : isProcessing
-                                      ? "text-[#B7D7E3]"
-                                      : isFailed
-                                        ? "text-[#ffb2c0]"
-                                        : "text-white/45";
-
-                                return (
-                                  <div
-                                    key={item.index}
-                                    className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-white/[0.06] bg-white/[0.025] px-2.5 py-2 text-[11px]"
-                                  >
-                                    <span
-                                      className={`w-3 text-center font-black ${statusClassName}`}
-                                      aria-hidden="true"
-                                    >
-                                      {marker}
-                                    </span>
-
-                                    <span className="min-w-[38px] font-black text-white/90">
-                                      {item.displayNumber}
-                                      구간
-                                    </span>
-
-                                    <span className="font-semibold text-white/55">
-                                      {formatMediaSyncSegmentDate(
-                                        item.dateFrom,
-                                      )}
-                                      {" ~ "}
-                                      {formatMediaSyncSegmentDate(
-                                        item.dateTo,
-                                      )}
-                                    </span>
-
-                                    <span
-                                      className={`ml-auto font-black ${statusClassName}`}
-                                    >
-                                      {item.status}
-                                    </span>
-                                  </div>
-                                );
-                              })}
-                            </div>
+                            <MediaSyncSegmentList
+                              items={effectiveSegmentUi.items}
+                            />
 
                             <div className="mt-3 flex items-center justify-between border-t border-white/[0.07] pt-2 text-[11px]">
                               <span className="font-extrabold text-[#8f8ca8]">
