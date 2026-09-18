@@ -3637,11 +3637,17 @@ export default function ReportDetailPage() {
 
     let nextMsg = "";
 
-    const [detailResult, creativesResult, rowsMetaResult] = await Promise.allSettled([
-      fetchReportDetail(reportId),
-      fetchCreativesMap(reportId),
-      fetchRowsMeta(reportId),
-    ]);
+    const settle = <T,>(promise: Promise<T>): Promise<PromiseSettledResult<T>> =>
+      promise.then(
+        (value) => ({ status: "fulfilled", value }),
+        (reason) => ({ status: "rejected", reason }),
+      );
+
+    const detailTask = settle(fetchReportDetail(reportId));
+    const creativesTask = settle(fetchCreativesMap(reportId));
+    const rowsMetaTask = settle(fetchRowsMeta(reportId));
+
+    const detailResult = await detailTask;
 
     if (detailResult.status === "fulfilled") {
       const detail = detailResult.value;
@@ -3667,6 +3673,11 @@ export default function ReportDetailPage() {
         reportTypeKey: "",
       });
     }
+
+    const [creativesResult, rowsMetaResult] = await Promise.all([
+      creativesTask,
+      rowsMetaTask,
+    ]);
 
     if (creativesResult.status === "fulfilled") {
       const result = creativesResult.value;
