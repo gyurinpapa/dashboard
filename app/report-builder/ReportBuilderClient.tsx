@@ -494,6 +494,7 @@ export default function ReportBuilderPage() {
 
   const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [signingIn, setSigningIn] = useState(false);
 
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [workspaceName, setWorkspaceName] = useState<string | null>(null);
@@ -661,6 +662,8 @@ export default function ReportBuilderPage() {
     ? currentWorkspaceMembership?.workspace_logo_url ?? null
     : null;
 
+  const showAuthenticatedUi = Boolean(userId && !signingIn);
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setUserId(data.user?.id ?? null);
@@ -674,6 +677,14 @@ export default function ReportBuilderPage() {
 
     return () => sub.subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!signingIn || !userId || !workspaceId) return;
+
+    if (workspaceId === workspaceIdFromQuery) {
+      setSigningIn(false);
+    }
+  }, [signingIn, userId, workspaceId, workspaceIdFromQuery]);
 
   async function getAccessToken(): Promise<string | null> {
     const { data } = await supabase.auth.getSession();
@@ -890,6 +901,7 @@ export default function ReportBuilderPage() {
       const token = await getAccessToken();
 
       if (!token) {
+        setSigningIn(false);
         setWorkspaceId(null);
         setWorkspaceName(null);
         setWorkspaceMemberships([]);
@@ -913,6 +925,7 @@ export default function ReportBuilderPage() {
 
       if (!res.ok || !(json as any)?.ok) {
         console.warn("[workspaces/list] failed", res.status, json);
+        setSigningIn(false);
         setWorkspaceId(null);
         setWorkspaceName(null);
         setWorkspaceMemberships([]);
@@ -968,6 +981,7 @@ export default function ReportBuilderPage() {
       const validRows = rows.filter((row) => row.workspace_id);
 
       if (!validRows.length) {
+        setSigningIn(false);
         setWorkspaceId(null);
         setWorkspaceName(null);
         setWorkspaceMemberships([]);
@@ -1006,7 +1020,10 @@ export default function ReportBuilderPage() {
       if (current?.workspace_id && current.workspace_id !== workspaceIdFromQuery) {
         router.replace(`/report-builder?workspace_id=${encodeURIComponent(current.workspace_id)}`);
       }
-    })();
+    })().catch((error) => {
+      console.warn("[workspaces/list] exception", error);
+      setSigningIn(false);
+    });
   }, [userId, workspaceIdFromQuery, router, resetReportsState]);
 
   useEffect(() => {
@@ -1706,26 +1723,40 @@ export default function ReportBuilderPage() {
   }, [canDeleteAdvertisers, selectedAdvertiserIds.length]);
 
   async function signIn() {
+    if (signingIn) return;
+
     setLocalMsg("");
+    setSigningIn(true);
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    if (error) {
-      setLocalMsg(error.message || "로그인 실패");
-      return;
+      if (error) {
+        setSigningIn(false);
+        setLocalMsg(error.message || "로그인 실패");
+        return;
+      }
+
+      setUserId(data.user?.id ?? null);
+      setUserEmail(data.user?.email ?? null);
+
+      await supabase.auth.getSession();
+    } catch (error) {
+      setSigningIn(false);
+      setLocalMsg(
+        error instanceof Error && error.message
+          ? error.message
+          : "로그인 실패"
+      );
     }
-
-    setUserId(data.user?.id ?? null);
-    setUserEmail(data.user?.email ?? null);
-
-    await supabase.auth.getSession();
   }
 
   async function signOut() {
     await supabase.auth.signOut();
+    setSigningIn(false);
     setUserId(null);
     setUserEmail(null);
     setWorkspaceId(null);
@@ -3731,7 +3762,7 @@ export default function ReportBuilderPage() {
       }}
     >
       <div style={containerStyle}>
-        {!userId ? (
+        {!showAuthenticatedUi ? (
           <div className="loginCornerLogo" aria-label="Etrylue">
             <img
               src="/branding/etrylue-logo.png"
@@ -3741,7 +3772,7 @@ export default function ReportBuilderPage() {
           </div>
         ) : null}
 
-        {userId ? (
+        {showAuthenticatedUi ? (
           <div className="builderCornerLogo" aria-label="Etrylue">
             <img
               src="/branding/etrylue-logo.png"
@@ -3751,7 +3782,7 @@ export default function ReportBuilderPage() {
           </div>
         ) : null}
 
-        {!userId ? (
+        {!showAuthenticatedUi ? (
           <div
             style={{
               display: "flex",
@@ -3809,10 +3840,10 @@ export default function ReportBuilderPage() {
 
         <h1
           style={{
-            fontSize: userId ? 36 : "clamp(22px, 2.4vw, 30px)",
+            fontSize: showAuthenticatedUi ? 36 : "clamp(22px, 2.4vw, 30px)",
             fontWeight: 900,
             textAlign: "center",
-            marginBottom: userId ? 20 : 18,
+            marginBottom: showAuthenticatedUi ? 20 : 18,
             color: "transparent",
             background: "linear-gradient(90deg, #f7f7ff 0%, #d9faff 54%, #bdb4ff 100%)",
             WebkitBackgroundClip: "text",
@@ -3825,22 +3856,22 @@ export default function ReportBuilderPage() {
 
         <div
           style={{
-            background: userId
+            background: showAuthenticatedUi
               ? "linear-gradient(160deg, rgba(57, 43, 112, 0.94), rgba(47, 35, 96, 0.92))"
               : "linear-gradient(160deg, rgba(57, 43, 112, 0.86), rgba(47, 35, 96, 0.84))",
             border: "1px solid rgba(255, 255, 255, 0.13)",
-            borderRadius: userId ? 18 : 24,
-            padding: userId ? "18px 20px" : 40,
+            borderRadius: showAuthenticatedUi ? 18 : 24,
+            padding: showAuthenticatedUi ? "18px 20px" : 40,
             display: "flex",
             flexDirection: "column",
-            alignItems: userId ? "stretch" : "center",
-            gap: userId ? 14 : 16,
-            boxShadow: userId
+            alignItems: showAuthenticatedUi ? "stretch" : "center",
+            gap: showAuthenticatedUi ? 14 : 16,
+            boxShadow: showAuthenticatedUi
               ? "0 20px 52px rgba(8, 5, 29, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06)"
               : "0 24px 60px rgba(8, 5, 29, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.06)",
           }}
         >
-          {!userId ? (
+          {!showAuthenticatedUi ? (
             <>
               <div
                 style={{
@@ -3890,6 +3921,7 @@ export default function ReportBuilderPage() {
                   <input
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    disabled={signingIn}
                     className="neoField"
                   />
 
@@ -3900,6 +3932,7 @@ export default function ReportBuilderPage() {
                     value={password}
                     type="password"
                     onChange={(e) => setPassword(e.target.value)}
+                    disabled={signingIn}
                     className="neoField"
                   />
 
@@ -3915,9 +3948,10 @@ export default function ReportBuilderPage() {
                     <button
                       className="mainBtn"
                       onClick={signIn}
+                      disabled={signingIn}
                       style={{ maxWidth: "none" }}
                     >
-                      로그인하기
+                      {signingIn ? "로그인 중..." : "로그인하기"}
                     </button>
 
                     <Link href="/signup" className="signupBtn">
@@ -6775,7 +6809,7 @@ export default function ReportBuilderPage() {
           </section>
         ) : null}
 
-        {userId ? (
+        {showAuthenticatedUi ? (
           <section style={{ marginTop: 40 }}>
             <div
               style={{
