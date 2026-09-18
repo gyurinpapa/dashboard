@@ -2407,6 +2407,7 @@ export default function ReportDetailPage() {
     null,
   );
   const rowsMetaFetchPromiseRef = useRef<Promise<RowsMetaResult> | null>(null);
+  const initialRowsMetaLoadedRef = useRef(false);
   const [rowsMetaCount, setRowsMetaCount] = useState(0);
   const [rowsMetaLoaded, setRowsMetaLoaded] = useState(false);
   const [rowsMetaMinDate, setRowsMetaMinDate] = useState("");
@@ -3696,12 +3697,14 @@ export default function ReportDetailPage() {
 
     if (rowsMetaResult.status === "fulfilled") {
       const meta = rowsMetaResult.value;
+      initialRowsMetaLoadedRef.current = true;
       setRowsMetaCount(meta.rowsCount);
       setRowsMetaMinDate(meta.minDate);
       setRowsMetaMaxDate(meta.maxDate);
       setRowsMetaLoaded(true);
     } else {
       console.error("[refreshReportShell] rows meta failed", rowsMetaResult.reason);
+      initialRowsMetaLoadedRef.current = false;
       setRowsMetaCount(0);
       setRowsMetaMinDate("");
       setRowsMetaMaxDate("");
@@ -3885,6 +3888,7 @@ export default function ReportDetailPage() {
     rowsLoadedRef.current = false;
     rowsFetchPromiseRef.current = null;
     rowsMetaFetchPromiseRef.current = null;
+    initialRowsMetaLoadedRef.current = false;
 
     setRowsMetaCount(0);
     setRowsMetaLoaded(false);
@@ -4410,7 +4414,7 @@ export default function ReportDetailPage() {
   ]);
 
   const fetchLatestMediaSyncJob = useCallback(
-    async (silent = false) => {
+    async (silent = false, reuseInitialRowsMeta = false) => {
       if (!reportId || !isApiReport) {
         setMediaSyncJob(null);
         setMediaSyncJobs([]);
@@ -4489,7 +4493,10 @@ export default function ReportDetailPage() {
           automaticSync,
         );
 
-        if (nextJob?.status === "done") {
+        if (
+          nextJob?.status === "done" &&
+          !(reuseInitialRowsMeta && initialRowsMetaLoadedRef.current)
+        ) {
           try {
             const meta =
               await fetchRowsMeta(reportId);
@@ -4541,7 +4548,7 @@ export default function ReportDetailPage() {
       return;
     }
 
-    void fetchLatestMediaSyncJob();
+    void fetchLatestMediaSyncJob(false, true);
   }, [fetchLatestMediaSyncJob, isApiReport, reportId]);
 
   useEffect(() => {
