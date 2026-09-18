@@ -5935,6 +5935,29 @@ export default function ReportDetailPage() {
             ) : null}
           </div>
         ) : null}
+
+        {!canonicalEditorEligible &&
+        !canonicalLifecycleMarked &&
+        !canonicalIdentity &&
+        displayFinalReportPath ? (
+          <div className="mt-5 border-t border-white/[0.12] pt-5">
+            <div className="min-w-0 rounded-xl border border-white/[0.10] bg-[#2a2157]/72 px-3.5 py-2.5">
+              <div className="text-xs font-extrabold text-[#bbb8d4]">
+                최종 보고서 URL
+              </div>
+              <div className="mt-1 text-sm text-[#f7f7ff]">
+                <a
+                  href={fullUrl(displayFinalReportPath)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="break-all font-semibold text-[#7defff] underline decoration-[#7defff]/50 underline-offset-2 hover:text-white"
+                >
+                  {fullUrl(displayFinalReportPath)}
+                </a>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <section className="mb-5 rounded-[20px] border border-white/[0.13] bg-[#392b70]/90 p-5 shadow-[0_22px_54px_rgba(8,5,29,0.22)]">
@@ -6874,7 +6897,8 @@ export default function ReportDetailPage() {
         </div>
       </section>
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+      {isCsvReport ? (
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <section className="rounded-[20px] border border-white/[0.13] bg-[#392b70]/90 p-5 shadow-[0_22px_54px_rgba(8,5,29,0.22)]">
           <div className="mb-1 text-base font-black text-[#f7f7ff]">
             CSV 업로드
@@ -7123,7 +7147,8 @@ export default function ReportDetailPage() {
             </div>
           ) : null}
         </section>
-      </div>
+        </div>
+      ) : null}
 
       <div className="mt-5">
         <DownloadPanel
