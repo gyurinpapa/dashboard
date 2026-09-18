@@ -220,12 +220,27 @@ export async function GET(req: Request, ctx: Ctx) {
 
     const userId = auth.userId;
 
-    // 1️⃣ report 조회
-    const { data: report, error: rErr } = await admin
-      .from("reports")
-      .select("id, workspace_id, current_creatives_batch_id")
-      .eq("id", reportId)
-      .maybeSingle();
+    // 1️⃣ report scope + true-master authority 조회
+    const [
+      reportResult,
+      trueMasterResult,
+    ] = await Promise.allSettled([
+      admin
+        .from("reports")
+        .select("id, workspace_id, current_creatives_batch_id")
+        .eq("id", reportId)
+        .maybeSingle(),
+      isTrueMasterUser(userId),
+    ]);
+
+    if (reportResult.status === "rejected") {
+      throw reportResult.reason;
+    }
+
+    const {
+      data: report,
+      error: rErr,
+    } = reportResult.value;
 
     if (rErr) {
       return jsonError(500, rErr.message);
@@ -248,7 +263,12 @@ export async function GET(req: Request, ctx: Ctx) {
     // - 일반 사용자는 해당 workspace member여야 함
     // - true master는 전체 workspace 조회 허용
     // - platform_owner 단독 우회 없음
-    const actorIsTrueMaster = await isTrueMasterUser(userId);
+    if (trueMasterResult.status === "rejected") {
+      throw trueMasterResult.reason;
+    }
+
+    const actorIsTrueMaster =
+      trueMasterResult.value;
 
     if (!actorIsTrueMaster) {
       const wm = await getWorkspaceMembership(userId, workspaceId);
