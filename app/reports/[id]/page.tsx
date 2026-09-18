@@ -2348,9 +2348,6 @@ export default function ReportDetailPage() {
   const params = useParams<{ id: string }>();
   const reportId = normalizeReportId(params?.id);
 
-  const sessionStartedAtRef = useRef<number | null>(null);
-  const [sessionStartedText, setSessionStartedText] = useState<string>("-");
-
   const [sessionIngested, setSessionIngested] = useState(false);
   const [sessionCreativesUploaded, setSessionCreativesUploaded] =
     useState(false);
@@ -3874,9 +3871,6 @@ export default function ReportDetailPage() {
   useEffect(() => {
     if (!reportId) return;
 
-    sessionStartedAtRef.current = Date.now();
-    setSessionStartedText("-");
-
     setSessionIngested(false);
     setSessionCreativesUploaded(false);
 
@@ -3951,9 +3945,6 @@ export default function ReportDetailPage() {
     setReportPeriod(resolvePresetPeriod());
 
     void refreshReportShell();
-
-    const d = new Date(sessionStartedAtRef.current);
-    setSessionStartedText(d.toLocaleString());
   }, [reportId, refreshReportShell]);
 
   useEffect(() => {
@@ -5901,10 +5892,45 @@ export default function ReportDetailPage() {
               )}
             </div>
 
-            {canonicalPreviewPath ? (
-              <div className="mt-2 break-all rounded-xl border border-white/[0.10] bg-[#2a2157]/72 px-3.5 py-2.5 font-mono text-xs text-[#9ef5ff]">
-                예상 공개 정규 경로:{" "}
-                {canonicalPreviewPath}
+            {canonicalPreviewPath || displayFinalReportPath ? (
+              <div className="mt-2 grid gap-3 lg:grid-cols-2">
+                {canonicalPreviewPath ? (
+                  <div className="min-w-0 rounded-xl border border-white/[0.10] bg-[#2a2157]/72 px-3.5 py-2.5">
+                    <div className="text-xs font-extrabold text-[#bbb8d4]">
+                      예상 공개 정규 경로
+                    </div>
+                    <div className="mt-1 break-all font-mono text-xs text-[#9ef5ff]">
+                      {canonicalPreviewPath}
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="min-w-0 rounded-xl border border-white/[0.10] bg-[#2a2157]/72 px-3.5 py-2.5">
+                  <div className="text-xs font-extrabold text-[#bbb8d4]">
+                    최종 보고서 URL
+                  </div>
+                  <div className="mt-1 text-sm text-[#f7f7ff]">
+                    {displayFinalReportPath ? (
+                      <a
+                        href={fullUrl(displayFinalReportPath)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="break-all font-semibold text-[#7defff] underline decoration-[#7defff]/50 underline-offset-2 hover:text-white"
+                      >
+                        {fullUrl(displayFinalReportPath)}
+                      </a>
+                    ) : (
+                      "-"
+                    )}
+                  </div>
+
+                  {canonicalPublishedPath &&
+                  displayFinalReportPath === canonicalPublishedPath ? (
+                    <div className="mt-2 text-[11px] text-[#aaa6c9]">
+                      발행된 정규 URL로 연결됩니다.
+                    </div>
+                  ) : null}
+                </div>
               </div>
             ) : null}
           </div>
@@ -6513,94 +6539,6 @@ export default function ReportDetailPage() {
           )}
         </div>
       </section>
-
-      <div className="mb-5 grid gap-3 rounded-[20px] border border-white/[0.13] bg-[#392b70]/90 p-4 shadow-[0_22px_54px_rgba(8,5,29,0.22)] lg:grid-cols-4">
-        <div className="rounded-xl border border-white/[0.10] bg-[#2a2157]/72 p-3">
-          <div className="text-xs text-[#bbb8d4]">Report ID</div>
-          <div className="mt-1 break-all font-mono text-sm">
-            {reportId || "-"}
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-white/[0.10] bg-[#2a2157]/72 p-3">
-          <div className="text-xs text-[#bbb8d4]">세션 시작</div>
-          <div className="mt-1 text-sm text-[#f7f7ff] font-semibold text-[#f7f7ff]">{sessionStartedText}</div>
-        </div>
-
-        <div className="rounded-xl border border-white/[0.10] bg-[#2a2157]/72 p-3">
-          <div className="text-xs text-[#bbb8d4]">CSV 파싱 상태</div>
-          <div className="mt-1 text-sm text-[#f7f7ff] font-semibold text-[#f7f7ff]">{ingestionStatusLabel}</div>
-
-          <div className="mt-1 text-xs leading-5 text-[#bbb8d4]">
-            {ingestionStatusDescription}
-          </div>
-
-          <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-[#211b44]/80">
-            <div
-              className={`h-full rounded-full transition-all ${
-                ingestionStatus === "failed"
-                  ? "bg-[#ff637c]"
-                  : ingestionStatus === "done"
-                    ? "bg-[#37e7a1]"
-                    : "bg-[linear-gradient(90deg,#21dff3_0%,#5f72ff_55%,#7c5cff_100%)]"
-              }`}
-              style={{
-                width: `${Math.max(
-                  ingestionStatus === "queued" ? 5 : 0,
-                  ingestionInfo.progress,
-                )}%`,
-              }}
-            />
-          </div>
-          <div className="mt-2 text-xs text-[#bbb8d4]">
-            진행률 {formatInt(ingestionInfo.progress)}%{" "}
-            <span className="text-white/20">·</span> parsed{" "}
-            {formatInt(ingestionInfo.parsedLines)} /{" "}
-            {formatInt(ingestionInfo.totalLines)}{" "}
-            <span className="text-white/20">·</span> inserted{" "}
-            {formatInt(ingestionInfo.inserted)}{" "}
-            <span className="text-white/20">·</span> 저장 rows{" "}
-            {rowsMetaLoaded ? formatInt(rowsMetaCount) : "-"}
-          </div>
-
-          {ingestionInfo.error ? (
-            <div
-              className={`mt-3 rounded-lg border px-3 py-2 text-xs leading-5 ${
-                ingestionStatus === "failed"
-                  ? "border-[#ff637c]/30 bg-[#ff637c]/10 text-[#ffb2c0]"
-                  : "border-amber-300/25 bg-amber-300/10 text-amber-100"
-              }`}
-            >
-              {ingestionInfo.error}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="rounded-xl border border-white/[0.10] bg-[#2a2157]/72 p-3">
-          <div className="text-xs text-[#bbb8d4]">최종 보고서 URL</div>
-          <div className="mt-1 text-sm text-[#f7f7ff]">
-            {displayFinalReportPath ? (
-              <a
-                href={fullUrl(displayFinalReportPath)}
-                target="_blank"
-                rel="noreferrer"
-                className="break-all font-semibold text-[#7defff] underline decoration-[#7defff]/50 underline-offset-2 hover:text-white"
-              >
-                {fullUrl(displayFinalReportPath)}
-              </a>
-            ) : (
-              "-"
-            )}
-          </div>
-
-          {canonicalPublishedPath &&
-          displayFinalReportPath === canonicalPublishedPath ? (
-            <div className="mt-2 text-[11px] text-[#aaa6c9]">
-              발행된 정규 URL로 연결됩니다.
-            </div>
-          ) : null}
-        </div>
-      </div>
 
       {msg ? (
         <div className="mb-5 rounded-xl border border-white/[0.10] bg-[#2a2157]/78 px-4 py-3 text-sm text-[#d7d5ec] whitespace-pre-wrap">
