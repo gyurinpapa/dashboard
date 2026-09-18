@@ -518,9 +518,6 @@ export default function ReportBuilderPage() {
   );
 
   const [creating, setCreating] = useState(false);
-  const [savingReportThemeId, setSavingReportThemeId] = useState<string | null>(
-    null
-  );
   const [selectedReportDataSourceKind, setSelectedReportDataSourceKind] =
     useState<ReportDataSourceKind>("csv");
   const [selectedReportTheme, setSelectedReportTheme] =
@@ -2633,83 +2630,6 @@ export default function ReportBuilderPage() {
     router.push(
       `/reports/${reportId}`
     );
-  }
-
-  async function updateExistingReportTheme(
-    report: ReportRow,
-    nextTheme: ReportTheme
-  ) {
-    const reportId = String(report?.id ?? "").trim();
-    const currentTheme = normalizeReportTheme(report?.report_theme);
-
-    if (!reportId || savingReportThemeId || currentTheme === nextTheme) {
-      return;
-    }
-
-    setSavingReportThemeId(reportId);
-    setLocalMsg("");
-
-    try {
-      const token = await getAccessToken();
-
-      if (!token) {
-        setLocalMsg("로그인 세션이 없습니다.");
-        return;
-      }
-
-      const res = await fetch(
-        `/api/reports/${encodeURIComponent(reportId)}`,
-        {
-          method: "PATCH",
-          credentials: "include",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            meta: {
-              report_theme: nextTheme,
-            },
-          }),
-        }
-      );
-
-      const json = await safeReadJson(res);
-
-      if (!res.ok || !(json as any)?.ok) {
-        console.warn("[reports/theme] failed", res.status, json);
-        setLocalMsg(
-          (json as any)?.message ||
-            (json as any)?.error ||
-            "리포트 테마 저장 실패"
-        );
-        return;
-      }
-
-      setReports((prev) =>
-        prev.map((item) =>
-          item.id === reportId
-            ? {
-                ...item,
-                report_theme: nextTheme,
-              }
-            : item
-        )
-      );
-
-      setLocalMsg(
-        nextTheme === "studio"
-          ? "리포트 테마를 Etrylue Studio로 저장했습니다."
-          : "리포트 테마를 Etrylue Light로 저장했습니다."
-      );
-    } catch (error) {
-      console.warn("[reports/theme] exception", error);
-      setLocalMsg("리포트 테마 저장 중 오류가 발생했습니다.");
-    } finally {
-      setSavingReportThemeId((current) =>
-        current === reportId ? null : current
-      );
-    }
   }
 
   const fetchLatestMediaSyncJobForReport = useCallback(
@@ -7172,171 +7092,34 @@ export default function ReportBuilderPage() {
                             );
 
                             if (dataSourceKind !== "api") {
-                              return (
-                                <div
-                                  className="reportActionRail"
-                                  onClick={(event) => event.stopPropagation()}
-                                >
-                                  <div
-                                    style={{
-                                      display: "grid",
-                                      gridTemplateColumns: "1fr 1fr",
-                                      gap: 5,
-                                      width: "100%",
-                                    }}
-                                  >
-                                    {(["light", "studio"] as ReportTheme[]).map(
-                                      (theme) => {
-                                        const active =
-                                          normalizeReportTheme(r.report_theme) ===
-                                          theme;
-                                        const saving =
-                                          savingReportThemeId === r.id;
-
-                                        return (
-                                          <button
-                                            key={theme}
-                                            type="button"
-                                            className="subBtn"
-                                            onClick={() =>
-                                              updateExistingReportTheme(r, theme)
-                                            }
-                                            disabled={saving}
-                                            aria-pressed={active}
-                                            style={{
-                                              minWidth: 0,
-                                              padding: "6px 5px",
-                                              borderRadius: 9,
-                                              fontSize: 10,
-                                              borderColor: active
-                                                ? "#21dff3"
-                                                : "rgba(255, 255, 255, 0.13)",
-                                              background: active
-                                                ? "rgba(33, 223, 243, 0.12)"
-                                                : "rgba(53, 40, 103, 0.90)",
-                                              color: active
-                                                ? "#78f0ff"
-                                                : "#d7d5ec",
-                                              boxShadow: "none",
-                                            }}
-                                            title={
-                                              theme === "studio"
-                                                ? "Etrylue Studio 테마로 변경"
-                                                : "Etrylue Light 테마로 변경"
-                                            }
-                                          >
-                                            {saving
-                                              ? "저장"
-                                              : theme === "studio"
-                                                ? "Studio"
-                                                : "Light"}
-                                          </button>
-                                        );
-                                      }
-                                    )}
-                                  </div>
-                                </div>
-                              );
+                              return null;
                             }
 
                             const currentSyncJob =
                               mediaSyncJobsByReportId[r.id] ?? null;
-                            const syncRange = pickReportSyncDateRange(r);
-                            const isActiveSyncJob = isActiveMediaSyncJobStatus(
-                              currentSyncJob?.status
-                            );
-                            const isLoadingSyncStatus = Boolean(
-                              loadingMediaSyncReportIds[r.id]
-                            );
-                            const isRequestingSync =
-                              requestingMediaSyncReportId === r.id;
-                            const isSyncDisabled =
-                              !r.advertiser_id ||
-                              !syncRange ||
-                              isRequestingSync ||
-                              isLoadingSyncStatus ||
-                              isActiveSyncJob;
+
+                            if (!currentSyncJob) {
+                              return null;
+                            }
 
                             return (
                               <div
                                 className="reportActionRail"
                                 onClick={(event) => event.stopPropagation()}
                               >
-                                  <div
-                                    style={{
-                                      display: "grid",
-                                      gridTemplateColumns: "1fr 1fr",
-                                      gap: 5,
-                                      width: "100%",
-                                    }}
-                                  >
-                                    {(["light", "studio"] as ReportTheme[]).map(
-                                      (theme) => {
-                                        const active =
-                                          normalizeReportTheme(r.report_theme) ===
-                                          theme;
-                                        const saving =
-                                          savingReportThemeId === r.id;
-
-                                        return (
-                                          <button
-                                            key={theme}
-                                            type="button"
-                                            className="subBtn"
-                                            onClick={() =>
-                                              updateExistingReportTheme(r, theme)
-                                            }
-                                            disabled={saving}
-                                            aria-pressed={active}
-                                            style={{
-                                              minWidth: 0,
-                                              padding: "6px 5px",
-                                              borderRadius: 9,
-                                              fontSize: 10,
-                                              borderColor: active
-                                                ? "#21dff3"
-                                                : "rgba(255, 255, 255, 0.13)",
-                                              background: active
-                                                ? "rgba(33, 223, 243, 0.12)"
-                                                : "rgba(53, 40, 103, 0.90)",
-                                              color: active
-                                                ? "#78f0ff"
-                                                : "#d7d5ec",
-                                              boxShadow: "none",
-                                            }}
-                                            title={
-                                              theme === "studio"
-                                                ? "Etrylue Studio 테마로 변경"
-                                                : "Etrylue Light 테마로 변경"
-                                            }
-                                          >
-                                            {saving
-                                              ? "저장"
-                                              : theme === "studio"
-                                                ? "Studio"
-                                                : "Light"}
-                                          </button>
-                                        );
-                                      }
-                                    )}
-                                  </div>
-
-
-                                {currentSyncJob ? (
-                                  <div
-                                    style={{
-                                      fontSize: 11,
-                                      color:
-                                        currentSyncJob.status === "failed"
-                                          ? "#ff9bad"
-                                          : "#d7d5ec",
-                                      whiteSpace: "nowrap",
-                                      textAlign: "center",
-                                    }}
-                                  >
-                                    API {currentSyncJob.status}
-                                  </div>
-                                ) : null}
+                                <div
+                                  style={{
+                                    fontSize: 11,
+                                    color:
+                                      currentSyncJob.status === "failed"
+                                        ? "#ff9bad"
+                                        : "#d7d5ec",
+                                    whiteSpace: "nowrap",
+                                    textAlign: "center",
+                                  }}
+                                >
+                                  API {currentSyncJob.status}
+                                </div>
                               </div>
                             );
                           })()}
