@@ -121,6 +121,12 @@ type WorkspaceMembershipRecord = {
   role: MediaConnectionWorkspaceRole;
 };
 
+type MediaConnectionUserAuthority = {
+  userId: string;
+  email: string;
+  isTrueMaster: boolean;
+};
+
 function normalizeRequiredString(
   value: unknown,
   fieldName: string,
@@ -296,6 +302,31 @@ async function resolveTrueMaster(
     email: normalizedEmail,
     hasMasterMembership: masterMembershipExists,
   });
+}
+
+async function resolveMediaConnectionUserAuthority(
+  user: User,
+): Promise<MediaConnectionUserAuthority> {
+  const userId = normalizeRequiredString(
+    user.id,
+    "user.id",
+  );
+
+  const email = await getProfileEmail(
+    userId,
+    user.email,
+  );
+
+  const isTrueMaster = await resolveTrueMaster(
+    userId,
+    email,
+  );
+
+  return {
+    userId,
+    email,
+    isTrueMaster,
+  };
 }
 
 async function getAdvertiserRecord(
@@ -511,23 +542,19 @@ async function buildAdvertiserAccessContext(input: {
   user: User;
   advertiser: AdvertiserAccessRecord;
   action: MediaConnectionAccessAction;
+  userAuthority?: MediaConnectionUserAuthority;
 }): Promise<MediaConnectionAccessContext> {
-  const user = input.user;
+  const userAuthority =
+    input.userAuthority ??
+    await resolveMediaConnectionUserAuthority(
+      input.user,
+    );
 
-  const userId = normalizeRequiredString(
-    user.id,
-    "user.id",
-  );
-
-  const email = await getProfileEmail(
-    userId,
-    user.email,
-  );
-
-  const isTrueMaster = await resolveTrueMaster(
+  const {
     userId,
     email,
-  );
+    isTrueMaster,
+  } = userAuthority;
 
   let role: MediaConnectionWorkspaceRole = "master";
 
@@ -619,9 +646,34 @@ export async function resolveReportMediaConnectionAccess(
 
   const report = await getReportRecord(reportId);
 
-  const advertiser = await getAdvertiserRecord(
-    report.advertiser_id,
-  );
+  const [
+    advertiserResult,
+    userAuthorityResult,
+  ] = await Promise.allSettled([
+    getAdvertiserRecord(
+      report.advertiser_id,
+    ),
+    resolveMediaConnectionUserAuthority(
+      user,
+    ),
+  ]);
+
+  if (
+    advertiserResult.status ===
+    "rejected"
+  ) {
+    throw advertiserResult.reason;
+  }
+
+  if (
+    userAuthorityResult.status ===
+    "rejected"
+  ) {
+    throw userAuthorityResult.reason;
+  }
+
+  const advertiser =
+    advertiserResult.value;
 
   const reportScopeMismatch =
     getReportAdvertiserScopeMismatch({
@@ -659,6 +711,8 @@ export async function resolveReportMediaConnectionAccess(
       user,
       advertiser,
       action: input.action,
+      userAuthority:
+        userAuthorityResult.value,
     });
 
   return {
