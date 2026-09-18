@@ -513,6 +513,9 @@ export default function ReportBuilderPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [nextOffset, setNextOffset] = useState(0);
+  const [reportsReadyWorkspaceId, setReportsReadyWorkspaceId] = useState<string | null>(
+    null
+  );
 
   const [creating, setCreating] = useState(false);
   const [savingReportThemeId, setSavingReportThemeId] = useState<string | null>(
@@ -662,7 +665,13 @@ export default function ReportBuilderPage() {
     ? currentWorkspaceMembership?.workspace_logo_url ?? null
     : null;
 
-  const showAuthenticatedUi = Boolean(userId && !signingIn);
+  const showLoginUi = Boolean(!userId || signingIn);
+  const showAuthenticatedUi = Boolean(
+    userId &&
+      !signingIn &&
+      workspaceId &&
+      reportsReadyWorkspaceId === workspaceId
+  );
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -702,6 +711,7 @@ export default function ReportBuilderPage() {
     setReports([]);
     setHasMore(false);
     setNextOffset(0);
+    setReportsReadyWorkspaceId(null);
     setLoadingReports(false);
     setLoadingMore(false);
     setMediaSyncJobsByReportId({});
@@ -865,6 +875,10 @@ export default function ReportBuilderPage() {
 
           setLoadingReports(false);
           setLoadingMore(false);
+
+          if (reset) {
+            setReportsReadyWorkspaceId(workspaceId);
+          }
         }
       }
     },
@@ -3871,7 +3885,7 @@ export default function ReportBuilderPage() {
               : "0 24px 60px rgba(8, 5, 29, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.06)",
           }}
         >
-          {!showAuthenticatedUi ? (
+          {showLoginUi ? (
             <>
               <div
                 style={{
@@ -4041,6 +4055,24 @@ export default function ReportBuilderPage() {
                 </div>
               </div>
             </>
+          ) : !showAuthenticatedUi ? (
+            <div
+              role="status"
+              aria-live="polite"
+              style={{
+                width: "100%",
+                minHeight: 140,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#e2e1f3",
+                fontSize: 15,
+                fontWeight: 700,
+                textAlign: "center",
+              }}
+            >
+              워크스페이스와 리포트를 불러오는 중...
+            </div>
           ) : (
             <>
               <div
