@@ -2,7 +2,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
-import { isPlatformOwner } from "@/src/lib/supabase/platform-role";
 import {
   loadWorkspaceBrandingMap,
   resolveWorkspaceBrandingMap,
@@ -126,26 +125,47 @@ async function getActor(req: Request) {
   };
 }
 
-async function getProfileEmailByUserId(
+async function getActorWorkspaceAuthority(
   userId: string
 ) {
   const id = asString(userId);
 
-  if (!id) return "";
+  if (!id) {
+    return {
+      isPlatformOwner: false,
+      isTrueMaster: false,
+    };
+  }
 
   const { data, error } = await supabaseAdmin
     .from("profiles")
-    .select("email")
+    .select("email, platform_role")
     .eq("id", id)
     .maybeSingle();
 
   if (error) {
     throw new Error(
-      `FAILED_TO_FETCH_PROFILE_EMAIL:${error.message}`
+      `Failed to load platform_role: ${error.message}`
     );
   }
 
-  return normalizeEmail(data?.email);
+  const email = normalizeEmail(data?.email);
+  const isPlatformOwner =
+    email === ONLY_MASTER_EMAIL &&
+    data?.platform_role === "platform_owner";
+
+  if (email !== ONLY_MASTER_EMAIL) {
+    return {
+      isPlatformOwner,
+      isTrueMaster: false,
+    };
+  }
+
+  return {
+    isPlatformOwner,
+    isTrueMaster:
+      await hasMasterMembership(id),
+  };
 }
 
 async function hasMasterMembership(
@@ -174,19 +194,6 @@ async function hasMasterMembership(
   );
 }
 
-async function isTrueMasterUser(
-  userId: string
-) {
-  const email =
-    await getProfileEmailByUserId(userId);
-
-  if (email !== ONLY_MASTER_EMAIL) {
-    return false;
-  }
-
-  return await hasMasterMembership(userId);
-}
-
 export async function GET(req: Request) {
   try {
     const actorResult = await getActor(req);
@@ -206,11 +213,16 @@ export async function GET(req: Request) {
       return jsonError(401, "UNAUTHORIZED");
     }
 
+    const actorAuthority =
+      await getActorWorkspaceAuthority(
+        userId
+      );
+
     const actorIsPlatformOwner =
-      await isPlatformOwner(userId);
+      actorAuthority.isPlatformOwner;
 
     const actorIsTrueMaster =
-      await isTrueMasterUser(userId);
+      actorAuthority.isTrueMaster;
 
     /**
      * true master는 전체 workspace 조회 가능.
