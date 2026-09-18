@@ -21,8 +21,6 @@ import ReportDownloadButtons from "@/app/components/report/ReportDownloadButtons
 import { buildReportFileName } from "@/src/lib/report/download/file-name";
 import { downloadCsvFile } from "@/src/lib/report/download/export-csv";
 import { prepareElementForExport } from "@/src/lib/report/download/export-helpers";
-import { downloadPngFromElement } from "@/src/lib/report/download/export-png";
-import { downloadPdfFromElement } from "@/src/lib/report/download/export-pdf";
 import { ENABLE_EXPORT_BUILDER_ENTRY } from "@/src/lib/export-builder/feature";
 
 import type { ReportPeriod } from "@/src/lib/report/period";
@@ -5166,6 +5164,10 @@ export default function ReportDetailPage() {
         return;
       }
 
+      const { downloadPdfFromElement } = await import(
+        "@/src/lib/report/download/export-pdf"
+      );
+
       setExportRenderActive(true);
       await waitForExportRender();
 
@@ -5222,6 +5224,10 @@ export default function ReportDetailPage() {
         );
         return;
       }
+
+      const { downloadPngFromElement } = await import(
+        "@/src/lib/report/download/export-png"
+      );
 
       setExportRenderActive(true);
       await waitForExportRender();
