@@ -1,14 +1,4 @@
 /** @type {import('next').NextConfig} */
-const nextConfig = {
-  async redirects() {
-    return [
-      {
-        source: "/",
-        destination: "/report-builder",
-        permanent: false,
-      },
-    ];
-  },
-};
+const nextConfig = {};
 
 module.exports = nextConfig;

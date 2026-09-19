@@ -39,6 +39,20 @@ export function middleware(req: NextRequest) {
     getRequestHostname(req);
 
   if (
+    requestHostname === APP_CANONICAL_HOST &&
+    pathname === "/"
+  ) {
+    const url = req.nextUrl.clone();
+
+    url.protocol = "https:";
+    url.hostname = APP_CANONICAL_HOST;
+    url.port = "";
+    url.pathname = "/report-builder";
+
+    return NextResponse.redirect(url, 307);
+  }
+
+  if (
     NON_CANONICAL_APP_HOSTS.has(requestHostname) &&
     isCanonicalAppPath(pathname)
   ) {
