@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/src/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import MetaAdsConnectionCard from "./MetaAdsConnectionCard";
 import { normalizeReportTheme, type ReportTheme } from "@/src/lib/report/theme";
 
 type ReportType = {
@@ -4901,65 +4902,18 @@ export default function ReportBuilderPage() {
                       </div>
                     </div>
 
-                    <div
-                      style={{
-                        border: "1px solid rgba(124, 92, 255, 0.18)",
-                        borderRadius: 14,
-                        background: "rgba(42, 33, 87, 0.82)",
-                        padding: 14,
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          gap: 8,
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontSize: 13,
-                            fontWeight: 900,
-                            color: "#f7f7ff",
-                          }}
-                        >
-                          META ADS
-                        </div>
-                        <span
-                          style={{
-                            borderRadius: 999,
-                            border: "1px solid rgba(255, 255, 255, 0.12)",
-                            background: "rgba(255, 255, 255, 0.05)",
-                            padding: "4px 8px",
-                            fontSize: 10,
-                            fontWeight: 900,
-                            color: "#bbb8d4",
-                          }}
-                        >
-                          준비 중
-                        </span>
-                      </div>
-                      <div
-                        style={{
-                          marginTop: 10,
-                          fontSize: 11,
-                          lineHeight: 1.6,
-                          color: "#bbb8d4",
-                          minHeight: 70,
-                        }}
-                      >
-                        Meta Ads 연동 기능은 아직 활성화하지 않았습니다.
-                        {hasCurrentAdvertiserMediaConnectionSnapshot &&
-                        !selectedAdvertiserMediaConnectionsError &&
-                        selectedAdvertiserMetaConnections.length > 0 ? (
-                          <>
-                            <br />
-                            DB 연결 기록: {selectedAdvertiserMetaConnections.length}개
-                          </>
-                        ) : null}
-                      </div>
-                    </div>
+                    <MetaAdsConnectionCard
+                      key={`${userId}:${currentAdvertiserMediaConnectionScopeKey}`}
+                      workspaceId={workspaceId ?? ""}
+                      advertiserId={selectedAdvertiserId}
+                      connections={selectedAdvertiserMetaConnections}
+                      loading={loadingSelectedAdvertiserMediaConnections}
+                      resolved={hasCurrentAdvertiserMediaConnectionSnapshot}
+                      error={selectedAdvertiserMediaConnectionsError}
+                      canManage={canManageSelectedAdvertiserMediaConnections}
+                      getAccessToken={getAccessToken}
+                      onRefresh={() => setMediaConnectionsRefreshVersion(value => value + 1)}
+                    />
                   </div>
 
                   {googleAdsConnectionFormOpen ? (
@@ -6441,7 +6395,7 @@ export default function ReportBuilderPage() {
                               whiteSpace: "nowrap",
                             }}
                           >
-                            준비 중
+                            동기화 준비 중
                           </span>
                         </div>
 
@@ -6453,8 +6407,8 @@ export default function ReportBuilderPage() {
                             color: "#bbb8d4",
                           }}
                         >
-                          Meta Ads 연결은 다음 provider 단계에서
-                          활성화합니다.
+                          계정 등록은 위의 매체 계정 연결에서 관리할 수 있습니다.
+                          Meta 광고 데이터 동기화는 아직 활성화하지 않았습니다.
                         </div>
 
                         {selectedAdvertiserMetaConnections.length > 0 ? (
