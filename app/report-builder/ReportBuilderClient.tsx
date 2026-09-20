@@ -6395,7 +6395,9 @@ export default function ReportBuilderPage() {
                               whiteSpace: "nowrap",
                             }}
                           >
-                            동기화 준비 중
+                            {selectedAdvertiserMetaConnections.length > 0
+                              ? "선택 불가"
+                              : "연결 필요"}
                           </span>
                         </div>
 
@@ -6407,8 +6409,7 @@ export default function ReportBuilderPage() {
                             color: "#bbb8d4",
                           }}
                         >
-                          계정 등록은 위의 매체 계정 연결에서 관리할 수 있습니다.
-                          Meta 광고 데이터 동기화는 아직 활성화하지 않았습니다.
+                          이 리포트에 포함할 Meta Ads 연결을 선택합니다.
                         </div>
 
                         {selectedAdvertiserMetaConnections.length > 0 ? (
@@ -6425,10 +6426,22 @@ export default function ReportBuilderPage() {
                               color: "#bbb8d4",
                             }}
                           >
-                            DB 연결 기록:{" "}
-                            {selectedAdvertiserMetaConnections.length}개
+                            등록된 Meta Ads 연결: {selectedAdvertiserMetaConnections.length}개
+                            <br />
+                            현재 이 리포트에서는 Meta Ads 연결을 선택할 수 없습니다.
                           </div>
-                        ) : null}
+                        ) : (
+                          <div
+                            style={{
+                              marginTop: 12,
+                              fontSize: 11,
+                              lineHeight: 1.65,
+                              color: "#bbb8d4",
+                            }}
+                          >
+                            등록된 Meta Ads 연결이 없습니다.
+                          </div>
+                        )}
                       </div>
                     </div>
                   </>

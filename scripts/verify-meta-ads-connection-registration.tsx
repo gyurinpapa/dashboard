@@ -170,11 +170,11 @@ async function fixture() {
     const markup = renderToStaticMarkup(createElement(Card, state));
     assert.ok(markup.includes(label)); assert.equal(markup.includes(token), false);
     assert.ok(markup.includes("광고 데이터 동기화는 아직 활성화하지 않았습니다."));
-    if (!view(state).ready) assert.equal(markup.includes("Meta 계정 등록"), false);
+    if (!view(state).ready) assert.equal(markup.includes("Meta 계정 연결"), false);
     cases++;
   }
   const readonlyMarkup = renderToStaticMarkup(createElement(Card, { ...props, canManage: false }));
-  assert.equal(readonlyMarkup.includes("Meta 계정 등록"), false); assert.ok(readonlyMarkup.includes("조회 권한만 있습니다.")); cases++;
+  assert.equal(readonlyMarkup.includes("Meta 계정 연결"), false); assert.ok(readonlyMarkup.includes("조회 권한만 있습니다.")); cases++;
   assert.equal(metaAdsConnectionErrorMessage(token).includes(token), false); cases++;
   const capabilities = await import("../src/lib/media-sync/media-provider-sync-capabilities");
   assert.equal(capabilities.getMediaProviderSyncCapability("meta_ads").syncRuntimeEnabled, false); cases++;

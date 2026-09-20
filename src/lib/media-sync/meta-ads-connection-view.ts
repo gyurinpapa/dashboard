@@ -46,8 +46,8 @@ export function metaAdsConnectionErrorMessage(code: unknown): string {
     case "FORBIDDEN": return "이 광고주의 매체 연결을 관리할 권한이 없습니다.";
     case "SCOPE_MISMATCH": return "광고주 또는 워크스페이스가 변경되었습니다. 연결 상태를 다시 확인해 주세요.";
     case "INVALID_INPUT": return "광고계정 ID와 액세스 토큰 입력값을 확인해 주세요.";
-    case "ALREADY_EXISTS": return "이미 등록된 계정입니다. 연결 상태를 새로고침해 주세요.";
+    case "ALREADY_EXISTS": return "이미 등록된 계정입니다. 페이지를 새로고침해 주세요.";
     case "ENCRYPTION_FAILED": return "인증 정보를 안전하게 암호화하지 못해 저장하지 않았습니다.";
-    default: return "등록 결과를 확인하지 못했습니다. 연결 상태를 새로고침한 뒤 다시 시도해 주세요.";
+    default: return "등록 결과를 확인하지 못했습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.";
   }
 }

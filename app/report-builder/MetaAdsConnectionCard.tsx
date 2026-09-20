@@ -126,9 +126,8 @@ export default function MetaAdsConnectionCard(props: Props) {
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
         {props.canManage && view.ready && !open && (
-          <button type="button" style={buttonStyle} onClick={() => { setOpen(true); setError(""); setNotice(""); }}>Meta 계정 등록</button>
+          <button type="button" style={buttonStyle} onClick={() => { setOpen(true); setError(""); setNotice(""); }}>Meta 계정 연결</button>
         )}
-        <button type="button" style={buttonStyle} disabled={props.loading || saving} onClick={props.onRefresh}>상태 새로고침</button>
       </div>
       {view.ready && !props.canManage && <p style={{ fontSize: 11 }}>조회 권한만 있습니다.</p>}
       {open && props.canManage && view.ready && (
