@@ -274,7 +274,8 @@ function validateJob(
 
   if (
     value.provider !== NAVER_PROVIDER &&
-    value.provider !== GOOGLE_ADS_PROVIDER
+    value.provider !== GOOGLE_ADS_PROVIDER &&
+    value.provider !== "meta_ads"
   ) {
     throw new MediaSyncSnapshotActivationError(
       "UNSUPPORTED_PROVIDER",
@@ -865,6 +866,14 @@ export async function activateMediaSyncSnapshot(
   }
 
   validateJob(input.job);
+
+  if (input.job.provider === "meta_ads" &&
+      (typeof input.dependencies?.invokeRpc !== "function" || !input.projection ||
+       input.job.data_level !== "creative")) {
+    throw new MediaSyncSnapshotActivationError(
+      "INVALID_INPUT", "Meta activation requires an injected RPC and explicit projection authority.",
+    );
+  }
 
   const expectedRows =
     validateExpectedRows(

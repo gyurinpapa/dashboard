@@ -1,0 +1,246 @@
+{
+  "description": "Synthetic offline wire fixtures only. fixture.* action/attribution labels are not a production policy; absent selected actions remain errors. No actual Meta API response or live compatibility claim.",
+  "context": {
+    "apiVersion": "v26.0",
+    "level": "ad",
+    "timeIncrement": 1,
+    "breakdowns": [],
+    "actionBreakdowns": [],
+    "externalAccountId": "12345678901234567890",
+    "dateFrom": "2026-09-01",
+    "dateTo": "2026-09-07",
+    "currency": "KRW",
+    "timeZone": "Asia/Seoul",
+    "metricPolicy": {
+      "conversionActionType": "fixture.explicit_conversion",
+      "revenueActionType": "fixture.explicit_revenue",
+      "actionReportTime": "fixture.explicit_report_time",
+      "attributionWindows": [
+        "fixture.explicit_window"
+      ]
+    }
+  },
+  "pages": [
+    {
+      "data": [
+        {
+          "account_id": "12345678901234567890",
+          "campaign_id": "1001",
+          "campaign_name": "Fixture campaign",
+          "adset_id": "2001",
+          "adset_name": "Fixture ad set",
+          "ad_id": "3001",
+          "ad_name": "Fixture ad",
+          "date_start": "2026-09-01",
+          "date_stop": "2026-09-01",
+          "impressions": "100",
+          "clicks": "10",
+          "spend": "12.345",
+          "actions": [
+            {
+              "action_type": "fixture.explicit_conversion",
+              "value": "1.5"
+            },
+            {
+              "action_type": "fixture.unselected_total",
+              "value": "900"
+            }
+          ],
+          "action_values": [
+            {
+              "action_type": "fixture.explicit_revenue",
+              "value": "45.67"
+            },
+            {
+              "action_type": "fixture.unselected_total",
+              "value": "9000"
+            }
+          ]
+        },
+        {
+          "account_id": "12345678901234567890",
+          "campaign_id": "1001",
+          "adset_id": "2001",
+          "ad_id": "3001",
+          "date_start": "2026-09-02",
+          "date_stop": "2026-09-02",
+          "impressions": "0",
+          "clicks": "0",
+          "spend": "0",
+          "actions": [
+            {
+              "action_type": "fixture.explicit_conversion",
+              "value": "0"
+            }
+          ],
+          "action_values": [
+            {
+              "action_type": "fixture.explicit_revenue",
+              "value": "0"
+            }
+          ]
+        },
+        {
+          "account_id": "12345678901234567890",
+          "campaign_id": "1001",
+          "adset_id": "2001",
+          "ad_id": "3001",
+          "date_start": "2026-09-03",
+          "date_stop": "2026-09-03",
+          "impressions": "0",
+          "clicks": "0",
+          "spend": "0",
+          "actions": [
+            {
+              "action_type": "fixture.explicit_conversion",
+              "value": "2.25"
+            }
+          ],
+          "action_values": [
+            {
+              "action_type": "fixture.explicit_revenue",
+              "value": "0"
+            }
+          ]
+        }
+      ],
+      "paging": {
+        "cursors": {
+          "after": "fixture-page-2"
+        },
+        "next": "https://graph.facebook.com/v26.0/act_12345678901234567890/insights?after=fixture-page-2&access_token=discard-fixture-token"
+      }
+    },
+    {
+      "data": [],
+      "paging": {
+        "cursors": {
+          "after": "fixture-page-3"
+        },
+        "next": "https://graph.facebook.com/v26.0/act_12345678901234567890/insights?after=fixture-page-3"
+      }
+    },
+    {
+      "data": [
+        {
+          "account_id": "12345678901234567890",
+          "campaign_id": "1001",
+          "adset_id": "2001",
+          "ad_id": "3001",
+          "date_start": "2026-09-04",
+          "date_stop": "2026-09-04",
+          "impressions": "0",
+          "clicks": "0",
+          "spend": "0",
+          "actions": [
+            {
+              "action_type": "fixture.explicit_conversion",
+              "value": "0"
+            }
+          ],
+          "action_values": [
+            {
+              "action_type": "fixture.explicit_revenue",
+              "value": "99.5"
+            }
+          ]
+        },
+        {
+          "account_id": "12345678901234567890",
+          "campaign_id": "1001",
+          "adset_id": "2001",
+          "ad_id": "3001",
+          "date_start": "2026-09-05",
+          "date_stop": "2026-09-05",
+          "impressions": "0",
+          "clicks": "0",
+          "spend": "0.125",
+          "actions": [
+            {
+              "action_type": "fixture.explicit_conversion",
+              "value": "0"
+            }
+          ],
+          "action_values": [
+            {
+              "action_type": "fixture.explicit_revenue",
+              "value": "0"
+            }
+          ]
+        },
+        {
+          "account_id": "12345678901234567890",
+          "campaign_id": "1001",
+          "adset_id": "2001",
+          "ad_id": "3001",
+          "date_start": "2026-09-06",
+          "date_stop": "2026-09-06",
+          "impressions": "0",
+          "clicks": "1",
+          "spend": "0",
+          "actions": [
+            {
+              "action_type": "fixture.explicit_conversion",
+              "value": "0"
+            }
+          ],
+          "action_values": [
+            {
+              "action_type": "fixture.explicit_revenue",
+              "value": "0"
+            }
+          ]
+        },
+        {
+          "account_id": "12345678901234567890",
+          "campaign_id": "1001",
+          "adset_id": "2001",
+          "ad_id": "3001",
+          "date_start": "2026-09-07",
+          "date_stop": "2026-09-07",
+          "impressions": "1",
+          "clicks": "0",
+          "spend": "0",
+          "actions": [
+            {
+              "action_type": "fixture.explicit_conversion",
+              "value": "0"
+            }
+          ],
+          "action_values": [
+            {
+              "action_type": "fixture.explicit_revenue",
+              "value": "0"
+            }
+          ]
+        }
+      ],
+      "paging": {
+        "cursors": {
+          "after": "terminal-cursor-not-a-next-page"
+        }
+      }
+    }
+  ],
+  "expected": {
+    "fetchedRows": 7,
+    "canonicalRows": 6,
+    "pages": 3
+  },
+  "errors": {
+    "transient": {
+      "error": {
+        "code": 2,
+        "is_transient": true,
+        "message": "DO_NOT_ECHO_RESPONSE_MESSAGE"
+      }
+    },
+    "auth": {
+      "error": {
+        "code": 190,
+        "is_transient": true,
+        "message": "DO_NOT_ECHO_RESPONSE_MESSAGE"
+      }
+    }
+  }
+}

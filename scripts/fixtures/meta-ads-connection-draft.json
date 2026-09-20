@@ -1,0 +1,19 @@
+{
+  "kind": "meta_ads_unconnected_draft",
+  "version": 1,
+  "executionEnabled": false,
+  "accountMetadataVerified": false,
+  "apiVersion": "v26.0",
+  "grain": { "level": "ad", "timeIncrement": 1, "breakdowns": [], "actionBreakdowns": [], "device": "" },
+  "scope": null,
+  "currency": null,
+  "timeZone": null,
+  "metricPolicyCandidate": {
+    "conversionActionType": null,
+    "revenueActionType": null,
+    "actionReportTime": "impression",
+    "attributionWindows": ["7d_click", "1d_view"]
+  },
+  "candidateIsAccountVerified": false,
+  "missingSelectedActionPolicy": "reject_without_zero_inference"
+}

@@ -148,7 +148,8 @@ type MaterializationScope = {
   connectionId: string;
   provider:
     | typeof NAVER_PROVIDER
-    | typeof GOOGLE_ADS_PROVIDER;
+    | typeof GOOGLE_ADS_PROVIDER
+    | "meta_ads";
   externalAccountId: string;
   dateFrom: string;
   dateTo: string;
@@ -416,7 +417,8 @@ function validateJob(
 
   if (
     value.provider !== NAVER_PROVIDER &&
-    value.provider !== GOOGLE_ADS_PROVIDER
+    value.provider !== GOOGLE_ADS_PROVIDER &&
+    value.provider !== "meta_ads"
   ) {
     throw new MediaSyncSnapshotMaterializationError(
       "UNSUPPORTED_PROVIDER",
@@ -544,7 +546,9 @@ function buildMaterializationScope(
       input.job.connection_id,
 
     provider:
-      input.job.provider ===
+      input.job.provider === "meta_ads"
+        ? "meta_ads"
+        : input.job.provider ===
         GOOGLE_ADS_PROVIDER
         ? GOOGLE_ADS_PROVIDER
         : NAVER_PROVIDER,
@@ -1783,6 +1787,14 @@ export async function materializeMediaSyncSnapshot(
   validateJob(
     input.job,
   );
+
+  if (input.job.provider === "meta_ads" &&
+      (typeof input.dependencies?.invokeRpc !== "function" || !input.targetReportId ||
+       input.job.data_level !== "creative")) {
+    throw new MediaSyncSnapshotMaterializationError(
+      "INVALID_INPUT", "Meta materialization requires an injected RPC and explicit creative projection target.",
+    );
+  }
 
   validateCompleteSummary(
     input.job,

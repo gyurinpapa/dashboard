@@ -1,0 +1,1035 @@
+{
+  "version": 1,
+  "repository": "https://github.com/gyurinpapa/dashboard.git",
+  "branch": "meta-ads-api",
+  "base_commit": "f714e95a374592a0f7581a2d82132ab043fab35e",
+  "head_commit": "f714e95a374592a0f7581a2d82132ab043fab35e",
+  "state": "UNCOMMITTED_UNPUSHED_OFFLINE_CANDIDATE",
+  "recorded_date": "2026-09-20",
+  "source_snapshot_sha256": "337b29f6e7397b058c876830d2e0b3f832a48c3fd770e76c59ebab5a19e6ef46",
+  "snapshot_definition": "SHA256 of sorted file entries: sha256 + two spaces + path + LF, UTF-8; excludes new handoff documents and ZIP",
+  "counts": {
+    "modified_existing": 4,
+    "new_before_handoff": 95,
+    "source_and_prior_artifact_files": 99,
+    "new_handoff_documents": 3
+  },
+  "category_counts": {
+    "existing_documentation": 4,
+    "fixture_exporter": 3,
+    "fixture_or_record": 7,
+    "historical_retry_archive": 4,
+    "isolated_postgres_harness": 5,
+    "postgres_preparation": 1,
+    "offline_preview_cli": 1,
+    "historical_mac_runner": 12,
+    "readonly_sql_audit": 3,
+    "sql_candidate": 7,
+    "offline_verifier": 30,
+    "shared_provider_module": 4,
+    "meta_application_module": 18
+  },
+  "runtime_gate": {
+    "syncRuntimeEnabled": false,
+    "allowedDataLevels": []
+  },
+  "files": [
+    {
+      "path": "scripts/README-meta-ads-account-preflight.md",
+      "status": "new",
+      "category": "existing_documentation",
+      "reason_ko": "미연결 draft·계정 metadata 대조·106개 offline 검증 설명",
+      "risk": "DOCUMENTATION",
+      "bytes": 6007,
+      "sha256": "971f65fc283d5e8b2d8b50c5bfd8564da6f7883aeef222a9a4ee9794e9681c8f",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/README-meta-ads-api-test-preview.md",
+      "status": "new",
+      "category": "existing_documentation",
+      "reason_ko": "실행 없는 최소 API 요청 CLI·116개 검증과 사용법",
+      "risk": "DOCUMENTATION",
+      "bytes": 6406,
+      "sha256": "d577fd1ab334de2e71b017efb92f0ad90892ab1ab3ee4924211a7d26941b643c",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/README-meta-ads-isolated-harness.md",
+      "status": "new",
+      "category": "existing_documentation",
+      "reason_ko": "초기 격리 PostgreSQL harness 사용법·사용자 제출 결과·당시 제약",
+      "risk": "DOCUMENTATION",
+      "bytes": 7450,
+      "sha256": "7db6c10bf6d887b6e49271fa166785294d1f82160c1ea08098985ac80a6242c9",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/README-meta-ads-server-preflight-integration.md",
+      "status": "new",
+      "category": "existing_documentation",
+      "reason_ko": "수집 전 metadata와 완료 복구 통합·128개 mock 검증 설명",
+      "risk": "DOCUMENTATION",
+      "bytes": 5690,
+      "sha256": "b199351c6568532eaf0d4b6ebd45e6f9f9d00140417beebba9c12410ec0057c4",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/export-meta-ads-isolated-fixture.ts",
+      "status": "new",
+      "category": "fixture_exporter",
+      "reason_ko": "isolated fixture 합성 데이터·IPC fixture 생성; 네트워크 차단",
+      "risk": "OFFLINE_FIXTURE_TOOL",
+      "bytes": 3560,
+      "sha256": "9e678eee0591a6166b074b5a408e4627ba470b824e786f9cbf886411e2298f90",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/export-meta-ads-materialization-handoff-fixture.ts",
+      "status": "new",
+      "category": "fixture_exporter",
+      "reason_ko": "materialization handoff fixture 합성 데이터·IPC fixture 생성; 네트워크 차단",
+      "risk": "OFFLINE_FIXTURE_TOOL",
+      "bytes": 5590,
+      "sha256": "24705a95761dd1190f955dc75541b38b1842f0563905894c4b5955134d333a8b",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/export-meta-ads-page-checkpoint-fixture.ts",
+      "status": "new",
+      "category": "fixture_exporter",
+      "reason_ko": "page checkpoint fixture 합성 데이터·IPC fixture 생성; 네트워크 차단",
+      "risk": "OFFLINE_FIXTURE_TOOL",
+      "bytes": 7780,
+      "sha256": "1a130ac018f1b6fb25f65bf33f6fee867082aa72124bfc5685b34aabba27b1f9",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/fixtures/meta-ads-ad-daily-insights.json",
+      "status": "new",
+      "category": "fixture_or_record",
+      "reason_ko": "합성 ad daily 입력·canonical 기대값·거부 사례",
+      "risk": "FIXTURE_OR_HISTORICAL_RECORD",
+      "bytes": 8461,
+      "sha256": "652f00734e4c6b31d21eb49581c740877869c529e0be6fe647591467ebb2b1af",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/fixtures/meta-ads-connection-draft.json",
+      "status": "new",
+      "category": "fixture_or_record",
+      "reason_ko": "계정 미연결 null 설정과 교체 가능한 지표 정책 후보",
+      "risk": "FIXTURE_OR_HISTORICAL_RECORD",
+      "bytes": 604,
+      "sha256": "f6706800bc95212d435c57bcb2947d9aeb74fb509f947e521739e6370788d25d",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/fixtures/meta-ads-db-authority-baseline.json",
+      "status": "new",
+      "category": "fixture_or_record",
+      "reason_ko": "READ ONLY 수집 DB 함수 정의/권한 baseline; 프로젝트 ref 독립 확인 아님",
+      "risk": "FIXTURE_OR_HISTORICAL_RECORD",
+      "bytes": 411273,
+      "sha256": "a8d1f166a3ab41aedd8499417516ad49a6d2da9cb193af0121fb3e970056b121",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/fixtures/meta-ads-insights-pages.json",
+      "status": "new",
+      "category": "fixture_or_record",
+      "reason_ko": "3개 합성 API page와 7 fetched/6 canonical 기대값",
+      "risk": "FIXTURE_OR_HISTORICAL_RECORD",
+      "bytes": 6558,
+      "sha256": "6f40530bb9666f2cd1cc2c980edf2194658b255c1087200ce48c2f6c19be892c",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/fixtures/meta-ads-isolated-db-authority.json",
+      "status": "new",
+      "category": "fixture_or_record",
+      "reason_ko": "격리 fixture용 테이블·기존/보조 함수·제약·권한 정의",
+      "risk": "FIXTURE_OR_HISTORICAL_RECORD",
+      "bytes": 508767,
+      "sha256": "83c82dd460c2e8344359efdbdb3c1dabfbabf0e3052a33bf6438e3d16808c985",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/fixtures/meta-ads-isolated-runtime-acceptance.json",
+      "status": "new",
+      "category": "fixture_or_record",
+      "reason_ko": "초기 사용자 제출 PG 결과 및 당시 파일 해시·검증 한계 기록",
+      "risk": "FIXTURE_OR_HISTORICAL_RECORD",
+      "bytes": 6068,
+      "sha256": "11465908db83f39a2d7929d6417bc7d3935b5af6eb1a23ff61473ae5e98a4cf3",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/fixtures/meta-ads-postgres-environment-preflight.json",
+      "status": "new",
+      "category": "fixture_or_record",
+      "reason_ko": "과거 PG 바이너리 준비 환경 진단 기록; 현재 운영 준비 판정 아님",
+      "risk": "FIXTURE_OR_HISTORICAL_RECORD",
+      "bytes": 1074,
+      "sha256": "8a5cbc78a8de2e7c339dce3604aec353e052eaf2bb4f43df96c4ff3423ea539e",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/meta-checkpoint-retry.zip",
+      "status": "new",
+      "category": "historical_retry_archive",
+      "reason_ko": "과거 checkpoint retry 전달본 보존; 현재 구현 재적용용 아님",
+      "risk": "HISTORICAL_DO_NOT_AUTO_RUN",
+      "bytes": 34411,
+      "sha256": "a0c1a384192f0580b9b21c76c83eaefcf3d214c58d378e3b4dc5d9de8a0dab77",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/meta-finalize-alias-retry.zip",
+      "status": "new",
+      "category": "historical_retry_archive",
+      "reason_ko": "과거 finalize alias retry 전달본 보존; 현재 구현 재적용용 아님",
+      "risk": "HISTORICAL_DO_NOT_AUTO_RUN",
+      "bytes": 38759,
+      "sha256": "61e5e62dbfe627f3e68cbcb3014d8054680a4c8e09795196a84652682fc22fa7",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/meta-rpc-name-retry.zip",
+      "status": "new",
+      "category": "historical_retry_archive",
+      "reason_ko": "과거 rpc name retry 전달본 보존; 현재 구현 재적용용 아님",
+      "risk": "HISTORICAL_DO_NOT_AUTO_RUN",
+      "bytes": 30324,
+      "sha256": "9b31054fac9a84d7ab0a1b66ec2c785aac6aba33e62c85bfe83658b5b897e5ff",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/meta-timezone-retry.zip",
+      "status": "new",
+      "category": "historical_retry_archive",
+      "reason_ko": "과거 timezone retry 전달본 보존; 현재 구현 재적용용 아님",
+      "risk": "HISTORICAL_DO_NOT_AUTO_RUN",
+      "bytes": 59575,
+      "sha256": "a8885024e2c7a5d65adb82a111f0f7c65c48b4a85990de56f86de9ade1c6b26b",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/meta_ads_completion_claim_harness.py",
+      "status": "new",
+      "category": "isolated_postgres_harness",
+      "reason_ko": "completion claim 단계의 private PostgreSQL fixture·재시작·롤백 검증",
+      "risk": "OPT_IN_ISOLATED_RUNTIME_DO_NOT_AUTO_RUN",
+      "bytes": 13108,
+      "sha256": "8d17788663dc0998a1d56120309756f791fefc71bc68ae3a9be75217ccb7f110",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/meta_ads_completion_harness.py",
+      "status": "new",
+      "category": "isolated_postgres_harness",
+      "reason_ko": "completion 단계의 private PostgreSQL fixture·재시작·롤백 검증",
+      "risk": "OPT_IN_ISOLATED_RUNTIME_DO_NOT_AUTO_RUN",
+      "bytes": 10437,
+      "sha256": "f71a728dd5199b60891b1914fe3d23d8ba57b4c7cdcc45a61e967208950c9f28",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/meta_ads_isolated_harness.py",
+      "status": "new",
+      "category": "isolated_postgres_harness",
+      "reason_ko": "isolated 단계의 private PostgreSQL fixture·재시작·롤백 검증",
+      "risk": "OPT_IN_ISOLATED_RUNTIME_DO_NOT_AUTO_RUN",
+      "bytes": 43589,
+      "sha256": "64e4d2e45cacc255a531d519d61f3f22fe58ecd781d3208f22af80037dd1e55e",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/meta_ads_materialization_handoff_harness.py",
+      "status": "new",
+      "category": "isolated_postgres_harness",
+      "reason_ko": "materialization handoff 단계의 private PostgreSQL fixture·재시작·롤백 검증",
+      "risk": "OPT_IN_ISOLATED_RUNTIME_DO_NOT_AUTO_RUN",
+      "bytes": 23229,
+      "sha256": "35ad02d83d8e51fb1c75d3e726389e8bcc2162704d791c133faceaa900e0369c",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/meta_ads_page_checkpoint_harness.py",
+      "status": "new",
+      "category": "isolated_postgres_harness",
+      "reason_ko": "page checkpoint 단계의 private PostgreSQL fixture·재시작·롤백 검증",
+      "risk": "OPT_IN_ISOLATED_RUNTIME_DO_NOT_AUTO_RUN",
+      "bytes": 18965,
+      "sha256": "27110bd63e7617703465cc11f893df20dd82396c4b78765cb2e977b7a7dddf3c",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/prepare-meta-ads-postgres-runtime.sh",
+      "status": "new",
+      "category": "postgres_preparation",
+      "reason_ko": "PG17.6 바이너리 준비와 source hash 검증; DB 실행과 분리",
+      "risk": "OPT_IN_LOCAL_BUILD_DO_NOT_AUTO_RUN",
+      "bytes": 4888,
+      "sha256": "6948a1c9180049fe19c8b2ddb76cbbb29a75abd6732387a4672cebb37abc5bf2",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/preview-meta-ads-api-test.ts",
+      "status": "new",
+      "category": "offline_preview_cli",
+      "reason_ko": "미연결/합성/수동 설정의 요청 미리보기 CLI; live 실행 없음",
+      "risk": "OFFLINE_PREVIEW_ONLY",
+      "bytes": 4381,
+      "sha256": "6eb8472f710f941cfdd92c0b3c16f4dd6d0672f97ca9e497e6d83aa6c0501861",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/resume-meta-ads-checkpoint-test.py",
+      "status": "new",
+      "category": "historical_mac_runner",
+      "reason_ko": "당시 checkpoint test 단계의 격리 Mac 재개 runner 보존",
+      "risk": "OPT_IN_ISOLATED_RUNTIME_DO_NOT_AUTO_RUN",
+      "bytes": 45423,
+      "sha256": "777d3febb8223b4c459c9e9bad982d5f1c23a6b8ab26f357c3d3f0e0dff7221e",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/resume-meta-ads-completion-claim-test.py",
+      "status": "new",
+      "category": "historical_mac_runner",
+      "reason_ko": "최신 사용자 PG claim 검증에 사용한 격리 Mac runner; payload 59개 현재 일치",
+      "risk": "OPT_IN_ISOLATED_RUNTIME_DO_NOT_AUTO_RUN",
+      "bytes": 615462,
+      "sha256": "55eb50c1320c7c853754b5d54befae1ee66224fb72b00fecd01f6e6e640e330f",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/resume-meta-ads-completion-test.py",
+      "status": "new",
+      "category": "historical_mac_runner",
+      "reason_ko": "당시 completion test 단계의 격리 Mac 재개 runner 보존",
+      "risk": "OPT_IN_ISOLATED_RUNTIME_DO_NOT_AUTO_RUN",
+      "bytes": 595002,
+      "sha256": "c918bbd542d271488a2611d9d625e556ebd5a0387a02650bb490c7741f784e66",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/resume-meta-ads-db-checkpoint-case-test.py",
+      "status": "new",
+      "category": "historical_mac_runner",
+      "reason_ko": "당시 db checkpoint case test 단계의 격리 Mac 재개 runner 보존",
+      "risk": "OPT_IN_ISOLATED_RUNTIME_DO_NOT_AUTO_RUN",
+      "bytes": 524994,
+      "sha256": "15d88e0167d13c8b6d6bde72ded46594dc4c99fcb8082ed698d7a824d15c42e8",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/resume-meta-ads-db-checkpoint-roles-test.py",
+      "status": "new",
+      "category": "historical_mac_runner",
+      "reason_ko": "당시 db checkpoint roles test 단계의 격리 Mac 재개 runner 보존",
+      "risk": "OPT_IN_ISOLATED_RUNTIME_DO_NOT_AUTO_RUN",
+      "bytes": 524361,
+      "sha256": "77ac5e6d78259060cd39ac11fd3ac523c0d03702358ef41c3f10d0bf7038cf10",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/resume-meta-ads-db-checkpoint-test.py",
+      "status": "new",
+      "category": "historical_mac_runner",
+      "reason_ko": "당시 db checkpoint test 단계의 격리 Mac 재개 runner 보존",
+      "risk": "OPT_IN_ISOLATED_RUNTIME_DO_NOT_AUTO_RUN",
+      "bytes": 522111,
+      "sha256": "e278181ae067f6c9a3bfbcfe89e1f2834ba5ff39e681947d22242789e48e1a0a",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/resume-meta-ads-finalize-alias-test.py",
+      "status": "new",
+      "category": "historical_mac_runner",
+      "reason_ko": "당시 finalize alias test 단계의 격리 Mac 재개 runner 보존",
+      "risk": "OPT_IN_ISOLATED_RUNTIME_DO_NOT_AUTO_RUN",
+      "bytes": 50807,
+      "sha256": "51d8a4276c9f04960033b11afb37c74cbd51e34bee41411aa354ca5fa24d58bf",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/resume-meta-ads-handoff-generated-row-test.py",
+      "status": "new",
+      "category": "historical_mac_runner",
+      "reason_ko": "당시 handoff generated row test 단계의 격리 Mac 재개 runner 보존",
+      "risk": "OPT_IN_ISOLATED_RUNTIME_DO_NOT_AUTO_RUN",
+      "bytes": 586843,
+      "sha256": "330712d800eac86fc82233d8c5801d53bd5f03aad0b1f4ad07f3e15941b20d84",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/resume-meta-ads-materialization-handoff-test.py",
+      "status": "new",
+      "category": "historical_mac_runner",
+      "reason_ko": "당시 materialization handoff test 단계의 격리 Mac 재개 runner 보존",
+      "risk": "OPT_IN_ISOLATED_RUNTIME_DO_NOT_AUTO_RUN",
+      "bytes": 585238,
+      "sha256": "fc8d4f9ca1d306d977ce0107da712f33653d17db1263f2edcca7621ca6abb360",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/resume-meta-ads-rpc-name-test.py",
+      "status": "new",
+      "category": "historical_mac_runner",
+      "reason_ko": "당시 rpc name test 단계의 격리 Mac 재개 runner 보존",
+      "risk": "OPT_IN_ISOLATED_RUNTIME_DO_NOT_AUTO_RUN",
+      "bytes": 40650,
+      "sha256": "a34cd4f8e6647ec3b6a5c358188ecbb113dc0cb431f2506500831024d669d942",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/resume-meta-ads-timezone-test.py",
+      "status": "new",
+      "category": "historical_mac_runner",
+      "reason_ko": "당시 timezone test 단계의 격리 Mac 재개 runner 보존",
+      "risk": "OPT_IN_ISOLATED_RUNTIME_DO_NOT_AUTO_RUN",
+      "bytes": 76686,
+      "sha256": "d1f1f0101fae98c02ca6a4c8681a19b8ffc68110d4ea7c679d1a3916d3c817e7",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/run-meta-ads-isolated-mac.py",
+      "status": "new",
+      "category": "historical_mac_runner",
+      "reason_ko": "최초 격리 Mac 검증 workspace 준비 및 실행 runner 보존",
+      "risk": "OPT_IN_ISOLATED_RUNTIME_DO_NOT_AUTO_RUN",
+      "bytes": 425472,
+      "sha256": "583df7fdd6a5e684b06e584913a50ff04db225eac75c64d463089a83fa80a96e",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/sql/audit-meta-ads-dependency-closure-readonly.sql",
+      "status": "new",
+      "category": "readonly_sql_audit",
+      "reason_ko": "DB 함수 의존성 closure의 READ ONLY 감사 질의",
+      "risk": "READ_ONLY_QUERY_NOT_EXECUTED",
+      "bytes": 17597,
+      "sha256": "35362226d3c6b3394b1c905789208a72fbd582cc05441a77a9689479ec6dc271",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/sql/audit-meta-ads-reference-dependencies-readonly.sql",
+      "status": "new",
+      "category": "readonly_sql_audit",
+      "reason_ko": "참조 테이블/함수 의존성의 READ ONLY 감사 질의",
+      "risk": "READ_ONLY_QUERY_NOT_EXECUTED",
+      "bytes": 12188,
+      "sha256": "a4ece2265262e187ba357f88cb78c0466dfa204ea00f73be8122996800a59ce6",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/sql/audit-meta-ads-transitive-dependencies-readonly.sql",
+      "status": "new",
+      "category": "readonly_sql_audit",
+      "reason_ko": "전이 함수 의존성과 권한의 READ ONLY 감사 질의",
+      "risk": "READ_ONLY_QUERY_NOT_EXECUTED",
+      "bytes": 12670,
+      "sha256": "79347aed53d36148308c2168d3998eec60c45c2af08375fed1bf40db909973e6",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/sql/create-activate-meta-ads-snapshot-fanout.sql",
+      "status": "new",
+      "category": "sql_candidate",
+      "reason_ko": "복수 projection 활성화의 원자성·baseline 검사 SQL 후보",
+      "risk": "SQL_REVIEW_ONLY_NOT_APPLIED",
+      "bytes": 13334,
+      "sha256": "7bec4fe4761f4f2baaa11e572043fe4023cb8d01874eb15ea4294ee318a40427",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/sql/create-meta-ads-completion-claim-fence.sql",
+      "status": "new",
+      "category": "sql_candidate",
+      "reason_ko": "원본 claim 검증을 추가한 activation/finalization wrapper SQL 후보",
+      "risk": "SQL_REVIEW_ONLY_NOT_APPLIED",
+      "bytes": 9397,
+      "sha256": "66a4a9ec04119e8984b742c683dc083cae4d8bc741b95e67f2392d1b9f37a3a4",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/sql/create-meta-ads-finalization-contract.sql",
+      "status": "new",
+      "category": "sql_candidate",
+      "reason_ko": "Meta 완료·connection last_sync 계약 SQL 후보",
+      "risk": "SQL_REVIEW_ONLY_NOT_APPLIED",
+      "bytes": 21042,
+      "sha256": "a5247ad5f4f22b6e118efa7edaa4ad502973f0bfe3315068bd661bf0694f8bd0",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/sql/create-meta-ads-materialization-handoff.sql",
+      "status": "new",
+      "category": "sql_candidate",
+      "reason_ko": "원자적 checkpoint handoff·projection materialization SQL 후보",
+      "risk": "SQL_REVIEW_ONLY_NOT_APPLIED",
+      "bytes": 23081,
+      "sha256": "b4a68489ddf97e7cad1da80b000b871fb02485ffab6c338b459d8ed0fb3b6164",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/sql/create-meta-ads-page-checkpoint-contract.sql",
+      "status": "new",
+      "category": "sql_candidate",
+      "reason_ko": "same-claim page checkpoint 테이블·load/CAS/append SQL 후보",
+      "risk": "SQL_REVIEW_ONLY_NOT_APPLIED",
+      "bytes": 24290,
+      "sha256": "7736da65d1bdb7e20f868ec1cf6783a843e2dfcca1b27c16ef4ce4c6f4374d6f",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/sql/create-meta-ads-snapshot-materialization.sql",
+      "status": "new",
+      "category": "sql_candidate",
+      "reason_ko": "Meta snapshot 생성·bounded materialization SQL 후보",
+      "risk": "SQL_REVIEW_ONLY_NOT_APPLIED",
+      "bytes": 52620,
+      "sha256": "3902332ee27eff683cff1e11276968c12784c50ac1037a08bb6574c186176dfa",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/sql/create-meta-ads-staging-contract.sql",
+      "status": "new",
+      "category": "sql_candidate",
+      "reason_ko": "Meta canonical/staging SQL 후보와 기존 함수 baseline guard",
+      "risk": "SQL_REVIEW_ONLY_NOT_APPLIED",
+      "bytes": 39330,
+      "sha256": "77700291945b9e68198f1c065c9fe8928bcd61584df0c8131d4307d4d2510531",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify-meta-ads-account-policy.ts",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "명시적 계정·통화·시간대·전환/매출·attribution 정책 검증 offline 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 13218,
+      "sha256": "74a93550f45ddd391a1173cd2f3b0a246eda4c01cb7f7cdc9086554887c088fd",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify-meta-ads-account-preflight.ts",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "계정 metadata 요청·응답 및 명시적 정책 대조 offline 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 15284,
+      "sha256": "57b285fc2bcafdf6646323b0f0447cd22e49222dc81adb18763e6e223bc79cf9",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify-meta-ads-ad-daily-insights-collector.ts",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "bounded page 수집·재시도·cursor 및 정책 일치 검사 offline 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 11252,
+      "sha256": "de82520984c99ead5f0db64fc264db937f3459539ac410055df90e6becac5512",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify-meta-ads-api-test-preview.ts",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "미리보기 요청 일치·누락·토큰 미사용·live 옵션 거부 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 13460,
+      "sha256": "bf250cb95713868146c7faf7fe150786526da115d652a8344268e9f19f7f22e0",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify-meta-ads-atomic-fanout-contract.ts",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "Meta 복수 projection activation/finalization의 원자 계약 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 17600,
+      "sha256": "e1b15594c6895fd1f9b96e5d979bd05e81fe60a556a4455e5971334c22a3a318",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify-meta-ads-canonical-contract.ts",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "canonical grain·지표·DROP/KEEP·기존 Naver/Google fixture 계약 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 13435,
+      "sha256": "65f1b85712d4bc5c74a1ff8ae0b89f2ff4fc5683e3315c1f7708a91dc97feba1",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify-meta-ads-completion-claim-contract.ts",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "원본 claim·completion token·projection 완료 상태 계약 offline 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 9525,
+      "sha256": "1963b28ad976a338d0de01e71580afff2747b87d9f4a09381db57b571815ba2b",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify-meta-ads-credentials.ts",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "기존 AES-256-GCM 재사용, 연결 scope를 묶는 Meta 전용 AAD offline 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 9149,
+      "sha256": "49daecddda4535ebb63a7a84e84d3c8345a1eaf3ab9df4a9d43cb1af873adb51",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify-meta-ads-insights-wire-contract.ts",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "Insights 요청·wire 응답·paging 및 token 비노출 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 6764,
+      "sha256": "2b20938e0a8d0df93305f057608bfda3c666f0c4a9e4427c13027bbebc5f1e16",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify-meta-ads-materialization-handoff-contract.ts",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "collected checkpoint와 projection target의 handoff 계약 offline 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 13348,
+      "sha256": "6a52418bb8184c1dee5892f8decdcddc190ddfabdcd6ed32b5fe5c6e21689790",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify-meta-ads-materialization-handoff-repository.ts",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "신규 handoff RPC와 2,000행 materialization 재개 adapter offline 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 15841,
+      "sha256": "bd2da7bdce4c578f52bba0fd772a5258306682b35bfbeac3293dc882e63c73c7",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify-meta-ads-materialization-handoff-sql-contract.ts",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "materialization handoff sql contract 정적/fixture/mock 계약 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 15980,
+      "sha256": "5e4b1b65cedecc54e236f7d39b50ea1f6af7f0d5c3c36698b11ff89d6e497e13",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify-meta-ads-page-checkpoint-contract.ts",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "원본 claim에 묶인 page checkpoint·cursor·digest 계약 offline 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 7542,
+      "sha256": "b7b505ad4d149e09e51fab4ae00e5c47a41f8d5fe5cf92169fa13bb82275240f",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify-meta-ads-page-checkpoint-repository.ts",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "신규 page load/CAS/append RPC의 요청·응답 adapter offline 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 7505,
+      "sha256": "5dfcb140cb61edc7b50f1fd9ef34b2996ee67a988eaf1487f4e8090758a45f62",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify-meta-ads-page-checkpoint-sql-contract.ts",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "page checkpoint sql contract 정적/fixture/mock 계약 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 7531,
+      "sha256": "aa28c3befd22efdb670e2767ad8c20bb5647b7bbed07255d3dd4c9160bebfd01",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify-meta-ads-server-execution.ts",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "credential·metadata·collector·보호 RPC를 주입 transport로 통합 offline 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 33724,
+      "sha256": "c034badb7913fc1669195cdf8ea988d2badfe9719a8debbe0e6ddfadd1b1c5f3",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify-meta-ads-sql-contract.ts",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "기존 DB 함수 복원 동등성·Meta SQL object/privilege 범위 정적 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 11073,
+      "sha256": "50c6a823ffcb0f682f81002fe41384ca275f8acae141293de5f48f91162a4bc7",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify-meta-ads-staging-orchestrator.ts",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "page 수집과 pending append·확정 checkpoint 순서 조정 offline 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 15128,
+      "sha256": "00ecf0acffb17d8ab99a2c2b612b42c17647c66f09fb2f3c364aff87ec9b1030",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify-meta-ads-staging-projection-contract.ts",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "공통 repository의 Meta 분기와 staging/projection 계약 mock 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 33166,
+      "sha256": "2ebee8fe81a30c5c2862174b022cad93da89c2700ee1d2ad1261a4935069d878",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify_meta_ads_completion_claim_harness.py",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "completion claim harness 안전 guard·정적 계약·runner 동작의 offline 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 6699,
+      "sha256": "5abe5cad5cc0c0f1e9f8d319210aec2a649dc19e4f264ff5f5bd1fd8db24e9c1",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify_meta_ads_completion_claim_runner.py",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "completion claim runner 안전 guard·정적 계약·runner 동작의 offline 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 5358,
+      "sha256": "4a0e0266c3109988ed6e409536310f49e32a3515054255912a8f4294f06fd919",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify_meta_ads_completion_claim_sql.py",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "completion claim sql 안전 guard·정적 계약·runner 동작의 offline 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 9060,
+      "sha256": "eab47d4ca101645c7eb6a8fbc2f0dc6574b8f6a1f27833c998c5c1e4bb134fd1",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify_meta_ads_completion_harness.py",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "completion harness 안전 guard·정적 계약·runner 동작의 offline 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 4782,
+      "sha256": "27bf586df089e6ee5745b4dd12c7282d201fda48f43e3bee6c5a23539f85e6a8",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify_meta_ads_completion_runner.py",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "completion runner 안전 guard·정적 계약·runner 동작의 offline 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 5357,
+      "sha256": "3e4d596f25bfafdaa18f6e47e24d99ea30ec96d3a2d80ed1061ebf75787237d7",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify_meta_ads_db_checkpoint_runner.py",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "db checkpoint runner 안전 guard·정적 계약·runner 동작의 offline 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 5359,
+      "sha256": "e3671f1cfc7e614b290b7a81da5ec0127d482283232c98db8e026959328c6072",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify_meta_ads_isolated_harness.py",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "isolated harness 안전 guard·정적 계약·runner 동작의 offline 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 10100,
+      "sha256": "a4e1934e81bee40724dae27de2941223e19d58bc59f0d9a22e7d15a4e4378d80",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify_meta_ads_materialization_handoff_harness.py",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "materialization handoff harness 안전 guard·정적 계약·runner 동작의 offline 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 12246,
+      "sha256": "f2c583ef742214d19a23416ed29f669c06630d2793caf08a96246fc44da7573d",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify_meta_ads_materialization_handoff_runner.py",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "materialization handoff runner 안전 guard·정적 계약·runner 동작의 offline 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 5365,
+      "sha256": "d69c0c4250be3275ecc903462f7ac96319fe621514acc71af4576ce01410cc24",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify_meta_ads_page_checkpoint_harness.py",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "page checkpoint harness 안전 guard·정적 계약·runner 동작의 offline 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 10493,
+      "sha256": "775c5d0bb51b96519769d834d62f8ea69c0ddf4f119084434b885dbc7fef3129",
+      "base_sha256": null
+    },
+    {
+      "path": "scripts/verify_meta_ads_page_checkpoint_parser.py",
+      "status": "new",
+      "category": "offline_verifier",
+      "reason_ko": "page checkpoint parser 안전 guard·정적 계약·runner 동작의 offline 검증",
+      "risk": "OFFLINE_VERIFIER",
+      "bytes": 2580,
+      "sha256": "22370aae0b715e060dac8c57bb9e3ee8c18975bbb4475b720cb098dbb2c034b4",
+      "base_sha256": null
+    },
+    {
+      "path": "src/lib/media-sync/media-sync-finalization-repository.ts",
+      "status": "modified",
+      "category": "shared_provider_module",
+      "reason_ko": "Meta provider 허용과 creative·주입 RPC guard",
+      "risk": "HIGH_SHARED_CODE_REVIEW",
+      "bytes": 20838,
+      "sha256": "c51582757e6d9c53a8bea2f72bae7ad6ddaf05e8272a8b4d6b20e968a6d7be9c",
+      "base_sha256": "b5c39da69a15bf31255adfda4538a9b3c1e3438c06f4fa4650eb1402972196c8"
+    },
+    {
+      "path": "src/lib/media-sync/media-sync-snapshot-activation-repository.ts",
+      "status": "modified",
+      "category": "shared_provider_module",
+      "reason_ko": "Meta provider 허용과 명시적 projection authority·주입 RPC guard",
+      "risk": "HIGH_SHARED_CODE_REVIEW",
+      "bytes": 20632,
+      "sha256": "dcf10fc43f26f77e5c0520d1a66c1c83ba067e9662724cea0a645a5c35014da3",
+      "base_sha256": "7b772bc9bcd4810d2a9c97d0a3376f2c87c97cfab087629c6f40aab7054107ca"
+    },
+    {
+      "path": "src/lib/media-sync/media-sync-snapshot-materialization-repository.ts",
+      "status": "modified",
+      "category": "shared_provider_module",
+      "reason_ko": "Meta scope 보존 및 creative/target/주입 RPC guard",
+      "risk": "HIGH_SHARED_CODE_REVIEW",
+      "bytes": 41950,
+      "sha256": "bd2c864189ed3c4fa1983b2f76a2f8378d9f688671c5fe50f5e8a449f85651a5",
+      "base_sha256": "1b51df925a3d8a76d7f2a8b31f9fa93a578747d7c01f4f6558f88399f2a0912a"
+    },
+    {
+      "path": "src/lib/media-sync/media-sync-staging-repository.ts",
+      "status": "modified",
+      "category": "shared_provider_module",
+      "reason_ko": "Meta provider 분기·명시적 context와 주입 RPC guard·Meta batch 변환",
+      "risk": "HIGH_SHARED_CODE_REVIEW",
+      "bytes": 33142,
+      "sha256": "fa4cc0d0d2ba29ed5bd6481d21d8323a26dbbfdfb4eb8c937805f9bcb629b474",
+      "base_sha256": "bfad6e63d82dfa07bf23763a8ccfd79ca5024346d06c5d4a3619f05527c62608"
+    },
+    {
+      "path": "src/lib/media-sync/meta-ads-account-policy.ts",
+      "status": "new",
+      "category": "meta_application_module",
+      "reason_ko": "명시적 계정·통화·시간대·전환/매출·attribution 정책 검증",
+      "risk": "META_ONLY_UNREGISTERED",
+      "bytes": 6159,
+      "sha256": "8443a586b578bbde51cf55a024f6a086963fbfcd8b3bd3bc08f229afca7477c9",
+      "base_sha256": null
+    },
+    {
+      "path": "src/lib/media-sync/meta-ads-account-preflight.ts",
+      "status": "new",
+      "category": "meta_application_module",
+      "reason_ko": "계정 metadata 요청·응답 및 명시적 정책 대조",
+      "risk": "META_ONLY_UNREGISTERED",
+      "bytes": 8483,
+      "sha256": "b0d0c1f8edda00679324c65b457b8ed809394458d5cbbbbec616fc2fd13a398d",
+      "base_sha256": null
+    },
+    {
+      "path": "src/lib/media-sync/meta-ads-ad-daily-insights-collector.ts",
+      "status": "new",
+      "category": "meta_application_module",
+      "reason_ko": "bounded page 수집·재시도·cursor 및 정책 일치 검사",
+      "risk": "META_ONLY_UNREGISTERED",
+      "bytes": 8342,
+      "sha256": "0f1bb81fd9de93dac2dca324f138f94a6d6275720547bc2bb5b7dffb5a211a8e",
+      "base_sha256": null
+    },
+    {
+      "path": "src/lib/media-sync/meta-ads-api-test-preview.ts",
+      "status": "new",
+      "category": "meta_application_module",
+      "reason_ko": "토큰 없는 하루·첫 페이지·25행 테스트 계획과 누락 항목 미리보기",
+      "risk": "META_ONLY_UNREGISTERED",
+      "bytes": 7188,
+      "sha256": "929066b894995b378181833981f33e7f0680ab1c064d012c7aada236c7c3cea8",
+      "base_sha256": null
+    },
+    {
+      "path": "src/lib/media-sync/meta-ads-canonical-row.ts",
+      "status": "new",
+      "category": "meta_application_module",
+      "reason_ko": "ad × day canonical 변환, 지표 선택과 all-zero DROP·지연 전환 KEEP 계약",
+      "risk": "META_ONLY_UNREGISTERED",
+      "bytes": 15180,
+      "sha256": "da251ace677ebf386101531f953da08e79101652360e6eb616f31003e32cffc3",
+      "base_sha256": null
+    },
+    {
+      "path": "src/lib/media-sync/meta-ads-completion-claim-contract.ts",
+      "status": "new",
+      "category": "meta_application_module",
+      "reason_ko": "원본 claim·completion token·projection 완료 상태 계약",
+      "risk": "META_ONLY_UNREGISTERED",
+      "bytes": 9198,
+      "sha256": "05cfd9f148dbebef64e10c66b5995ee752924a3c54e23a2f2cdc83bdfba7b283",
+      "base_sha256": null
+    },
+    {
+      "path": "src/lib/media-sync/meta-ads-completion-claim-repository.ts",
+      "status": "new",
+      "category": "meta_application_module",
+      "reason_ko": "신규 claim-protected activation/finalization RPC adapter",
+      "risk": "META_ONLY_UNREGISTERED",
+      "bytes": 6987,
+      "sha256": "fc90e12f48c5e656eeaef2691d3711185ab3cdfce746b270e12666bbc8189069",
+      "base_sha256": null
+    },
+    {
+      "path": "src/lib/media-sync/meta-ads-credentials.ts",
+      "status": "new",
+      "category": "meta_application_module",
+      "reason_ko": "기존 AES-256-GCM 재사용, 연결 scope를 묶는 Meta 전용 AAD",
+      "risk": "META_ONLY_UNREGISTERED",
+      "bytes": 5140,
+      "sha256": "635d66e8ee9126e3793ea261225d9f831421dc97ef9e85683ae00f3046610247",
+      "base_sha256": null
+    },
+    {
+      "path": "src/lib/media-sync/meta-ads-insights-request.ts",
+      "status": "new",
+      "category": "meta_application_module",
+      "reason_ko": "v26.0 Insights GET·명시적 attribution·header-only token 요청 생성",
+      "risk": "META_ONLY_UNREGISTERED",
+      "bytes": 4232,
+      "sha256": "5f4297679635b018ebb96b003e50f9210f7832d50cf49926fca61d1f71e4f156",
+      "base_sha256": null
+    },
+    {
+      "path": "src/lib/media-sync/meta-ads-insights-response.ts",
+      "status": "new",
+      "category": "meta_application_module",
+      "reason_ko": "wire 응답·계정/기간·paging endpoint 검증과 canonical 전달",
+      "risk": "META_ONLY_UNREGISTERED",
+      "bytes": 2853,
+      "sha256": "824a2de9bd6ae64a39ef94c1966c753b9068c788e834507e5f27037ed3b3e837",
+      "base_sha256": null
+    },
+    {
+      "path": "src/lib/media-sync/meta-ads-materialization-handoff-contract.ts",
+      "status": "new",
+      "category": "meta_application_module",
+      "reason_ko": "collected checkpoint와 projection target의 handoff 계약",
+      "risk": "META_ONLY_UNREGISTERED",
+      "bytes": 7984,
+      "sha256": "b9c94c2b546a13ac151f27ea47423d1097dcf1f0bf64923dc0c35d91e61bf3c2",
+      "base_sha256": null
+    },
+    {
+      "path": "src/lib/media-sync/meta-ads-materialization-handoff-repository.ts",
+      "status": "new",
+      "category": "meta_application_module",
+      "reason_ko": "신규 handoff RPC와 2,000행 materialization 재개 adapter",
+      "risk": "META_ONLY_UNREGISTERED",
+      "bytes": 15595,
+      "sha256": "a88216aa34dcf703e70932ad8723f399859c254d1971df29deb128109fa5903b",
+      "base_sha256": null
+    },
+    {
+      "path": "src/lib/media-sync/meta-ads-page-checkpoint-contract.ts",
+      "status": "new",
+      "category": "meta_application_module",
+      "reason_ko": "원본 claim에 묶인 page checkpoint·cursor·digest 계약",
+      "risk": "META_ONLY_UNREGISTERED",
+      "bytes": 15312,
+      "sha256": "0b279a570380adf4c6ad9ea11118d6f6c78e773963fafb762e46db43f82a2d79",
+      "base_sha256": null
+    },
+    {
+      "path": "src/lib/media-sync/meta-ads-page-checkpoint-repository.ts",
+      "status": "new",
+      "category": "meta_application_module",
+      "reason_ko": "신규 page load/CAS/append RPC의 요청·응답 adapter",
+      "risk": "META_ONLY_UNREGISTERED",
+      "bytes": 6241,
+      "sha256": "d2d21e35c2593c5e585403a12ce06dedc9559a3bf11becd6a42007ecc3c25273",
+      "base_sha256": null
+    },
+    {
+      "path": "src/lib/media-sync/meta-ads-server-execution.ts",
+      "status": "new",
+      "category": "meta_application_module",
+      "reason_ko": "credential·metadata·collector·보호 RPC를 주입 transport로 통합",
+      "risk": "META_ONLY_UNREGISTERED",
+      "bytes": 9156,
+      "sha256": "8f126ed4e1671e9387d3ff319234ad51e38f3b02691bb18130a7bf76ccf8fbd9",
+      "base_sha256": null
+    },
+    {
+      "path": "src/lib/media-sync/meta-ads-staging-contract.ts",
+      "status": "new",
+      "category": "meta_application_module",
+      "reason_ko": "Meta canonical scope·row identity·staging batch 정규화",
+      "risk": "META_ONLY_UNREGISTERED",
+      "bytes": 5094,
+      "sha256": "e45be2abb4b103e2979ddb3a4a2f2dd84d5d96e504b10ef2564035afdf41527c",
+      "base_sha256": null
+    },
+    {
+      "path": "src/lib/media-sync/meta-ads-staging-orchestrator.ts",
+      "status": "new",
+      "category": "meta_application_module",
+      "reason_ko": "page 수집과 pending append·확정 checkpoint 순서 조정",
+      "risk": "META_ONLY_UNREGISTERED",
+      "bytes": 5449,
+      "sha256": "3b909b346f52bfe47bb6fd634e7f14a13539e2ebb68e4c10d868d463c842ad0d",
+      "base_sha256": null
+    },
+    {
+      "path": "src/lib/media-sync/meta-ads-staging-projection-contract.ts",
+      "status": "new",
+      "category": "meta_application_module",
+      "reason_ko": "canonical dataset에서 독립 report projection의 완료 계약",
+      "risk": "META_ONLY_UNREGISTERED",
+      "bytes": 18825,
+      "sha256": "b0ae098bd9767940204b5034816398ff2840cdee59320b3b5bb3e904b76195a4",
+      "base_sha256": null
+    }
+  ],
+  "handoff_documents": [
+    "docs/meta-ads-offline-handoff.md",
+    "docs/meta-ads-offline-files.json",
+    "docs/meta-ads-offline-verification.json"
+  ],
+  "manifest_self_hash_excluded": true,
+  "delivery_layout": "ZIP contains these 99 files plus the 3 handoff documents under dashboard-meta-ads-api/; full file bytes, not a full clone or patch installer."
+}

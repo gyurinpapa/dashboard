@@ -1,0 +1,88 @@
+{
+  "acceptance": "PASS_ISOLATED_POSTGRES_FIXTURE_ONLY",
+  "recorded_date": "2026-09-20",
+  "evidence_source": "Complete runtime JSON and terminal output pasted by the user; Mac files were not independently opened by this assistant.",
+  "source_result_path": "/Users/damon/Downloads/etrylue-meta-validation-yx3bf1m0/results-timezone-retry-6304c4c5cbc1/runtime-result.json",
+  "source_log_path": "/Users/damon/Downloads/etrylue-meta-validation-yx3bf1m0/timezone-retry-6304c4c5cbc1.log",
+  "branch": "meta-ads-api",
+  "base_commit": "f714e95a374592a0f7581a2d82132ab043fab35e",
+  "runtime_result": {
+    "status": "PASS",
+    "meta_rows": 6,
+    "projections": 2,
+    "negative_activation_cases": 8,
+    "legacy_common_rpc_comparison": [
+      "naver_searchad",
+      "google_ads"
+    ],
+    "csv_sentinels_preserved": true,
+    "actual_sql_rollback": true,
+    "two_session_locking": true,
+    "fingerprint_parity": true,
+    "processing_stale_batch_rejected": true,
+    "materialization_resume_checkpoint": true,
+    "completed_batch_replay_unchanged": true,
+    "timezone_policy": {
+      "parity_cases": 9,
+      "invalid_append_cases": 4
+    },
+    "performance": {
+      "rows": 2001,
+      "status": "PASS",
+      "wall_seconds": 8.843,
+      "production_latency_equivalence": false,
+      "materialization_batch_size": 2000
+    },
+    "full_provider_collector_and_csv_worker": "OUT_OF_SCOPE",
+    "limitations": [
+      "Source project ref not independently verified.",
+      "Metadata was captured across four read-only transactions, not one database-wide snapshot.",
+      "Three trigger helper owner/ACL records were not exported; local harness will use postgres ownership and service_role-only execution for those helpers, without claiming full privilege parity.",
+      "Supabase Auth server, JWT verification, API services and production performance are outside this PostgreSQL fixture harness."
+    ]
+  },
+  "tested_file_sha256": {
+    "scripts/README-meta-ads-isolated-harness.md": "3d8188fdfeea291ab4a4726fdf65d79b15c8b23f7ba3e4824cc27680e1fd1db7",
+    "scripts/export-meta-ads-isolated-fixture.ts": "9e678eee0591a6166b074b5a408e4627ba470b824e786f9cbf886411e2298f90",
+    "scripts/fixtures/meta-ads-ad-daily-insights.json": "652f00734e4c6b31d21eb49581c740877869c529e0be6fe647591467ebb2b1af",
+    "scripts/fixtures/meta-ads-db-authority-baseline.json": "a8d1f166a3ab41aedd8499417516ad49a6d2da9cb193af0121fb3e970056b121",
+    "scripts/fixtures/meta-ads-isolated-db-authority.json": "83c82dd460c2e8344359efdbdb3c1dabfbabf0e3052a33bf6438e3d16808c985",
+    "scripts/fixtures/meta-ads-postgres-environment-preflight.json": "8a5cbc78a8de2e7c339dce3604aec353e052eaf2bb4f43df96c4ff3423ea539e",
+    "scripts/meta_ads_isolated_harness.py": "64e4d2e45cacc255a531d519d61f3f22fe58ecd781d3208f22af80037dd1e55e",
+    "scripts/prepare-meta-ads-postgres-runtime.sh": "6948a1c9180049fe19c8b2ddb76cbbb29a75abd6732387a4672cebb37abc5bf2",
+    "scripts/sql/audit-meta-ads-dependency-closure-readonly.sql": "35362226d3c6b3394b1c905789208a72fbd582cc05441a77a9689479ec6dc271",
+    "scripts/sql/audit-meta-ads-reference-dependencies-readonly.sql": "a4ece2265262e187ba357f88cb78c0466dfa204ea00f73be8122996800a59ce6",
+    "scripts/sql/audit-meta-ads-transitive-dependencies-readonly.sql": "79347aed53d36148308c2168d3998eec60c45c2af08375fed1bf40db909973e6",
+    "scripts/sql/create-activate-meta-ads-snapshot-fanout.sql": "7bec4fe4761f4f2baaa11e572043fe4023cb8d01874eb15ea4294ee318a40427",
+    "scripts/sql/create-meta-ads-finalization-contract.sql": "a5247ad5f4f22b6e118efa7edaa4ad502973f0bfe3315068bd661bf0694f8bd0",
+    "scripts/sql/create-meta-ads-snapshot-materialization.sql": "3902332ee27eff683cff1e11276968c12784c50ac1037a08bb6574c186176dfa",
+    "scripts/sql/create-meta-ads-staging-contract.sql": "77700291945b9e68198f1c065c9fe8928bcd61584df0c8131d4307d4d2510531",
+    "scripts/verify-meta-ads-atomic-fanout-contract.ts": "e1b15594c6895fd1f9b96e5d979bd05e81fe60a556a4455e5971334c22a3a318",
+    "scripts/verify-meta-ads-canonical-contract.ts": "65f1b85712d4bc5c74a1ff8ae0b89f2ff4fc5683e3315c1f7708a91dc97feba1",
+    "scripts/verify-meta-ads-sql-contract.ts": "50c6a823ffcb0f682f81002fe41384ca275f8acae141293de5f48f91162a4bc7",
+    "scripts/verify-meta-ads-staging-projection-contract.ts": "2ebee8fe81a30c5c2862174b022cad93da89c2700ee1d2ad1261a4935069d878",
+    "scripts/verify_meta_ads_isolated_harness.py": "a4e1934e81bee40724dae27de2941223e19d58bc59f0d9a22e7d15a4e4378d80",
+    "src/lib/media-sync/media-sync-finalization-repository.ts": "c51582757e6d9c53a8bea2f72bae7ad6ddaf05e8272a8b4d6b20e968a6d7be9c",
+    "src/lib/media-sync/media-sync-snapshot-activation-repository.ts": "dcf10fc43f26f77e5c0520d1a66c1c83ba067e9662724cea0a645a5c35014da3",
+    "src/lib/media-sync/media-sync-snapshot-materialization-repository.ts": "bd2c864189ed3c4fa1983b2f76a2f8378d9f688671c5fe50f5e8a449f85651a5",
+    "src/lib/media-sync/media-sync-staging-repository.ts": "fa4cc0d0d2ba29ed5bd6481d21d8323a26dbbfdfb4eb8c937805f9bcb629b474",
+    "src/lib/media-sync/meta-ads-canonical-row.ts": "da251ace677ebf386101531f953da08e79101652360e6eb616f31003e32cffc3",
+    "src/lib/media-sync/meta-ads-staging-contract.ts": "e45be2abb4b103e2979ddb3a4a2f2dd84d5d96e504b10ef2564035afdf41527c",
+    "src/lib/media-sync/meta-ads-staging-projection-contract.ts": "b0ae098bd9767940204b5034816398ff2840cdee59320b3b5bb3e904b76195a4"
+  },
+  "runtime_gate": {
+    "meta_ads_syncRuntimeEnabled": false,
+    "meta_ads_allowedDataLevels": []
+  },
+  "not_authorized_by_this_pass": [
+    "production SQL application",
+    "real Meta API/OAuth/secrets",
+    "live jobs or worker activation",
+    "main changes, commit, push or deployment"
+  ],
+  "next_scope": "READ ONLY file allowlist for fixture/mock-tested Meta server-side fetch collector and pagination; no real API call.",
+  "delivered_files_matched_before_acceptance_documentation_update": true,
+  "post_acceptance_documentation_changes": {
+    "scripts/README-meta-ads-isolated-harness.md": "7db6c10bf6d887b6e49271fa166785294d1f82160c1ea08098985ac80a6242c9"
+  }
+}

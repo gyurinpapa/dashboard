@@ -1,0 +1,26 @@
+{
+  "status": "PENDING_ENVIRONMENT_LIMITATION",
+  "source_version": "17.6",
+  "source_url": "https://ftp.postgresql.org/pub/source/v17.6/postgresql-17.6.tar.bz2",
+  "source_sha256": "e0630a3600aea27511715563259ec2111cd5f4353a4b040e0be827f94cd7a8b0",
+  "official_sha256_verified": true,
+  "archive_member_checks": "PASS",
+  "uid": 0,
+  "gid": 0,
+  "uid_map": "0          0          1",
+  "gid_map": "0          0          1",
+  "non_root_account_transition": "BLOCKED: runuser cannot set groups: Operation not permitted",
+  "nested_user_namespace": "BLOCKED: write /proc/self/uid_map: Operation not permitted",
+  "missing_build_tools": [
+    "bison",
+    "flex",
+    "pkg-config"
+  ],
+  "postgres_installed": false,
+  "server_started": false,
+  "db_executions": 0,
+  "protected_repository_accesses": 0,
+  "installer_shell_syntax": "PASS",
+  "installer_root_rejection": "PASS: exit 3; output directory not created",
+  "required_next_environment": "A real non-root Linux/macOS account with the documented build prerequisites; do not alter PostgreSQL or harness root checks."
+}

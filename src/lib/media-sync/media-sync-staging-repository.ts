@@ -2,6 +2,11 @@ import {
   buildMediaSyncStagingRowKey,
 } from "./media-sync-staging-row-identity";
 import {
+  assertMetaAdsStagingContextScope,
+  prepareMetaAdsStagingBatch,
+} from "./meta-ads-staging-contract";
+import type { MetaAdsCanonicalContext } from "./meta-ads-canonical-row";
+import {
   GoogleAdsAllDataStagingContractError,
   prepareGoogleAdsAllDataSearchStagingRows,
 } from "./google-ads-all-data-staging-contract";
@@ -84,6 +89,8 @@ export type AppendMediaSyncStagingBatchInput = {
   rows: readonly EtrylueNormalizedMediaRow[];
   rowStartIndex: number;
   dateWindowIndex: number;
+  /** Offline Meta bridge only; never infer attribution from row payloads. */
+  metaContext?: MetaAdsCanonicalContext;
 };
 
 export type AppendMediaSyncStagingBatchResult = {
@@ -514,7 +521,8 @@ function validateJob(
     value.provider !==
       NAVER_SEARCH_ADS_PROVIDER &&
     value.provider !==
-      GOOGLE_ADS_PROVIDER
+      GOOGLE_ADS_PROVIDER &&
+    value.provider !== "meta_ads"
   ) {
     throw new MediaSyncStagingRepositoryError(
       "UNSUPPORTED_PROVIDER",
@@ -1368,6 +1376,20 @@ export async function appendMediaSyncStagingBatch(
 
   validateJob(input.job);
 
+  const metaAds = input.job.provider === "meta_ads";
+  if (metaAds) {
+    if (typeof dependencies?.invokeRpc !== "function" || !input.metaContext) {
+      throw new MediaSyncStagingRepositoryError(
+        "INVALID_INPUT", "Meta staging requires an explicit injected RPC and canonical context.",
+      );
+    }
+    if (input.job.data_level !== "creative" || input.job.mode !== "snapshot_replace" ||
+        (input.job as MediaSyncJobRecordWithExecutionContract).execution_contract != null) {
+      throw new MediaSyncStagingRepositoryError("INVALID_JOB", "Unsupported Meta execution contract.");
+    }
+    assertMetaAdsStagingContextScope(input.metaContext, input.job);
+  }
+
   if (!Array.isArray(input.rows)) {
     throw new MediaSyncStagingRepositoryError(
       "INVALID_INPUT",
@@ -1407,13 +1429,17 @@ export async function appendMediaSyncStagingBatch(
   }
 
   const googleAdsAllDataSearch =
-    isGoogleAdsAllDataSearchJob(
+    !metaAds && isGoogleAdsAllDataSearchJob(
       input.job,
     );
 
   const rpcRows:
     readonly StagingRpcInputRow[] =
-      googleAdsAllDataSearch
+      metaAds
+        ? prepareMetaAdsStagingBatch({
+            context: input.metaContext!, rows: input.rows, rowStartIndex,
+          })
+        : googleAdsAllDataSearch
         ? prepareGoogleAdsAllDataSearchRpcRows({
             rows:
               input.rows,

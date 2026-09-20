@@ -1,0 +1,118 @@
+{
+  "description": "Synthetic offline contract only. fixture.* action types and attribution labels are deliberately not a production Meta metric policy. Selected zero values are explicit; sparse live responses need a separately approved collector policy.",
+  "context": {
+    "apiVersion": "v26.0",
+    "level": "ad",
+    "timeIncrement": 1,
+    "breakdowns": [],
+    "actionBreakdowns": [],
+    "externalAccountId": "12345678901234567890",
+    "dateFrom": "2026-09-01",
+    "dateTo": "2026-09-07",
+    "currency": "KRW",
+    "timeZone": "Asia/Seoul",
+    "metricPolicy": {
+      "conversionActionType": "fixture.explicit_conversion",
+      "revenueActionType": "fixture.explicit_revenue",
+      "actionReportTime": "fixture.explicit_report_time",
+      "attributionWindows": ["fixture.explicit_window"]
+    }
+  },
+  "records": [
+    {
+      "account_id": "12345678901234567890", "campaign_id": "1001", "campaign_name": "Fixture campaign",
+      "adset_id": "2001", "adset_name": "Fixture ad set", "ad_id": "3001", "ad_name": "Fixture ad",
+      "date_start": "2026-09-01", "date_stop": "2026-09-01",
+      "impressions": "100", "clicks": "10", "spend": "12.345",
+      "actions": [{"action_type": "fixture.explicit_conversion", "value": "1.5"}, {"action_type": "fixture.unselected_total", "value": "900"}],
+      "action_values": [{"action_type": "fixture.explicit_revenue", "value": "45.67"}, {"action_type": "fixture.unselected_total", "value": "9000"}]
+    },
+    {
+      "account_id": "12345678901234567890", "campaign_id": "1001", "adset_id": "2001", "ad_id": "3001",
+      "date_start": "2026-09-02", "date_stop": "2026-09-02",
+      "impressions": "0", "clicks": "0", "spend": "0",
+      "actions": [{"action_type": "fixture.explicit_conversion", "value": "0"}],
+      "action_values": [{"action_type": "fixture.explicit_revenue", "value": "0"}]
+    },
+    {
+      "account_id": "12345678901234567890", "campaign_id": "1001", "adset_id": "2001", "ad_id": "3001",
+      "date_start": "2026-09-03", "date_stop": "2026-09-03",
+      "impressions": "0", "clicks": "0", "spend": "0",
+      "actions": [{"action_type": "fixture.explicit_conversion", "value": "2.25"}],
+      "action_values": [{"action_type": "fixture.explicit_revenue", "value": "0"}]
+    },
+    {
+      "account_id": "12345678901234567890", "campaign_id": "1001", "adset_id": "2001", "ad_id": "3001",
+      "date_start": "2026-09-04", "date_stop": "2026-09-04",
+      "impressions": "0", "clicks": "0", "spend": "0",
+      "actions": [{"action_type": "fixture.explicit_conversion", "value": "0"}],
+      "action_values": [{"action_type": "fixture.explicit_revenue", "value": "99.5"}]
+    },
+    {
+      "account_id": "12345678901234567890", "campaign_id": "1001", "adset_id": "2001", "ad_id": "3001",
+      "date_start": "2026-09-05", "date_stop": "2026-09-05",
+      "impressions": "0", "clicks": "0", "spend": "0.125",
+      "actions": [{"action_type": "fixture.explicit_conversion", "value": "0"}],
+      "action_values": [{"action_type": "fixture.explicit_revenue", "value": "0"}]
+    },
+    {
+      "account_id": "12345678901234567890", "campaign_id": "1001", "adset_id": "2001", "ad_id": "3001",
+      "date_start": "2026-09-06", "date_stop": "2026-09-06",
+      "impressions": "0", "clicks": "1", "spend": "0",
+      "actions": [{"action_type": "fixture.explicit_conversion", "value": "0"}],
+      "action_values": [{"action_type": "fixture.explicit_revenue", "value": "0"}]
+    },
+    {
+      "account_id": "12345678901234567890", "campaign_id": "1001", "adset_id": "2001", "ad_id": "3001",
+      "date_start": "2026-09-07", "date_stop": "2026-09-07",
+      "impressions": "1", "clicks": "0", "spend": "0",
+      "actions": [{"action_type": "fixture.explicit_conversion", "value": "0"}],
+      "action_values": [{"action_type": "fixture.explicit_revenue", "value": "0"}]
+    }
+  ],
+  "expected": {
+    "inputRows": 7,
+    "totalRows": 6,
+    "rawRows": 6,
+    "droppedDates": ["2026-09-02"],
+    "metricsByDate": [
+      {"date": "2026-09-01", "impressions": 100, "clicks": 10, "cost": 12.345, "conversions": 1.5, "revenue": 45.67},
+      {"date": "2026-09-03", "impressions": 0, "clicks": 0, "cost": 0, "conversions": 2.25, "revenue": 0},
+      {"date": "2026-09-04", "impressions": 0, "clicks": 0, "cost": 0, "conversions": 0, "revenue": 99.5},
+      {"date": "2026-09-05", "impressions": 0, "clicks": 0, "cost": 0.125, "conversions": 0, "revenue": 0},
+      {"date": "2026-09-06", "impressions": 0, "clicks": 1, "cost": 0, "conversions": 0, "revenue": 0},
+      {"date": "2026-09-07", "impressions": 1, "clicks": 0, "cost": 0, "conversions": 0, "revenue": 0}
+    ],
+    "firstRowKey": "[\"meta_ads_ad_daily_v1\",\"meta_ads\",\"ad\",\"12345678901234567890\",\"1001\",\"2001\",\"3001\",\"2026-09-01\"]"
+  },
+  "invalidCases": [
+    {"name": "wrong version", "target": "context", "changes": {"apiVersion": "v25.0"}, "error": "UNSUPPORTED_CONTRACT"},
+    {"name": "wrong grain", "target": "context", "changes": {"level": "campaign"}, "error": "UNSUPPORTED_CONTRACT"},
+    {"name": "non daily", "target": "context", "changes": {"timeIncrement": 7}, "error": "UNSUPPORTED_CONTRACT"},
+    {"name": "device breakdown", "target": "context", "changes": {"breakdowns": ["device_platform"]}, "error": "UNSUPPORTED_CONTRACT"},
+    {"name": "action breakdown", "target": "context", "changes": {"actionBreakdowns": ["action_device"]}, "error": "UNSUPPORTED_CONTRACT"},
+    {"name": "unresolved policy", "target": "context", "changes": {"metricPolicy": null}, "error": "UNRESOLVED_METRIC_POLICY"},
+    {"name": "reversed range", "target": "context", "changes": {"dateFrom": "2026-09-08"}, "error": "INVALID_INPUT"},
+    {"name": "invalid time zone", "target": "context", "changes": {"timeZone": "fixture/invalid"}, "error": "INVALID_INPUT"},
+    {"name": "account scope", "target": "record", "changes": {"account_id": "9999"}, "error": "SCOPE_MISMATCH"},
+    {"name": "out of range", "target": "record", "changes": {"date_start": "2026-08-31", "date_stop": "2026-08-31"}, "error": "SCOPE_MISMATCH"},
+    {"name": "multi day", "target": "record", "changes": {"date_stop": "2026-09-02"}, "error": "UNSUPPORTED_CONTRACT"},
+    {"name": "impossible date", "target": "record", "changes": {"date_start": "2026-02-31"}, "error": "INVALID_INPUT"},
+    {"name": "missing ad", "target": "record", "omit": ["ad_id"], "error": "INVALID_INPUT"},
+    {"name": "numeric ID", "target": "record", "changes": {"ad_id": 3001}, "error": "INVALID_INPUT"},
+    {"name": "fractional count", "target": "record", "changes": {"impressions": "0.1"}, "error": "INVALID_METRIC"},
+    {"name": "negative spend", "target": "record", "changes": {"spend": "-1"}, "error": "INVALID_METRIC"},
+    {"name": "empty spend", "target": "record", "changes": {"spend": ""}, "error": "INVALID_METRIC"},
+    {"name": "null spend", "target": "record", "changes": {"spend": null}, "error": "INVALID_METRIC"},
+    {"name": "exponent spend", "target": "record", "changes": {"spend": "1e3"}, "error": "INVALID_METRIC"},
+    {"name": "unsafe integer", "target": "record", "changes": {"impressions": "9007199254740993"}, "error": "INVALID_METRIC"},
+    {"name": "missing actions", "target": "record", "omit": ["actions"], "error": "UNRESOLVED_METRIC_POLICY"},
+    {"name": "missing selected action", "target": "record", "changes": {"actions": []}, "error": "UNRESOLVED_METRIC_POLICY"},
+    {"name": "wrong action is not fallback", "target": "record", "changes": {"actions": [{"action_type": "purchase", "value": "20"}]}, "error": "UNRESOLVED_METRIC_POLICY"},
+    {"name": "missing revenue is not zero", "target": "record", "changes": {"action_values": []}, "error": "UNRESOLVED_METRIC_POLICY"},
+    {"name": "duplicate action cannot be summed", "target": "record", "changes": {"actions": [{"action_type": "fixture.explicit_conversion", "value": "1"}, {"action_type": "fixture.explicit_conversion", "value": "2"}]}, "error": "UNRESOLVED_METRIC_POLICY"},
+    {"name": "unapproved window values", "target": "record", "changes": {"actions": [{"action_type": "fixture.explicit_conversion", "value": "1", "7d_click": "2"}]}, "error": "UNSUPPORTED_CONTRACT"},
+    {"name": "unexpected breakdown field", "target": "record", "changes": {"publisher_platform": "facebook"}, "error": "UNSUPPORTED_CONTRACT"},
+    {"name": "credential excluded", "target": "record", "changes": {"access_token": "synthetic-not-a-secret"}, "error": "UNSUPPORTED_CONTRACT"}
+  ]
+}

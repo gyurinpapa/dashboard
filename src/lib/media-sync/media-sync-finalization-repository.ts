@@ -332,7 +332,8 @@ function validateJob(
 
   if (
     value.provider !== NAVER_PROVIDER &&
-    value.provider !== GOOGLE_ADS_PROVIDER
+    value.provider !== GOOGLE_ADS_PROVIDER &&
+    value.provider !== "meta_ads"
   ) {
     throw new MediaSyncFinalizationError(
       "UNSUPPORTED_PROVIDER",
@@ -900,6 +901,13 @@ export async function finalizeMediaSyncJob(
   }
 
   validateJob(input.job);
+
+  if (input.job.provider === "meta_ads" &&
+      (typeof input.dependencies?.invokeRpc !== "function" || input.job.data_level !== "creative")) {
+    throw new MediaSyncFinalizationError(
+      "INVALID_INPUT", "Meta finalization requires an explicit injected RPC and creative execution.",
+    );
+  }
 
   const expectedRows =
     validateExpectedRows(

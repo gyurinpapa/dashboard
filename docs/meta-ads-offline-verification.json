@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "recorded_date": "2026-09-20",
+  "source_snapshot_sha256": "337b29f6e7397b058c876830d2e0b3f832a48c3fd770e76c59ebab5a19e6ef46",
+  "current_handoff_checks": {
+    "source_file_inventory": "PASS",
+    "delivered_archive_current_bytes": "PASS",
+    "latest_claim_runner_embedded_files": "59/59",
+    "initial_runtime_pinned_files": {
+      "total": 27,
+      "code_drift": 0,
+      "document_change_matches_record": true
+    },
+    "test_suites_rerun": 0,
+    "db_executions": 0,
+    "live_meta_api_calls": 0
+  },
+  "offline_deliveries": [
+    {
+      "archive": "meta-ads-credentials-contract.zip",
+      "sha256": "6231237f0b5c502ff8900f22ab045c4ac598052847b1dd79a72d5232557baf42",
+      "matching_current_files": [
+        "src/lib/media-sync/meta-ads-credentials.ts",
+        "scripts/verify-meta-ads-credentials.ts"
+      ],
+      "previous_pass_cases": 84,
+      "evidence": "prior_assistant_tool_execution; current bytes match delivered files; not rerun in handoff"
+    },
+    {
+      "archive": "meta-ads-account-policy-contract.zip",
+      "sha256": "171acadc757d14e971ef99f5490858d4bbcdf0705fcb413179842cef89cf8e80",
+      "matching_current_files": [
+        "src/lib/media-sync/meta-ads-account-policy.ts",
+        "scripts/verify-meta-ads-account-policy.ts"
+      ],
+      "previous_pass_cases": 141,
+      "evidence": "prior_assistant_tool_execution; current bytes match delivered files; not rerun in handoff"
+    },
+    {
+      "archive": "meta-ads-account-preflight-contract.zip",
+      "sha256": "be5f9c4430f9a7dca763cee4b929b7ae0bdeb1785e7a48f7b4437af19a1acba0",
+      "matching_current_files": [
+        "src/lib/media-sync/meta-ads-account-preflight.ts",
+        "scripts/verify-meta-ads-account-preflight.ts",
+        "scripts/fixtures/meta-ads-connection-draft.json",
+        "scripts/README-meta-ads-account-preflight.md"
+      ],
+      "previous_pass_cases": 106,
+      "evidence": "prior_assistant_tool_execution; current bytes match delivered files; not rerun in handoff"
+    },
+    {
+      "archive": "meta-ads-server-preflight-integration.zip",
+      "sha256": "75aa1954ef88e2d66ed13f75987d0d7fcde1d230de71ac1830ef36b8b82f2fba",
+      "matching_current_files": [
+        "src/lib/media-sync/meta-ads-server-execution.ts",
+        "scripts/verify-meta-ads-server-execution.ts",
+        "scripts/README-meta-ads-server-preflight-integration.md"
+      ],
+      "previous_pass_cases": 128,
+      "evidence": "prior_assistant_tool_execution; current bytes match delivered files; not rerun in handoff"
+    },
+    {
+      "archive": "meta-ads-api-test-preview.zip",
+      "sha256": "13e3c312d1ec9238172f2ae8073cb801753a1f417ba747bd28ee18f89bfa83d6",
+      "matching_current_files": [
+        "src/lib/media-sync/meta-ads-api-test-preview.ts",
+        "scripts/preview-meta-ads-api-test.ts",
+        "scripts/verify-meta-ads-api-test-preview.ts",
+        "scripts/README-meta-ads-api-test-preview.md"
+      ],
+      "previous_pass_cases": 116,
+      "evidence": "prior_assistant_tool_execution; current bytes match delivered files; not rerun in handoff"
+    }
+  ],
+  "latest_claim_payload": {
+    "runner": "scripts/resume-meta-ads-completion-claim-test.py",
+    "payload_sha256": "bf177028e2f9b05645ef62346b6dc6537788ae0c88d7ab82ef84672cae16a8ec",
+    "embedded_file_count": 59,
+    "matching_files": 59,
+    "mismatch": [],
+    "proof_limit": "Matches delivered runner payload; does not independently read the user Mac runtime files."
+  },
+  "prior_typecheck_and_lint": {
+    "status": "PASS",
+    "source": "previous turn tool output; all existing source bytes unchanged in this handoff",
+    "rerun": false
+  },
+  "user_reported_isolated_postgres": {
+    "source": "user_pasted_Mac_terminal_output_2026-09-20",
+    "independently_opened_mac_result_files": false,
+    "latest_result_path": "/Users/damon/Downloads/etrylue-meta-claim-db-d46in1_u/results/runtime-result.json",
+    "latest_log_path": "/Users/damon/Downloads/etrylue-meta-claim-db-d46in1_u/run.log",
+    "earlier_stages": {
+      "page_checkpoint_runtime_cases": 18,
+      "handoff_runtime_cases": 28,
+      "completion_runtime_cases": 13
+    },
+    "latest_selected_result_fields": {
+      "status": "PASS",
+      "claim_runtime_cases": 38,
+      "meta_job_status": "done",
+      "progress": 100,
+      "canonical_rows": 6,
+      "fetched_rows": 7,
+      "projections": 2,
+      "materialized_rows": 12,
+      "same_claim_completion": true,
+      "stale_claim_activation_rejected": true,
+      "stale_claim_finalization_rejected": true,
+      "done_replay_claim_checked": true,
+      "reclaim_race_rejected": true,
+      "two_session_transitions": true,
+      "actual_rollback": true,
+      "postgres_restart_replay": true,
+      "published_baseline_preserved": true,
+      "csv_legacy_and_unrelated_fields_unchanged": true,
+      "existing_definitions_acl": "UNCHANGED",
+      "execution_scope": "ISOLATED_FIXTURE_ONLY",
+      "live_meta_api_calls": 0,
+      "live_worker": "DISABLED"
+    },
+    "latest_handoff_performance": {
+      "rows": 2001,
+      "wall_seconds": 4.31,
+      "batch_size": 2000,
+      "production_latency_equivalence": false
+    }
+  },
+  "limitations": [
+    "Source project ref not independently verified.",
+    "Metadata export used four read-only transactions, not one database-wide snapshot.",
+    "Three trigger helper owner/ACL exports were missing; local postgres/service_role assumptions do not prove production privilege parity.",
+    "Same-claim restart supported; claim transfer/reclaim recovery rejected.",
+    "New wrappers fence their RPC path only; old direct RPCs and privileged SQL are outside that fence.",
+    "Naver/Google common-RPC fixture comparison and CSV sentinel preservation do not prove full collectors, live worker or UI regression.",
+    "No live Meta API, Supabase REST/JWT, worker, deployment or production performance proof.",
+    "No sums or percentages across overlapping test suites are used as completion metrics."
+  ]
+}
