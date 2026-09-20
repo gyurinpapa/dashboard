@@ -539,7 +539,7 @@ type ReportMediaSyncProviderProduct = {
   key: string;
   label: string;
   description: string;
-  state: "enabled" | "preparing";
+  state: "enabled" | "catalog" | "preparing";
 };
 
 type ReportMediaSyncProviderStatus = {
@@ -956,8 +956,8 @@ function formatMediaSyncSegmentDate(
 function getProviderSyncStatusText(
   provider: ReportMediaSyncProviderStatus,
 ) {
-  if (!provider.runtime_enabled) return "준비 중";
   if (provider.connections.length === 0) return "리포트 연결 없음";
+  if (!provider.runtime_enabled) return "준비 중";
 
   const job = provider.latest_job;
 
@@ -6432,12 +6432,12 @@ export default function ReportDetailPage() {
                                 key={product.key}
                                 title={product.description}
                                 className={`rounded-full border px-2 py-1 text-[11px] font-extrabold ${
-                                  product.state === "enabled"
+                                  product.state === "enabled" || product.state === "catalog"
                                     ? "border-[#21dff3]/25 bg-[#21dff3]/10 text-[#9ef5ff]"
                                     : "border-white/[0.10] bg-white/[0.04] text-[#8f8ca8]"
                                 }`}
                               >
-                                {product.state === "enabled" ? "✓ " : "준비 중 · "}
+                                {product.state === "preparing" ? "준비 중 · " : "✓ "}
                                 {product.label}
                               </span>
                             ))}
@@ -6532,11 +6532,7 @@ export default function ReportDetailPage() {
                           </div>
                         </div>
 
-                        {!provider.runtime_enabled ? (
-                          <div className="mt-3 text-xs text-amber-100">
-                            런타임 준비 전이므로 job을 생성하지 않습니다.
-                          </div>
-                        ) : connection && enabledProducts.length > 0 ? (
+                        {provider.runtime_enabled && connection && enabledProducts.length > 0 ? (
                           <div className="mt-3 text-xs text-[#bbb8d4]">
                             현재 {enabledProducts.length}개 상품을 전체 고정 범위로 표시합니다.
                           </div>

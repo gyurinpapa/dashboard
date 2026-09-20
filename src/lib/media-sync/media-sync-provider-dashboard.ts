@@ -8,6 +8,7 @@ import type {
 
 export type MediaSyncProviderProductState =
   | "enabled"
+  | "catalog"
   | "preparing";
 
 export type MediaSyncProviderProduct = Readonly<{
@@ -134,24 +135,38 @@ const PROVIDER_PRODUCTS: Readonly<
       state: "enabled" as const,
     },
   ]),
+  // Display catalog only: Meta insights remain ad × day totals without platform
+  // breakdowns. These entries do not enable runtime or product selection.
   meta_ads: Object.freeze([
     {
-      key: "campaign",
-      label: "캠페인",
-      description: "Meta Ads 수집 런타임 준비 중",
-      state: "preparing" as const,
+      key: "facebook",
+      label: "Facebook",
+      description: "Facebook 광고 · 성과는 광고별 일별 합산 기준",
+      state: "catalog" as const,
     },
     {
-      key: "adset",
-      label: "광고 세트",
-      description: "Meta Ads 수집 런타임 준비 중",
-      state: "preparing" as const,
+      key: "instagram",
+      label: "Instagram",
+      description: "Instagram 광고 · 성과는 광고별 일별 합산 기준",
+      state: "catalog" as const,
     },
     {
-      key: "ad",
-      label: "광고",
-      description: "Meta Ads 수집 런타임 준비 중",
-      state: "preparing" as const,
+      key: "messenger",
+      label: "Messenger",
+      description: "Messenger 광고 · 성과는 광고별 일별 합산 기준",
+      state: "catalog" as const,
+    },
+    {
+      key: "audience_network",
+      label: "Audience Network",
+      description: "Audience Network 광고 · 성과는 광고별 일별 합산 기준",
+      state: "catalog" as const,
+    },
+    {
+      key: "threads",
+      label: "Threads",
+      description: "Threads 광고 · 성과는 광고별 일별 합산 기준",
+      state: "catalog" as const,
     },
   ]),
 });

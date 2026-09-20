@@ -132,7 +132,7 @@ assert.deepEqual(
   google.products
     .filter((product) => product.state === "enabled")
     .map((product) => product.key),
-  ["search", "demand_gen", "display"],
+  ["search", "demand_gen", "display", "performance_max", "shopping", "youtube"],
 );
 assert.equal(google.latest_job?.phase, "demand_gen_ad");
 assert.equal(google.latest_job?.current_product, "demand_gen");
@@ -144,6 +144,12 @@ assert.equal(meta.runtime_enabled, false);
 assert.equal(meta.selection_mode, "unavailable");
 assert.equal(meta.connections.length, 0);
 assert.equal(meta.latest_job, null);
+assert.deepEqual(
+  meta.products.map((product) => product.label),
+  ["Facebook", "Instagram", "Messenger", "Audience Network", "Threads"],
+);
+assert.ok(meta.products.every((product) => product.state === "catalog"));
+assert.equal(meta.products.filter((product) => product.state === "enabled").length, 0);
 
 const serialized = JSON.stringify(dashboard).toLowerCase();
 
@@ -158,8 +164,9 @@ for (const forbidden of [
 
 console.log("MEDIA_SYNC_PROVIDER_DASHBOARD=PASS");
 console.log("PROVIDER_CARDS=3");
-console.log("GOOGLE_ENABLED_PRODUCTS=3");
+console.log("GOOGLE_ENABLED_PRODUCTS=6");
 console.log("NAVER_ENABLED_PRODUCTS=5");
+console.log("META_CATALOG_PRODUCTS=5 META_ENABLED_PRODUCTS=0");
 console.log("META_RUNTIME=DISABLED");
 console.log("DATABASE_MUTATIONS=0");
 console.log("LIVE_SYNC=NOT_RUN");
