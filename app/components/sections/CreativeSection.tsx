@@ -117,8 +117,21 @@ const COMPARISON_METRICS: readonly {
   { key: "roas", label: "ROAS", format: (value) => formatPercentFromRoas(value, 1), modes: ["commerce"] },
 ];
 
+function isComparisonMetricEligible(row: CreativeAgg, key: Exclude<SortKey, "creative">) {
+  const value = row[key];
+  if (!Number.isFinite(value) || value < 0) return false;
+  if (key === "cpc") return row.clicks > 0;
+  if (key === "cpa") return row.conversions > 0;
+  if (value === 0) return false;
+  if (key === "ctr") return row.impressions > 0;
+  if (key === "cvr") return row.clicks > 0;
+  if (key === "roas") return row.cost > 0;
+  return true;
+}
+
 const CreativeComparisonSlide = memo(function CreativeComparisonSlide({
   rows,
+  comparisonRows,
   reportMode,
   sortKey,
   sortDir,
@@ -126,6 +139,7 @@ const CreativeComparisonSlide = memo(function CreativeComparisonSlide({
   filters,
 }: {
   rows: CreativeAgg[];
+  comparisonRows: CreativeAgg[];
   reportMode: ReportMode;
   sortKey: SortKey;
   sortDir: SortDir;
@@ -138,6 +152,24 @@ const CreativeComparisonSlide = memo(function CreativeComparisonSlide({
     () => COMPARISON_METRICS.filter((metric) => !metric.modes || metric.modes.includes(reportMode)),
     [reportMode],
   );
+  const bestValues = useMemo(() => {
+    const best: Partial<Record<Exclude<SortKey, "creative">, number>> = {};
+    if (comparisonRows.length < 2) return best;
+
+    // Compare the existing filtered aggregates before Top50/scrolling; do not reaggregate.
+    for (const row of comparisonRows) {
+      for (const { key } of metrics) {
+        if (!isComparisonMetricEligible(row, key)) continue;
+        const value = row[key];
+        const current = best[key];
+        const lowerIsBetter = key === "cpc" || key === "cpa";
+        if (current === undefined || (lowerIsBetter ? value < current : value > current)) {
+          best[key] = value;
+        }
+      }
+    }
+    return best;
+  }, [comparisonRows, metrics]);
 
   useEffect(() => {
     if (railRef.current) railRef.current.scrollLeft = 0;
@@ -218,10 +250,18 @@ const CreativeComparisonSlide = memo(function CreativeComparisonSlide({
               <dl className="px-3">
                 {metrics.map((metric) => {
                   const label = metric.format(row[metric.key]);
+                  const isBest = bestValues[metric.key] !== undefined
+                    && row[metric.key] === bestValues[metric.key]
+                    && isComparisonMetricEligible(row, metric.key);
+                  const bestLabel = metric.key === "cpc" || metric.key === "cpa" ? "최저" : "최대";
                   return (
-                  <div key={metric.key} className="flex h-8 items-center justify-between gap-1 border-b border-[#CFC2B1]/25 last:border-0">
-                    <dt className="shrink-0 text-[11px] text-[#7A8794]">{metric.label}</dt>
-                    <dd title={label} className="min-w-0 truncate text-right text-xs font-medium tabular-nums text-[#334155]">{label}</dd>
+                  <div key={metric.key}
+                    title={isBest ? `현재 필터 전체 소재 중 ${metric.label} ${bestLabel}${metric.key === "cost" ? " 집행액" : ""} (동률 포함)` : undefined}
+                    className={`flex h-8 items-center justify-between gap-1 border-b border-[#CFC2B1]/25 last:border-0 ${isBest ? "-mx-3 border-l-2 border-l-[#7FA6C4] bg-[#B7D7E3]/45 pl-[10px] pr-3" : ""}`}>
+                    <dt className={`shrink-0 text-[11px] ${isBest ? "font-semibold text-[#334155]" : "text-[#7A8794]"}`}>
+                      {metric.label}{isBest ? <span className="ml-1 text-[9px] text-[#4D718C]">{bestLabel}</span> : null}
+                    </dt>
+                    <dd title={label} className={`min-w-0 truncate text-right text-xs tabular-nums text-[#334155] ${isBest ? "font-bold" : "font-medium"}`}>{label}</dd>
                   </div>
                   );
                 })}
@@ -234,6 +274,7 @@ const CreativeComparisonSlide = memo(function CreativeComparisonSlide({
       )}
       <p className="mt-2 text-xs leading-5 text-[#9A8F81]">
         {rows.length === 1 ? "현재 조건의 소재가 1개입니다." : "좌우로 넘겨 다른 소재를 비교할 수 있습니다."} 소재 상세 성과표와 동일한 정렬 기준의 최대 50개 소재를 표시합니다.
+        <span className="block">강조는 현재 필터 전체 소재 기준이며 동률도 함께 표시합니다. 광고비는 최대 집행액, CPC·CPA는 클릭·전환이 있는 소재의 최저 비용, 나머지는 최댓값입니다. 소재가 1개이거나 유효한 값이 없으면 강조하지 않습니다.</span>
       </p>
     </section>
   );
@@ -1997,6 +2038,7 @@ export default function CreativeSection({
       {isComparisonSlideActive ? (
         <CreativeComparisonSlide
           rows={tableRows}
+          comparisonRows={tableCreativeAgg}
           reportMode={reportMode}
           sortKey={sortKey}
           sortDir={sortDir}
