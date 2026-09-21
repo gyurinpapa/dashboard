@@ -10,6 +10,7 @@ const FilterDropdown = memo(function FilterDropdown({
   disabled,
   placeholder,
   maxButtonWidthClass = "max-w-[220px]",
+  align = "start",
 }: {
   label: string;
   options: string[];
@@ -18,6 +19,7 @@ const FilterDropdown = memo(function FilterDropdown({
   disabled?: boolean;
   placeholder?: string;
   maxButtonWidthClass?: string;
+  align?: "start" | "end";
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -71,7 +73,8 @@ const FilterDropdown = memo(function FilterDropdown({
       {open && !disabled && (
         <div
           className={[
-            "absolute left-0 mt-2",
+            "absolute mt-2",
+            align === "end" ? "right-0" : "left-0",
             "z-50 max-h-72 min-w-full w-80 max-w-[70vw] overflow-auto",
             "rounded-[16px] border border-[#CFC2B1]/60 bg-white shadow-[0_6px_18px_rgba(127,166,196,0.10)]"
           ].join(" ")}

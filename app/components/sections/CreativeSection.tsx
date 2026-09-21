@@ -1821,10 +1821,10 @@ export default function CreativeSection({
   ]);
 
   const scopeFilters = !showAllSlides ? (
-    <div className="mb-4 flex flex-wrap items-center gap-3" role="group" aria-label="소재 캠페인·그룹 필터">
-      <FilterDropdown label="캠페인명" options={scopeOptions.campaigns}
+    <div className="mb-4 flex flex-wrap items-center justify-end gap-3" role="group" aria-label="소재 캠페인·그룹 필터">
+      <FilterDropdown label="캠페인명" options={scopeOptions.campaigns} align="end"
         value={selectedCampaign} onChange={handleChangeCampaign}/>
-      <FilterDropdown label="그룹명" options={groupOptions}
+      <FilterDropdown label="그룹명" options={groupOptions} align="end"
         value={selectedGroup} disabled={!selectedCampaign} onChange={handleChangeGroup}/>
     </div>
   ) : null;
