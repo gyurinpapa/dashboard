@@ -3322,7 +3322,7 @@ export default function ReportTemplate({
 
   const goToNextCreativeSlide = useCallback(() => {
     setCreativeSlide((current) =>
-      Math.min(1, current + 1) as SummarySlideIndex,
+      Math.min(2, current + 1) as SummarySlideIndex,
     );
   }, []);
 
@@ -3528,7 +3528,7 @@ export default function ReportTemplate({
       : keywordDetailSlide;
   const effectiveCreativeSlide =
     forcedTab === "creative"
-      ? clampSlideIndex(forcedSlideIndex, 1, creativeSlide)
+      ? clampSlideIndex(forcedSlideIndex, 2, creativeSlide)
       : creativeSlide;
   const effectiveCreativeDetailSlide =
     forcedTab === "creativeDetail"
@@ -5062,7 +5062,7 @@ export default function ReportTemplate({
                         <CreativeSection
                           {...({ reportType } as any)}
                           rows={summaryFilteredRowsWithCreatives as any[]}
-                          activeSlide={effectiveCreativeSlide as 0 | 1}
+                          activeSlide={effectiveCreativeSlide}
                         />
                       </div>
                     ) : (
@@ -5079,14 +5079,14 @@ export default function ReportTemplate({
 
                           <div className="flex flex-col items-center gap-2">
                             <div className="text-xs font-semibold tracking-[0.08em] text-slate-600">
-                              슬라이드 {creativeSlide + 1} / 2
+                              슬라이드 {creativeSlide + 1} / 3
                             </div>
 
                             <div
                               className="flex items-center gap-2"
                               aria-label="소재 슬라이드 선택"
                             >
-                              {([0, 1] as SummarySlideIndex[]).map(
+                              {([0, 1, 2] as SummarySlideIndex[]).map(
                                 (slideIndex) => (
                                   <button
                                     key={slideIndex}
@@ -5113,7 +5113,7 @@ export default function ReportTemplate({
                           <button
                             type="button"
                             onClick={goToNextCreativeSlide}
-                            disabled={creativeSlide === 1}
+                            disabled={creativeSlide === 2}
                             className="inline-flex h-9 min-w-[104px] items-center justify-center rounded-full border border-[var(--nature-border-blue)] bg-white px-4 text-xs font-semibold text-slate-700 transition hover:bg-[var(--nature-blue-light)]/25 disabled:cursor-not-allowed disabled:opacity-35"
                           >
                             다음 ›
@@ -5127,7 +5127,7 @@ export default function ReportTemplate({
                             <CreativeSection
                               {...({ reportType } as any)}
                               rows={summaryFilteredRowsWithCreatives as any[]}
-                              activeSlide={creativeSlide as 0 | 1}
+                              activeSlide={creativeSlide}
                               metadataSource={exportMode ? undefined : creativeMetadataSource}
                             />
                           </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import {CachedCreativeProvider as CreativeMetadataProvider, CachedCreativeLabel as CreativeMetadataLabel, CachedCreativePreview, CachedCreativeHint} from '../creative-metadata/CachedCreativePreview';
+import {CachedCreativeProvider as CreativeMetadataProvider, CachedCreativeLabel as CreativeMetadataLabel, CachedCreativePreview, CachedCreativeHint, CachedCreativeThumbnail} from '../creative-metadata/CachedCreativePreview';
 import type {CreativeMetadataSource} from '../creative-metadata/CreativeMetadata';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -31,7 +31,7 @@ import { groupByCreative } from "../../../src/lib/report/creative";
 
 type ReportMode = "commerce" | "traffic" | "db_acquisition";
 
-type CreativeSlideIndex = 0 | 1;
+type CreativeSlideIndex = 0 | 1 | 2;
 
 type Props = {
   metadataSource?: CreativeMetadataSource;
@@ -97,6 +97,142 @@ const SORT_LABEL: Record<SortKey, string> = {
 const PREVIEW_CARD_WIDTH = 288;
 const PREVIEW_OPEN_DELAY = 0;
 const PREVIEW_CLOSE_DELAY = 140;
+
+const COMPARISON_METRICS: readonly {
+  key: Exclude<SortKey, "creative">;
+  label: string;
+  format: (value: number) => string;
+  modes?: readonly ReportMode[];
+}[] = [
+  { key: "cost", label: "광고비", format: KRW },
+  { key: "impressions", label: "노출", format: formatCount },
+  { key: "clicks", label: "클릭", format: formatCount },
+  { key: "ctr", label: "CTR", format: (value) => formatPercentFromRate(value, 2) },
+  { key: "cpc", label: "CPC", format: KRW },
+  { key: "conversions", label: "전환", format: formatCount, modes: ["db_acquisition", "commerce"] },
+  { key: "cvr", label: "CVR", format: (value) => formatPercentFromRate(value, 2), modes: ["db_acquisition", "commerce"] },
+  { key: "cpa", label: "CPA", format: KRW, modes: ["db_acquisition", "commerce"] },
+  { key: "revenue", label: "매출", format: KRW, modes: ["commerce"] },
+  { key: "roas", label: "ROAS", format: (value) => formatPercentFromRoas(value, 1), modes: ["commerce"] },
+];
+
+const CreativeComparisonSlide = memo(function CreativeComparisonSlide({
+  rows,
+  reportMode,
+  sortKey,
+  sortDir,
+  active,
+}: {
+  rows: CreativeAgg[];
+  reportMode: ReportMode;
+  sortKey: SortKey;
+  sortDir: SortDir;
+  active: boolean;
+}) {
+  const railRef = useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = useState({ start: true, end: true });
+  const metrics = useMemo(
+    () => COMPARISON_METRICS.filter((metric) => !metric.modes || metric.modes.includes(reportMode)),
+    [reportMode],
+  );
+
+  useEffect(() => {
+    if (railRef.current) railRef.current.scrollLeft = 0;
+  }, [rows]);
+
+  useEffect(() => {
+    const rail = railRef.current;
+    if (!active || !rail) return;
+
+    const updateEdges = () => {
+      const start = rail.scrollLeft <= 1;
+      const end = rail.scrollLeft + rail.clientWidth >= rail.scrollWidth - 1;
+      setEdges((current) => current.start === start && current.end === end ? current : { start, end });
+    };
+    updateEdges();
+    rail.addEventListener("scroll", updateEdges, { passive: true });
+    const observer = new ResizeObserver(updateEdges);
+    observer.observe(rail);
+    return () => {
+      rail.removeEventListener("scroll", updateEdges);
+      observer.disconnect();
+    };
+  }, [active, rows]);
+
+  const scrollCards = (direction: number) => {
+    const rail = railRef.current;
+    if (!rail) return;
+    rail.scrollBy({
+      left: direction * (rail.clientWidth + 12),
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    });
+  };
+
+  const sortLabel = sortKey === "creative"
+    ? "소재명"
+    : COMPARISON_METRICS.find((metric) => metric.key === sortKey)?.label ?? SORT_LABEL[sortKey];
+
+  return (
+    <section
+      aria-label="소재 나란히 비교"
+      aria-hidden={!active}
+      className={active ? "min-w-0" : "hidden"}
+    >
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-[#27364A]">소재 나란히 비교</h2>
+          <p className="mt-1 text-xs leading-5 text-[#7A8794]">현재 필터의 소재 이미지와 성과를 한눈에 비교합니다.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="mr-1 text-xs text-[#6F7B86]">
+            {sortLabel} {sortDir === "desc" ? "내림차순" : "오름차순"} · {rows.length}개
+          </span>
+          <button type="button" aria-label="이전 소재 카드" disabled={edges.start}
+            onClick={() => scrollCards(-1)}
+            className="h-9 w-9 rounded-full border border-[var(--nature-border-blue)] bg-white text-lg text-[#5F87A3] hover:bg-[#B7D7E3]/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7FA6C4] disabled:cursor-not-allowed disabled:opacity-35">‹</button>
+          <button type="button" aria-label="다음 소재 카드" disabled={edges.end}
+            onClick={() => scrollCards(1)}
+            className="h-9 w-9 rounded-full border border-[var(--nature-border-blue)] bg-white text-lg text-[#5F87A3] hover:bg-[#B7D7E3]/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7FA6C4] disabled:cursor-not-allowed disabled:opacity-35">›</button>
+        </div>
+      </div>
+
+      {rows.length ? (
+        <div ref={railRef} tabIndex={0} role="region" aria-label="소재 비교 카드 목록, 좌우로 스크롤"
+          className="grid min-w-0 grid-flow-col auto-cols-[85%] items-start gap-3 overflow-x-auto overscroll-x-contain pb-3 snap-x snap-mandatory focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7FA6C4] sm:auto-cols-[calc((100%-12px)/2)] lg:auto-cols-[calc((100%-48px)/5)]">
+          {rows.map((row) => (
+            <article key={row.creative} aria-label={row.creative}
+              className="min-w-0 snap-start overflow-hidden rounded-[16px] border border-[var(--nature-border-blue)] bg-white">
+              <div className="h-[260px] overflow-hidden border-b border-[var(--nature-border-blue)]/60 bg-[#B7D7E3]/10 p-2 [&>span]:h-full [&>span]:w-full [&_img]:h-full [&_img]:w-full [&_img]:object-contain">
+                <CachedCreativeThumbnail name={row.creative} fallbackUrl={row.imagePath}/>
+              </div>
+              <div className="flex h-14 items-center border-b border-[var(--nature-border-blue)]/60 px-3">
+                <h3 title={row.creative} className="line-clamp-2 break-all text-[13px] font-semibold leading-5 text-[#27364A]">
+                  <CreativeMetadataLabel name={row.creative}/>
+                </h3>
+              </div>
+              <dl className="px-3">
+                {metrics.map((metric) => {
+                  const label = metric.format(row[metric.key]);
+                  return (
+                  <div key={metric.key} className="flex h-8 items-center justify-between gap-1 border-b border-[#CFC2B1]/25 last:border-0">
+                    <dt className="shrink-0 text-[11px] text-[#7A8794]">{metric.label}</dt>
+                    <dd title={label} className="min-w-0 truncate text-right text-xs font-medium tabular-nums text-[#334155]">{label}</dd>
+                  </div>
+                  );
+                })}
+              </dl>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div role="status" className="flex h-[420px] items-center justify-center rounded-[16px] border border-[var(--nature-border-blue)] bg-white text-sm text-[#7A8794]">현재 필터에 해당하는 소재가 없습니다.</div>
+      )}
+      <p className="mt-2 text-xs leading-5 text-[#9A8F81]">
+        {rows.length === 1 ? "현재 조건의 소재가 1개입니다." : "좌우로 넘겨 다른 소재를 비교할 수 있습니다."} 소재 상세 성과표와 동일한 정렬 기준의 최대 50개 소재를 표시합니다.
+      </p>
+    </section>
+  );
+});
 
 function resolveReportMode(reportType?: ReportMode): ReportMode {
   if (reportType === "traffic") return "traffic";
@@ -645,6 +781,8 @@ export default function CreativeSection({
   const showAllSlides = activeSlide == null;
   const isRankingSlideActive = showAllSlides || activeSlide === 0;
   const isTableSlideActive = showAllSlides || activeSlide === 1;
+  // 미지정 export는 기존 두 슬라이드만 출력한다.
+  const isComparisonSlideActive = activeSlide === 2;
 
   /**
    * 일반 웹에서는 현재 슬라이드만 최초 계산·mount하고,
@@ -666,7 +804,7 @@ export default function CreativeSection({
   const shouldBuildRankingData =
     showAllSlides || visitedSlidesRef.current.ranking;
   const shouldBuildTableData =
-    showAllSlides || visitedSlidesRef.current.table;
+    isComparisonSlideActive || showAllSlides || visitedSlidesRef.current.table;
   const shouldRenderRankingSlide =
     showAllSlides || visitedSlidesRef.current.ranking;
   const shouldRenderTableSlide =
@@ -1564,6 +1702,7 @@ export default function CreativeSection({
   ]);
 
   const tableBody = useMemo(() => {
+    if (isComparisonSlideActive) return null;
     if (tableRows.length === 0) {
       return (
         <tr className="border-t border-slate-200 bg-white">
@@ -1594,6 +1733,7 @@ export default function CreativeSection({
     ));
   }, [
     tableRows,
+    isComparisonSlideActive,
     tableMeta.colSpan,
     reportMode,
     maxImpr,
@@ -1767,6 +1907,16 @@ export default function CreativeSection({
           </div>
         </div>
       </section>
+      ) : null}
+
+      {isComparisonSlideActive ? (
+        <CreativeComparisonSlide
+          rows={tableRows}
+          reportMode={reportMode}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          active={isComparisonSlideActive}
+        />
       ) : null}
 
       {isTableSlideActive ? (
