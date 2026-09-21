@@ -27,6 +27,7 @@ import {
   formatPercentAxisFromRoas,
 } from "../../../src/lib/report/format";
 import DataBarCell from "../ui/DataBarCell";
+import FilterDropdown from "../ui/FilterDropdown";
 import { groupByCreative } from "../../../src/lib/report/creative";
 
 type ReportMode = "commerce" | "traffic" | "db_acquisition";
@@ -122,12 +123,14 @@ const CreativeComparisonSlide = memo(function CreativeComparisonSlide({
   sortKey,
   sortDir,
   active,
+  filters,
 }: {
   rows: CreativeAgg[];
   reportMode: ReportMode;
   sortKey: SortKey;
   sortDir: SortDir;
   active: boolean;
+  filters?: ReactNode;
 }) {
   const railRef = useRef<HTMLDivElement>(null);
   const [edges, setEdges] = useState({ start: true, end: true });
@@ -195,6 +198,8 @@ const CreativeComparisonSlide = memo(function CreativeComparisonSlide({
             className="h-9 w-9 rounded-full border border-[var(--nature-border-blue)] bg-white text-lg text-[#5F87A3] hover:bg-[#B7D7E3]/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7FA6C4] disabled:cursor-not-allowed disabled:opacity-35">›</button>
         </div>
       </div>
+
+      {filters}
 
       {rows.length ? (
         <div ref={railRef} tabIndex={0} role="region" aria-label="소재 비교 카드 목록, 좌우로 스크롤"
@@ -444,6 +449,76 @@ function getCreativeImageUrlCandidate(row: any) {
     row?.thumbnail_url,
     row?.thumbnail
   );
+}
+
+function aggregateCreativeRows(rows: any[]): CreativeAgg[] {
+  const map = new Map<string, string>();
+
+  for (const row of rows ?? []) {
+    const imageUrl = getCreativeImageUrlCandidate(row);
+    if (!imageUrl) continue;
+
+    const creativeName = getCreativeNameCandidate(row);
+
+    const keys = [
+      normalizeCreativeMatchKey(creativeName),
+      normalizeCreativeMatchKey(creativeName, { stripExtension: true }),
+    ].filter(Boolean);
+
+    for (const key of keys) {
+      if (!map.has(key)) {
+        map.set(key, imageUrl);
+      }
+    }
+  }
+
+  const imagePathByCreativeKey = map;
+  const rawAgg = groupByCreative(rows ?? []);
+
+  return (rawAgg ?? []).map((r: any) => {
+    const impressions = toSafeNumber(r.impressions ?? r.impr);
+    const clicks = toSafeNumber(r.clicks);
+    const cost = toSafeNumber(r.cost);
+    const conversions = toSafeNumber(r.conversions ?? r.conv);
+    const revenue = toSafeNumber(r.revenue);
+
+    const ctr = normalizeRate01(
+      r.ctr ?? (impressions > 0 ? clicks / impressions : 0)
+    );
+    const cvr = normalizeRate01(
+      r.cvr ?? (clicks > 0 ? conversions / clicks : 0)
+    );
+    const cpc = toSafeNumber(r.cpc ?? (clicks > 0 ? cost / clicks : 0));
+    const cpa = toSafeNumber(
+      r.cpa ?? (conversions > 0 ? cost / conversions : 0)
+    );
+    const roas = normalizeRoas01(r.roas ?? (cost > 0 ? revenue / cost : 0));
+
+    const creative = String(r.creative ?? "");
+    const directImageUrl = getCreativeImageUrlCandidate(r);
+    const imagePath =
+      directImageUrl ||
+      imagePathByCreativeKey.get(normalizeCreativeMatchKey(creative)) ||
+      imagePathByCreativeKey.get(
+        normalizeCreativeMatchKey(creative, { stripExtension: true })
+      ) ||
+      "";
+
+    return {
+      creative,
+      imagePath,
+      impressions,
+      clicks,
+      ctr,
+      cpc,
+      cost,
+      conversions,
+      cvr,
+      cpa,
+      revenue,
+      roas,
+    };
+  });
 }
 
 function computePreviewPosition(anchorEl: HTMLElement | null) {
@@ -810,78 +885,59 @@ export default function CreativeSection({
   const shouldRenderTableSlide =
     showAllSlides || visitedSlidesRef.current.table;
 
-  const imagePathByCreativeKey = useMemo(() => {
-    const map = new Map<string, string>();
+  const [campaignFilter, setCampaignFilter] = useState<string | null>(null);
+  const [groupFilter, setGroupFilter] = useState<string | null>(null);
 
-    for (const row of rows ?? []) {
-      const imageUrl = getCreativeImageUrlCandidate(row);
-      if (!imageUrl) continue;
-
-      const creativeName = getCreativeNameCandidate(row);
-
-      const keys = [
-        normalizeCreativeMatchKey(creativeName),
-        normalizeCreativeMatchKey(creativeName, { stripExtension: true }),
-      ].filter(Boolean);
-
-      for (const key of keys) {
-        if (!map.has(key)) {
-          map.set(key, imageUrl);
+  const scopeOptions = useMemo(() => {
+    const groupsByCampaign = new Map<string, Set<string>>();
+    if (shouldBuildTableData && !showAllSlides) {
+      for (const row of rows ?? []) {
+        if (!String(row.creative ?? "").trim()) continue;
+        const campaign = String(row.campaign_name ?? "").trim();
+        if (!campaign) continue;
+        let groups = groupsByCampaign.get(campaign);
+        if (!groups) {
+          groups = new Set<string>();
+          groupsByCampaign.set(campaign, groups);
         }
+        const group = String(row.group_name ?? "").trim();
+        if (group) groups.add(group);
       }
     }
+    return {
+      campaigns: [...groupsByCampaign.keys()],
+      groupsByCampaign,
+    };
+  }, [rows, shouldBuildTableData, showAllSlides]);
 
-    return map;
-  }, [rows]);
+  const selectedCampaign = campaignFilter && scopeOptions.groupsByCampaign.has(campaignFilter)
+    ? campaignFilter : null;
+  const groupOptions = useMemo(() => selectedCampaign
+    ? [...(scopeOptions.groupsByCampaign.get(selectedCampaign) ?? [])]
+    : [], [scopeOptions, selectedCampaign]);
+  const selectedGroup = groupFilter && groupOptions.includes(groupFilter) ? groupFilter : null;
 
-  const creativeAgg: CreativeAgg[] = useMemo(() => {
-    const rawAgg = groupByCreative(rows ?? []);
+  useEffect(() => {
+    if (!shouldBuildTableData || showAllSlides) return;
+    if (campaignFilter !== selectedCampaign) setCampaignFilter(selectedCampaign);
+    if (groupFilter !== selectedGroup) setGroupFilter(selectedGroup);
+  }, [campaignFilter, groupFilter, selectedCampaign, selectedGroup, shouldBuildTableData, showAllSlides]);
 
-    return (rawAgg ?? []).map((r: any) => {
-      const impressions = toSafeNumber(r.impressions ?? r.impr);
-      const clicks = toSafeNumber(r.clicks);
-      const cost = toSafeNumber(r.cost);
-      const conversions = toSafeNumber(r.conversions ?? r.conv);
-      const revenue = toSafeNumber(r.revenue);
+  // Apply the local scope before the existing aggregation, sorting and Top50 limit.
+  const tableInputRows = useMemo(() => {
+    if (!selectedCampaign || showAllSlides) return rows;
+    return rows.filter((row) =>
+      String(row.campaign_name ?? "").trim() === selectedCampaign &&
+      (!selectedGroup || String(row.group_name ?? "").trim() === selectedGroup)
+    );
+  }, [rows, selectedCampaign, selectedGroup, showAllSlides]);
 
-      const ctr = normalizeRate01(
-        r.ctr ?? (impressions > 0 ? clicks / impressions : 0)
-      );
-      const cvr = normalizeRate01(
-        r.cvr ?? (clicks > 0 ? conversions / clicks : 0)
-      );
-      const cpc = toSafeNumber(r.cpc ?? (clicks > 0 ? cost / clicks : 0));
-      const cpa = toSafeNumber(
-        r.cpa ?? (conversions > 0 ? cost / conversions : 0)
-      );
-      const roas = normalizeRoas01(r.roas ?? (cost > 0 ? revenue / cost : 0));
+  const creativeAgg = useMemo(() => aggregateCreativeRows(rows), [rows]);
 
-      const creative = String(r.creative ?? "");
-      const directImageUrl = getCreativeImageUrlCandidate(r);
-      const imagePath =
-        directImageUrl ||
-        imagePathByCreativeKey.get(normalizeCreativeMatchKey(creative)) ||
-        imagePathByCreativeKey.get(
-          normalizeCreativeMatchKey(creative, { stripExtension: true })
-        ) ||
-        "";
-
-      return {
-        creative,
-        imagePath,
-        impressions,
-        clicks,
-        ctr,
-        cpc,
-        cost,
-        conversions,
-        cvr,
-        cpa,
-        revenue,
-        roas,
-      };
-    });
-  }, [rows, imagePathByCreativeKey]);
+  const tableCreativeAgg = useMemo(() => {
+    if (!shouldBuildTableData) return EMPTY_CREATIVE_AGG;
+    return tableInputRows === rows ? creativeAgg : aggregateCreativeRows(tableInputRows);
+  }, [tableInputRows, rows, creativeAgg, shouldBuildTableData]);
 
   const topImpressions = useMemo(() => {
     if (!shouldBuildRankingData || reportMode !== "traffic") {
@@ -984,6 +1040,24 @@ export default function CreativeSection({
     }
   }, []);
 
+  const clearScopedPreview = useCallback(() => {
+    clearPreviewTimers();
+    setSelectedCreative(null);
+    setHoveredCreative(null);
+    setPreviewAnchorEl(null);
+  }, [clearPreviewTimers]);
+
+  const handleChangeCampaign = useCallback((value: string | null) => {
+    setCampaignFilter(value);
+    setGroupFilter(null);
+    clearScopedPreview();
+  }, [clearScopedPreview]);
+
+  const handleChangeGroup = useCallback((value: string | null) => {
+    setGroupFilter(value);
+    clearScopedPreview();
+  }, [clearScopedPreview]);
+
   const openPreview = useCallback(
     (item: CreativeAgg, anchorEl: HTMLElement) => {
       clearPreviewTimers();
@@ -1026,7 +1100,7 @@ export default function CreativeSection({
       return EMPTY_CREATIVE_AGG;
     }
 
-    const sorted = [...creativeAgg].sort((a, b) => {
+    const sorted = [...tableCreativeAgg].sort((a, b) => {
       const dir = sortDir === "asc" ? 1 : -1;
 
       if (sortKey === "creative") {
@@ -1038,7 +1112,7 @@ export default function CreativeSection({
     });
 
     return sorted.slice(0, 50);
-  }, [creativeAgg, sortKey, sortDir, shouldBuildTableData]);
+  }, [tableCreativeAgg, sortKey, sortDir, shouldBuildTableData]);
 
   const tableMaxes = useMemo(() => {
     let maxImpr = 0;
@@ -1081,7 +1155,7 @@ export default function CreativeSection({
   useEffect(() => {
     if (!selectedCreative) return;
 
-    const exists = creativeAgg.some(
+    const exists = tableCreativeAgg.some(
       (item) =>
         item.creative === selectedCreative.creative &&
         String(item.imagePath ?? "") === String(selectedCreative.imagePath ?? "")
@@ -1090,12 +1164,12 @@ export default function CreativeSection({
     if (!exists) {
       setSelectedCreative(null);
     }
-  }, [creativeAgg, selectedCreative]);
+  }, [tableCreativeAgg, selectedCreative]);
 
   useEffect(() => {
     if (!hoveredCreative) return;
 
-    const exists = creativeAgg.some(
+    const exists = tableCreativeAgg.some(
       (item) =>
         item.creative === hoveredCreative.creative &&
         String(item.imagePath ?? "") === String(hoveredCreative.imagePath ?? "")
@@ -1105,7 +1179,7 @@ export default function CreativeSection({
       setHoveredCreative(null);
       setPreviewAnchorEl(null);
     }
-  }, [creativeAgg, hoveredCreative]);
+  }, [tableCreativeAgg, hoveredCreative]);
 
   useEffect(() => {
     if (!hoveredCreative || !previewAnchorEl) return;
@@ -1746,8 +1820,17 @@ export default function CreativeSection({
     closePreview,
   ]);
 
+  const scopeFilters = !showAllSlides ? (
+    <div className="mb-4 flex flex-wrap items-center gap-3" role="group" aria-label="소재 캠페인·그룹 필터">
+      <FilterDropdown label="캠페인명" options={scopeOptions.campaigns}
+        value={selectedCampaign} onChange={handleChangeCampaign}/>
+      <FilterDropdown label="그룹명" options={groupOptions}
+        value={selectedGroup} disabled={!selectedCampaign} onChange={handleChangeGroup}/>
+    </div>
+  ) : null;
+
   return (
-    <CreativeMetadataProvider source={metadataSource} rows={rows} kind="creative">
+    <CreativeMetadataProvider source={metadataSource} rows={isRankingSlideActive ? rows : tableInputRows} kind="creative">
     <section className="mt-2 space-y-6">
       {shouldRenderRankingSlide ? (
         <div
@@ -1811,6 +1894,8 @@ export default function CreativeSection({
               소재명에 마우스를 올리면 문구·이미지·영상 미리보기가 나타납니다.
             </div>
           </div>
+
+          {isTableSlideActive ? scopeFilters : null}
 
           <div
             data-report-ten-row-scroll={activeSlide != null ? "true" : undefined}
@@ -1916,6 +2001,7 @@ export default function CreativeSection({
           sortKey={sortKey}
           sortDir={sortDir}
           active={isComparisonSlideActive}
+          filters={scopeFilters}
         />
       ) : null}
 
