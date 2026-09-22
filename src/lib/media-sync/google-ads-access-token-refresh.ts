@@ -10,6 +10,24 @@ import {
 const MAX_CLIENT_VALUE_LENGTH = 10_000;
 const MAX_REFRESH_TOKEN_LENGTH = 20_000;
 const MAX_ACCESS_TOKEN_LENGTH = 20_000;
+const MAX_ERROR_RESPONSE_BYTES = 8_192;
+
+// Only fixed protocol codes may enter diagnostics. Never retain Google's raw
+// error_description, response body, or request credentials.
+const SAFE_OAUTH_ERROR_CODES = [
+  "invalid_grant",
+  "invalid_client",
+  "invalid_request",
+  "invalid_scope",
+  "unauthorized_client",
+  "unsupported_grant_type",
+  "access_denied",
+  "admin_policy_enforced",
+  "temporarily_unavailable",
+  "server_error",
+] as const;
+
+type GoogleAdsOAuthErrorCode = typeof SAFE_OAUTH_ERROR_CODES[number];
 
 export const GOOGLE_ADS_ACCESS_TOKEN_REFRESH_TIMEOUT_MS =
   GOOGLE_ADS_OAUTH_TOKEN_REQUEST_TIMEOUT_MS;
@@ -46,12 +64,14 @@ export type GoogleAdsAccessTokenRefreshErrorCode =
 export class GoogleAdsAccessTokenRefreshError extends Error {
   readonly code: GoogleAdsAccessTokenRefreshErrorCode;
   readonly status: number | null;
+  readonly oauthError: GoogleAdsOAuthErrorCode | null;
 
   constructor(
     code: GoogleAdsAccessTokenRefreshErrorCode,
     message: string,
     options?: {
       status?: number | null;
+      oauthError?: GoogleAdsOAuthErrorCode | null;
     },
   ) {
     super(message);
@@ -59,6 +79,42 @@ export class GoogleAdsAccessTokenRefreshError extends Error {
     this.name = "GoogleAdsAccessTokenRefreshError";
     this.code = code;
     this.status = options?.status ?? null;
+    this.oauthError = options?.oauthError ?? null;
+  }
+}
+
+async function readSafeOAuthError(
+  response: Response,
+): Promise<GoogleAdsOAuthErrorCode | null> {
+  if (!response.body) return null;
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let text = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > MAX_ERROR_RESPONSE_BYTES) {
+        await reader.cancel();
+        return null;
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+    const body: unknown = JSON.parse(text);
+    if (!isPlainObject(body)) return null;
+
+    return SAFE_OAUTH_ERROR_CODES.find(code => code === body.error) ?? null;
+  } catch {
+    // Malformed, interrupted, or oversized error bodies must not hide the
+    // already-known HTTP failure or expose arbitrary response text.
+    return null;
+  } finally {
+    reader.releaseLock();
   }
 }
 
@@ -327,19 +383,14 @@ export async function refreshGoogleAdsAccessToken(
     }
 
     if (!response.ok) {
-      if (response.body) {
-        try {
-          await response.body.cancel();
-        } catch {
-          // Ignore response-body cleanup failures.
-        }
-      }
+      const oauthError = await readSafeOAuthError(response);
 
       throw new GoogleAdsAccessTokenRefreshError(
         "TOKEN_HTTP_ERROR",
-        "Google OAuth access-token refresh returned an unsuccessful response.",
+        `Google OAuth access-token refresh returned an unsuccessful response (HTTP ${response.status}; OAuth ${oauthError ?? "unclassified"}).`,
         {
           status: response.status,
+          oauthError,
         },
       );
     }
