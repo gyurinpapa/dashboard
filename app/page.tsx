@@ -56,9 +56,9 @@ const steps = [
 
 const faqs = [
   {
-    question: "기존 리포트와 홈페이지는 어떻게 나뉘나요?",
+    question: "리포트는 어디에서 만들 수 있나요?",
     answer:
-      "공식 소개는 etrylue.com에서, 리포트 생성과 관리는 app.etrylue.com에서 운영됩니다. 기존 리포트 URL과 인증 흐름은 그대로 유지됩니다.",
+      "리포트 생성과 관리는 app.etrylue.com에서 이용할 수 있습니다.",
   },
   {
     question: "어떤 방식으로 데이터를 넣을 수 있나요?",
@@ -356,7 +356,7 @@ export default function HomePage() {
 
       <section className={styles.ctaSection}>
         <div className={[styles.container, styles.ctaCard].join(" ")}>
-          <div><span className={styles.eyebrow}>READY WHEN YOU ARE</span><h2>다음 리포트는, 더 명확한 기준으로</h2><p>기존 리포트 앱에서 광고주와 목적을 선택하고 Etrylue Performance를 시작하세요.</p></div>
+          <div><span className={styles.eyebrow}>READY WHEN YOU ARE</span><h2>다음 리포트는, 더 명확한 기준으로</h2><p>광고주와 리포트 목적을 선택하고 시작하세요.</p></div>
           <div className={styles.ctaActions}><a className={buttonAccent} href="https://app.etrylue.com/report-builder">리포트 열기</a><a className={buttonGhost} href="mailto:hello@etrylue.com">도입 문의</a></div>
         </div>
       </section>

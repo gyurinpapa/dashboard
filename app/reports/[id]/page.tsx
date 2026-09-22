@@ -3094,7 +3094,7 @@ export default function ReportDetailPage() {
     }
 
     if (ingestionStatus === "queued") {
-      return "CSV 업로드는 완료되었습니다. WORKER 터미널이 켜져 있으면 곧 서버 처리가 시작됩니다.";
+      return "CSV 업로드가 완료되어 처리 순서를 기다리고 있습니다.";
     }
 
     if (ingestionStatus === "processing") {
@@ -3102,7 +3102,7 @@ export default function ReportDetailPage() {
     }
 
     if (ingestionStatus === "done") {
-      return "처리 완료. rows가 반영되었고 발행 가능한 상태입니다.";
+      return "데이터 처리가 완료되었습니다. 리포트를 발행할 수 있습니다.";
     }
 
     if (ingestionStatus === "failed") {
@@ -3839,13 +3839,13 @@ export default function ReportDetailPage() {
         pollingBusyRef.current = false;
 
         setMsg(
-          "서버 처리 상태 확인 시간이 길어지고 있습니다. WORKER 터미널이 켜져 있는지 확인한 뒤 새로고침해 주세요.",
+          "처리 상태 확인이 지연되고 있습니다. 잠시 후 새로고침해 주세요.",
         );
 
         setIngestionInfo((prev) => ({
           ...prev,
           error:
-            "서버 처리 상태 확인 시간이 길어지고 있습니다. 로컬 개발 환경이라면 WORKER 터미널에서 npm run worker:ingestion이 실행 중인지 확인하세요.",
+            "처리 상태 확인이 지연되고 있습니다. 새로고침 후에도 계속되면 관리자에게 문의해 주세요.",
         }));
 
         return;
@@ -4848,7 +4848,7 @@ export default function ReportDetailPage() {
       lastLoadedBrandSearchContractsKeyRef.current = savedKey;
       setBrandSearchContractsSavedText("저장 완료");
       setMsg(
-        "브랜드검색 계약 금액이 저장되었습니다. 다음 단계에서 리포트 rows 비용 자동 배분에 사용합니다.",
+        "브랜드검색 계약 금액이 저장되었습니다.",
       );
     } catch (e: any) {
       setBrandSearchContractsSavedText("");
@@ -6093,23 +6093,22 @@ export default function ReportDetailPage() {
                   ) : (
                     <>
                       이 리포트의 데일리 자동 동기화는 종료된 상태입니다.
-                      기존 데이터와 snapshot은 유지되며 자동 동기화를 다시 시작할 수 있습니다.
+                      기존 데이터와 발행본은 유지되며 자동 동기화를 다시 시작할 수 있습니다.
                     </>
                   )
                 ) : mediaSyncAutomatic.enabled ? (
                   <>
                     이 리포트는 새벽 자동 동기화 관리 대상입니다.
-                    수동 동기화 요청은 중복 job 방지를 위해 비활성화됩니다.
+                    중복 수집을 막기 위해 수동 동기화는 비활성화됩니다.
                   </>
                 ) : mediaSyncPeriodManagedByCanonical ? (
                   <>
                     API 동기화 시작일과 종료일은 저장된 정규 URL 기간에서 자동 설정됩니다.
-                    별도 기간 저장은 사용하지 않으며, 저장만으로 동기화 job이 생성되지는 않습니다.
+                    기간을 저장한 뒤 동기화 요청 버튼을 눌러 수집을 시작하세요.
                   </>
                 ) : (
                   <>
-                    API 연동형 리포트는 사용자가 저장한 기간만 media_sync_jobs의 date_from/date_to로 사용합니다.
-                    저장만으로 동기화는 실행되지 않으며, 실제 동기화는 이 화면의 동기화 요청 버튼과 Railway media sync worker가 처리합니다.
+                    저장한 기간의 데이터를 수집합니다. 기간 저장 후 동기화 요청 버튼을 눌러 시작하세요.
                   </>
                 )}
               </div>
@@ -6237,7 +6236,7 @@ export default function ReportDetailPage() {
                         ? "API 동기화 기간을 먼저 저장해 주세요."
                         : isActiveMediaSyncJobStatus(mediaSyncJob?.status)
                           ? "이미 대기 또는 처리 중인 API 동기화 job이 있습니다."
-                          : "pending job만 생성하고 실제 동기화는 Railway worker가 처리합니다."
+                          : "저장한 기간의 데이터 수집을 요청합니다."
                   }
                 >
                   {dailySyncManagedByCanonical
@@ -6260,12 +6259,9 @@ export default function ReportDetailPage() {
                 <div className="flex flex-wrap items-end justify-between gap-2">
                   <div>
                     <div className="text-sm font-black text-[#f7f7ff]">매체별 동기화 현황</div>
-                    <div className="mt-1 text-xs text-[#bbb8d4]">
-                      데이터 레벨이 아니라 매체의 실제 상품 계약과 job 결과를 표시합니다.
-                    </div>
                   </div>
                   <div className="text-xs font-extrabold text-[#9ef5ff]">
-                    상품 선택 저장은 다매체 실행 계약 적용 후 활성화됩니다.
+                    상품 범위는 고정되어 있습니다.
                   </div>
                 </div>
 
@@ -6516,7 +6512,7 @@ export default function ReportDetailPage() {
                         : "데일리 자동 동기화가 종료되었습니다."
                       : mediaSyncAutomatic.enabled
                         ? "새벽 자동 동기화 관리 대상입니다."
-                        : "저장된 기간으로만 pending job을 생성합니다."}
+                        : "저장한 기간의 데이터를 수집합니다."}
                   </span>
                 )}
               </div>
@@ -6527,7 +6523,7 @@ export default function ReportDetailPage() {
             </div>
           ) : (
             <>
-              CSV 업로드형 리포트의 기간은 업로드된 rows의 날짜 범위로 자동 산정됩니다.
+              CSV 업로드형 리포트의 기간은 업로드한 데이터의 날짜로 자동 설정됩니다.
               기간을 바꾸려면 다른 기간의 CSV를 다시 업로드해야 합니다.
             </>
           )}
@@ -6547,8 +6543,7 @@ export default function ReportDetailPage() {
               월 목표값 사전 입력
             </div>
             <div className="mt-1.5 text-sm leading-6 text-[#d7d5ec]">
-              저장된 값은 reports.meta.month_goal에 보관되며, 발행 후 공유
-              리포트에서도 사라지지 않도록 사용합니다.
+              월 목표를 입력하면 공유 리포트에도 반영됩니다.
             </div>
           </div>
 
@@ -6759,10 +6754,6 @@ export default function ReportDetailPage() {
           )}
         </div>
 
-        <div className="mt-3 text-xs leading-5 text-[#bbb8d4]">
-          숫자 형식은 그대로 저장합니다. 표시/계산 방식은 기존 리포트 로직을
-          변경하지 않습니다.
-        </div>
       </section>
 
       <section className="mb-5 rounded-[20px] border border-white/[0.13] bg-[#392b70]/90 p-5 shadow-[0_22px_54px_rgba(8,5,29,0.22)]">
@@ -6772,10 +6763,7 @@ export default function ReportDetailPage() {
               브랜드검색 계약 금액
             </div>
             <div className="mt-1.5 text-sm leading-6 text-[#d7d5ec]">
-              네이버 브랜드검색처럼 월 단위로 구매한 광고비를 PC/모바일별로
-              입력합니다. 저장된 값은 reports.meta.brand_search_contracts에
-              보관하고, 리포트 화면에서 월·기기별 일별 rows에 자동 배분하는 데
-              사용합니다.
+              월 계약 금액을 PC·모바일별로 입력하세요. 해당 월의 일별 광고비에 배분됩니다.
             </div>
           </div>
 
@@ -6861,11 +6849,6 @@ export default function ReportDetailPage() {
           ))}
         </div>
 
-        <div className="mt-3 text-xs leading-5 text-[#bbb8d4]">
-          이번 단계에서는 계약 금액 입력/저장 UI만 추가합니다. 다음 단계에서
-          ReportTemplate에 전달한 뒤 입력 월의 PC/모바일 브랜드검색 rows 수를
-          기준으로 일별 비용을 자동 배분합니다.
-        </div>
       </section>
 
       {isCsvReport ? (
@@ -6876,7 +6859,7 @@ export default function ReportDetailPage() {
           </div>
           <div className="mb-4 text-sm leading-6 text-[#d7d5ec]">
             {isCsvReport
-              ? "브라우저에서 Storage로 직접 업로드 후 finalize 합니다."
+              ? "CSV 파일을 선택해 광고 데이터를 업로드하세요."
               : "API 연동형 리포트에서는 CSV 업로드를 사용할 수 없습니다."}
           </div>
 
@@ -7008,10 +6991,6 @@ export default function ReportDetailPage() {
               ) : null}
             </div>
 
-            <div className="text-xs text-[#bbb8d4]">
-              업로드 완료 후 WORKER가 켜져 있으면 서버 처리 상태와 진행률이
-              자동으로 갱신됩니다.
-            </div>
           </div>
         </section>
 
@@ -7086,14 +7065,12 @@ export default function ReportDetailPage() {
 
             {!sessionCreativesUploaded ? (
               <div className="mt-2 text-xs leading-5 text-[#bbb8d4]">
-                현재는 서버에 저장된 기존 매칭 결과를 표시 중입니다. 이번
-                세션에서 새 이미지를 업로드하면 즉시 갱신됩니다.
+                저장된 소재입니다. 새 이미지를 업로드하면 갱신됩니다.
               </div>
             ) : null}
 
             <div className="mt-2 text-xs text-[#bbb8d4]">
-              ※ 키 후보 수는 매칭 성공률을 올리기 위한 확장 키가 포함되어 커질
-              수 있습니다. 실제 이미지 파일 수 감은 고유 URL이 더 정확합니다.
+              이미지 수는 고유 URL 기준이며, 키 후보에는 추가 매칭 항목이 포함됩니다.
             </div>
           </div>
 
@@ -7140,9 +7117,9 @@ export default function ReportDetailPage() {
       </div>
 
       <div className="mt-3 text-xs leading-5 text-[#bbb8d4]">
-        서버 rows(실제):{" "}
+        저장된 데이터:{" "}
         {rowsMetaLoaded ? formatInt(rowsMetaCount) : "-"}개{" "}
-        <span className="text-[#aaa6c9]">·</span> 현재 표시 rows:{" "}
+        <span className="text-[#aaa6c9]">·</span> 미리보기 데이터:{" "}
         {displayRows.length}개 <span className="text-[#aaa6c9]">·</span> 광고주:{" "}
         {effectivePreviewAdvertiserName || "-"}{" "}
         <span className="text-[#aaa6c9]">·</span> 유형:{" "}

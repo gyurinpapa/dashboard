@@ -5117,7 +5117,6 @@ export default function ReportBuilderPage() {
                         }}
                       >
                         비밀번호나 OAuth 토큰은 이 화면에 입력하지 않습니다.
-                        OAuth 승인 후 Server API에서 계정 범위와 저장된 연결 상태를 다시 확인합니다.
                       </div>
 
                       <div
@@ -5787,9 +5786,6 @@ export default function ReportBuilderPage() {
               <div style={{ fontSize: 14, fontWeight: 900, color: "#f7f7ff" }}>
                 데이터 입력 방식
               </div>
-              <div style={{ marginTop: 4, fontSize: 12, color: "#d7d5ec", lineHeight: 1.5 }}>
-                새 리포트를 CSV 업로드형으로 만들지, 매체 API 연동형으로 만들지 먼저 선택합니다.
-              </div>
 
               <div
                 style={{
@@ -5913,7 +5909,7 @@ export default function ReportBuilderPage() {
                 ) : loadingSelectedAdvertiserMediaConnections ||
                   !hasCurrentAdvertiserMediaConnectionSnapshot ? (
                   <div style={{ marginTop: 12, fontSize: 12, color: "#bbb8d4" }}>
-                    현재 광고주의 실제 media connection 상태를 확인하고 있습니다.
+                    광고주의 연결 상태를 확인하고 있습니다.
                   </div>
                 ) : selectedAdvertiserMediaConnectionsError ? (
                   <div
