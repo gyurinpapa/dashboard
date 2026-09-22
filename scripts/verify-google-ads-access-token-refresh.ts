@@ -337,6 +337,8 @@ async function main(): Promise<void> {
       );
 
     assert.equal(error.status, 400);
+    assert.equal(error.oauthError, "invalid_grant");
+    assert.match(error.message, /HTTP 400; OAuth invalid_grant/);
     assertNoCredentialLeak(error);
 
     console.log(
@@ -344,6 +346,70 @@ async function main(): Promise<void> {
     );
 
     passed += 1;
+  }
+
+  {
+    const cases = [
+      { status: 401, body: { error: "invalid_client", error_description: CLIENT_SECRET }, expected: "invalid_client" },
+      { status: 403, body: { error: "admin_policy_enforced", error_description: REFRESH_TOKEN }, expected: "admin_policy_enforced" },
+      { status: 503, body: { error: "temporarily_unavailable" }, expected: "temporarily_unavailable" },
+      { status: 400, body: { error: REFRESH_TOKEN, error_description: CLIENT_SECRET }, expected: null },
+      { status: 400, body: { error: { message: CLIENT_SECRET }, refresh_token: REFRESH_TOKEN }, expected: null },
+      { status: 502, body: `<html>${CLIENT_SECRET}</html>`, expected: null },
+    ];
+    for (const fixture of cases) {
+      let fetchCalls = 0;
+      const error = await expectAsyncError(() => refreshGoogleAdsAccessToken(
+        { config: CONFIG, refreshToken: REFRESH_TOKEN },
+        async () => {
+          fetchCalls++;
+          return new Response(typeof fixture.body === "string" ? fixture.body : JSON.stringify(fixture.body), { status: fixture.status });
+        },
+      ), "TOKEN_HTTP_ERROR");
+      assert.equal(fetchCalls, 1, "diagnostics must not introduce token retries");
+      assert.equal(error.status, fixture.status);
+      assert.equal(error.oauthError, fixture.expected);
+      assertNoCredentialLeak(error);
+    }
+    console.log("PASS: OAuth failure classification retains only allowlisted codes; no raw descriptions or retries");
+    passed++;
+  }
+
+  {
+    let cancelled = false;
+    const oversizedBody = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(JSON.stringify({ error: "invalid_grant", error_description: CLIENT_SECRET + "x".repeat(9_000) })));
+      },
+      cancel() { cancelled = true; },
+    });
+    const error = await expectAsyncError(() => refreshGoogleAdsAccessToken(
+      { config: CONFIG, refreshToken: REFRESH_TOKEN },
+      async () => new Response(oversizedBody, { status: 400 }),
+    ), "TOKEN_HTTP_ERROR");
+    assert.equal(cancelled, true);
+    assert.equal(error.status, 400);
+    assert.equal(error.oauthError, null);
+    assertNoCredentialLeak(error);
+    console.log("PASS: oversized error body is cancelled and discarded");
+    passed++;
+  }
+
+  {
+    const error = await expectAsyncError(() => refreshGoogleAdsAccessToken(
+      { config: CONFIG, refreshToken: REFRESH_TOKEN },
+      async (_input, init) => new Response(new ReadableStream<Uint8Array>({
+        start(controller) {
+          init?.signal?.addEventListener("abort", () => controller.error(new DOMException("Aborted", "AbortError")), { once: true });
+        },
+      }), { status: 503 }),
+      10,
+    ), "TOKEN_HTTP_ERROR");
+    assert.equal(error.status, 503);
+    assert.equal(error.oauthError, null);
+    assertNoCredentialLeak(error);
+    console.log("PASS: stalled OAuth error body remains bounded and preserves the HTTP failure");
+    passed++;
   }
 
   {
@@ -585,10 +651,10 @@ async function main(): Promise<void> {
     passed += 1;
   }
 
-  assert.equal(passed, 10);
+  assert.equal(passed, 13);
 
   console.log(
-    `Google Ads access-token refresh fixture: ${passed}/10 PASS`,
+    `Google Ads access-token refresh fixture: ${passed}/13 PASS`,
   );
 
   console.log(

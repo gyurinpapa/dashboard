@@ -44,6 +44,7 @@ import {
 import {
   isMediaSyncSegmentEligibleReport,
 } from "@/src/lib/media-sync/media-sync-segment-eligibility";
+import { getDailyReportV2ProviderStatus } from "@/src/lib/media-sync/daily-report-v2-provider-status";
 import { extractAdvertiserName } from "@/src/lib/report/utils";
 
 import ReportTemplate from "../../components/ReportTemplate";
@@ -6312,52 +6313,20 @@ export default function ReportDetailPage() {
                       dailyV2SegmentUi ??
                       providerSegmentUi;
 
+                    const dailyV2Status = getDailyReportV2ProviderStatus(
+                      dailyV2Progress,
+                      job ? {
+                        ...job,
+                        date_from: providerSegmentJob?.date_from,
+                        automation_contract: providerSegmentJob?.automation_contract,
+                      } : null,
+                    );
+
                     const displayStatus =
-                      dailyV2Progress
-                        ? dailyV2Progress
-                            .target_covered
-                          ? "done"
-                          : providerSegmentJob
-                              ?.status ===
-                              "failed"
-                            ? "failed"
-                            : providerSegmentJob
-                                ?.status ===
-                                "processing"
-                              ? "processing"
-                              : "pending"
-                        : job?.status ??
-                          null;
+                      dailyV2Status?.status ?? job?.status ?? null;
 
                     const displayStatusText =
-                      dailyV2Progress
-                        ? dailyV2Progress
-                            .target_covered
-                          ? "완료"
-                          : providerSegmentJob
-                              ?.status ===
-                              "failed"
-                            ? "실패"
-                            : providerSegmentJob
-                                ?.status ===
-                                "processing"
-                              ? `처리 중 ${
-                                  Math.max(
-                                    0,
-                                    Math.min(
-                                      100,
-                                      Number(
-                                        providerSegmentJob
-                                          ?.progress ??
-                                          0,
-                                      ),
-                                    ),
-                                  )
-                                }%`
-                              : "대기 중"
-                        : getProviderSyncStatusText(
-                            provider,
-                          );
+                      dailyV2Status?.statusText ?? getProviderSyncStatusText(provider);
 
                     const displayCollectedRows =
                       dailyV2Progress
@@ -6369,31 +6338,10 @@ export default function ReportDetailPage() {
                           );
 
                     const displayCurrentStage =
-                      dailyV2Progress
-                        ? dailyV2Progress
-                            .target_covered
-                          ? "초기 동기화 완료"
-                          : providerSegmentJob
-                              ?.automation_contract ===
-                              "daily_report_v2" &&
-                            providerSegmentJob
-                              ?.date_from
-                            ? `${
-                                providerSegmentJob
-                                  .date_from
-                              } · ${
-                                getMediaSyncJobStatusText(
-                                  providerSegmentJob,
-                                )
-                              }`
-                            : dailyV2Progress
-                                  .first_missing_date
-                              ? `${dailyV2Progress.first_missing_date} 대기`
-                              : "-"
-                        : job
+                      dailyV2Status?.currentStage ?? (job
                             ?.current_product_label ||
                           job?.phase ||
-                          "-";
+                          "-");
 
                     return (
                       <div
