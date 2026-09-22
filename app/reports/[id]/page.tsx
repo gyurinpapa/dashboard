@@ -6543,7 +6543,7 @@ export default function ReportDetailPage() {
               월 목표값 사전 입력
             </div>
             <div className="mt-1.5 text-sm leading-6 text-[#d7d5ec]">
-              월 목표를 입력하면 공유 리포트에도 반영됩니다.
+              저장한 월 목표는 공유 리포트에도 반영됩니다.
             </div>
           </div>
 
