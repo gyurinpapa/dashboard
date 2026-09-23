@@ -18,6 +18,7 @@ import {
 } from "next/navigation";
 import { supabase } from "@/src/lib/supabase/client";
 import ReportDownloadButtons from "@/app/components/report/ReportDownloadButtons";
+import PreparedMediaStatus from "@/app/components/media-sync/PreparedMediaStatus";
 import { buildReportFileName } from "@/src/lib/report/download/file-name";
 import { downloadCsvFile } from "@/src/lib/report/download/export-csv";
 import { prepareElementForExport } from "@/src/lib/report/download/export-helpers";
@@ -6492,6 +6493,8 @@ export default function ReportDetailPage() {
                   })}
                 </div>
               </div>
+
+              <PreparedMediaStatus />
 
               <div className="text-xs text-[#bbb8d4]">
                 {mediaSyncPeriodManagedByCanonical ? (

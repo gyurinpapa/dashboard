@@ -5,6 +5,7 @@ import { supabase } from "@/src/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import MetaAdsConnectionCard from "./MetaAdsConnectionCard";
+import PreparedMediaStatus from "@/app/components/media-sync/PreparedMediaStatus";
 import { normalizeReportTheme, type ReportTheme } from "@/src/lib/report/theme";
 
 type ReportType = {
@@ -5450,6 +5451,8 @@ export default function ReportBuilderPage() {
                       </div>
                     </div>
                   ) : null}
+
+                  <PreparedMediaStatus />
                 </div>
               ) : null}
 
