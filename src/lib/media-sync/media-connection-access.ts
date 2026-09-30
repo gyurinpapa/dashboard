@@ -720,3 +720,6 @@ export async function resolveReportMediaConnectionAccess(
     reportId: report.id,
   };
 }
+
+// Reuse existing request authentication for original-actor delegation revocation.
+export { getAuthenticatedUser as authenticateMediaConnectionRequest };
