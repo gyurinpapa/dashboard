@@ -808,13 +808,16 @@ async function verifyDemandGenProductBoundaryAuthority():
           false,
       });
 
-    const futureClaimed =
+    const pmaxClaimed =
       withProductBoundaryCheckpoint(
         createBaseJob(),
         routing,
       );
 
-    let futureRuntimeCalls =
+    // PMax boundary resume was enabled by ce3e644; preserve that contract.
+    const runtimeStop = new Error("fixture-pmax-runtime-stop");
+
+    let pmaxRuntimeCalls =
       0;
 
     await assert.rejects(
@@ -822,7 +825,7 @@ async function verifyDemandGenProductBoundaryAuthority():
         processGoogleAdsAllDataWorkerHandler(
           {
             job:
-              futureClaimed,
+              pmaxClaimed,
 
             executionContract:
               "google_all_data_v1",
@@ -836,12 +839,10 @@ async function verifyDemandGenProductBoundaryAuthority():
 
             processRuntime:
               async () => {
-                futureRuntimeCalls +=
+                pmaxRuntimeCalls +=
                   1;
 
-                throw new Error(
-                  "FUTURE_PRODUCT_RUNTIME_MUST_NOT_RUN",
-                );
+                throw runtimeStop;
               },
           },
         ),
@@ -852,16 +853,17 @@ async function verifyDemandGenProductBoundaryAuthority():
         error instanceof
           GoogleAdsAllDataWorkerHandlerError &&
       error.code ===
-        "INVALID_CHECKPOINT",
+        "PROCESSING_FAILED" &&
+      error.cause === runtimeStop,
     );
 
     assert.equal(
-      futureRuntimeCalls,
-      0,
+      pmaxRuntimeCalls,
+      1,
     );
 
     console.log(
-      `ALL_DATA_HANDLER_${testCase.label}_PRODUCT_BOUNDARY_BLOCKED=PASS`,
+      `ALL_DATA_HANDLER_${testCase.label}_PRODUCT_BOUNDARY_RUNTIME_ENTRY=PASS`,
     );
   }
 }

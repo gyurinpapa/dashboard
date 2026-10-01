@@ -1,5 +1,7 @@
 // src/lib/media-sync/google-ads-media-sync-worker-orchestration-repository.ts
 
+import { getGoogleAdsSafeFailureDiagnostic } from "./google-ads-safe-failure-diagnostic";
+
 import {
   readGoogleAdsMediaSyncProcessingCheckpoint,
   type GoogleAdsMediaSyncProcessingCheckpointState,
@@ -700,6 +702,8 @@ const defaultMarkFailed:
             code,
             stage:
               "google_ads_worker_runtime",
+            diagnostic:
+              getGoogleAdsSafeFailureDiagnostic(input.error),
           },
           finished_at:
             now,

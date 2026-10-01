@@ -145,20 +145,44 @@ async function main(
     return result;
   };
 
+  const runForReportIsolated = async (reportId: string, snapshotStep: number) => {
+    try {
+      return await runForReport(reportId, snapshotStep);
+    } catch (error) {
+      // Only an already-failed, scope-validated job is safe to skip.
+      // Unknown failures and ambiguous mutation outcomes still stop this run.
+      if (!(error instanceof scheduler.DailyReportV2SchedulerError) ||
+          error.code !== "EXACT_JOB_FAILED") {
+        throw error;
+      }
+      console.error(JSON.stringify({
+        scheduler: CONTRACT,
+        ok: false,
+        code: error.code,
+        action: "report_blocked_failed_job",
+        targetDate,
+        reportId,
+        snapshotStep,
+      }));
+      process.exitCode = 1;
+      return null;
+    }
+  };
+
   const snapshotReports: string[] = [];
   // Give every discovered report its first turn before draining any snapshot.
   // Never loop after job creation/replay: provider continuation remains worker-owned.
   for (const reportId of reportIds) {
-    const result = await runForReport(reportId, 0);
-    if (result.action === "snapshot_materialized") {
+    const result = await runForReportIsolated(reportId, 0);
+    if (result?.action === "snapshot_materialized") {
       snapshotReports.push(reportId);
     }
   }
 
   for (const reportId of snapshotReports) {
     for (let step = 1; step <= MAX_SNAPSHOT_CONTINUATION_STEPS; step += 1) {
-      const result = await runForReport(reportId, step);
-      if (result.action !== "snapshot_materialized") break;
+      const result = await runForReportIsolated(reportId, step);
+      if (!result || result.action !== "snapshot_materialized") break;
       if (step === MAX_SNAPSHOT_CONTINUATION_STEPS) {
         console.error(JSON.stringify({
           scheduler: CONTRACT,
