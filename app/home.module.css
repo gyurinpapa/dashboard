@@ -152,11 +152,12 @@
 .hero h1 {
   max-width: 720px;
   margin: 28px 0 24px;
-  font-size: clamp(42px, 5.6vw, 72px);
+  font-size: clamp(32px, 4vw, 54px);
   font-weight: 800;
   line-height: 1.16;
   letter-spacing: -0.058em;
   word-break: keep-all;
+  white-space: nowrap;
 }
 .hero h1 em,
 .sectionHeading h2 em {
@@ -182,22 +183,8 @@
   position: relative;
   overflow: hidden;
   aspect-ratio: 1.1;
-  border: 1px solid rgba(183, 215, 227, 0.14);
-  border-radius: 28px;
-  background:
-    radial-gradient(circle at 50% 50%, rgba(47, 224, 196, 0.09), transparent 32%),
-    linear-gradient(145deg, rgba(28, 33, 69, 0.95), rgba(12, 14, 36, 0.96));
-  box-shadow: 0 34px 70px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
-.signalGrid {
-  position: absolute;
-  inset: 0;
-  opacity: 0.5;
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-  background-size: 30px 30px;
-}
+.signalGrid { display: none; }
 .signalSvg { position: absolute; inset: 0; width: 100%; height: 100%; }
 .signalLine {
   stroke: rgba(183, 215, 227, 0.46);
@@ -686,12 +673,11 @@
   .brandLockup small { font-size: 8px; }
   .navButton { min-height: 40px; padding: 10px 13px; font-size: 13px; }
   .hero { padding-top: 126px; }
-  .hero h1 { margin-top: 22px; font-size: clamp(37px, 11.5vw, 54px); }
+  .hero h1 { margin-top: 22px; font-size: clamp(24px, 8vw, 42px); }
   .heroCopy > p:not(.heroNote) { font-size: 16px; }
   .desktopBreak { display: none; }
   .heroActions { align-items: stretch; flex-direction: column; }
   .heroActions .button { width: 100%; }
-  .signalPanel { border-radius: 22px; }
   .sourceLabel { padding: 6px 8px; font-size: 9px; }
   .sourceLabel i { width: 17px; height: 17px; }
   .sourceNaver { left: 79%; }
