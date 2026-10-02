@@ -96,7 +96,7 @@
   box-shadow: 0 10px 26px rgba(90, 113, 190, 0.24);
 }
 .navButton { flex-shrink: 0; }
-.buttonAccent {
+.page .buttonAccent {
   color: #07111f;
   background: linear-gradient(135deg, var(--teal), var(--light-blue));
   box-shadow: 0 14px 32px rgba(47, 224, 196, 0.18);
@@ -156,6 +156,7 @@
   font-weight: 800;
   line-height: 1.16;
   letter-spacing: -0.058em;
+  word-break: keep-all;
 }
 .hero h1 em,
 .sectionHeading h2 em {
@@ -304,11 +305,12 @@
     var(--deep);
 }
 .brandHeading { max-width: 760px; margin: 0 auto; text-align: center; }
-.brandHeading .brandLockup { margin-bottom: 34px; }
+.brandHeading .brandLockup { display: flex; width: fit-content; margin: 0 auto 34px; }
 .brandHeading h2,
 .sectionHeading h2 {
   margin: 22px 0 16px;
   font-size: clamp(32px, 4vw, 48px);
+  word-break: keep-all;
   line-height: 1.28;
   letter-spacing: -0.04em;
 }
@@ -592,7 +594,7 @@
     linear-gradient(135deg, #1b2045, #11152f);
   box-shadow: 0 28px 60px rgba(0, 0, 0, 0.25);
 }
-.ctaCard h2 { margin: 18px 0 10px !important; font-size: clamp(28px, 3.4vw, 40px); letter-spacing: -0.04em; }
+.ctaCard h2 { word-break: keep-all; margin: 18px 0 10px !important; font-size: clamp(28px, 3.4vw, 40px); letter-spacing: -0.04em; }
 .ctaCard p { max-width: 610px; color: var(--muted); font-size: 16px; }
 .ctaActions { display: flex; flex-shrink: 0; gap: 10px; }
 
