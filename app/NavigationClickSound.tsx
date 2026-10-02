@@ -7,6 +7,7 @@ export default function NavigationClickSound() {
     let context: AudioContext | undefined;
     let buffer: AudioBuffer | undefined;
     let disposed = false;
+    let activeSounds = 0;
     let lastClick = -Infinity;
 
     const onClick = (event: MouseEvent) => {
@@ -47,8 +48,11 @@ export default function NavigationClickSound() {
             source.onended = () => {
               source.disconnect();
               gain.disconnect();
+              activeSounds -= 1;
+              if (!disposed && activeSounds === 0) void audio.suspend().catch(() => {});
             };
             source.start();
+            activeSounds += 1;
           } catch {
             // Sound must never interrupt the original action.
           }
