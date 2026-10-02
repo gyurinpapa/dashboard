@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import NavigationClickSound from "./NavigationClickSound";
 
 export const metadata: Metadata = {
   title: "Online AD Report",
@@ -13,7 +14,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko">
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        {children}
+        <NavigationClickSound />
+      </body>
     </html>
   );
 }
