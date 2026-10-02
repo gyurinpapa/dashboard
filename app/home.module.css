@@ -665,6 +665,13 @@
 }
 
 @media (max-width: 820px) {
+  .page { --cta-height: 128px; }
+  .ctaCard { flex-direction: column; justify-content: center; gap: 10px; }
+  .ctaCard h2 { margin: 0 !important; font-size: 16px; text-align: center; }
+  .ctaCard p { display: none; }
+  .ctaActions { width: 100%; }
+  .ctaActions .button { flex: 1; padding-inline: 12px; }
+
   .capabilityLayout { grid-template-columns: 1fr; }
   .capabilityVisual { display: block; min-width: 0; }
   .capabilityLayout .reportTypeRow { margin-top: 20px; }
@@ -727,12 +734,6 @@
   .reportTypeRow { margin-bottom: 40px; }
   .stepGrid { grid-template-columns: 1fr; }
   .stepCard { min-height: auto; }
-  .page { --cta-height: 128px; }
-  .ctaCard { flex-direction: column; justify-content: center; gap: 10px; }
-  .ctaCard h2 { margin: 0 !important; font-size: 16px; text-align: center; }
-  .ctaCard p { display: none; }
-  .ctaActions { width: 100%; }
-  .ctaActions .button { flex: 1; padding-inline: 12px; }
   .faqGrid { grid-template-columns: 1fr; }
   .faqCard { min-height: auto; }
   .footerGrid { grid-template-columns: 1fr 1fr; gap: 34px 24px; }
