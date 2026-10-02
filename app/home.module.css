@@ -1,5 +1,5 @@
 .page {
-  --cta-height: 88px;
+  --cta-height: 96px;
   --bg: #0b0d22;
   --deep: #080a1a;
   --surface: #151832;
@@ -577,9 +577,9 @@
   inset: auto 0 0;
   height: calc(var(--cta-height) + env(safe-area-inset-bottom, 0px));
   padding: 12px 0 calc(12px + env(safe-area-inset-bottom, 0px));
-  border-top: 1px solid rgba(183, 215, 227, 0.2);
-  background: #11152f;
-  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.2);
+  border-top: 2px solid var(--teal);
+  background: linear-gradient(105deg, #182644, #152e3b 58%, #18213e);
+  box-shadow: 0 -10px 32px rgba(0, 0, 0, 0.3), 0 -1px 16px rgba(47, 224, 196, 0.16);
 }
 .ctaCard {
   display: flex;
@@ -590,10 +590,13 @@
 }
 .ctaCard > div:first-child { display: flex; min-width: 0; align-items: center; gap: 16px; }
 .ctaCard .eyebrow { display: none; }
-.ctaCard h2 { white-space: nowrap; margin: 0 !important; font-size: 20px; line-height: 1.4; letter-spacing: -0.04em; }
-.ctaCard p { white-space: nowrap; color: var(--muted); font-size: 13px; }
+.ctaCard h2 { white-space: nowrap; margin: 0 !important; color: white; font-size: 24px; font-weight: 800; line-height: 1.4; letter-spacing: -0.04em; }
+.ctaCard p { white-space: nowrap; color: #dce7ee; font-size: 15px; }
 .ctaActions { display: flex; flex-shrink: 0; gap: 10px; }
-.ctaActions .button { min-height: 44px; padding: 12px 20px; }
+.ctaActions .button { min-height: 52px; padding: 14px 22px; font-size: 16px; font-weight: 800; }
+.ctaActions .buttonAccent { background: linear-gradient(110deg, #2fe0c4, #a4f1e5); box-shadow: 0 4px 20px rgba(47, 224, 196, 0.3); }
+.ctaActions .buttonGhost { color: #18213e; border-color: var(--cream); background: var(--cream); }
+.ctaActions .buttonGhost:hover { color: #18213e; border-color: white; background: #fff3e4; }
 .page a { scroll-margin-bottom: calc(var(--cta-height) + env(safe-area-inset-bottom, 0px) + 16px); }
 
 .faqSection { background: #0e1127; }
@@ -647,11 +650,11 @@
 @keyframes speedSweep { from { transform: translateX(0); } to { transform: translateX(-190%); } }
 
 @media (max-width: 1040px) {
-  .page { --cta-height: 144px; }
+  .page { --cta-height: 160px; }
   .ctaCard { flex-direction: column; gap: 10px; }
   .ctaCard > div:first-child { flex-wrap: wrap; justify-content: center; gap: 4px 12px; text-align: center; }
-  .ctaCard h2 { white-space: normal; font-size: 16px; }
-  .ctaCard p { white-space: normal; font-size: 12px; }
+  .ctaCard h2 { white-space: normal; font-size: 18px; }
+  .ctaCard p { white-space: normal; font-size: 14px; }
   .ctaActions { width: min(100%, 420px); }
   .ctaActions .button { flex: 1; padding-inline: 12px; }
   .navLinks { gap: 18px; }
