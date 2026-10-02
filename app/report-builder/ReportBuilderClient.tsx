@@ -3698,16 +3698,6 @@ export default function ReportBuilderPage() {
       }}
     >
       <div style={containerStyle}>
-        {!showAuthenticatedUi ? (
-          <div className="loginCornerLogo" aria-label="Etrylue">
-            <img
-              src="/branding/etrylue-logo.png"
-              alt="Etrylue"
-              className="loginCornerLogoImage"
-            />
-          </div>
-        ) : null}
-
         {showAuthenticatedUi ? (
           <div className="builderCornerLogo" aria-label="Etrylue">
             <img
@@ -3729,21 +3719,28 @@ export default function ReportBuilderPage() {
               textAlign: "center",
             }}
           >
-            <div
-              style={{
-                fontSize: "clamp(42px, 5vw, 60px)",
-                lineHeight: 1,
-                fontWeight: 950,
-                letterSpacing: "-0.055em",
-                color: "transparent",
-                background:
-                  "linear-gradient(90deg, #21dff3 0%, #82efff 34%, #bdb4ff 68%, #8f6cff 100%)",
-                WebkitBackgroundClip: "text",
-                backgroundClip: "text",
-                filter: "drop-shadow(0 8px 24px rgba(69, 87, 230, 0.20))",
-              }}
-            >
-              Etrylue
+            <div className="loginBrandRow">
+              <img
+                src="/branding/etrylue-logo.png"
+                alt=""
+                className="loginBrandLogo"
+              />
+              <div
+                style={{
+                  fontSize: "clamp(42px, 5vw, 60px)",
+                  lineHeight: 1,
+                  fontWeight: 950,
+                  letterSpacing: "-0.055em",
+                  color: "transparent",
+                  background:
+                    "linear-gradient(90deg, #21dff3 0%, #82efff 34%, #bdb4ff 68%, #8f6cff 100%)",
+                  WebkitBackgroundClip: "text",
+                  backgroundClip: "text",
+                  filter: "drop-shadow(0 8px 24px rgba(69, 87, 230, 0.20))",
+                }}
+              >
+                Etrylue
+              </div>
             </div>
 
             <div
@@ -3907,22 +3904,6 @@ export default function ReportBuilderPage() {
                   textAlign: "center",
                 }}
               >
-                <div
-                  style={{
-                    color: "#d7d5e8",
-                    fontSize: 12,
-                    lineHeight: 1.65,
-                  }}
-                >
-                  <strong style={{ color: "#f0eff8", fontWeight: 800 }}>
-                    Google Ads Integration
-                  </strong>
-                  {" · "}
-                  Authorized users connect their Google Ads accounts through
-                  OAuth 2.0. Google Ads API access is used for reporting and
-                  analytics only, not for creating or editing ads.
-                </div>
-
                 <div
                   style={{
                     display: "flex",
@@ -7438,27 +7419,20 @@ export default function ReportBuilderPage() {
             transform: translateY(-1px);
           }
 
-          .loginCornerLogo {
-            position: absolute;
-            top: 34px;
-            right: 28px;
-            width: clamp(126px, 9.5vw, 148px);
-            padding: 0;
-            border: 0;
-            background: transparent;
-            box-shadow: none;
-            pointer-events: none;
-            z-index: 2;
+          .loginBrandRow {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: clamp(10px, 1.2vw, 16px);
           }
 
-          .loginCornerLogoImage {
+          .loginBrandLogo {
             display: block;
-            width: 100%;
+            flex: 0 0 auto;
+            width: clamp(48px, 5vw, 64px);
             height: auto;
             object-fit: contain;
-            filter:
-              drop-shadow(0 14px 32px rgba(8, 5, 29, 0.34))
-              drop-shadow(0 0 24px rgba(33, 223, 243, 0.14));
+            filter: drop-shadow(0 0 16px rgba(33, 223, 243, 0.14));
           }
 
           .builderCornerLogo {
@@ -7485,7 +7459,6 @@ export default function ReportBuilderPage() {
           }
 
           @media (max-width: 980px) {
-            .loginCornerLogo,
             .builderCornerLogo {
               display: none;
             }
