@@ -311,11 +311,14 @@ export default function HomePage() {
         <div className={styles.container}>
           <div className={styles.sectionHeading}>
             <span className={styles.eyebrow}>WHY ETRYLUE PERFORMANCE</span>
-            <h2>리포트에 쓰는 시간을,<br /><em>판단하는 시간</em>으로</h2>
+            <h2>리포트에 쓰는 시간을, <em>판단하는 시간</em>으로</h2>
             <p>반복되는 데이터 취합과 결과 정리를 가볍게 만들고,<br className={styles.desktopBreak} /> 팀이 성과의 의미와 다음 행동에 집중하도록 돕습니다.</p>
           </div>
-          <DashboardPreview />
+          <div className={styles.capabilityLayout}>
+            <div className={styles.capabilityVisual}>
+              <DashboardPreview />
           <div className={styles.reportTypeRow}>{["TRAFFIC", "DB ACQUISITION", "COMMERCE"].map((type) => <span key={type}>{type}</span>)}</div>
+            </div>
           <div className={styles.capabilityGrid}>
             {capabilities.map((capability) => (
               <article className={styles.capabilityCard} key={capability.title}>
@@ -323,6 +326,7 @@ export default function HomePage() {
                 <span className={styles.cardNumber}>{capability.number}</span><h3>{capability.title}</h3><p>{capability.description}</p>
               </article>
             ))}
+          </div>
           </div>
         </div>
       </section>
