@@ -607,6 +607,14 @@
 .footerGrid h3 { margin-bottom: 18px !important; color: var(--muted); font-size: 13px; }
 .footerGrid > div:not(.footerBrand) a { display: block; margin-bottom: 10px; color: var(--faint); font-size: 14px; }
 .footerGrid a:hover { color: white !important; }
+.businessInfo { margin-top: 36px; padding-top: 28px; border-top: 1px solid rgba(255, 255, 255, 0.08); font-size: 13px; line-height: 1.8; }
+.businessName { margin: 0 0 12px !important; color: var(--muted); font-weight: 600; }
+.businessDetails { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 0; }
+.businessDetails > div { display: flex; flex-wrap: wrap; gap: 0 8px; min-width: 0; }
+.businessDetails dt { color: var(--faint); }
+.businessDetails dd { margin: 0; color: var(--muted); overflow-wrap: anywhere; }
+.businessDetails a:hover { text-decoration: underline; }
+.businessAddress { flex-basis: 100%; }
 .footerBottom {
   display: flex;
   justify-content: space-between;

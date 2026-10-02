@@ -357,7 +357,7 @@ export default function HomePage() {
       <section className={styles.ctaSection}>
         <div className={[styles.container, styles.ctaCard].join(" ")}>
           <div><span className={styles.eyebrow}>READY WHEN YOU ARE</span><h2>다음 리포트는, 더 명확한 기준으로</h2><p>광고주와 리포트 목적을 선택하고 시작하세요.</p></div>
-          <div className={styles.ctaActions}><a className={buttonAccent} href="https://app.etrylue.com/report-builder">리포트 열기</a><a className={buttonGhost} href="mailto:hello@etrylue.com">도입 문의</a></div>
+          <div className={styles.ctaActions}><a className={buttonAccent} href="https://app.etrylue.com/report-builder">리포트 열기</a><a className={buttonGhost} href="mailto:etrylue3479@gmail.com">도입 문의</a></div>
         </div>
       </section>
 
@@ -374,7 +374,17 @@ export default function HomePage() {
             <div className={styles.footerBrand}><a href="#top" aria-label="Etrylue Performance 홈"><BrandLockup compact /></a><p>흩어진 광고 데이터를 하나의 기준으로 정리하는<br /> 광고 성과 리포트 플랫폼.</p></div>
             <div><h3>제품</h3><a href="#capabilities">기능</a><a href="#workflow">동작 방식</a><a href="https://app.etrylue.com/report-builder">리포트 열기</a></div>
             <div><h3>안내</h3><a href="/about">서비스 소개</a><a href="/terms">이용약관</a><a href="/privacy">개인정보처리방침</a></div>
-            <div><h3>문의</h3><a href="mailto:hello@etrylue.com">hello@etrylue.com</a></div>
+            <div><h3>문의</h3><a href="mailto:etrylue3479@gmail.com">etrylue3479@gmail.com</a><a href="tel:01058716881">010-5871-6881</a></div>
+          </div>
+          <div className={styles.businessInfo} aria-label="사업자 정보">
+            <p className={styles.businessName}>이트라이루</p>
+            <dl className={styles.businessDetails}>
+              <div><dt>대표자</dt><dd>신광희</dd></div>
+              <div><dt>사업자등록번호</dt><dd>365-31-01818</dd></div>
+              <div><dt>연락처</dt><dd><a href="tel:01058716881">010-5871-6881</a></dd></div>
+              <div><dt>CS 이메일</dt><dd><a href="mailto:etrylue3479@gmail.com">etrylue3479@gmail.com</a></dd></div>
+              <div className={styles.businessAddress}><dt>사업자 주소</dt><dd>경기도 수원시 권선구 세권로181번길 20-23, 2층 137호(권선동, 태양빌딩)</dd></div>
+            </dl>
           </div>
           <div className={styles.footerBottom}><span>© 2026 Etrylue Performance. All rights reserved.</span><span>Contribution · Value · Try · Reflection · Gratitude</span></div>
         </div>
