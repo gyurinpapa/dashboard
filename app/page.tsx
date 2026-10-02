@@ -430,6 +430,9 @@ export default function HomePage() {
           <div className={styles.ctaActions}><a className={buttonAccent} href="https://app.etrylue.com/report-builder">리포트 열기</a><a className={buttonGhost} href="mailto:etrylue3479@gmail.com">도입 문의</a></div>
         </div>
       </section>
+      <a className={styles.backToTop} href="#top" aria-label="페이지 맨 위로 이동" title="맨 위로">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 20V4m-7 7 7-7 7 7" /></svg>
+      </a>
     </main>
   );
 }

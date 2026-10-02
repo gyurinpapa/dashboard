@@ -782,3 +782,26 @@
     transition-duration: 0.001ms !important;
   }
 }
+
+.page .backToTop {
+  position: fixed;
+  z-index: 31;
+  right: 20px;
+  bottom: calc(var(--cta-height) + env(safe-area-inset-bottom, 0px) + 16px);
+  display: inline-flex;
+  width: 48px;
+  height: 48px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(183, 215, 227, .55);
+  border-radius: 50%;
+  color: #15243b;
+  background: #f7f7ff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .25);
+  transition: background 160ms ease, transform 160ms ease;
+}
+.backToTop svg { width: 24px; height: 24px; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.page .backToTop:hover { background: var(--light-blue); transform: translateY(-2px); }
+@media (max-width: 600px) {
+  .page .backToTop { right: 14px; width: 44px; height: 44px; }
+}
