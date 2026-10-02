@@ -287,7 +287,6 @@ export default function HomePage() {
       <section className={styles.brandSection} id="brand">
         <div className={styles.container}>
           <div className={styles.brandHeading}>
-            <BrandLockup compact />
             <span className={styles.eyebrow}>OUR NAME, OUR STANDARD</span>
             <h2>Etrylue, 다섯 마음이 모여 만든 이름</h2>
             <p>Contribution · Value · Try · Reflection · Gratitude<br />기여, 가치, 시도, 반성, 감사의 기준을 제품과 일하는 방식에 담았습니다.</p>
