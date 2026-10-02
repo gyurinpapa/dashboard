@@ -497,6 +497,9 @@
 .faqCard p { color: var(--muted); font-size: 15px; }
 
 .outcomeSection {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   background:
     radial-gradient(circle at 85% 35%, rgba(168, 140, 255, 0.09), transparent 22rem),
     var(--bg);
@@ -507,6 +510,29 @@
   padding: 30px;
   background: linear-gradient(145deg, rgba(25, 29, 61, 0.86), rgba(14, 17, 39, 0.94));
 }
+
+.outcomeSection > .container { position: relative; z-index: 1; }
+.outcomeArtwork {
+  position: absolute;
+  top: -12px;
+  right: calc(50% - 710px);
+  width: 760px;
+  height: 500px;
+  opacity: .75;
+  pointer-events: none;
+  mask-image: linear-gradient(to right, transparent, black 32%);
+}
+.outcomeCard::before {
+  position: absolute;
+  inset: 0 28px auto;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--outcome-accent), transparent);
+  content: "";
+}
+.outcomeCard:nth-child(1) { --outcome-accent: #2fe0c4; }
+.outcomeCard:nth-child(2) { --outcome-accent: #b7d7e3; }
+.outcomeCard:nth-child(3) { --outcome-accent: #a88cff; }
+
 .outcomeCard > span {
   color: var(--teal);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -675,6 +701,7 @@
 }
 
 @media (max-width: 820px) {
+  .outcomeArtwork { top: 20px; right: -280px; opacity: .38; }
 
   .capabilityLayout { grid-template-columns: 1fr; }
   .capabilityVisual { display: block; min-width: 0; }

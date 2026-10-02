@@ -331,6 +331,43 @@ export default function HomePage() {
       </section>
 
       <section className={styles.outcomeSection}>
+        <svg className={styles.outcomeArtwork} viewBox="0 0 760 500" fill="none" aria-hidden="true" focusable="false">
+          <defs>
+            <radialGradient id="home-flow-glow">
+              <stop stopColor="#2fe0c4" stopOpacity=".28" />
+              <stop offset="1" stopColor="#2fe0c4" stopOpacity="0" />
+            </radialGradient>
+            <linearGradient id="home-flow-line" x1="60" y1="390" x2="680" y2="90" gradientUnits="userSpaceOnUse">
+              <stop stopColor="#7fa6c4" stopOpacity="0" />
+              <stop offset=".5" stopColor="#2fe0c4" />
+              <stop offset="1" stopColor="#a88cff" />
+            </linearGradient>
+          </defs>
+          <ellipse cx="490" cy="240" rx="270" ry="230" fill="url(#home-flow-glow)" />
+          <g stroke="#7fa6c4" strokeOpacity=".18">
+            <ellipse cx="490" cy="240" rx="220" ry="150" transform="rotate(-25 490 240)" />
+            <ellipse cx="490" cy="240" rx="280" ry="190" transform="rotate(-25 490 240)" />
+            <path d="M260 80V440M380 35V465M500 15V475M620 35V450M185 140H730M165 260H750M185 380H730" strokeDasharray="2 10" />
+          </g>
+          <g stroke="url(#home-flow-line)" strokeLinecap="round">
+            <path d="M30 410C180 410 180 160 330 160S425 230 485 230S575 90 700 90" strokeWidth="2" />
+            <path d="M0 430C160 430 220 230 330 230H485C580 230 590 120 700 120" strokeWidth="3" />
+            <path d="M80 475C225 475 210 310 330 310S430 230 485 230S590 150 700 150" strokeWidth="2" />
+          </g>
+          <g transform="translate(270 114) rotate(-12)" stroke="#b7d7e3">
+            <rect width="88" height="110" rx="14" fill="#182640" fillOpacity=".65" strokeOpacity=".5" />
+            <path d="M20 28H59M20 42H48M20 78V65M35 78V55M50 78V61M65 78V48" strokeWidth="3" strokeLinecap="round" strokeOpacity=".65" />
+          </g>
+          <g transform="translate(605 45) rotate(12)" stroke="#c6b5ff">
+            <rect width="100" height="128" rx="16" fill="#242440" fillOpacity=".6" strokeOpacity=".55" />
+            <path d="M23 28H72M23 42H56M23 80L38 65L51 73L76 55M23 103H72" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" strokeOpacity=".8" />
+          </g>
+          <circle cx="485" cy="230" r="48" fill="#152f3c" stroke="#2fe0c4" strokeOpacity=".2" />
+          <circle cx="485" cy="230" r="35" stroke="#2fe0c4" strokeOpacity=".55" />
+          <path d="m468 230 11 11 23-24" stroke="#a4f1e5" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+          <g fill="#2fe0c4"><circle cx="222" cy="262" r="4" /><circle cx="552" cy="205" r="5" /><circle cx="387" cy="299" r="3" /></g>
+          <g fill="#a88cff"><circle cx="590" cy="159" r="4" /><circle cx="697" cy="120" r="5" /></g>
+        </svg>
         <div className={styles.container}>
           <div className={styles.sectionHeading}>
             <span className={styles.eyebrow}>WORKFLOW, REFRAMED</span><h2>리포트가 바꾸는 세 가지 흐름</h2><p>기능을 늘리기보다, 반복 업무의 경계를 정확히 줄였습니다.</p>
