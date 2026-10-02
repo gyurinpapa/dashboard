@@ -3676,6 +3676,7 @@ export default function ReportBuilderPage() {
     width: "100%",
     maxWidth: 1200,
     padding: 24,
+    marginBlock: showAuthenticatedUi ? undefined : "auto",
   };
 
   const topActionsStyle: React.CSSProperties = {
