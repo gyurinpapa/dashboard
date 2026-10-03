@@ -4,10 +4,66 @@ import HomeBackToTop from "./HomeBackToTop";
 
 import styles from "./home.module.css";
 
+const homeUrl = "https://www.etrylue.com/";
+const homeTitle = "Etrylue Performance | 광고 성과 리포트 자동화";
+const homeDescription =
+  "흩어진 광고 데이터를 하나의 기준으로 정리하고, 의사결정과 공유까지 이어주는 광고 성과 리포트 플랫폼입니다.";
+const logoUrl = "https://www.etrylue.com/branding/etrylue-logo.png";
+
 export const metadata: Metadata = {
-  title: "Etrylue Performance | 광고 성과 리포트 자동화",
-  description:
-    "흩어진 광고 데이터를 하나의 기준으로 정리하고, 의사결정과 공유까지 이어주는 광고 성과 리포트 플랫폼입니다.",
+  title: homeTitle,
+  description: homeDescription,
+  alternates: { canonical: homeUrl },
+  openGraph: {
+    type: "website",
+    locale: "ko_KR",
+    url: homeUrl,
+    siteName: "Etrylue Performance",
+    title: homeTitle,
+    description: homeDescription,
+    images: [{ url: logoUrl, width: 294, height: 247, alt: "Etrylue Performance" }],
+  },
+  twitter: {
+    card: "summary",
+    title: homeTitle,
+    description: homeDescription,
+    images: [logoUrl],
+  },
+};
+
+const structuredData = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": `${homeUrl}#organization`,
+      name: "Etrylue Performance",
+      legalName: "이트라이루",
+      url: homeUrl,
+      logo: logoUrl,
+      email: "etrylue3479@gmail.com",
+      telephone: "+82-10-5871-6881",
+    },
+    {
+      "@type": "WebSite",
+      "@id": `${homeUrl}#website`,
+      url: homeUrl,
+      name: "Etrylue Performance",
+      description: homeDescription,
+      inLanguage: "ko-KR",
+      publisher: { "@id": `${homeUrl}#organization` },
+    },
+    {
+      "@type": "WebPage",
+      "@id": `${homeUrl}#webpage`,
+      url: homeUrl,
+      name: homeTitle,
+      description: homeDescription,
+      inLanguage: "ko-KR",
+      isPartOf: { "@id": `${homeUrl}#website` },
+      about: { "@id": `${homeUrl}#organization` },
+    },
+  ],
 };
 
 const values = [
@@ -251,6 +307,13 @@ export default function HomePage() {
   const buttonGhost = [styles.button, styles.buttonGhost, styles.buttonLarge].join(" ");
   return (
     <main className={styles.page}>
+      <script
+        id="etrylue-home-structured-data"
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(structuredData).replace(/</g, "\\u003c"),
+        }}
+      />
       <nav className={styles.nav} aria-label="주요 메뉴">
         <div className={[styles.container, styles.navInner].join(" ")}>
           <a href="#top" className={styles.logoLink} aria-label="Etrylue Performance 홈"><BrandLockup /></a>
