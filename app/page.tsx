@@ -89,7 +89,7 @@ const capabilities = [
     number: "02",
     title: "판단을 돕는 리포트",
     description:
-      "Traffic, DB Acquisition, Commerce 목적에 맞춰 목표와 실제 성과, 주차별 변화와 핵심 지표를 연결합니다.",
+      "트래픽·DB 획득·커머스 목적에 맞춰 목표와 실제 성과, 주차별 변화와 핵심 지표를 연결합니다.",
     icon: "signal",
   },
   {
@@ -108,13 +108,23 @@ const outcomes = [
 ] as const;
 
 const steps = [
-  ["STEP 1", "목적 선택", "Traffic, DB Acquisition, Commerce 중 리포트 목적을 정합니다.", "target"],
+  ["STEP 1", "목적 선택", "방문 유입은 트래픽, 상담·문의 전환은 DB 획득, 매출 성과는 커머스 리포트를 선택합니다.", "target"],
   ["STEP 2", "데이터 수집", "CSV를 올리거나 권한이 연결된 매체 API에서 데이터를 가져옵니다.", "download"],
   ["STEP 3", "성과 정리", "기간과 필터 기준을 유지하며 지표·차트·인사이트를 구성합니다.", "dashboard"],
   ["STEP 4", "발행과 공유", "공개 URL 또는 PDF·PPT로 팀과 클라이언트에 전달합니다.", "send"],
 ] as const;
 
 const faqs = [
+  {
+    question: "Etrylue Performance는 누구를 위한 서비스인가요?",
+    answer:
+      "여러 광고주의 성과를 보고하는 광고대행사와 자사 광고를 분석하는 인하우스 마케터를 위한 서비스입니다. 광고 데이터를 정리하고 목적에 맞는 리포트를 만들어 팀과 고객에게 공유할 수 있습니다.",
+  },
+  {
+    question: "어떤 광고 성과 리포트를 만들 수 있나요?",
+    answer:
+      "방문 유입을 보는 트래픽, 상담·문의 전환을 보는 DB 획득, 매출과 광고수익률을 보는 커머스 리포트를 만들 수 있습니다. 리포트 목적에 맞춰 목표와 실제 성과를 비교합니다.",
+  },
   {
     question: "리포트는 어디에서 만들 수 있나요?",
     answer:
@@ -123,7 +133,7 @@ const faqs = [
   {
     question: "어떤 방식으로 데이터를 넣을 수 있나요?",
     answer:
-      "CSV 업로드형과 API 호출형을 구분해 운영합니다. API 이용 범위는 연결된 매체 계정과 승인된 권한에 따라 달라집니다.",
+      "CSV 파일 업로드 또는 지원되는 매체의 API 연결로 데이터를 입력합니다. API 이용 가능 여부와 수집 범위는 매체별 지원 상태, 계정 연결 및 승인된 권한에 따라 달라집니다.",
   },
   {
     question: "리포트를 외부에 공유할 수 있나요?",
@@ -280,7 +290,7 @@ function DashboardPreview() {
   const bars = [46, 70, 58, 94, 82, 124, 108, 146, 132, 174, 158, 194];
   return (
     <div className={styles.dashboardPreview} aria-hidden="true">
-      <div className={styles.previewChrome}><i /><i /><i /><span>PERFORMANCE OVERVIEW</span></div>
+      <div className={styles.previewChrome}><i /><i /><i /><span>서비스 화면 예시 · 예시 데이터</span></div>
       <div className={styles.previewBody}>
         <div className={styles.previewMetrics}>
           <div><span>광고비</span><b>₩ 48.2M</b><small>선택 기간</small></div>
@@ -332,7 +342,7 @@ export default function HomePage() {
           <div className={styles.heroCopy}>
             <span className={styles.eyebrow}>AD PERFORMANCE · ONE STANDARD</span>
             <h1>흩어진 광고 숫자를,<br />하나의 <em>신호</em>로 정리합니다</h1>
-            <p>매체마다 흩어진 성과 데이터를 같은 기준으로 모으고,<br className={styles.desktopBreak} /> 판단과 공유까지 이어지는 리포트로 만듭니다.</p>
+            <p>광고대행사와 인하우스 마케터를 위한 광고 성과 리포트 플랫폼입니다.<br className={styles.desktopBreak} /> 흩어진 데이터를 같은 기준으로 정리하고, 분석부터 공유까지 연결합니다.</p>
             <div className={styles.heroActions}>
               <a className={buttonAccent} href="https://app.etrylue.com/report-builder">리포트 시작하기</a>
               <a className={buttonGhost} href="#capabilities">서비스 구조 보기 <span aria-hidden="true">→</span></a>
