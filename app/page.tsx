@@ -14,6 +14,9 @@ export const metadata: Metadata = {
   title: homeTitle,
   description: homeDescription,
   alternates: { canonical: homeUrl },
+  verification: {
+    other: { "naver-site-verification": "12530a12b58fb58d67a8b2b5f15b556424be2217" },
+  },
   openGraph: {
     type: "website",
     locale: "ko_KR",
