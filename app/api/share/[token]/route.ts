@@ -509,7 +509,7 @@ async function mapWithConcurrency<T, R>(
 /**
  * GET /api/share/[token]
  */
-export async function GET(req: Request, ctx: Ctx) {
+async function handleGet(req: Request, ctx: Ctx) {
   const { token } = await ctx.params;
   const shareToken = asToken(token);
   if (!shareToken) return jsonError(400, "Missing share token");
@@ -761,4 +761,21 @@ export async function GET(req: Request, ctx: Ctx) {
     },
     { status: 200 }
   );
+}
+
+export async function GET(req: Request, ctx: Ctx) {
+  if (process.env.VERCEL_ENV !== "preview") return handleGet(req, ctx);
+
+  const startedAt = performance.now();
+  const url = new URL(req.url);
+  try {
+    return await handleGet(req, ctx);
+  } finally {
+    console.info("share-api-timing", {
+      region: process.env.VERCEL_REGION ?? "unknown",
+      includeRows: !asFalseLike(url.searchParams.get("includeRows")),
+      includeCreatives: !asFalseLike(url.searchParams.get("includeCreatives")),
+      total_ms: Math.round((performance.now() - startedAt) * 10) / 10,
+    });
+  }
 }
