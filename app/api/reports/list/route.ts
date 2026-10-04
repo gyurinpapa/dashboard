@@ -312,6 +312,8 @@ function normalizeReportRow(args: {
 }
 
 export async function GET(req: Request) {
+  const timingEnabled = process.env.VERCEL_ENV === "preview";
+  const timingStartedAt = timingEnabled ? performance.now() : 0;
   try {
     const url = new URL(req.url);
 
@@ -612,5 +614,12 @@ export async function GET(req: Request) {
     return jsonError(500, "INTERNAL_ERROR", {
       detail: e?.message ?? String(e),
     });
+  } finally {
+    if (timingEnabled) {
+      console.info("[reports-list-timing]", JSON.stringify({
+        region: process.env.VERCEL_REGION ?? "unknown",
+        total_ms: Math.round((performance.now() - timingStartedAt) * 10) / 10,
+      }));
+    }
   }
 }
