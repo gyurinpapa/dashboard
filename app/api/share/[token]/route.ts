@@ -509,7 +509,7 @@ async function mapWithConcurrency<T, R>(
 /**
  * GET /api/share/[token]
  */
-async function handleGet(req: Request, ctx: Ctx) {
+async function handleGet(req: Request, ctx: Ctx, mark?: (stage: string) => void) {
   const { token } = await ctx.params;
   const shareToken = asToken(token);
   if (!shareToken) return jsonError(400, "Missing share token");
@@ -548,6 +548,7 @@ async function handleGet(req: Request, ctx: Ctx) {
     .eq("share_token", shareToken)
     .maybeSingle();
 
+  mark?.("report_lookup");
   if (repErr) return jsonError(500, repErr.message || "DB error");
   if (!report) return jsonError(404, "Invalid share token");
 
@@ -575,12 +576,14 @@ async function handleGet(req: Request, ctx: Ctx) {
     asStr((report as any)?.published_creatives_batch_id) || null;
 
   const names = await fetchReportNames(sb, report);
+  mark?.("report_names");
   const workspaceLogoUrl =
     await fetchWorkspaceLogoUrl(
       sb,
       workspaceId
     );
 
+  mark?.("workspace_branding");
   const reportForResponse = {
     title: (report as any)?.title ?? null,
     meta: buildPublicMeta((report as any)?.meta),
@@ -637,6 +640,7 @@ async function handleGet(req: Request, ctx: Ctx) {
     }
   }
 
+  mark?.("rows_fetch");
   let rows = includeRows
     ? (rawRows ?? [])
         .map((r: any) => extractRowObject(r))
@@ -664,6 +668,7 @@ async function handleGet(req: Request, ctx: Ctx) {
     creatives = data ?? [];
   }
 
+  mark?.("creatives_lookup");
   const signedCreativeEntries = await mapWithConcurrency(
     creatives ?? [],
     6,
@@ -691,6 +696,7 @@ async function handleGet(req: Request, ctx: Ctx) {
     }
   );
 
+  mark?.("creative_signing");
   const creativesUrlMap: Record<string, string> = {};
 
   for (const entry of signedCreativeEntries) {
@@ -752,6 +758,7 @@ async function handleGet(req: Request, ctx: Ctx) {
     });
   }
 
+  mark?.("row_mapping");
   return NextResponse.json(
     {
       ok: true,
@@ -767,14 +774,24 @@ export async function GET(req: Request, ctx: Ctx) {
   if (process.env.VERCEL_ENV !== "preview") return handleGet(req, ctx);
 
   const startedAt = performance.now();
+  let previousAt = startedAt;
+  const stages_ms: Record<string, number> = {};
+  const mark = (stage: string) => {
+    const now = performance.now();
+    stages_ms[stage] = Math.round((now - previousAt) * 10) / 10;
+    previousAt = now;
+  };
   const url = new URL(req.url);
   try {
-    return await handleGet(req, ctx);
+    const response = await handleGet(req, ctx, mark);
+    mark("response");
+    return response;
   } finally {
     console.info("share-api-timing", {
       region: process.env.VERCEL_REGION ?? "unknown",
       includeRows: !asFalseLike(url.searchParams.get("includeRows")),
       includeCreatives: !asFalseLike(url.searchParams.get("includeCreatives")),
+      stages_ms,
       total_ms: Math.round((performance.now() - startedAt) * 10) / 10,
     });
   }
