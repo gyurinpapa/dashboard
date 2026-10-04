@@ -499,6 +499,7 @@ export default function ReportBuilderPage() {
   const [signingIn, setSigningIn] = useState(false);
 
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [advertisersReadyWorkspaceId, setAdvertisersReadyWorkspaceId] = useState<string | null>(null);
   const [workspaceName, setWorkspaceName] = useState<string | null>(null);
   const [workspaceMemberships, setWorkspaceMemberships] = useState<WorkspaceMemberRow[]>([]);
   const [canViewAllWorkspaces, setCanViewAllWorkspaces] = useState(false);
@@ -665,10 +666,13 @@ export default function ReportBuilderPage() {
     : null;
 
   const showLoginUi = Boolean(!userId || signingIn);
+  const showWorkspaceShell = Boolean(userId && !signingIn && workspaceId);
   const showAuthenticatedUi = Boolean(
     userId &&
       !signingIn &&
       workspaceId &&
+      (!workspaceIdFromQuery || workspaceIdFromQuery === workspaceId) &&
+      advertisersReadyWorkspaceId === workspaceId &&
       reportsReadyWorkspaceId === workspaceId
   );
 
@@ -910,8 +914,11 @@ export default function ReportBuilderPage() {
       return;
     }
 
+    let cancelled = false;
+
     (async () => {
       const token = await getAccessToken();
+      if (cancelled) return;
 
       if (!token) {
         setSigningIn(false);
@@ -935,6 +942,7 @@ export default function ReportBuilderPage() {
       });
 
       const json = await safeReadJson(res);
+      if (cancelled) return;
 
       if (!res.ok || !(json as any)?.ok) {
         console.warn("[workspaces/list] failed", res.status, json);
@@ -1034,9 +1042,13 @@ export default function ReportBuilderPage() {
         router.replace(`/report-builder?workspace_id=${encodeURIComponent(current.workspace_id)}`);
       }
     })().catch((error) => {
+      if (cancelled) return;
       console.warn("[workspaces/list] exception", error);
       setSigningIn(false);
     });
+    return () => {
+      cancelled = true;
+    };
   }, [userId, workspaceIdFromQuery, router, resetReportsState]);
 
   useEffect(() => {
@@ -1076,8 +1088,9 @@ export default function ReportBuilderPage() {
   }, [userId]);
 
   useEffect(() => {
+    setAdvertisersReadyWorkspaceId(null);
+    setAdvertisers([]);
     if (!workspaceId) {
-      setAdvertisers([]);
       setSelectedAdvertiserId("");
       return;
     }
@@ -1088,6 +1101,7 @@ export default function ReportBuilderPage() {
       const token = await getAccessToken();
       if (cancelled) return;
       if (!token) {
+        setAdvertisersReadyWorkspaceId(workspaceId);
         setAdvertisers([]);
         setSelectedAdvertiserId("");
         return;
@@ -1106,6 +1120,8 @@ export default function ReportBuilderPage() {
 
       const json = await safeReadJson(res);
       if (cancelled) return;
+
+      setAdvertisersReadyWorkspaceId(workspaceId);
 
       if (!res.ok || !(json as any)?.ok) {
         console.warn("[advertisers/list] failed", res.status, json);
@@ -1138,7 +1154,13 @@ export default function ReportBuilderPage() {
         if (!prev) return "";
         return rows.some((x) => x.id === prev) ? prev : "";
       });
-    })();
+    })().catch((error) => {
+      if (cancelled) return;
+      console.warn("[advertisers/list] exception", error);
+      setAdvertisers([]);
+      setSelectedAdvertiserId("");
+      setAdvertisersReadyWorkspaceId(workspaceId);
+    });
 
     return () => {
       cancelled = true;
@@ -3684,7 +3706,7 @@ export default function ReportBuilderPage() {
     width: "100%",
     maxWidth: 1200,
     padding: 24,
-    marginBlock: showAuthenticatedUi ? undefined : "auto",
+    marginBlock: showWorkspaceShell ? undefined : "auto",
   };
 
   const topActionsStyle: React.CSSProperties = {
@@ -3707,7 +3729,7 @@ export default function ReportBuilderPage() {
       }}
     >
       <div style={containerStyle}>
-        {showAuthenticatedUi ? (
+        {showWorkspaceShell ? (
           <div className="builderCornerLogo" aria-label="Etrylue">
             <img
               src="/branding/etrylue-logo.png"
@@ -3717,7 +3739,7 @@ export default function ReportBuilderPage() {
           </div>
         ) : null}
 
-        {!showAuthenticatedUi ? (
+        {!showWorkspaceShell ? (
           <div
             style={{
               display: "flex",
@@ -3782,10 +3804,10 @@ export default function ReportBuilderPage() {
 
         <h1
           style={{
-            fontSize: showAuthenticatedUi ? 36 : "clamp(22px, 2.4vw, 30px)",
+            fontSize: showWorkspaceShell ? 36 : "clamp(22px, 2.4vw, 30px)",
             fontWeight: 900,
             textAlign: "center",
-            marginBottom: showAuthenticatedUi ? 20 : 18,
+            marginBottom: showWorkspaceShell ? 20 : 18,
             color: "transparent",
             background: "linear-gradient(90deg, #f7f7ff 0%, #d9faff 54%, #bdb4ff 100%)",
             WebkitBackgroundClip: "text",
@@ -3798,17 +3820,17 @@ export default function ReportBuilderPage() {
 
         <div
           style={{
-            background: showAuthenticatedUi
+            background: showWorkspaceShell
               ? "linear-gradient(160deg, rgba(57, 43, 112, 0.94), rgba(47, 35, 96, 0.92))"
               : "linear-gradient(160deg, rgba(57, 43, 112, 0.86), rgba(47, 35, 96, 0.84))",
             border: "1px solid rgba(255, 255, 255, 0.13)",
-            borderRadius: showAuthenticatedUi ? 18 : 24,
-            padding: showAuthenticatedUi ? "18px 20px" : 40,
+            borderRadius: showWorkspaceShell ? 18 : 24,
+            padding: showWorkspaceShell ? "18px 20px" : 40,
             display: "flex",
             flexDirection: "column",
-            alignItems: showAuthenticatedUi ? "stretch" : "center",
-            gap: showAuthenticatedUi ? 14 : 16,
-            boxShadow: showAuthenticatedUi
+            alignItems: showWorkspaceShell ? "stretch" : "center",
+            gap: showWorkspaceShell ? 14 : 16,
+            boxShadow: showWorkspaceShell
               ? "0 20px 52px rgba(8, 5, 29, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06)"
               : "0 24px 60px rgba(8, 5, 29, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.06)",
           }}
@@ -3904,7 +3926,7 @@ export default function ReportBuilderPage() {
               </div>
 
             </>
-          ) : !showAuthenticatedUi ? (
+          ) : !showWorkspaceShell ? (
             <div
               role="status"
               aria-live="polite"
@@ -3961,7 +3983,7 @@ export default function ReportBuilderPage() {
                     <button
                       className="subBtn"
                       onClick={openMemberManagement}
-                      disabled={!workspaceId}
+                      disabled={!workspaceId || !showAuthenticatedUi}
                       title={!workspaceId ? "workspace_id가 필요합니다." : "멤버 관리"}
                       style={{ padding: "9px 12px" }}
                     >
@@ -4017,7 +4039,7 @@ export default function ReportBuilderPage() {
                         현재 workspace
                       </div>
 
-                      {currentWorkspaceMembership?.tenant_type ? (
+                      {showAuthenticatedUi && currentWorkspaceMembership?.tenant_type ? (
                         <span
                           style={{
                             border: "1px solid rgba(255, 255, 255, 0.13)",
@@ -4058,7 +4080,7 @@ export default function ReportBuilderPage() {
                   </div>
                 ) : null}
 
-                {workspaceId && !isAllWorkspaceMode && isAgencyWorkspace ? (
+                {showAuthenticatedUi && workspaceId && !isAllWorkspaceMode && isAgencyWorkspace ? (
                   <div
                     style={{
                       border: "1px solid rgba(255, 255, 255, 0.13)",
@@ -4184,7 +4206,7 @@ export default function ReportBuilderPage() {
           )}
         </div>
 
-        {canManageAdvertisers ? (
+        {canManageAdvertisers && showAuthenticatedUi ? (
           <section style={{ marginTop: 28 }}>
             <div
               style={{
@@ -5630,7 +5652,7 @@ export default function ReportBuilderPage() {
           </div>
         ) : null}
 
-        {canCreateReport ? (
+        {canCreateReport && showAuthenticatedUi ? (
           <section style={{ marginTop: 28 }}>
             <div
               style={{
@@ -6651,6 +6673,15 @@ export default function ReportBuilderPage() {
                 </button>
               ))}
             </div>
+          </section>
+        ) : null}
+
+        {showWorkspaceShell && !showAuthenticatedUi ? (
+          <section style={{ marginTop: 40 }} aria-busy="true">
+            <h2 style={{ fontSize: 20, fontWeight: 800 }}>내 리포트 목록</h2>
+            <p role="status" aria-live="polite" style={{ color: "#d7d5ec", fontSize: 13 }}>
+              선택한 워크스페이스의 목록을 불러오는 중...
+            </p>
           </section>
         ) : null}
 
