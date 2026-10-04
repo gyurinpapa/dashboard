@@ -10,6 +10,11 @@
       "regions": [
         "hnd1"
       ]
+    },
+    "app/api/workspaces/list/route.ts": {
+      "regions": [
+        "hnd1"
+      ]
     }
   }
 }
