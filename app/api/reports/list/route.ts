@@ -3,7 +3,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
-import { isPlatformOwner } from "@/src/lib/supabase/platform-role";
 
 import { normalizeReportTheme } from "@/src/lib/report/theme";
 
@@ -145,21 +144,25 @@ async function getUserId(
   return { ok: true, userId: auth.user.id };
 }
 
-async function getProfileEmailByUserId(userId: string) {
+async function getActorListAuthority(userId: string) {
   const id = asString(userId);
-  if (!id) return "";
+  if (!id) return { isPlatformOwner: false, isTrueMaster: false };
 
   const { data, error } = await supabaseAdmin
     .from("profiles")
-    .select("email")
+    .select("email, platform_role")
     .eq("id", id)
     .maybeSingle();
 
   if (error) {
-    throw new Error(`FAILED_TO_FETCH_PROFILE_EMAIL:${error.message}`);
+    throw new Error(`Failed to load platform_role: ${error.message}`);
   }
 
-  return asString(data?.email).toLowerCase();
+  const isMasterEmail = asString(data?.email).toLowerCase() === ONLY_MASTER_EMAIL;
+  return {
+    isPlatformOwner: isMasterEmail && data?.platform_role === "platform_owner",
+    isTrueMaster: isMasterEmail ? await hasMasterMembership(id) : false,
+  };
 }
 
 async function hasMasterMembership(userId: string) {
@@ -178,16 +181,6 @@ async function hasMasterMembership(userId: string) {
   }
 
   return Array.isArray(data) && data.length > 0;
-}
-
-async function isTrueMasterUser(userId: string) {
-  const email = await getProfileEmailByUserId(userId);
-
-  if (email !== ONLY_MASTER_EMAIL) {
-    return false;
-  }
-
-  return await hasMasterMembership(userId);
 }
 
 async function getWorkspaceMembership(userId: string, workspaceId: string) {
@@ -337,8 +330,9 @@ export async function GET(req: Request) {
     }
 
     const userId = auth.userId;
-    const actorIsPlatformOwner = await isPlatformOwner(userId);
-    const actorIsTrueMaster = await isTrueMasterUser(userId);
+    const actorAuthority = await getActorListAuthority(userId);
+    const actorIsPlatformOwner = actorAuthority.isPlatformOwner;
+    const actorIsTrueMaster = actorAuthority.isTrueMaster;
 
     /**
      * ✅ true master 전용 전체 리포트 조회
