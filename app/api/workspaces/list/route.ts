@@ -195,6 +195,19 @@ async function hasMasterMembership(
 }
 
 export async function GET(req: Request) {
+  const timingEnabled = process.env.VERCEL_ENV === "preview";
+  const timings: Record<string, number> = {};
+  const timingStartedAt = timingEnabled ? performance.now() : 0;
+  let stageStartedAt = timingStartedAt;
+  let timingStage = "auth";
+  const startTimingStage = (nextStage: string) => {
+    if (!timingEnabled) return;
+    const now = performance.now();
+    timings[timingStage] = Math.round((now - stageStartedAt) * 10) / 10;
+    stageStartedAt = now;
+    timingStage = nextStage;
+  };
+
   try {
     const actorResult = await getActor(req);
 
@@ -213,6 +226,7 @@ export async function GET(req: Request) {
       return jsonError(401, "UNAUTHORIZED");
     }
 
+    startTimingStage("authority");
     const actorAuthority =
       await getActorWorkspaceAuthority(
         userId
@@ -229,6 +243,7 @@ export async function GET(req: Request) {
      * platform_owner 단독으로는 전체 권한을 주지 않는다.
      */
     if (actorIsTrueMaster) {
+      startTimingStage("workspace_list");
       const {
         data: workspaces,
         error,
@@ -258,12 +273,14 @@ export async function GET(req: Request) {
         );
       }
 
+      startTimingStage("branding");
       const brandingByWorkspaceId =
         await resolveWorkspaceBrandingMap(
           supabaseAdmin,
           (workspaces ?? []) as any[]
         );
 
+      startTimingStage("response");
       const rows = (workspaces ?? [])
         .filter(
           (w: any) =>
@@ -309,6 +326,7 @@ export async function GET(req: Request) {
     /**
      * 일반 사용자는 본인 membership 기반만 반환.
      */
+    startTimingStage("membership_list");
     const {
       data: memberships,
       error: memberErr,
@@ -351,12 +369,14 @@ export async function GET(req: Request) {
         )
         .filter(Boolean);
 
+    startTimingStage("branding");
     const brandingByWorkspaceId =
       await loadWorkspaceBrandingMap(
         supabaseAdmin,
         workspaceIds
       );
 
+    startTimingStage("response");
     const rows = membershipRows
       .filter(
         (m: any) =>
@@ -448,5 +468,13 @@ export async function GET(req: Request) {
           e?.message ?? null,
       }
     );
+  } finally {
+    if (timingEnabled) {
+      startTimingStage("complete");
+      console.info("[workspace-list-timing]", JSON.stringify({
+        stages_ms: timings,
+        total_ms: Math.round((performance.now() - timingStartedAt) * 10) / 10,
+      }));
+    }
   }
 }
