@@ -200,7 +200,6 @@ export default function ShareReportPage() {
   const token = useMemo(() => String(params?.token ?? "").trim(), [params]);
 
   const [loading, setLoading] = useState(true);
-  const [rowsLoading, setRowsLoading] = useState(false);
   const [report, setReport] = useState<ReportRow | null>(null);
   const [rows, setRows] = useState<any[]>([]);
   const [creativesMap, setCreativesMap] = useState<Record<string, string>>({});
@@ -339,7 +338,6 @@ export default function ShareReportPage() {
     if (!token) {
       setError("공유 토큰이 없습니다.");
       setLoading(false);
-      setRowsLoading(false);
       return;
     }
 
@@ -355,7 +353,6 @@ export default function ShareReportPage() {
     }
 
     setLoading(true);
-    setRowsLoading(false);
     setError("");
     setReport(null);
     setRows([]);
@@ -364,37 +361,6 @@ export default function ShareReportPage() {
 
     (async () => {
       try {
-        const lightRes = await fetch(`/api/share/${token}?includeRows=0&includeCreatives=0`, {
-          cache: "no-store",
-        });
-
-        const lightJson = await safeReadJson(lightRes);
-
-        if (!alive) return;
-
-        if (!lightRes.ok || !lightJson?.ok) {
-          setError(asStr(lightJson?.error) || "공유 리포트 조회 실패");
-          setLoading(false);
-          setRowsLoading(false);
-          return;
-        }
-
-        const lightReport = (lightJson.report ?? null) as ReportRow | null;
-        const lightCreativesMap =
-          lightJson.creativesMap && typeof lightJson.creativesMap === "object"
-            ? lightJson.creativesMap
-            : {};
-
-        setReport(lightReport);
-        setRows([]);
-        setLoading(false);
-        setRowsLoading(true);
-
-        creativesCommitTimerRef.current = window.setTimeout(() => {
-          if (!alive) return;
-          setCreativesMap(lightCreativesMap);
-        }, 0);
-
         const fullRes = await fetch(`/api/share/${token}?includeRows=1`, {
           cache: "no-store",
         });
@@ -405,20 +371,20 @@ export default function ShareReportPage() {
 
         if (!fullRes.ok || !fullJson?.ok) {
           setError(asStr(fullJson?.error) || "공유 리포트 데이터 조회 실패");
-          setRowsLoading(false);
+          setLoading(false);
           return;
         }
 
-        const nextReport = (fullJson.report ?? lightReport ?? null) as ReportRow | null;
+        const nextReport = (fullJson.report ?? null) as ReportRow | null;
         const nextRows = Array.isArray(fullJson.rows) ? fullJson.rows : [];
         const nextCreativesMap =
           fullJson.creativesMap && typeof fullJson.creativesMap === "object"
             ? fullJson.creativesMap
-            : lightCreativesMap;
+            : {};
 
         setReport(nextReport);
         setRows(nextRows);
-        setRowsLoading(false);
+        setLoading(false);
 
         creativesCommitTimerRef.current = window.setTimeout(() => {
           if (!alive) return;
@@ -428,7 +394,6 @@ export default function ShareReportPage() {
         if (!alive) return;
         setError(asStr(e?.message) || "Unknown error");
         setLoading(false);
-        setRowsLoading(false);
       }
     })();
 
@@ -450,8 +415,8 @@ export default function ShareReportPage() {
   if (loading) {
     return (
       <LoadingShell
-        title="공유 리포트를 확인하는 중입니다"
-        description="발행된 리포트의 기본 정보를 먼저 불러오고 있습니다."
+        title="공유 리포트를 불러오고 있습니다"
+        description="발행된 데이터를 불러와 분석 화면을 준비하고 있습니다."
         report={null}
       />
     );
@@ -459,16 +424,6 @@ export default function ShareReportPage() {
 
   if (error) {
     return <main className="p-6">{error}</main>;
-  }
-
-  if (rowsLoading) {
-    return (
-      <LoadingShell
-        title="리포트 분석 데이터를 준비하고 있습니다"
-        description="리포트 기본 정보는 확인되었습니다. 현재 리포트의 rows 데이터를 불러와 분석 화면을 준비하는 중입니다."
-        report={report}
-      />
-    );
   }
 
   if (!hasRenderableRows) {
