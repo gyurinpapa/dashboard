@@ -210,7 +210,7 @@ async function fetchAllReportRows(
 
     const { data, error } = await sb
       .from("report_rows")
-      .select("*")
+      .select("row_index,row,date,channel,device,source")
       .eq("report_id", reportId)
       .eq("ingestion_id", publishedIngestionId)
       .range(from, to);
