@@ -1082,8 +1082,11 @@ export default function ReportBuilderPage() {
       return;
     }
 
+    let cancelled = false;
+
     (async () => {
       const token = await getAccessToken();
+      if (cancelled) return;
       if (!token) {
         setAdvertisers([]);
         setSelectedAdvertiserId("");
@@ -1102,6 +1105,7 @@ export default function ReportBuilderPage() {
       );
 
       const json = await safeReadJson(res);
+      if (cancelled) return;
 
       if (!res.ok || !(json as any)?.ok) {
         console.warn("[advertisers/list] failed", res.status, json);
@@ -1135,6 +1139,10 @@ export default function ReportBuilderPage() {
         return rows.some((x) => x.id === prev) ? prev : "";
       });
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [workspaceId]);
 
   useEffect(() => {
