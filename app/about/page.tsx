@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Etrylue Performance",
+  title: "서비스 소개 | Etrylue Performance",
   description:
-    "Advertising performance reporting and analytics for authorized Google Ads accounts.",
+    "광고대행사와 인하우스 마케터를 위한 광고 성과 리포트 플랫폼. CSV와 지원되는 매체 API 데이터를 정리하고, 트래픽·DB 획득·커머스 리포트를 만들어 공유합니다.",
+  alternates: { canonical: "https://www.etrylue.com/about" },
 };
 
 export default function AboutPage() {
@@ -14,6 +15,8 @@ export default function AboutPage() {
         background: "#f7f8fa",
         color: "#1f2937",
         padding: "48px 20px",
+        wordBreak: "keep-all",
+        overflowWrap: "anywhere",
       }}
     >
       <article
@@ -49,7 +52,7 @@ export default function AboutPage() {
               letterSpacing: "-0.04em",
             }}
           >
-            Advertising performance reporting and analytics
+            광고 데이터를 판단과 공유로 연결합니다
           </h1>
 
           <p
@@ -60,11 +63,38 @@ export default function AboutPage() {
               lineHeight: 1.75,
             }}
           >
-            Etrylue Performance helps authorized users connect advertising
-            accounts, review performance data, build reports, compare results,
-            and generate analytical insights in one workspace.
+            Etrylue Performance는 광고대행사와 인하우스 마케터를 위한 광고 성과
+            리포트 플랫폼입니다. 흩어진 광고 데이터를 같은 기준으로 정리하고,
+            목표와 실제 성과를 비교해 팀과 고객에게 전달할 수 있습니다.
           </p>
         </header>
+
+        <section style={{ marginBottom: 36 }}>
+          <h2 style={{ margin: "0 0 14px", fontSize: 22, lineHeight: 1.4 }}>
+            데이터 입력
+          </h2>
+          <p style={{ margin: 0, color: "#475569", fontSize: 16, lineHeight: 1.8 }}>
+            CSV 파일 업로드 또는 지원되는 매체의 API 연결로 데이터를 입력합니다. API 이용 가능 여부와 수집 범위는 매체별 지원 상태, 계정 연결 및 승인된 권한에 따라 달라집니다.
+          </p>
+        </section>
+
+        <section style={{ marginBottom: 36 }}>
+          <h2 style={{ margin: "0 0 14px", fontSize: 22, lineHeight: 1.4 }}>
+            목적별 리포트
+          </h2>
+          <p style={{ margin: 0, color: "#475569", fontSize: 16, lineHeight: 1.8 }}>
+            방문 유입을 보는 트래픽, 상담·문의 전환을 보는 DB 획득, 매출과 광고수익률을 보는 커머스 리포트를 제공합니다.
+          </p>
+        </section>
+
+        <section style={{ marginBottom: 36 }}>
+          <h2 style={{ margin: "0 0 14px", fontSize: 22, lineHeight: 1.4 }}>
+            발행과 공유
+          </h2>
+          <p style={{ margin: 0, color: "#475569", fontSize: 16, lineHeight: 1.8 }}>
+            발행한 리포트를 공개 URL로 공유하거나 PDF·PPT로 내보낼 수 있습니다. 대행사 유형 워크스페이스에서는 기업 로고와 리포트 브랜딩을 적용할 수 있습니다.
+          </p>
+        </section>
 
         <section style={{ marginBottom: 36 }}>
           <h2
@@ -128,6 +158,21 @@ export default function AboutPage() {
             borderTop: "1px solid #e5e7eb",
           }}
         >
+          <a
+            href="https://www.etrylue.com/"
+            style={{
+              color: "#315f86",
+              fontWeight: 700,
+              textDecoration: "none",
+            }}
+          >
+            홈페이지
+          </a>
+
+          <span aria-hidden="true" style={{ color: "#cbd5e1" }}>
+            ·
+          </span>
+
           <a
             href="/privacy"
             style={{
