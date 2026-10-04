@@ -412,7 +412,7 @@ export default function ShareReportPage() {
     };
   }, [token]);
 
-  if (loading) {
+  if (loading || (!error && rows.length > 0 && !hasRenderableRows)) {
     return (
       <LoadingShell
         title="공유 리포트를 불러오고 있습니다"
