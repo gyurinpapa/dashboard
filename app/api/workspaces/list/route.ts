@@ -472,6 +472,7 @@ export async function GET(req: Request) {
     if (timingEnabled) {
       startTimingStage("complete");
       console.info("[workspace-list-timing]", JSON.stringify({
+        region: process.env.VERCEL_REGION ?? "unknown",
         stages_ms: timings,
         total_ms: Math.round((performance.now() - timingStartedAt) * 10) / 10,
       }));
