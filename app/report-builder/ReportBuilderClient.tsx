@@ -5,7 +5,7 @@ import { supabase } from "@/src/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import MetaAdsConnectionCard from "./MetaAdsConnectionCard";
-import PreparedMediaStatus from "@/app/components/media-sync/PreparedMediaStatus";
+import MediaConnectionCarousel from "./MediaConnectionCarousel";
 import { normalizeReportTheme, type ReportTheme } from "@/src/lib/report/theme";
 
 type ReportType = {
@@ -4482,14 +4482,7 @@ export default function ReportBuilderPage() {
                     </div>
                   ) : null}
 
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                      gap: 10,
-                      marginTop: 12,
-                    }}
-                  >
+                  <MediaConnectionCarousel>
                     <div
                       style={{
                         border: "1px solid rgba(33, 223, 243, 0.18)",
@@ -4864,7 +4857,7 @@ export default function ReportBuilderPage() {
                       getAccessToken={getAccessToken}
                       onRefresh={() => setMediaConnectionsRefreshVersion(value => value + 1)}
                     />
-                  </div>
+                  </MediaConnectionCarousel>
 
                   {googleAdsConnectionFormOpen ? (
                     <div
@@ -5401,7 +5394,6 @@ export default function ReportBuilderPage() {
                     </div>
                   ) : null}
 
-                  <PreparedMediaStatus />
                 </div>
               ) : null}
 
