@@ -1,5 +1,5 @@
 // Display-only catalog. Never import provider preparation or credential modules here.
-const PREPARED_MEDIA = [
+export const PREPARED_MEDIA = [
   { name: "카카오모먼트", detail: "성과형 4종 · 실계정 검증 대기" },
   { name: "TikTok Ads", detail: "웹사이트 광고 · 실계정 검증 대기" },
   { name: "TG (타게팅게이츠)", detail: "광고실적 API 명세 확인 대기" },
