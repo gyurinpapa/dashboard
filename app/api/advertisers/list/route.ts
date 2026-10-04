@@ -166,6 +166,8 @@ function normalizeAdvertiserRow(row: any, workspaceName?: string | null) {
 }
 
 export async function GET(req: Request) {
+  const timingEnabled = process.env.VERCEL_ENV === "preview";
+  const timingStartedAt = timingEnabled ? performance.now() : 0;
   try {
     const actorResult = await getActor(req);
     if (!actorResult.user) {
@@ -409,5 +411,12 @@ export async function GET(req: Request) {
     return jsonError(500, "INTERNAL_ERROR", {
       detail: e?.message ?? String(e),
     });
+  } finally {
+    if (timingEnabled) {
+      console.info("[advertisers-list-timing]", JSON.stringify({
+        region: process.env.VERCEL_REGION ?? "unknown",
+        total_ms: Math.round((performance.now() - timingStartedAt) * 10) / 10,
+      }));
+    }
   }
 }
