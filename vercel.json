@@ -25,6 +25,11 @@
       "regions": [
         "hnd1"
       ]
+    },
+    "app/api/share/\\[token\\]/route.ts": {
+      "regions": [
+        "hnd1"
+      ]
     }
   }
 }
