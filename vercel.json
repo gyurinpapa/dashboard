@@ -15,6 +15,16 @@
       "regions": [
         "hnd1"
       ]
+    },
+    "app/api/advertisers/list/route.ts": {
+      "regions": [
+        "hnd1"
+      ]
+    },
+    "app/api/reports/list/route.ts": {
+      "regions": [
+        "hnd1"
+      ]
     }
   }
 }
