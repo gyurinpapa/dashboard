@@ -5461,6 +5461,30 @@ export default function ReportDetailPage() {
     }
   }, [advertiserNameForDownload, reportId, reportTitleForDownload]);
 
+  if (!report) {
+    return (
+      <main
+        className="min-h-screen text-[#f7f7ff]"
+        style={{
+          background:
+            "radial-gradient(circle at 18% 0%, rgba(33, 223, 243, 0.10), transparent 30%), radial-gradient(circle at 82% 12%, rgba(124, 92, 255, 0.18), transparent 34%), linear-gradient(135deg, #251b4d 0%, #2c2061 48%, #211a46 100%)",
+          backgroundAttachment: "fixed",
+        }}
+      >
+        <div className="mx-auto max-w-[1600px] px-6 py-8">
+          <h1 className="text-3xl font-black tracking-[-0.03em]">리포트 편집</h1>
+          {msg ? (
+            <div role="alert" className="mt-6 whitespace-pre-wrap rounded-2xl border border-rose-300/20 bg-rose-300/10 p-5 text-sm text-rose-100">{msg}</div>
+          ) : (
+            <div role="status" className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5 text-sm text-[#d7d5ec]">
+              리포트 정보를 불러오고 있습니다.
+            </div>
+          )}
+        </div>
+      </main>
+    );
+  }
+
   return (
     <>
       <main
