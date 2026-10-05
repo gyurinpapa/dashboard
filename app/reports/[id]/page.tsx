@@ -2584,6 +2584,7 @@ export default function ReportDetailPage() {
   });
 
   const [publishing, setPublishing] = useState(false);
+  const publishCompleteDialogRef = useRef<HTMLDialogElement>(null);
   const [sharePath, setSharePath] = useState<string>("");
   const [advertiserPublicSlug, setAdvertiserPublicSlug] = useState<string>("");
 
@@ -3965,6 +3966,7 @@ export default function ReportDetailPage() {
     setSessionIngested(false);
     setSessionCreativesUploaded(false);
 
+    publishCompleteDialogRef.current?.close();
     setSharePath("");
     setMsg("");
     setAdvertiserPublicSlug("");
@@ -5108,13 +5110,7 @@ export default function ReportDetailPage() {
         };
       });
 
-      if (out.used === "publish-lite") {
-        setMsg(
-          "발행 완료(안전모드: publish-lite). 아래 URL로 실제 보고서를 볼 수 있습니다.",
-        );
-      } else {
-        setMsg("발행 완료. 아래 URL로 실제 보고서를 볼 수 있습니다.");
-      }
+      publishCompleteDialogRef.current?.showModal();
 
       /**
        * 대용량 rows 안정화:
@@ -5487,6 +5483,21 @@ export default function ReportDetailPage() {
 
   return (
     <>
+      <dialog
+        ref={publishCompleteDialogRef}
+        aria-labelledby="publish-complete-title"
+        aria-describedby="publish-complete-description"
+        className="fixed inset-0 m-auto w-[calc(100%_-_48px)] max-w-md rounded-3xl border border-[#7FA6C4]/40 bg-[#2c2061] p-8 text-[#f7f7ff] shadow-2xl backdrop:bg-black/60"
+      >
+        <div aria-hidden="true" className="mb-4 text-3xl text-emerald-300">✓</div>
+        <h2 id="publish-complete-title" className="text-2xl font-black">발행이 완료되었습니다</h2>
+        <p id="publish-complete-description" className="mt-3 text-sm leading-6 text-[#d7d5ec]">
+          공유 링크에서 발행된 리포트를 확인할 수 있습니다.
+        </p>
+        <form method="dialog" className="mt-6">
+          <button autoFocus type="submit" className="w-full rounded-xl bg-[#7FA6C4] px-5 py-3 font-extrabold text-[#17132e] hover:bg-[#B7D7E3] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#B7D7E3]">확인</button>
+        </form>
+      </dialog>
       <main
         className="min-h-screen"
         style={{
