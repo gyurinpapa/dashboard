@@ -6291,6 +6291,7 @@ export default function ReportDetailPage() {
                 </div>
 
 
+                {mediaSyncProviders.length > 0 ? (
                 <MediaConnectionCarousel>
                   {mediaSyncProviders.map((provider) => {
                     const connection = provider.connections[0] ?? null;
@@ -6516,6 +6517,11 @@ export default function ReportDetailPage() {
                     );
                   })}
                 </MediaConnectionCarousel>
+                ) : (
+                  <div role="status" className="mt-3 rounded-xl border border-white/10 bg-white/5 p-5 text-sm text-[#bbb8d4]">
+                    매체별 연결 상태를 확인하고 있습니다.
+                  </div>
+                )}
               </div>
 
               <div className="text-xs text-[#bbb8d4]">
