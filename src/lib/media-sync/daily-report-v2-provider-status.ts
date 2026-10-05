@@ -11,7 +11,7 @@ type LatestJob = Readonly<{
   automation_contract?: string | null;
 }>;
 
-// Initial coverage and the latest daily run describe different date windows.
+// Cumulative coverage and the latest daily run can describe different date windows.
 // Keep coverage counts intact while giving the latest non-success precedence.
 export function getDailyReportV2ProviderStatus(
   coverage: Coverage | null,
@@ -39,9 +39,9 @@ export function getDailyReportV2ProviderStatus(
       ? `${dailyDate} · ${statusText}`
       : `최근 동기화 ${statusText}`;
   } else if (coverage.target_covered) {
-    currentStage = dailyDate && dailyDate > coverage.through_date
+    currentStage = dailyDate && dailyDate >= coverage.through_date
       ? `${dailyDate} · 데일리 동기화 완료`
-      : "초기 동기화 완료";
+      : "누적 동기화 완료";
   } else if (dailyDate && job?.status === "done") {
     currentStage = `${dailyDate} · 완료`;
   } else {
