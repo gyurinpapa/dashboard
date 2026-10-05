@@ -18,7 +18,7 @@ import {
 } from "next/navigation";
 import { supabase } from "@/src/lib/supabase/client";
 import ReportDownloadButtons from "@/app/components/report/ReportDownloadButtons";
-import PreparedMediaStatus from "@/app/components/media-sync/PreparedMediaStatus";
+import MediaConnectionCarousel from "@/app/report-builder/MediaConnectionCarousel";
 import { buildReportFileName } from "@/src/lib/report/download/file-name";
 import { downloadCsvFile } from "@/src/lib/report/download/export-csv";
 import { prepareElementForExport } from "@/src/lib/report/download/export-helpers";
@@ -6267,7 +6267,7 @@ export default function ReportDetailPage() {
                 </div>
 
 
-                <div className="mt-3 grid gap-3 xl:grid-cols-3">
+                <MediaConnectionCarousel>
                   {mediaSyncProviders.map((provider) => {
                     const connection = provider.connections[0] ?? null;
                     const job = provider.latest_job;
@@ -6491,10 +6491,8 @@ export default function ReportDetailPage() {
                       </div>
                     );
                   })}
-                </div>
+                </MediaConnectionCarousel>
               </div>
-
-              <PreparedMediaStatus />
 
               <div className="text-xs text-[#bbb8d4]">
                 {mediaSyncPeriodManagedByCanonical ? (
