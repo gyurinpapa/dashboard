@@ -368,10 +368,11 @@ async function loadDailyReportV2ProviderProgress(
       autoSync.start_date,
     );
 
-  const throughDate =
-    normalizeYmdOrNull(
-      autoSync.immediate_through_date,
-    );
+  // Display cumulative coverage through yesterday in KST. The initial
+  // catch-up boundary remains stored unchanged for scheduler execution.
+  const throughDate = new Date(
+    Date.now() + (9 - 24) * 60 * 60 * 1000,
+  ).toISOString().slice(0, 10);
 
   if (
     !startDate ||
