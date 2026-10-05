@@ -8,7 +8,9 @@
 --   - activation authority: daily_report_v2_snapshot_runs
 --   - only ready -> activated may move reports.current_ingestion_id
 --   - exact retry of activated + current snapshot is idempotent
---   - reports.published_ingestion_id is preserved exactly
+--   - already-published ready daily reports advance their published data atomically
+--   - drafts/unpublished reports and exact retries never publish automatically
+--   - share identity, published creatives, periods and manual settings are preserved
 --   - compact canonical source_fingerprint is revalidated before pointer move
 --   - candidate report_ingestion must already be success with exact row_count
 --   - no media_sync_jobs/media_connections/report_projection ownership
@@ -49,6 +51,7 @@ declare
   v_source_fingerprint text;
 
   v_published_ingestion_before uuid;
+  v_published_ingestion_after uuid;
   v_idempotent boolean := false;
 begin
   if p_payload is null
@@ -198,6 +201,23 @@ begin
   v_published_ingestion_before :=
     v_report.published_ingestion_id;
 
+  -- First publication remains explicit. Only a new, successful daily snapshot
+  -- may advance an existing public data pointer. An idempotent retry must not
+  -- republish or overwrite a subsequent manual publication decision.
+  v_published_ingestion_after :=
+    case
+      when not v_idempotent
+       and v_report.status = 'ready'
+       and v_published_ingestion_before is not null
+       and nullif(btrim(v_report.share_token), '') is not null
+       and v_report.meta #>> '{data_source,kind}' = 'api'
+       and v_report.meta #>> '{public_identity,period_type}' = 'daily_sync'
+       and v_report.meta #>> '{media_sync,auto_sync,enabled}' = 'true'
+       and v_report.meta #>> '{media_sync,auto_sync,contract}' = 'daily_report_v2'
+      then v_run.snapshot_ingestion_id
+      else v_published_ingestion_before
+    end;
+
   /*
    * Freeze the exact canonical partition generations through pointer CAS.
    *
@@ -338,11 +358,14 @@ begin
     /*
      * Atomic CAS:
      *   current = previous -> snapshot
-     * published participates only as a preservation assertion.
+     * published advances only for an already-published ready daily report.
+     * Both pointers commit together, after all existing readiness checks.
      */
     update public.reports as r
        set current_ingestion_id =
-             v_run.snapshot_ingestion_id
+             v_run.snapshot_ingestion_id,
+           published_ingestion_id =
+             v_published_ingestion_after
      where r.id = v_run.report_id
        and r.workspace_id = v_run.workspace_id
        and r.advertiser_id
@@ -393,7 +416,7 @@ begin
      or v_report.current_ingestion_id
           is distinct from v_run.snapshot_ingestion_id
      or v_report.published_ingestion_id
-          is distinct from v_published_ingestion_before
+          is distinct from v_published_ingestion_after
   then
     raise exception using
       message =

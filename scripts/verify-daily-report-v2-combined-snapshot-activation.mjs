@@ -95,10 +95,13 @@ requireCondition(
 );
 
 requireCondition(
-  !sql.toLowerCase().includes(
-    "set published_ingestion_id",
-  ),
-  "D10K4_PUBLISHED_POINTER_IMMUTABLE",
+  sql.includes("when not v_idempotent") &&
+    sql.includes("and v_report.status = 'ready'") &&
+    sql.includes("and v_published_ingestion_before is not null") &&
+    sql.includes("and nullif(btrim(v_report.share_token), '') is not null") &&
+    sql.includes("else v_published_ingestion_before") &&
+    sql.includes("is distinct from v_published_ingestion_after"),
+  "D10K4_PUBLISHED_DAILY_POINTER_GUARDED",
 );
 
 requireCondition(
