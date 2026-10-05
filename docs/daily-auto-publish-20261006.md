@@ -1,6 +1,12 @@
 # Daily Report V2: published data follows successful daily activation
 
-Status: isolated candidate; production approval required. No production mutation performed.
+Status: APPROVED AND APPLIED to production on 2026-10-06 KST.
+
+Migration: daily_report_v2_published_snapshot_on_activation.
+Approved implementation commit: 727fd5693a1b0717132b997889456e9599ea9948.
+The bounded transaction verified the baseline function/ACL and no active daily runs/jobs, replaced only the reviewed function, and verified the candidate hash/ACL before commit. Supabase returned success.
+Post-commit read-only verification: candidate hash matches; postgres owner and service_role-only execution preserved; both daily reports' current/published pointers, status and share-token/meta hashes unchanged. No sync, activation call, manual publication, report-row rewrite, Vercel deploy or Railway configuration change was performed.
+Next natural successful activation remains pending for end-to-end production confirmation. The already-completed 2026-10-06 run was not republished.
 
 Base: Vercel production 4c01771c356d44e8cb31b4c7b740e6fab34781c3, verified 2026-10-06 KST.
 Branch: fix/daily-published-snapshot-20261006.
