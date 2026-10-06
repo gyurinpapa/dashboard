@@ -332,6 +332,7 @@ export default function HomePage() {
           <a href="#top" className={styles.logoLink} aria-label="Etrylue Performance 홈"><BrandLockup /></a>
           <div className={styles.navLinks}>
             <a href="#brand">소개</a><a href="#capabilities">기능</a><a href="#workflow">동작 방식</a><a href="#faq">자주 묻는 질문</a>
+            {process.env.VERCEL_ENV !== "production" && process.env.BILLING_UI_PREVIEW === "true" ? <a href="/pricing">요금제</a> : null}
           </div>
           <a className={buttonPrimary} href="https://app.etrylue.com/report-builder">리포트 열기</a>
         </div>
