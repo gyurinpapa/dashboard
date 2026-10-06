@@ -16,7 +16,7 @@ Branch: `feat/billing-test-20261006`. This work does not authorize live payments
 - Separate billing records are not read by existing report/access paths. This candidate DOES NOT impose a paywall, change legacy access, enforce ongoing advertiser caps, or modify report data.
 - No purchase analytics event yet. Existing GTM/layout untouched. Provider auth/payment keys land only at an API endpoint that redirects to a clean order URL with `no-referrer`; no HTML/analytics on the callback.
 
-Only existing source edit: one feature-gated pricing navigation link in `app/page.tsx`. All other changes are new billing files/tests/docs. No dependency or lockfile changes.
+The homepage header, logo, footer, business information and fixed contact CTA are shared through `app/HomeChrome.tsx`. Billing pages use `app/PublicSiteShell.tsx` with the unchanged homepage CSS/background/assets. The homepage DOM was compared before/after extraction: all 966 normalized element/text tokens matched. Billing colors use the homepage CSS variables. No payment logic, dependency or lockfile changes in this visual follow-up.
 
 ## Guards and test setup
 
