@@ -1,4 +1,5 @@
 /* eslint-disable @next/next/no-html-link-for-pages -- Explicit full navigation for isolated billing screens. */
+import PublicSiteShell from "../../PublicSiteShell";
 import { notFound } from "next/navigation";
 import { actor, loadOrder } from "@/lib/billing/server";
 import { won } from "@/lib/billing/catalog";
@@ -14,8 +15,7 @@ export default async function Result({ searchParams }: { searchParams: Promise<{
   // This uncached server component evaluates the entitlement at request time, never in client render.
   // eslint-disable-next-line react-hooks/purity
   const paid = order?.status === "active" && !!order.paid_until && Date.parse(order.paid_until) > Date.now();
-  return <main className={styles.page}><div className={styles.container}>
-    <nav className={styles.nav}><a className={styles.brand} href="/pricing">ETRYLUE PERFORMANCE</a></nav>
+  return <PublicSiteShell><div className={styles.container}>
     <section className={styles.panel}><p className={styles.eyebrow}>TEST PAYMENT</p>
       <h1>{paid ? "테스트 결제가 확인되었습니다" : "결제 상태 확인"}</h1>
       {order ? <><dl>
@@ -28,5 +28,5 @@ export default async function Result({ searchParams }: { searchParams: Promise<{
       <p className={styles.details}>실제 청구와 기존 리포트 권한 변경은 없습니다. 결제 오류가 발생하면 새로 구매하기 전에 기존 결제 결과를 먼저 확인해주세요.</p>
       <div className={styles.actions}><a href="/pricing">요금제로 돌아가기</a></div>
     </section>
-  </div></main>;
+  </div></PublicSiteShell>;
 }

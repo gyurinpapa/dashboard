@@ -1,5 +1,6 @@
 /* eslint-disable @next/next/no-html-link-for-pages -- Static links avoid client navigation/prefetch on this small review page. */
 import type { Metadata } from "next";
+import PublicSiteShell from "../PublicSiteShell";
 import { notFound } from "next/navigation";
 import { plans, won, type Scope } from "@/lib/billing/catalog";
 import styles from "./billing.module.css";
@@ -7,8 +8,7 @@ export const metadata: Metadata = { title: "요금제 검토 | Etrylue Performan
 export default async function Pricing({ searchParams }: { searchParams: Promise<{ mode?: string }> }) {
   if (process.env.VERCEL_ENV === "production") notFound();
   const mode = (await searchParams).mode === "once" ? "once" : "monthly";
-  return <main className={styles.page}><div className={styles.container}>
-    <nav className={styles.nav} aria-label="요금제 메뉴"><a className={styles.brand} href="/">ETRYLUE PERFORMANCE</a><a href="/report-builder">리포트 열기</a></nav>
+  return <PublicSiteShell><div className={styles.container}>
     <p className={styles.eyebrow}>PRICING PREVIEW</p>
     <h1 className={styles.title}>필요한 범위만큼,<br />원하는 결제 방식으로.</h1>
     <p className={styles.intro}>광고주 한 곳부터 회사 전체까지.<br />1개월 이용권과 매월 자동결제 중 선택하세요.</p>
@@ -29,5 +29,5 @@ export default async function Pricing({ searchParams }: { searchParams: Promise<
       <li>결제로 다른 회사·워크스페이스·광고주의 열람 권한이 추가되지는 않습니다.</li>
       <li>유료 이용 범위·환불 기준·기존 고객 전환 정책은 운영 오픈 전에 별도로 확정합니다.</li>
     </ul>
-  </div></main>;
+  </div></PublicSiteShell>;
 }
