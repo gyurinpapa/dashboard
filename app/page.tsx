@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import Image from "next/image";
-import HomeBackToTop from "./HomeBackToTop";
+import { HomeHeader, HomeFooter } from "./HomeChrome";
 
 import styles from "./home.module.css";
 
@@ -146,26 +145,6 @@ const faqs = [
       "대행사 유형 워크스페이스에서는 기업 로고와 리포트 브랜딩을 적용할 수 있습니다. 광고주 인하우스 유형에는 이 기능을 노출하지 않습니다.",
   },
 ];
-
-function BrandLockup({ compact = false }: { compact?: boolean }) {
-  return (
-    <span className={styles.brandLockup}>
-      <Image
-        src="/branding/etrylue-logo.png"
-        alt=""
-        width={294}
-        height={247}
-        sizes={compact ? "46px" : "58px"}
-        className={compact ? styles.brandMarkCompact : styles.brandMark}
-        priority={!compact}
-      />
-      <span>
-        <b>Etrylue</b>
-        <small>PERFORMANCE</small>
-      </span>
-    </span>
-  );
-}
 
 function FeatureIcon({ type }: { type: string }) {
   if (type === "chart") {
@@ -315,7 +294,6 @@ function DashboardPreview() {
 }
 
 export default function HomePage() {
-  const buttonPrimary = [styles.button, styles.buttonPrimary, styles.navButton].join(" ");
   const buttonAccent = [styles.button, styles.buttonAccent, styles.buttonLarge].join(" ");
   const buttonGhost = [styles.button, styles.buttonGhost, styles.buttonLarge].join(" ");
   return (
@@ -327,15 +305,7 @@ export default function HomePage() {
           __html: JSON.stringify(structuredData).replace(/</g, "\\u003c"),
         }}
       />
-      <nav className={styles.nav} aria-label="주요 메뉴">
-        <div className={[styles.container, styles.navInner].join(" ")}>
-          <a href="#top" className={styles.logoLink} aria-label="Etrylue Performance 홈"><BrandLockup /></a>
-          <div className={styles.navLinks}>
-            <a href="#brand">소개</a><a href="#capabilities">기능</a><a href="#workflow">동작 방식</a><a href="#faq">자주 묻는 질문</a>
-          </div>
-          <a className={buttonPrimary} href="https://app.etrylue.com/report-builder">리포트 열기</a>
-        </div>
-      </nav>
+      <HomeHeader home />
 
       <header className={styles.hero} id="top">
         <div className={[styles.container, styles.heroGrid].join(" ")}>
@@ -480,34 +450,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <footer className={styles.footer}>
-        <div className={styles.container}>
-          <div className={styles.footerGrid}>
-            <div className={styles.footerBrand}><a href="#top" aria-label="Etrylue Performance 홈"><BrandLockup compact /></a><p>흩어진 광고 데이터를 하나의 기준으로 정리하는<br /> 광고 성과 리포트 플랫폼.</p></div>
-            <div><h3>제품</h3><a href="#capabilities">기능</a><a href="#workflow">동작 방식</a><a href="https://app.etrylue.com/report-builder">리포트 열기</a></div>
-            <div><h3>안내</h3><a href="/about">서비스 소개</a><a href="/terms">이용약관</a><a href="/privacy">개인정보처리방침</a></div>
-            <div><h3>문의</h3><a href="mailto:etrylue3479@gmail.com">etrylue3479@gmail.com</a><a href="tel:01058716881">010-5871-6881</a></div>
-          </div>
-          <div className={styles.businessInfo} aria-label="사업자 정보">
-            <p className={styles.businessName}>이트라이루</p>
-            <dl className={styles.businessDetails}>
-              <div><dt>대표자</dt><dd>신광희</dd></div>
-              <div><dt>사업자등록번호</dt><dd>365-31-01818</dd></div>
-              <div><dt>연락처</dt><dd><a href="tel:01058716881">010-5871-6881</a></dd></div>
-              <div><dt>CS 이메일</dt><dd><a href="mailto:etrylue3479@gmail.com">etrylue3479@gmail.com</a></dd></div>
-              <div className={styles.businessAddress}><dt>사업자 주소</dt><dd>경기도 수원시 권선구 세권로181번길 20-23, 2층 137호(권선동, 태양빌딩)</dd></div>
-            </dl>
-          </div>
-          <div className={styles.footerBottom}><span>© 2026 Etrylue Performance. All rights reserved.</span><span>Contribution · Value · Try · Reflection · Gratitude</span></div>
-        </div>
-      </footer>
-      <section className={styles.ctaSection} aria-label="리포트 시작 및 도입 문의">
-        <div className={[styles.container, styles.ctaCard].join(" ")}>
-          <div><span className={styles.eyebrow}>READY WHEN YOU ARE</span><h2>다음 리포트는, 더 명확한 기준으로</h2><p>광고주와 리포트 목적을 선택하고 시작하세요.</p></div>
-          <div className={styles.ctaActions}><a className={buttonAccent} href="https://app.etrylue.com/report-builder">리포트 열기</a><a className={buttonGhost} href="mailto:etrylue3479@gmail.com">도입 문의</a></div>
-        </div>
-      </section>
-      <HomeBackToTop />
+      <HomeFooter home />
     </main>
   );
 }
