@@ -69,3 +69,10 @@ Still pending: synthetic membership fixtures and test user, separate Vercel depl
 - User exercised full test cancellation. Read-only DB confirms order and charge refunded; paid_until=2026-10-07T13:20:49.152043Z. PC screenshot shows refund state and matching KST end time.
 - User requested a more specific message instead of the red generic success notice. Local result UI now derives action-specific status text from the existing server order state; confirmed messages use mint, unresolved/errors keep warning color. No new requests, dependencies, payment/permission mutations, or report changes.
 - Scoped ESLint and TypeScript noEmit pass. This copy change is committed locally only; Preview deployment and visual verification remain pending.
+
+## Webhook verification — 2026-10-07
+- Prior UI message change deployed as Preview commit 5430e58698cf2c89f67c14b2c149819564782fed, deployment dpl_FnjvgDnuc5hTgNz2NuT9YfsR9H1n; user screenshot confirmed mint refund-completion message.
+- Added synthetic route-to-SQL verification with all HTTP intercepted and independently installed PGlite; no actual provider API or Supabase database is contacted by this test.
+- Reproduced storage outage incorrectly acknowledged as HTTP 200 because loadCharge mapped database errors to CHARGE_NOT_FOUND. Split storage failure (503) from genuinely absent charge (404); only absent charge is acknowledged as ignored by the webhook.
+- Eight webhook checks pass: invalid token, unknown order, provider mismatch/outage, storage outage, untrusted payload fields, repeated success, repeated cancellation and stale success after cancellation. Replays preserve all stored order/charge fields and one order/one charge.
+- Provider dashboard registration and real delivery/retry remain unverified; dashboard currently requires login. No webhook token was read or printed. Event to register: PAYMENT_STATUS_CHANGED, test merchant only. Monthly billing remains deferred.

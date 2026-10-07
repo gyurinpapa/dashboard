@@ -35,7 +35,8 @@ export async function loadOrder(id: unknown, userId?: string): Promise<Order> {
 async function loadCharge(id: string): Promise<Charge> {
   if (!uuid(id)) throw new BillingError("INVALID_CHARGE");
   const { data, error } = await db().from("billing_test_charges").select("*").eq("id", id).maybeSingle();
-  if (error || !data) throw new BillingError("CHARGE_NOT_FOUND", 404);
+  if (error) throw new BillingError("BILLING_STORAGE_UNAVAILABLE", 503);
+  if (!data) throw new BillingError("CHARGE_NOT_FOUND", 404);
   return data as Charge;
 }
 async function rpc(name: string, args: Record<string, unknown>) {
