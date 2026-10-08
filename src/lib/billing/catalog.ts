@@ -1,5 +1,5 @@
-/** Versioned server quote. A price change requires a new catalog version. */
-export const CATALOG_VERSION = "etrylue-preview-20261006";
+/** Once prices/scopes approved 2026-10-09. Monthly prices remain provisional/unavailable. */
+export const CATALOG_VERSION = "etrylue-once-20261009";
 export const plans = {
   advertiser: { name: "광고주", limit: 1, once: 39000, monthly: 29000, description: "선택한 광고주 1개" },
   workspace: { name: "워크스페이스", limit: 5, once: 129000, monthly: 99000, description: "선택한 워크스페이스 · 광고주 최대 5개" },
