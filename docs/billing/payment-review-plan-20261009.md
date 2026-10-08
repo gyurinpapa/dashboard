@@ -1,3 +1,33 @@
+# Current decision: existing app account and real targets (2026-10-09)
+
+This section supersedes the separate reviewer-auth design and settings recorded below.
+
+The user approved connecting Toss TEST payments to the existing report account and actual permitted advertiser/workspace/company selections. No separate reviewer login or synthetic target selection is required. Removed the dedicated review login/session routes and cookie implementation. Existing app authentication is reused without modification.
+
+Homepage pricing routes to checkout on app.etrylue.com when enabled, retaining the original public header/footer. Report builder adds only a conditional checkout link; report calculations, filters, creation APIs, sharing, PPT and workers are unchanged. SDK loads only after checkout submission.
+
+Actual targets are read using the existing true-master rule (designated email AND master membership), admin/director workspace access and staff-owned advertisers. Company purchase selection requires active company ownership or true master. Selection grants no additional app permissions. A transport guard only permits GET/HEAD on six hierarchy/profile tables; all writes, RPCs and report-table access are rejected before HTTP. All orders, charges and settlement RPCs use only the separate test payment database. Real app UUIDs are stored as references without duplicating user accounts or report data.
+
+Required branch-scoped Preview configuration (8 settings):
+- BILLING_REVIEW_ENABLED=true when remaining settings are ready.
+- BILLING_REVIEW_ORIGIN=https://dashboard-git-feat-payment-review-20261009-gyurinpapas-projects.vercel.app; after separate production approval use https://app.etrylue.com.
+- BILLING_REVIEW_SUPABASE_URL=https://kbqyszbuxojofugqfjbh.supabase.co.
+- BILLING_REVIEW_SERVICE_ROLE_KEY: isolated payment DB server key, entered privately.
+- BILLING_REVIEW_USER_IDS: real app account UUID allowlist; verified owner UUID 36936aa5-155e-4b3a-aa1f-ffc9d885ee15.
+- BILLING_REVIEW_STATE_SECRET: independent random secret of at least 32 characters.
+- BILLING_REVIEW_TOSS_CLIENT_KEY: contracted merchant test_ck_ key.
+- BILLING_REVIEW_TOSS_SECRET_KEY: matching test_sk_ key, entered privately.
+
+BILLING_REVIEW_ANON_KEY is no longer used. Ordinary app Supabase settings must remain unchanged. Existing account login on Preview is required because cookies are host-scoped; this uses the SAME account, not a new identity. Test merchant remains tetryluei6e. Live keys and monthly payments are rejected.
+
+18 synthetic SQL/route checks passed, including standard auth, retired-cookie rejection, all three prices/scopes, read-only transport, staff/client/true-master boundaries, app fixture immutability after approval, tampering, duplicate confirmation, merchant validation, uncertain result reconciliation, cancellation/refund and purchaser isolation. These tests do not establish a hosted payment transaction or actual UI verification. No real payment, production DB write or scheduler operation occurred.
+
+Production baseline was rechecked and remains f1d6f980186ef14f1529d5ad24356aaaa09076c3. Hosted keys remain unconfigured by this work. A real-account Preview payment check and separate production release approval remain required. Supply/refund policy and current business registration details are still unverified.
+
+---
+
+## Historical preparation record (superseded where noted above)
+
 # Etrylue public payment review preparation
 
 ## Verified baseline (2026-10-09 KST)
@@ -113,3 +143,18 @@ This candidate is not yet merchant-review-ready: dedicated Preview configuration
 Local HTTP verification subsequently passed seven checks against the running Next server with synthetic review config: pricing, once checkout, monthly informational checkout, reviewer login, unknown-order result, unauthenticated targets rejection, CSRF rejection. All five HTML responses include the existing business footer/navigation, and none includes an eagerly loaded Toss SDK script. This is HTTP/SSR evidence, not a browser click or mobile layout test. Initial separate-command connection attempts failed; running the server and probes in one process namespace resolved it without changing application code. Total current named backend/config/Auth checks=15, HTTP checks=7.
 
 Refunded review orders offer an explicit new-order test action that clears only that exact review order's sessionStorage key. Interrupted checkouts return to the same pending order, avoiding silent duplicate orders. Server-rendered result still checks stored/provider-verified state rather than trusting the redirect's result label.
+
+## Preview publication evidence
+
+Remote branch feat/payment-review-20261009 was created at 734d7ccdbab1630eeb524e61e6bef900dd63d72e, parent f1d6f980186ef14f1529d5ad24356aaaa09076c3. Its tree daa51a759d2fa10a4b31afc9e4acca3a778acde3 equals tested local 227b8f7's tree. No force push or main update. Remote history was created through the connector; do not force-push differing local ancestry.
+
+Vercel get_deployment confirmed dashboard Preview READY:
+- dpl_8GyNbXFgDFBUjg9pj4q2pBP2uUTB
+- https://dashboard-g34u0pcax-gyurinpapas-projects.vercel.app
+- Stable branch origin: https://dashboard-git-feat-payment-review-20261009-gyurinpapas-projects.vercel.app
+- Exact remote SHA above, project prj_lDzro0dEk4vJRaqjgIbTu8yepUDX, target null (Preview)
+- Build interval approximately 62 seconds.
+
+Production was independently rechecked after the branch push and remained READY on f1d6f980186ef14f1529d5ad24356aaaa09076c3 / dpl_Gad9jkmb1LHhrk5JFAxhoxQmBuwJ. No environment changes or production promotion occurred. Review settings are not provisioned by this work; this is a code/UI candidate, not completed hosted payment verification.
+
+The separate etrylue-billing-test project's automatic build for this new branch reported failure (dpl_FAcn3y2N6fmaf8MyPXvwG4tJVGDF). Its previously established build guard only allows feat/billing-once-20261007, making rejection of this new branch expected; the failure's actual logs could not be retrieved (connector 404), so that cause is not independently confirmed. Do not relax the guard or change its working test deployment to address this incidental build. No browser credential-recovery retry was attempted.

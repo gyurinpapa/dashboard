@@ -485,7 +485,7 @@ function pickCurrentMembership(
   return rows[0] ?? null;
 }
 
-export default function ReportBuilderPage() {
+export default function ReportBuilderPage({ showBillingTest = false }: { showBillingTest?: boolean }) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -3979,6 +3979,11 @@ export default function ReportBuilderPage() {
                     flexWrap: "wrap",
                   }}
                 >
+                  {showBillingTest ? (
+                    <Link prefetch={false} className="subBtn" href="/billing/checkout?scope=advertiser&mode=once" style={{ padding: "9px 12px", textDecoration: "none" }}>
+                      이용권 · 테스트 결제
+                    </Link>
+                  ) : null}
                   {canManageMembers ? (
                     <button
                       className="subBtn"

@@ -8,21 +8,20 @@ const { workAsyncStorage } = await import('next/dist/server/app-render/work-asyn
 const { workUnitAsyncStorage } = await import('next/dist/server/app-render/work-unit-async-storage.external.js');
 const { reviewConfig, providerKeys, REVIEW_PROJECT } = await import('../src/lib/billing/review/config.ts');
 const { checkout, callback, manage, loadOrder } = await import('../src/lib/billing/review/server.ts');
-const { NextRequest } = await import('next/server.js');
-const { POST: sessionRoute } = await import('../app/api/billing/review/session/route.ts');
 const { POST } = await import('../app/api/billing/review/checkout/route.ts');
 const { GET: callbackRoute } = await import('../app/api/billing/review/callback/route.ts');
-const { REVIEW_COOKIE } = await import('../src/lib/billing/review/auth.ts');
+const { appReadDb, appTargets, APP_PROJECT } = await import('../src/lib/billing/review/app-targets.ts');
+const APP_COOKIE=`sb-${APP_PROJECT}-auth-token`;
 const uid='11111111-1111-4111-8111-111111111111', outsider='22222222-2222-4222-8222-222222222222';
 const env={VERCEL_ENV:'production', BILLING_REVIEW_ENABLED:'true', BILLING_REVIEW_SUPABASE_URL:`https://${REVIEW_PROJECT}.supabase.co`,
- BILLING_REVIEW_SERVICE_ROLE_KEY:'synthetic-service',BILLING_REVIEW_ANON_KEY:'synthetic-anon',BILLING_REVIEW_ORIGIN:'https://www.etrylue.com',
+ BILLING_REVIEW_SERVICE_ROLE_KEY:'synthetic-service',BILLING_REVIEW_ORIGIN:'https://app.etrylue.com',
  BILLING_REVIEW_USER_IDS:uid,BILLING_REVIEW_STATE_SECRET:'synthetic-state-secret-longer-than-32-characters',
  BILLING_REVIEW_TOSS_CLIENT_KEY:'test_ck_synthetic',BILLING_REVIEW_TOSS_SECRET_KEY:'test_sk_synthetic',
- NEXT_PUBLIC_SUPABASE_URL:'https://rulcvpgvmmckacshkmfy.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'must-never-be-used'};
+ NEXT_PUBLIC_SUPABASE_URL:'https://rulcvpgvmmckacshkmfy.supabase.co',NEXT_PUBLIC_SUPABASE_ANON_KEY:'synthetic-app-anon',SUPABASE_SERVICE_ROLE_KEY:'synthetic-app-read-only'};
 const previous=Object.fromEntries(Object.keys(env).map(k=>[k,process.env[k]])); Object.assign(process.env,env);
 const originalFetch=global.fetch;
 if(!process.env.PGLITE_MODULE) throw new Error('PGLITE_MODULE required (external test-only dependency)');
-const {PGlite}=await import(process.env.PGLITE_MODULE); const db=new PGlite();
+const {PGlite}=await import(process.env.PGLITE_MODULE); const db=new PGlite(), appDb=new PGlite();
 let calls=[],unexpected=[],checks=0,outage=false,providerCalls=0,uncertain=false,payment,authUser=uid;
 let ad,wid,tid,otherAd;
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json'}});
@@ -34,7 +33,7 @@ function identifier(name, table) {
 async function storage(input, init) {
   const url = new URL(typeof input === 'string' ? input : input.url ?? input.toString());
   const method = init?.method || 'GET';
-  calls.push({ path: url.pathname, method });
+  calls.push({ origin: url.origin, path: url.pathname, method });
   try {
     if (url.origin === 'https://api.tosspayments.com') {
       providerCalls++;
@@ -47,18 +46,13 @@ async function storage(input, init) {
       else { assert.equal(method,'GET'); assert.equal(url.pathname,`/v1/payments/orders/${payment.orderId}`); }
       return json(payment);
     }
-    assert.equal(url.origin, env.BILLING_REVIEW_SUPABASE_URL, 'External network forbidden');
-    if(url.pathname === '/auth/v1/token') {
-      assert.equal(method,'POST');assert.equal(url.searchParams.get('grant_type'),'password');
-      const payload=Buffer.from(JSON.stringify({sub:authUser,exp:Math.floor(Date.now()/1000)+3600})).toString('base64url');
-      return json({access_token:`eyJhbGciOiJIUzI1NiJ9.${payload}.synthetic`,refresh_token:'synthetic-refresh',expires_in:3600,token_type:'bearer',user:{id:authUser,aud:'authenticated',role:'authenticated',app_metadata:{},user_metadata:{}}});
-    }
-    if(url.pathname === '/auth/v1/logout') { assert.equal(method,'POST');return json({}); }
+    assert.ok([env.BILLING_REVIEW_SUPABASE_URL,env.NEXT_PUBLIC_SUPABASE_URL].includes(url.origin),'External network forbidden');
     if (url.pathname === '/auth/v1/user') {
-      assert.equal(method, 'GET');
+      assert.equal(url.origin,env.NEXT_PUBLIC_SUPABASE_URL); assert.equal(method, 'GET');
       return json({ id: authUser, aud: 'authenticated', role: 'authenticated', app_metadata: {}, user_metadata: {} });
     }
     if(url.pathname.startsWith('/rest/v1/rpc/')) {
+      assert.equal(url.origin,env.BILLING_REVIEW_SUPABASE_URL,'No RPC on app DB');
       const name=url.pathname.split('/').at(-1), args=JSON.parse(init.body);
       assert.equal(method,'POST'); assert.ok(['billing_test_create','billing_test_settle','billing_test_cancel'].includes(name));
       if(outage) return json({message:'Synthetic outage'},503);
@@ -67,10 +61,13 @@ async function storage(input, init) {
     }
     const table = url.pathname.replace('/rest/v1/', '');
     assert.ok(Object.hasOwn(columns, table), 'Unknown endpoint forbidden');
+    const isApp = url.origin===env.NEXT_PUBLIC_SUPABASE_URL;
+    if(isApp) {assert.ok(['GET','HEAD'].includes(method),'App data is strictly read-only');assert.ok(['profiles','workspace_members','tenant_members','workspaces','tenants','advertisers'].includes(table));}
+    else assert.ok(['billing_test_orders','billing_test_charges'].includes(table),'Targets cannot be loaded from isolated DB');
     if (outage && table === 'billing_test_orders') return json({ message: 'Synthetic outage' }, 503);
     const selection = url.searchParams.get('select');
     const selected = !selection || selection === '*' ? '*' : selection.split(',').map(s => identifier(s.trim(), table)).join(',');
-    const result = await db.transaction(async tx => {
+    const result = await (isApp?appDb:db).transaction(async tx => {
       await tx.exec('set local role service_role');
       assert.ok(['GET', 'HEAD', 'PATCH'].includes(method));
       const params = [], where = [];
@@ -109,12 +106,12 @@ async function storage(input, init) {
   } catch (e) { unexpected.push(e.message); throw e; }
 }
 
-function cookies(name=REVIEW_COOKIE) {
+function cookies(name=APP_COOKIE) {
  const payload=Buffer.from(JSON.stringify({sub:uid,exp:Math.floor(Date.now()/1000)+3600})).toString('base64url');
  const session={access_token:`eyJhbGciOiJIUzI1NiJ9.${payload}.synthetic`,refresh_token:'synthetic-refresh',token_type:'bearer',expires_at:Math.floor(Date.now()/1000)+3600,expires_in:3600,user:{id:uid}};
  return {getAll:()=>[{name,value:`base64-${Buffer.from(JSON.stringify(session)).toString('base64url')}`}]};
 }
-async function route(input,cookieName=REVIEW_COOKIE,origin=env.BILLING_REVIEW_ORIGIN) {
+async function route(input,cookieName=APP_COOKIE,origin=env.BILLING_REVIEW_ORIGIN) {
  const response=await workAsyncStorage.run({route:'/api/billing/review/checkout'},()=>workUnitAsyncStorage.run({type:'request',phase:'render',cookies:cookies(cookieName)},()=>POST(new Request(`${env.BILLING_REVIEW_ORIGIN}/api/billing/review/checkout`,{method:'POST',headers:{'Content-Type':'application/json',origin},body:JSON.stringify(input)}))));
  assert.deepEqual(unexpected,[]); return {status:response.status,body:await response.json()};
 }
@@ -127,44 +124,36 @@ async function order(scope='advertiser',target=ad) {
 async function snapshot() { return JSON.stringify((await db.query('select row_to_json(o) as row from billing_test_orders o order by id')).rows); }
 async function check(name,fn) {
  await db.exec('truncate billing_test_charges,billing_test_orders');calls=[];unexpected=[];outage=false;providerCalls=0;uncertain=false;authUser=uid;
+ await appDb.query("update profiles set email='admin@example.invalid'");await appDb.query("update workspace_members set role='admin'");await appDb.query('update advertisers set created_by=$1',[uid]);
  await fn();assert.deepEqual(unexpected,[]);checks++;console.log(`PASS ${name}`);
 }
 try {
  await db.exec("create role anon;create role authenticated;create role service_role bypassrls;grant usage on schema public to service_role;create schema auth;create table auth.users(id uuid primary key);set etrylue.billing_test_install='isolated-tests-only';");
  await db.exec(await readFile(new URL('../sql/billing/test-only.sql',import.meta.url),'utf8'));
- await db.exec("set etrylue.billing_test_project='kbqyszbuxojofugqfjbh';");
- await db.exec(await readFile(new URL('../sql/billing/test-target-fixtures.sql',import.meta.url),'utf8'));
- await db.query('insert into auth.users values($1)',[uid]);
- const rows=(await db.query('select a.id as ad,a.workspace_id as wid,w.tenant_id as tid from advertisers a join workspaces w on w.id=a.workspace_id order by a.name')).rows;
- ({ad,wid,tid}=rows[0]);otherAd=rows[1].ad;
- await db.query("insert into workspace_members values($1,$2,'admin')",[uid,wid]);
- await db.query("insert into tenant_members values($1,$2,'owner')",[uid,tid]);
- columns={};for(const r of (await db.query("select table_name,column_name from information_schema.columns where table_schema='public'")).rows)(columns[r.table_name]??=new Set()).add(r.column_name);
+ await appDb.exec("create role service_role bypassrls;grant usage on schema public to service_role;create table profiles(id uuid primary key,email text);create table tenants(id uuid primary key,name text,status text);create table workspaces(id uuid primary key,name text,tenant_id uuid);create table advertisers(id uuid primary key,name text,workspace_id uuid,created_by uuid);create table workspace_members(user_id uuid,workspace_id uuid,role text);create table tenant_members(user_id uuid,tenant_id uuid,role text);grant select on all tables in schema public to service_role;");
+ ad=randomUUID();wid=randomUUID();tid=randomUUID();otherAd=randomUUID();const otherWid=randomUUID();
+ await appDb.query("insert into profiles values($1,'admin@example.invalid')",[uid]);
+ await appDb.query("insert into tenants values($1,'Synthetic company','active')",[tid]);
+ await appDb.query("insert into workspaces values($1,'A',$3),($2,'B',$3)",[wid,otherWid,tid]);
+ await appDb.query("insert into advertisers values($1,'A',$3,$5),($2,'B',$4,$5)",[ad,otherAd,wid,otherWid,uid]);
+ await appDb.query("insert into workspace_members values($1,$2,'admin')",[uid,wid]);
+ await appDb.query("insert into tenant_members values($1,$2,'owner')",[uid,tid]);
+ columns={};for(const database of [db,appDb])for(const r of (await database.query("select table_name,column_name from information_schema.columns where table_schema='public'")).rows)(columns[r.table_name]??=new Set()).add(r.column_name);
  global.fetch=storage;
  await check('review configuration never falls back to production app database',async()=>{
   assert.equal(reviewConfig().dbUrl,env.BILLING_REVIEW_SUPABASE_URL);
-  for(const patch of [{BILLING_REVIEW_ENABLED:'false'},{BILLING_REVIEW_SUPABASE_URL:env.NEXT_PUBLIC_SUPABASE_URL},{BILLING_REVIEW_SERVICE_ROLE_KEY:''},{BILLING_REVIEW_ANON_KEY:''},{BILLING_REVIEW_ORIGIN:'https://evil.example'},{BILLING_REVIEW_ORIGIN:'https://app.etrylue.com'},{BILLING_REVIEW_USER_IDS:''}])assert.throws(()=>reviewConfig({...env,...patch}));
+  for(const patch of [{BILLING_REVIEW_ENABLED:'false'},{BILLING_REVIEW_SUPABASE_URL:env.NEXT_PUBLIC_SUPABASE_URL},{BILLING_REVIEW_SERVICE_ROLE_KEY:''},{BILLING_REVIEW_ORIGIN:'https://evil.example'},{BILLING_REVIEW_ORIGIN:'https://www.etrylue.com'},{BILLING_REVIEW_USER_IDS:''}])assert.throws(()=>reviewConfig({...env,...patch}));
   assert.throws(()=>providerKeys('monthly',env));assert.throws(()=>providerKeys('once',{...env,BILLING_REVIEW_TOSS_SECRET_KEY:'live_sk_no'}));assert.throws(()=>providerKeys('once',{...env,BILLING_REVIEW_TOSS_CLIENT_KEY:'live_ck_no'}));assert.equal(calls.length,0);
  });
- await check('ordinary app auth cookies cannot log into review checkout',async()=>{
-  const r=await route({id:randomUUID(),scope:'advertiser',mode:'once',targetId:ad,consent:true},'sb-production-auth-token');assert.equal(r.status,401);assert.equal(calls.length,0);
+ await check('retired isolated-review cookies cannot authorize real-app checkout',async()=>{
+  const r=await route({id:randomUUID(),scope:'advertiser',mode:'once',targetId:ad,consent:true},'etrylue-review-auth');assert.equal(r.status,401);assert.equal(calls.length,0);
  });
  await check('review auth, allowlist, CSRF and server quote enforced',async()=>{
   const input={id:randomUUID(),scope:'advertiser',mode:'once',targetId:ad,consent:true};
   assert.equal((await route({...input,amount:1})).status,400);assert.equal((await route({...input,mode:'monthly'})).status,400);
-  assert.equal((await route(input,REVIEW_COOKIE,'https://evil.example')).status,403);
+  assert.equal((await route(input,APP_COOKIE,'https://evil.example')).status,403);
   authUser=outsider;assert.equal((await route(input)).status,403);authUser=uid;
   const r=await route(input);assert.equal(r.status,200);assert.equal(r.body.amount,39000);assert.equal(r.body.mode,'once');
- });
- await check('review password login sets only its own secure HttpOnly cookies',async()=>{
-  const req=()=>new NextRequest(`${env.BILLING_REVIEW_ORIGIN}/api/billing/review/session`,{method:'POST',headers:{'Content-Type':'application/json',origin:env.BILLING_REVIEW_ORIGIN},body:JSON.stringify({email:'synthetic@example.invalid',password:'synthetic-password'})});
-  const r=await sessionRoute(req());assert.equal(r.status,200);const cookie=r.headers.get('set-cookie');
-  assert.ok(cookie.startsWith(REVIEW_COOKIE));assert.match(cookie,/HttpOnly/i);assert.match(cookie,/Secure/i);assert.match(cookie,/SameSite=lax/i);assert.ok(!cookie.includes('sb-production'));
-  authUser=outsider;const denied=await sessionRoute(req());assert.equal(denied.status,401);assert.equal(denied.headers.get('set-cookie'),null);
- });
- await check('review logout never clears ordinary app session cookie',async()=>{
-  const c=cookies().getAll()[0];const req=new NextRequest(`${env.BILLING_REVIEW_ORIGIN}/api/billing/review/session`,{method:'POST',headers:{'Content-Type':'application/json',origin:env.BILLING_REVIEW_ORIGIN,cookie:`${c.name}=${c.value}; sb-production-auth-token=protected`},body:JSON.stringify({action:'logout'})});
-  const r=await sessionRoute(req);assert.equal(r.status,200);assert.ok(r.headers.get('set-cookie').startsWith(REVIEW_COOKIE));assert.ok(!r.headers.get('set-cookie').includes('sb-production'));
  });
  await check('other workspace target rejected without order or provider call',async()=>{
   const before=await snapshot();await assert.rejects(checkout(uid,randomUUID(),'advertiser','once',otherAd));assert.equal(await snapshot(),before);assert.equal(providerCalls,0);
@@ -175,6 +164,35 @@ try {
    const duplicate=await checkout(uid,o.orderId,scope,'once',target);assert.equal(duplicate.orderId,o.orderId);
    assert.equal((await db.query('select count(*)::int n from billing_test_orders')).rows[0].n,1);
   }
+ });
+ await check('real-app read client rejects all writes, RPCs and report-table access before HTTP',async()=>{
+  const before=calls.length;
+  for(const query of [appReadDb().from('advertisers').insert({name:'forbidden'}),appReadDb().from('advertisers').delete().eq('id',ad),appReadDb().rpc('billing_test_create',{p:{}}),appReadDb().from('reports').select('*')]) {
+    const result=await query;assert.ok(result.error);
+  }
+  assert.equal(calls.length,before);
+ });
+ await check('staff sees own advertisers only and cannot purchase full workspace',async()=>{
+  await appDb.query("update workspace_members set role='staff'");
+  let options=await appTargets(uid);assert.equal(options.advertiser.length,1);assert.equal(options.workspace.length,0);
+  const {o}=await order();assert.equal(o.amount,39000);
+  await assert.rejects(checkout(uid,randomUUID(),'workspace','once',wid));
+  await appDb.query('update advertisers set created_by=$1',[outsider]);options=await appTargets(uid);assert.equal(options.advertiser.length,0);
+ });
+ await check('client role and fake master role cannot acquire advertiser/workspace permission',async()=>{
+  for(const role of ['client','master']) {await appDb.query('update workspace_members set role=$1',[role]);const options=await appTargets(uid);assert.equal(options.advertiser.length,0);assert.equal(options.workspace.length,0);}
+ });
+ await check('true master retains existing cross-workspace authority only with both conditions',async()=>{
+  await appDb.query("update profiles set email='gyurinpapakimdh@gmail.com'");
+  assert.equal((await appTargets(uid)).workspace.length,1);
+  await appDb.query("update workspace_members set role='master'");
+  const options=await appTargets(uid);assert.equal(options.workspace.length,2);assert.equal(options.advertiser.length,2);
+ });
+ await check('payment approval changes only separate payment DB, never app hierarchy',async()=>{
+  const state=async()=>JSON.stringify(await Promise.all(['profiles','tenants','workspaces','advertisers','workspace_members','tenant_members'].map(t=>appDb.query(`select row_to_json(r) as row from ${t} r`))));
+  const before=await state();const {o,p}=await order();await callback(uid,p);assert.equal((await loadOrder(o.orderId,uid)).status,'active');assert.equal(await state(),before);
+  assert.ok(calls.filter(c=>c.origin===env.NEXT_PUBLIC_SUPABASE_URL).every(c=>['GET','HEAD'].includes(c.method)));
+  assert.ok(!(await appDb.query("select to_regclass('billing_test_orders') as name")).rows[0].name);
  });
  await check('tampered callback amount, state or order ID never reaches provider',async()=>{
   const {o,p}=await order();for(const [key,value] of [['amount','1'],['state','bad'],['orderId',randomUUID()]]) {const bad=new URLSearchParams(p);bad.set(key,value);await assert.rejects(callback(uid,bad));}
@@ -203,4 +221,4 @@ try {
   assert.equal(r.status,303);const u=new URL(r.headers.get('location'));assert.equal(u.pathname,'/billing/review/result');assert.deepEqual([...u.searchParams.keys()].sort(),['order','result']);assert.match(r.headers.get('cache-control'),/no-store/);assert.equal(r.headers.get('referrer-policy'),'no-referrer');
  });
  console.log(`PUBLIC_REVIEW_SQL_CHECKS_PASSED=${checks}`);
-}finally{global.fetch=originalFetch;for(const[k,v]of Object.entries(previous)){if(v===undefined)delete process.env[k];else process.env[k]=v;}await db.close();}
+}finally{global.fetch=originalFetch;for(const[k,v]of Object.entries(previous)){if(v===undefined)delete process.env[k];else process.env[k]=v;}await db.close();await appDb.close();}

@@ -10,13 +10,12 @@ export function reviewConfig(env: Env = process.env) {
   // No fallback to app credentials. A production-hosted review still uses only the isolated DB.
   const dbUrl = env.BILLING_REVIEW_SUPABASE_URL || "";
   const dbKey = env.BILLING_REVIEW_SERVICE_ROLE_KEY || "";
-  const anonKey = env.BILLING_REVIEW_ANON_KEY || "";
-  if (dbUrl !== `https://${REVIEW_PROJECT}.supabase.co` || !dbKey || !anonKey)
+  if (dbUrl !== `https://${REVIEW_PROJECT}.supabase.co` || !dbKey)
     throw new BillingError("ISOLATED_REVIEW_DATABASE_REQUIRED", 503);
   let origin: URL;
   try { origin = new URL(env.BILLING_REVIEW_ORIGIN || ""); }
   catch { throw new BillingError("REVIEW_ORIGIN_REQUIRED", 503); }
-  const publicSite = origin.origin === "https://www.etrylue.com";
+  const publicSite = origin.origin === "https://app.etrylue.com";
   const preview = env.VERCEL_ENV !== "production" && origin.protocol === "https:" && origin.hostname.endsWith(".vercel.app");
   const local = env.VERCEL_ENV !== "production" && origin.origin === "http://localhost:3000";
   if (origin.origin !== env.BILLING_REVIEW_ORIGIN || origin.username || origin.password || !(publicSite || preview || local))
@@ -24,7 +23,7 @@ export function reviewConfig(env: Env = process.env) {
   const testers = (env.BILLING_REVIEW_USER_IDS || "").split(",").map(s => s.trim()).filter(Boolean);
   if (!testers.length || !testers.every(uuid)) throw new BillingError("REVIEW_USERS_REQUIRED", 503);
   if ((env.BILLING_REVIEW_STATE_SECRET || "").length < 32) throw new BillingError("REVIEW_STATE_SECRET_REQUIRED", 503);
-  return { dbUrl, dbKey, anonKey, origin: origin.origin, testers };
+  return { dbUrl, dbKey, origin: origin.origin, testers };
 }
 export function providerKeys(mode: "once" | "monthly", env: Env = process.env) {
   reviewConfig(env);

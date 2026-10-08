@@ -1,9 +1,12 @@
 import { Suspense } from "react";
+import { providerKeys } from "@/lib/billing/review/config";
 import { connection } from "next/server";
 import ReportBuilderClient from "./ReportBuilderClient";
 
 export default async function ReportBuilderPage() {
   await connection();
+  let showBillingTest = false;
+  try { providerKeys("once"); showBillingTest = true; } catch { /* Default builder UI stays unchanged. */ }
 
   return (
     <Suspense
@@ -33,7 +36,7 @@ export default async function ReportBuilderPage() {
         </main>
       }
     >
-      <ReportBuilderClient />
+      <ReportBuilderClient showBillingTest={showBillingTest} />
     </Suspense>
   );
 }

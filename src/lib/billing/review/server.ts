@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
-import { reviewAuth } from "./auth";
+import { sbAuth } from "@/lib/supabase/auth-server";
+import { appReadDb, assertAppDatabase, appTargets } from "./app-targets";
 import { BillingError, hash, providerKeys, reviewConfig, uuid } from "./config";
 import { periodEnd, plans, quote, type BillingMode, type Scope } from "../catalog";
 import { toss, verifiedPayment } from "./toss";
@@ -20,7 +21,8 @@ export async function actor(request?: Request) {
   const c = reviewConfig();
   if (request && request.method !== "GET" && request.headers.get("origin") !== c.origin)
     throw new BillingError("INVALID_ORIGIN", 403);
-  const { user, error } = await reviewAuth();
+  assertAppDatabase();
+  const { user, error } = await sbAuth();
   if (error || !user) throw new BillingError("LOGIN_REQUIRED", 401);
   if (!c.testers.includes(user.id)) throw new BillingError("TEST_ACCESS_REQUIRED", 403);
   return user.id;
@@ -45,39 +47,25 @@ async function rpc(name: string, args: Record<string, unknown>) {
   return data;
 }
 
-// Provisional TEST permissions: workspace admin/director or company owner. No role mutation.
-export async function targets(userId: string) {
-  const client = db();
-  const [members, tenants] = await Promise.all([
-    client.from("workspace_members").select("workspace_id").eq("user_id", userId).in("role", ["admin", "director"]),
-    client.from("tenant_members").select("tenant_id").eq("user_id", userId).eq("role", "owner"),
-  ]);
-  if (members.error || tenants.error) throw new BillingError("TARGET_LOOKUP_FAILED", 503);
-  const ids = (members.data || []).map(m => m.workspace_id as string);
-  const tids = (tenants.data || []).map(m => m.tenant_id as string);
-  const [workspaces, companies] = await Promise.all([
-    ids.length ? client.from("workspaces").select("id,name,tenant_id").in("id", ids) : { data: [], error: null },
-    tids.length ? client.from("tenants").select("id,name").in("id", tids).eq("status", "active") : { data: [], error: null },
-  ]);
-  if (workspaces.error || companies.error) throw new BillingError("TARGET_LOOKUP_FAILED", 503);
-  const advertisers = ids.length ? await client.from("advertisers").select("id,name,workspace_id").in("workspace_id", ids) : { data: [], error: null };
-  if (advertisers.error) throw new BillingError("TARGET_LOOKUP_FAILED", 503);
-  return { advertiser: advertisers.data || [], workspace: workspaces.data || [], company: companies.data || [] };
-}
+// Existing app hierarchy is read-only; payment storage remains isolated.
+export const targets = appTargets;
 async function targetContext(userId: string, scope: Scope, targetId: string) {
   const options = await targets(userId);
   if (!options[scope].some(t => t.id === targetId)) throw new BillingError("TARGET_NOT_ALLOWED", 403);
   const ad = scope === "advertiser" ? options.advertiser.find(t => t.id === targetId) : null;
-  const workspace = scope === "company" ? null : options.workspace.find(t => t.id === (ad?.workspace_id || targetId));
+  const workspaceId = scope === "company" ? null : (ad?.workspace_id || targetId);
+  const context = workspaceId ? await appReadDb().from("workspaces").select("id,tenant_id").eq("id", workspaceId).maybeSingle() : { data: null, error: null };
+  if (context.error || (workspaceId && !context.data)) throw new BillingError("TARGET_LOOKUP_FAILED", 503);
+  const workspace = context.data;
   const tenantId = scope === "company" ? targetId : workspace?.tenant_id || null;
   let workspaceIds: string[] = workspace ? [workspace.id] : [];
   if (scope === "company") {
-    const { data, error } = await db().from("workspaces").select("id").eq("tenant_id", targetId);
+    const { data, error } = await appReadDb().from("workspaces").select("id").eq("tenant_id", targetId);
     if (error) throw new BillingError("TARGET_LOOKUP_FAILED", 503);
     workspaceIds = (data || []).map(w => w.id);
   }
   if (scope !== "advertiser" && workspaceIds.length) {
-    const { count, error } = await db().from("advertisers").select("id", { count: "exact", head: true }).in("workspace_id", workspaceIds);
+    const { count, error } = await appReadDb().from("advertisers").select("id", { count: "exact", head: true }).in("workspace_id", workspaceIds);
     if (error || count === null) throw new BillingError("TARGET_LOOKUP_FAILED", 503);
     if (count > plans[scope].limit) throw new BillingError("PLAN_CAPACITY_EXCEEDED", 409);
   }

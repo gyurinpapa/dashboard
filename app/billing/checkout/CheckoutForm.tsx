@@ -29,7 +29,7 @@ export default function CheckoutForm({ scope, mode }: { scope: Scope; mode: Bill
       if (response.status === 401) { setLoginRequired(true); return; }
       if (!response.ok) throw new Error();
       const data = await response.json(); setOptions(data[scope] || []);
-    }).catch(() => { if (!abort.signal.aborted) setMessage("결제 가능한 이용 대상을 확인하지 못했습니다. 테스트 계정과 설정을 확인해주세요."); })
+    }).catch(() => { if (!abort.signal.aborted) setMessage("결제 가능한 이용 대상을 확인하지 못했습니다. 현재 계정의 이용 권한을 확인해주세요."); })
       .finally(() => { if (!abort.signal.aborted) setLoaded(true); });
     return () => abort.abort();
   }, [scope]);
@@ -54,29 +54,18 @@ export default function CheckoutForm({ scope, mode }: { scope: Scope; mode: Bill
       setMessage("결제가 완료되지 않았거나 결과 확인이 필요합니다. 이미 인증했다면 결제 결과를 먼저 확인해주세요.");
     } finally { submitting.current = false; setBusy(false); }
   }
-  async function logout() {
-    if (submitting.current) return;
-    submitting.current = true; setBusy(true); setMessage("");
-    try {
-      const response = await fetch("/api/billing/review/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "logout" }) });
-      if (!response.ok) throw new Error();
-      window.location.reload();
-    } catch { setMessage("로그아웃을 확인하지 못했습니다. 잠시 후 다시 시도해주세요."); }
-    finally { submitting.current = false; setBusy(false); }
-  }
   const next = `/billing/checkout?scope=${scope}&mode=${mode}`;
   return <form onSubmit={submit}>
-    {loginRequired ? <p className={styles.notice}><a href={`/billing/review/login?next=${encodeURIComponent(next)}`}>심사용 계정으로 로그인</a>한 뒤 이용 대상을 선택해주세요.</p> : null}
+    {loginRequired ? <p className={styles.notice}><a href={`/login?next=${encodeURIComponent(next)}`}>기존 계정으로 로그인</a>한 뒤 이용 대상을 선택해주세요.</p> : null}
     <label className={styles.label} htmlFor="billing-target">결제할 이용 대상</label>
     <select className={styles.select} id="billing-target" value={target} onChange={event => { setTarget(event.target.value); requestId.current = ""; }} disabled={!loaded || busy} required>
       <option value="">{loaded ? "대상을 선택해주세요" : "이용 대상 확인 중…"}</option>
       {options.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
     </select>
-    {loaded && !loginRequired && !options.length ? <p className={styles.details}>현재 테스트 계정에 결제 가능한 대상이 없습니다.</p> : null}
+    {loaded && !loginRequired && !options.length ? <p className={styles.details}>현재 계정에서 선택할 수 있는 이용 대상이 없습니다.</p> : null}
     <label className={styles.consent}><input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} required disabled={busy} />
       <span>표시된 이용 범위와 테스트 금액을 확인했습니다. {mode === "monthly" ? "카드 등록 후 첫 테스트 결제가 진행되며, 월 갱신 흐름과 다음 결제 해지를 테스트하는 데 동의합니다." : "자동 갱신되지 않는 1개월 이용권 테스트에 동의합니다."} 실제 요금은 청구되지 않습니다.</span></label>
     <button className={styles.button} disabled={busy || !target || !consent}>{busy ? "결제창 준비 중…" : mode === "monthly" ? "카드 등록하고 테스트 결제" : "테스트 결제하기"}</button>
-    {loaded && !loginRequired ? <div className={styles.actions}><button type="button" className={styles.button} disabled={busy} onClick={logout}>심사용 계정 로그아웃</button></div> : null}
     <p className={styles.error} role="status">{message}</p>
     {message && requestId.current ? <a href={`/billing/review/result?order=${requestId.current}`}>결제 결과 확인</a> : null}
   </form>;
