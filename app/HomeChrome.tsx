@@ -64,10 +64,10 @@ export function HomeFooter({ home = false }: { home?: boolean }) {
           <div className={styles.footerBottom}><span>© 2026 Etrylue Performance. All rights reserved.</span><span>Contribution · Value · Try · Reflection · Gratitude</span></div>
         </div>
       </footer>
-      <section className={styles.ctaSection} aria-label="리포트 시작 및 도입 문의">
+      <section className={styles.ctaSection} aria-label="요금제 안내 및 도입 문의">
         <div className={[styles.container, styles.ctaCard].join(" ")}>
           <div><span className={styles.eyebrow}>READY WHEN YOU ARE</span><h2>다음 리포트는, 더 명확한 기준으로</h2><p>광고주와 리포트 목적을 선택하고 시작하세요.</p></div>
-          <div className={styles.ctaActions}><a className={buttonAccent} href="https://app.etrylue.com/report-builder">리포트 열기</a><a className={buttonGhost} href="mailto:etrylue3479@gmail.com">도입 문의</a></div>
+          <div className={styles.ctaActions}><a className={buttonAccent} href="/pricing">요금제 바로가기</a><a className={buttonGhost} href="mailto:etrylue3479@gmail.com">도입 문의</a></div>
         </div>
       </section>
       <HomeBackToTop />
