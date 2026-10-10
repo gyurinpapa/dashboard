@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
+import { productionReviewRequested } from "@/lib/billing/review/app-rollout";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -1000,14 +1001,16 @@ export async function POST(req: Request) {
     // ✅ 3-1) advertiser_id가 들어오면 같은 workspace 소속 광고주인지 최종 재검증
     // - staff는 report-builder 목록 계약과 동일하게 본인이 생성한 광고주만 허용
     let canonicalAdvertiserPublicSlug = "";
+    let verifiedBillingManaged: boolean | undefined;
 
     if (advertiser_id) {
       const { data: adv, error: advErr } =
         await supabaseAdmin
           .from("advertisers")
-          .select("id, workspace_id, created_by, public_slug")
+          .select<string>(productionReviewRequested() ? "id, workspace_id, created_by, public_slug, billing_review_managed" : "id, workspace_id, created_by, public_slug")
           .eq("id", advertiser_id)
           .eq("workspace_id", resolved_workspace_id)
+          .returns<{id:string;workspace_id:string;created_by:string|null;public_slug:string|null;billing_review_managed?:boolean}[]>()
           .maybeSingle();
 
       if (advErr) {
@@ -1034,6 +1037,7 @@ export async function POST(req: Request) {
 
       canonicalAdvertiserPublicSlug =
         asString(adv.public_slug);
+      if (productionReviewRequested()) verifiedBillingManaged = adv.billing_review_managed === true;
 
       if (
         wantsCanonicalIdentity &&
@@ -1051,7 +1055,7 @@ export async function POST(req: Request) {
     // Test-purchase gate runs after existing workspace/advertiser authorization.
     const { reportCreationAccess } = await import("@/lib/billing/review/creation-gate");
     try {
-      const access = await reportCreationAccess(advertiser_id, resolved_workspace_id);
+      const access = await reportCreationAccess(advertiser_id, resolved_workspace_id, verifiedBillingManaged);
       if (!access.eligible) return jsonError(403, "ENTITLEMENT_REQUIRED");
     } catch {
       return jsonError(503, "ENTITLEMENT_LOOKUP_FAILED");

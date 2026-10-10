@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { resolveTrueMasterStatus } from "@/lib/media-sync/media-connection-access-policy";
 import { BillingError } from "./config";
+import { productionReviewRequested } from './app-rollout';
 
 export const APP_PROJECT = "rulcvpgvmmckacshkmfy";
 const ONBOARDING_TEST_PROJECT = "lpwmxtnzpgyrhphwufsd";
@@ -60,11 +61,11 @@ export async function appTargets(userId: string) {
   if (workspaces.error || companies.error) throw new BillingError("TARGET_LOOKUP_FAILED", 503);
   const workspaceRows = workspaces.data || [];
   const allowedIds = workspaceRows.map(w => w.id as string);
-  const ads = allowedIds.length ? await client.from("advertisers").select("id,name,workspace_id,created_by").in("workspace_id", allowedIds)
+  const ads = allowedIds.length ? await client.from("advertisers").select<string>(productionReviewRequested() ? "id,name,workspace_id,created_by,billing_review_managed" : "id,name,workspace_id,created_by").in("workspace_id", allowedIds).returns<{id:string;name:string;workspace_id:string;created_by:string|null;billing_review_managed?:boolean}[]>()
     : { data: [], error: null };
   if (ads.error) throw new BillingError("TARGET_LOOKUP_FAILED", 503);
   const advertiser = (ads.data || []).filter(a => master || adminIds.includes(a.workspace_id) ||
     (staffIds.includes(a.workspace_id) && a.created_by === userId))
-    .map(a => ({ id: a.id, name: a.name, workspace_id: a.workspace_id }));
+    .map(a => ({ id: a.id, name: a.name, workspace_id: a.workspace_id, billing_review_managed: a.billing_review_managed === true }));
   return { advertiser, newAdvertiserWorkspaces: workspaceRows, workspace: workspaceRows.filter(w => master || adminIds.includes(w.id)), company: companies.data || [] };
 }

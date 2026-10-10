@@ -2,11 +2,12 @@ import { createHmac } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { BillingError } from './config';
 import { appTargets, assertAppDatabase } from './app-targets';
-// Provisioning is deliberately restricted to the isolated onboarding database.
+import { reviewAppContext } from './app-rollout';
+// Production requires a separate, exact test-payment rollout opt-in.
 export function assertNewAdvertiserTest() {
  const url=assertAppDatabase();
- if(process.env.VERCEL_ENV!=='preview'||url!=='https://lpwmxtnzpgyrhphwufsd.supabase.co'||process.env.CUSTOMER_ONBOARDING_ENABLED!=='true')
-  throw new BillingError('NEW_ADVERTISER_TEST_ONLY',503);
+ try { reviewAppContext(); } catch { throw new BillingError('NEW_ADVERTISER_TEST_ONLY',503); }
+ if(process.env.CUSTOMER_ONBOARDING_ENABLED!=='true')throw new BillingError('NEW_ADVERTISER_TEST_ONLY',503);
  return url;
 }
 export function draftTarget(userId:string,orderId:string,secret:string) {
@@ -30,9 +31,10 @@ export async function createVerifiedTestAdvertiser(draft:{target_id:string;user_
  const context=await newAdvertiserContext(draft.user_id,draft.workspace_id);
  const client=createClient(assertNewAdvertiserTest(),process.env.SUPABASE_SERVICE_ROLE_KEY!,{auth:{persistSession:false,autoRefreshToken:false}});
  // Server-derived stable ID: retries cannot create a second advertiser.
- const record={id:draft.target_id,workspace_id:context.workspace_id,tenant_id:context.tenant_id,created_by:draft.user_id,name:draft.name};
+ const production = reviewAppContext().production;
+ const record={id:draft.target_id,workspace_id:context.workspace_id,tenant_id:context.tenant_id,created_by:draft.user_id,name:draft.name,...(production?{billing_review_managed:true}:{})};
  const result=await client.from('advertisers').insert(record);
  if(result.error&&result.error.code!=='23505')throw new BillingError('ADVERTISER_PREPARATION_FAILED',503);
- const check=await client.from('advertisers').select('id,workspace_id,created_by,name').eq('id',draft.target_id).single();
- if(check.error||check.data.workspace_id!==draft.workspace_id||check.data.created_by!==draft.user_id||check.data.name!==draft.name)throw new BillingError('ADVERTISER_PREPARATION_FAILED',409);
+ const check=await client.from('advertisers').select<string>(production?'id,workspace_id,created_by,name,billing_review_managed':'id,workspace_id,created_by,name').eq('id',draft.target_id).returns<{workspace_id:string;created_by:string;name:string;billing_review_managed?:boolean}[]>().single();
+ if(check.error||check.data.workspace_id!==draft.workspace_id||check.data.created_by!==draft.user_id||check.data.name!==draft.name||(production&&check.data.billing_review_managed!==true))throw new BillingError('ADVERTISER_PREPARATION_FAILED',409);
 }

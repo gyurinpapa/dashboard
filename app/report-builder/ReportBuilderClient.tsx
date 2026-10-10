@@ -57,6 +57,7 @@ type ReportRow = {
 };
 
 type AdvertiserRow = {
+  billing_review_managed?: boolean;
   id: string;
   name: string;
   workspace_id?: string | null;
@@ -486,7 +487,7 @@ function pickCurrentMembership(
   return rows[0] ?? null;
 }
 
-export default function ReportBuilderPage({ showBillingTest = false, enforceTestCreation = false }: { showBillingTest?: boolean; enforceTestCreation?: boolean }) {
+export default function ReportBuilderPage({ showBillingTest = false, enforceTestCreation = false, managedPurchasesOnly = false }: { showBillingTest?: boolean; enforceTestCreation?: boolean; managedPurchasesOnly?: boolean }) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -558,7 +559,12 @@ export default function ReportBuilderPage({ showBillingTest = false, enforceTest
   const [reportFilter, setReportFilter] = useState<ReportFilterKey>("all");
 
   const [selectedAdvertiserId, setSelectedAdvertiserId] = useState<string>("");
-  const creationAccess = useCreationAccess(enforceTestCreation, workspaceId ?? "", selectedAdvertiserId);
+  const selectedAdvertiser = useMemo(() => {
+    if (!selectedAdvertiserId) return null;
+    return advertisers.find((a) => a.id === selectedAdvertiserId) ?? null;
+  }, [advertisers, selectedAdvertiserId]);
+  const selectedBillingMarker = selectedAdvertiser?.billing_review_managed;
+  const creationAccess = useCreationAccess(enforceTestCreation && (!managedPurchasesOnly || selectedBillingMarker !== false), workspaceId ?? "", selectedAdvertiserId);
   const [newAdvertiserName, setNewAdvertiserName] = useState("");
   const [creatingAdvertiser, setCreatingAdvertiser] = useState(false);
   const [publicSlugInput, setPublicSlugInput] = useState("");
@@ -1138,6 +1144,7 @@ export default function ReportBuilderPage({ showBillingTest = false, enforceTest
         workspace_id: x.workspace_id ? String(x.workspace_id) : null,
         workspace_name: x.workspace_name ? String(x.workspace_name) : null,
         public_slug: x.public_slug ? String(x.public_slug) : null,
+        billing_review_managed: typeof x.billing_review_managed === "boolean" ? x.billing_review_managed : undefined,
         created_by: x.created_by ? String(x.created_by) : null,
       })) || [];
 
@@ -2270,6 +2277,7 @@ export default function ReportBuilderPage({ showBillingTest = false, enforceTest
       const data = (json as any)?.advertiser;
 
       const created: AdvertiserRow = {
+        billing_review_managed: managedPurchasesOnly ? false : undefined,
         id: String((data as any)?.id),
         name: String((data as any)?.name ?? name),
         workspace_id: (data as any)?.workspace_id
@@ -3141,11 +3149,6 @@ export default function ReportBuilderPage({ showBillingTest = false, enforceTest
     }
     return m;
   }, [advertisers]);
-
-  const selectedAdvertiser = useMemo(() => {
-    if (!selectedAdvertiserId) return null;
-    return advertisers.find((a) => a.id === selectedAdvertiserId) ?? null;
-  }, [advertisers, selectedAdvertiserId]);
 
   const selectedAdvertiserName = useMemo(() => {
     return selectedAdvertiser ? formatAdvertiserLabel(selectedAdvertiser) : "";

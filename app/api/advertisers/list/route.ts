@@ -1,4 +1,5 @@
 // app/api/advertisers/list/route.ts
+import { productionReviewRequested } from "@/lib/billing/review/app-rollout";
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
@@ -159,6 +160,7 @@ function normalizeAdvertiserRow(row: any, workspaceName?: string | null) {
     name: asString(row?.name),
     workspace_id: asString(row?.workspace_id),
     workspace_name: workspaceName ?? null,
+    ...(productionReviewRequested() ? { billing_review_managed: row?.billing_review_managed === true } : {}),
     public_slug: row?.public_slug ? asString(row.public_slug) : null,
     created_by: row?.created_by ? asString(row.created_by) : null,
     created_at: row?.created_at ? String(row.created_at) : null,
@@ -204,7 +206,7 @@ export async function GET(req: Request) {
 
       const { data, error } = await supabaseAdmin
         .from("advertisers")
-        .select("id, name, workspace_id, created_by, created_at, public_slug")
+        .select<string>("id, name, workspace_id, created_by, created_at, public_slug" + (productionReviewRequested() ? ", billing_review_managed" : ""))
         .order("name", { ascending: true });
 
       if (error) {
@@ -348,7 +350,7 @@ export async function GET(req: Request) {
 
     let query = supabaseAdmin
       .from("advertisers")
-      .select("id, name, workspace_id, created_by, created_at, public_slug")
+      .select<string>("id, name, workspace_id, created_by, created_at, public_slug" + (productionReviewRequested() ? ", billing_review_managed" : ""))
       .eq("workspace_id", workspace_id)
       .order("name", { ascending: true });
 

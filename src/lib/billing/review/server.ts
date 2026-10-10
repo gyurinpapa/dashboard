@@ -1,4 +1,5 @@
 import { creationGateEnabled } from "./creation-gate";
+import { isolatedReviewEnabled, productionReviewRequested, reviewAppContext } from './app-rollout';
 import { advertiserName, draftTarget, newAdvertiserContext, createVerifiedTestAdvertiser } from './new-advertiser';
 import { createHmac } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
@@ -26,9 +27,8 @@ export async function actor(request?: Request) {
   assertAppDatabase();
   const { user, error } = await sbAuth();
   if (error || !user) throw new BillingError("LOGIN_REQUIRED", 401);
-  const onboardingTest = process.env.VERCEL_ENV === "preview" &&
-    process.env.NEXT_PUBLIC_SUPABASE_URL === "https://lpwmxtnzpgyrhphwufsd.supabase.co" &&
-    process.env.CUSTOMER_ONBOARDING_ENABLED === "true" && !!user.email_confirmed_at &&
+  if (productionReviewRequested()) reviewAppContext();
+  const onboardingTest = (isolatedReviewEnabled() || productionReviewRequested()) && !!user.email_confirmed_at &&
     user.app_metadata?.etrylue_customer_version === "1";
   if (!c.testers.includes(user.id) && !onboardingTest) throw new BillingError("TEST_ACCESS_REQUIRED", 403);
   return user.id;
@@ -110,10 +110,13 @@ export async function checkout(userId: string, id: string, scope: Scope, mode: B
     if(scope!=="advertiser")throw new BillingError("INVALID_CHECKOUT");
     context=await newAdvertiserContext(userId,draft.workspaceId);
     targetId=draftTarget(userId,id,process.env.BILLING_REVIEW_STATE_SECRET||"");
-    const proposed={order_id:id,user_id:userId,target_id:targetId,...context,name:advertiserName(draft.name)};
+    const appContext=reviewAppContext();
+    const proposed={order_id:id,user_id:userId,target_id:targetId,...context,name:advertiserName(draft.name),...(appContext.production?{app_project:appContext.project}:{})};
     const inserted=await db().from("billing_test_purchase_drafts").insert(proposed);
     if(inserted.error&&inserted.error.code!=="23505")throw new BillingError("BILLING_STORAGE_UNAVAILABLE",503);
-    const saved=await db().from("billing_test_purchase_drafts").select("user_id,target_id,workspace_id,name").eq("order_id",id).single();
+    let savedQuery=db().from("billing_test_purchase_drafts").select("user_id,target_id,workspace_id,name").eq("order_id",id);
+    if(appContext.production)savedQuery=savedQuery.eq("app_project",appContext.project);
+    const saved=await savedQuery.single();
     if(saved.error||saved.data.user_id!==userId||saved.data.target_id!==targetId||saved.data.workspace_id!==draft.workspaceId||saved.data.name!==proposed.name)
       throw new BillingError("ORDER_DRAFT_CONFLICT",409);
   } else {context=await targetContext(userId,scope,targetId);}
@@ -175,7 +178,10 @@ export async function manage(userId: string, orderId: string, action: string) {
     await reconcile(order.id);
     const current=await loadOrder(order.id,userId);
     if(current.status!=="active")throw new BillingError("PAYMENT_NOT_VERIFIED",409);
-    const draft=await db().from("billing_test_purchase_drafts").select("target_id,user_id,workspace_id,name").eq("order_id",order.id).eq("user_id",userId).single();
+    const appContext=reviewAppContext();
+    let draftQuery=db().from("billing_test_purchase_drafts").select("target_id,user_id,workspace_id,name").eq("order_id",order.id).eq("user_id",userId);
+    if(appContext.production)draftQuery=draftQuery.eq("app_project",appContext.project);
+    const draft=await draftQuery.single();
     if(draft.error||draft.data.target_id!==order.target_id)throw new BillingError("ORDER_DRAFT_NOT_FOUND",404);
     await createVerifiedTestAdvertiser(draft.data);
   } else if (action === "reconcile") {

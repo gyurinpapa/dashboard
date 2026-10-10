@@ -1,4 +1,5 @@
 import { creationGateEnabled } from "@/lib/billing/review/creation-gate";
+import { productionReviewRequested } from "@/lib/billing/review/app-rollout";
 import { Suspense } from "react";
 import { connection } from "next/server";
 import ReportBuilderClient from "./ReportBuilderClient";
@@ -34,7 +35,7 @@ export default async function ReportBuilderPage() {
         </main>
       }
     >
-      <ReportBuilderClient enforceTestCreation={creationGateEnabled()} />
+      <ReportBuilderClient enforceTestCreation={creationGateEnabled()} managedPurchasesOnly={productionReviewRequested()} />
     </Suspense>
   );
 }
