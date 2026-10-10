@@ -224,6 +224,7 @@ export async function POST(req: Request) {
         email,
         password,
         email_confirm: true,
+        app_metadata: { etrylue_invite_version: "1", invited_workspace_id: workspaceId },
         user_metadata: {
           name: safeProfileName(email),
           invited_workspace_id: workspaceId,

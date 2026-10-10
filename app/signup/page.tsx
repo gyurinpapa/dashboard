@@ -1,7 +1,25 @@
 // app/signup/page.tsx
 import Link from "next/link";
+import { headers } from 'next/headers';
+import { redirect } from 'next/navigation';
+import PublicSiteShell from '../PublicSiteShell';
+import SignupForm from './SignupForm';
+import { onboardingOrigin } from '@/lib/customer-onboarding/contract';
+import styles from '../pricing/billing.module.css';
 
-export default function SignupPage() {
+export const dynamic = 'force-dynamic';
+export const metadata = { title: '회원가입 | Etrylue Performance', robots: {index:false,follow:false}, referrer:'no-referrer' as const };
+export default async function SignupPage() {
+  let origin: string;
+  try { origin=onboardingOrigin(); } catch { return <InviteOnlyPage />; }
+  if ((await headers()).get('host')!==new URL(origin).host) redirect(`${origin}/signup`);
+  return <PublicSiteShell><div className={styles.container}><section className={styles.panel}>
+    <h1>우리 회사 계정 만들기</h1><p className={styles.intro}>이메일 인증 후 회사 전용 워크스페이스를 준비합니다.</p>
+    <SignupForm /><p className={styles.details}>초대받은 구성원은 전달받은 초대 링크로 가입해주세요. <Link href="/login">기존 계정으로 로그인</Link></p>
+  </section></div></PublicSiteShell>;
+}
+
+function InviteOnlyPage() {
   return (
     <main
       style={{
