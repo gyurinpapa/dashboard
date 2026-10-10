@@ -8,6 +8,7 @@ import styles from '../pricing/billing.module.css';
 export default function LoginForm() {
   const query=useSearchParams(), next=safeNext(query.get('next'));
   const [email,setEmail]=useState(''),[password,setPassword]=useState('');
+  const [showPassword,setShowPassword]=useState(false);
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
   async function login(magic=false) {
     if(busy)return;
@@ -26,7 +27,8 @@ export default function LoginForm() {
     <p className={styles.intro}>{next.startsWith('/billing/checkout')?'선택한 요금제가 준비되어 있습니다. 로그인하면 주문을 이어갑니다.':next.startsWith('/invite/')?'초대받은 이메일로 로그인하면 초대 수락 화면으로 돌아갑니다.':'우리 회사의 이용권과 리포트를 한곳에서 관리하세요.'}</p>
     <form onSubmit={e=>{e.preventDefault();void login();}}>
       <label className={styles.label} htmlFor="email">이메일</label><input className={styles.select} id="email" type="email" value={email} onChange={e=>setEmail(e.target.value)} autoComplete="email" autoCapitalize="none" required />
-      <label className={styles.label} htmlFor="password">비밀번호</label><input className={styles.select} id="password" type="password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password" required />
+      <label className={styles.label} htmlFor="password">비밀번호</label><div style={{position:'relative'}}><input className={styles.select} style={{paddingRight:80}} id="password" type={showPassword?'text':'password'} value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password" autoCapitalize="none" spellCheck={false} required />
+      <button type="button" aria-controls="password" aria-label={showPassword?'비밀번호 숨기기':'비밀번호 보기'} aria-pressed={showPassword} onClick={()=>setShowPassword(value=>!value)} style={{position:'absolute',right:4,top:2,bottom:2,minWidth:64,background:'transparent',border:0,color:'var(--text)',font:'inherit',fontSize:13,cursor:'pointer'}}>{showPassword?'숨기기':'보기'}</button></div>
       {error&&<p className={styles.error} role="alert">{error}</p>}{message&&<p className={styles.notice} role="status">{message}</p>}
       <div className={styles.actions}><button className={styles.button} disabled={busy}>{busy?'처리 중…':'로그인하고 계속하기'}</button><button type="button" className={styles.button} disabled={busy} onClick={()=>void login(true)}>이메일로 로그인</button></div>
     </form>
