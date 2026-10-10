@@ -1,3 +1,4 @@
+import { creationGateEnabled } from "./creation-gate";
 import { advertiserName, draftTarget, newAdvertiserContext, createVerifiedTestAdvertiser } from './new-advertiser';
 import { createHmac } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
@@ -53,10 +54,30 @@ async function rpc(name: string, args: Record<string, unknown>) {
 }
 
 // Existing app hierarchy is read-only; payment storage remains isolated.
-export const targets = appTargets;
+export async function targets(userId: string) {
+  const options = await appTargets(userId);
+  const ids = [...new Set([...options.advertiser.map(a => a.id), ...options.newAdvertiserWorkspaces.map(w => w.id), ...options.newAdvertiserWorkspaces.map(w => w.tenant_id).filter(Boolean), ...options.company.map(c => c.id)])];
+  const coverage = creationGateEnabled() && ids.length ? await db().from("billing_test_orders")
+    .select("scope,target_id,workspace_id,tenant_id,paid_until").eq("status", "active")
+    .gt("paid_until", new Date().toISOString()).in("target_id", ids) : { data: [], error: null };
+  if(coverage.error)throw new BillingError("ENTITLEMENT_LOOKUP_FAILED",503);
+  function paidUntil(scope: Scope, id: string, workspaceId: string | null, tenantId: string | null) {
+    return (coverage.data || []).filter(o =>
+      (o.scope === scope && o.target_id === id && (scope === "company" ? o.tenant_id === tenantId : o.workspace_id === workspaceId)) ||
+      (scope === "advertiser" && o.scope === "workspace" && o.target_id === workspaceId && o.workspace_id === workspaceId) ||
+      (o.scope === "company" && !!tenantId && o.target_id === tenantId && o.tenant_id === tenantId)
+    ).reduce<string | null>((end,o) => !end || Date.parse(o.paid_until)>Date.parse(end) ? o.paid_until : end,null);
+  }
+  return { ...options,
+    advertiser: options.advertiser.map(a => ({ ...a, paidUntil: paidUntil("advertiser",a.id,a.workspace_id,options.newAdvertiserWorkspaces.find(w=>w.id===a.workspace_id)?.tenant_id || null) })),
+    workspace: options.workspace.map(w => ({ ...w, paidUntil: paidUntil("workspace",w.id,w.id,w.tenant_id) })),
+    company: options.company.map(c => ({ ...c, paidUntil: paidUntil("company",c.id,null,c.id) })),
+  };
+}
 async function targetContext(userId: string, scope: Scope, targetId: string) {
   const options = await targets(userId);
   if (!options[scope].some(t => t.id === targetId)) throw new BillingError("TARGET_NOT_ALLOWED", 403);
+  if (options[scope].find(t => t.id === targetId)?.paidUntil) throw new BillingError("ACTIVE_ENTITLEMENT_EXISTS", 409);
   const ad = scope === "advertiser" ? options.advertiser.find(t => t.id === targetId) : null;
   const workspaceId = scope === "company" ? null : (ad?.workspace_id || targetId);
   const context = workspaceId ? await appReadDb().from("workspaces").select("id,tenant_id").eq("id", workspaceId).maybeSingle() : { data: null, error: null };
