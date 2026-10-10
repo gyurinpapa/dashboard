@@ -1048,6 +1048,15 @@ export async function POST(req: Request) {
       }
     }
 
+    // Test-purchase gate runs after existing workspace/advertiser authorization.
+    const { reportCreationAccess } = await import("@/lib/billing/review/creation-gate");
+    try {
+      const access = await reportCreationAccess(advertiser_id, resolved_workspace_id);
+      if (!access.eligible) return jsonError(403, "ENTITLEMENT_REQUIRED");
+    } catch {
+      return jsonError(503, "ENTITLEMENT_LOOKUP_FAILED");
+    }
+
     const hasCanonicalAdvertiserSlug =
       isValidCanonicalPublicSlug(
         canonicalAdvertiserPublicSlug,

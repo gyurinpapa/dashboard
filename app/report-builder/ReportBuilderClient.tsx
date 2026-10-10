@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/src/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { useCreationAccess } from "./useCreationAccess";
 import MetaAdsConnectionCard from "./MetaAdsConnectionCard";
 import MediaConnectionCarousel from "./MediaConnectionCarousel";
 import { normalizeReportTheme, type ReportTheme } from "@/src/lib/report/theme";
@@ -485,7 +486,7 @@ function pickCurrentMembership(
   return rows[0] ?? null;
 }
 
-export default function ReportBuilderPage({ showBillingTest = false }: { showBillingTest?: boolean }) {
+export default function ReportBuilderPage({ showBillingTest = false, enforceTestCreation = false }: { showBillingTest?: boolean; enforceTestCreation?: boolean }) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -557,6 +558,7 @@ export default function ReportBuilderPage({ showBillingTest = false }: { showBil
   const [reportFilter, setReportFilter] = useState<ReportFilterKey>("all");
 
   const [selectedAdvertiserId, setSelectedAdvertiserId] = useState<string>("");
+  const creationAccess = useCreationAccess(enforceTestCreation, workspaceId ?? "", selectedAdvertiserId);
   const [newAdvertiserName, setNewAdvertiserName] = useState("");
   const [creatingAdvertiser, setCreatingAdvertiser] = useState(false);
   const [publicSlugInput, setPublicSlugInput] = useState("");
@@ -2465,6 +2467,7 @@ export default function ReportBuilderPage({ showBillingTest = false }: { showBil
   }
 
   async function createReport(type: ReportType) {
+    if (creationAccess.blocked) { setLocalMsg(creationAccess.message); return; }
     if (isAllWorkspaceMode) {
       setLocalMsg(
         "전체 workspace 보기에서는 리포트를 생성할 수 없습니다. 특정 workspace를 선택해 주세요."
@@ -2623,6 +2626,12 @@ export default function ReportBuilderPage({ showBillingTest = false }: { showBil
         String(
           (json as any)?.error ?? ""
         ).trim();
+
+      if (["ENTITLEMENT_REQUIRED", "ENTITLEMENT_LOOKUP_FAILED"].includes(createError)) {
+        creationAccess.refresh();
+        setLocalMsg("이용권 확인이 필요합니다. 새 리포트는 생성되지 않았습니다.");
+        return;
+      }
 
       if (
         selectedReportDataSourceKind === "api" &&
@@ -5652,7 +5661,15 @@ export default function ReportBuilderPage({ showBillingTest = false }: { showBil
           </div>
         ) : null}
 
+        {canCreateReport && showAuthenticatedUi && creationAccess.blocked ? (
+          <div className="infoMsg" role="status" style={{ marginTop: 28 }}>
+            <p>{creationAccess.message}</p>
+            {creationAccess.denied ? <Link prefetch={false} href="/pricing">이용권 구매하기</Link> : null}
+            {creationAccess.failed ? <button type="button" onClick={creationAccess.refresh}>이용권 다시 확인</button> : null}
+          </div>
+        ) : null}
         {canCreateReport && showAuthenticatedUi ? (
+          <fieldset disabled={creationAccess.blocked} inert={creationAccess.blocked} aria-label="새 리포트 설정" style={{ border: 0, padding: 0, margin: 0, minWidth: 0, opacity: creationAccess.blocked ? 0.5 : 1 }}>
           <section style={{ marginTop: 28 }}>
             <div
               style={{
@@ -6674,6 +6691,7 @@ export default function ReportBuilderPage({ showBillingTest = false }: { showBil
               ))}
             </div>
           </section>
+          </fieldset>
         ) : null}
 
         {showWorkspaceShell && !showAuthenticatedUi ? (
