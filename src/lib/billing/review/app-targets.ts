@@ -3,16 +3,25 @@ import { resolveTrueMasterStatus } from "@/lib/media-sync/media-connection-acces
 import { BillingError } from "./config";
 
 export const APP_PROJECT = "rulcvpgvmmckacshkmfy";
+const ONBOARDING_TEST_PROJECT = "lpwmxtnzpgyrhphwufsd";
+const ONBOARDING_PREVIEW = "https://dashboard-git-feat-customer-onboard-9ef6cd-gyurinpapas-projects.vercel.app";
 const readTables = new Set(["profiles", "workspace_members", "tenant_members", "workspaces", "tenants", "advertisers"]);
 export function assertAppDatabase() {
-  if (process.env.NEXT_PUBLIC_SUPABASE_URL !== `https://${APP_PROJECT}.supabase.co` ||
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const isolatedPreview = process.env.VERCEL_ENV === "preview" &&
+    process.env.CUSTOMER_ONBOARDING_ENABLED === "true" &&
+    process.env.CUSTOMER_ONBOARDING_ORIGIN === ONBOARDING_PREVIEW &&
+    process.env.BILLING_REVIEW_ORIGIN === ONBOARDING_PREVIEW &&
+    process.env.CUSTOMER_ONBOARDING_DATABASE_URL === url &&
+    url === `https://${ONBOARDING_TEST_PROJECT}.supabase.co`;
+  if ((url !== `https://${APP_PROJECT}.supabase.co` && !isolatedPreview) ||
       !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || !process.env.SUPABASE_SERVICE_ROLE_KEY)
     throw new BillingError("APP_DATABASE_REQUIRED", 503);
+  return url!;
 }
 /** Hard transport boundary: this client cannot write or call RPCs in the real app DB. */
 export function appReadDb() {
-  assertAppDatabase();
-  const origin = `https://${APP_PROJECT}.supabase.co`;
+  const origin = assertAppDatabase();
   return createClient(origin, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
     auth: { persistSession: false, autoRefreshToken: false },
     global: { fetch: async (input, init) => {
