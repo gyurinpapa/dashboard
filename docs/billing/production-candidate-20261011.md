@@ -10,7 +10,7 @@ Read-only audit on 2026-10-11 KST:
 - Production has no customer private schema, provisioning RPC, or signup reservation RPC. The onboarding flags exist only on the tested Preview branch.
 - Production daily activation body MD5 `17df92c196f28727c6602ab920a48940`; preparation `11fd8088ddb063dfa46be60b11a06a3c`. Both allow service_role and deny anon/authenticated execution. No snapshot ACL change is currently needed.
 - Production report INSERT and the two API report creation RPCs deny authenticated access. Preserve these grants; they are necessary to prevent bypassing the server route.
-- Compatibility branch `feat/payment-invite-compat-20261011`, commit `5c4f35f7578e1f6189506b842e9c9cfaf5d6ffa2`: one trusted invite app_metadata line plus disabled automatic Git deployments. It has no customer UI, payment gate, or DB changes.
+- Compatibility branch `feat/payment-invite-compat-20261011`, GitHub commit `3a1e29db8923e050623f8eabb19f4f6f5280187c`: one trusted invite app_metadata line plus disabled automatic Git deployments. It has no customer UI, payment gate, or DB changes.
 
 This candidate keeps Toss test keys, the fixed test merchant, once-only payments, and the isolated payment ledger. It does not implement live billing, monthly billing, a final price/refund policy, or restrictions on existing report viewing/editing/publishing/sharing/PPT/scheduled sync.
 
