@@ -31,5 +31,8 @@
         "hnd1"
       ]
     }
+  },
+  "git": {
+    "deploymentEnabled": false
   }
 }
