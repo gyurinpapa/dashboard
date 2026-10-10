@@ -1,5 +1,6 @@
 /* eslint-disable @next/next/no-html-link-for-pages -- Preserve the homepage's native navigation. */
 import Image from "next/image";
+import HomeAccountLinks from "./HomeAccountLinks";
 import HomeBackToTop from "./HomeBackToTop";
 import styles from "./home.module.css";
 
@@ -23,8 +24,7 @@ function BrandLockup({ compact = false }: { compact?: boolean }) {
   );
 }
 
-export function HomeHeader({ home = false, signedIn = false }: { home?: boolean; signedIn?: boolean }) {
-  const buttonPrimary = [styles.button, styles.buttonPrimary, styles.navButton].join(" ");
+export function HomeHeader({ home = false }: { home?: boolean }) {
   return (
       <nav className={styles.nav} aria-label="주요 메뉴">
         <div className={[styles.container, styles.navInner].join(" ")}>
@@ -33,7 +33,7 @@ export function HomeHeader({ home = false, signedIn = false }: { home?: boolean;
             <a href={`${home ? "" : "/"}#brand`}>소개</a><a href={`${home ? "" : "/"}#capabilities`}>기능</a><a href={`${home ? "" : "/"}#workflow`}>동작 방식</a><a href={`${home ? "" : "/"}#faq`}>자주 묻는 질문</a>
             <a href="/pricing">요금제</a>
           </div>
-          <div className={styles.accountLinks}>{signedIn ? <><a href="/account">결제 관리</a><a className={buttonPrimary} href="/account">내 서비스</a></> : <><a href="/login">로그인</a><a className={buttonPrimary} href="/signup">회원가입</a><a href="/account">내 서비스</a></>}</div>
+          <HomeAccountLinks />
         </div>
       </nav>
   );

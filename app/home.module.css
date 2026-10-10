@@ -808,3 +808,7 @@
 
 .accountLinks { display:flex; align-items:center; gap:14px; flex-shrink:0; font-size:13px; }
 @media(max-width:600px) { .accountLinks { gap:8px; font-size:12px; } .accountLinks .navButton { padding:9px 10px; min-height:38px; } }
+
+.accountLogout { padding:4px 0; background:none; border:0; color:inherit; font:inherit; cursor:pointer; }
+.accountLogout:disabled { opacity:.6; cursor:wait; }
+@media(max-width:380px) { .accountLinks { gap:6px; font-size:11px; } }
