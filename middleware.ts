@@ -11,6 +11,8 @@ const NON_CANONICAL_APP_HOSTS = new Set([
 
 function isCanonicalAppPath(pathname: string): boolean {
   return (
+    ["/login", "/signup", "/onboarding", "/account", "/reset-password"].includes(pathname) ||
+    pathname.startsWith("/account/") || pathname.startsWith("/billing/") ||
     pathname === "/report-builder" ||
     pathname.startsWith("/report-builder/") ||
     pathname === "/reports" ||
@@ -45,9 +47,9 @@ export function middleware(req: NextRequest) {
     const url = req.nextUrl.clone();
 
     url.protocol = "https:";
-    url.hostname = APP_CANONICAL_HOST;
+    url.hostname = "www.etrylue.com";
     url.port = "";
-    url.pathname = "/report-builder";
+    url.pathname = "/";
 
     return NextResponse.redirect(url, 307);
   }

@@ -15,11 +15,12 @@ export default async function Pricing({ searchParams }: { searchParams: Promise<
       <a href="/pricing?mode=monthly" aria-current={mode === "monthly" ? "page" : undefined}>매월 자동결제 · 준비 중</a>
       <a href="/pricing?mode=once" aria-current={mode === "once" ? "page" : undefined}>건별 결제 · 1개월</a>
     </nav>
+    <ol className={styles.steps} aria-label="구매 순서"><li>1. 요금제 선택</li><li>2. 로그인 · 회원가입</li><li>3. 이용 대상 · 결제</li><li>4. 리포트 시작</li></ol>
     <div className={styles.grid}>{(Object.keys(plans) as Scope[]).map(scope => <article key={scope} className={styles.card}>
       <h2>{plans[scope].name}</h2><p>{plans[scope].description}</p>
       <div className={styles.price}>{won(plans[scope][mode])}<span className={styles.unit}> / 1개월</span></div>
       <p>부가세 포함<br />{mode === "monthly" ? "출시 예정 요금 · 현재 신청 불가" : "한 번 결제 · 자동 갱신 없음"}</p>
-      <a className={styles.button} href={`/billing/checkout?scope=${scope}&mode=${mode}`}>{mode === "once" ? "이용권 선택 · 주문 확인" : "출시 예정 이용권 안내"}</a>
+      <a className={styles.button} href={`/billing/checkout?scope=${scope}&mode=${mode}`}>{mode === "once" ? "이 요금제로 시작하기" : "출시 예정 이용권 안내"}</a>
     </article>)}</div>
     <ul className={styles.details}>
       <li>건별 결제는 리포트 한 건의 가격이 아닌, 선택한 범위의 1개월 이용권입니다.</li>

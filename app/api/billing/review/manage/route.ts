@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   try {
     const userId = await actor(request), input = await body(request);
-    if (!uuid(input.orderId) || !["reconcile", "refund"].includes(String(input.action))) throw new BillingError("INVALID_ACTION");
+    if (!uuid(input.orderId) || !["reconcile", "refund", "prepare"].includes(String(input.action))) throw new BillingError("INVALID_ACTION");
     await manage(userId, input.orderId, String(input.action));
     return json({ ok: true });
   } catch (error) { return failure(error); }

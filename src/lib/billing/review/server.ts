@@ -1,3 +1,4 @@
+import { advertiserName, draftTarget, newAdvertiserContext, createVerifiedTestAdvertiser } from './new-advertiser';
 import { createHmac } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { sbAuth } from "@/lib/supabase/auth-server";
@@ -24,7 +25,11 @@ export async function actor(request?: Request) {
   assertAppDatabase();
   const { user, error } = await sbAuth();
   if (error || !user) throw new BillingError("LOGIN_REQUIRED", 401);
-  if (!c.testers.includes(user.id)) throw new BillingError("TEST_ACCESS_REQUIRED", 403);
+  const onboardingTest = process.env.VERCEL_ENV === "preview" &&
+    process.env.NEXT_PUBLIC_SUPABASE_URL === "https://lpwmxtnzpgyrhphwufsd.supabase.co" &&
+    process.env.CUSTOMER_ONBOARDING_ENABLED === "true" && !!user.email_confirmed_at &&
+    user.app_metadata?.etrylue_customer_version === "1";
+  if (!c.testers.includes(user.id) && !onboardingTest) throw new BillingError("TEST_ACCESS_REQUIRED", 403);
   return user.id;
 }
 export async function loadOrder(id: unknown, userId?: string): Promise<Order> {
@@ -76,10 +81,22 @@ function stateFor(id: string, userId: string) {
   if (secret.length < 32) throw new BillingError("STATE_SECRET_REQUIRED", 503);
   return createHmac("sha256", secret).update(`${id}:${userId}`).digest("hex");
 }
-export async function checkout(userId: string, id: string, scope: Scope, mode: BillingMode, targetId: string) {
+export async function checkout(userId: string, id: string, scope: Scope, mode: BillingMode, targetId: string, draft?: {name: string; workspaceId: string}) {
   const config = reviewConfig(), keys = providerKeys(mode);
   if (mode !== "once") throw new BillingError("MONTHLY_NOT_AVAILABLE", 400);
-  const context = await targetContext(userId, scope, targetId), q = quote(scope, mode);
+  let context;
+  if(draft) {
+    if(scope!=="advertiser")throw new BillingError("INVALID_CHECKOUT");
+    context=await newAdvertiserContext(userId,draft.workspaceId);
+    targetId=draftTarget(userId,id,process.env.BILLING_REVIEW_STATE_SECRET||"");
+    const proposed={order_id:id,user_id:userId,target_id:targetId,...context,name:advertiserName(draft.name)};
+    const inserted=await db().from("billing_test_purchase_drafts").insert(proposed);
+    if(inserted.error&&inserted.error.code!=="23505")throw new BillingError("BILLING_STORAGE_UNAVAILABLE",503);
+    const saved=await db().from("billing_test_purchase_drafts").select("user_id,target_id,workspace_id,name").eq("order_id",id).single();
+    if(saved.error||saved.data.user_id!==userId||saved.data.target_id!==targetId||saved.data.workspace_id!==draft.workspaceId||saved.data.name!==proposed.name)
+      throw new BillingError("ORDER_DRAFT_CONFLICT",409);
+  } else {context=await targetContext(userId,scope,targetId);}
+  const q=quote(scope,mode);
   const state = stateFor(id, userId), customerKey = `etrylue_${id.replaceAll("-", "")}`;
   await rpc("billing_test_create", { p: { id, user_id: userId, scope, target_id: targetId, ...context,
     mode, catalog_version: q.version, amount: q.amount, name: q.name, customer_key: customerKey, nonce_hash: hash(state) } });
@@ -131,7 +148,16 @@ export async function callback(userId: string, params: URLSearchParams) {
 export async function manage(userId: string, orderId: string, action: string) {
   const order = await loadOrder(orderId, userId);
   if (order.mode !== "once") throw new BillingError("MONTHLY_NOT_AVAILABLE");
-  if (action === "reconcile") {
+  if (action === "prepare") {
+    if(order.status!=="active"||!order.paid_until||Date.parse(order.paid_until)<=Date.now())throw new BillingError("PAYMENT_NOT_VERIFIED",409);
+    // Fresh provider reconciliation prevents a stale local DONE after a provider cancellation.
+    await reconcile(order.id);
+    const current=await loadOrder(order.id,userId);
+    if(current.status!=="active")throw new BillingError("PAYMENT_NOT_VERIFIED",409);
+    const draft=await db().from("billing_test_purchase_drafts").select("target_id,user_id,workspace_id,name").eq("order_id",order.id).eq("user_id",userId).single();
+    if(draft.error||draft.data.target_id!==order.target_id)throw new BillingError("ORDER_DRAFT_NOT_FOUND",404);
+    await createVerifiedTestAdvertiser(draft.data);
+  } else if (action === "reconcile") {
     const { data, error } = await db().from("billing_test_charges").select("id").eq("order_id", order.id).order("cycle", { ascending: false }).limit(1).single();
     if (error) throw new BillingError("CHARGE_NOT_FOUND", 404);
     await reconcile(data.id);

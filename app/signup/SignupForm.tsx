@@ -1,7 +1,8 @@
+/* eslint-disable @next/next/no-html-link-for-pages -- Full navigation preserves auth cookies and canonical host routing without prefetch. */
 'use client';
 import { useState, type FormEvent } from 'react';
 import styles from '../pricing/billing.module.css';
-export default function SignupForm() {
+export default function SignupForm({ next }: { next: string }) {
   const [busy,setBusy]=useState(false), [message,setMessage]=useState(''), [error,setError]=useState('');
   async function submit(event:FormEvent<HTMLFormElement>) {
     event.preventDefault(); if(busy)return;
@@ -9,7 +10,7 @@ export default function SignupForm() {
     setBusy(true);setError('');setMessage('');
     try {
       const response=await fetch('/api/auth/signup',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify(Object.fromEntries(['email','password','contactName','companyName','tenantType'].map(k=>[k,form.get(k)])))});
+        body:JSON.stringify({...Object.fromEntries(['email','password','contactName','companyName','tenantType'].map(k=>[k,form.get(k)])),next})});
       const result=await response.json();
       if(!response.ok) {
         const messages:Record<string,string>={TOO_MANY_ATTEMPTS:'요청이 많습니다. 잠시 후 다시 시도해주세요.',
@@ -26,7 +27,7 @@ export default function SignupForm() {
     <label className={styles.label} htmlFor="companyName">회사명</label><input className={styles.select} id="companyName" name="companyName" maxLength={100} autoComplete="organization" required />
     <label className={styles.label} htmlFor="tenantType">회사 유형</label><select className={styles.select} id="tenantType" name="tenantType" required><option value="agency">광고 대행사</option><option value="advertiser">광고주 · 인하우스</option></select>
     <label className={styles.label} htmlFor="contactName">이름</label><input className={styles.select} id="contactName" name="contactName" maxLength={80} autoComplete="name" required />
-    <label className={styles.label} htmlFor="email">이메일</label><input className={styles.select} id="email" name="email" type="email" maxLength={254} autoComplete="email" required />
+    <label className={styles.label} htmlFor="email">이메일</label><input className={styles.select} id="email" name="email" type="email" maxLength={254} autoComplete="email" autoCapitalize="none" required />
     <label className={styles.label} htmlFor="password">비밀번호 · 12자 이상</label><input className={styles.select} id="password" name="password" type="password" minLength={12} maxLength={128} autoComplete="new-password" required />
     <p className={styles.details}><a href="/privacy">개인정보 처리방침</a> · <a href="/terms">이용약관</a></p>
     {error&&<p className={styles.error} role="alert">{error}</p>}{message&&<p className={styles.notice} role="status">{message}</p>}

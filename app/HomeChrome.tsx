@@ -23,7 +23,7 @@ function BrandLockup({ compact = false }: { compact?: boolean }) {
   );
 }
 
-export function HomeHeader({ home = false }: { home?: boolean }) {
+export function HomeHeader({ home = false, signedIn = false }: { home?: boolean; signedIn?: boolean }) {
   const buttonPrimary = [styles.button, styles.buttonPrimary, styles.navButton].join(" ");
   return (
       <nav className={styles.nav} aria-label="주요 메뉴">
@@ -33,7 +33,7 @@ export function HomeHeader({ home = false }: { home?: boolean }) {
             <a href={`${home ? "" : "/"}#brand`}>소개</a><a href={`${home ? "" : "/"}#capabilities`}>기능</a><a href={`${home ? "" : "/"}#workflow`}>동작 방식</a><a href={`${home ? "" : "/"}#faq`}>자주 묻는 질문</a>
             <a href="/pricing">요금제</a>
           </div>
-          <a className={buttonPrimary} href="https://app.etrylue.com/report-builder">리포트 열기</a>
+          <div className={styles.accountLinks}>{signedIn ? <><a href="/account">결제 관리</a><a className={buttonPrimary} href="/account">내 서비스</a></> : <><a href="/login">로그인</a><a className={buttonPrimary} href="/signup">회원가입</a><a href="/account">내 서비스</a></>}</div>
         </div>
       </nav>
   );
@@ -47,7 +47,7 @@ export function HomeFooter({ home = false }: { home?: boolean }) {
         <div className={styles.container}>
           <div className={styles.footerGrid}>
             <div className={styles.footerBrand}><a href={`${home ? "" : "/"}#top`} aria-label="Etrylue Performance 홈"><BrandLockup compact /></a><p>흩어진 광고 데이터를 하나의 기준으로 정리하는<br /> 광고 성과 리포트 플랫폼.</p></div>
-            <div><h3>제품</h3><a href="/pricing">요금제</a><a href={`${home ? "" : "/"}#capabilities`}>기능</a><a href={`${home ? "" : "/"}#workflow`}>동작 방식</a><a href="https://app.etrylue.com/report-builder">리포트 열기</a></div>
+            <div><h3>제품</h3><a href="/pricing">요금제</a><a href={`${home ? "" : "/"}#capabilities`}>기능</a><a href={`${home ? "" : "/"}#workflow`}>동작 방식</a><a href="/account">내 서비스</a></div>
             <div><h3>안내</h3><a href="/about">서비스 소개</a><a href="/terms">이용약관</a><a href="/privacy">개인정보처리방침</a></div>
             <div><h3>문의</h3><a href="mailto:etrylue3479@gmail.com">etrylue3479@gmail.com</a><a href="tel:01058716881">010-5871-6881</a></div>
           </div>
@@ -66,7 +66,7 @@ export function HomeFooter({ home = false }: { home?: boolean }) {
       </footer>
       <section className={styles.ctaSection} aria-label="요금제 안내 및 도입 문의">
         <div className={[styles.container, styles.ctaCard].join(" ")}>
-          <div><span className={styles.eyebrow}>READY WHEN YOU ARE</span><h2>다음 리포트는, 더 명확한 기준으로</h2><p>광고주와 리포트 목적을 선택하고 시작하세요.</p></div>
+          <div><span className={styles.eyebrow}>READY WHEN YOU ARE</span><h2>다음 리포트는, 더 명확한 기준으로</h2><p>요금제를 선택하고 우리 회사의 첫 리포트를 시작하세요.</p></div>
           <div className={styles.ctaActions}><a className={buttonAccent} href="/pricing">요금제 바로가기</a><a className={buttonGhost} href="mailto:etrylue3479@gmail.com">도입 문의</a></div>
         </div>
       </section>

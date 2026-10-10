@@ -48,6 +48,8 @@ create or replace function public.handle_new_user_create_profile()
 returns trigger language plpgsql security definer set search_path=public as $function$
 declare default_company_id uuid; customer_company_id uuid;
 begin
+  select u.* into new from auth.users u where u.id=new.id;
+  if not found then return null; end if;
   if new.raw_app_meta_data->>'etrylue_customer_version' = '1' then
     insert into etrylue_customer_private.accounts(user_id,company_name,contact_name,tenant_type)
     values(new.id,new.raw_app_meta_data->>'company_name',new.raw_app_meta_data->>'contact_name',new.raw_app_meta_data->>'tenant_type') returning company_id into customer_company_id;
@@ -76,6 +78,11 @@ begin
   return new;
 end;
 $function$;
+
+-- Auth Admin updates app_metadata after INSERT in the same transaction.
+drop trigger if exists on_auth_user_created_profile on auth.users;
+create constraint trigger on_auth_user_created_profile after insert on auth.users
+  deferrable initially deferred for each row execute function public.handle_new_user_create_profile();
 
 create function etrylue_customer_private.my_company() returns uuid
 language sql stable security definer set search_path=pg_catalog as $function$

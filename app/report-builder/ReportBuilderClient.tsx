@@ -3921,6 +3921,9 @@ export default function ReportBuilderPage({ showBillingTest = false }: { showBil
                     <Link href="/signup" className="signupBtn">
                       회원가입
                     </Link>
+                    <Link href="/reset-password" className="signupBtn">
+                      비밀번호 재설정
+                    </Link>
                   </div>
                 </div>
               </div>

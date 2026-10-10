@@ -1,3 +1,4 @@
+import { purchaseNext } from '../customer-journey';
 export class CustomerError extends Error {
   constructor(public code: string, public status = 400) { super(code); }
 }
@@ -15,7 +16,7 @@ export function onboardingOrigin(env: Record<string,string|undefined> = process.
 export function registrationInput(value: unknown) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new CustomerError('INVALID_INPUT');
   const v = value as Record<string,unknown>;
-  const fields = new Set(['email','password','contactName','companyName','tenantType']);
+  const fields = new Set(['email','password','contactName','companyName','tenantType','next']);
   if (Object.keys(v).some(k=>!fields.has(k))) throw new CustomerError('INVALID_INPUT');
   function bounded(key: string, max: number) {
     const text = typeof v[key] === 'string' ? v[key].trim() : '';
@@ -27,9 +28,9 @@ export function registrationInput(value: unknown) {
   const password = typeof v.password === 'string' ? v.password : '';
   if (password.length < 12 || password.length > 128 || password.includes('\u0000')) throw new CustomerError('INVALID_PASSWORD');
   if (v.tenantType !== 'agency' && v.tenantType !== 'advertiser') throw new CustomerError('INVALID_INPUT');
-  return { email, password, contactName: bounded('contactName',80), companyName: bounded('companyName',100), tenantType:v.tenantType };
+  return { email, password, next:purchaseNext(v.next), contactName: bounded('contactName',80), companyName: bounded('companyName',100), tenantType:v.tenantType };
 }
 export function registrationAttributes(input: ReturnType<typeof registrationInput>) {
   return {email:input.email,password:input.password,email_confirm:false,
-    app_metadata:{etrylue_customer_version:'1',company_name:input.companyName,contact_name:input.contactName,tenant_type:input.tenantType}};
+    app_metadata:{etrylue_customer_version:'1',purchase_next:input.next,company_name:input.companyName,contact_name:input.contactName,tenant_type:input.tenantType}};
 }

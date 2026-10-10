@@ -805,3 +805,6 @@
 @media (max-width: 600px) {
   .page .backToTop { right: 14px; width: 44px; height: 44px; }
 }
+
+.accountLinks { display:flex; align-items:center; gap:14px; flex-shrink:0; font-size:13px; }
+@media(max-width:600px) { .accountLinks { gap:8px; font-size:12px; } .accountLinks .navButton { padding:9px 10px; min-height:38px; } }

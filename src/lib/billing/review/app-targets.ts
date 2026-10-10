@@ -66,5 +66,5 @@ export async function appTargets(userId: string) {
   const advertiser = (ads.data || []).filter(a => master || adminIds.includes(a.workspace_id) ||
     (staffIds.includes(a.workspace_id) && a.created_by === userId))
     .map(a => ({ id: a.id, name: a.name, workspace_id: a.workspace_id }));
-  return { advertiser, workspace: workspaceRows.filter(w => master || adminIds.includes(w.id)), company: companies.data || [] };
+  return { advertiser, newAdvertiserWorkspaces: workspaceRows, workspace: workspaceRows.filter(w => master || adminIds.includes(w.id)), company: companies.data || [] };
 }

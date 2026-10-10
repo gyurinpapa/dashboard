@@ -2,7 +2,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import styles from "../../../pricing/billing.module.css";
-export default function ManageButtons({ orderId, status, monthly, paid, cancelled, scope, targetId }: { scope: string; targetId: string; orderId: string; status: string; monthly: boolean; paid: boolean; cancelled: boolean }) {
+export default function ManageButtons({ orderId, status, monthly, paid, cancelled, scope, newAdvertiser = false }: { newAdvertiser?: boolean; scope: string; targetId: string; orderId: string; status: string; monthly: boolean; paid: boolean; cancelled: boolean }) {
   const router = useRouter(), pending = useRef(false);
   const [busy, setBusy] = useState(false), [message, setMessage] = useState("");
   const [completedAction, setCompletedAction] = useState("");
@@ -12,6 +12,7 @@ export default function ManageButtons({ orderId, status, monthly, paid, cancelle
     try {
       const response = await fetch("/api/billing/review/manage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId, action }) });
       if (!response.ok) throw new Error();
+      if(action === "prepare") { window.location.assign("/report-builder"); return; }
       setCompletedAction(action); router.refresh();
     } catch { setMessage(action === "refund"
       ? "전액 취소 결과를 확인하지 못했습니다. 취소가 실패했다고 확정된 것은 아닙니다. ‘결제 상태 재확인’을 눌러주세요. 계속 확인되지 않으면 새로 결제하지 말고 문의해주세요."
@@ -29,13 +30,17 @@ export default function ManageButtons({ orderId, status, monthly, paid, cancelle
           : "결제 승인 완료 상태가 확인되지 않았습니다. 새로 결제하지 말고 잠시 후 ‘결제 상태 재확인’을 눌러주세요. 계속 동일하면 문의해주세요.";
   const confirmed = status === "refunded" || (completedAction !== "refund" && (paid || (monthly && cancelled)));
   function restart() {
-    sessionStorage.removeItem(`etrylue:review-checkout:${scope}:once:${targetId}`);
+    for(let i=sessionStorage.length-1;i>=0;i--) {
+      const key=sessionStorage.key(i);
+      if(key?.startsWith("etrylue:review-checkout:")&&sessionStorage.getItem(key)===orderId)sessionStorage.removeItem(key);
+    }
     window.location.assign(`/billing/checkout?scope=${encodeURIComponent(scope)}&mode=once`);
   }
   return <><div className={styles.actions}>
     {status === "refunded" ? <button type="button" className={styles.button} disabled={busy} onClick={restart}>새 주문으로 다시 테스트</button> : null}
     <button type="button" className={styles.button} disabled={busy} onClick={() => act("reconcile")}>결제 상태 재확인</button>
     {monthly && paid && !cancelled ? <button type="button" className={styles.button} disabled={busy} onClick={() => act("cancel")}>다음 결제 해지</button> : null}
+    {paid && newAdvertiser ? <button type="button" className={styles.button} disabled={busy} onClick={() => act("prepare")}>신규 광고주 준비하고 리포트 시작</button> : null}
     {paid ? <button type="button" className={styles.button} disabled={busy} onClick={() => act("refund")}>테스트 결제 전액 취소</button> : null}
   </div><p className={styles.error} style={!message && completedAction && confirmed ? { color: "var(--mint, #35e0d0)" } : undefined} role="status">{message || (completedAction ? confirmedMessage : "")}</p></>;
 }
