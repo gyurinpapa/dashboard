@@ -39,3 +39,19 @@ Applied billing_test_refund_policy_20261011 to kbqyszbuxojofugqfjbh after the co
 Security advisor: informational RLS-without-policy on server-only tables is intentional; no public policy added. Existing payment-sandbox Auth leaked-password warning is outside this refund change and was not altered. References: https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy and https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection.
 
 Production app read-only protection check: 16 legacy advertisers, 0 managed, no refund table. Prepare MD5 11fd8088ddb063dfa46be60b11a06a3c and activation MD5 17df92c196f28727c6602ab920a48940 unchanged. No application DB migration. Preview raw HTTP returned Vercel's protection surface; authenticated browser rendered the actual policy, shared chrome and footer successfully. Final production build uses the same Preview-tested runtime source; only SQL/tests/audit changed afterward.
+
+## Final production release and verification
+
+Production SHA 1510be92cb1932d25b834a0a10c70ee4b70bd74d (tree 05a55c6e5cb67b7e8a1e3ba4e820e2bbf0e28d0b), deployment dpl_CXC3HkSQMacw4yyMyavCsdmV82Tq, READY with no alias error. app/www/apex domains attached. Production build approximately 46 seconds; created through connector as a production target after Preview testing; not a separately staged/promoted production artifact. No production environment/secret changes in this refund release.
+
+Postdeploy: public homepage/refund/pricing/terms and app signup/login/advertiser checkout HTTP 200 with expected new content. Anonymous manage POST, targets GET and creation-access GET return 401 LOGIN_REQUIRED. Browser directly observes public www/refund with shared chrome and correct approved policy. Latest 10-minute error/fatal log query scoped to this deployment returned no groups; not a claim of future or full authenticated runtime correctness. Drains/long-term monitoring not audited in this release.
+
+Production application DB remains 16 legacy advertisers; prepare/activate hashes unchanged, no refund table. Payment orders/charges unchanged by migration. Actual hosted purchaser full/partial-refund flow, new signup email receipt and multi-session concurrency are still not established by synthetic tests or these anonymous smoke checks. Test keys remain mandatory; no real payment, billing contract activation or recurring scheduler changes.
+
+Mac VS Code source sync pending user execution. Exact command after downloading scripts/macos/sync-production-worktree.sh:
+
+```bash
+/bin/bash "$HOME/Downloads/sync-production-worktree.sh" 1510be92cb1932d25b834a0a10c70ee4b70bd74d
+```
+
+Expected worktree: /Users/damon/Projects/dashboard-production-1510be92cb19. Only mark complete after PRODUCTION_SOURCE_SYNC_VERIFIED and VS Code opens that source. This final audit-only commit is not a new web deployment; deployed source remains the immutable SHA above.
