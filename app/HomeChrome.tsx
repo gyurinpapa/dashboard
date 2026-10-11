@@ -56,7 +56,6 @@ export function HomeFooter({ home = false }: { home?: boolean }) {
             <dl className={styles.businessDetails}>
               <div><dt>대표자</dt><dd>신광희</dd></div>
               <div><dt>사업자등록번호</dt><dd>365-31-01818</dd></div>
-              <div><dt>연락처</dt><dd><a href="tel:01058716881">010-5871-6881</a></dd></div>
               <div><dt>CS 이메일</dt><dd><a href="mailto:etrylue3479@gmail.com">etrylue3479@gmail.com</a></dd></div>
               <div className={styles.businessAddress}><dt>사업자 주소</dt><dd>경기도 수원시 권선구 세권로181번길 20-23, 2층 137호(권선동, 태양빌딩)</dd></div>
             </dl>
