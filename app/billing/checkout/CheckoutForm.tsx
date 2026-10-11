@@ -77,7 +77,7 @@ export default function CheckoutForm({ scope, mode }: { scope: Scope; mode: Bill
     {loaded&&!workspaces.length&&<a href="/onboarding">신규 가입 계정 준비하기</a>}</>}
     {paidUntil ? <div className={styles.notice}><strong>사용 가능한 테스트 이용권이 있습니다.</strong><p>이용기간 종료: {new Date(paidUntil).toLocaleString("ko-KR", {timeZone:"Asia/Seoul"})} KST</p><p>추가 결제 없이 리포트를 시작할 수 있습니다.</p><a className={styles.button} href="/report-builder">리포트 시작하기</a></div> : <>
     <label className={styles.consent}><input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} required disabled={busy} />
-      <span>표시된 이용 범위와 테스트 금액을 확인했습니다. {mode === "monthly" ? "카드 등록 후 첫 테스트 결제가 진행되며, 월 갱신 흐름과 다음 결제 해지를 테스트하는 데 동의합니다." : "자동 갱신되지 않는 1개월 이용권 테스트에 동의합니다."} 실제 요금은 청구되지 않습니다.</span></label>
+      <span>표시된 이용 범위와 테스트 금액을 확인했습니다. {mode === "monthly" ? "카드 등록 후 첫 테스트 결제가 진행되며, 월 갱신 흐름과 다음 결제 해지를 테스트하는 데 동의합니다." : "자동 갱신되지 않는 1개월 이용권 테스트에 동의합니다."} 실제 요금은 청구되지 않습니다. <a href="/refund" target="_blank" rel="noopener noreferrer">이용기간·환불정책</a>을 확인하고 동의합니다.</span></label>
     <button className={styles.button} disabled={busy || !loaded || !target || !consent || (target==="new"&&(!workspace||!name.trim()))}>{busy ? "결제창 준비 중…" : mode === "monthly" ? "카드 등록하고 테스트 결제" : "테스트 결제하기"}</button>
     </>}
     <p className={styles.error} role="status">{message}</p>

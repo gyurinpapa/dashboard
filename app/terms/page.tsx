@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-html-link-for-pages -- Preserve existing static policy navigation without client prefetch. */
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -148,6 +149,8 @@ export default function TermsPage() {
           </a>
           .
         </TermsSection>
+
+        <section style={{ marginBottom: 30 }}><h2>12. 이용권 결제 및 환불</h2><p>건별 이용권은 결제 승인일부터 1개월 제공되며 자동 갱신되지 않습니다. 결제 후 7일 이내 전액 환불, 이후 이용기간 종료 전 남은 기간 비례 환불을 제공합니다. 자세한 조건과 요청 방법은 <a href="/refund">환불정책</a>을 확인해주세요. 관계 법령상 권리는 이 안내로 제한되지 않습니다.</p></section>
 
         <footer
           style={{

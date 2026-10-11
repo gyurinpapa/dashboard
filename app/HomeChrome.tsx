@@ -48,7 +48,7 @@ export function HomeFooter({ home = false }: { home?: boolean }) {
           <div className={styles.footerGrid}>
             <div className={styles.footerBrand}><a href={`${home ? "" : "/"}#top`} aria-label="Etrylue Performance 홈"><BrandLockup compact /></a><p>흩어진 광고 데이터를 하나의 기준으로 정리하는<br /> 광고 성과 리포트 플랫폼.</p></div>
             <div><h3>제품</h3><a href="/pricing">요금제</a><a href={`${home ? "" : "/"}#capabilities`}>기능</a><a href={`${home ? "" : "/"}#workflow`}>동작 방식</a><a href="/account">내 서비스</a></div>
-            <div><h3>안내</h3><a href="/about">서비스 소개</a><a href="/terms">이용약관</a><a href="/privacy">개인정보처리방침</a></div>
+            <div><h3>안내</h3><a href="/about">서비스 소개</a><a href="/terms">이용약관</a><a href="/refund">환불정책</a><a href="/privacy">개인정보처리방침</a></div>
             <div><h3>문의</h3><a href="mailto:etrylue3479@gmail.com">etrylue3479@gmail.com</a><a href="tel:01058716881">010-5871-6881</a></div>
           </div>
           <div className={styles.businessInfo} aria-label="사업자 정보">

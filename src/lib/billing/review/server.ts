@@ -134,8 +134,8 @@ async function settle(charge: Charge, order: Order, value: unknown, expectedKey?
   const payment = verifiedPayment(value, charge, expectedKey);
   if ((value as { mId?: string }).mId !== "tetryluei6e") throw new BillingError("REVIEW_MERCHANT_MISMATCH", 409);
   const end = periodEnd(order.anchor_at || payment.approvedAt, charge.cycle);
-  await rpc("billing_test_settle", { p: { charge_id: charge.id, amount: payment.totalAmount,
-    payment_key: payment.paymentKey, status: payment.status, approved_at: payment.approvedAt, paid_until: end } });
+  await rpc("billing_test_settle_refund", { p: { charge_id: charge.id, amount: payment.totalAmount,
+    payment_key: payment.paymentKey, balance_amount: payment.balanceAmount, status: payment.status, approved_at: payment.approvedAt, paid_until: end } });
 }
 export async function reconcile(chargeId: string) {
   const charge = await loadCharge(chargeId), order = await loadOrder(charge.order_id);
@@ -189,17 +189,32 @@ export async function manage(userId: string, orderId: string, action: string) {
     if (error) throw new BillingError("CHARGE_NOT_FOUND", 404);
     await reconcile(data.id);
   } else if (action === "refund") {
-    // Test-only full refund. Production refund eligibility is not yet an approved policy.
-    const { data, error } = await db().from("billing_test_charges").select("*").eq("order_id", order.id)
-      .eq("status", "done").order("cycle", { ascending: false }).limit(1).single();
-    if (error || !data?.payment_key) throw new BillingError("REFUND_REQUIRES_REVIEW", 409);
-    const charge = data as Charge;
-    // Stop renewal first under the same order lock used by the renewal reservation.
-    await rpc("billing_test_cancel", { p_order: order.id });
+    // A service-only DB reservation fixes the amount/time across retries and concurrent requests.
+    const reserved = await rpc("billing_test_request_refund", { p_order: order.id, p_user: userId }) as { charge_id: string; amount: number; status: string };
+    if (reserved.status === "completed") return;
+    const charge = await loadCharge(reserved.charge_id);
+    if (!charge.payment_key || !Number.isSafeInteger(reserved.amount) || reserved.amount <= 0 || reserved.amount > charge.amount)
+      throw new BillingError("REFUND_REQUIRES_REVIEW", 409);
+    // Reconcile before cancellation, including recovery after provider success / storage timeout.
+    await reconcile(charge.id);
+    const request = await refundRequest(order.id, userId);
+    if (request?.status === "completed") return;
+    const current = await loadCharge(charge.id);
+    if (current.status !== "done") throw new BillingError("REFUND_REQUIRES_REVIEW", 409);
     try {
-      const value = await toss(order.mode, `/v1/payments/${encodeURIComponent(charge.payment_key!)}/cancel`,
-        { cancelReason: "Etrylue 테스트 전액 취소" }, `refund-${charge.id}`);
-      await settle(charge, order, value, charge.payment_key!);
+      const value = await toss(order.mode, `/v1/payments/${encodeURIComponent(charge.payment_key)}/cancel`,
+        { cancelReason: "Etrylue 이용권 환불정책에 따른 테스트 취소", cancelAmount: reserved.amount }, `policy-refund-${charge.id}`);
+      await settle(charge, order, value, charge.payment_key);
     } catch { await reconcile(charge.id); }
+    if ((await refundRequest(order.id, userId))?.status !== "completed")
+      throw new BillingError("REFUND_PENDING_RECONCILIATION", 409);
   } else throw new BillingError("INVALID_ACTION");
+}
+
+export type RefundRequest = { amount: number; requested_at: string; period_start: string; period_end: string; status: string };
+export async function refundRequest(orderId: string, userId: string): Promise<RefundRequest | null> {
+  const { data, error } = await db().from("billing_test_refund_requests")
+    .select("amount,requested_at,period_start,period_end,status").eq("order_id",orderId).eq("user_id",userId).maybeSingle();
+  if (error) throw new BillingError("BILLING_STORAGE_UNAVAILABLE",503);
+  return data;
 }

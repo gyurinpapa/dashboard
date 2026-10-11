@@ -13,7 +13,8 @@ export function verifiedPayment(value: unknown, order: { id: string; amount: num
       typeof p.balanceAmount !== "number" || !Number.isSafeInteger(p.balanceAmount) || p.balanceAmount < 0 || p.balanceAmount > order.amount ||
       !Number.isFinite(Date.parse(p.approvedAt || "")) ||
       (p.status === "DONE" && p.balanceAmount !== order.amount) ||
-      (p.status === "CANCELED" && p.balanceAmount !== 0))
+      (p.status === "CANCELED" && p.balanceAmount !== 0) ||
+      (p.status === "PARTIAL_CANCELED" && (p.balanceAmount <= 0 || p.balanceAmount >= order.amount)))
     throw new BillingError("PAYMENT_VERIFICATION_FAILED", 409);
   return p as Payment;
 }

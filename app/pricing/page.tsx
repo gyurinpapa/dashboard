@@ -23,6 +23,7 @@ export default async function Pricing({ searchParams }: { searchParams: Promise<
       <a className={styles.button} href={`/billing/checkout?scope=${scope}&mode=${mode}`}>{mode === "once" ? "이 요금제로 시작하기" : "출시 예정 이용권 안내"}</a>
     </article>)}</div>
     <ul className={styles.details}>
+      <li>결제 승인일부터 1개월 제공됩니다. 7일 이내 전액 환불, 이후 이용기간 종료 전 남은 기간 비례 환불입니다. <a href="/refund">환불정책 확인</a></li>
       <li>건별 결제는 리포트 한 건의 가격이 아닌, 선택한 범위의 1개월 이용권입니다.</li>
       <li>회사 이용권은 해당 회사 소속 워크스페이스를 포함하며, 광고주 수는 전체 합산합니다.</li>
       <li>결제로 다른 회사·워크스페이스·광고주의 열람 권한이 추가되지는 않습니다.</li>
