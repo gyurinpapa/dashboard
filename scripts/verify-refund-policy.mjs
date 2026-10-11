@@ -9,6 +9,9 @@ const check=(v,w)=>{assert.deepEqual(v,w);checks++;};
 try{
  await db.exec("create role anon; create role authenticated; create role service_role bypassrls; set etrylue.billing_test_install='isolated-tests-only';");
  await db.exec(await readFile('sql/billing/test-only.sql','utf8'));
+ await db.exec('create table reports(id uuid primary key);');
+ await assert.rejects(db.exec(await readFile('scripts/sql/billing-test-refund-policy.sql','utf8')),/ISOLATED_PAYMENT_DATABASE_REQUIRED/);checks++;
+ await db.exec("rollback; comment on table reports is 'Billing sandbox synthetic CSV fixture. Not a production report schema.';");
  await db.exec(await readFile('scripts/sql/billing-test-refund-policy.sql','utf8'));
  const id=i=>`00000000-0000-4000-a000-${String(i).padStart(12,'0')}`;
  async function fixture(i,age='2 days',duration='31 days',status='active',mode='once'){

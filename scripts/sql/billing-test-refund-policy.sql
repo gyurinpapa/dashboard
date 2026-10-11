@@ -3,8 +3,14 @@
 begin;
 set local lock_timeout='2s';
 set local statement_timeout='8s';
+set local etrylue.billing_test_project='kbqyszbuxojofugqfjbh';
 do $$ begin
-  if to_regclass('public.reports') is not null or to_regclass('public.billing_test_orders') is null then
+  if current_setting('etrylue.billing_test_project',true) is distinct from 'kbqyszbuxojofugqfjbh' or
+    to_regclass('public.billing_test_orders') is null or to_regclass('public.report_rows') is not null or
+    to_regprocedure('public.activate_daily_report_v2_combined_snapshot(jsonb)') is not null or
+    to_regnamespace('etrylue_customer_private') is not null or
+    (to_regclass('public.reports') is not null and obj_description(to_regclass('public.reports'),'pg_class')
+      is distinct from 'Billing sandbox synthetic CSV fixture. Not a production report schema.') then
     raise exception 'ISOLATED_PAYMENT_DATABASE_REQUIRED'; end if;
   if (select md5(prosrc) from pg_proc where oid='public.billing_test_settle(jsonb)'::regprocedure)
     is distinct from 'e2d89b61b03b3b11d95976399ba86a24' then raise exception 'SETTLE_BASELINE_CHANGED'; end if;
