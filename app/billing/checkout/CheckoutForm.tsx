@@ -23,6 +23,7 @@ export default function CheckoutForm({ scope, mode }: { scope: Scope; mode: Bill
   const [workspaces,setWorkspaces]=useState<{id:string;name:string}[]>([]),[workspace,setWorkspace]=useState(""),[name,setName]=useState("");
   const [consent, setConsent] = useState(false), [busy, setBusy] = useState(false), [message, setMessage] = useState("");
   const [loginRequired, setLoginRequired] = useState(false), [loaded, setLoaded] = useState(false);
+  const [targetsReady, setTargetsReady] = useState(false);
   const requestId = useRef("");
   const submitting = useRef(false);
   const paidUntil = options.find(option => option.id === target)?.paidUntil;
@@ -31,14 +32,14 @@ export default function CheckoutForm({ scope, mode }: { scope: Scope; mode: Bill
     fetch("/api/billing/review/targets", { cache: "no-store", signal: abort.signal }).then(async response => {
       if (response.status === 401) { setLoginRequired(true); return; }
       if (!response.ok) {const result=await response.json();throw new Error(result.error);}
-      const data = await response.json(); setOptions(data[scope] || []); setWorkspaces(data.newAdvertiserWorkspaces || []); if(data.newAdvertiserWorkspaces?.length===1)setWorkspace(data.newAdvertiserWorkspaces[0].id); if(scope==="advertiser")setTarget("new");
+      const data = await response.json(); setOptions(data[scope] || []); setWorkspaces(data.newAdvertiserWorkspaces || []); if(data.newAdvertiserWorkspaces?.length===1)setWorkspace(data.newAdvertiserWorkspaces[0].id); if(scope==="advertiser")setTarget("new"); setTargetsReady(true);
     }).catch(error => { if (!abort.signal.aborted) setMessage(error.message === "TEST_ACCESS_REQUIRED" ? "현재는 심사용 테스트 계정만 결제할 수 있습니다. 일반 구매는 결제 심사 완료 후 열립니다." : "이용 대상을 불러오지 못했습니다. 새로고침 후에도 같다면 문의해주세요. 결제는 시작되지 않았습니다."); })
       .finally(() => { if (!abort.signal.aborted) setLoaded(true); });
     return () => abort.abort();
   }, [scope]);
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (submitting.current || !target || !consent || paidUntil) return;
+    if (submitting.current || !targetsReady || !target || !consent || paidUntil) return;
     submitting.current = true; setBusy(true); setMessage("");
     try {
       // Keep one order ID across retries/tab reloads for this exact choice.
@@ -63,6 +64,7 @@ export default function CheckoutForm({ scope, mode }: { scope: Scope; mode: Bill
   }
   const next = `/billing/checkout?scope=${scope}&mode=${mode}`;
   if(loginRequired)return <div className={styles.notice}><h2>로그인하고 주문을 이어가세요</h2><p>신규 고객도 기존 광고주 없이 구매할 수 있습니다. 선택한 요금제는 그대로 유지됩니다.</p><div className={styles.actions}><a className={styles.button} href={`/login?next=${encodeURIComponent(next)}`}>로그인</a><a className={styles.button} href={`/signup?next=${encodeURIComponent(next)}`}>회원가입하고 계속하기</a></div></div>;
+  if (loaded && !targetsReady) return <div className={styles.notice} role="status"><h2>이용 대상을 확인할 수 없습니다</h2><p>{message}</p><p>조회가 완료되지 않아 워크스페이스와 결제 입력을 표시하지 않습니다. 기존 회사와 워크스페이스는 변경되지 않았으며 결제도 시작되지 않았습니다.</p><div className={styles.actions}><a className={styles.button} href={next}>다시 확인</a><a href="/account">내 계정 확인</a><a href="mailto:etrylue3479@gmail.com">문의하기</a></div></div>;
   return <form onSubmit={submit}>
     <label className={styles.label} htmlFor="billing-target">결제할 이용 대상</label>
     <select className={styles.select} id="billing-target" value={target} onChange={event => { setTarget(event.target.value); requestId.current = ""; }} disabled={!loaded || busy} required>
