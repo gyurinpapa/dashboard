@@ -624,7 +624,21 @@ async function requestNaverSearchAdsJson(input: {
     }
 
     try {
-      return await response.json();
+      const responseBytes = await response.arrayBuffer();
+
+      // Some accounts return HTTP 200 with zero bytes for the report-job
+      // collection. Normalize only that exact response to an empty list.
+      // Empty create/detail responses and malformed nonempty JSON still fail.
+      if (
+        method === "GET" &&
+        uri === NAVER_SEARCH_ADS_STAT_REPORTS_URI &&
+        response.status === 200 &&
+        responseBytes.byteLength === 0
+      ) {
+        return [];
+      }
+
+      return JSON.parse(new TextDecoder().decode(responseBytes)) as unknown;
     } catch (error) {
       throw new NaverSearchAdsStatReportApiError(
         "INVALID_RESPONSE",
