@@ -28,11 +28,13 @@ export default function CheckoutForm({ scope, mode }: { scope: Scope; mode: Bill
   const submitting = useRef(false);
   const paidUntil = options.find(option => option.id === target)?.paidUntil;
   useEffect(() => {
+    setTargetsReady(false); setLoaded(false); setLoginRequired(false); setMessage("");
+    setOptions([]); setWorkspaces([]); setTarget(""); setWorkspace("");
     const abort = new AbortController();
     fetch("/api/billing/review/targets", { cache: "no-store", signal: abort.signal }).then(async response => {
       if (response.status === 401) { setLoginRequired(true); return; }
       if (!response.ok) {const result=await response.json();throw new Error(result.error);}
-      const data = await response.json(); setOptions(data[scope] || []); setWorkspaces(data.newAdvertiserWorkspaces || []); if(data.newAdvertiserWorkspaces?.length===1)setWorkspace(data.newAdvertiserWorkspaces[0].id); if(scope==="advertiser")setTarget("new"); setTargetsReady(true);
+      const data = await response.json(); if (abort.signal.aborted) return; setOptions(data[scope] || []); setWorkspaces(data.newAdvertiserWorkspaces || []); if(data.newAdvertiserWorkspaces?.length===1)setWorkspace(data.newAdvertiserWorkspaces[0].id); if(scope==="advertiser")setTarget("new"); setTargetsReady(true);
     }).catch(error => { if (!abort.signal.aborted) setMessage(error.message === "TEST_ACCESS_REQUIRED" ? "현재는 심사용 테스트 계정만 결제할 수 있습니다. 일반 구매는 결제 심사 완료 후 열립니다." : "이용 대상을 불러오지 못했습니다. 새로고침 후에도 같다면 문의해주세요. 결제는 시작되지 않았습니다."); })
       .finally(() => { if (!abort.signal.aborted) setLoaded(true); });
     return () => abort.abort();
