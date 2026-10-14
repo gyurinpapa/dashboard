@@ -2,10 +2,12 @@
 import type { Metadata } from "next";
 import PublicSiteShell from "../PublicSiteShell";
 import styles from "../pricing/billing.module.css";
+import { registrationEnabled } from '@/lib/billing/review/registration-config';
 export const metadata: Metadata = { title: "환불정책 | Etrylue Performance", alternates: { canonical: "https://www.etrylue.com/refund" } };
 export default function RefundPage() {
   return <PublicSiteShell><article className={styles.container}>
     <p className={styles.eyebrow}>REFUND POLICY · 2026년 10월 11일</p><h1 className={styles.title}>이용기간과 환불정책</h1>
+    {registrationEnabled()?<section className={styles.panel}><h2>분리 테스트: 신규 광고주 미등록 구매</h2><p>신규 광고주를 워크스페이스 미등록으로 구매하는 테스트에 한해 아래 일반 이용기간의 시작을 관리자 배정 완료 시각으로 적용합니다. 배정 전에는 리포트를 이용할 수 없고 이용기간은 차감되지 않으며, 배정 전 요청한 환불은 전액입니다.</p><p>배정 완료일부터 1개월간 이용할 수 있습니다. 결제 승인일부터 7일(168시간) 이내의 전액 환불 보장은 유지하며, 그 이후에는 실제 배정 완료일부터 시작한 이용기간의 남은 시간에 비례해 환불합니다. 원 미만은 올림합니다. 기존 구매 건과 기존 이용 대상의 이용기간·환불 기준은 변경하지 않습니다. 실제 요금은 청구되지 않습니다.</p></section>:null}
     <section className={styles.panel}><h2>1. 판매 상품과 이용기간</h2>
       <p>Etrylue Performance는 광고 성과 리포트 플랫폼 이용권을 판매합니다. 광고비 충전이나 광고 집행 대행 상품이 아닙니다.</p>
       <p>광고주·워크스페이스·회사 중 선택한 범위의 이용권은 결제 승인일부터 1개월간 제공됩니다. 매월 말일 등 다음 달에 같은 날짜가 없으면 해당 달의 마지막 날을 종료일로 적용합니다. 정확한 종료 시각은 결제 내역에서 한국 시간(KST)으로 확인할 수 있습니다.</p>
@@ -32,3 +34,4 @@ export default function RefundPage() {
     </section><p><a href="/pricing">요금제</a> · <a href="/terms">이용약관</a></p>
   </article></PublicSiteShell>;
 }
+

@@ -93,3 +93,4 @@ export function confirmRefund(value: Registration): Registration {
   if (value.payment !== 'refund_pending') fail('REFUND_RESERVATION_REQUIRED');
   return { ...value, payment: 'refunded' };
 }
+

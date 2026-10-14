@@ -5,12 +5,16 @@ import { refundAmount } from "@/lib/billing/refund-policy";
 import { won } from "@/lib/billing/catalog";
 import ManageButtons from "./ManageButtons";
 import styles from "../../../pricing/billing.module.css";
+import { isRegistrationOrder } from '@/lib/billing/review/registration-service';
+import { registrationEnabled } from '@/lib/billing/review/registration-config';
+import RegistrationResult from './RegistrationResult';
 export const dynamic = "force-dynamic";
 export const metadata = { title: "결제 결과 확인 | Etrylue", robots: { index: false, follow: false }, referrer: "no-referrer" as const };
 export default async function Result({ searchParams }: { searchParams: Promise<{ order?: string; result?: string }> }) {
   const { order: id, result } = await searchParams;
   let order = null;
   try { order = await loadOrder(id, await actor()); } catch { /* Never leak another purchaser's order. */ }
+  if(order&&isRegistrationOrder(order)&&registrationEnabled())return <RegistrationResult order={order}/>;
   const [refundState, draft] = order ? await Promise.all([
     refundRequest(order.id,order.user_id).then(data => ({data, unavailable:false})).catch(() => ({data:null, unavailable:true})),
     db().from("billing_test_purchase_drafts").select("order_id").eq("order_id",order.id).eq("user_id",order.user_id).maybeSingle(),
@@ -43,3 +47,4 @@ export default async function Result({ searchParams }: { searchParams: Promise<{
     </section>
   </div></PublicSiteShell>;
 }
+

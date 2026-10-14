@@ -2,6 +2,8 @@ import { createClient } from '@supabase/supabase-js';
 import { BillingError, reviewConfig } from './config';
 import { appReadDb } from './app-targets';
 import { isolatedReviewEnabled, productionReviewRequested, reviewAppContext } from './app-rollout';
+import { registrationEnabled, REGISTRATION_CATALOG } from './registration-config';
+import { registrationAccess } from './registration-store';
 
 // Production remains disabled until the explicit, reviewed rollout opt-in.
 export function creationGateEnabled(env: Record<string, string | undefined> = process.env) {
@@ -13,6 +15,33 @@ const unrestricted: CreationAccess = { managed: false, eligible: true, paidUntil
 // Call only after the caller has verified advertiser/workspace access.
 export async function reportCreationAccess(advertiserId: string | null, workspaceId: string, verifiedManaged?: boolean): Promise<CreationAccess> {
   if (!creationGateEnabled() || !advertiserId) return unrestricted;
+  if(registrationEnabled()){
+    const rows=await registrationAccess([advertiserId]), row=rows[0];
+    if(row){
+      if(row.workspace_id!==workspaceId)return {managed:true,eligible:false,paidUntil:null};
+      const config=reviewConfig(), client=createClient(config.dbUrl,config.dbKey,{auth:{persistSession:false,autoRefreshToken:false}});
+      const scopes=[`and(scope.eq.advertiser,target_id.eq.${advertiserId},workspace_id.eq.${workspaceId})`,
+        `and(scope.eq.workspace,target_id.eq.${workspaceId},workspace_id.eq.${workspaceId})`,
+        `and(scope.eq.company,target_id.eq.${row.tenant_id},tenant_id.eq.${row.tenant_id})`,
+        `and(id.eq.${row.order_id},catalog_version.eq.${REGISTRATION_CATALOG},target_id.eq.${advertiserId})`];
+      const orders=await client.from('billing_test_orders').select('id,catalog_version,paid_until').eq('status','active').or(scopes.join(','));
+      if(orders.error)throw new BillingError('ENTITLEMENT_LOOKUP_FAILED',503);
+      const now=Date.now();
+      const ends=(orders.data||[]).map(o=>o.catalog_version===REGISTRATION_CATALOG
+        ? o.id===row.order_id&&row.payment_status==='verified'&&row.started_at&&Date.parse(row.started_at)<=now?row.paid_until:null
+        :o.paid_until).filter((end):end is string=>!!end&&Date.parse(end)>now);
+      const paidUntil=ends.reduce<string|null>((end,value)=>!end||Date.parse(value)>Date.parse(end)?value:end,null);
+      return {managed:true,eligible:!!paidUntil,paidUntil};
+    }
+  }
+  // New-version advertisers must not fall into the legacy Preview "manual" path
+  // if the test feature is later switched off. Missing legacy marker columns are
+  // tolerated only in old isolated fixtures, where new materialization is impossible.
+  if(!registrationEnabled()&&isolatedReviewEnabled()){
+    const marker=await appReadDb().from('advertisers').select('billing_review_managed').eq('id',advertiserId).eq('workspace_id',workspaceId).maybeSingle();
+    if(marker.error&&marker.error.code!=='42703')throw new BillingError('ENTITLEMENT_LOOKUP_FAILED',503);
+    if(marker.data?.billing_review_managed===true)return {managed:true,eligible:false,paidUntil:null};
+  }
   const production = productionReviewRequested();
   if (production) {
     // Only accept this optional hint from an already-authorized server DB row.
@@ -47,3 +76,4 @@ export async function reportCreationAccess(advertiserId: string | null, workspac
   if (order.error) throw new BillingError('ENTITLEMENT_LOOKUP_FAILED', 503);
   return { managed: true, eligible: !!order.data, paidUntil: order.data?.paid_until ?? null };
 }
+

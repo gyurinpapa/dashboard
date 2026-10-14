@@ -3,7 +3,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { won } from "@/lib/billing/catalog";
 import styles from "../../../pricing/billing.module.css";
-export default function ManageButtons({ orderId, status, monthly, paid, cancelled, scope, newAdvertiser = false, refundAmount = 0, refundPending = false }: { refundAmount?: number; refundPending?: boolean; newAdvertiser?: boolean; scope: string; targetId: string; orderId: string; status: string; monthly: boolean; paid: boolean; cancelled: boolean }) {
+export default function ManageButtons({ orderId, status, monthly, paid, cancelled, scope, newAdvertiser = false, refundAmount = 0, refundPending = false,awaitingAssignment=false }: { awaitingAssignment?:boolean;refundAmount?: number; refundPending?: boolean; newAdvertiser?: boolean; scope: string; targetId: string; orderId: string; status: string; monthly: boolean; paid: boolean; cancelled: boolean }) {
   const router = useRouter(), pending = useRef(false);
   const [busy, setBusy] = useState(false), [message, setMessage] = useState("");
   const [completedAction, setCompletedAction] = useState("");
@@ -27,10 +27,11 @@ export default function ManageButtons({ orderId, status, monthly, paid, cancelle
       ? "환불 완료가 아직 확인되지 않았습니다. ‘결제 상태 재확인’을 눌러 취소 반영 여부를 확인해주세요."
       : monthly && cancelled
         ? "다음 테스트 결제가 해지되었습니다. 이미 결제한 금액은 취소되지 않으며, 이용기간은 상단에서 확인할 수 있습니다."
+        : awaitingAssignment ? '테스트 결제 확인 · 관리자 배정 대기 상태입니다. 배정 완료 전에는 이용기간이 차감되지 않습니다.'
         : paid
           ? "테스트 결제 승인 완료 상태를 확인했습니다. 이용기간은 상단에 표시된 종료 시각까지입니다. 실제 요금은 청구되지 않습니다."
           : "결제 승인 완료 상태가 확인되지 않았습니다. 새로 결제하지 말고 잠시 후 ‘결제 상태 재확인’을 눌러주세요. 계속 동일하면 문의해주세요.";
-  const confirmed = status === "refunded" || (completedAction !== "refund" && (paid || (monthly && cancelled)));
+  const confirmed = status === "refunded" || (completedAction !== "refund" && (paid || awaitingAssignment || (monthly && cancelled)));
   function restart() {
     for(let i=sessionStorage.length-1;i>=0;i--) {
       const key=sessionStorage.key(i);
@@ -43,6 +44,7 @@ export default function ManageButtons({ orderId, status, monthly, paid, cancelle
     <button type="button" className={styles.button} disabled={busy} onClick={() => act("reconcile")}>결제 상태 재확인</button>
     {monthly && paid && !cancelled ? <button type="button" className={styles.button} disabled={busy} onClick={() => act("cancel")}>다음 결제 해지</button> : null}
     {paid && newAdvertiser ? <button type="button" className={styles.button} disabled={busy} onClick={() => act("prepare")}>신규 광고주 준비하고 리포트 시작</button> : null}
-    {refundAmount > 0 && (paid || refundPending) ? <button type="button" className={styles.button} disabled={busy} onClick={() => act("refund")}>{refundPending ? "접수된 환불 재확인·재시도" : `테스트 환불 요청 · 예상 ${won(refundAmount)}`}</button> : null}
+    {refundAmount > 0 && (paid || refundPending || awaitingAssignment) ? <button type="button" className={styles.button} disabled={busy} onClick={() => act("refund")}>{refundPending ? "접수된 환불 재확인·재시도" : `테스트 환불 요청 · 예상 ${won(refundAmount)}`}</button> : null}
   </div><p className={styles.error} style={!message && completedAction && confirmed ? { color: "var(--mint, #35e0d0)" } : undefined} role="status">{message || (completedAction ? confirmedMessage : "")}</p></>;
 }
+

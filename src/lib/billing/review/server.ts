@@ -8,12 +8,15 @@ import { appReadDb, assertAppDatabase, appTargets } from "./app-targets";
 import { BillingError, hash, providerKeys, reviewConfig, uuid } from "./config";
 import { periodEnd, plans, quote, type BillingMode, type Scope } from "../catalog";
 import { toss, verifiedPayment } from "./toss";
+import { registrationEnabled, REGISTRATION_CATALOG } from './registration-config';
+import { createRegistrationDraft, isRegistrationOrder, syncRegistration } from './registration-service';
+import { registrationAccess, registrationGet, registrationRpc } from './registration-store';
 
 export type Order = {
   id: string; user_id: string; scope: Scope; target_id: string; workspace_id: string | null;
   tenant_id: string | null; mode: BillingMode; amount: number; name: string; customer_key: string;
   nonce_hash: string; status: string; billing_key_cipher: string | null; anchor_at: string | null;
-  paid_until: string | null; last_cycle: number; cancel_at_period_end: boolean;
+  paid_until: string | null; last_cycle: number; cancel_at_period_end: boolean; catalog_version:string;
 };
 type Charge = { id: string; order_id: string; amount: number; cycle: number; status: string; payment_key: string | null; created_at: string };
 export function db() {
@@ -57,12 +60,20 @@ async function rpc(name: string, args: Record<string, unknown>) {
 export async function targets(userId: string) {
   const options = await appTargets(userId);
   const ids = [...new Set([...options.advertiser.map(a => a.id), ...options.newAdvertiserWorkspaces.map(w => w.id), ...options.newAdvertiserWorkspaces.map(w => w.tenant_id).filter(Boolean), ...options.company.map(c => c.id)])];
-  const coverage = creationGateEnabled() && ids.length ? await db().from("billing_test_orders")
-    .select("scope,target_id,workspace_id,tenant_id,paid_until").eq("status", "active")
-    .gt("paid_until", new Date().toISOString()).in("target_id", ids) : { data: [], error: null };
+  const now=new Date().toISOString();
+  let coverageQuery=db().from("billing_test_orders").select("id,catalog_version,scope,target_id,workspace_id,tenant_id,paid_until").eq("status","active");
+  coverageQuery=registrationEnabled()?coverageQuery.or(`catalog_version.eq.${REGISTRATION_CATALOG},paid_until.gt.${now}`):coverageQuery.gt("paid_until",now);
+  const coverage = creationGateEnabled() && ids.length ? await coverageQuery.in("target_id", ids) : { data: [], error: null };
   if(coverage.error)throw new BillingError("ENTITLEMENT_LOOKUP_FAILED",503);
+  const registrations=registrationEnabled()&&options.advertiser.length?await registrationAccess(options.advertiser.map(a=>a.id)):[];
+  const registrationByOrder=new Map(registrations.map(r=>[r.order_id,r]));
+  const coverageRows=(coverage.data||[]).map(o=>{
+    if(o.catalog_version!==REGISTRATION_CATALOG)return o;
+    const r=registrationByOrder.get(o.id);
+    return r&&r.advertiser_id===o.target_id&&r.payment_status==='verified'?{...o,workspace_id:r.workspace_id,tenant_id:r.tenant_id,paid_until:r.paid_until}:{...o,paid_until:null};
+  }).filter(o=>o.paid_until&&Date.parse(o.paid_until)>Date.parse(now));
   function paidUntil(scope: Scope, id: string, workspaceId: string | null, tenantId: string | null) {
-    return (coverage.data || []).filter(o =>
+    return coverageRows.filter(o =>
       (o.scope === scope && o.target_id === id && (scope === "company" ? o.tenant_id === tenantId : o.workspace_id === workspaceId)) ||
       (scope === "advertiser" && o.scope === "workspace" && o.target_id === workspaceId && o.workspace_id === workspaceId) ||
       (o.scope === "company" && !!tenantId && o.target_id === tenantId && o.tenant_id === tenantId)
@@ -106,7 +117,12 @@ export async function checkout(userId: string, id: string, scope: Scope, mode: B
   const config = reviewConfig(), keys = providerKeys(mode);
   if (mode !== "once") throw new BillingError("MONTHLY_NOT_AVAILABLE", 400);
   let context;
-  if(draft) {
+  const registration=!!draft&&registrationEnabled();
+  if(registration&&draft){
+    if(scope!=='advertiser'||draft.workspaceId)throw new BillingError('INVALID_CHECKOUT');
+    const pending=await createRegistrationDraft(db(),userId,id,draft.name);
+    context=pending.context;targetId=pending.targetId;
+  }else if(draft) {
     if(scope!=="advertiser")throw new BillingError("INVALID_CHECKOUT");
     context=await newAdvertiserContext(userId,draft.workspaceId);
     targetId=draftTarget(userId,id,process.env.BILLING_REVIEW_STATE_SECRET||"");
@@ -123,8 +139,10 @@ export async function checkout(userId: string, id: string, scope: Scope, mode: B
   const q=quote(scope,mode);
   const state = stateFor(id, userId), customerKey = `etrylue_${id.replaceAll("-", "")}`;
   await rpc("billing_test_create", { p: { id, user_id: userId, scope, target_id: targetId, ...context,
-    mode, catalog_version: q.version, amount: q.amount, name: q.name, customer_key: customerKey, nonce_hash: hash(state) } });
+    mode, catalog_version: registration?REGISTRATION_CATALOG:q.version, amount: q.amount, name: q.name, customer_key: customerKey, nonce_hash: hash(state) } });
   const order = await loadOrder(id, userId);
+  if(registration&&(order.catalog_version!==REGISTRATION_CATALOG||order.target_id!==targetId||order.scope!==scope||
+    order.mode!==mode||order.amount!==q.amount||order.workspace_id!==null||order.tenant_id!==context.tenant_id))throw new BillingError('ORDER_DRAFT_CONFLICT',409);
   if (order.status !== "pending") throw new BillingError("ORDER_ALREADY_PROCESSED", 409);
   return { orderId: id, orderName: order.name, amount: order.amount, mode, customerKey, clientKey: keys.client,
     successUrl: `${config.origin}/api/billing/review/callback?order=${id}&state=${state}`,
@@ -136,6 +154,7 @@ async function settle(charge: Charge, order: Order, value: unknown, expectedKey?
   const end = periodEnd(order.anchor_at || payment.approvedAt, charge.cycle);
   await rpc("billing_test_settle_refund", { p: { charge_id: charge.id, amount: payment.totalAmount,
     payment_key: payment.paymentKey, balance_amount: payment.balanceAmount, status: payment.status, approved_at: payment.approvedAt, paid_until: end } });
+  if(isRegistrationOrder(order))await syncRegistration(db(),await loadOrder(order.id),value,expectedKey);
 }
 export async function reconcile(chargeId: string) {
   const charge = await loadCharge(chargeId), order = await loadOrder(charge.order_id);
@@ -149,7 +168,7 @@ export async function callback(userId: string, params: URLSearchParams) {
   if (hash(params.get("state") || "") !== order.nonce_hash) throw new BillingError("INVALID_STATE", 403);
   if (params.get("failed")) return order.id;
   const charge = await loadCharge(order.id);
-  if (charge.status !== "pending") return order.id;
+  if (charge.status !== "pending") {if(isRegistrationOrder(order))await reconcile(charge.id);return order.id;}
   if (order.mode === "once") {
     const paymentKey = params.get("paymentKey") || "";
     if (!paymentKey || paymentKey.length > 300 || params.get("orderId") !== order.id ||
@@ -172,6 +191,25 @@ export async function callback(userId: string, params: URLSearchParams) {
 export async function manage(userId: string, orderId: string, action: string) {
   const order = await loadOrder(orderId, userId);
   if (order.mode !== "once") throw new BillingError("MONTHLY_NOT_AVAILABLE");
+  if(isRegistrationOrder(order)){
+    if(!registrationEnabled())throw new BillingError('REGISTRATION_TEST_ONLY',503);
+    if(action==='reconcile'||action==='prepare'){await reconcile(order.id);return;}
+    if(action!=='refund')throw new BillingError('INVALID_ACTION');
+    const reserved=await registrationRpc<import('./registration-store').RegistrationRow>('etrylue_registration_reserve_refund',{p_order:order.id,p_actor:userId});
+    if(reserved.payment_status==='refunded')return;
+    await reconcile(order.id);
+    if((await registrationGet(order.id,userId)).payment_status==='refunded')return;
+    const charge=await loadCharge(order.id), amount=reserved.refund_amount;
+    if(!charge.payment_key||!amount||!Number.isSafeInteger(amount)||amount<=0||amount>charge.amount||charge.status!=='done')
+      throw new BillingError('REFUND_REQUIRES_REVIEW',409);
+    try{
+      const value=await toss('once',`/v1/payments/${encodeURIComponent(charge.payment_key)}/cancel`,
+        {cancelReason:'미등록 광고주 테스트 이용권 환불',cancelAmount:amount},`registration-refund-${charge.id}`);
+      await settle(charge,order,value,charge.payment_key);
+    }catch{await reconcile(charge.id);}
+    if((await registrationGet(order.id,userId)).payment_status!=='refunded')throw new BillingError('REFUND_PENDING_RECONCILIATION',409);
+    return;
+  }
   if (action === "prepare") {
     if(order.status!=="active"||!order.paid_until||Date.parse(order.paid_until)<=Date.now())throw new BillingError("PAYMENT_NOT_VERIFIED",409);
     // Fresh provider reconciliation prevents a stale local DONE after a provider cancellation.
@@ -218,3 +256,4 @@ export async function refundRequest(orderId: string, userId: string): Promise<Re
   if (error) throw new BillingError("BILLING_STORAGE_UNAVAILABLE",503);
   return data;
 }
+

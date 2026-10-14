@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { resolveTrueMasterStatus } from "@/lib/media-sync/media-connection-access-policy";
 import { BillingError } from "./config";
 import { productionReviewRequested } from './app-rollout';
+import { registrationEnabled } from './registration-config';
 
 export const APP_PROJECT = "rulcvpgvmmckacshkmfy";
 const ONBOARDING_TEST_PROJECT = "lpwmxtnzpgyrhphwufsd";
@@ -15,7 +16,7 @@ export function assertAppDatabase() {
     process.env.BILLING_REVIEW_ORIGIN === ONBOARDING_PREVIEW &&
     process.env.CUSTOMER_ONBOARDING_DATABASE_URL === url &&
     url === `https://${ONBOARDING_TEST_PROJECT}.supabase.co`;
-  if ((url !== `https://${APP_PROJECT}.supabase.co` && !isolatedPreview) ||
+  if ((url !== `https://${APP_PROJECT}.supabase.co` && !isolatedPreview && !registrationEnabled()) ||
       !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || !process.env.SUPABASE_SERVICE_ROLE_KEY)
     throw new BillingError("APP_DATABASE_REQUIRED", 503);
   return url!;
@@ -69,3 +70,4 @@ export async function appTargets(userId: string) {
     .map(a => ({ id: a.id, name: a.name, workspace_id: a.workspace_id, billing_review_managed: a.billing_review_managed === true }));
   return { advertiser, newAdvertiserWorkspaces: workspaceRows, workspace: workspaceRows.filter(w => master || adminIds.includes(w.id)), company: companies.data || [] };
 }
+

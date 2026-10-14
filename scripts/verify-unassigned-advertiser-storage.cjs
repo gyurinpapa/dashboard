@@ -19,7 +19,7 @@ async function main(){
  create table public.profiles(id uuid primary key references auth.users(id),company_id uuid not null references public.companies(id),email text);
  create table public.tenants(id uuid primary key,status text not null);
  create table public.tenant_members(tenant_id uuid references public.tenants(id),user_id uuid references auth.users(id),role text not null,primary key(tenant_id,user_id));
- create table public.workspaces(id uuid primary key,company_id uuid references public.companies(id),tenant_id uuid references public.tenants(id),unique(tenant_id,id));
+ create table public.workspaces(id uuid primary key,name text not null default 'Workspace',company_id uuid references public.companies(id),tenant_id uuid references public.tenants(id),unique(tenant_id,id));
  create table public.workspace_members(workspace_id uuid references public.workspaces(id),user_id uuid references auth.users(id),role text not null,primary key(workspace_id,user_id));
  create table public.advertisers(id uuid primary key,workspace_id uuid not null references public.workspaces(id),tenant_id uuid references public.tenants(id),created_by uuid references auth.users(id),name text not null,billing_review_managed boolean not null default false,foreign key(tenant_id,workspace_id) references public.workspaces(tenant_id,id));
  create table public.reports(id uuid primary key,workspace_id uuid not null references public.workspaces(id),advertiser_id uuid references public.advertisers(id),total numeric not null);
@@ -38,7 +38,7 @@ async function main(){
  for(const n of [101,102])await q('insert into public.companies values($1,$2)',[id(n),'Company '+n]);
  for(const n of [201,202,203])await q('insert into public.tenants values($1,$2)',[id(n),'active']);
  for(const n of [1,2,3,4,5,6,7,8,9,10,11,12])await q('insert into public.profiles values($1,$2,$3)',[id(n),id(n===9?102:101),'test'+n+'@example.invalid']);
- for(const [w,c,t] of [[301,101,201],[302,101,201],[303,102,202],[304,101,203]])await q('insert into public.workspaces values($1,$2,$3)',[id(w),id(c),id(t)]);
+ for(const [w,c,t] of [[301,101,201],[302,101,201],[303,102,202],[304,101,203]])await q('insert into public.workspaces(id,company_id,tenant_id) values($1,$2,$3)',[id(w),id(c),id(t)]);
  for(const [u,t,r] of [[1,201,'member'],[2,201,'member'],[3,201,'owner'],[4,201,'member'],[9,202,'owner']])await q('insert into public.tenant_members values($1,$2,$3)',[id(t),id(u),r]);
  for(const [w,u,r] of [[301,1,'staff'],[301,2,'admin'],[301,4,'director'],[301,5,'staff'],[301,6,'client'],[301,7,'master'],[302,2,'admin'],[303,9,'admin']])await q('insert into public.workspace_members values($1,$2,$3)',[id(w),id(u),r]);
  await q('update public.profiles set company_id=$1,email=$2 where id=$3',[id(102),'gyurinpapakimdh@gmail.com',id(10)]);
@@ -124,12 +124,16 @@ async function main(){
  await record({order_id:id(609),advertiser_id:id(709)});
  await test('pending list cursor yields distinct second page',async()=>{const first=await list(1,null,null,1);const second=await list(1,first[0].created_at,first[0].order_id,1);assert.equal(first.length,1);assert.equal(second.length,1);assert.notEqual(first[0].order_id,second[0].order_id)});
  await test('pending list omits assigned registrations',async()=>assert.ok((await list(1)).every(x=>x.workspace_id===null)));
+ await test('destination names scoped to authority and buyer access',async()=>{const rows=await list(2);assert.ok(rows.length);assert.ok(rows.every(r=>r.destinations.every(w=>[id(301),id(302)].includes(w.id))));assert.ok(rows[0].destinations.some(w=>w.id===id(301)))});
+ await test('staff buyer cannot self assign through destination list',async()=>assert.ok((await list(1)).every(r=>r.destinations.length===0)));
+ await test('batch access only returns matching advertiser',async()=>assert.equal((await q('select public.etrylue_registration_access_many($1::uuid[]) as value',[[id(701)]])).rows[0].value.advertiser_id,id(701)));
+ await test('batch access rejects unbounded ID list',async()=>denied(()=>q('select public.etrylue_registration_access_many($1::uuid[])', [Array(1001).fill(id(701))]),/INVALID_REGISTRATION_IDS/));
  await db.exec('reset role');
  await test('existing report rows and totals unchanged',async()=>assert.equal(JSON.stringify((await q('select * from public.reports')).rows),before));
  await test('legacy advertiser unchanged',async()=>{const x=(await q('select * from public.advertisers where id=$1',[id(401)])).rows[0];assert.equal(x.name,'Existing');assert.equal(x.billing_review_managed,false)});
  await test('legacy workspace constraint unchanged',async()=>assert.equal((await q("select is_nullable from information_schema.columns where table_name='advertisers' and table_schema='public' and column_name='workspace_id'")).rows[0].is_nullable,'NO'));
  await test('private table RLS enabled',async()=>assert.equal((await q("select relrowsecurity from pg_class where oid='etrylue_registration_private.advertisers'::regclass")).rows[0].relrowsecurity,true));
- const signatures=['etrylue_registration_record(jsonb)','etrylue_registration_assign(uuid,uuid,uuid)','etrylue_registration_reserve_refund(uuid,uuid)','etrylue_registration_confirm_refund(uuid,integer)','etrylue_registration_provider_state(uuid,text)','etrylue_registration_get(uuid,uuid)','etrylue_registration_list(uuid,timestamptz,uuid,integer)'];
+ const signatures=['etrylue_registration_record(jsonb)','etrylue_registration_assign(uuid,uuid,uuid)','etrylue_registration_reserve_refund(uuid,uuid)','etrylue_registration_confirm_refund(uuid,integer)','etrylue_registration_provider_state(uuid,text)','etrylue_registration_get(uuid,uuid)','etrylue_registration_list(uuid,timestamptz,uuid,integer)','etrylue_registration_access_many(uuid[])'];
  for(const role of ['anon','authenticated']){
   for(const signature of signatures)await test(role+' cannot execute '+signature,async()=>assert.equal((await q('select has_function_privilege($1,$2,\'EXECUTE\') as v',[role,'public.'+signature])).rows[0].v,false));
   await test(role+' cannot access private schema',async()=>assert.equal((await q("select has_schema_privilege($1,'etrylue_registration_private','USAGE') as v",[role])).rows[0].v,false));

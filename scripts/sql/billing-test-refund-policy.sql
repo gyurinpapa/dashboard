@@ -120,3 +120,4 @@ end $$;
 revoke all on function public.billing_test_request_refund(uuid,uuid),public.billing_test_settle_refund(jsonb),public.billing_test_settle(jsonb) from public,anon,authenticated;
 grant execute on function public.billing_test_request_refund(uuid,uuid),public.billing_test_settle_refund(jsonb),public.billing_test_settle(jsonb) to service_role;
 commit;
+

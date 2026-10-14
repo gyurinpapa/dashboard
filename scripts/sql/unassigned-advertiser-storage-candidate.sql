@@ -207,7 +207,16 @@ returns setof jsonb language plpgsql stable security invoker set search_path='' 
 begin
   if p_actor is null or p_limit is null or p_limit<1 or p_limit>100 or
     ((p_before is null) is distinct from (p_cursor is null)) then raise exception 'INVALID_REGISTRATION_PAGE'; end if;
-  return query select to_jsonb(r) from etrylue_registration_private.advertisers r
+  return query select to_jsonb(r)||jsonb_build_object('destinations',coalesce((
+    select jsonb_agg(jsonb_build_object('id',w.id,'name',w.name) order by w.name,w.id)
+    from public.workspaces w where w.company_id=r.company_id and w.tenant_id=r.tenant_id
+      and exists(select 1 from public.workspace_members buyer where buyer.workspace_id=w.id and buyer.user_id=r.buyer_id and buyer.role in ('admin','director','staff'))
+      and exists(select 1 from public.profiles ap where ap.id=p_actor and (
+        (lower(btrim(ap.email))='gyurinpapakimdh@gmail.com' and exists(select 1 from public.workspace_members am where am.user_id=p_actor and am.role='master')) or
+        (ap.company_id=r.company_id and (
+          exists(select 1 from public.tenant_members tm where tm.user_id=p_actor and tm.tenant_id=r.tenant_id and tm.role='owner') or
+          exists(select 1 from public.workspace_members am where am.user_id=p_actor and am.workspace_id=w.id and am.role in ('admin','director'))))))
+  ),'[]'::jsonb)) from etrylue_registration_private.advertisers r
   where r.workspace_id is null and (p_before is null or (r.created_at,r.order_id)<(p_before,p_cursor)) and (
     r.buyer_id=p_actor or
     exists(select 1 from public.profiles p where p.id=p_actor and lower(btrim(p.email))='gyurinpapakimdh@gmail.com' and
@@ -219,13 +228,21 @@ begin
   order by r.created_at desc,r.order_id desc limit p_limit;
 end $$;
 
+-- Server-only batch lookup, called after existing advertiser/workspace authorization.
+create function public.etrylue_registration_access_many(p_advertisers uuid[]) returns setof jsonb
+language plpgsql stable security invoker set search_path='' as $$
+begin
+  if p_advertisers is null or cardinality(p_advertisers)>1000 then raise exception 'INVALID_REGISTRATION_IDS'; end if;
+  return query select to_jsonb(r) from etrylue_registration_private.advertisers r where r.advertiser_id=any(p_advertisers);
+end $$;
+
 revoke all on function public.etrylue_registration_record(jsonb),public.etrylue_registration_assign(uuid,uuid,uuid),
   public.etrylue_registration_reserve_refund(uuid,uuid),public.etrylue_registration_confirm_refund(uuid,integer),
   public.etrylue_registration_provider_state(uuid,text),public.etrylue_registration_get(uuid,uuid),
-  public.etrylue_registration_list(uuid,timestamptz,uuid,integer)
+  public.etrylue_registration_list(uuid,timestamptz,uuid,integer),public.etrylue_registration_access_many(uuid[])
   from public,anon,authenticated;
 grant execute on function public.etrylue_registration_record(jsonb),public.etrylue_registration_assign(uuid,uuid,uuid),
   public.etrylue_registration_reserve_refund(uuid,uuid),public.etrylue_registration_confirm_refund(uuid,integer),
   public.etrylue_registration_provider_state(uuid,text),public.etrylue_registration_get(uuid,uuid),
-  public.etrylue_registration_list(uuid,timestamptz,uuid,integer) to service_role;
+  public.etrylue_registration_list(uuid,timestamptz,uuid,integer),public.etrylue_registration_access_many(uuid[]) to service_role;
 commit;

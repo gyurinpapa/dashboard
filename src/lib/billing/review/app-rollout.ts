@@ -1,4 +1,5 @@
 import { BillingError } from './config';
+import { registrationEnabled } from './registration-config';
 
 type Env = Record<string, string | undefined>;
 export const PRODUCTION_APP_PROJECT = 'rulcvpgvmmckacshkmfy';
@@ -10,7 +11,7 @@ export function productionReviewRequested(env: Env = process.env) {
   return env.VERCEL_ENV === 'production' && env.BILLING_REVIEW_APP_ROLLOUT === 'production-test-v1';
 }
 export function isolatedReviewEnabled(env: Env = process.env) {
-  return env.VERCEL_ENV === 'preview' &&
+  return registrationEnabled(env) || env.VERCEL_ENV === 'preview' &&
     env.NEXT_PUBLIC_SUPABASE_URL === `https://${TEST_APP_PROJECT}.supabase.co` &&
     env.CUSTOMER_ONBOARDING_DATABASE_URL === env.NEXT_PUBLIC_SUPABASE_URL &&
     env.CUSTOMER_ONBOARDING_ENABLED === 'true' &&
@@ -27,3 +28,4 @@ export function reviewAppContext(env: Env = process.env) {
   }
   throw new BillingError('APP_ROLLOUT_UNAVAILABLE', 503);
 }
+

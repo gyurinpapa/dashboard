@@ -2,6 +2,7 @@ import { actor, checkout } from "@/lib/billing/review/server";
 import { isScope } from "@/lib/billing/catalog";
 import { BillingError, uuid } from "@/lib/billing/review/config";
 import { body, failure, json } from "@/lib/billing/review/http";
+import { registrationEnabled } from '@/lib/billing/review/registration-config';
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
@@ -12,7 +13,8 @@ export async function POST(request: Request) {
     // Reject user-supplied prices instead of silently appearing to honor them.
     if ("amount" in input || "price" in input || "userId" in input) throw new BillingError("INVALID_CHECKOUT");
     const draft=input.targetId==="new"?{name:typeof input.newAdvertiserName==="string"?input.newAdvertiserName:"",workspaceId:typeof input.workspaceId==="string"?input.workspaceId:""}:undefined;
-    if(draft&&(!uuid(draft.workspaceId)||input.scope!=="advertiser"))throw new BillingError("INVALID_CHECKOUT");
+    if(draft&&(input.scope!=="advertiser"||(registrationEnabled()?('workspaceId' in input):!uuid(draft.workspaceId))))throw new BillingError("INVALID_CHECKOUT");
     return json(await checkout(userId, input.id, input.scope, input.mode, input.targetId, draft));
   } catch (error) { return failure(error); }
 }
+
