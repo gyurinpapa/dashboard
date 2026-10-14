@@ -1393,6 +1393,7 @@ async function processSingleJob(
 
   const naverResult =
     await processNextNaverMediaSyncJob({
+      enableNaverCampaignAuthority: true,
       jobTimeoutMs:
         options.jobTimeoutMs,
 
