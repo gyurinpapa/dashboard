@@ -2,6 +2,7 @@
 "use client";
 
 import type {CreativeMetadataSource} from './creative-metadata/CreativeMetadata';
+import { selectNaverCampaignAuthority } from "@/src/lib/report/naver-campaign-authority";
 import type { ReportTheme } from "@/src/lib/report/theme";
 import dynamic from "next/dynamic";
 import {
@@ -2579,7 +2580,10 @@ function pickRepresentativeRows(input: {
     ),
   ];
 
-  return representativeRows.length > 0 ? representativeRows : EMPTY_ROWS;
+  const selectedRows = selectNaverCampaignAuthority(representativeRows, [
+    ...input.keywordRows, ...input.creativeRows, ...input.mixedRows, ...input.unknownRows,
+  ]);
+  return selectedRows.length > 0 ? selectedRows : EMPTY_ROWS;
 }
 
 export function buildRowLevelBuckets(
