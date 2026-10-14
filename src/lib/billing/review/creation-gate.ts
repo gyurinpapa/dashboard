@@ -76,4 +76,3 @@ export async function reportCreationAccess(advertiserId: string | null, workspac
   if (order.error) throw new BillingError('ENTITLEMENT_LOOKUP_FAILED', 503);
   return { managed: true, eligible: !!order.data, paidUntil: order.data?.paid_until ?? null };
 }
-

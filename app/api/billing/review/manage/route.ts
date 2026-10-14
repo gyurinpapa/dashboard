@@ -11,4 +11,3 @@ export async function POST(request: Request) {
     return json({ ok: true });
   } catch (error) { return failure(error); }
 }
-

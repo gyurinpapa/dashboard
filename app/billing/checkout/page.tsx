@@ -36,4 +36,3 @@ export default async function Checkout({ searchParams }: { searchParams: Promise
     </section>
   </div></PublicSiteShell>;
 }
-

@@ -90,4 +90,3 @@ export default function CheckoutForm({ scope, mode,registration=false }: { scope
     {message && requestId.current ? <a href={`/billing/review/result?order=${requestId.current}`}>결제 결과 확인</a> : null}
   </form>;
 }
-

@@ -38,4 +38,3 @@ export async function createVerifiedTestAdvertiser(draft:{target_id:string;user_
  const check=await client.from('advertisers').select<string>(production?'id,workspace_id,created_by,name,billing_review_managed':'id,workspace_id,created_by,name').eq('id',draft.target_id).returns<{workspace_id:string;created_by:string;name:string;billing_review_managed?:boolean}[]>().single();
  if(check.error||check.data.workspace_id!==draft.workspace_id||check.data.created_by!==draft.user_id||check.data.name!==draft.name||(production&&check.data.billing_review_managed!==true))throw new BillingError('ADVERTISER_PREPARATION_FAILED',409);
 }
-

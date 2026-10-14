@@ -47,4 +47,3 @@ export default function ManageButtons({ orderId, status, monthly, paid, cancelle
     {refundAmount > 0 && (paid || refundPending || awaitingAssignment) ? <button type="button" className={styles.button} disabled={busy} onClick={() => act("refund")}>{refundPending ? "접수된 환불 재확인·재시도" : `테스트 환불 요청 · 예상 ${won(refundAmount)}`}</button> : null}
   </div><p className={styles.error} style={!message && completedAction && confirmed ? { color: "var(--mint, #35e0d0)" } : undefined} role="status">{message || (completedAction ? confirmedMessage : "")}</p></>;
 }
-

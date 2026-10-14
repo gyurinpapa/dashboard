@@ -47,4 +47,3 @@ export default async function Result({ searchParams }: { searchParams: Promise<{
     </section>
   </div></PublicSiteShell>;
 }
-

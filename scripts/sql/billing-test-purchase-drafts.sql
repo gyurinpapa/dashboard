@@ -11,4 +11,3 @@ create table public.billing_test_purchase_drafts (
 alter table public.billing_test_purchase_drafts enable row level security;
 revoke all on public.billing_test_purchase_drafts from public,anon,authenticated,service_role;
 grant select,insert on public.billing_test_purchase_drafts to service_role;
-

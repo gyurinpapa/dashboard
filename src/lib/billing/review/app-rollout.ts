@@ -28,4 +28,3 @@ export function reviewAppContext(env: Env = process.env) {
   }
   throw new BillingError('APP_ROLLOUT_UNAVAILABLE', 503);
 }
-

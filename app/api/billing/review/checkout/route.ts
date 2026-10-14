@@ -17,4 +17,3 @@ export async function POST(request: Request) {
     return json(await checkout(userId, input.id, input.scope, input.mode, input.targetId, draft));
   } catch (error) { return failure(error); }
 }
-

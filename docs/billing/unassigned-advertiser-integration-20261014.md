@@ -31,6 +31,16 @@ This supersedes the earlier lifecycle/storage-only checkpoint for implementation
 
 These are not real card payments, browser visual QA, real multi-session lock tests, or hosted PostgREST validation. All provider/network requests in flow tests are intercepted and unknown URLs throw. Production/Railway/Google/Naver credentials and jobs are untouched.
 
+## Hosted test application completed
+
+- App project lpwmxtnzpgyrhphwufsd: migration unassigned_advertiser_registration_test_only applied after exact project/metadata checks. The default-false marker and private registry/eight service-only RPCs exist. RLS, invoker permissions, service execution and denial for anon/authenticated were checked on hosted PostgreSQL 17.11. Registration rows remain zero; no hosted test purchase/advertiser was created by this application.
+- Payment project kbqyszbuxojofugqfjbh: migration unassigned_advertiser_payment_drafts_test_only added the new immutable draft table. RLS and service SELECT/INSERT-only access were checked. New draft rows remain zero.
+- Existing app test advertisers: 4 rows, business-row hash e38b6f787198772f855c916ab6471713 unchanged. Memberships: 2 rows, hash 3cfea94e5e5cabba78d20a8a2ab7fe5d unchanged.
+- Existing payment orders: 7 rows, selected immutable/business-state hash 4daa6ba89bad919ac3e07f2cb6825049 unchanged; charge rows remain 7. No existing order, charge, refund or old draft was updated by these migrations.
+- Branch-only Preview configuration was created for feat/unassigned-advertiser-20261014. Public test project keys/config were validated, a fresh private state signer was stored without displaying its value, and inherited production service credentials were masked with test-only placeholders. Production variables and old Preview branch scopes were not edited.
+- Three private placeholders require direct user replacement: SUPABASE_SERVICE_ROLE_KEY (app test project), BILLING_REVIEW_SERVICE_ROLE_KEY (payment test project), BILLING_REVIEW_TOSS_SECRET_KEY (Toss test secret). The placeholder for the Toss secret intentionally fails providerKeys; the new checkout cannot open until correct test configuration is supplied.
+- Stable Preview origin: https://dashboard-git-feat-unassigned-adver-af8f36-gyurinpapas-projects.vercel.app . A first Preview build passed TypeScript and Next compilation; final source/config build status must be checked separately.
+
 ## Hosted Preview preparation
 
 1. Inspect latest Production and this branch head. Build a Preview in dashboard/team_ADwPfZGADl8I5pvYHxjtcyYx; verify the exact commit. No production target or aliases.

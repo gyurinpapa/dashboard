@@ -29,4 +29,3 @@ export function periodEnd(anchor: string, cycle: number): string {
   return new Date(Date.UTC(kst.getUTCFullYear(), month, Math.min(kst.getUTCDate(), lastDay),
     kst.getUTCHours() - 9, kst.getUTCMinutes(), kst.getUTCSeconds(), kst.getUTCMilliseconds())).toISOString();
 }
-

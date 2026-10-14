@@ -41,4 +41,3 @@ export default async function Account(){
  {unavailable?<p className={styles.notice}>결제 내역을 불러오지 못했거나 테스트 이용 대상이 아닌 계정입니다. 이미 결제했다면 다시 구매하지 말고 문의해주세요.</p>:!orders.length?<p className={styles.notice}>아직 결제 내역이 없습니다. 요금제를 선택하고 첫 구매를 시작하세요.</p>:<ul>{orders.map(o=><li key={o.id} className={styles.row}><span>{o.name}<br/>{won(o.amount)} · {orderStatus(o)}</span><a href={`/billing/review/result?order=${o.id}`}>상세 · 취소</a></li>)}</ul>}
  </section></div></PublicSiteShell>;
 }
-

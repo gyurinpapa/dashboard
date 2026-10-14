@@ -34,4 +34,3 @@ export default function RefundPage() {
     </section><p><a href="/pricing">요금제</a> · <a href="/terms">이용약관</a></p>
   </article></PublicSiteShell>;
 }
-

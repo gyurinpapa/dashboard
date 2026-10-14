@@ -32,4 +32,3 @@ export async function toss(mode: BillingMode, path: string, body?: object, idemp
   if (!response.ok) throw new BillingError("PAYMENT_PROVIDER_RETRY_REQUIRED", 502);
   return response.json() as Promise<unknown>;
 }
-

@@ -145,4 +145,3 @@ revoke all on function public.billing_test_create(jsonb), public.billing_test_se
 grant execute on function public.billing_test_create(jsonb), public.billing_test_settle(jsonb),
  public.billing_test_next_charge(uuid,uuid), public.billing_test_cancel(uuid) to service_role;
 commit;
-

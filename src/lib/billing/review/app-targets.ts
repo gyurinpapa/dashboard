@@ -70,4 +70,3 @@ export async function appTargets(userId: string) {
     .map(a => ({ id: a.id, name: a.name, workspace_id: a.workspace_id, billing_review_managed: a.billing_review_managed === true }));
   return { advertiser, newAdvertiserWorkspaces: workspaceRows, workspace: workspaceRows.filter(w => master || adminIds.includes(w.id)), company: companies.data || [] };
 }
-
