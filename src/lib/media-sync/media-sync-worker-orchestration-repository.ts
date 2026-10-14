@@ -1,6 +1,7 @@
 // src/lib/media-sync/media-sync-worker-orchestration-repository.ts
 
 import { getSupabaseAdmin } from "../supabase/admin";
+import { enrichNaverCampaignAuthority } from './naver-campaign-authority-enrichment';
 import {
   claimNextNaverMediaSyncJob,
   loadNaverMediaSyncWorkerContext,
@@ -311,6 +312,7 @@ export type ProcessNaverMediaSyncJobOptions = {
   reconciliationStepsPerClaim?: number;
   materializationBatchSize?: number;
   enableNaverFactProjection?: boolean;
+  enableNaverCampaignAuthority?: boolean;
   jobTimeoutMs?: number;
 
   /**
@@ -4490,6 +4492,12 @@ export async function processClaimedNaverMediaSyncJob(
     detail:
       `sourceRows=${reconciliation.sourceRows} excludedRows=${reconciliation.excludedRows} retainedRows=${reconciliation.retainedRows} changed=${reconciliation.changed} alreadyReconciled=${reconciliation.alreadyReconciled}`,
   });
+
+  if (options.enableNaverCampaignAuthority === true) {
+    await enrichNaverCampaignAuthority({
+      job: checkpointJob, expectedRows: checkpoint.totalRows, credentials: context.credentials,
+    });
+  }
 
   let summary:
     MediaSyncStagingSummary;
