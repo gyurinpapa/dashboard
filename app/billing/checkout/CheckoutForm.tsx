@@ -61,7 +61,8 @@ export default function CheckoutForm({ scope, mode,registration=false }: { scope
       if(code==="ACTIVE_ENTITLEMENT_EXISTS")setMessage("이미 사용 가능한 이용권이 있습니다. 추가 결제 없이 리포트를 시작하세요. 새로고침하면 최신 이용기간이 표시됩니다.");
       else if(code==="NEW_ADVERTISER_TEST_ONLY")setMessage("신규 광고주 구매는 현재 분리된 테스트 환경에서 검증 중입니다. 운영 결제는 아직 시작되지 않았습니다.");
       else if(code==="TARGET_NOT_ALLOWED")setMessage("선택한 회사에 광고주를 등록할 권한이 없습니다. 회사 관리자에게 확인해주세요.");
-      else if(code==='REGISTRATION_ACCOUNT_REQUIRED')setMessage('회사 계정 준비가 필요합니다. 신규 가입 계정의 준비를 완료하거나 회사 관리자에게 소속을 확인해주세요. 결제는 시작되지 않았습니다.');
+      else if(code==='REGISTRATION_ACCOUNT_REQUIRED')setMessage('가입 정보의 회사 소속을 확인할 수 없어 결제창을 열지 못했습니다. 다시 로그인한 뒤에도 같다면 문의해주세요. 결제는 시작되지 않았습니다.');
+      else if(code==='REGISTRATION_UNAVAILABLE')setMessage('계정 확인을 완료하지 못해 결제창을 열지 못했습니다. 잠시 후 다시 시도해주세요. 결제는 시작되지 않았습니다.');
       else setMessage("결제가 완료되지 않았거나 결과 확인이 필요합니다. 이미 인증했다면 결제 결과를 먼저 확인해주세요.");
     } finally { submitting.current = false; setBusy(false); }
   }

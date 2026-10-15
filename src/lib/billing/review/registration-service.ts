@@ -16,11 +16,20 @@ export function isRegistrationOrder(order:{catalog_version?:string}) { return or
 async function companyContext(userId:string) {
   assertRegistration();
   const client=appReadDb();
-  const [profile,members]=await Promise.all([
+  const identity=()=>Promise.all([
     client.from('profiles').select('company_id').eq('id',userId).maybeSingle(),
     client.from('tenant_members').select('tenant_id').eq('user_id',userId),
   ]);
+  let [profile,members]=await identity();
   if(profile.error||members.error)throw new BillingError('REGISTRATION_UNAVAILABLE',503);
+  // New email-confirmed customers need no separate "prepare company" action.
+  // The existing locked RPC owns identity creation and rejects legacy/partial identities.
+  // Never provision during a lookup, for an existing identity, or outside this isolated flow.
+  if(!profile.data&&!members.data?.length) {
+    await registrationRpc('provision_etrylue_customer',{p_user_id:userId});
+    [profile,members]=await identity();
+    if(profile.error||members.error)throw new BillingError('REGISTRATION_UNAVAILABLE',503);
+  }
   if(!profile.data?.company_id||!members.data?.length)throw new BillingError('REGISTRATION_ACCOUNT_REQUIRED',409);
   const links=await client.from('workspaces').select('tenant_id').eq('company_id',profile.data.company_id)
     .in('tenant_id',members.data.map(m=>m.tenant_id));
@@ -30,9 +39,10 @@ async function companyContext(userId:string) {
   return {company_id:profile.data.company_id as string,tenant_id:ids[0] as string};
 }
 export async function createRegistrationDraft(paymentDb:SupabaseClient,userId:string,id:string,name:string) {
+  const validatedName=advertiserName(name);
   const context=await companyContext(userId);
   const targetId=draftTarget(userId,id,process.env.BILLING_REVIEW_STATE_SECRET||'');
-  const proposed={order_id:id,user_id:userId,target_id:targetId,...context,name:advertiserName(name),app_project:REGISTRATION_APP_PROJECT};
+  const proposed={order_id:id,user_id:userId,target_id:targetId,...context,name:validatedName,app_project:REGISTRATION_APP_PROJECT};
   const insert=await paymentDb.from('billing_test_registration_drafts').insert(proposed);
   if(insert.error&&insert.error.code!=='23505')throw new BillingError('BILLING_STORAGE_UNAVAILABLE',503);
   const saved=await paymentDb.from('billing_test_registration_drafts').select('*').eq('order_id',id).eq('app_project',REGISTRATION_APP_PROJECT).single();

@@ -11,7 +11,7 @@ const env={VERCEL_ENV:'preview',VERCEL_GIT_COMMIT_REF:'feat/unassigned-advertise
  CUSTOMER_ONBOARDING_ORIGIN:origin,BILLING_REVIEW_ORIGIN:origin,BILLING_REVIEW_ENABLED:'true',BILLING_REVIEW_SUPABASE_URL:payUrl,BILLING_REVIEW_SERVICE_ROLE_KEY:'synthetic-payment-service',
  BILLING_REVIEW_USER_IDS:[1,2,9].map(id).join(','),BILLING_REVIEW_STATE_SECRET:'S'.repeat(64),BILLING_REVIEW_TOSS_CLIENT_KEY:'test_ck_synthetic',BILLING_REVIEW_TOSS_SECRET_KEY:'test_sk_synthetic'};
 const app=new PGlite(),pay=new PGlite(),payments=new Map(),modules=new Map();
-let actorId=id(1),checks=0,providerReads=0,providerConfirms=0,providerCancels=0,recordFailures=0,registrationCalls=0;
+let actorId=id(1),checks=0,providerReads=0,providerConfirms=0,providerCancels=0,recordFailures=0,registrationCalls=0,provisioningCalls=0;
 const json=(data,status=200,headers={})=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json',...headers}});
 const identifier=s=>{assert.match(s,/^[a-z_][a-z0-9_]*$/i);return '"'+s+'"';};
 function split(s){let depth=0,start=0,out=[];for(let i=0;i<s.length;i++){if(s[i]==='(')depth++;if(s[i]===')')depth--;if(s[i]===','&&depth===0){out.push(s.slice(start,i));start=i+1;}}out.push(s.slice(start));return out;}
@@ -29,6 +29,7 @@ async function rest(db,url,init){
  if(suffix.startsWith('rpc/')){
   assert.equal(method,'POST');const name=suffix.slice(4);identifier(name);const input=JSON.parse(init.body);
   if(name.startsWith('etrylue_registration_'))registrationCalls++;
+  if(name==='provision_etrylue_customer')provisioningCalls++;
   if(name==='etrylue_registration_record'&&recordFailures){recordFailures--;return json({code:'P0001',message:'SYNTHETIC_REGISTRATION_FAILURE'},503);}
   const keys=Object.keys(input);const result=await db.query('select public.'+identifier(name)+'('+keys.map(k=>identifier(k)+' => '+param(typeof input[k]==='object'&&input[k]!==null&&!Array.isArray(input[k])?JSON.stringify(input[k]):input[k])).join(',')+') as value',args);
   return json(name.endsWith('_list')||name.endsWith('_many')?result.rows.map(r=>r.value):result.rows[0]?.value??null);
@@ -76,7 +77,7 @@ function load(file){
  function required(name){
   if(name==='server-only')return {};
   if(name==='@supabase/supabase-js')return {createClient:(url,key,options={})=>sdk.createClient(url,key,{...options,global:{...options.global,fetch:options.global?.fetch||interceptedFetch}})};
-  if(name==='@/lib/supabase/auth-server')return {sbAuth:async()=>({user:{id:actorId,email_confirmed_at:'2026-01-01',app_metadata:{}},error:null})};
+  if(name==='@/lib/supabase/auth-server')return {sbAuth:async()=>({user:{id:actorId,email_confirmed_at:'2026-01-01',app_metadata:actorId===id(3)?{etrylue_customer_version:'1'}:{}},error:null})};
   if(name==='@/lib/media-sync/media-connection-access-policy')return {resolveTrueMasterStatus:({email,hasMasterMembership})=>email==='gyurinpapakimdh@gmail.com'&&hasMasterMembership};
   if(name==='next/server')return {NextResponse:{json:(data,options={})=>json(data,options.status||200,options.headers)}};
   if(name.startsWith('node:'))return require(name);
@@ -98,6 +99,24 @@ async function main(){try{
  create table workspace_members(workspace_id uuid,user_id uuid,role text,primary key(workspace_id,user_id));
  create table advertisers(id uuid primary key,workspace_id uuid not null references workspaces(id),tenant_id uuid,created_by uuid references auth.users(id),name text not null,billing_review_managed boolean not null default false,foreign key(tenant_id,workspace_id) references workspaces(tenant_id,id));
  grant usage on schema public,auth to service_role;grant select,update on profiles,tenant_members,tenants,workspaces,workspace_members to service_role;grant select,insert on advertisers to service_role;`);
+ // Synthetic stand-in for the unchanged, separately reviewed onboarding transaction.
+ // No hosted identity, provider call or service key is used by this harness.
+ await app.exec(`create schema etrylue_customer_private;
+ create table etrylue_customer_private.accounts(user_id uuid primary key,confirmed boolean,conflict boolean);
+ create function public.provision_etrylue_customer(p_user_id uuid) returns jsonb language plpgsql security definer set search_path=pg_catalog as $$
+ declare a etrylue_customer_private.accounts;begin
+ select * into a from etrylue_customer_private.accounts where user_id=p_user_id for update;
+ if not found then raise exception 'CUSTOMER_ACCOUNT_REQUIRED';end if;
+ if not a.confirmed then raise exception 'CUSTOMER_EMAIL_UNVERIFIED';end if;
+ if a.conflict then raise exception 'CUSTOMER_EXISTING_IDENTITY';end if;
+ if not exists(select 1 from public.profiles where id=p_user_id) then
+ insert into public.profiles values(p_user_id,'${id(101)}','new@example.invalid');
+ insert into public.tenant_members values('${id(201)}',p_user_id,'member');
+ end if;return '{}'::jsonb;end;$$;
+ revoke all on function public.provision_etrylue_customer(uuid) from public,anon,authenticated;
+ grant execute on function public.provision_etrylue_customer(uuid) to service_role;
+ insert into auth.users values('${id(3)}');
+ insert into etrylue_customer_private.accounts values('${id(3)}',true,false);`);
  await app.exec("set etrylue.registration_candidate='isolated-candidate-only';"+fs.readFileSync(path.join(root,'scripts/sql/unassigned-advertiser-storage-candidate.sql'),'utf8'));
  for(const n of [1,2,9]){await app.query('insert into auth.users values($1)',[id(n)]);await app.query('insert into profiles values($1,$2,$3)',[id(n),id(n===9?102:101),'fixture'+n+'@example.invalid']);}
  for(const c of [101,102])await app.query('insert into companies values($1)',[id(c)]);
@@ -119,6 +138,21 @@ async function main(){try{
  await test('spoofed price rejected',async()=>assert.equal((await api.POST(request({...input,amount:1}))).status,400));
  await test('client workspace rejected in new purchase',async()=>assert.equal((await api.POST(request({...input,workspaceId:id(301)}))).status,400));
  await test('invalid origin rejected',async()=>{const r=request(input);r.headers.set('Origin','https://evil.invalid');assert.equal((await api.POST(r)).status,403)});
+ actorId=id(3);
+ const freshInput={...input,id:id(610),newAdvertiserName:'Fresh signup'};
+ await test('invalid new-customer input performs no provisioning',async()=>{assert.equal((await api.POST(request({...freshInput,newAdvertiserName:''}))).status,400);assert.equal(provisioningCalls,0)});
+ await test('invalid origin performs no provisioning',async()=>{const r=request(freshInput);r.headers.set('Origin','https://evil.invalid');assert.equal((await api.POST(r)).status,403);assert.equal(provisioningCalls,0)});
+ await test('target lookup is read-only before first purchase',async()=>{await server.targets(id(3));assert.equal(provisioningCalls,0);assert.equal((await app.query('select count(*)::int n from profiles where id=$1',[id(3)])).rows[0].n,0)});
+ await test('fresh confirmed customer prepares identity automatically before checkout',async()=>{assert.equal((await api.POST(request(freshInput))).status,200);assert.equal(provisioningCalls,1);assert.equal((await app.query('select count(*)::int n from profiles where id=$1',[id(3)])).rows[0].n,1)});
+ await test('automatic account preparation never creates an advertiser or starts service',async()=>{assert.equal((await app.query('select count(*)::int n from advertisers')).rows[0].n,0);assert.equal((await app.query('select count(*)::int n from etrylue_registration_private.advertisers')).rows[0].n,0);assert.equal(providerConfirms,0)});
+ await test('checkout retry does not repeat account provisioning',async()=>{assert.equal((await api.POST(request(freshInput))).status,200);assert.equal(provisioningCalls,1)});
+ await app.exec(`reset role;delete from profiles where id='${id(3)}';delete from tenant_members where user_id='${id(3)}';update etrylue_customer_private.accounts set confirmed=false where user_id='${id(3)}';set role service_role;`);
+ await test('unverified account cannot prepare or create payment order',async()=>{const body={...freshInput,id:id(611)};assert.equal((await api.POST(request(body))).status,409);assert.equal((await pay.query('select count(*)::int n from billing_test_orders where id=$1',[body.id])).rows[0].n,0)});
+ await app.exec(`reset role;update etrylue_customer_private.accounts set confirmed=true,conflict=true where user_id='${id(3)}';set role service_role;`);
+ await test('conflicting identity fails without any payment order',async()=>{const body={...freshInput,id:id(612)};assert.equal((await api.POST(request(body))).status,409);assert.equal((await pay.query('select count(*)::int n from billing_test_orders where id=$1',[body.id])).rows[0].n,0)});
+ await app.exec(`reset role;delete from etrylue_customer_private.accounts where user_id='${id(3)}';set role service_role;`);
+ await test('missing trusted signup record cannot be provisioned',async()=>{assert.equal((await api.POST(request({...freshInput,id:id(613)}))).status,409)});
+ actorId=id(1);const provisioningBeforeLegacy=provisioningCalls;
  const response=await api.POST(request(input));assert.equal(response.status,200);const order=await response.json();
  await test('name-only checkout creates pending ledger without workspace',async()=>{const o=(await pay.query('select * from billing_test_orders where id=$1',[input.id])).rows[0];assert.equal(o.workspace_id,null);assert.equal(o.catalog_version,'assignment-start-20261014');assert.equal(o.status,'pending');assert.equal((await app.query('select count(*)::int n from advertisers')).rows[0].n,0)});
  await test('no approval means no registration',async()=>assert.equal((await app.query('select count(*)::int n from etrylue_registration_private.advertisers')).rows[0].n,0));
@@ -169,6 +203,7 @@ async function main(){try{
  await test('legacy prepare still creates its advertiser',async()=>assert.equal((await app.query('select count(*)::int n from advertisers where id=$1',[legacyRow.target_id])).rows[0].n,1));
  await test('legacy entitlement still uses payment approval period',async()=>{const access=await gate.reportCreationAccess(legacyRow.target_id,id(301));assert.equal(access.eligible,true);assert.equal(Date.parse(access.paidUntil),new Date(legacyRow.paid_until).getTime())});
  await test('disabled feature causes zero registration RPCs on legacy path',async()=>assert.equal(registrationCalls,callsBefore));
+ await test('legacy and existing-identity purchases perform no provisioning',async()=>assert.equal(provisioningCalls,provisioningBeforeLegacy));
  await test('disabled feature never reclassifies a new managed advertiser as unrestricted',async()=>assert.equal((await gate.reportCreationAccess(registered.advertiser_id,id(301))).eligible,false));
  console.log(`UNASSIGNED_FLOW_PASS: ${checks} scenarios; actual routes/services/SDK and synthetic PostgreSQL; provider/network intercepted`);
  }finally{await app.close();await pay.close();}}

@@ -9,9 +9,9 @@ export type RegistrationRow = {
   workspace_id:string|null; assigned_by:string|null; started_at:string|null; paid_until:string|null; created_at:string;
   refund_requested_at:string|null; refund_amount:number|null;
 };
-const calls = new Set(['etrylue_registration_record','etrylue_registration_assign','etrylue_registration_reserve_refund',
+const calls = new Set(['provision_etrylue_customer','etrylue_registration_record','etrylue_registration_assign','etrylue_registration_reserve_refund',
   'etrylue_registration_confirm_refund','etrylue_registration_provider_state','etrylue_registration_get','etrylue_registration_list','etrylue_registration_access_many']);
-/** Separate from appReadDb: this transport can ONLY invoke the reviewed registration RPCs. */
+/** Separate from appReadDb: only reviewed registration RPCs and existing account provisioning. */
 export async function registrationRpc<T>(name:string,args:Record<string,unknown>):Promise<T> {
   assertRegistration();
   if (!calls.has(name) || !process.env.SUPABASE_SERVICE_ROLE_KEY) throw new BillingError('REGISTRATION_UNAVAILABLE',503);
@@ -26,6 +26,10 @@ export async function registrationRpc<T>(name:string,args:Record<string,unknown>
     }}});
   const {data,error}=await client.rpc(name,args);
   if(error){
+    if(name==='provision_etrylue_customer') {
+      const identityError=['CUSTOMER_ACCOUNT_REQUIRED','CUSTOMER_EMAIL_UNVERIFIED','CUSTOMER_EXISTING_IDENTITY'].includes(error.message);
+      throw new BillingError(identityError?'REGISTRATION_ACCOUNT_REQUIRED':'REGISTRATION_UNAVAILABLE',identityError?409:503);
+    }
     const allowed=['REGISTRATION_NOT_FOUND','ASSIGNMENT_SCOPE_DENIED','ASSIGNMENT_ROLE_DENIED','BUYER_DESTINATION_ACCESS_REQUIRED',
       'VERIFIED_PAYMENT_REQUIRED','ALREADY_ASSIGNED','REGISTRATION_CONFLICT','REFUND_AMOUNT_MISMATCH','REFUND_REQUIRES_REVIEW'];
     const code=allowed.find(c=>error.message===c);
