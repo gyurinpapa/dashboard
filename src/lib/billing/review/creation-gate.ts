@@ -14,7 +14,8 @@ const unrestricted: CreationAccess = { managed: false, eligible: true, paidUntil
 
 // Call only after the caller has verified advertiser/workspace access.
 export async function reportCreationAccess(advertiserId: string | null, workspaceId: string, verifiedManaged?: boolean): Promise<CreationAccess> {
-  if (!creationGateEnabled() || !advertiserId) return unrestricted;
+  if (!creationGateEnabled()) return unrestricted;
+  if (!advertiserId) return { managed: true, eligible: false, paidUntil: null };
   if(registrationEnabled()){
     const rows=await registrationAccess([advertiserId]), row=rows[0];
     if(row){

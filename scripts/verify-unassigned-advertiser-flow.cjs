@@ -77,7 +77,10 @@ function load(file){
  function required(name){
   if(name==='server-only')return {};
   if(name==='@supabase/supabase-js')return {createClient:(url,key,options={})=>sdk.createClient(url,key,{...options,global:{...options.global,fetch:options.global?.fetch||interceptedFetch}})};
-  if(name==='@/lib/supabase/auth-server')return {sbAuth:async()=>({user:{id:actorId,email_confirmed_at:'2026-01-01',app_metadata:actorId===id(3)?{etrylue_customer_version:'1'}:{}},error:null})};
+  if(name==='@/lib/supabase/auth-server'||name==='@/src/lib/supabase/auth-server')return {sbAuth:async()=>({user:{id:actorId,email_confirmed_at:'2026-01-01',app_metadata:actorId===id(3)?{etrylue_customer_version:'1'}:{}},error:null})};
+  if(name==='@/lib/supabase/admin')return {supabaseAdmin:sdk.createClient(appUrl,'synthetic-app-service',{auth:{persistSession:false,autoRefreshToken:false},global:{fetch:interceptedFetch}})};
+  if(name==='@/src/lib/report/theme')return {normalizeReportTheme:value=>value==='studio'?'studio':'light'};
+  if(name==='@/src/lib/media-sync/media-sync-automation')return {NAVER_DAILY_REPORT_AUTO_SYNC_CONTRACT:'synthetic-unused-contract'};
   if(name==='@/lib/media-sync/media-connection-access-policy')return {resolveTrueMasterStatus:({email,hasMasterMembership})=>email==='gyurinpapakimdh@gmail.com'&&hasMasterMembership};
   if(name==='next/server')return {NextResponse:{json:(data,options={})=>json(data,options.status||200,options.headers)}};
   if(name.startsWith('node:'))return require(name);
@@ -131,7 +134,10 @@ async function main(){try{
  await app.exec('set role service_role');await pay.exec('set role service_role');
  const api=load('app/api/billing/review/checkout/route.ts'),manage=load('app/api/billing/review/manage/route.ts'),assignment=load('app/api/billing/registrations/route.ts');
  const server=load('src/lib/billing/review/server.ts'),gate=load('src/lib/billing/review/creation-gate.ts'),config=load('src/lib/billing/review/registration-config.ts');
+ const reportApi=load('app/api/reports/create/route.ts');
  const input={id:id(601),scope:'advertiser',mode:'once',targetId:'new',newAdvertiserName:'신규 테스트',consent:true};
+ await test('empty advertiser is denied without payment or registration reads',async()=>{const calls=registrationCalls,reads=providerReads;assert.equal((await gate.reportCreationAccess(null,id(301))).eligible,false);assert.equal(registrationCalls,calls);assert.equal(providerReads,reads)});
+ await test('actual report-create API rejects CSV without advertiser after workspace authorization',async()=>{const response=await reportApi.POST(request({workspace_id:id(301),report_type_id:id(701),meta:{data_source:{kind:'csv'}}},'/api/reports/create'));assert.equal(response.status,403);assert.equal((await response.json()).error,'ENTITLEMENT_REQUIRED')});
  await test('Production cannot enable the new flow',async()=>assert.equal(config.registrationEnabled({...env,VERCEL_ENV:'production'}),false));
  await test('other branch cannot enable the new flow',async()=>assert.equal(config.registrationEnabled({...env,VERCEL_GIT_COMMIT_REF:'main'}),false));
  await test('production DB cannot enable the new flow',async()=>assert.equal(config.registrationEnabled({...env,NEXT_PUBLIC_SUPABASE_URL:'https://rulcvpgvmmckacshkmfy.supabase.co'}),false));
@@ -205,6 +211,8 @@ async function main(){try{
  await test('disabled feature causes zero registration RPCs on legacy path',async()=>assert.equal(registrationCalls,callsBefore));
  await test('legacy and existing-identity purchases perform no provisioning',async()=>assert.equal(provisioningCalls,provisioningBeforeLegacy));
  await test('disabled feature never reclassifies a new managed advertiser as unrestricted',async()=>assert.equal((await gate.reportCreationAccess(registered.advertiser_id,id(301))).eligible,false));
+ env.CUSTOMER_ONBOARDING_ENABLED='false';
+ await test('gate-disabled legacy empty advertiser access remains unchanged',async()=>assert.equal((await gate.reportCreationAccess(null,id(301))).eligible,true));
  console.log(`UNASSIGNED_FLOW_PASS: ${checks} scenarios; actual routes/services/SDK and synthetic PostgreSQL; provider/network intercepted`);
  }finally{await app.close();await pay.close();}}
 main().catch(error=>{console.error(error);process.exitCode=1});

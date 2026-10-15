@@ -4358,7 +4358,9 @@ export default function ReportBuilderPage({ showBillingTest = false, enforceTest
                   >
                     {selectedAdvertiserId
                       ? `${selectedAdvertiserName} 기준으로 새 리포트를 준비합니다.`
-                      : "광고주 없이 리포트를 만들 수도 있습니다."}
+                      : enforceTestCreation
+                        ? "광고주를 먼저 선택해주세요. 이용권 확인 후 새 리포트를 만들 수 있습니다."
+                        : "광고주 없이 리포트를 만들 수도 있습니다."}
                   </div>
                 </div>
 

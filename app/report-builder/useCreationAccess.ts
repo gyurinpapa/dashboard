@@ -38,10 +38,12 @@ export function useCreationAccess(enabled: boolean, workspace: string, advertise
     return () => { controller.abort(); if (timer) clearTimeout(timer); window.removeEventListener('focus', focus); };
   }, [key, workspace, advertiser, revision]);
   const current = result?.key === key ? result : null;
-  const blocked = !!key && (!current || !current.eligible);
-  const message = !current ? '이용권을 확인하고 있습니다.' : current.failed
+  const advertiserRequired = enabled && !advertiser;
+  const blocked = advertiserRequired || (!!key && (!current || !current.eligible));
+  const message = advertiserRequired ? 'STEP 1에서 광고주를 먼저 선택해주세요. 이용권 확인 후 새 리포트를 만들 수 있습니다.' : !current ? '이용권을 확인하고 있습니다.' : current.failed
     ? '이용권을 확인하지 못했습니다. 다시 확인해 주세요. 새 리포트 생성은 잠시 중지됩니다.'
     : '사용 가능한 이용권이 없습니다. 이용권 구매 후 새 리포트를 만들 수 있습니다.';
   return { blocked, message, failed: !!current?.failed, denied: !!current && !current.failed && !current.eligible,
     refresh: () => { setResult(null); setRevision(v => v + 1); } };
 }
+
