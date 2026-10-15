@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import ReportTemplate from "@/app/components/ReportTemplate";
+import { pickReportThemeFromMeta } from "@/src/lib/report/theme";
 import type { ReportPeriod } from "@/src/lib/report/period";
 import type { TabKey } from "@/src/lib/report/types";
 import type {
@@ -633,6 +634,7 @@ export default function PptRenderClient({ reportId, encodedPayload }: Props) {
         reportTypeName={pickReportTypeName(data.report)}
         reportTypeKey={pickReportTypeKey(data.report)}
         workspaceLogoUrl={data.workspaceLogoUrl}
+        reportTheme={pickReportThemeFromMeta(data.report.meta)}
         reportPeriod={reportPeriod}
         onChangeReportPeriod={() => undefined}
         monthGoal={pickMonthGoal(data.report)}

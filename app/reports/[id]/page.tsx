@@ -49,6 +49,7 @@ import { getDailyReportV2ProviderStatus } from "@/src/lib/media-sync/daily-repor
 import { extractAdvertiserName } from "@/src/lib/report/utils";
 
 import ReportTemplate from "../../components/ReportTemplate";
+import { pickReportThemeFromMeta } from "@/src/lib/report/theme";
 
 const CSV_BUCKET = "report_uploads";
 const MAX_MEDIA_SYNC_DATE_WINDOW_DAYS = 31;
@@ -7189,6 +7190,7 @@ export default function ReportDetailPage() {
               reportTypeName={effectivePreviewReportTypeName}
               reportTypeKey={headerInfo.reportTypeKey}
               workspaceLogoUrl={workspaceLogoUrl}
+              reportTheme={pickReportThemeFromMeta(report?.meta)}
               reportPeriod={reportPeriod}
               onChangeReportPeriod={setReportPeriod}
               monthGoal={resolvedMonthGoalForSave}
