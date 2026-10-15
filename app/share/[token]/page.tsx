@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useParams } from "next/navigation";
 import ReportTemplate from "@/app/components/ReportTemplate";
+import { pickReportThemeFromMeta } from "@/src/lib/report/theme";
 import type { ReportPeriod } from "@/src/lib/report/period";
 import { getRowsDateRange } from "@/src/lib/report/period";
 
@@ -446,6 +447,7 @@ export default function ShareReportPage() {
       reportTypeName={reportTypeName}
       reportTypeKey={reportTypeKey}
       workspaceLogoUrl={workspaceLogoUrl}
+      reportTheme={pickReportThemeFromMeta(report?.meta)}
       reportPeriod={shareReportPeriod}
       monthGoal={monthGoal}
       brandSearchContracts={brandSearchContracts}
