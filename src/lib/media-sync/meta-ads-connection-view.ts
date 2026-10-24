@@ -3,7 +3,7 @@ import type { SafeMediaConnection } from "./types";
 // Client-safe display contract. Registration and sync readiness are independent.
 export type MetaAdsConnectionSummary = Pick<SafeMediaConnection,
   "id" | "workspace_id" | "advertiser_id" | "provider" | "external_account_id" |
-  "external_account_name" | "status" | "has_credentials" | "last_verified_at">;
+  "external_account_name" | "status" | "has_credentials" | "last_verified_at"> & { meta?: Record<string, unknown> };
 
 export function getMetaAdsConnectionView(input: {
   workspaceId: string;

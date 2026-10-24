@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useCreationAccess } from "./useCreationAccess";
 import MetaAdsConnectionCard from "./MetaAdsConnectionCard";
+import { isMetaAdsContactConnection, metaAdsContactSyncErrorMessage } from "@/src/lib/media-sync/meta-ads-contact-policy";
 import MediaConnectionCarousel from "./MediaConnectionCarousel";
 import { normalizeReportTheme, type ReportTheme } from "@/src/lib/report/theme";
 
@@ -2540,6 +2541,12 @@ export default function ReportBuilderPage({ showBillingTest = false, enforceTest
       }
     }
 
+    const hasMetaSelection = selectedReportDataSourceKind === "api" && selectedApiReportConnections.some(c => c.provider === "meta_ads");
+    if (hasMetaSelection && (selectedApiReportConnections.length !== 1 || type.key !== "db")) {
+      setLocalMsg("Meta 웹사이트 문의는 Meta 연결 1개만 선택한 DB획득 보고서로 생성해 주세요.");
+      return;
+    }
+
     setCreating(true);
     setLocalMsg("");
 
@@ -2559,7 +2566,7 @@ export default function ReportBuilderPage({ showBillingTest = false, enforceTest
         ? {
             data_source: {
               kind: "api",
-              data_level: "keyword",
+              data_level: hasMetaSelection ? "creative" : "keyword",
               mode: "snapshot_replace",
             },
           }
@@ -2828,6 +2835,8 @@ export default function ReportBuilderPage({ showBillingTest = false, enforceTest
         console.warn("[media-sync-jobs:post] failed", res.status, json);
 
         const syncError = String((json as any)?.error ?? "").trim();
+        const metaMessage = metaAdsContactSyncErrorMessage(syncError);
+        if (metaMessage) { setLocalMsg(metaMessage); return; }
 
         if (syncError === "ACTIVE_JOB_ALREADY_EXISTS") {
           await fetchLatestMediaSyncJobForReport(reportId, true);
@@ -2871,7 +2880,8 @@ export default function ReportBuilderPage({ showBillingTest = false, enforceTest
       }));
 
       setLocalMsg(
-        `API 동기화 요청 생성 완료: ${dateRange.dateFrom} ~ ${dateRange.dateTo}`
+        job?.status === "done" ? `API 데이터 저장 완료: ${dateRange.dateFrom} ~ ${dateRange.dateTo}` :
+          `API 동기화 요청 생성 완료: ${dateRange.dateFrom} ~ ${dateRange.dateTo}`
       );
     } catch (error: any) {
       console.warn("[media-sync-jobs:post] exception", error);
@@ -3234,6 +3244,7 @@ export default function ReportBuilderPage({ showBillingTest = false, enforceTest
       ? [
           ...usableNaverConnections,
           ...usableGoogleConnections,
+          ...selectedAdvertiserMetaConnections.filter(isMetaAdsContactConnection),
         ]
       : [];
 
@@ -3268,12 +3279,15 @@ export default function ReportBuilderPage({ showBillingTest = false, enforceTest
           );
         }
 
-        if (current.length >= 16) {
+        if (selectedAdvertiserMetaConnections.some(c => c.id === connectionId)) return [connectionId];
+        const withoutMeta = current.filter(id => !selectedAdvertiserMetaConnections.some(c => c.id === id));
+
+        if (withoutMeta.length >= 16) {
           return current;
         }
 
         return [
-          ...current,
+          ...withoutMeta,
           connectionId,
         ];
       }
@@ -6363,8 +6377,9 @@ export default function ReportBuilderPage({ showBillingTest = false, enforceTest
                               whiteSpace: "nowrap",
                             }}
                           >
-                            {selectedAdvertiserMetaConnections.length > 0
-                              ? "선택 불가"
+                            {selectedAdvertiserMetaConnections.some(isMetaAdsContactConnection)
+                              ? "웹사이트 문의"
+                              : selectedAdvertiserMetaConnections.length > 0 ? "집계 기준 확인 필요"
                               : "연결 필요"}
                           </span>
                         </div>
@@ -6394,9 +6409,16 @@ export default function ReportBuilderPage({ showBillingTest = false, enforceTest
                               color: "#bbb8d4",
                             }}
                           >
-                            등록된 Meta Ads 연결: {selectedAdvertiserMetaConnections.length}개
-                            <br />
-                            현재 이 리포트에서는 Meta Ads 연결을 선택할 수 없습니다.
+                            {selectedAdvertiserMetaConnections.map(connection => (
+                              <label key={connection.id} style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 0" }}>
+                                <input type="checkbox" checked={selectedApiMediaConnectionIds.includes(connection.id)}
+                                  disabled={creating || !isMetaAdsContactConnection(connection)}
+                                  onChange={() => toggleApiReportConnection(connection.id)} />
+                                <span>{connection.external_account_name || connection.external_account_id} · {connection.external_account_id}
+                                  {isMetaAdsContactConnection(connection) ? " · 사용 가능" : " · 집계 기준 확인 필요"}</span>
+                              </label>
+                            ))}
+                            Meta 계정 1개를 선택해 DB획득 보고서를 생성합니다. 전환 기준은 웹사이트 문의입니다.
                           </div>
                         ) : (
                           <div

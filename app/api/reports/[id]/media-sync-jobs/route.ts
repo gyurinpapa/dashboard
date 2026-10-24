@@ -55,6 +55,7 @@ import type {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const MAX_MEDIA_SYNC_DATE_WINDOW_DAYS = 31;
 
@@ -775,10 +776,10 @@ export async function GET(
  * - workspaceId, advertiserId, userId는
  *   access resolver 결과만 사용한다.
  * - 인증 및 run_sync 권한 확인을 body 파싱/검증보다 먼저 수행한다.
- * - pending job 생성까지만 수행한다.
+ * - 네이버/구글은 pending job 생성까지만 수행한다.
+ * - 승인된 Meta 단일 연결은 별도의 합계 검증·원자적 저장 경로를 사용한다.
  * - 기존 processing job의 stale recovery는 수행하지 않는다. worker만 수행한다.
- * - provider API 호출, worker 실행, ingestion 생성,
- *   report_rows 저장, report pointer 전환은 수행하지 않는다.
+ * - 네이버/구글의 provider 호출, worker, ingestion 및 pointer 처리는 기존 경로를 유지한다.
  */
 export async function POST(
   request: Request,
@@ -878,6 +879,17 @@ export async function POST(
       parsedRequest.mode !== storedSettings.mode
     ) {
       return mediaSyncSettingMismatchResponse();
+    }
+
+    if (mappedConnections.length === 1 && mappedConnections[0].provider === "meta_ads") {
+      const [{ handleMetaAdsContactSync }, { loadMetaAdsContactTarget, saveMetaAdsContactSnapshot }] = await Promise.all([
+        import("@/src/lib/media-sync/meta-ads-contact-sync"),
+        import("@/src/lib/media-sync/meta-ads-contact-repository"),
+      ]);
+      return handleMetaAdsContactSync(request, access, parsedRequest, {
+        load: loadMetaAdsContactTarget, save: saveMetaAdsContactSnapshot, fetchImpl: fetch,
+        reauthorize: () => resolveReportMediaConnectionAccess({ request, reportId: id, action: "run_sync" }),
+      });
     }
 
     const executionWindow =

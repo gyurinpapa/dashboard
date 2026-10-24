@@ -17,6 +17,7 @@ import {
   useSearchParams,
 } from "next/navigation";
 import { supabase } from "@/src/lib/supabase/client";
+import { metaAdsContactSyncErrorMessage } from "@/src/lib/media-sync/meta-ads-contact-policy";
 import ReportDownloadButtons from "@/app/components/report/ReportDownloadButtons";
 import MediaConnectionCarousel from "@/app/report-builder/MediaConnectionCarousel";
 import { buildReportFileName } from "@/src/lib/report/download/file-name";
@@ -1017,7 +1018,8 @@ function extractMediaSyncSettingsFromReport(
   return {
     dateFrom: normalizeYmdInput(mediaSync?.date_from),
     dateTo: normalizeYmdInput(mediaSync?.date_to),
-    dataLevel: normalizeMediaSyncDataLevel(mediaSync?.data_level),
+    dataLevel: normalizeMediaSyncDataLevel(mediaSync?.data_level ??
+      (meta?.data_source?.provider === "meta_ads" ? "creative" : undefined)),
     mode: "snapshot_replace",
   };
 }
@@ -4735,6 +4737,8 @@ export default function ReportDetailPage() {
 
       if (!res.ok || !json?.ok) {
         const syncError = String(json?.error ?? "").trim();
+        const metaMessage = metaAdsContactSyncErrorMessage(syncError);
+        if (metaMessage) { setMsg(metaMessage); return; }
 
         if (syncError === "AUTOMATIC_SYNC_MANAGED") {
           setMediaSyncAutomatic({
@@ -4801,7 +4805,8 @@ export default function ReportDetailPage() {
       const job = (json?.job ?? null) as ReportMediaSyncJob | null;
       setMediaSyncJob(job);
       await fetchLatestMediaSyncJob(true);
-      setMsg(`API 동기화 요청 생성 완료: ${dateFrom} ~ ${dateTo}`);
+      setMsg(job?.status === "done" ? `API 데이터 저장 완료: ${dateFrom} ~ ${dateTo}` :
+        `API 동기화 요청 생성 완료: ${dateFrom} ~ ${dateTo}`);
     } catch (e: any) {
       setMsg(e?.message || "API 동기화 요청 실패");
     } finally {

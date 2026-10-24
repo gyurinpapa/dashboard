@@ -1,4 +1,5 @@
 "use client";
+import { isMetaAdsContactConnection } from "@/src/lib/media-sync/meta-ads-contact-policy";
 
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import {
@@ -75,7 +76,7 @@ export default function MetaAdsConnectionCard(props: Props) {
         result.verification !== "ACCOUNT_ACCESS_CONFIRMED" || result.sync_enabled !== false) {
         setError(metaAdsConnectionErrorMessage("SCOPE_MISMATCH")); return;
       }
-      setNotice("Meta 광고 계정 접근을 확인했습니다. 광고 데이터 동기화는 아직 활성화하지 않았습니다.");
+      setNotice("Meta 광고 계정 접근을 확인했습니다.");
       props.onRefresh();
     } catch {
       if (mounted.current && !controller.signal.aborted) setError(metaAdsConnectionErrorMessage("META_VERIFICATION_FAILED"));
@@ -159,7 +160,9 @@ export default function MetaAdsConnectionCard(props: Props) {
             {connection.external_account_name || "Meta Ads 계정"} · {connection.external_account_id}
           </p>
         ))}
-        <p style={{ margin: "5px 0" }}>광고 데이터 동기화는 아직 활성화하지 않았습니다.</p>
+        <p style={{ margin: "5px 0" }}>{view.ready && props.connections.some(c => isMetaAdsContactConnection({ ...c, meta: c.meta ?? {} }))
+          ? "DB획득 보고서에서 웹사이트 문의를 수동으로 동기화할 수 있습니다."
+          : "광고 데이터 동기화는 아직 활성화하지 않았습니다."}</p>
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
         {props.canManage && view.ready && !open && (

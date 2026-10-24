@@ -1,3 +1,4 @@
+import { isMetaAdsContactConnection } from "./meta-ads-contact-policy";
 import type {
   JsonObject,
   MediaProvider,
@@ -295,14 +296,17 @@ export function buildMediaSyncProviderDashboard(input: {
         input.connections.filter((connection) => connection.provider === provider),
       );
       const latestJob = input.jobs.find((job) => job.provider === provider) ?? null;
-      const runtimeEnabled = PROVIDER_RUNTIME_ENABLED[provider];
+      const metaContactEnabled = provider === "meta_ads" && input.connections.length === 1 &&
+        connections.length === 1 && isMetaAdsContactConnection(connections[0]);
+      const runtimeEnabled = PROVIDER_RUNTIME_ENABLED[provider] || metaContactEnabled;
 
       return Object.freeze({
         provider,
         label: PROVIDER_LABELS[provider],
         runtime_enabled: runtimeEnabled,
         selection_mode: runtimeEnabled ? "fixed_all" : "unavailable",
-        products: PROVIDER_PRODUCTS[provider],
+        products: metaContactEnabled ? Object.freeze([{ key: "website_contact", label: "웹사이트 문의",
+          description: "광고별·일별 성과 · 수동 동기화", state: "enabled" as const }]) : PROVIDER_PRODUCTS[provider],
         connections,
         latest_job: latestJob ? toLatestJob(latestJob) : null,
       });

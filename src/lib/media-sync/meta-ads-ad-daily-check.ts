@@ -119,6 +119,13 @@ export function reconcileMetaAdsAdDailyRows(records: readonly unknown[], account
 /** At most five pages/2,500 rows, one overall 20-second budget, no retries or DB writes. */
 export async function readMetaAdsAdDailyCheck(input: MetaAdsPreviewRange & { externalAccountId: string; accessToken: string },
   account: MetaAdsInsightsPreview, fetchImpl: typeof fetch, options: { timeoutMs?: number } = {}): Promise<MetaAdsAdDailyCheck> {
+  return (await readMetaAdsAdDailyDataset(input, account, fetchImpl, options)).check;
+}
+
+/** Server-internal complete dataset. Raw records must never be returned to the browser. */
+export async function readMetaAdsAdDailyDataset(input: MetaAdsPreviewRange & { externalAccountId: string; accessToken: string },
+  account: MetaAdsInsightsPreview, fetchImpl: typeof fetch, options: { timeoutMs?: number } = {}):
+  Promise<{ records: readonly unknown[]; check: MetaAdsAdDailyCheck }> {
   check(typeof window === "undefined"); id(input.externalAccountId);
   check(typeof input.accessToken === "string" && /^[\x21-\x7e]{1,20000}$/.test(input.accessToken));
   check(/^\d{4}-\d{2}-\d{2}$/.test(input.dateFrom) && isValidYmd(input.dateFrom) &&
@@ -127,7 +134,7 @@ export async function readMetaAdsAdDailyCheck(input: MetaAdsPreviewRange & { ext
   const timeoutMs = options.timeoutMs ?? 20000;
   check(Number.isInteger(timeoutMs) && timeoutMs > 0 && timeoutMs <= 20000);
   const url = new URL(`https://graph.facebook.com/${META_ADS_API_VERSION}/act_${input.externalAccountId}/insights`);
-  url.searchParams.set("fields", "account_id,campaign_id,campaign_name,adset_id,ad_id,date_start,date_stop,impressions,clicks,spend,conversions");
+  url.searchParams.set("fields", "account_id,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,date_start,date_stop,impressions,clicks,spend,conversions");
   url.searchParams.set("level", "ad"); url.searchParams.set("time_increment", "1");
   url.searchParams.set("time_range", JSON.stringify({ since: input.dateFrom, until: input.dateTo }));
   url.searchParams.set("limit", "500");
@@ -164,7 +171,8 @@ export async function readMetaAdsAdDailyCheck(input: MetaAdsPreviewRange & { ext
         check(!Object.hasOwn(body, "error") && Array.isArray(body.data) && body.data.length <= 500);
         records.push(...body.data); check(records.length <= 2500, "INCOMPLETE_RESPONSE");
         const paging = body.paging === undefined ? {} : object(body.paging);
-        if (!Object.hasOwn(paging, "next")) return reconcileMetaAdsAdDailyRows(records, input.externalAccountId, input, account, page);
+        if (!Object.hasOwn(paging, "next")) return { records,
+          check: reconcileMetaAdsAdDailyRows(records, input.externalAccountId, input, account, page) };
         check(page < 5 && typeof paging.next === "string" && paging.next.length <= 32768, "INCOMPLETE_RESPONSE");
         const cursor = object(paging.cursors).after;
         check(typeof cursor === "string" && /^[A-Za-z0-9_.~+/=-]{1,4096}$/.test(cursor) &&
