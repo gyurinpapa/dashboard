@@ -39,10 +39,13 @@ export function isMetaAdsContactConnection(value: { provider: string; status: st
 export function metaAdsContactSyncErrorMessage(code: string): string | null {
   const messages: Record<string, string> = {
     META_CONTACT_POLICY_REQUIRED: "이 Meta 계정의 웹사이트 문의 집계 기준을 먼저 확인해야 합니다.",
-    META_CONTACT_REPORT_REQUIRED: "Meta 웹사이트 문의는 Meta 연결 1개를 선택한 DB획득 보고서에서 수집할 수 있습니다.",
+    META_CONTACT_REPORT_REQUIRED: "Meta 웹사이트 문의는 Meta 단독 또는 네이버·Meta 통합 DB획득 보고서에서 수집할 수 있습니다.",
     META_CONTACT_RECONCILIATION_FAILED: "Meta 계정 합계와 소재·일별 합계가 확인되지 않아 저장하지 않았습니다. 별도 점검 페이지에서 확인해 주세요.",
     META_CONTACT_CHANGED: "수집 중 보고서 또는 연결 설정이 변경됐습니다. 새로고침 후 다시 실행해 주세요.",
     META_CONTACT_SYNC_FAILED: "Meta 동기화 결과를 확인하지 못했습니다. 새로고침하여 최신 동기화 상태를 확인해 주세요.",
+    NAVER_META_COVERAGE_INCOMPLETE: "선택 기간에 네이버 수집이 완료되지 않은 날짜가 있습니다. 네이버 수집 완료 기간을 확인한 뒤 다시 실행해 주세요.",
+    NAVER_META_FACTS_CHANGED: "네이버 데이터가 갱신 중입니다. 잠시 후 다시 실행해 주세요.",
+    NAVER_META_TOO_MANY_ROWS: "통합 데이터가 한 번에 반영할 수 있는 범위를 초과했습니다. 기간을 줄여 주세요.",
     META_CONTACT_INVALID_RANGE: "Meta 수집 기간은 어제까지, 최대 31일로 설정해 주세요.",
   };
   return messages[code] ?? null;

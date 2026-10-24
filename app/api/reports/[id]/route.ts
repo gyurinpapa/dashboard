@@ -1,3 +1,4 @@
+import { isNaverMetaReportMeta } from "@/src/lib/media-sync/naver-meta-report";
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
@@ -802,6 +803,11 @@ export async function PATCH(req: Request, ctx: Ctx) {
     const existingMeta = isPlainObject(report?.meta) ? report.meta : {};
 
     const incomingMeta = isPlainObject(body.meta) ? body.meta : undefined;
+    if (isNaverMetaReportMeta(existingMeta) && (body.period_type === "daily_sync" || dailySyncAction ||
+      incomingMeta?.data_source !== undefined || incomingMeta?.media_sync?.auto_sync !== undefined || body.media_sync?.auto_sync !== undefined)) {
+      return jsonError(400, "통합 보고서는 기간을 선택한 수동 동기화로 갱신합니다.");
+    }
+
 
     if (
       incomingMeta &&
@@ -1322,6 +1328,8 @@ export async function PATCH(req: Request, ctx: Ctx) {
         )
           ? baseMediaSyncSettings
           : {}),
+        data_level: isNaverMetaReportMeta(existingMeta) ? "mixed" :
+          (baseMediaSyncSettings?.data_level ?? (existingMeta?.data_source?.provider === "meta_ads" ? "creative" : "keyword")),
         date_from:
           canonicalMediaSyncRange.dateFrom,
         date_to:

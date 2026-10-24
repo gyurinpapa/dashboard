@@ -1,3 +1,5 @@
+import { normalizeCsvRows, summarize, groupBySource } from "../src/lib/report/aggregate";
+import { isNaverMetaReportMeta, isNaverMetaSelection, toggleReportConnectionSelection } from "../src/lib/media-sync/naver-meta-report";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { normalizeMetaAdsContactRows } from "../src/lib/media-sync/meta-ads-contact-rows";
@@ -77,7 +79,7 @@ async function main() {
     created_by:uuid(1),created_at:timestamp,meta:{meta_ads_reporting:policy} } as unknown as SafeMediaConnection;
   assert.equal(buildMediaSyncProviderDashboard({connections:[safeConnection],jobs:[]})[2].runtime_enabled,true); cases++;
   assert.equal(buildMediaSyncProviderDashboard({connections:[{...safeConnection,meta:{}}],jobs:[]})[2].runtime_enabled,false); cases++;
-  assert.equal(buildMediaSyncProviderDashboard({connections:[safeConnection,{...safeConnection,id:uuid(98),provider:"naver_searchad"}],jobs:[]})[2].runtime_enabled,false); cases++;
+  assert.equal(buildMediaSyncProviderDashboard({connections:[safeConnection,{...safeConnection,id:uuid(98),provider:"naver_searchad"}],jobs:[]})[2].runtime_enabled,true); cases++;
 
   let payload: Record<string, unknown> | undefined, writes = 0, loads = 0;
   const deps = { load: async () => { loads++; return structuredClone(target); }, reauthorize: async () => access,
@@ -120,7 +122,7 @@ async function main() {
   const { PGlite } = await import(modulePath);
   const db = new PGlite();
   await db.exec(`
-    create role service_role; create role anon; create role authenticated;
+    create role service_role bypassrls; create role anon; create role authenticated;
     create table media_connections(id uuid primary key,workspace_id uuid,advertiser_id uuid,tenant_id uuid,provider text,
       external_account_id text,status text,credential_version integer,credential_ciphertext text,last_verified_at timestamptz,
       updated_at timestamptz,last_sync_at timestamptz,meta jsonb);
@@ -143,6 +145,26 @@ async function main() {
     grant all on all tables in schema public to service_role;
   `);
   await db.exec(readFileSync("scripts/sql/create-meta-ads-contact-snapshot.sql","utf8")); cases++;
+  await db.exec(`
+    alter table reports add constraint report_scope_unique unique(tenant_id,workspace_id,advertiser_id,id);
+    alter table media_connections add constraint connection_scope_unique unique(tenant_id,workspace_id,advertiser_id,id);
+    alter table reports add column title text, add column period_start date, add column period_end date,
+      add column created_by uuid, add column created_at timestamptz default now();
+    alter table reports alter column id set default gen_random_uuid();
+    alter table reports alter column updated_at set default now();
+    create table workspaces(id uuid primary key,tenant_id uuid);
+    create table advertisers(id uuid primary key,workspace_id uuid,tenant_id uuid);
+    create table media_sync_fact_partitions(workspace_id uuid,advertiser_id uuid,provider text,external_account_id text,date date,
+      source_connection_id uuid,source_job_id uuid,row_count bigint,updated_at timestamptz default now(),
+      primary key(workspace_id,advertiser_id,provider,external_account_id,date));
+    create table media_sync_fact_rows(workspace_id uuid,advertiser_id uuid,provider text,external_account_id text,date date,
+      source_connection_id uuid,source_job_id uuid,row_key text,row jsonb,channel text,device text,source text,
+      primary key(workspace_id,advertiser_id,provider,external_account_id,row_key));
+    grant all on all tables in schema public to service_role;
+  `);
+  await db.exec(readFileSync("scripts/sql/create-api-report-with-media-connections-v2.sql","utf8"));
+  await db.exec(readFileSync("scripts/sql/create-naver-meta-report.sql","utf8")); cases++;
+
   await db.query("insert into report_types values($1,'db'),($2,'commerce')",[uuid(8),uuid(9)]);
   await db.query("insert into media_connections values($1,$2,$3,$4,'meta_ads',$5,'active',1,'synthetic_cipher',$6,$6,null,$7)",
     [uuid(5),access.workspaceId,access.advertiserId,uuid(10),accountId,timestamp,JSON.stringify(target.connection.meta)]);
@@ -199,7 +221,123 @@ async function main() {
   const started=Date.now(); await save(bulkPayload); const bulkMs=Date.now()-started;
   const bulkState=await db.query("select count(*)::integer rows,sum((rr.row->>'conversions')::numeric)::text contacts from report_rows rr join reports r on r.id=rr.report_id and r.current_ingestion_id=rr.ingestion_id where r.id=$1",[access.reportId]);
   assert.deepEqual(bulkState.rows[0],{rows:2500,contacts:"8"}); cases++;
+  await runCombinedChecks(db, validPayload, safeConnection, deps);
   assert.equal(liveNetwork,0); await db.close();
   console.log(`META_CONTACT_SNAPSHOT: ${cases} cases PASS; MAX_2500_ROWS_MS=${bulkMs}; REAL_POSTGRES_ENGINE=17_WASM; LIVE_API=0; PRODUCTION_WRITES=0`);
+}
+
+
+type TestDb = {exec: (sql:string)=>Promise<unknown>; query: (sql:string,args?:unknown[])=>Promise<{rows:Record<string,any>[]}>};
+async function runCombinedChecks(db: TestDb, payload: Record<string,unknown>, safeMeta: SafeMediaConnection,
+  deps: Parameters<typeof handleMetaAdsContactSync>[3]) {
+  const naver = {id:uuid(40),workspace_id:access.workspaceId,advertiser_id:access.advertiserId,
+    provider:"naver_searchad",external_account_id:"naver-1",status:"active",updated_at:timestamp};
+  const mixedMeta = {url_contract_version:2, data_source:{kind:"api",providers:["meta_ads","naver_searchad"],
+    aggregation_contract:"naver_meta_contact_v1",data_level:"mixed",mode:"snapshot_replace"},
+    media_sync:{date_from:range.dateFrom,date_to:range.dateTo,data_level:"mixed",mode:"snapshot_replace"}};
+  const mixedTarget: MetaAdsContactTarget = {...structuredClone(target),companions:[naver],
+    report:{...target.report,meta:mixedMeta},mapping:[...target.mapping,
+      {connection_id:naver.id,workspace_id:access.workspaceId,advertiser_id:access.advertiserId}]};
+  const selected = toggleReportConnectionSelection([naver.id],safeMeta.id);
+  assert.deepEqual(selected,[naver.id,safeMeta.id]);
+  assert.deepEqual(toggleReportConnectionSelection(selected,naver.id),[safeMeta.id]);
+  assert.deepEqual(toggleReportConnectionSelection([safeMeta.id],naver.id),[safeMeta.id,naver.id]); cases++;
+  assert.ok(isNaverMetaReportMeta(mixedMeta));
+  assert.ok(isNaverMetaSelection([safeMeta,{...safeMeta,...naver}]));
+  assert.ok(!isNaverMetaSelection([safeMeta,{...safeMeta,id:uuid(41),provider:"google_ads"}])); cases++;
+  let preflights=0,combinedSaves=0;
+  const combinedDeps = {...deps,load:async()=>structuredClone(mixedTarget),preflight:async()=>{preflights++;},
+    save:async(p:Record<string,unknown>)=>{combinedSaves++;return deps.save(p);}};
+  const combinedResponse=await handleMetaAdsContactSync(request(),access,{...settings,dataLevel:"mixed"},combinedDeps);
+  assert.equal(combinedResponse.status,200,await combinedResponse.text()); assert.equal(preflights,1); assert.equal(combinedSaves,1); cases++;
+  for (const mutate of [
+    (t:MetaAdsContactTarget)=>{t.companions![0].advertiser_id=uuid(98);},
+    (t:MetaAdsContactTarget)=>{t.companions![0].provider="google_ads";},
+    (t:MetaAdsContactTarget)=>{t.mapping.pop();},
+    (t:MetaAdsContactTarget)=>{t.report.meta.media_sync={...mixedMeta.media_sync,auto_sync:{enabled:true}};},
+  ]) {
+    const bad=structuredClone(mixedTarget);mutate(bad);combinedSaves=0;
+    assert.equal((await handleMetaAdsContactSync(request(),access,{...settings,dataLevel:"mixed"},
+      {...combinedDeps,load:async()=>bad})).status,409);assert.equal(combinedSaves,0);cases++;
+  }
+  combinedSaves=0;
+  const failedCoverage=await handleMetaAdsContactSync(request(),access,{...settings,dataLevel:"mixed"},
+    {...combinedDeps,preflight:async()=>{throw new Error("fixture missing coverage");}});
+  assert.notEqual(failedCoverage.status,200);assert.equal(combinedSaves,0);cases++;
+
+  await db.exec("reset role");
+  await db.query("insert into workspaces values($1,$2)",[access.workspaceId,uuid(10)]);
+  await db.query("insert into advertisers values($1,$2,$3)",[access.advertiserId,access.workspaceId,uuid(10)]);
+  await db.query("insert into media_connections values($1,$2,$3,$4,'naver_searchad','naver-1','active',1,'synthetic_naver_cipher',$5,$5,null,'{}')",
+    [naver.id,access.workspaceId,access.advertiserId,uuid(10),timestamp]);
+  await db.exec("set role service_role");
+  const createArgs = [access.workspaceId,access.advertiserId,[safeMeta.id,naver.id],uuid(8),"Combined fixture",null,null,access.userId,
+    JSON.stringify({data_source:{kind:"api",data_level:"mixed"}})];
+  const create = (args=createArgs)=>db.query("select create_naver_meta_report_v1($1,$2,$3,$4,$5,$6,$7,$8,$9) result",args);
+  for (const change of [(a:unknown[])=>{a[3]=uuid(9);},(a:unknown[])=>{a[2]=[safeMeta.id,safeMeta.id];},
+    (a:unknown[])=>{a[1]=uuid(98);},(a:unknown[])=>{a[8]=JSON.stringify({media_sync:{auto_sync:{enabled:true}}});}]) {
+    const args=structuredClone(createArgs);change(args);await assert.rejects(create(args));cases++;
+  }
+  for(const role of ["anon","authenticated"]) {
+    await db.exec(`reset role;set role ${role}`);
+    await assert.rejects(create(),/permission denied/);cases++;
+  }
+  await db.exec("reset role;set role service_role");
+  const created=(await create()).rows[0].result, reportId=created.id;
+  assert.deepEqual(created.providers,["meta_ads","naver_searchad"]);
+  assert.deepEqual(new Set(created.connection_ids),new Set([naver.id,safeMeta.id]));
+  assert.equal(created.meta.data_source.data_level,"mixed");cases++;
+  const mappings=(await db.query("select (select count(*) from manual_report_media_connections where report_id=$1)::integer manual,(select count(*) from report_media_connections where report_id=$1)::integer legacy",[reportId])).rows[0];
+  assert.deepEqual(mappings,{manual:2,legacy:0});cases++;
+  await db.query("update reports set meta=$2,updated_at=$3,published_ingestion_id=$4 where id=$1",[reportId,JSON.stringify(mixedMeta),timestamp,uuid(49)]);
+  const freshMeta=(await db.query("select updated_at::text from media_connections where id=$1",[safeMeta.id])).rows[0];
+  const mixedPayload={...payload,report_id:reportId,expected_report_updated_at:timestamp,expected_current_ingestion_id:null,
+    expected_connection_updated_at:freshMeta.updated_at};
+  const saveMixed=(p=mixedPayload)=>db.query("select save_meta_ads_contact_snapshot_v1($1) result",[JSON.stringify(p)]);
+  const denyMixed=async(error:RegExp)=>{await assert.rejects(saveMixed(),error);
+    assert.equal((await db.query("select count(*)::integer n from report_rows where report_id=$1",[reportId])).rows[0].n,0);cases++;};
+  await denyMixed(/NAVER_META_COVERAGE_INCOMPLETE/);
+  // Thirty authoritative dates, including twenty-nine valid zero-row dates.
+  await db.query(`insert into media_sync_fact_partitions(workspace_id,advertiser_id,provider,external_account_id,date,source_connection_id,source_job_id,row_count)
+    select $1,$2,'naver_searchad','naver-1',d::date,$3,$4,case when d::date='2020-09-01' then 1 else 0 end
+    from generate_series('2020-09-01'::date,'2020-09-30'::date,interval '1 day') d`,[access.workspaceId,access.advertiserId,naver.id,uuid(42)]);
+  await denyMixed(/NAVER_META_FACTS_CHANGED/);
+  const fact={date:"2020-09-01",provider:"naver_searchad",external_account_id:"naver-1",impressions:600,clicks:60,cost:99.6,
+    conversions:12,revenue:0,campaign:"Naver campaign",group:"Naver group",keyword:"Naver keyword",row_level:"keyword"};
+  await db.query("insert into media_sync_fact_rows values($1,$2,'naver_searchad','naver-1','2020-09-01',$3,$4,'row1',$5,'검색광고','','네이버 검색광고')",
+    [access.workspaceId,access.advertiserId,naver.id,uuid(42),JSON.stringify(fact)]);
+  const before=JSON.stringify((await db.query("select * from media_sync_fact_rows")).rows);
+  // Late failure after both provider rows and the Naver done job were inserted must roll everything back.
+  await db.exec("reset role;alter table media_sync_jobs add constraint combined_late_failure check(provider<>'meta_ads' or report_id<>'"+reportId+"');set role service_role");
+  await denyMixed(/combined_late_failure/);
+  assert.equal((await db.query("select count(*)::integer n from media_sync_jobs where report_id=$1",[reportId])).rows[0].n,0);cases++;
+  await db.exec("reset role;alter table media_sync_jobs drop constraint combined_late_failure;set role service_role");
+  const saved=(await saveMixed()).rows[0].result;
+  assert.equal(saved.row_count,5); assert.equal(saved.job.inserted_rows,4);cases++;
+  const totals=(await db.query(`select count(*)::integer rows,sum((rr.row->>'impressions')::numeric)::text impressions,
+    sum((rr.row->>'clicks')::numeric)::text clicks,sum((rr.row->>'cost')::numeric)::text cost,sum((rr.row->>'conversions')::numeric)::text conversions
+    from report_rows rr join reports r on r.id=rr.report_id and r.current_ingestion_id=rr.ingestion_id where r.id=$1`,[reportId])).rows[0];
+  assert.deepEqual(totals,{rows:5,impressions:"1000",clicks:"100",cost:"100.0",conversions:"20"});cases++;
+  const displayed = normalizeCsvRows((await db.query("select rr.row from report_rows rr join reports r on r.id=rr.report_id and r.current_ingestion_id=rr.ingestion_id where r.id=$1",[reportId])).rows.map(r=>r.row));
+  const summary=summarize(displayed);
+  assert.equal(summary.impressions,1000);assert.equal(summary.clicks,100);assert.equal(summary.conversions,20);
+  assert.ok(Math.abs(summary.cost-100)<0.000001);assert.ok(Math.abs(summary.cpa-5)<0.000001);
+  const sources=groupBySource(displayed);assert.equal(sources.length,2);
+  assert.deepEqual(sources.map(r=>r.conversions).sort((a,b)=>a-b),[8,12]);cases++;
+  assert.equal(JSON.stringify((await db.query("select * from media_sync_fact_rows")).rows),before);cases++;
+  assert.equal((await db.query("select published_ingestion_id from reports where id=$1",[reportId])).rows[0].published_ingestion_id,uuid(49));cases++;
+  assert.deepEqual((await db.query("select current_ingestion_id,published_ingestion_id from reports where id=$1",[uuid(99)])).rows[0],
+    {current_ingestion_id:uuid(12),published_ingestion_id:uuid(12)});cases++;
+  assert.equal((await db.query("select last_sync_at from media_connections where id=$1",[naver.id])).rows[0].last_sync_at,null);cases++;
+  await assert.rejects(saveMixed(),/META_CONTACT_CHANGED/);cases++;
+  // Refresh replaces the entire combined snapshot without duplicate accumulation; the previous snapshot stays intact.
+  const current=(await db.query("select r.updated_at::text report_updated,c.updated_at::text connection_updated,r.current_ingestion_id from reports r,media_connections c where r.id=$1 and c.id=$2",[reportId,safeMeta.id])).rows[0];
+  await saveMixed({...mixedPayload,expected_report_updated_at:current.report_updated,expected_connection_updated_at:current.connection_updated,
+    expected_current_ingestion_id:current.current_ingestion_id});
+  assert.equal((await db.query("select count(*)::integer n from report_rows rr join reports r on r.id=rr.report_id and r.current_ingestion_id=rr.ingestion_id where r.id=$1",[reportId])).rows[0].n,5);
+  assert.equal((await db.query("select count(*)::integer n from report_rows where report_id=$1",[reportId])).rows[0].n,10);cases++;
+  // No worker ever sees a Naver mapping for this report, even after refresh.
+  assert.equal((await db.query("select count(*)::integer n from report_media_connections where report_id=$1",[reportId])).rows[0].n,0);cases++;
+  assert.equal((await db.query("select count(*)::integer n from media_sync_jobs where report_id=$1 and status in ('pending','processing')",[reportId])).rows[0].n,0);cases++;
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

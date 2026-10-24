@@ -772,12 +772,12 @@ export async function GET(
  * - body에서는 날짜 범위, dataLevel, mode만 읽는다.
  * - body의 connectionId, workspaceId, advertiserId, reportId,
  *   userId, createdBy, provider, status 등 scope/authority 값은 신뢰하지 않는다.
- * - connectionId는 report_media_connections의 단일 mapping에서만 확정한다.
+ * - connectionId는 보고서 계약에 맞는 서버의 scoped mapping에서만 확정한다.
  * - workspaceId, advertiserId, userId는
  *   access resolver 결과만 사용한다.
  * - 인증 및 run_sync 권한 확인을 body 파싱/검증보다 먼저 수행한다.
  * - 네이버/구글은 pending job 생성까지만 수행한다.
- * - 승인된 Meta 단일 연결은 별도의 합계 검증·원자적 저장 경로를 사용한다.
+ * - 승인된 Meta 단독/네이버·Meta 통합 보고서는 별도의 합계 검증·원자적 저장 경로를 사용한다.
  * - 기존 processing job의 stale recovery는 수행하지 않는다. worker만 수행한다.
  * - 네이버/구글의 provider 호출, worker, ingestion 및 pointer 처리는 기존 경로를 유지한다.
  */
@@ -881,13 +881,13 @@ export async function POST(
       return mediaSyncSettingMismatchResponse();
     }
 
-    if (mappedConnections.length === 1 && mappedConnections[0].provider === "meta_ads") {
-      const [{ handleMetaAdsContactSync }, { loadMetaAdsContactTarget, saveMetaAdsContactSnapshot }] = await Promise.all([
+    if (mappedConnections.some(connection => connection.provider === "meta_ads")) {
+      const [{ handleMetaAdsContactSync }, { loadMetaAdsContactTarget, saveMetaAdsContactSnapshot, preflightNaverMetaCoverage }] = await Promise.all([
         import("@/src/lib/media-sync/meta-ads-contact-sync"),
         import("@/src/lib/media-sync/meta-ads-contact-repository"),
       ]);
       return handleMetaAdsContactSync(request, access, parsedRequest, {
-        load: loadMetaAdsContactTarget, save: saveMetaAdsContactSnapshot, fetchImpl: fetch,
+        load: loadMetaAdsContactTarget, save: saveMetaAdsContactSnapshot, fetchImpl: fetch, preflight: preflightNaverMetaCoverage,
         reauthorize: () => resolveReportMediaConnectionAccess({ request, reportId: id, action: "run_sync" }),
       });
     }

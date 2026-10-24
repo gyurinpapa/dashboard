@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useCreationAccess } from "./useCreationAccess";
 import MetaAdsConnectionCard from "./MetaAdsConnectionCard";
+import { isNaverMetaSelection, toggleReportConnectionSelection } from "@/src/lib/media-sync/naver-meta-report";
 import { isMetaAdsContactConnection, metaAdsContactSyncErrorMessage } from "@/src/lib/media-sync/meta-ads-contact-policy";
 import MediaConnectionCarousel from "./MediaConnectionCarousel";
 import { normalizeReportTheme, type ReportTheme } from "@/src/lib/report/theme";
@@ -2542,8 +2543,8 @@ export default function ReportBuilderPage({ showBillingTest = false, enforceTest
     }
 
     const hasMetaSelection = selectedReportDataSourceKind === "api" && selectedApiReportConnections.some(c => c.provider === "meta_ads");
-    if (hasMetaSelection && (selectedApiReportConnections.length !== 1 || type.key !== "db")) {
-      setLocalMsg("Meta 웹사이트 문의는 Meta 연결 1개만 선택한 DB획득 보고서로 생성해 주세요.");
+    if (hasMetaSelection && (type.key !== "db" || (selectedApiReportConnections.length > 1 && !isNaverMetaSelection(selectedApiReportConnections)))) {
+      setLocalMsg("DB획득 보고서에서 Meta 계정 1개와 네이버 연결을 함께 선택할 수 있습니다.");
       return;
     }
 
@@ -2566,7 +2567,7 @@ export default function ReportBuilderPage({ showBillingTest = false, enforceTest
         ? {
             data_source: {
               kind: "api",
-              data_level: hasMetaSelection ? "creative" : "keyword",
+              data_level: hasMetaSelection ? (selectedApiReportConnections.length > 1 ? "mixed" : "creative") : "keyword",
               mode: "snapshot_replace",
             },
           }
@@ -3271,27 +3272,7 @@ export default function ReportBuilderPage({ showBillingTest = false, enforceTest
   function toggleApiReportConnection(
     connectionId: string
   ) {
-    setSelectedApiMediaConnectionIds(
-      (current) => {
-        if (current.includes(connectionId)) {
-          return current.filter(
-            (id) => id !== connectionId
-          );
-        }
-
-        if (selectedAdvertiserMetaConnections.some(c => c.id === connectionId)) return [connectionId];
-        const withoutMeta = current.filter(id => !selectedAdvertiserMetaConnections.some(c => c.id === id));
-
-        if (withoutMeta.length >= 16) {
-          return current;
-        }
-
-        return [
-          ...withoutMeta,
-          connectionId,
-        ];
-      }
-    );
+    setSelectedApiMediaConnectionIds(current => toggleReportConnectionSelection(current, connectionId));
   }
 
   const canManageSelectedAdvertiserMediaConnections =
@@ -6418,7 +6399,7 @@ export default function ReportBuilderPage({ showBillingTest = false, enforceTest
                                   {isMetaAdsContactConnection(connection) ? " · 사용 가능" : " · 집계 기준 확인 필요"}</span>
                               </label>
                             ))}
-                            Meta 계정 1개를 선택해 DB획득 보고서를 생성합니다. 전환 기준은 웹사이트 문의입니다.
+                            네이버와 함께 선택해 DB획득 통합 보고서를 만들 수 있습니다. Meta 전환 기준은 웹사이트 문의입니다.
                           </div>
                         ) : (
                           <div

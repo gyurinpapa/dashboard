@@ -1,3 +1,4 @@
+import { isNaverMetaReportMeta } from "./naver-meta-report";
 import { readMetaAdsAccountMetadata } from "./meta-ads-account-preflight";
 import { readMetaAdsAdDailyDataset } from "./meta-ads-ad-daily-check";
 import { decryptMetaAdsCredentials } from "./meta-ads-credentials";
@@ -11,6 +12,8 @@ export type MetaAdsContactTarget = {
   report: { id: string; workspace_id: string; advertiser_id: string; updated_at: string; current_ingestion_id: string | null;
     status: string; report_type_key: string; meta: Record<string, unknown> };
   connection: MetaAdsPreviewRecord & { meta: Record<string, unknown> };
+  companions?: { id: string; workspace_id: string; advertiser_id: string; provider: string;
+    external_account_id: string; status: string; updated_at: string }[];
   mapping: { connection_id: string; workspace_id: string; advertiser_id: string }[];
 };
 type Access = MediaConnectionReportAccessContext;
@@ -18,6 +21,7 @@ type Settings = { dateFrom: string; dateTo: string; dataLevel: string; mode: str
 export type MetaAdsContactSyncDependencies = {
   load: (access: Access) => Promise<MetaAdsContactTarget | null>;
   reauthorize: () => Promise<Access>;
+  preflight?: (target: MetaAdsContactTarget, settings: Settings) => Promise<void>;
   save: (payload: Record<string, unknown>) => Promise<unknown>;
   fetchImpl: typeof fetch;
   now?: () => Date;
@@ -29,19 +33,31 @@ function validateTarget(target: MetaAdsContactTarget | null, access: Access, set
   check(r.id === access.reportId && r.workspace_id === access.workspaceId && r.advertiser_id === access.advertiserId &&
     r.report_type_key === "db" && ["draft", "ready"].includes(r.status) && Number.isFinite(Date.parse(r.updated_at)), "META_CONTACT_REPORT_REQUIRED");
   const source = object(r.meta.data_source), saved = object(r.meta.media_sync);
-  check(source.kind === "api" && source.provider === "meta_ads" && source.providers === undefined && saved.auto_sync === undefined &&
-    settings.dataLevel === "creative" && settings.mode === "snapshot_replace" && saved.date_from === settings.dateFrom &&
-    saved.date_to === settings.dateTo && saved.data_level === "creative" && saved.mode === "snapshot_replace", "META_CONTACT_REPORT_REQUIRED");
-  check(mapping.length === 1 && mapping[0].connection_id === c.id && mapping[0].workspace_id === access.workspaceId &&
-    mapping[0].advertiser_id === access.advertiserId && c.workspace_id === access.workspaceId && c.advertiser_id === access.advertiserId &&
+  const combined = isNaverMetaReportMeta(r.meta), companions = target.companions ?? [];
+  const level = combined ? "mixed" : "creative";
+  check(source.kind === "api" && (combined
+    ? source.provider === undefined && JSON.stringify(source.providers) === JSON.stringify(["meta_ads", "naver_searchad"]) &&
+      r.meta.url_contract_version === 2 && companions.length >= 1 && companions.length <= 15
+    : source.provider === "meta_ads" && source.providers === undefined && companions.length === 0) &&
+    saved.auto_sync === undefined && settings.dataLevel === level && settings.mode === "snapshot_replace" &&
+    saved.date_from === settings.dateFrom && saved.date_to === settings.dateTo && saved.data_level === level &&
+    saved.mode === "snapshot_replace", "META_CONTACT_REPORT_REQUIRED");
+  const ids = [c.id, ...companions.map(n => n.id)];
+  check(mapping.length === ids.length && new Set(ids).size === ids.length &&
+    new Set(mapping.map(m => m.connection_id)).size === ids.length && mapping.every(m => ids.includes(m.connection_id) &&
+      m.workspace_id === access.workspaceId && m.advertiser_id === access.advertiserId) &&
+    companions.every(n => n.workspace_id === access.workspaceId && n.advertiser_id === access.advertiserId &&
+      n.provider === "naver_searchad" && n.status === "active") &&
+    new Set(companions.map(n => n.external_account_id)).size === companions.length &&
+    c.workspace_id === access.workspaceId && c.advertiser_id === access.advertiserId &&
     c.provider === "meta_ads" && c.status === "active" && c.credential_version === 1 && c.credential_ciphertext &&
     c.last_verified_at && Number.isFinite(Date.parse(c.last_verified_at)) && Number.isFinite(Date.parse(c.updated_at)), "META_CONTACT_CHANGED");
   const policy = readMetaAdsContactPolicy(c.meta.meta_ads_reporting, c.external_account_id);
-  check(policy, "META_CONTACT_POLICY_REQUIRED");
+  check(policy && (!combined || (policy.currency === "KRW" && policy.time_zone === "Asia/Seoul")), "META_CONTACT_POLICY_REQUIRED");
   return policy;
 }
 
-/** Authenticated, manual, bounded Meta-only snapshot. Shared worker capability remains disabled. */
+/** Authenticated, manual snapshot: Meta-only or atomically combined with completed Naver facts. Shared worker capability remains disabled. */
 export async function handleMetaAdsContactSync(request: Request, access: Access, settings: Settings,
   deps: MetaAdsContactSyncDependencies): Promise<Response> {
   const json = (status: number, body: unknown) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
@@ -55,6 +71,10 @@ export async function handleMetaAdsContactSync(request: Request, access: Access,
     const policy = validateTarget(target, access, settings);
     const { connection: c, report: r } = target!;
     const range = resolveMetaAdsPreviewRange(settings, policy.time_zone, deps.now?.());
+    if (isNaverMetaReportMeta(r.meta)) {
+      check(deps.preflight, "META_CONTACT_REPORT_REQUIRED");
+      await deps.preflight(target!, settings);
+    }
     const credential = decryptMetaAdsCredentials(c.credential_ciphertext!, { connectionId: c.id,
       workspaceId: c.workspace_id, advertiserId: c.advertiser_id, provider: "meta_ads", externalAccountId: c.external_account_id });
     const metadata = await readMetaAdsAccountMetadata({ externalAccountId: c.external_account_id, accessToken: credential.access_token },
@@ -71,6 +91,8 @@ export async function handleMetaAdsContactSync(request: Request, access: Access,
     const fresh = await deps.load(access);
     validateTarget(fresh, access, settings);
     check(fresh!.report.updated_at === r.updated_at && fresh!.report.current_ingestion_id === r.current_ingestion_id &&
+      JSON.stringify(fresh!.mapping) === JSON.stringify(target!.mapping) &&
+      JSON.stringify(fresh!.companions ?? []) === JSON.stringify(target!.companions ?? []) &&
       fresh!.connection.id === c.id && fresh!.connection.updated_at === c.updated_at &&
       fresh!.connection.last_verified_at === c.last_verified_at && fresh!.connection.credential_ciphertext === c.credential_ciphertext &&
       JSON.stringify(readMetaAdsContactPolicy(fresh!.connection.meta.meta_ads_reporting, c.external_account_id)) === JSON.stringify(policy),
@@ -89,7 +111,7 @@ export async function handleMetaAdsContactSync(request: Request, access: Access,
     // The repository whitelists returned job fields; never return the collector or DB payload.
     return json(200, { ok: true, report_id: r.id, workspace_id: access.workspaceId, advertiser_id: access.advertiserId,
       access_scope: access.accessScope, job, report_data_saved: true, conversion_mapping: "CONTACT_WEBSITE",
-      row_count: normalized.rows.length, website_contacts: normalized.check.account.website_contacts });
+      row_count: result.row_count ?? normalized.rows.length, website_contacts: normalized.check.account.website_contacts });
   } catch (error) {
     if (error instanceof MetaAdsContactError) return json(error.status, { ok: false, error: error.code });
     if (error instanceof MetaAdsInsightsPreviewError && error.code === "INVALID_RANGE")

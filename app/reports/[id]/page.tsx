@@ -17,6 +17,7 @@ import {
   useSearchParams,
 } from "next/navigation";
 import { supabase } from "@/src/lib/supabase/client";
+import { isNaverMetaReportMeta } from "@/src/lib/media-sync/naver-meta-report";
 import { metaAdsContactSyncErrorMessage } from "@/src/lib/media-sync/meta-ads-contact-policy";
 import ReportDownloadButtons from "@/app/components/report/ReportDownloadButtons";
 import MediaConnectionCarousel from "@/app/report-builder/MediaConnectionCarousel";
@@ -1019,7 +1020,7 @@ function extractMediaSyncSettingsFromReport(
     dateFrom: normalizeYmdInput(mediaSync?.date_from),
     dateTo: normalizeYmdInput(mediaSync?.date_to),
     dataLevel: normalizeMediaSyncDataLevel(mediaSync?.data_level ??
-      (meta?.data_source?.provider === "meta_ads" ? "creative" : undefined)),
+      (isNaverMetaReportMeta(meta) ? "mixed" : meta?.data_source?.provider === "meta_ads" ? "creative" : undefined)),
     mode: "snapshot_replace",
   };
 }
@@ -5668,7 +5669,7 @@ export default function ReportDetailPage() {
                   }
                   className="etrylue-field mt-1 w-full rounded-xl px-3.5 py-2.5 text-sm"
                 >
-                  {canonicalSourceType === "api" ? (
+                  {canonicalSourceType === "api" && !isNaverMetaReportMeta(report?.meta) ? (
                     <option value="daily_sync">
                       데일리 자동 동기화
                     </option>
@@ -6541,6 +6542,12 @@ export default function ReportDetailPage() {
                 )}
               </div>
 
+              {isNaverMetaReportMeta(report?.meta) ? (
+                <div className="text-xs leading-5 text-[#bbb8d4]">
+                  네이버는 수집 완료된 일별 성과, Meta는 이번에 조회한 웹사이트 문의 성과를 같은 기간으로 합산합니다.
+                  두 매체가 모두 확인된 경우에만 통합 데이터를 반영합니다. 전환 합계는 매체별 집계의 합이며 중복 문의를 제거한 수치는 아닙니다.
+                </div>
+              ) : null}
               <div className="text-xs text-[#bbb8d4]">
                 {mediaSyncPeriodManagedByCanonical ? (
                   <span className="font-extrabold text-[#9ef5ff]">

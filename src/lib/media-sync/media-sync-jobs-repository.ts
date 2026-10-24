@@ -1,3 +1,4 @@
+import { isNaverMetaReportMeta, MANUAL_REPORT_CONNECTIONS_TABLE } from "./naver-meta-report";
 import { isDeepStrictEqual } from "node:util";
 
 import { getSupabaseAdmin } from "../supabase/admin";
@@ -1738,9 +1739,8 @@ export async function listRecentMediaSyncJobsForReport(
 /**
  * 리포트에 명시적으로 매핑된 connection id를 읽기 전용으로 반환한다.
  *
- * 현재 Production은 리포트당 1개 매핑을 강제하지만, 이 조회 계약은
- * M5 다매체 UI가 기존 단일 매핑과 향후 복수 매핑을 같은 형식으로
- * 안전하게 표시할 수 있도록 배열을 사용한다.
+ * 기존 worker 매핑은 단일 연결을 유지한다. 수동 네이버·Meta 통합 보고서는
+ * 전용 매핑을 조회하며, 기존 Naver fanout 대상에는 추가되지 않는다.
  */
 export async function listReportMediaConnectionIds(
   input: ListReportMediaConnectionIdsInput,
@@ -1761,7 +1761,7 @@ export async function listReportMediaConnectionIds(
     200,
   );
 
-  await requireScopedReport({
+  const report = await requireScopedReport({
     reportId,
     workspaceId,
     advertiserId,
@@ -1769,7 +1769,7 @@ export async function listReportMediaConnectionIds(
 
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
-    .from(REPORT_MEDIA_CONNECTIONS_TABLE)
+    .from(isNaverMetaReportMeta(report.meta) ? MANUAL_REPORT_CONNECTIONS_TABLE : REPORT_MEDIA_CONNECTIONS_TABLE)
     .select("workspace_id, advertiser_id, report_id, connection_id")
     .eq("report_id", reportId)
     .eq("workspace_id", workspaceId)

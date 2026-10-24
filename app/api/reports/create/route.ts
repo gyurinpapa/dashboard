@@ -35,7 +35,7 @@ type CreateBody = {
   connection_id?: string | null;
 
   // Additive V2 multi-media creation contract.
-  // Existing Builder continues to use connection_id until V2-B.
+  // Builder supplies connection_ids; the original single-input contract remains available.
   connection_ids?: string[] | null;
 
   report_type_id?: string;
@@ -357,6 +357,7 @@ function normalizeReportMeta(
     };
 
     delete normalizedDataSource.provider;
+    delete normalizedDataSource.aggregation_contract;
 
     return {
       ...meta,
@@ -1306,7 +1307,7 @@ export async function POST(req: Request) {
     //
     // V1 remains the exact current single-connection authority.
     // V2 is additive and is entered only when the caller explicitly
-    // supplies connection_ids. Report Builder does not use V2 yet.
+    // supplies connection_ids. Naver + Meta uses its isolated manual-report wrapper.
     if (dataSourceKind === "api") {
       if (!advertiser_id) {
         return jsonError(
@@ -1316,11 +1317,20 @@ export async function POST(req: Request) {
       }
 
       if (connection_ids) {
+        // Mixed manual reports keep mappings outside the legacy Naver fanout authority.
+        let createRpc = "create_api_report_with_media_connections_v2";
+        if (connection_ids.length > 1) {
+          const selected = await supabaseAdmin.from("media_connections").select("id,provider")
+            .in("id", connection_ids).eq("workspace_id", resolved_workspace_id).eq("advertiser_id", advertiser_id);
+          if (selected.error) return jsonError(500, "CONNECTION_LOOKUP_FAILED");
+          if (selected.data?.length !== connection_ids.length) return jsonError(403, "CONNECTION_SCOPE_MISMATCH");
+          if (selected.data.some(c => c.provider === "meta_ads")) createRpc = "create_naver_meta_report_v1";
+        }
         const {
           data,
           error,
         } = await supabaseAdmin.rpc(
-          "create_api_report_with_media_connections_v2",
+          createRpc,
           {
             p_workspace_id:
               resolved_workspace_id,
