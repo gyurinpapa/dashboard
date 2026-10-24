@@ -32,7 +32,7 @@ export function getMetaAdsConnectionView(input: {
     if (!connection.last_verified_at || !Number.isFinite(Date.parse(connection.last_verified_at))) {
       return { label: "인증 확인 필요", description: "계정이 등록되었습니다. Meta 계정 접근 권한은 아직 확인하지 않았습니다.", ready: true };
     }
-    return { label: "● 연결됨", description: "Meta 광고 계정 접근을 확인했습니다.", ready: true };
+    return { label: "● 연결됨", description: "Meta 광고 계정 접근을 확인했습니다.", ready: true, connected: true };
   }
   if (input.connections.some(c => c.status === "error")) {
     return { label: "오류", description: "Meta Ads 연결에 오류가 있습니다. 인증 정보를 확인해 주세요.", ready: true };

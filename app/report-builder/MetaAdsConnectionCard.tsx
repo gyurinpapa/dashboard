@@ -150,8 +150,11 @@ export default function MetaAdsConnectionCard(props: Props) {
       borderRadius: 14, background: "rgba(42,33,87,0.82)", padding: 14, color: "#bbb8d4" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
         <div style={{ fontSize: 13, fontWeight: 900, color: "#f7f7ff" }}>META ADS</div>
-        <span aria-live="polite" style={{ borderRadius: 999, border: "1px solid rgba(255,255,255,0.12)",
-          background: "rgba(255,255,255,0.05)", padding: "4px 8px", fontSize: 10, fontWeight: 900 }}>{view.label}</span>
+        <span aria-live="polite" style={{ borderRadius: 999,
+          border: view.connected ? "1px solid rgba(110, 231, 183, 0.28)" : "1px solid rgba(255, 255, 255, 0.12)",
+          background: view.connected ? "rgba(110, 231, 183, 0.10)" : "rgba(255, 255, 255, 0.05)",
+          color: view.connected ? "#a7f3d0" : "#bbb8d4",
+          padding: "4px 8px", fontSize: 10, fontWeight: 900, whiteSpace: "nowrap" }}>{view.label}</span>
       </div>
       <div style={{ marginTop: 10, minHeight: 70, fontSize: 11, lineHeight: 1.6 }}>
         <p style={{ margin: 0 }}>{view.description}</p>
