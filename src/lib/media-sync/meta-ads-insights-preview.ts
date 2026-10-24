@@ -7,6 +7,8 @@ export type MetaAdsInsightsPreview = Readonly<{
   date_from: string; date_to: string; has_data: boolean;
   impressions: string | null; clicks: string | null; spend: string | null;
   actions: readonly MetaAdsPreviewAction[]; action_values: readonly MetaAdsPreviewAction[];
+  // Raw Meta arrays, not a mapped or summed report conversion metric.
+  conversions: readonly MetaAdsPreviewAction[]; conversion_values: readonly MetaAdsPreviewAction[];
 }>;
 export class MetaAdsInsightsPreviewError extends Error {
   constructor(readonly code: "INVALID_RANGE" | "INVALID_RESPONSE" | "REQUEST_FAILED" |
@@ -69,12 +71,13 @@ export function parseMetaAdsInsightsPreview(body: unknown, accountId: string,
   }
   const base = { date_from: range.dateFrom, date_to: range.dateTo };
   if (parsed.data.length === 0) return { ...base, has_data: false, impressions: null, clicks: null,
-    spend: null, actions: [], action_values: [] };
+    spend: null, actions: [], action_values: [], conversions: [], conversion_values: [] };
   const row = object(parsed.data[0]);
   check(row.account_id === accountId && row.date_start === range.dateFrom && row.date_stop === range.dateTo,
     "INVALID_RESPONSE");
   return { ...base, has_data: true, impressions: metric(row.impressions, true), clicks: metric(row.clicks, true),
-    spend: metric(row.spend), actions: actions(row.actions), action_values: actions(row.action_values) };
+    spend: metric(row.spend), actions: actions(row.actions), action_values: actions(row.action_values),
+    conversions: actions(row.conversions), conversion_values: actions(row.conversion_values) };
 }
 export async function readMetaAdsInsightsPreview(input: MetaAdsPreviewRange & {
   externalAccountId: string; accessToken: string;
@@ -87,7 +90,7 @@ export async function readMetaAdsInsightsPreview(input: MetaAdsPreviewRange & {
   check(Number.isSafeInteger(timeoutMs) && timeoutMs > 0 && timeoutMs <= 15000, "INVALID_RANGE");
   const url = new URL(`https://graph.facebook.com/${META_ADS_API_VERSION}/act_${input.externalAccountId}/insights`);
   // Match the platform's default attribution settings; do not introduce synthetic windows.
-  url.searchParams.set("fields", "account_id,date_start,date_stop,impressions,clicks,spend,actions,action_values");
+  url.searchParams.set("fields", "account_id,date_start,date_stop,impressions,clicks,spend,actions,action_values,conversions,conversion_values");
   url.searchParams.set("level", "account");
   url.searchParams.set("time_range", JSON.stringify({ since: input.dateFrom, until: input.dateTo }));
   url.searchParams.set("limit", "1");

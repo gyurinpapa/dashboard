@@ -39,10 +39,31 @@ async function main() {
   const parsed = parse({ data: [row], paging: { cursors: { after: "opaque" } } }, accountId, period);
   assert.equal(parsed.spend, "101531.25"); assert.equal(parsed.actions.length, 4);
   assert.equal(parsed.actions[0].value, "7"); assert.equal(parsed.actions[1].value, "7");
-  assert.equal(Object.hasOwn(parsed, "conversions"), false); assert.deepEqual(parsed.action_values, []); cases++;
+  assert.deepEqual(parsed.conversions, []); assert.deepEqual(parsed.conversion_values, []);
+  assert.deepEqual(parsed.action_values, []); cases++;
   const empty = parse({ data: [] }, accountId, period);
-  assert.equal(empty.has_data, false); assert.equal(empty.spend, null); cases++;
+  assert.equal(empty.has_data, false); assert.equal(empty.spend, null);
+  assert.deepEqual(empty.conversions, []); assert.deepEqual(empty.conversion_values, []); cases++;
   assert.deepEqual(parse({ data: [{ ...row, actions: undefined }] }, accountId, period).actions, []); cases++;
+  const conversionRow = { ...row, actions: [{ action_type: "contact_website", value: "3" }],
+    action_values: [{ action_type: "contact_website", value: "30" }],
+    conversions: [{ action_type: "contact_website", value: "5" }, { action_type: "contact_total", value: "5" }],
+    conversion_values: [{ action_type: "contact_website", value: "12.5" }] };
+  const conversionParsed = parse({ data: [conversionRow] }, accountId, period);
+  // Preserve fields and overlapping action types independently, without totals or zero coercion.
+  for (const field of ["actions", "action_values", "conversions", "conversion_values"] as const) {
+    assert.deepEqual(conversionParsed[field], conversionRow[field]); cases++;
+  }
+  const conversionOnly = parse({ data: [{ ...conversionRow, actions: undefined, action_values: undefined }] }, accountId, period);
+  assert.equal(conversionOnly.has_data, true); assert.deepEqual(conversionOnly.actions, []);
+  assert.deepEqual(conversionOnly.conversions, conversionRow.conversions); cases++;
+  for (const field of ["conversions", "conversion_values"] as const) {
+    for (const invalid of [null, "5", [{ action_type: "contact_website", value: "-1" }],
+      [{ action_type: "contact_website", value: "1" }, { action_type: "contact_website", value: "2" }],
+      [{ action_type: "<script>", value: "1" }]]) {
+      assert.throws(() => parse({ data: [{ ...conversionRow, [field]: invalid }] }, accountId, period)); cases++;
+    }
+  }
   for (const bad of [null, { error: { message: token } }, { data: [row, row] },
     { data: [row], paging: { next: "https://untrusted.invalid/?access_token=secret" } },
     ...[{ account_id: "99" }, { date_stop: "2026-10-24" }, { spend: "NaN" }, { impressions: "1.5" },
@@ -59,6 +80,7 @@ async function main() {
     assert.equal(url.origin, "https://graph.facebook.com");
     assert.equal(url.pathname, `/v26.0/act_${accountId}/insights`);
     assert.equal(url.searchParams.get("level"), "account"); assert.equal(url.searchParams.get("limit"), "1");
+    assert.equal(url.searchParams.get("fields"), "account_id,date_start,date_stop,impressions,clicks,spend,actions,action_values,conversions,conversion_values");
     assert.equal(url.searchParams.has("access_token"), false);
     assert.equal(url.searchParams.has("action_report_time"), false);
     assert.equal(url.searchParams.has("action_attribution_windows"), false);
@@ -118,6 +140,11 @@ async function main() {
   assert.deepEqual(success.preview, parsed); assert.equal(success.read_only, true);
   assert.equal(success.sync_enabled, false); assert.equal(success.conversion_mapping, "UNCONFIRMED");
   assert.equal(loads, 2); assert.deepEqual(record, beforeRecord);
+  const conversionSuccess = await run(request(), 200, { fetchImpl: async (input, init) => {
+    if (!String(input).includes("/insights?")) return deps.fetchImpl(input, init);
+    calls++; return Response.json({ data: [conversionRow] });
+  } }, 2);
+  assert.deepEqual(conversionSuccess.preview, conversionParsed);
   const beforeLoads = loads;
   for (const status of [401, 403, 404, 500]) {
     await run(request(), status === 404 ? 403 : status, { resolveAccess: async () => { throw new MediaConnectionAccessError("UNAUTHORIZED", status, token); } });
@@ -151,10 +178,15 @@ async function main() {
   assert.ok(renderToStaticMarkup(createElement(Diagnostic, { workspaceId, advertiserId, connectionId,
     externalAccountId: accountId, accountLabel: "Fixture", getAccessToken: async () => null })).includes("성과·전환 점검")); cases++;
   const exported = exportResult({ externalAccountId: accountId, currency: "KRW", timeZone: "Asia/Seoul",
-    preview: { ...parsed, access_token: token, actions: parsed.actions.map(action => ({ ...action, access_token: token })) } as typeof parsed });
+    preview: { ...conversionParsed, access_token: token,
+      ...Object.fromEntries((["actions", "action_values", "conversions", "conversion_values"] as const)
+        .map(field => [field, conversionParsed[field].map(action => ({ ...action, access_token: token }))])) } as typeof parsed });
   assert.equal(exported.includes(token), false);
   assert.equal(exported.includes("access_token"), false);
-  assert.deepEqual(JSON.parse(exported).actions, parsed.actions);
+  assert.equal(JSON.parse(exported).schema, "etrylue_meta_insights_check_v2");
+  for (const field of ["actions", "action_values", "conversions", "conversion_values"] as const) {
+    assert.deepEqual(JSON.parse(exported)[field], conversionParsed[field]);
+  }
   assert.equal(JSON.parse(exported).conversion_mapping, "UNCONFIRMED"); cases++;
   assert.equal(network, 0); assert.equal(getMediaProviderSyncCapability("meta_ads").syncRuntimeEnabled, false);
   assert.deepEqual(record, beforeRecord);

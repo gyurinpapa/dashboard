@@ -24,7 +24,7 @@ const labels: Record<string, string> = {
 const label = (type: string) => labels[type] ?? (type.startsWith("offsite_conversion.custom.") ? "맞춤 전환" : type);
 const number = (value: string | null) => value === null ? "—" : Number(value).toLocaleString("ko-KR", { maximumFractionDigits: 6 });
 function priority(type: string) {
-  return type === "lead" ? 0 : type.includes("lead") || type.startsWith("offsite_conversion.") ? 1 : 2;
+  return type.includes("contact") ? 0 : type === "lead" ? 1 : type.includes("lead") || type.startsWith("offsite_conversion.") ? 2 : 3;
 }
 
 /** Parent remounts on connection/scope/credential-verification changes. No token or result persistence. */
@@ -58,7 +58,8 @@ export default function MetaAdsInsightsPreview(props: Props) {
       if (body.workspace_id !== props.workspaceId || body.advertiser_id !== props.advertiserId ||
         body.connection_id !== props.connectionId || body.external_account_id !== props.externalAccountId ||
         body.read_only !== true || body.sync_enabled !== false || body.conversion_mapping !== "UNCONFIRMED" ||
-        !body.preview || !Array.isArray(body.preview.actions) || !Array.isArray(body.preview.action_values)) {
+        !body.preview || !Array.isArray(body.preview.actions) || !Array.isArray(body.preview.action_values) ||
+        !Array.isArray(body.preview.conversions) || !Array.isArray(body.preview.conversion_values)) {
         setError(metaAdsConnectionErrorMessage("SCOPE_MISMATCH")); return;
       }
       setResult({ preview: body.preview, currency: body.currency, timezone_name: body.timezone_name });
@@ -74,8 +75,10 @@ export default function MetaAdsInsightsPreview(props: Props) {
     event.preventDefault();
     void load(dateFrom || dateTo ? { dateFrom, dateTo } : {});
   }
-  const rows = result ? [...result.preview.actions].sort((a, b) =>
-    priority(a.action_type) - priority(b.action_type) || a.action_type.localeCompare(b.action_type)) : [];
+  const rows = result ? (["conversions", "actions", "conversion_values", "action_values"] as const)
+    .flatMap(source => [...result.preview[source]].sort((a, b) =>
+      priority(a.action_type) - priority(b.action_type) || a.action_type.localeCompare(b.action_type))
+      .map(row => ({ ...row, source }))) : [];
   const exportText = result ? formatMetaAdsPreviewExport({ externalAccountId: props.externalAccountId,
     currency: result.currency, timeZone: result.timezone_name, preview: result.preview }) : "";
   async function copyResult() {
@@ -116,13 +119,15 @@ export default function MetaAdsInsightsPreview(props: Props) {
           <p>노출 <strong>{number(result.preview.impressions)}</strong> · 클릭 <strong>{number(result.preview.clicks)}</strong><br />
             광고비 <strong>{number(result.preview.spend)} {result.currency}</strong></p>
           <p style={{ color: "#b4e8d8" }}>문의·상담 신청에 해당하는 항목을 광고 관리자 수치와 비교해 주세요.</p>
+          <p>조회 범위: actions · action_values · conversions · conversion_values</p>
           {rows.length ? <div style={{ maxHeight: 300, overflow: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
               <caption style={{ textAlign: "left", fontWeight: 800 }}>Meta에서 반환한 성과 항목</caption>
               <thead><tr><th scope="col" style={{ textAlign: "left", width: "78%" }}>항목</th><th scope="col">값</th></tr></thead>
-              <tbody>{rows.map(row => <tr key={row.action_type}>
+              <tbody>{rows.map(row => <tr key={`${row.source}:${row.action_type}`}>
                 <td style={{ borderTop: "1px solid rgba(255,255,255,.1)", padding: "6px 3px", overflowWrap: "anywhere" }}>
-                  {label(row.action_type)}{label(row.action_type) !== row.action_type && <small style={{ display: "block", opacity: .7 }}>{row.action_type}</small>}
+                  {label(row.action_type)}
+                  <small style={{ display: "block", opacity: .7 }}>{row.source}{label(row.action_type) !== row.action_type && ` · ${row.action_type}`}</small>
                 </td>
                 <td style={{ borderTop: "1px solid rgba(255,255,255,.1)", textAlign: "right", verticalAlign: "top", paddingTop: 6 }}>{number(row.value)}</td>
               </tr>)}</tbody>
