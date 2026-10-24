@@ -3212,6 +3212,8 @@ export default function ReportBuilderPage({ showBillingTest = false, enforceTest
     currentAdvertiserMediaConnections.filter(
       (connection) => connection.provider === "meta_ads"
     );
+  const usableMetaConnections =
+    selectedAdvertiserMetaConnections.filter(isMetaAdsContactConnection);
 
   const usableNaverConnections =
     selectedAdvertiserNaverConnections.filter(
@@ -3245,7 +3247,7 @@ export default function ReportBuilderPage({ showBillingTest = false, enforceTest
       ? [
           ...usableNaverConnections,
           ...usableGoogleConnections,
-          ...selectedAdvertiserMetaConnections.filter(isMetaAdsContactConnection),
+          ...usableMetaConnections,
         ]
       : [];
 
@@ -3268,6 +3270,29 @@ export default function ReportBuilderPage({ showBillingTest = false, enforceTest
       (connection) =>
         connection.provider === "google_ads"
     );
+
+  const selectedMetaApiReportConnections =
+    selectedApiReportConnections.filter(
+      (connection) => connection.provider === "meta_ads"
+    );
+  const allApiReportConnectionsSelected =
+    usableApiReportConnections.length > 0 &&
+    selectedApiReportConnections.length === usableApiReportConnections.length;
+  const canSelectAllApiReportConnections =
+    !creating &&
+    !loadingSelectedAdvertiserMediaConnections &&
+    hasCurrentAdvertiserMediaConnectionSnapshot &&
+    !selectedAdvertiserMediaConnectionsError &&
+    usableApiReportConnections.length > 0 &&
+    usableApiReportConnections.length <= 16 &&
+    !allApiReportConnectionsSelected;
+
+  function selectAllApiReportConnections() {
+    if (!canSelectAllApiReportConnections) return;
+    setSelectedApiMediaConnectionIds(
+      usableApiReportConnections.map((connection) => connection.id)
+    );
+  }
 
   function toggleApiReportConnection(
     connectionId: string
@@ -5897,6 +5922,57 @@ export default function ReportBuilderPage({ showBillingTest = false, enforceTest
                   <>
                     <div
                       style={{
+                        display: "flex",
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                        gap: 8,
+                        marginTop: 14,
+                      }}
+                    >
+                      <button
+                        type="button"
+                        disabled={!canSelectAllApiReportConnections}
+                        onClick={selectAllApiReportConnections}
+                        style={{
+                          border: "1px solid rgba(110, 231, 183, 0.28)",
+                          borderRadius: 9,
+                          background: "rgba(110, 231, 183, 0.10)",
+                          color: "#a7f3d0",
+                          padding: "7px 11px",
+                          fontSize: 12,
+                          fontWeight: 800,
+                          cursor: canSelectAllApiReportConnections ? "pointer" : "not-allowed",
+                          opacity: canSelectAllApiReportConnections ? 1 : 0.5,
+                        }}
+                      >
+                        전체 선택
+                      </button>
+                      <button
+                        type="button"
+                        disabled={creating || selectedApiMediaConnectionIds.length === 0}
+                        onClick={() => setSelectedApiMediaConnectionIds([])}
+                        style={{
+                          border: "1px solid rgba(255, 255, 255, 0.12)",
+                          borderRadius: 9,
+                          background: "rgba(255, 255, 255, 0.05)",
+                          color: "#d7d5ec",
+                          padding: "7px 11px",
+                          fontSize: 12,
+                          fontWeight: 800,
+                          cursor: !creating && selectedApiMediaConnectionIds.length > 0 ? "pointer" : "not-allowed",
+                          opacity: !creating && selectedApiMediaConnectionIds.length > 0 ? 1 : 0.5,
+                        }}
+                      >
+                        전체 해제
+                      </button>
+                      <span style={{ fontSize: 11, lineHeight: 1.5, color: "#bbb8d4" }}>
+                        {usableApiReportConnections.length > 16
+                          ? "한 리포트에는 최대 16개까지 개별 선택할 수 있습니다."
+                          : "사용 가능한 연결만 전체 선택합니다. 선택 후 개별 해제할 수 있습니다."}
+                      </span>
+                    </div>
+                    <div
+                      style={{
                         marginTop: 14,
                         display: "grid",
                         gridTemplateColumns:
@@ -6349,19 +6425,30 @@ export default function ReportBuilderPage({ showBillingTest = false, enforceTest
                               flexShrink: 0,
                               borderRadius: 999,
                               border:
-                                "1px solid rgba(255, 255, 255, 0.12)",
-                              background: "rgba(255, 255, 255, 0.05)",
+                                selectedMetaApiReportConnections.length > 0
+                                  ? "1px solid rgba(110, 231, 183, 0.28)"
+                                  : "1px solid rgba(255, 255, 255, 0.12)",
+                              background:
+                                selectedMetaApiReportConnections.length > 0
+                                  ? "rgba(110, 231, 183, 0.10)"
+                                  : "rgba(255, 255, 255, 0.05)",
                               padding: "4px 8px",
                               fontSize: 10,
                               fontWeight: 900,
-                              color: "#bbb8d4",
+                              color:
+                                selectedMetaApiReportConnections.length > 0
+                                  ? "#a7f3d0"
+                                  : "#bbb8d4",
                               whiteSpace: "nowrap",
                             }}
                           >
-                            {selectedAdvertiserMetaConnections.some(isMetaAdsContactConnection)
-                              ? "웹사이트 문의"
-                              : selectedAdvertiserMetaConnections.length > 0 ? "집계 기준 확인 필요"
-                              : "연결 필요"}
+                            {selectedMetaApiReportConnections.length > 0
+                              ? `● ${selectedMetaApiReportConnections.length}개 선택`
+                              : usableMetaConnections.length > 0
+                                ? "선택 가능"
+                                : selectedAdvertiserMetaConnections.length > 0
+                                  ? "집계 기준 확인 필요"
+                                  : "연결 필요"}
                           </span>
                         </div>
 
@@ -6379,27 +6466,62 @@ export default function ReportBuilderPage({ showBillingTest = false, enforceTest
                         {selectedAdvertiserMetaConnections.length > 0 ? (
                           <div
                             style={{
+                              display: "grid",
+                              gap: 8,
                               marginTop: 12,
-                              border:
-                                "1px solid rgba(255, 255, 255, 0.09)",
-                              borderRadius: 10,
-                              background: "rgba(33, 27, 68, 0.58)",
-                              padding: "10px 11px",
-                              fontSize: 10,
-                              lineHeight: 1.5,
-                              color: "#bbb8d4",
                             }}
                           >
-                            {selectedAdvertiserMetaConnections.map(connection => (
-                              <label key={connection.id} style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 0" }}>
-                                <input type="checkbox" checked={selectedApiMediaConnectionIds.includes(connection.id)}
-                                  disabled={creating || !isMetaAdsContactConnection(connection)}
-                                  onChange={() => toggleApiReportConnection(connection.id)} />
-                                <span>{connection.external_account_name || connection.external_account_id} · {connection.external_account_id}
-                                  {isMetaAdsContactConnection(connection) ? " · 사용 가능" : " · 집계 기준 확인 필요"}</span>
-                              </label>
-                            ))}
-                            네이버와 함께 선택해 DB획득 통합 보고서를 만들 수 있습니다. Meta 전환 기준은 웹사이트 문의입니다.
+                            {selectedAdvertiserMetaConnections.map((connection) => {
+                              const selectable = isMetaAdsContactConnection(connection);
+                              const checked = selectedApiMediaConnectionIds.includes(connection.id);
+                              const statusLabel =
+                                connection.status === "disconnected" ? "연결 해제"
+                                  : connection.status === "error" ? "오류"
+                                  : !connection.has_credentials ? "자격증명 필요"
+                                  : !connection.last_verified_at ? "인증 확인 필요"
+                                  : selectable ? "사용 가능" : "집계 기준 확인 필요";
+                              return (
+                                <label
+                                  key={connection.id}
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 9,
+                                    border: checked
+                                      ? "1px solid rgba(110, 231, 183, 0.28)"
+                                      : "1px solid rgba(255, 255, 255, 0.10)",
+                                    borderRadius: 10,
+                                    background: checked
+                                      ? "rgba(110, 231, 183, 0.08)"
+                                      : "rgba(42, 33, 87, 0.72)",
+                                    padding: "9px 10px",
+                                    cursor: selectable && !creating ? "pointer" : "not-allowed",
+                                    opacity: selectable ? 1 : 0.58,
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    disabled={creating || !selectable}
+                                    onChange={() => toggleApiReportConnection(connection.id)}
+                                  />
+                                  <span
+                                    style={{
+                                      minWidth: 0,
+                                      fontSize: 11,
+                                      lineHeight: 1.5,
+                                      color: checked ? "#a7f3d0" : "#d7d5ec",
+                                    }}
+                                  >
+                                    {connection.external_account_name || connection.external_account_id}
+                                    {" · "}{connection.external_account_id}{" · "}{statusLabel}
+                                  </span>
+                                </label>
+                              );
+                            })}
+                            <div style={{ marginTop: 2, fontSize: 10, lineHeight: 1.55, color: "#8f8bad" }}>
+                              네이버와 함께 선택해 DB획득 통합 보고서를 만들 수 있습니다. Meta 전환 기준은 웹사이트 문의입니다.
+                            </div>
                           </div>
                         ) : (
                           <div
