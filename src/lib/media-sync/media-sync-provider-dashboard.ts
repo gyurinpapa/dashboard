@@ -1,5 +1,6 @@
 import { isNaverMetaSelection } from "./naver-meta-report";
 import { isMetaAdsContactConnection } from "./meta-ads-contact-policy";
+import { readMetaAdsDailyPolicy } from "./meta-ads-daily-policy";
 import type {
   JsonObject,
   MediaProvider,
@@ -307,7 +308,9 @@ export function buildMediaSyncProviderDashboard(input: {
         runtime_enabled: runtimeEnabled,
         selection_mode: runtimeEnabled ? "fixed_all" : "unavailable",
         products: metaContactEnabled ? Object.freeze([{ key: "website_contact", label: "웹사이트 문의",
-          description: "광고별·일별 성과 · 수동 동기화", state: "enabled" as const }]) : provider === "naver_searchad" && isNaverMetaSelection(input.connections) ? Object.freeze([{ key: "stored_daily", label: "수집 완료된 일별 성과", description: "네이버 자동 수집 데이터를 선택 기간에 맞춰 통합 반영", state: "enabled" as const }]) : PROVIDER_PRODUCTS[provider],
+          description: readMetaAdsDailyPolicy(connections[0].meta.meta_ads_daily)
+            ? "매일 새벽 5시 자동 수집 · 최근 7일 전환 재확인" : "광고별·일별 성과 · 수동 동기화",
+          state: "enabled" as const }]) : provider === "naver_searchad" && isNaverMetaSelection(input.connections) ? Object.freeze([{ key: "stored_daily", label: "수집 완료된 일별 성과", description: "네이버 자동 수집 데이터를 선택 기간에 맞춰 통합 반영", state: "enabled" as const }]) : PROVIDER_PRODUCTS[provider],
         connections,
         latest_job: latestJob ? toLatestJob(latestJob) : null,
       });

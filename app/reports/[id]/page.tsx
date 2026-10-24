@@ -19,6 +19,7 @@ import {
 import { supabase } from "@/src/lib/supabase/client";
 import { isNaverMetaReportMeta } from "@/src/lib/media-sync/naver-meta-report";
 import { metaAdsContactSyncErrorMessage } from "@/src/lib/media-sync/meta-ads-contact-policy";
+import { metaAdsDailyStatusText } from "@/src/lib/media-sync/meta-ads-daily-policy";
 import ReportDownloadButtons from "@/app/components/report/ReportDownloadButtons";
 import MediaConnectionCarousel from "@/app/report-builder/MediaConnectionCarousel";
 import { buildReportFileName } from "@/src/lib/report/download/file-name";
@@ -560,6 +561,7 @@ type ReportMediaSyncProviderStatus = {
     status: string;
     last_sync_at?: string | null;
     last_error?: string | null;
+    meta?: Record<string, unknown>;
   }>;
   latest_job: null | {
     id: string;
@@ -6526,6 +6528,9 @@ export default function ReportDetailPage() {
                           </div>
                         ) : null}
 
+                        {provider.provider === "meta_ads" && connection && metaAdsDailyStatusText(connection.meta ?? {}) ? (
+                          <div className="mt-3 text-xs text-emerald-200">{metaAdsDailyStatusText(connection.meta ?? {})}</div>
+                        ) : null}
                         {job?.error || connection?.last_error ? (
                           <div className="mt-3 rounded-lg border border-rose-300/15 bg-rose-300/[0.06] px-2.5 py-2 text-xs text-rose-100">
                             {job?.error || connection?.last_error}
@@ -6544,7 +6549,7 @@ export default function ReportDetailPage() {
 
               {isNaverMetaReportMeta(report?.meta) ? (
                 <div className="text-xs leading-5 text-[#bbb8d4]">
-                  네이버는 수집 완료된 일별 성과, Meta는 이번에 조회한 웹사이트 문의 성과를 같은 기간으로 합산합니다.
+                  네이버의 일별 성과와 Meta의 웹사이트 문의 성과를 저장한 같은 기간으로 합산합니다.
                   두 매체가 모두 확인된 경우에만 통합 데이터를 반영합니다. 전환 합계는 매체별 집계의 합이며 중복 문의를 제거한 수치는 아닙니다.
                 </div>
               ) : null}

@@ -1,5 +1,6 @@
 "use client";
 import { isMetaAdsContactConnection } from "@/src/lib/media-sync/meta-ads-contact-policy";
+import { metaAdsDailyStatusText } from "@/src/lib/media-sync/meta-ads-daily-policy";
 
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import {
@@ -161,10 +162,15 @@ export default function MetaAdsConnectionCard(props: Props) {
         {view.ready && props.connections.map(connection => (
           <p key={connection.id} style={{ margin: "5px 0" }}>
             {connection.external_account_name || "Meta Ads 계정"} · {connection.external_account_id}
+            {connection.status === "active" && metaAdsDailyStatusText(connection.meta ?? {}) ? (
+              <span style={{ display: "block", color: "#a7f3d0" }}>{metaAdsDailyStatusText(connection.meta ?? {})}</span>
+            ) : null}
           </p>
         ))}
         <p style={{ margin: "5px 0" }}>{view.ready && props.connections.some(c => isMetaAdsContactConnection({ ...c, meta: c.meta ?? {} }))
-          ? "DB획득 보고서에서 웹사이트 문의를 수동으로 동기화할 수 있습니다."
+          ? props.connections.some(c => c.status === "active" && metaAdsDailyStatusText(c.meta ?? {}))
+            ? "최근 7일의 전환을 다시 확인하며, 저장한 기간의 DB획득 보고서에 자동 반영합니다."
+            : "DB획득 보고서에서 웹사이트 문의를 수동으로 동기화할 수 있습니다."
           : "광고 데이터 동기화는 아직 활성화하지 않았습니다."}</p>
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
