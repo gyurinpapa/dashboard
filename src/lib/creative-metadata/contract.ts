@@ -1,5 +1,5 @@
 /** Offline-only contract. No network, credentials, database, or performance writes. */
-export type Provider = "naver_searchad" | "google_ads";
+export type Provider = "naver_searchad" | "google_ads" | "meta_ads";
 export type Scope = Readonly<{
   workspaceId: string; advertiserId: string; provider: Provider; externalAccountId: string;
 }>;
@@ -41,7 +41,7 @@ export function timestamp(value: unknown): string | null {
 }
 export function makeIdentity(input: Identity): Identity {
   if (!id(input.workspaceId) || !id(input.advertiserId) || !id(input.entityId) ||
-      !["naver_searchad", "google_ads"].includes(input.provider) ||
+      !["naver_searchad", "google_ads", "meta_ads"].includes(input.provider) ||
       !["ad", "asset_group"].includes(input.entityType)) throw new Error("INVALID_IDENTITY");
   const account = input.provider === "google_ads" ? input.externalAccountId.replace(/-/g, "") : input.externalAccountId;
   if (!/^\d+$/.test(account)) throw new Error("INVALID_ACCOUNT");
@@ -58,7 +58,11 @@ export function identityForRow(scope: Scope, value: unknown): Identity | null {
   try {
     const row = record(value), meta = record(row.provider_meta);
     const entityId = id(row.external_creative_id);
-    if (!entityId || row.row_level !== "creative" || row.provider !== scope.provider || meta.entity_type !== "ad") return null;
+    if (!entityId || row.row_level !== "creative" || row.provider !== scope.provider) return null;
+    if (scope.provider === "meta_ads") {
+      if (meta.contract !== "meta_contact_snapshot_v1" || meta.level !== "ad" ||
+          row.row_level_reason !== "meta_ads_ad_daily_insights" || row.external_ad_id !== entityId) return null;
+    } else if (meta.entity_type !== "ad") return null;
     if (row.workspace_id !== undefined && row.workspace_id !== scope.workspaceId) return null;
     if (row.advertiser_id !== undefined && row.advertiser_id !== scope.advertiserId) return null;
     const result = makeIdentity({...scope,entityType:"ad",entityId});
@@ -76,7 +80,7 @@ export function identityForRow(scope: Scope, value: unknown): Identity | null {
         meta.authoritative_grain === "ad" &&
         meta.ad_type === "SHOPPING_PRODUCT_AD";
       if (!webSite && !shopping) return null;
-    } else {
+    } else if (scope.provider === "google_ads") {
       const family = meta.product_family;
       if (family !== "search" && family !== "display" && family !== "demand_gen") return null;
       if (row.row_level_reason !== `google_ads_${family}_ad_daily_stats`) return null;
@@ -88,6 +92,7 @@ export function identityForRow(scope: Scope, value: unknown): Identity | null {
 const imageHosts: Readonly<Record<Provider, readonly string[]>> = Object.freeze({
   naver_searchad: Object.freeze(["pstatic.net"]),
   google_ads: Object.freeze(["googlesyndication.com","googleusercontent.com","gstatic.com","ytimg.com"]),
+  meta_ads: Object.freeze(["fbcdn.net", "cdninstagram.com"]),
 });
 /** URL policy only; this does NOT fetch URLs or guarantee CORS, reachability, or redirect safety. */
 export function safeImageUrl(value: unknown, provider: Provider): string | null {

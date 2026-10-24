@@ -2,6 +2,9 @@ import 'server-only';
 import type {SupabaseClient} from '@supabase/supabase-js';
 import {record,identityForRow} from '../contract';
 import type {Identity} from '../contract';
+import type {Target} from '../collector';
+import type {HydrationViewPorts} from './view-hydration';
+import {createHydrationDependencies,hydrateViewMetadata} from './view-hydration';
 import {parseViewRequest} from '../view';
 import type {ViewRequest} from '../view';
 import {readViewMetadata} from './view-service';
@@ -16,7 +19,7 @@ type Source={kind:'share';token:string}|{kind:'report';id:string};
 type Dependencies={client:SupabaseClient;authorize:(request:Request,id:string)=>Promise<{workspaceId:string;advertiserId:string;userId:string;role:string;canRunSync:boolean}>;googleConfig:()=>{clientId:string;clientSecret:string;developerToken:string;redirectUri:string}};
 const text=(v:unknown):string=>{if(typeof v!=='string'||!v||v!==v.trim())fail('INVALID_CONTEXT');return v;};
 /** Only scoped SELECTs plus read RPC. Does not import credential decryptors. */
-export function createViewPorts(request:Request,source:Source,input:ViewRequest,deps:Dependencies):ViewPorts{
+export function createViewPorts(request:Request,source:Source,input:ViewRequest,deps:Dependencies):HydrationViewPorts{
  const sb=deps.client;
  async function one(query:any,signal:AbortSignal):Promise<Record<string,unknown>>{
   if(signal.aborted)fail('ABORTED');const {data,error}=await query.limit(2).abortSignal(signal);if(signal.aborted)fail('ABORTED');
@@ -29,11 +32,24 @@ export function createViewPorts(request:Request,source:Source,input:ViewRequest,
   const r=await one(rq,signal),reportId=text(r.id),workspaceId=text(r.workspace_id),advertiserId=text(r.advertiser_id);
   if(source.kind==='share'&&r.status!=='ready'||source.kind==='report'&&(!access?.canRunSync||reportId!==source.id))fail('ACCESS_DENIED');
   if(String(record(record(r.meta).data_source).kind??'').trim().toLowerCase()!=='api')fail('INVALID_CONTEXT');
-  const ingestionId=text(source.kind==='share'?r.published_ingestion_id:r.current_ingestion_id);
+  let ingestionId=text(source.kind==='share'?r.published_ingestion_id:r.current_ingestion_id);
+  const meta=record(r.meta),attached=record(meta.daily_meta_attachment).contract==='daily_meta_attachment_v1';
+  if(source.kind==='report'&&attached){
+   const {data:projections,error}=await sb.from('daily_report_meta_snapshots').select('snapshot_ingestion_id')
+    .eq('report_id',reportId).eq('source_ingestion_id',ingestionId).order('created_at',{ascending:false}).limit(1).abortSignal(signal);
+   if(error)fail('DEPENDENCY_ERROR');if(projections?.length)ingestionId=text(projections[0].snapshot_ingestion_id);
+  }
   await one(sb.from('advertisers').select('id').eq('id',advertiserId).eq('workspace_id',workspaceId),signal);
   await one(sb.from('report_ingestions').select('id').eq('id',ingestionId).eq('report_id',reportId).eq('workspace_id',workspaceId).eq('kind','api').eq('status','success'),signal);
-  const {data:m,error:me}=await sb.from('report_media_connections').select('connection_id').eq('report_id',reportId).eq('workspace_id',workspaceId).eq('advertiser_id',advertiserId).order('connection_id').limit(101).abortSignal(signal);
-  if(me||!m?.length||m.length>100||new Set(m.map(x=>x.connection_id)).size!==m.length)fail('INVALID_CONTEXT');
+  const tables=record(meta.data_source).aggregation_contract==='naver_meta_contact_v1'
+    ? ['manual_report_media_connections'] : attached ? ['report_media_connections','daily_report_meta_connections'] : ['report_media_connections'];
+  const m:{connection_id:string}[]=[];
+  for(const table of tables){
+   const {data,error}=await sb.from(table).select('connection_id').eq('report_id',reportId).eq('workspace_id',workspaceId)
+    .eq('advertiser_id',advertiserId).order('connection_id').limit(101).abortSignal(signal);
+   if(error||!data)fail('INVALID_CONTEXT');m.push(...data);
+  }
+  if(!m.length||m.length>100||new Set(m.map(x=>x.connection_id)).size!==m.length)fail('INVALID_CONTEXT');
   const c=await one(sb.from('media_connections').select('id,workspace_id,advertiser_id,provider,external_account_id,status,credential_version,credential_ciphertext')
    .in('id',m.map(x=>text(x.connection_id))).eq('workspace_id',workspaceId).eq('advertiser_id',advertiserId).eq('provider',input.provider).eq('external_account_id',input.externalAccountId).eq('status','active'),signal);
   if(c.credential_version!==1)fail('INVALID_CONTEXT');const connectionId=text(c.id),ciphertext=text(c.credential_ciphertext);
@@ -43,8 +59,8 @@ export function createViewPorts(request:Request,source:Source,input:ViewRequest,
   const binding={workspaceId,advertiserId,provider:input.provider,externalAccountId:input.externalAccountId,connectionId,credentialRevision};
   return {binding,ingestionId,stamp:JSON.stringify([reportId,workspaceId,advertiserId,ingestionId,connectionId,credentialRevision,source.kind,access&&[access.userId,access.role,access.canRunSync],m.map(x=>x.connection_id)])};
  }
- async function identities(state:ViewState,input:ViewRequest,signal:AbortSignal):Promise<readonly Identity[]>{
-  const b=state.binding,result:Identity[]=[];const reportId=JSON.parse(state.stamp)[0] as string;
+ async function targets(state:ViewState,input:ViewRequest,signal:AbortSignal):Promise<readonly Target[]>{
+  const b=state.binding,result:Target[]=[];const reportId=JSON.parse(state.stamp)[0] as string;
   // Shared cache reads only: at most four scoped SELECTs in flight per invocation.
   // Keep editor/refresh reads serial. Do not parallelize authorization or snapshot checks.
   const width=source.kind==='share'?4:1;
@@ -53,11 +69,11 @@ export function createViewPorts(request:Request,source:Source,input:ViewRequest,
    const batch=await Promise.allSettled(input.entityIds.slice(offset,offset+width).map(async id=>{
     if(signal.aborted)fail('ABORTED');
     const {data,error}=await sb.from('report_rows').select('row').eq('report_id',reportId).eq('workspace_id',b.workspaceId).eq('advertiser_id',b.advertiserId).eq('ingestion_id',state.ingestionId)
-     .eq('row->>provider',b.provider).eq('row->>external_account_id',b.externalAccountId).eq('row->>external_creative_id',id).eq('row->>row_level','creative').eq('row->provider_meta->>entity_type','ad').order('row_index').limit(1).abortSignal(signal);
+     .eq('row->>provider',b.provider).eq('row->>external_account_id',b.externalAccountId).eq('row->>external_creative_id',id).eq('row->>row_level','creative').order('row_index').limit(1).abortSignal(signal);
     if(signal.aborted)fail('ABORTED');
     if(error||!Array.isArray(data))fail('DEPENDENCY_ERROR');
     const identity=data[0]&&identityForRow(b,data[0].row);
-    return identity&&identity.entityId===id?identity:null;
+    return identity&&identity.entityId===id?{identity,campaignType:String(record(record(data[0].row).provider_meta).campaign_type??'')}:null;
    }));
    if(signal.aborted)fail('ABORTED');
    // Settle the bounded wave before inspecting failures; never start another wave on error.
@@ -69,7 +85,7 @@ export function createViewPorts(request:Request,source:Source,input:ViewRequest,
   }
   return result;
  }
- return {snapshot,identities,read:async(account,keys,signal)=>{
+ return {snapshot,targets,identities:async(state,input,signal)=>(await targets(state,input,signal)).map(t=>t.identity),read:async(account,keys,signal)=>{
   const {data,error}=await sb.rpc('read_creative_metadata_cache_v1',{p_account_key:account,p_keys:[...keys]}).abortSignal(signal);
   if(error)fail('DEPENDENCY_ERROR');return data;
  }};
@@ -86,6 +102,24 @@ async function body(request:Request,signal:AbortSignal):Promise<unknown>{
  }finally{signal.removeEventListener('abort',cancel);void reader.cancel().catch(()=>{});reader.releaseLock();}
 }
 const json=(value:unknown,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'private, no-store, max-age=0','Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff'}});
+/** Explicit, bounded cache fill. Public shares can request only their published ad IDs. */
+export async function handleMetadataEnsureRequest(request:Request,source:Source):Promise<Response>{
+ if(process.env.CREATIVE_METADATA_VIEW_ENABLED!=='1'||process.env.CREATIVE_METADATA_CACHE_ENABLED!=='1'||process.env.CREATIVE_METADATA_READ_ENABLED!=='1')return json({status:'disabled',entries:[]});
+ if(request.headers.get('origin')!==new URL(request.url).origin)return json({status:'rejected'},403);
+ const session=new Session(1,5000,30000,request.signal);
+ try{
+  const input=parseViewRequest(await session.run(s=>body(request,s)));
+  if(input.provider==='google_ads')return json({status:'disabled',entries:[]},403);
+  const deps=await session.run(()=>dependencies()),ports=createViewPorts(request,source,input,deps);
+  const hydration=await session.run(()=>createHydrationDependencies(deps.client));
+  const result=await session.run(s=>hydrateViewMetadata(input,ports,hydration,s),Math.max(1,session.remaining()-5000));
+  const cached=await session.run(s=>readViewMetadata(input,ports,s));
+  return json({status:'ready',...cached,retryAt:result.retryAt});
+ }catch(error){
+  console.info(JSON.stringify({event:'creative_preview_ensure',problem:error instanceof Failure?error.code:'UNAVAILABLE'}));
+  return json({status:'unavailable',entries:[]},503);
+ }finally{session.close();}
+}
 export async function handleMetadataRequest(request:Request,source:Source,refresh=false):Promise<Response>{
  if(process.env.CREATIVE_METADATA_VIEW_ENABLED!=='1'||process.env.CREATIVE_METADATA_CACHE_ENABLED!=='1'||process.env.CREATIVE_METADATA_READ_ENABLED!=='1')return json({status:'disabled',entries:[]});
  if(refresh&&(source.kind!=='report'||process.env.CREATIVE_METADATA_REFRESH_ENABLED!=='1'))return json({status:'disabled'},403);

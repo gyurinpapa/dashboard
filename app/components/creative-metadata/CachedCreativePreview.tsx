@@ -11,12 +11,14 @@ const enabled = process.env.NEXT_PUBLIC_CREATIVE_METADATA_UI_ENABLED === '1';
 const MAX_REFS = 400;
 const PAGE_SIZE = 20;
 
-/** Cache reads only. This client has no discovery, refresh or provider API path. */
+/** Read cached previews first; fill missing visible NAVER/Meta ads through a scoped server endpoint. */
 export class PreviewCacheReader {
   readonly entries = new Map<string, ViewEntry>();
   readonly states = new Map<string, ReadState>();
   private queue = new Map<string, Ref>();
   private listeners = new Set<() => void>();
+  private retries = new Map<string, number>();
+  private retryTimers = new Set<ReturnType<typeof setTimeout>>();
   private revision = 0;
   private disposed = false;
   private running = false;
@@ -57,34 +59,57 @@ export class PreviewCacheReader {
         const refs = [...this.queue.values()].filter(r => r.provider === first.provider && r.externalAccountId === first.externalAccountId).slice(0, PAGE_SIZE);
         refs.forEach(r => this.queue.delete(refKey(r)));
         const controller = new AbortController(); this.controller = controller;
-        const timeout = setTimeout(() => controller.abort(), 18000);
+        const timeout = setTimeout(() => controller.abort(), 48000);
         try {
           const base = this.source.kind === 'share'
             ? `/api/share/${encodeURIComponent(this.source.token)}/creative-metadata`
             : `/api/reports/${encodeURIComponent(this.source.reportId)}/creative-metadata`;
           const fetcher = this.source.kind === 'report' ? this.source.fetcher : fetch;
-          const response = await fetcher(base, {method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({provider: first.provider, externalAccountId: first.externalAccountId, entityIds: refs.map(r => r.entityId)}),
-            cache: 'no-store', credentials: 'same-origin', referrerPolicy: 'no-referrer', signal: controller.signal});
-          if (!response.ok) throw Error('CACHE_UNAVAILABLE');
-          const data = await response.json();
-          if (data.status !== 'ready' || !Array.isArray(data.entries) || data.entries.length > PAGE_SIZE) throw Error('CACHE_UNAVAILABLE');
-          const valid = data.entries.map((e: unknown) => validateViewEntry(e, refs, Date.now())) as (ViewEntry | null)[];
-          if (valid.some(e => !e) || new Set(valid.map(e => refKey(e!.ref))).size !== valid.length) throw Error('INVALID_CACHE');
-          if (this.disposed) continue;
-          if (controller.signal.aborted) throw Error('CACHE_TIMEOUT');
-          refs.forEach(r => this.states.set(refKey(r), 'empty'));
-          valid.forEach(e => { this.entries.set(refKey(e!.ref), e!); this.states.set(refKey(e!.ref), 'ready'); });
-          this.expire();
+          const read = async (url: string, requested: readonly Ref[]) => {
+            const response = await fetcher(url, {method: 'POST', headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({provider: first.provider, externalAccountId: first.externalAccountId, entityIds: requested.map(r => r.entityId)}),
+              cache: 'no-store', credentials: 'same-origin', referrerPolicy: 'no-referrer', signal: controller.signal});
+            if (!response.ok) throw Error('CACHE_UNAVAILABLE');
+            const data = await response.json();
+            if (data.status !== 'ready' || !Array.isArray(data.entries) || data.entries.length > requested.length) throw Error('CACHE_UNAVAILABLE');
+            const valid = data.entries.map((e: unknown) => validateViewEntry(e, requested, Date.now())) as (ViewEntry | null)[];
+            if (valid.some(e => !e) || new Set(valid.map(e => refKey(e!.ref))).size !== valid.length) throw Error('INVALID_CACHE');
+            if (this.disposed || controller.signal.aborted) throw Error('CACHE_TIMEOUT');
+            valid.forEach(e => { this.entries.set(refKey(e!.ref), e!); this.states.set(refKey(e!.ref), 'ready'); });
+            this.expire(); this.emit();
+            return data;
+          };
+          await read(base, refs);
+          let missing = refs.filter(r => !this.entries.has(refKey(r)));
+          if (missing.length && first.provider !== 'google_ads') {
+            const data = await read(`${base}/ensure`, missing);
+            missing = missing.filter(r => !this.entries.has(refKey(r)));
+            if (missing.length && Number.isFinite(data.retryAt) && data.retryAt > Date.now() && data.retryAt <= Date.now() + 3600000) {
+              const retry = missing.filter(r => (this.retries.get(refKey(r)) ?? 0) < 2);
+              retry.forEach(r => { const key = refKey(r); this.retries.set(key, (this.retries.get(key) ?? 0) + 1); });
+              if (retry.length) {
+                const timer = setTimeout(() => {
+                  this.retryTimers.delete(timer);
+                  if (this.disposed) return;
+                  retry.forEach(r => { if (!this.entries.has(refKey(r))) { this.states.delete(refKey(r)); } });
+                  this.request(retry);
+                }, Math.max(1000, data.retryAt - Date.now() + 250));
+                this.retryTimers.add(timer);
+                const retryKeys = new Set(retry.map(refKey));
+                missing = missing.filter(r => !retryKeys.has(refKey(r)));
+              }
+            }
+          }
+          missing.forEach(r => this.states.set(refKey(r), 'empty'));
         } catch {
-          if (!this.disposed) refs.forEach(r => this.states.set(refKey(r), 'unavailable'));
+          if (!this.disposed) refs.forEach(r => { if (!this.entries.has(refKey(r))) this.states.set(refKey(r), 'unavailable'); });
         } finally { clearTimeout(timeout); this.emit(); }
       }
     } finally { this.running = false; }
   }
   dispose() {
     this.disposed = true; clearTimeout(this.timer); clearTimeout(this.expiry);
-    this.controller?.abort(); this.queue.clear(); this.listeners.clear();
+    this.controller?.abort(); this.retryTimers.forEach(clearTimeout); this.retryTimers.clear(); this.queue.clear(); this.listeners.clear();
   }
 }
 
@@ -207,7 +232,7 @@ function PreviewBody({name, fallbackUrl}: {name: string; fallbackUrl: string}) {
     {fallbackUrl && <PreviewImage key={fallbackUrl} src={fallbackUrl} alt={name}/>}
     {visible.map(entry => <EntryContent key={refKey(entry.ref) + ':' + entry.fetchedAt} entry={entry} fallbackUrl={fallbackUrl} name={name} grouped={!!group && group.refs.length > 1}/>)}
     {!visible.length && !fallbackUrl && <p role="status" className="flex min-h-32 items-center justify-center px-2 text-center text-xs text-slate-400">
-      {pending ? '저장된 소재를 확인하고 있습니다.' : limited ? '소재를 더 확인하려면 필터 범위를 좁혀 주세요.' : unavailable ? '소재 정보를 표시할 수 없습니다.' : expired ? '저장된 소재 정보의 유효기간이 지났습니다.' : '저장된 소재 정보가 없습니다.'}
+      {pending ? '소재 정보를 불러오고 있습니다.' : limited ? '소재를 더 확인하려면 필터 범위를 좁혀 주세요.' : unavailable ? '소재 정보를 표시할 수 없습니다.' : expired ? '저장된 소재 정보의 유효기간이 지났습니다.' : '저장된 소재 정보가 없습니다.'}
     </p>}
     {group && group.refs.length > PAGE_SIZE && <div className="flex items-center justify-between gap-2 text-xs">
       <button type="button" disabled={!page} onClick={() => setPage(p => p - 1)}>이전 소재</button>

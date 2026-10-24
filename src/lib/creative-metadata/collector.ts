@@ -107,7 +107,7 @@ export async function collectCreativeMetadata(input:CollectInput,transport:ReadT
    !Number.isInteger(totalTimeoutMs)||totalTimeoutMs<requestTimeoutMs||totalTimeoutMs>30000||
    !Array.isArray(input.targets)||input.targets.length>20||!timestamp(input.observation.fetchedAt)||!id(input.observation.revision))fail('INVALID_INPUT');
   const a=makeIdentity({...input.authorizedScope,entityId:'scope-check',entityType:'ad'});
-  if(!numeric(a.externalAccountId))fail('INVALID_INPUT');
+  if(!numeric(a.externalAccountId)||!['naver_searchad','google_ads'].includes(a.provider))fail('INVALID_INPUT');
   scope=Object.freeze({workspaceId:a.workspaceId,advertiserId:a.advertiserId,provider:a.provider,externalAccountId:a.externalAccountId});
   observation=Object.freeze({...input.observation});
   const map=new Map<string,Target>();

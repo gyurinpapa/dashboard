@@ -6,7 +6,7 @@ export type ViewRequest=Readonly<{provider:Provider;externalAccountId:string;ent
 export function refKey(r:Ref):string{return JSON.stringify([r.provider,r.externalAccountId,r.entityId]);}
 export function parseViewRequest(v:unknown):ViewRequest{
  const x=record(v);
- if(Object.keys(x).sort().join(',')!=='entityIds,externalAccountId,provider'||!['naver_searchad','google_ads'].includes(String(x.provider))||
+ if(Object.keys(x).sort().join(',')!=='entityIds,externalAccountId,provider'||!['naver_searchad','google_ads','meta_ads'].includes(String(x.provider))||
   typeof x.externalAccountId!=='string'||!(x.provider==='google_ads'?/^\d{10}$/:/^\d{1,20}$/).test(x.externalAccountId)||
   !Array.isArray(x.entityIds)||x.entityIds.length<1||x.entityIds.length>20||new Set(x.entityIds).size!==x.entityIds.length||
   !x.entityIds.every(id=>typeof id==='string'&&(x.provider==='naver_searchad'?/^nad-[a-zA-Z0-9-]{1,100}$/:/^\d{1,20}$/).test(id)))throw Error('INVALID_REQUEST');
@@ -14,7 +14,7 @@ export function parseViewRequest(v:unknown):ViewRequest{
 }
 /** UI hints only. The server independently proves each ID belongs to the authorized snapshot. */
 export function refForRow(value:unknown):Ref|null{
- const r=record(value);if(r.provider!=='naver_searchad'&&r.provider!=='google_ads'||typeof r.external_account_id!=='string')return null;
+ const r=record(value);if(r.provider!=='naver_searchad'&&r.provider!=='google_ads'&&r.provider!=='meta_ads'||typeof r.external_account_id!=='string')return null;
  const i=identityForRow({workspaceId:typeof r.workspace_id==='string'?r.workspace_id:'display-only',advertiserId:typeof r.advertiser_id==='string'?r.advertiser_id:'display-only',provider:r.provider,externalAccountId:r.external_account_id},r);
  return i?{provider:i.provider,externalAccountId:i.externalAccountId,entityId:i.entityId}:null;
 }
