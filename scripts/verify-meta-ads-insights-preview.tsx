@@ -145,6 +145,32 @@ async function main() {
     calls++; return Response.json({ data: [conversionRow] });
   } }, 2);
   assert.deepEqual(conversionSuccess.preview, conversionParsed);
+  assert.equal(success.ad_daily_check, null);
+  const dailyRequest = () => request({ expectedWorkspaceId: workspaceId, includeAdDailyCheck: true });
+  const dailyFetch: typeof fetch = async (input, init) => {
+    const u = new URL(String(input));
+    if (u.searchParams.get("level") === "ad") {
+      calls++;
+      return Response.json({ data: [{ ...conversionRow, campaign_id: "123", campaign_name: "Fixture", adset_id: "234", ad_id: "345",
+        date_start: period.dateFrom, date_stop: period.dateFrom }] });
+    }
+    if (u.pathname.endsWith("/insights")) { calls++; return Response.json({ data: [conversionRow] }); }
+    return deps.fetchImpl(input, init);
+  };
+  const dailySuccess = await run(dailyRequest(), 200, { fetchImpl: dailyFetch }, 3);
+  assert.equal(dailySuccess.ad_daily_check.status, "MATCH");
+  assert.equal(dailySuccess.ad_daily_check.account.website_contacts, "5");
+  assert.equal(dailySuccess.sync_enabled, false); assert.deepEqual(record, beforeRecord);
+  await run(request({ expectedWorkspaceId: workspaceId, includeAdDailyCheck: "true" }), 400);
+  await run(dailyRequest(), 403, { resolveAccess: async () => ({ ...access, canManageConnections: false }) });
+  let dailyLoads = 0;
+  await run(dailyRequest(), 409, { fetchImpl: dailyFetch,
+    load: async () => ++dailyLoads === 1 ? { ...record } : { ...record, updated_at: "2026-10-23T00:00:00Z" } }, 3);
+  const incomplete = await run(dailyRequest(), 502, { fetchImpl: async (input, init) => {
+    if (new URL(String(input)).searchParams.get("level") === "ad") { calls++; return Response.json({ error: { message: token } }); }
+    return dailyFetch(input, init);
+  } }, 3);
+  assert.equal(incomplete.error, "META_DAILY_CHECK_FAILED"); assert.equal(Object.hasOwn(incomplete, "preview"), false);
   const beforeLoads = loads;
   for (const status of [401, 403, 404, 500]) {
     await run(request(), status === 404 ? 403 : status, { resolveAccess: async () => { throw new MediaConnectionAccessError("UNAUTHORIZED", status, token); } });

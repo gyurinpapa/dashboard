@@ -58,6 +58,7 @@ export function metaAdsConnectionErrorMessage(code: unknown): string {
     case "META_VERIFICATION_SAVE_FAILED": return "인증 확인 결과를 저장하지 못했습니다. 잠시 후 다시 확인해 주세요.";
     case "META_PREVIEW_VERIFY_FIRST": return "먼저 Meta 계정의 인증 확인을 완료해 주세요.";
     case "META_PREVIEW_INVALID_RANGE": return "오늘 이전 날짜로 최대 31일의 시작일과 종료일을 선택해 주세요.";
+    case "META_DAILY_CHECK_FAILED": return "소재·일별 데이터를 끝까지 검증하지 못했습니다. 기간을 줄여 다시 시도해 주세요. 부분 합계는 사용하지 않습니다.";
     case "META_PREVIEW_FAILED": return "Meta 성과를 조회하지 못했습니다. 기간을 줄여 다시 시도해 주세요. 계속 실패하면 토큰 권한을 확인해 주세요.";
     default: return "등록 결과를 확인하지 못했습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.";
   }

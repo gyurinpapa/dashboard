@@ -4,12 +4,13 @@ import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 
 import type { MetaAdsInsightsPreview as Preview } from "@/src/lib/media-sync/meta-ads-insights-preview";
 import { metaAdsConnectionErrorMessage } from "@/src/lib/media-sync/meta-ads-connection-view";
 import { formatMetaAdsPreviewExport } from "@/src/lib/media-sync/meta-ads-insights-preview-export";
+import type { MetaAdsAdDailyCheck } from "@/src/lib/media-sync/meta-ads-ad-daily-check";
 
 type Props = {
   workspaceId: string; advertiserId: string; connectionId: string; externalAccountId: string;
   accountLabel: string; getAccessToken: () => Promise<string | null>;
 };
-type Result = { preview: Preview; currency: string; timezone_name: string };
+type Result = { preview: Preview; currency: string; timezone_name: string; adDailyCheck: MetaAdsAdDailyCheck | null };
 const buttonStyle: CSSProperties = { border: "1px solid rgba(124,92,255,0.30)", borderRadius: 10,
   background: "rgba(124,92,255,0.10)", padding: "9px 11px", color: "#e8e4ff", fontSize: 11, fontWeight: 800, cursor: "pointer" };
 const dateStyle: CSSProperties = { width: "100%", minWidth: 0, boxSizing: "border-box", borderRadius: 6,
@@ -39,7 +40,7 @@ export default function MetaAdsInsightsPreview(props: Props) {
     return () => { mounted.current = false; request.current?.abort(); };
   }, []);
 
-  async function load(range: { dateFrom?: string; dateTo?: string } = {}) {
+  async function load(range: { dateFrom?: string; dateTo?: string } = {}, includeAdDailyCheck = false) {
     if (request.current) return;
     const controller = new AbortController(); request.current = controller;
     setOpen(true); setBusy(true); setError(""); setResult(null); setCopyMessage(""); setManualCopy(false);
@@ -50,7 +51,7 @@ export default function MetaAdsInsightsPreview(props: Props) {
       const response = await fetch(`/api/advertisers/${encodeURIComponent(props.advertiserId)}/media-connections/meta-ads/${encodeURIComponent(props.connectionId)}/insights-preview`, {
         method: "POST", credentials: "include", signal: controller.signal,
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ expectedWorkspaceId: props.workspaceId, ...range }),
+        body: JSON.stringify({ expectedWorkspaceId: props.workspaceId, ...range, ...(includeAdDailyCheck ? { includeAdDailyCheck: true } : {}) }),
       });
       const body = await response.json();
       if (!mounted.current || controller.signal.aborted) return;
@@ -62,7 +63,15 @@ export default function MetaAdsInsightsPreview(props: Props) {
         !Array.isArray(body.preview.conversions) || !Array.isArray(body.preview.conversion_values)) {
         setError(metaAdsConnectionErrorMessage("SCOPE_MISMATCH")); return;
       }
-      setResult({ preview: body.preview, currency: body.currency, timezone_name: body.timezone_name });
+      if (includeAdDailyCheck && (!body.ad_daily_check || body.ad_daily_check.complete !== true ||
+        !["MATCH", "MISMATCH", "UNRESOLVED"].includes(body.ad_daily_check.status) ||
+        body.ad_daily_check.date_from !== body.preview.date_from || body.ad_daily_check.date_to !== body.preview.date_to ||
+        body.ad_daily_check.conversion_field !== "conversions" || body.ad_daily_check.conversion_action_type !== "contact_website" ||
+        body.ad_daily_check.report_data_saved !== false || !Array.isArray(body.ad_daily_check.campaigns) || !Array.isArray(body.ad_daily_check.days))) {
+        setError(metaAdsConnectionErrorMessage("META_DAILY_CHECK_FAILED")); return;
+      }
+      setResult({ preview: body.preview, currency: body.currency, timezone_name: body.timezone_name,
+        adDailyCheck: includeAdDailyCheck ? body.ad_daily_check : null });
       setDateFrom(body.preview.date_from); setDateTo(body.preview.date_to);
     } catch {
       if (mounted.current && !controller.signal.aborted) setError(metaAdsConnectionErrorMessage("META_PREVIEW_FAILED"));
@@ -80,7 +89,7 @@ export default function MetaAdsInsightsPreview(props: Props) {
       priority(a.action_type) - priority(b.action_type) || a.action_type.localeCompare(b.action_type))
       .map(row => ({ ...row, source }))) : [];
   const exportText = result ? formatMetaAdsPreviewExport({ externalAccountId: props.externalAccountId,
-    currency: result.currency, timeZone: result.timezone_name, preview: result.preview }) : "";
+    currency: result.currency, timeZone: result.timezone_name, preview: result.preview, adDailyCheck: result.adDailyCheck }) : "";
   async function copyResult() {
     try {
       await navigator.clipboard.writeText(exportText);
@@ -106,6 +115,8 @@ export default function MetaAdsInsightsPreview(props: Props) {
         </div>
         <span>최대 31일. 기간을 비우면 광고계정 시간대 기준 어제까지 최근 30일을 조회합니다.</span>
         <button type="submit" style={buttonStyle} disabled={busy}>선택 기간 조회</button>
+        <button type="button" style={buttonStyle} disabled={busy || !dateFrom || !dateTo}
+          onClick={() => void load({ dateFrom, dateTo }, true)}>소재·일별 합계 검증</button>
       </form>
       {busy && <p role="status">Meta에서 성과를 조회하고 있습니다.</p>}
       {error && <p role="alert" style={{ color: "#ffb4c5" }}>{error}</p>}
@@ -115,6 +126,16 @@ export default function MetaAdsInsightsPreview(props: Props) {
         {copyMessage && <p>{copyMessage}</p>}
         {manualCopy && <textarea aria-label="복사할 점검 결과" readOnly value={exportText}
           onFocus={event => event.currentTarget.select()} style={{ ...dateStyle, height: 160, marginTop: 8 }} />}
+        {result.adDailyCheck && <div style={{ border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: 10, marginTop: 10 }}>
+          <strong>{result.adDailyCheck.status === "MATCH" ? "계정 합계와 소재·일별 합계가 일치합니다."
+            : result.adDailyCheck.status === "MISMATCH" ? "계정 합계와 소재·일별 합계에 차이가 있습니다."
+              : "문의 전환 기준값이 없어 일치를 확정할 수 없습니다."}</strong>
+          <p>소재 {result.adDailyCheck.ad_count}개 · {result.adDailyCheck.day_count}일 · {result.adDailyCheck.row_count}행<br />
+            웹사이트 문의: 계정 {number(result.adDailyCheck.account.website_contacts)}건 / 소재·일별 명시값 합계 {number(result.adDailyCheck.ad_daily_sum.reported_website_contacts)}건</p>
+          <p>문의 값이 생략된 행 {result.adDailyCheck.ad_daily_sum.rows_without_contact_value}개는 별도로 기록했습니다.
+            검증 결과는 보고서 동기화를 활성화하지 않습니다.</p>
+          <ul>{result.adDailyCheck.campaigns.map(c => <li key={c.campaign_id}>{c.campaign_name}: 문의 명시값 합계 {number(c.reported_website_contacts)}건</li>)}</ul>
+        </div>}
         {result.preview.has_data ? <>
           <p>노출 <strong>{number(result.preview.impressions)}</strong> · 클릭 <strong>{number(result.preview.clicks)}</strong><br />
             광고비 <strong>{number(result.preview.spend)} {result.currency}</strong></p>

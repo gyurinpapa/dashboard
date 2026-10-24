@@ -5,6 +5,7 @@ import { decryptMetaAdsCredentials, MetaAdsCredentialError } from "./meta-ads-cr
 import { readMetaAdsAccountMetadata, MetaAdsAccountPreflightError } from "./meta-ads-account-preflight";
 import { readMetaAdsInsightsPreview, resolveMetaAdsPreviewRange, MetaAdsInsightsPreviewError } from "./meta-ads-insights-preview";
 import { isValidYmd } from "./types";
+import { readMetaAdsAdDailyCheck, MetaAdsAdDailyCheckError } from "./meta-ads-ad-daily-check";
 
 export type MetaAdsPreviewRecord = MetaAdsVerificationRecord & { last_verified_at: string | null };
 type Dependencies = {
@@ -35,13 +36,15 @@ async function readInput(request: Request) {
     }
     const body = JSON.parse(text + decoder.decode());
     check(body && typeof body === "object" && !Array.isArray(body) && uuid(body.expectedWorkspaceId) &&
-      Object.keys(body).every(k => ["expectedWorkspaceId", "dateFrom", "dateTo"].includes(k)), "INVALID_INPUT", 400);
+      Object.keys(body).every(k => ["expectedWorkspaceId", "dateFrom", "dateTo", "includeAdDailyCheck"].includes(k)) &&
+      (!Object.hasOwn(body, "includeAdDailyCheck") || typeof body.includeAdDailyCheck === "boolean"), "INVALID_INPUT", 400);
     const explicitRange = Object.hasOwn(body, "dateFrom") || Object.hasOwn(body, "dateTo");
     check(!explicitRange || (typeof body.dateFrom === "string" && typeof body.dateTo === "string" &&
       /^\d{4}-\d{2}-\d{2}$/.test(body.dateFrom) && /^\d{4}-\d{2}-\d{2}$/.test(body.dateTo) &&
       isValidYmd(body.dateFrom) && isValidYmd(body.dateTo) && body.dateFrom <= body.dateTo &&
       Date.parse(body.dateTo) - Date.parse(body.dateFrom) < 31 * 86400000), "META_PREVIEW_INVALID_RANGE", 400);
     return { expectedWorkspaceId: body.expectedWorkspaceId as string,
+      includeAdDailyCheck: body.includeAdDailyCheck === true,
       range: explicitRange ? { dateFrom: body.dateFrom as string, dateTo: body.dateTo as string } : {} };
   } catch (error) {
     throw error instanceof PreviewRequestError ? error : new PreviewRequestError("INVALID_INPUT", 400);
@@ -76,6 +79,8 @@ export async function handleMetaAdsInsightsPreview(request: Request, advertiserI
     const range = resolveMetaAdsPreviewRange(input.range, metadata.timeZone, deps.now?.());
     const preview = await readMetaAdsInsightsPreview({ ...range, externalAccountId: connection.external_account_id,
       accessToken: credentials.access_token }, deps.fetchImpl);
+    const adDailyCheck = input.includeAdDailyCheck ? await readMetaAdsAdDailyCheck({ ...range,
+      externalAccountId: connection.external_account_id, accessToken: credentials.access_token }, preview, deps.fetchImpl) : null;
     // Do not display a result obtained before a concurrent credential/scope change.
     const current = await deps.load(scope);
     check(current && current.id === connection.id && current.workspace_id === connection.workspace_id &&
@@ -87,7 +92,7 @@ export async function handleMetaAdsInsightsPreview(request: Request, advertiserI
     return json(200, { ok: true, workspace_id: scope.workspaceId, advertiser_id: advertiserId,
       connection_id: connectionId, external_account_id: connection.external_account_id,
       currency: metadata.currency, timezone_name: metadata.timeZone, read_only: true, sync_enabled: false,
-      conversion_mapping: "UNCONFIRMED", preview });
+      conversion_mapping: "UNCONFIRMED", preview, ad_daily_check: adDailyCheck });
   } catch (error) {
     if (error instanceof PreviewRequestError) return json(error.status, { ok: false, error: error.code });
     if (error instanceof MediaConnectionAccessError) {
@@ -98,9 +103,11 @@ export async function handleMetaAdsInsightsPreview(request: Request, advertiserI
     if (error instanceof MetaAdsInsightsPreviewError && error.code === "INVALID_RANGE") {
       return json(400, { ok: false, error: "META_PREVIEW_INVALID_RANGE" });
     }
-    if ((error instanceof MetaAdsInsightsPreviewError || error instanceof MetaAdsAccountPreflightError) && error.code === "REQUEST_TIMEOUT") {
+    if ((error instanceof MetaAdsInsightsPreviewError || error instanceof MetaAdsAccountPreflightError ||
+      error instanceof MetaAdsAdDailyCheckError) && error.code === "REQUEST_TIMEOUT") {
       return json(504, { ok: false, error: "META_VERIFICATION_TIMEOUT" });
     }
+    if (error instanceof MetaAdsAdDailyCheckError) return json(502, { ok: false, error: "META_DAILY_CHECK_FAILED" });
     return json(502, { ok: false, error: "META_PREVIEW_FAILED" });
   } finally { if (connection) connection.credential_ciphertext = null; }
 }
