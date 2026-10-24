@@ -1,8 +1,8 @@
-import {identityKey} from '../contract';
+import {record,identityKey} from '../contract';
 import type {Metadata} from '../contract';
 import type {Target} from '../collector';
 import {normalizeNaver} from '../naver';
-import {META_CREATIVE_FIELDS,normalizeMetaCreative} from '../meta';
+import {META_CREATIVE_FIELDS,META_CREATIVE_DETAIL_QUERY,normalizeMetaCreative} from '../meta';
 import {cacheKeys,digest,readyMetadata} from '../cache/contract';
 import type {CacheStore} from '../cache/contract';
 import type {ViewPorts,ViewState} from './view-service';
@@ -28,7 +28,7 @@ export type HydrationDependencies={
  */
 export async function hydrateViewMetadata(input:ViewRequest,ports:HydrationViewPorts,deps:HydrationDependencies,signal?:AbortSignal){
   if(input.provider!=='naver_searchad'&&input.provider!=='meta_ads')return {retryAt:null};
-  const session=new Session(20,4000,28000,signal);
+  const session=new Session(40,4000,28000,signal);
   let token:string|null=null,accountKey='',finished=false;
   try{
     const state=await session.run(s=>ports.snapshot(s));
@@ -42,7 +42,7 @@ export async function hydrateViewMetadata(input:ViewRequest,ports:HydrationViewP
     }
     const keys=await cacheKeys(state.binding,targets.map(t=>t.identity));accountKey=keys.accountKey;
     if((await session.run(s=>ports.snapshot(s))).stamp!==state.stamp)fail('STALE_CONTEXT');
-    const claim=await session.run(s=>deps.cache.claim({...keys,maxRequests:targets.length},s));
+    const claim=await session.run(s=>deps.cache.claim({...keys,maxRequests:targets.length*(input.provider==='meta_ads'?2:1)},s));
     if(!['hit','leader','busy','cooldown','budget'].includes(claim.status)||!Array.isArray(claim.entries))fail('INVALID_CONTEXT');
     const cached=new Set<string>();
     for(const e of claim.entries){
@@ -76,6 +76,23 @@ export async function hydrateViewMetadata(input:ViewRequest,ports:HydrationViewP
         }
         if(response.status===429){rateLimited=true;return null;}
         if(response.status!==200)return null;
+        // Only follow the creative ID returned by the account-validated ad; request a useful preview size.
+        if(secrets.provider==='meta_ads'){
+          const original=record(response.body),creativeId=record(original.creative).id;
+          if(!normalizeMetaCreative({identity:target.identity,observation,ad:original}).ok||
+            typeof creativeId!=='string'||!/^\d{1,20}$/.test(creativeId))return null;
+          try{
+            const detail=await requestJson(session,deps.fetch,'metadata',
+              `https://graph.facebook.com/v26.0/${creativeId}?${META_CREATIVE_DETAIL_QUERY}`,
+              {method:'GET',headers:{Accept:'application/json',Authorization:`Bearer ${secrets.accessToken}`}});
+            if(detail.status===429)rateLimited=true;
+            if(detail.status===200){
+              const creative=record(detail.body);
+              if(creative.id!==creativeId||creative.account_id!==input.externalAccountId)return null;
+              response={status:200,body:{...original,creative}};
+            }
+          }catch{ /* Retain the verified original preview if the optional larger image is unavailable. */ }
+        }
         const normalized=secrets.provider==='naver_searchad'
           ? normalizeNaver({identity:target.identity,observation,campaignType:target.campaignType!,ad:response.body})
           : normalizeMetaCreative({identity:target.identity,observation,ad:response.body});

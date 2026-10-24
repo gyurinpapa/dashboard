@@ -246,8 +246,6 @@ function EntryContent({entry, fallbackUrl, name, grouped}: {entry: ViewEntry; fa
   const [assetPage, setAssetPage] = useState(0);
   return <div className="space-y-2 py-2">
     {grouped && <div className="break-all text-xs text-slate-500">{entry.displayName || entry.ref.entityId} · {entry.ref.entityId}</div>}
-    {entry.headlines.map((text, i) => <p key={'h' + i} className="break-words font-semibold">{text}</p>)}
-    {entry.descriptions.map((text, i) => <p key={'d' + i} className="break-words leading-6">{text}</p>)}
     {entry.assets.slice(assetPage * 12, (assetPage + 1) * 12).map((asset, i) => <figure key={asset.assetId + ':' + i} className="space-y-1">
       {asset.imageUrl && asset.imageUrl !== fallbackUrl && <PreviewImage key={asset.imageUrl} src={asset.imageUrl} alt={entry.displayName || name}/>}
       {asset.kind === 'youtube' && asset.videoId && asset.watchUrl && (
@@ -258,6 +256,8 @@ function EntryContent({entry, fallbackUrl, name, grouped}: {entry: ViewEntry; fa
         />
       )}
     </figure>)}
+    {entry.headlines.map((text, i) => <p key={'h' + i} className="break-words font-semibold">{text}</p>)}
+    {entry.descriptions.map((text, i) => <p key={'d' + i} className="break-words leading-6">{text}</p>)}
     {entry.assets.length > 12 && <button type="button" onClick={() => setAssetPage(p => (p + 1) % Math.ceil(entry.assets.length / 12))} className="text-xs text-blue-700">다음 자산 ({assetPage + 1}/{Math.ceil(entry.assets.length / 12)})</button>}
   </div>;
 }

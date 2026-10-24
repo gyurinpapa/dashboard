@@ -735,8 +735,8 @@ const CreativeTableRow = memo(function CreativeTableRow({
           onFocus={(e) => onPreviewEnter(row, e.currentTarget)}
           onBlur={onPreviewLeave}
         >
-          <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-[8px] border border-[#CFC2B1]/45 bg-[#F3E4D2]/20 px-2 text-[11px] font-semibold text-[#7A8794]">
-            AD
+          <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-[8px] border border-[#CFC2B1]/45 bg-[#F3E4D2]/20 text-[10px] font-semibold text-[#7A8794] [&>span]:h-7 [&>span]:w-7 [&_img]:h-7 [&_img]:w-7">
+            <CachedCreativeThumbnail name={row.creative} fallbackUrl={row.imagePath}/>
           </span>
 
           <span

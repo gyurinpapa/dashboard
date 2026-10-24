@@ -1,6 +1,6 @@
 /** No default network dependency. Bind native server fetch only after integration review. */
 import type {Problem} from '../collector';
-import {META_CREATIVE_FIELDS} from '../meta';
+import {META_CREATIVE_FIELDS,META_CREATIVE_DETAIL_QUERY} from '../meta';
 export type ServerProblem=Problem|'ACCESS_DENIED'|'INVALID_CONTEXT'|'STALE_CONTEXT'|'INVALID_CREDENTIALS'|'DEPENDENCY_ERROR'|'CLOSED'|'TOKEN_EXPIRED'|'REQUEST_NOT_ALLOWED';
 export class Failure extends Error{constructor(readonly code:ServerProblem){super(code);}}
 export function fail(code:ServerProblem):never{throw new Failure(code);}
@@ -68,7 +68,7 @@ async function boundedJson(response:Response,cap:number,signal:AbortSignal):Prom
 export async function requestJson(session:Session,fetchPort:FetchPort,kind:'oauth'|'metadata',url:string,
  init:Readonly<{method:'GET'|'POST';headers:Readonly<Record<string,string>>;body?:string}>,extra?:AbortSignal):Promise<Readonly<{status:number;body:unknown}>>{
  const metaUrl=/^https:\/\/graph\.facebook\.com\/v26\.0\/[0-9]{1,20}\?fields=/.test(url)&&
-  url===`${url.split('?')[0]}?fields=${encodeURIComponent(META_CREATIVE_FIELDS)}`;
+  (url===`${url.split('?')[0]}?fields=${encodeURIComponent(META_CREATIVE_FIELDS)}`||url===`${url.split('?')[0]}?${META_CREATIVE_DETAIL_QUERY}`);
  const allowed=kind==='oauth'
   ? url==='https://oauth2.googleapis.com/token'&&init.method==='POST'
   : /^https:\/\/api\.searchad\.naver\.com\/ncc\/ads\/nad-[a-zA-Z0-9-]{1,100}$/.test(url)&&init.method==='GET'||

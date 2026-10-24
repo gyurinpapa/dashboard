@@ -18,7 +18,7 @@ export async function digest(parts:readonly unknown[]):Promise<string>{
 /** Account lock spans connections/credential generations; metadata keys do not. */
 export async function cacheKeys(binding:Binding,identities:readonly Identity[]){
  const accountKey=await digest(['creative-account-v1',binding.workspaceId,binding.advertiserId,binding.provider,binding.externalAccountId]);
- const keys=await Promise.all(identities.map(i=>digest(['creative-metadata-v1',accountKey,binding.connectionId,binding.credentialRevision,identityKey(i)])));
+ const keys=await Promise.all(identities.map(i=>digest(['creative-metadata-v1',accountKey,binding.connectionId,binding.credentialRevision,identityKey(i),...(binding.provider==='meta_ads'?['creative-image-v2']:[])])));
  return {accountKey,keys};
 }
 function exact(r:Record<string,unknown>,keys:readonly string[]):boolean{return Object.keys(r).length===keys.length&&keys.every(k=>Object.hasOwn(r,k));}

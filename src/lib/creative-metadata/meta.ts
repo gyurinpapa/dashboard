@@ -2,6 +2,8 @@ import {finish,id,makeIdentity,record,safeImageUrl,text} from './contract';
 import type {Asset,Identity,NormalizeResult,Observation} from './contract';
 
 // Read the ad and its expanded creative together, proving the account/ad identity.
+export const META_CREATIVE_DETAIL_FIELDS = 'id,account_id,name,title,body,image_url,thumbnail_url,object_story_spec,asset_feed_spec';
+export const META_CREATIVE_DETAIL_QUERY = `fields=${encodeURIComponent(META_CREATIVE_DETAIL_FIELDS)}&thumbnail_width=600&thumbnail_height=600`;
 export const META_CREATIVE_FIELDS = 'id,account_id,name,creative{id,account_id,name,title,body,image_url,thumbnail_url,object_story_spec,asset_feed_spec}';
 
 export function metaImageExpiry(url: string): string | null {
