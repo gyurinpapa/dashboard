@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
-import MetaAdsInsightsPreview from "./MetaAdsInsightsPreview";
 import {
   getMetaAdsConnectionView,
   metaAdsConnectionErrorMessage,
@@ -173,15 +172,6 @@ export default function MetaAdsConnectionCard(props: Props) {
           </button>
         ))}
       </div>
-      {props.canManage && view.ready && !open && props.connections.filter(connection =>
-        connection.status === "active" && connection.has_credentials && connection.last_verified_at &&
-        Number.isFinite(Date.parse(connection.last_verified_at))).map(connection => (
-        <MetaAdsInsightsPreview key={`${connection.id}:${connection.last_verified_at}`}
-          workspaceId={props.workspaceId} advertiserId={props.advertiserId} connectionId={connection.id}
-          externalAccountId={connection.external_account_id}
-          accountLabel={connection.external_account_name || connection.external_account_id}
-          getAccessToken={props.getAccessToken} />
-      ))}
       {view.ready && !props.canManage && <p style={{ fontSize: 11 }}>조회 권한만 있습니다.</p>}
       {open && props.canManage && view.ready && (
         <form onSubmit={submit} autoComplete="off" style={{ marginTop: 14, display: "grid", gap: 12, fontSize: 11 }}>

@@ -18,6 +18,8 @@ async function main() {
   const { createElement } = await import("react");
   const { renderToStaticMarkup } = await import("react-dom/server");
   const { default: Card } = await import("../app/report-builder/MetaAdsConnectionCard");
+  const { default: Diagnostic } = await import("../app/report-builder/MetaAdsInsightsPreview");
+  const { formatMetaAdsPreviewExport: exportResult } = await import("../src/lib/media-sync/meta-ads-insights-preview-export");
   let cases = 0;
   const now = new Date("2026-10-23T16:00:00Z"); // Oct 24 in the account's time zone.
   const period = { dateFrom: "2026-09-24", dateTo: "2026-10-23" };
@@ -143,9 +145,17 @@ async function main() {
   await run(request(), 502, { fetchImpl: async () => { calls++; return Response.json({ error: { message: token } }); } }, 1);
   const props = { workspaceId, advertiserId, loading: false, resolved: true, error: "", canManage: true,
     getAccessToken: async () => null, onRefresh() {}, connections: [{ ...record, has_credentials: true, external_account_name: "Fixture" }] };
-  assert.ok(renderToStaticMarkup(createElement(Card, props)).includes("성과·전환 점검")); cases++;
+  assert.equal(renderToStaticMarkup(createElement(Card, props)).includes("성과·전환 점검"), false); cases++;
   assert.equal(renderToStaticMarkup(createElement(Card, { ...props, canManage: false })).includes("성과·전환 점검"), false); cases++;
   assert.equal(renderToStaticMarkup(createElement(Card, { ...props, connections: [{ ...props.connections[0], last_verified_at: null }] })).includes("성과·전환 점검"), false); cases++;
+  assert.ok(renderToStaticMarkup(createElement(Diagnostic, { workspaceId, advertiserId, connectionId,
+    externalAccountId: accountId, accountLabel: "Fixture", getAccessToken: async () => null })).includes("성과·전환 점검")); cases++;
+  const exported = exportResult({ externalAccountId: accountId, currency: "KRW", timeZone: "Asia/Seoul",
+    preview: { ...parsed, access_token: token, actions: parsed.actions.map(action => ({ ...action, access_token: token })) } as typeof parsed });
+  assert.equal(exported.includes(token), false);
+  assert.equal(exported.includes("access_token"), false);
+  assert.deepEqual(JSON.parse(exported).actions, parsed.actions);
+  assert.equal(JSON.parse(exported).conversion_mapping, "UNCONFIRMED"); cases++;
   assert.equal(network, 0); assert.equal(getMediaProviderSyncCapability("meta_ads").syncRuntimeEnabled, false);
   assert.deepEqual(record, beforeRecord);
   console.log(`META_INSIGHTS_PREVIEW: ${cases} cases PASS; LIVE_API=0; DB_WRITES=0; META_SYNC=DISABLED`);

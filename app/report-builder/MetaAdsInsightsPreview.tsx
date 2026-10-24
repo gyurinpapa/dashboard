@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import type { MetaAdsInsightsPreview as Preview } from "@/src/lib/media-sync/meta-ads-insights-preview";
 import { metaAdsConnectionErrorMessage } from "@/src/lib/media-sync/meta-ads-connection-view";
+import { formatMetaAdsPreviewExport } from "@/src/lib/media-sync/meta-ads-insights-preview-export";
 
 type Props = {
   workspaceId: string; advertiserId: string; connectionId: string; externalAccountId: string;
@@ -31,6 +32,7 @@ export default function MetaAdsInsightsPreview(props: Props) {
   const [open, setOpen] = useState(false), [busy, setBusy] = useState(false);
   const [error, setError] = useState(""), [result, setResult] = useState<Result | null>(null);
   const [dateFrom, setDateFrom] = useState(""), [dateTo, setDateTo] = useState("");
+  const [copyMessage, setCopyMessage] = useState(""), [manualCopy, setManualCopy] = useState(false);
   const request = useRef<AbortController | null>(null), mounted = useRef(false);
   useEffect(() => {
     mounted.current = true;
@@ -40,7 +42,7 @@ export default function MetaAdsInsightsPreview(props: Props) {
   async function load(range: { dateFrom?: string; dateTo?: string } = {}) {
     if (request.current) return;
     const controller = new AbortController(); request.current = controller;
-    setOpen(true); setBusy(true); setError(""); setResult(null);
+    setOpen(true); setBusy(true); setError(""); setResult(null); setCopyMessage(""); setManualCopy(false);
     try {
       const token = await props.getAccessToken();
       if (!mounted.current || controller.signal.aborted) return;
@@ -74,6 +76,16 @@ export default function MetaAdsInsightsPreview(props: Props) {
   }
   const rows = result ? [...result.preview.actions].sort((a, b) =>
     priority(a.action_type) - priority(b.action_type) || a.action_type.localeCompare(b.action_type)) : [];
+  const exportText = result ? formatMetaAdsPreviewExport({ externalAccountId: props.externalAccountId,
+    currency: result.currency, timeZone: result.timezone_name, preview: result.preview }) : "";
+  async function copyResult() {
+    try {
+      await navigator.clipboard.writeText(exportText);
+      if (mounted.current) { setCopyMessage("결과 전체를 복사했습니다. 대화창에 붙여넣어 주세요."); setManualCopy(false); }
+    } catch {
+      if (mounted.current) { setManualCopy(true); setCopyMessage("아래 내용을 선택해 복사해 주세요."); }
+    }
+  }
 
   return <div style={{ marginTop: 10, fontSize: 11, lineHeight: 1.6 }}>
     <button type="button" style={buttonStyle} disabled={busy} aria-expanded={open}
@@ -96,6 +108,10 @@ export default function MetaAdsInsightsPreview(props: Props) {
       {error && <p role="alert" style={{ color: "#ffb4c5" }}>{error}</p>}
       {result && <div role="status">
         <p>{result.preview.date_from} ~ {result.preview.date_to}<br />{result.timezone_name} · {result.currency}</p>
+        <button type="button" style={buttonStyle} onClick={() => void copyResult()}>점검 결과 전체 복사</button>
+        {copyMessage && <p>{copyMessage}</p>}
+        {manualCopy && <textarea aria-label="복사할 점검 결과" readOnly value={exportText}
+          onFocus={event => event.currentTarget.select()} style={{ ...dateStyle, height: 160, marginTop: 8 }} />}
         {result.preview.has_data ? <>
           <p>노출 <strong>{number(result.preview.impressions)}</strong> · 클릭 <strong>{number(result.preview.clicks)}</strong><br />
             광고비 <strong>{number(result.preview.spend)} {result.currency}</strong></p>
