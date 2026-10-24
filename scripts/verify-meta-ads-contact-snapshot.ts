@@ -1,5 +1,6 @@
 import { normalizeCsvRows, summarize, groupBySource } from "../src/lib/report/aggregate";
 import { runMetaDailyChecks } from "./verify-meta-ads-daily";
+import { runMetaOnboardingChecks } from "./verify-meta-ads-onboarding";
 import { isNaverMetaReportMeta, isNaverMetaSelection, toggleReportConnectionSelection } from "../src/lib/media-sync/naver-meta-report";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -224,6 +225,7 @@ async function main() {
   assert.deepEqual(bulkState.rows[0],{rows:2500,contacts:"8"}); cases++;
   await runCombinedChecks(db, validPayload, safeConnection, deps);
   await runMetaDailyChecks(db);
+  await runMetaOnboardingChecks(db);
   assert.equal(liveNetwork,0); await db.close();
   console.log(`META_CONTACT_SNAPSHOT: ${cases} cases PASS; MAX_2500_ROWS_MS=${bulkMs}; REAL_POSTGRES_ENGINE=17_WASM; LIVE_API=0; PRODUCTION_WRITES=0`);
 }

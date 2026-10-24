@@ -42,6 +42,14 @@ export function getMetaAdsConnectionView(input: {
 
 export function metaAdsConnectionErrorMessage(code: unknown): string {
   switch (code) {
+    case "META_SETUP_INVALID_INPUT": return "계정 정보와 웹사이트 문의 집계 동의 항목을 확인해 주세요.";
+    case "META_SETUP_CONFIRM_CONVERSION": return "이 계정에서 웹사이트 문의를 문의·상담 신청으로 집계하는지 확인해 주세요.";
+    case "META_SETUP_INVALID_RANGE": return "수집 시작일은 어제까지, 최근 1년 범위에서 선택해 주세요.";
+    case "META_SETUP_UNSUPPORTED_ACCOUNT": return "현재 자동 수집은 통화 KRW, 시간대 Asia/Seoul인 Meta 광고계정을 지원합니다.";
+    case "META_SETUP_VERIFICATION_FAILED": return "계정 권한 또는 성과 조회를 확인하지 못했습니다. 토큰과 광고계정 권한을 확인한 뒤 다시 시도해 주세요.";
+    case "META_SETUP_SAVE_FAILED": return "자동 수집 설정을 저장하지 못했습니다. 연결 상태를 새로고침해 주세요.";
+    case "META_CONTACT_CHANGED": return "확인 중 계정 설정이 변경됐습니다. 새로고침 후 다시 시도해 주세요.";
+    case "META_CONTACT_RECONCILIATION_FAILED": return "계정 합계와 광고별 성과가 일치하지 않아 자동 수집을 시작하지 않았습니다. 잠시 후 다시 확인해 주세요.";
     case "UNAUTHORIZED": return "로그인 세션을 확인한 뒤 다시 시도해 주세요.";
     case "FORBIDDEN": return "이 광고주의 매체 연결을 관리할 권한이 없습니다.";
     case "SCOPE_MISMATCH": return "광고주 또는 워크스페이스가 변경되었습니다. 연결 상태를 다시 확인해 주세요.";
