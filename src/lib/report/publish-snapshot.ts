@@ -1,3 +1,4 @@
+import { resolveDailyMetaSnapshot } from "../media-sync/daily-report-meta-attachment";
 import { getSupabaseAdmin } from "../supabase/admin";
 
 export type ReportPublishSnapshot = {
@@ -428,6 +429,16 @@ export async function commitReportPublishSnapshot(
       snapshot.reportId,
     );
 
+  let publishedIngestionId = snapshot.currentIngestionId;
+  if (canonicalIdentityGuard?.period_type === "daily_sync") {
+    const { data: report, error } = await sb.from("reports").select("id,current_ingestion_id,meta")
+      .eq("id", snapshot.reportId).single();
+    if (error || !report || report.current_ingestion_id !== snapshot.currentIngestionId) {
+      throw new ReportPublishSnapshotError("PUBLISH_CONFLICT", "The report source changed before publish.");
+    }
+    publishedIngestionId = await resolveDailyMetaSnapshot(sb, report) || snapshot.currentIngestionId;
+  }
+
   const shareToken =
     normalizeExistingShareToken(snapshot.sourceShareToken) ||
     randToken(32);
@@ -437,7 +448,7 @@ export async function commitReportPublishSnapshot(
     share_token: shareToken,
     status: "ready",
     updated_at: now,
-    published_ingestion_id: snapshot.currentIngestionId,
+    published_ingestion_id: publishedIngestionId,
     published_creatives_batch_id:
       snapshot.currentCreativesBatchId,
     published_period_start: snapshot.draftPeriodStart,
@@ -537,7 +548,7 @@ export async function commitReportPublishSnapshot(
   return {
     shareToken,
     publishedAt: includePublishedAt ? now : null,
-    publishedIngestionId: snapshot.currentIngestionId,
+    publishedIngestionId,
     publishedCreativesBatchId:
       snapshot.currentCreativesBatchId,
     publishedPeriodStart: snapshot.draftPeriodStart,

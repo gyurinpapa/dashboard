@@ -1,3 +1,4 @@
+import { resolveDailyMetaSnapshot } from "@/src/lib/media-sync/daily-report-meta-attachment";
 // app/api/reports/[id]/publish/route.ts
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/src/lib/supabase/admin";
@@ -129,6 +130,7 @@ export async function POST(req: Request, ctx: Ctx) {
         "share_token",
         "status",
         "current_ingestion_id",
+        "meta",
         "current_creatives_batch_id",
         "draft_period_start",
         "draft_period_end",
@@ -189,11 +191,13 @@ export async function POST(req: Request, ctx: Ctx) {
     });
   }
 
+  const displayIngestionId = await resolveDailyMetaSnapshot(sb, report as any);
+
   const { count, error: cntErr } = await sb
     .from("report_rows")
     .select("id", { count: "exact", head: true })
     .eq("report_id", reportId)
-    .eq("ingestion_id", currentIngestionId);
+    .eq("ingestion_id", displayIngestionId);
 
   if (cntErr) return jsonError(500, cntErr.message || "COUNT_FAILED");
 
@@ -261,7 +265,7 @@ export async function POST(req: Request, ctx: Ctx) {
       share_token: token,
       sharePath: `/share/${token}`,
       status: "ready",
-      published_ingestion_id: currentIngestionId,
+      published_ingestion_id: publishResult.publishedIngestionId,
       published_creatives_batch_id: currentCreativesBatchId,
       published_period_start: draftPeriodStart,
       published_period_end: draftPeriodEnd,

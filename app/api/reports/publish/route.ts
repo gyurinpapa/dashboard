@@ -1,3 +1,4 @@
+import { resolveDailyMetaSnapshot } from "@/src/lib/media-sync/daily-report-meta-attachment";
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/src/lib/supabase/admin";
 import {
@@ -79,6 +80,7 @@ export async function POST(req: Request) {
           "status",
           "share_token",
           "current_ingestion_id",
+        "meta",
           "current_creatives_batch_id",
           "draft_period_start",
           "draft_period_end",
@@ -117,11 +119,13 @@ export async function POST(req: Request) {
       return jsonError(400, "PUBLISH_BLOCKED_NO_CURRENT_SESSION");
     }
 
+    const displayIngestionId = await resolveDailyMetaSnapshot(sb, report as any);
+
     const { count, error: countError } = await sb
       .from("report_rows")
       .select("id", { count: "exact", head: true })
       .eq("report_id", reportId)
-      .eq("ingestion_id", currentIngestionId);
+      .eq("ingestion_id", displayIngestionId);
 
     if (countError) {
       return jsonError(500, countError.message || "COUNT_FAILED");

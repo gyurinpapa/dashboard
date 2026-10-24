@@ -2476,6 +2476,36 @@ export default function ReportBuilderPage({ showBillingTest = false, enforceTest
     }
   }
 
+  async function openExistingReport(report: ReportRow) {
+    if (creating) return;
+    const applies = selectedReportDataSourceKind === "api" && report.data_source_kind === "api" &&
+      report.advertiser_id === selectedAdvertiserId && report.workspace_id === workspaceId &&
+      selectedApiMediaConnectionIds.length > 0;
+    if (!applies) { router.push(`/reports/${report.id}`); return; }
+    if (loadingSelectedAdvertiserMediaConnections || !hasCurrentAdvertiserMediaConnectionSnapshot ||
+      selectedAdvertiserMediaConnectionsError || selectedApiReportConnections.length !== selectedApiMediaConnectionIds.length) {
+      setLocalMsg("현재 광고주의 매체 연결 상태를 확인한 뒤 다시 열어 주세요."); return;
+    }
+    setCreating(true);
+    setLocalMsg("선택한 매체를 기존 보고서에 적용하는 중입니다.");
+    try {
+      const token = await getAccessToken();
+      if (!token) throw new Error("로그인 세션이 없습니다.");
+      const res = await fetch(`/api/reports/${report.id}/media-connections`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ workspace_id: workspaceId, advertiser_id: selectedAdvertiserId,
+          connection_ids: selectedApiMediaConnectionIds }),
+      });
+      const json = await safeReadJson(res) as any;
+      if (!res.ok || !json?.ok) throw new Error(json?.message || "선택한 매체를 적용하지 못했습니다.");
+      setLocalMsg("");
+      router.push(`/reports/${report.id}`);
+    } catch (error) {
+      setLocalMsg(error instanceof Error ? error.message : "선택한 매체를 적용하지 못했습니다.");
+    } finally { setCreating(false); }
+  }
+
   async function createReport(type: ReportType) {
     if (creationAccess.blocked) { setLocalMsg(creationAccess.message); return; }
     if (isAllWorkspaceMode) {
@@ -6982,6 +7012,9 @@ export default function ReportBuilderPage({ showBillingTest = false, enforceTest
               }}
             >
               <span>현재 로딩된 리포트: {reports.length}개</span>
+              {selectedReportDataSourceKind === "api" && selectedApiMediaConnectionIds.length > 0 ? (
+                <span>보고서를 열면 선택한 매체를 추가합니다. 기존 연결은 유지됩니다.</span>
+              ) : null}
               {loadingReports ? <span>첫 목록 불러오는 중...</span> : null}
               {!loadingReports && loadingMore ? <span>추가 불러오는 중...</span> : null}
               {!loadingReports && !loadingMore && hasMore ? (
@@ -7120,7 +7153,8 @@ export default function ReportBuilderPage({ showBillingTest = false, enforceTest
                           ) : null}
 
                           <button
-                            onClick={() => router.push(`/reports/${r.id}`)}
+                            onClick={() => openExistingReport(r)}
+                            disabled={creating}
                             className={`reportItem reportItemMain ${
                               checked ? "reportItemSelected" : ""
                             }`}

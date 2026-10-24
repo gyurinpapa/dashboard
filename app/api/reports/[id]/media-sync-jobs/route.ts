@@ -1,3 +1,4 @@
+import { loadDailyMetaProviderStatus } from "@/src/lib/media-sync/daily-report-meta-attachment";
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
@@ -682,6 +683,10 @@ export async function GET(
       );
     }
 
+    const attachedMeta = await loadDailyMetaProviderStatus(supabaseAdmin, automaticSyncReport as any);
+    const providerSync = buildMediaSyncProviderDashboard({ connections: mappedConnections, jobs });
+    if (attachedMeta) dailyReportV2ProviderProgress = [...dailyReportV2ProviderProgress, attachedMeta.progress];
+
     const response = {
       ok: true as const,
       report_id: access.reportId,
@@ -692,10 +697,7 @@ export async function GET(
       jobs,
       daily_report_v2_provider_progress:
         dailyReportV2ProviderProgress,
-      provider_sync: buildMediaSyncProviderDashboard({
-        connections: mappedConnections,
-        jobs,
-      }),
+      provider_sync: providerSync.map(provider => attachedMeta && provider.provider === "meta_ads" ? attachedMeta.provider : provider),
       automatic_sync:
         getMediaSyncAutomaticAuthority({
           connections:

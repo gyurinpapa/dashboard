@@ -1,3 +1,4 @@
+import { hasDailyMetaAttachment, resolveDailyMetaSnapshot } from "@/src/lib/media-sync/daily-report-meta-attachment";
 // app/api/reports/[id]/ppt/route.ts
 
 import { NextResponse } from "next/server";
@@ -619,6 +620,7 @@ async function findBestIngestionIdByRows(reportId: string) {
 async function fetchRowsForPpt(args: {
   reportId: string;
   currentIngestionId: string;
+  authoritativeSnapshot?: boolean;
 }) {
   const { reportId, currentIngestionId } = args;
 
@@ -628,7 +630,7 @@ async function fetchRowsForPpt(args: {
       ingestionId: currentIngestionId,
     });
 
-    if (rows.length > 0) {
+    if (rows.length > 0 || args.authoritativeSnapshot) {
       return {
         rows,
         ingestionIdUsed: currentIngestionId,
@@ -1150,7 +1152,8 @@ export async function GET(req: Request, ctx: Ctx) {
 
     const rowsResult = await fetchRowsForPpt({
       reportId,
-      currentIngestionId: asString((report as any)?.current_ingestion_id),
+      currentIngestionId: asString(await resolveDailyMetaSnapshot(supabaseAdmin, report as any)),
+      authoritativeSnapshot: hasDailyMetaAttachment((report as any)?.meta),
     });
 
     const rows = rowsResult.rows;
@@ -1385,7 +1388,8 @@ export async function POST(req: Request, ctx: Ctx) {
 
     const rowsResult = await fetchRowsForPpt({
       reportId,
-      currentIngestionId: asString((report as any)?.current_ingestion_id),
+      currentIngestionId: asString(await resolveDailyMetaSnapshot(supabaseAdmin, report as any)),
+      authoritativeSnapshot: hasDailyMetaAttachment((report as any)?.meta),
     });
 
     const rows = rowsResult.rows;

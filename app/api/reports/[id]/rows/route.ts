@@ -1,3 +1,4 @@
+import { resolveDailyMetaSnapshot, hasDailyMetaAttachment, dailyMetaAttachmentErrorMessage } from "@/src/lib/media-sync/daily-report-meta-attachment";
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { sbAuth } from "@/src/lib/supabase/auth-server";
@@ -319,7 +320,7 @@ export async function GET(req: Request, ctx: Ctx) {
     ] = await Promise.allSettled([
       admin
         .from("reports")
-        .select("id, workspace_id, current_ingestion_id")
+        .select("id, workspace_id, current_ingestion_id, meta")
         .eq("id", reportId)
         .maybeSingle(),
       isTrueMasterUser(userId),
@@ -364,12 +365,12 @@ export async function GET(req: Request, ctx: Ctx) {
 
     const currentIngestionId = asStr((report as any).current_ingestion_id);
 
-    let ingestionIdUsed = currentIngestionId;
+    let ingestionIdUsed = asStr(await resolveDailyMetaSnapshot(admin, report as any));
     let fallbackUsed = false;
     let ranked: any[] = [];
     let rawRows: any[] = [];
     let rowsCount = 0;
-    let authoritativeZeroRowCurrentIngestion = false;
+    let authoritativeZeroRowCurrentIngestion = hasDailyMetaAttachment((report as any).meta);
 
     /**
      * ✅ metaOnly/includeRows=0 경량 응답
@@ -394,6 +395,7 @@ export async function GET(req: Request, ctx: Ctx) {
      */
     if (
       currentIngestionId &&
+      !authoritativeZeroRowCurrentIngestion &&
       rowsCount === 0
     ) {
       const {
@@ -601,6 +603,8 @@ export async function GET(req: Request, ctx: Ctx) {
       meta_only: false,
     });
   } catch (e: any) {
-    return jsonError(500, e?.message || String(e));
+    return String(e?.message).startsWith("DAILY_META_")
+      ? jsonError(409, dailyMetaAttachmentErrorMessage(e.message))
+      : jsonError(500, e?.message || String(e));
   }
 }
