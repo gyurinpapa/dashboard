@@ -33,6 +33,7 @@ const inputStyle: CSSProperties = {
 export default function MetaAdsConnectionCard(props: Props) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [verifyingId, setVerifyingId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const busy = useRef(false);
@@ -47,6 +48,42 @@ export default function MetaAdsConnectionCard(props: Props) {
       requestController.current?.abort();
     };
   }, []);
+
+  async function verify(connection: MetaAdsConnectionSummary) {
+    if (busy.current || !props.canManage || !view.ready) return;
+    busy.current = true; setVerifyingId(connection.id); setError(""); setNotice("");
+    const controller = new AbortController();
+    requestController.current = controller;
+    try {
+      const sessionToken = await props.getAccessToken();
+      if (!mounted.current || controller.signal.aborted) return;
+      if (!sessionToken) { setError(metaAdsConnectionErrorMessage("UNAUTHORIZED")); return; }
+      const response = await fetch(`/api/advertisers/${encodeURIComponent(props.advertiserId)}/media-connections/meta-ads/${encodeURIComponent(connection.id)}/verify`, {
+        method: "POST", credentials: "include", signal: controller.signal,
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
+        body: JSON.stringify({ expectedWorkspaceId: props.workspaceId }),
+      });
+      const result = await response.json();
+      if (!mounted.current || controller.signal.aborted) return;
+      if (!response.ok || result?.ok !== true) {
+        setError(metaAdsConnectionErrorMessage(result?.error)); return;
+      }
+      if (result.workspace_id !== props.workspaceId || result.advertiser_id !== props.advertiserId ||
+        result.connection?.id !== connection.id || result.connection?.provider !== "meta_ads" ||
+        result.connection?.external_account_id !== connection.external_account_id ||
+        !Number.isFinite(Date.parse(result.connection?.last_verified_at)) ||
+        result.verification !== "ACCOUNT_ACCESS_CONFIRMED" || result.sync_enabled !== false) {
+        setError(metaAdsConnectionErrorMessage("SCOPE_MISMATCH")); return;
+      }
+      setNotice("Meta 광고 계정 접근을 확인했습니다. 광고 데이터 동기화는 아직 활성화하지 않았습니다.");
+      props.onRefresh();
+    } catch {
+      if (mounted.current && !controller.signal.aborted) setError(metaAdsConnectionErrorMessage("META_VERIFICATION_FAILED"));
+    } finally {
+      busy.current = false;
+      if (mounted.current) setVerifyingId(null);
+    }
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -126,8 +163,14 @@ export default function MetaAdsConnectionCard(props: Props) {
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
         {props.canManage && view.ready && !open && (
-          <button type="button" style={buttonStyle} onClick={() => { setOpen(true); setError(""); setNotice(""); }}>Meta 계정 연결</button>
+          <button type="button" style={buttonStyle} disabled={verifyingId !== null} onClick={() => { setOpen(true); setError(""); setNotice(""); }}>Meta 계정 연결</button>
         )}
+        {props.canManage && view.ready && !open && props.connections.filter(c => c.status === "active" && c.has_credentials).map(connection => (
+          <button key={connection.id} type="button" style={buttonStyle} disabled={verifyingId !== null || saving}
+            onClick={() => void verify(connection)}>
+            {verifyingId === connection.id ? "인증 확인 중…" : props.connections.length > 1 ? `${connection.external_account_name || connection.external_account_id} 인증 확인` : "인증 확인"}
+          </button>
+        ))}
       </div>
       {view.ready && !props.canManage && <p style={{ fontSize: 11 }}>조회 권한만 있습니다.</p>}
       {open && props.canManage && view.ready && (
