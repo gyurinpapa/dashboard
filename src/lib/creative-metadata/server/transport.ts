@@ -46,9 +46,9 @@ async function token(session:Session,fetchPort:FetchPort,s:Extract<Secrets,{prov
  return {value,expires:start+expires*1000};
 }
 /** Equivalent to existing timestamp.method.uri HMAC. Does not use or download media URLs. */
-export async function signNaver(timestamp:string,uri:string,secretKey:string):Promise<string>{
+export async function signNaver(timestamp:string,uri:string,secretKey:string,method:'GET'|'POST'='GET'):Promise<string>{
  const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secretKey),{name:'HMAC',hash:'SHA-256'},false,['sign']);
- const signature=await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(`${timestamp}.GET.${uri}`));
+ const signature=await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(`${timestamp}.${method}.${uri}`));
  return btoa(String.fromCharCode(...new Uint8Array(signature)));
 }
 export type BoundTransport=Readonly<{read:ReadTransport;problem:()=>ServerProblem|null;dispose:()=>void}>;

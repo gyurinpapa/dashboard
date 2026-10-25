@@ -6,7 +6,7 @@ import type {CreativeMetadataSource} from './CreativeMetadata';
 import {groupReferences, refKey, validateViewEntry} from '@/src/lib/creative-metadata/view';
 import type {DisplayGroup, Ref, ViewEntry} from '@/src/lib/creative-metadata/view';
 
-type ReadState = 'pending' | 'ready' | 'empty' | 'unavailable' | 'expired';
+type ReadState = 'pending' | 'ready' | 'empty' | 'unavailable' | 'expired' | 'source_missing';
 const enabled = process.env.NEXT_PUBLIC_CREATIVE_METADATA_UI_ENABLED === '1';
 const MAX_REFS = 400;
 const PAGE_SIZE = 20;
@@ -84,6 +84,12 @@ export class PreviewCacheReader {
           if (missing.length && first.provider !== 'google_ads') {
             const data = await read(`${base}/ensure`, missing);
             missing = missing.filter(r => !this.entries.has(refKey(r)));
+            if (Array.isArray(data.unavailableEntityIds) && data.unavailableEntityIds.length <= missing.length &&
+                data.unavailableEntityIds.every((id: unknown) => typeof id === 'string' && missing.some(r => r.entityId === id))) {
+              const absent = new Set(data.unavailableEntityIds);
+              missing.filter(r => absent.has(r.entityId)).forEach(r => this.states.set(refKey(r), 'source_missing'));
+              missing = missing.filter(r => !absent.has(r.entityId));
+            }
             if (missing.length && Number.isFinite(data.retryAt) && data.retryAt > Date.now() && data.retryAt <= Date.now() + 3600000) {
               const retry = missing.filter(r => (this.retries.get(refKey(r)) ?? 0) < 2);
               retry.forEach(r => { const key = refKey(r); this.retries.set(key, (this.retries.get(key) ?? 0) + 1); });
@@ -227,12 +233,13 @@ function PreviewBody({name, fallbackUrl}: {name: string; fallbackUrl: string}) {
   const limited = !!ctx && refs.some(r => !ctx.reader.states.has(refKey(r))) && ctx.reader.states.size >= MAX_REFS;
   const unavailable = refs.some(r => ctx?.reader.states.get(refKey(r)) === 'unavailable');
   const expired = refs.some(r => ctx?.reader.states.get(refKey(r)) === 'expired');
+  const sourceMissing = refs.some(r => ctx?.reader.states.get(refKey(r)) === 'source_missing');
   return <div data-cached-creative-preview className="max-h-[360px] overflow-auto p-3 text-sm text-slate-700">
     <span ref={anchor}/>
     {fallbackUrl && <PreviewImage key={fallbackUrl} src={fallbackUrl} alt={name}/>}
     {visible.map(entry => <EntryContent key={refKey(entry.ref) + ':' + entry.fetchedAt} entry={entry} fallbackUrl={fallbackUrl} name={name} grouped={!!group && group.refs.length > 1}/>)}
     {!visible.length && !fallbackUrl && <p role="status" className="flex min-h-32 items-center justify-center px-2 text-center text-xs text-slate-400">
-      {pending ? '소재 정보를 불러오고 있습니다.' : limited ? '소재를 더 확인하려면 필터 범위를 좁혀 주세요.' : unavailable ? '소재 정보를 표시할 수 없습니다.' : expired ? '저장된 소재 정보의 유효기간이 지났습니다.' : '저장된 소재 정보가 없습니다.'}
+      {pending ? '소재 정보를 불러오고 있습니다.' : limited ? '소재를 더 확인하려면 필터 범위를 좁혀 주세요.' : sourceMissing ? '매체에서 원본 소재 정보를 제공하지 않습니다.' : unavailable ? '소재 정보를 표시할 수 없습니다.' : expired ? '저장된 소재 정보의 유효기간이 지났습니다.' : '저장된 소재 정보가 없습니다.'}
     </p>}
     {group && group.refs.length > PAGE_SIZE && <div className="flex items-center justify-between gap-2 text-xs">
       <button type="button" disabled={!page} onClick={() => setPage(p => p - 1)}>이전 소재</button>

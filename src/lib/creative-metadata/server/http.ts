@@ -46,11 +46,9 @@ export class Session{
  close():void{this.closed=true;this.root.abort();this.external?.removeEventListener('abort',this.onAbort);}
 }
 function cancelBody(response:Response):void{if(response.body)void response.body.cancel().catch(()=>{});}
-async function boundedJson(response:Response,cap:number,signal:AbortSignal):Promise<unknown>{
+async function boundedText(response:Response,cap:number,signal:AbortSignal):Promise<string>{
  const length=response.headers.get('content-length');
  if(length!==null&&(!/^\d+$/.test(length)||Number(length)>cap)){cancelBody(response);fail('RESPONSE_TOO_LARGE');}
- const type=response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase();
- if(type!=='application/json'&&!(type?.startsWith('application/')&&type.endsWith('+json'))){cancelBody(response);fail('INVALID_RESPONSE');}
  if(!response.body)fail('INVALID_RESPONSE');
  const reader=response.body.getReader();const chunks:Uint8Array[]=[];let size=0;
  const abort=()=>{void reader.cancel().catch(()=>{});};signal.addEventListener('abort',abort,{once:true});
@@ -61,19 +59,41 @@ async function boundedJson(response:Response,cap:number,signal:AbortSignal):Prom
    size+=part.value.byteLength;if(size>cap){abort();fail('RESPONSE_TOO_LARGE');}chunks.push(part.value);
   }
   const bytes=new Uint8Array(size);let offset=0;for(const c of chunks){bytes.set(c,offset);offset+=c.length;}
-  try{return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)) as unknown;}catch{fail('INVALID_RESPONSE');}
+  try{return new TextDecoder('utf-8',{fatal:true}).decode(bytes);}catch{fail('INVALID_RESPONSE');}
  }finally{signal.removeEventListener('abort',abort);reader.releaseLock();}
+}
+async function boundedJson(response:Response,cap:number,signal:AbortSignal):Promise<unknown>{
+ const type=response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase();
+ if(type!=='application/json'&&!(type?.startsWith('application/')&&type.endsWith('+json'))){cancelBody(response);fail('INVALID_RESPONSE');}
+ const body=await boundedText(response,cap,signal);
+ try{return JSON.parse(body) as unknown;}catch{fail('INVALID_RESPONSE');}
+}
+/** The only downloadable document is NAVER's authenticated, same-host master TSV. */
+export async function requestNaverMasterText(session:Session,fetchPort:FetchPort,url:string,headers:Readonly<Record<string,string>>){
+ let u:URL;try{u=new URL(url);}catch{fail('REQUEST_NOT_ALLOWED');}
+ if(typeof window!=='undefined'||u.origin!=='https://api.searchad.naver.com'||u.username||u.password||u.hash||u.pathname!=='/report-download'||
+  !u.searchParams.get('authtoken')||u.searchParams.getAll('authtoken').length!==1||url.length>4096||
+  [...u.searchParams.keys()].some(k=>!['authtoken','fileVersion'].includes(k)))fail('REQUEST_NOT_ALLOWED');
+ return session.run(async signal=>{
+  session.spend('metadata');
+  const response=await fetchPort(url,{method:'GET',headers:{...headers},redirect:'error',cache:'no-store',credentials:'omit',signal});
+  if(response.redirected||(response.url&&response.url!==url)||response.status>=300&&response.status<400){cancelBody(response);fail('REQUEST_NOT_ALLOWED');}
+  if(response.status!==200){cancelBody(response);return {status:response.status,body:''};}
+  return {status:200,body:await boundedText(response,8*1024*1024,signal)};
+ },session.requestMs);
 }
 /** Called only with internally constructed, provider-specific URLs and headers. */
 export async function requestJson(session:Session,fetchPort:FetchPort,kind:'oauth'|'metadata',url:string,
  init:Readonly<{method:'GET'|'POST';headers:Readonly<Record<string,string>>;body?:string}>,extra?:AbortSignal):Promise<Readonly<{status:number;body:unknown}>>{
  const metaUrl=/^https:\/\/graph\.facebook\.com\/v26\.0\/[0-9]{1,20}\?fields=/.test(url)&&
   (url===`${url.split('?')[0]}?fields=${encodeURIComponent(META_CREATIVE_FIELDS)}`||url===`${url.split('?')[0]}?${META_CREATIVE_DETAIL_QUERY}`);
+ const masterUrl=(init.method==='GET'&&/^https:\/\/api\.searchad\.naver\.com\/master-reports(?:\/[a-zA-Z0-9-]{1,100})?$/.test(url))||
+  (init.method==='POST'&&url==='https://api.searchad.naver.com/master-reports'&&/^\{"item":"Ad","fromTime":"\d{4}-\d{2}-\d{2}T00:00:00\.000Z"\}$/.test(init.body??''));
  const allowed=kind==='oauth'
   ? url==='https://oauth2.googleapis.com/token'&&init.method==='POST'
   : /^https:\/\/api\.searchad\.naver\.com\/ncc\/ads\/nad-[a-zA-Z0-9-]{1,100}$/.test(url)&&init.method==='GET'||
     /^https:\/\/googleads\.googleapis\.com\/v25\/customers\/[0-9]{10}\/googleAds:search$/.test(url)&&init.method==='POST'||
-    metaUrl&&init.method==='GET';
+    metaUrl&&init.method==='GET'||masterUrl;
  if(typeof window!=='undefined'||!allowed)fail('REQUEST_NOT_ALLOWED');
  return session.run(async signal=>{
   if(signal.aborted)fail('ABORTED');session.spend(kind);

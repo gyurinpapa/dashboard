@@ -10,9 +10,11 @@ import type {ViewRequest} from '../view';
 import {Session,Failure,fail,requestJson} from './http';
 import type {FetchPort} from './http';
 import {signNaver} from './transport';
+import {NAVER_HISTORY_REQUESTS,readNaverHistory} from './naver-history';
 
+export type HydrationTarget=Target&{historySince?:string};
 export type HydrationViewPorts=ViewPorts&{
-  targets:(state:ViewState,input:ViewRequest,signal:AbortSignal)=>Promise<readonly Target[]>;
+  targets:(state:ViewState,input:ViewRequest,signal:AbortSignal)=>Promise<readonly HydrationTarget[]>;
 };
 export type PreviewSecrets={provider:'naver_searchad';customerId:string;accessLicense:string;secretKey:string}|
   {provider:'meta_ads';accessToken:string};
@@ -44,7 +46,7 @@ export async function hydrateViewMetadata(input:ViewRequest,ports:HydrationViewP
     }
     const keys=await cacheKeys(state.binding,targets.map(t=>t.identity));accountKey=keys.accountKey;
     if((await session.run(s=>ports.snapshot(s))).stamp!==state.stamp)fail('STALE_CONTEXT');
-    const claim=await session.run(s=>deps.cache.claim({...keys,maxRequests:targets.length*(input.provider==='meta_ads'?2:1)},s));
+    const claim=await session.run(s=>deps.cache.claim({...keys,maxRequests:input.provider==='meta_ads'?targets.length*2:targets.length+NAVER_HISTORY_REQUESTS},s));
     if(!['hit','leader','busy','cooldown','budget'].includes(claim.status)||!Array.isArray(claim.entries))fail('INVALID_CONTEXT');
     const cached=new Set<string>();
     for(const e of claim.entries){
@@ -61,6 +63,7 @@ export async function hydrateViewMetadata(input:ViewRequest,ports:HydrationViewP
     if((await session.run(s=>ports.snapshot(s))).stamp!==state.stamp)fail('STALE_CONTEXT');
     const missing=targets.map((t,i)=>({target:t,key:keys.keys[i]})).filter(x=>!cached.has(x.key));
     const accepted:{key:string;metadata:Metadata}[]=[];
+    const notFound:typeof missing=[];
     let rateLimited=false;
     for(let start=0;start<missing.length;start+=4){
       const wave=await Promise.allSettled(missing.slice(start,start+4).map(async({target,key})=>{
@@ -84,6 +87,7 @@ export async function hydrateViewMetadata(input:ViewRequest,ports:HydrationViewP
           count(`basic_headline_${typeof basic.headline}`);count(`basic_description_${typeof basic.description}`);
         }
         if(response.status===429){rateLimited=true;return null;}
+        if(response.status===404&&secrets.provider==='naver_searchad'){notFound.push({target,key});return null;}
         if(response.status!==200)return null;
         // Only follow the creative ID returned by the account-validated ad; request a useful preview size.
         if(secrets.provider==='meta_ads'){
@@ -114,12 +118,25 @@ export async function hydrateViewMetadata(input:ViewRequest,ports:HydrationViewP
       for(const result of wave){if(result.status==='fulfilled'&&result.value)accepted.push(result.value);else if(result.status==='rejected')count(result.reason instanceof Failure?result.reason.code:'UNAVAILABLE');}
       if(rateLimited)break;
     }
+    let historyPending=false;
+    const unavailableEntityIds:string[]=[];
+    if(notFound.length&&!rateLimited&&secrets.provider==='naver_searchad'){
+      const searchable=notFound.filter(x=>x.target.campaignType==='WEB_SITE'&&x.target.historySince);
+      unavailableEntityIds.push(...notFound.filter(x=>!searchable.includes(x)).map(x=>x.target.identity.entityId));
+      if(searchable.length)try{
+        const history=await readNaverHistory(session,deps.fetch,secrets,searchable.map(x=>x.target),count);
+        for(const metadata of history.entries){const found=searchable.find(x=>x.target.identity.entityId===metadata.identity.entityId)!;accepted.push({key:found.key,metadata});}
+        rateLimited=history.status==='rate_limited';historyPending=history.status==='pending';
+        if(history.status==='ready')unavailableEntityIds.push(...searchable.filter(x=>!history.entries.some(m=>m.identity.entityId===x.target.identity.entityId)).map(x=>x.target.identity.entityId));
+      }catch(error){count(error instanceof Failure?`history_${error.code}`:'history_UNAVAILABLE');}
+    }
     if((await session.run(s=>ports.snapshot(s))).stamp!==state.stamp)fail('STALE_CONTEXT');
     const complete=accepted.length===missing.length;
+    const resolved=accepted.length+unavailableEntityIds.length+(historyPending?notFound.length-unavailableEntityIds.length:0)===missing.length;
     finished=await session.run(s=>deps.cache.finish({accountKey,token:token!,entries:accepted,
-      outcome:rateLimited?'rate_limited':complete?'success':'failure'},s));
+      outcome:rateLimited?'rate_limited':resolved?'success':'failure'},s));
     if(!finished)fail('STALE_CONTEXT');
-    return {diagnostics,retryAt:complete?null:Date.now()+(rateLimited?900000:300000)};
+    return {diagnostics,unavailableEntityIds,retryAt:complete||resolved&&!historyPending?null:Date.now()+(rateLimited?900000:resolved?60000:300000)};
   }finally{
     // On cancellation/staleness the bounded lease expires naturally; never publish stale data.
     session.close();

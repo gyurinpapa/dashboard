@@ -2,8 +2,7 @@ import 'server-only';
 import type {SupabaseClient} from '@supabase/supabase-js';
 import {record,identityForRow} from '../contract';
 import type {Identity} from '../contract';
-import type {Target} from '../collector';
-import type {HydrationViewPorts} from './view-hydration';
+import type {HydrationViewPorts,HydrationTarget} from './view-hydration';
 import {createHydrationDependencies,hydrateViewMetadata} from './view-hydration';
 import {parseViewRequest} from '../view';
 import type {ViewRequest} from '../view';
@@ -59,8 +58,8 @@ export function createViewPorts(request:Request,source:Source,input:ViewRequest,
   const binding={workspaceId,advertiserId,provider:input.provider,externalAccountId:input.externalAccountId,connectionId,credentialRevision};
   return {binding,ingestionId,stamp:JSON.stringify([reportId,workspaceId,advertiserId,ingestionId,connectionId,credentialRevision,source.kind,access&&[access.userId,access.role,access.canRunSync],m.map(x=>x.connection_id)])};
  }
- async function targets(state:ViewState,input:ViewRequest,signal:AbortSignal):Promise<readonly Target[]>{
-  const b=state.binding,result:Target[]=[];const reportId=JSON.parse(state.stamp)[0] as string;
+ async function targets(state:ViewState,input:ViewRequest,signal:AbortSignal):Promise<readonly HydrationTarget[]>{
+  const b=state.binding,result:HydrationTarget[]=[];const reportId=JSON.parse(state.stamp)[0] as string;
   // Shared cache reads only: at most four scoped SELECTs in flight per invocation.
   // Keep editor/refresh reads serial. Do not parallelize authorization or snapshot checks.
   const width=source.kind==='share'?4:1;
@@ -73,7 +72,7 @@ export function createViewPorts(request:Request,source:Source,input:ViewRequest,
     if(signal.aborted)fail('ABORTED');
     if(error||!Array.isArray(data))fail('DEPENDENCY_ERROR');
     const identity=data[0]&&identityForRow(b,data[0].row);
-    return identity&&identity.entityId===id?{identity,campaignType:String(record(record(data[0].row).provider_meta).campaign_type??'')}:null;
+    return identity&&identity.entityId===id?{identity,campaignType:String(record(record(data[0].row).provider_meta).campaign_type??''),historySince:typeof data[0].row.date==='string'?data[0].row.date:undefined}:null;
    }));
    if(signal.aborted)fail('ABORTED');
    // Settle the bounded wave before inspecting failures; never start another wave on error.
@@ -115,7 +114,7 @@ export async function handleMetadataEnsureRequest(request:Request,source:Source)
   const result=await session.run(s=>hydrateViewMetadata(input,ports,hydration,s),Math.max(1,session.remaining()-5000));
   console.info(JSON.stringify({event:'creative_preview_outcome',provider:input.provider,diagnostics:result.diagnostics}));
   const cached=await session.run(s=>readViewMetadata(input,ports,s));
-  return json({status:'ready',...cached,retryAt:result.retryAt});
+  return json({status:'ready',...cached,retryAt:result.retryAt,unavailableEntityIds:result.unavailableEntityIds??[]});
  }catch(error){
   console.info(JSON.stringify({event:'creative_preview_ensure',problem:error instanceof Failure?error.code:'UNAVAILABLE'}));
   return json({status:'unavailable',entries:[]},503);

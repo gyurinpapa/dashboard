@@ -79,6 +79,9 @@ async function main(){
  const reader=new Reader({kind:'report',reportId:'fixture',fetcher:async(url:string)=>{urls.push(url);return Response.json({status:'ready',entries:url.endsWith('/ensure')?[entry]:[]});}});
  reader.request([ref]);await new Promise(r=>setTimeout(r,150));assert.equal(urls.length,2);assert.ok(urls[1].endsWith('/ensure'));assert.equal(reader.entries.size,1);assert.equal(reader.states.get(refKey(ref as any)),'ready');reader.dispose();cases++;
  urls=[];const hit=new Reader({kind:'report',reportId:'fixture',fetcher:async(url:string)=>{urls.push(url);return Response.json({status:'ready',entries:[entry]});}});hit.request([ref]);await new Promise(r=>setTimeout(r,150));assert.equal(urls.length,1);hit.dispose();cases++;
+ const absentRef={provider:'naver_searchad',externalAccountId:'123456',entityId:'nad-deleted'};
+ const absent=new Reader({kind:'report',reportId:'fixture',fetcher:async(url:string)=>Response.json({status:'ready',entries:[],unavailableEntityIds:url.endsWith('/ensure')?['nad-deleted']:[],retryAt:null})});
+ absent.request([absentRef]);await new Promise(r=>setTimeout(r,150));assert.equal(absent.states.get(refKey(absentRef as any)),'source_missing');absent.dispose();cases++;
  console.log(`PASS ${cases} creative preview checks`);
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
