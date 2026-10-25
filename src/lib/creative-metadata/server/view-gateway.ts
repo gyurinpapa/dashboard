@@ -113,6 +113,7 @@ export async function handleMetadataEnsureRequest(request:Request,source:Source)
   const deps=await session.run(()=>dependencies()),ports=createViewPorts(request,source,input,deps);
   const hydration=await session.run(()=>createHydrationDependencies(deps.client));
   const result=await session.run(s=>hydrateViewMetadata(input,ports,hydration,s),Math.max(1,session.remaining()-5000));
+  console.info(JSON.stringify({event:'creative_preview_outcome',provider:input.provider,diagnostics:result.diagnostics}));
   const cached=await session.run(s=>readViewMetadata(input,ports,s));
   return json({status:'ready',...cached,retryAt:result.retryAt});
  }catch(error){

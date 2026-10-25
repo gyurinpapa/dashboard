@@ -7,7 +7,7 @@ import {cacheKeys,digest,readyMetadata} from '../cache/contract';
 import type {CacheStore} from '../cache/contract';
 import type {ViewPorts,ViewState} from './view-service';
 import type {ViewRequest} from '../view';
-import {Session,fail,requestJson} from './http';
+import {Session,Failure,fail,requestJson} from './http';
 import type {FetchPort} from './http';
 import {signNaver} from './transport';
 
@@ -29,6 +29,8 @@ export type HydrationDependencies={
 export async function hydrateViewMetadata(input:ViewRequest,ports:HydrationViewPorts,deps:HydrationDependencies,signal?:AbortSignal){
   if(input.provider!=='naver_searchad'&&input.provider!=='meta_ads')return {retryAt:null};
   const session=new Session(40,4000,28000,signal);
+  const diagnostics:Record<string,number>={};
+  const count=(key:string)=>{diagnostics[key]=(diagnostics[key]??0)+1;};
   let token:string|null=null,accountKey='',finished=false;
   try{
     const state=await session.run(s=>ports.snapshot(s));
@@ -51,7 +53,7 @@ export async function hydrateViewMetadata(input:ViewRequest,ports:HydrationViewP
         !readyMetadata(e.metadata,targets[index].identity,Date.now()))fail('INVALID_CONTEXT');
       cached.add(e.key);
     }
-    if(claim.status!=='leader')return {retryAt:Number.isFinite(claim.retryAt)&&claim.retryAt>Date.now()?claim.retryAt:null};
+    if(claim.status!=='leader')return {diagnostics:{[claim.status]:1},retryAt:Number.isFinite(claim.retryAt)&&claim.retryAt>Date.now()?claim.retryAt:null};
     if(!claim.token||!/^[a-f0-9-]{36}$/.test(claim.token)||claim.leaseUntil<Date.now()+30000)fail('INVALID_CONTEXT');
     token=claim.token;
     const secrets=await session.run(s=>deps.secrets(state,s));
@@ -73,6 +75,13 @@ export async function hydrateViewMetadata(input:ViewRequest,ports:HydrationViewP
           response=await requestJson(session,deps.fetch,'metadata',
             `https://graph.facebook.com/v26.0/${target.identity.entityId}?fields=${encodeURIComponent(META_CREATIVE_FIELDS)}`,
             {method:'GET',headers:{Accept:'application/json',Authorization:`Bearer ${secrets.accessToken}`}});
+        }
+        count(`http_${response.status}`);
+        if(response.status===200&&secrets.provider==='naver_searchad'){
+          const raw=record(response.body),ad=record(raw.ad),basic=record(ad.basic);
+          count(raw.type==='TEXT_45'?'naver_text45':raw.type==='RSA_AD'?'naver_rsa':'naver_other');
+          count(`flat_headline_${typeof ad.headline}`);count(`flat_description_${typeof ad.description}`);
+          count(`basic_headline_${typeof basic.headline}`);count(`basic_description_${typeof basic.description}`);
         }
         if(response.status===429){rateLimited=true;return null;}
         if(response.status!==200)return null;
@@ -97,9 +106,12 @@ export async function hydrateViewMetadata(input:ViewRequest,ports:HydrationViewP
           ? normalizeNaver({identity:target.identity,observation,campaignType:target.campaignType!,ad:response.body})
           : normalizeMetaCreative({identity:target.identity,observation,ad:response.body});
         const metadata=normalized.ok?readyMetadata(normalized.metadata,target.identity,Date.now()):null;
+        if(!normalized.ok)count(normalized.reason);
+        else if(!metadata){count(`metadata_${normalized.metadata.status}`);for(const issue of normalized.metadata.issues)if(['NO_DISPLAY_CONTENT','IMAGE_URL_UNSUPPORTED','HEADLINE_INVALID','DESCRIPTION_INVALID'].includes(issue))count(issue);}
+
         return metadata?{key,metadata}:null;
       }));
-      for(const result of wave)if(result.status==='fulfilled'&&result.value)accepted.push(result.value);
+      for(const result of wave){if(result.status==='fulfilled'&&result.value)accepted.push(result.value);else if(result.status==='rejected')count(result.reason instanceof Failure?result.reason.code:'UNAVAILABLE');}
       if(rateLimited)break;
     }
     if((await session.run(s=>ports.snapshot(s))).stamp!==state.stamp)fail('STALE_CONTEXT');
@@ -107,7 +119,7 @@ export async function hydrateViewMetadata(input:ViewRequest,ports:HydrationViewP
     finished=await session.run(s=>deps.cache.finish({accountKey,token:token!,entries:accepted,
       outcome:rateLimited?'rate_limited':complete?'success':'failure'},s));
     if(!finished)fail('STALE_CONTEXT');
-    return {retryAt:complete?null:Date.now()+(rateLimited?900000:300000)};
+    return {diagnostics,retryAt:complete?null:Date.now()+(rateLimited?900000:300000)};
   }finally{
     // On cancellation/staleness the bounded lease expires naturally; never publish stale data.
     session.close();
