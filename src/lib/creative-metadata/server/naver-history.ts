@@ -47,7 +47,7 @@ export async function readNaverHistory(session:Session,fetchPort:FetchPort,secre
  async function request(path:string,method:'GET'|'POST'='GET',body?:string){
   const response=await requestJson(session,fetchPort,'metadata',`https://api.searchad.naver.com${path}`,{method,headers:await headers(path,method),...(body?{body}:{})});
   count(`history_http_${response.status}`);if(response.status===429)return {limited:true,body:null};
-  if(response.status!==200)fail('INVALID_RESPONSE');return {limited:false,body:response.body};
+  if(response.status!==200&&!(method==='POST'&&response.status===201))fail('INVALID_RESPONSE');return {limited:false,body:response.body};
  }
  const list=await request('/master-reports');if(list.limited)return {status:'rate_limited' as const,entries:[]};
  if(!Array.isArray(list.body)||list.body.length>1000)fail('INVALID_RESPONSE');

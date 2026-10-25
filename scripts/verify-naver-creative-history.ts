@@ -20,12 +20,14 @@ async function main(){
   calls.push(u);assert.equal(init.redirect,'error');assert.equal(init.credentials,'omit');
   const h=init.headers as Record<string,string>,path=new URL(u).pathname;
   assert.equal(h['X-Signature'],createHmac('sha256','fixture-secret').update(`${h['X-Timestamp']}.${init.method}.${path}`).digest('base64'));
-  if(u.includes('/ncc/ads/nad-live'))return Response.json({customerId:'123456',nccAdId:'nad-live',type:'TEXT_45',ad:{headline:'현재 소재',description:'현재 안내'}});
-  if(u.includes('/ncc/ads/'))return new Response('',{status:404});
+  if(path==='/ncc/ads'){
+   const ids=new URL(u).searchParams.get('ids')!.split(',');assert.ok(ids.length<=20);
+   return Response.json(ids.includes('nad-live')?[{customerId:'123456',nccAdId:'nad-live',type:'TEXT_45',ad:{headline:'현재 소재',description:'현재 안내'}}]:[]);
+  }
   if(limited)return new Response('',{status:429});
   if(path==='/master-reports'&&init.method==='GET')return Response.json(created?[]:[job]);
   if(path==='/master-reports'&&init.method==='POST'){
-   assert.deepEqual(JSON.parse(init.body as string),{item:'Ad',fromTime:job.fromTime});return Response.json({...job,status:'REGIST'});
+   assert.deepEqual(JSON.parse(init.body as string),{item:'Ad',fromTime:job.fromTime});return Response.json({...job,status:'REGIST'},{status:201});
   }
   if(path==='/master-reports/abc123')return Response.json({...job,status:pending?'RUNNING':'BUILT'});
   if(path==='/report-download')return new Response(none?'':row(foreign?'999999':'123456'));

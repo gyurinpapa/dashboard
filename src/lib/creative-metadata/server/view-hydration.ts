@@ -1,4 +1,4 @@
-import {record,identityKey} from '../contract';
+import {record,id,identityKey} from '../contract';
 import type {Metadata} from '../contract';
 import type {Target} from '../collector';
 import {normalizeNaver} from '../naver';
@@ -46,7 +46,7 @@ export async function hydrateViewMetadata(input:ViewRequest,ports:HydrationViewP
     }
     const keys=await cacheKeys(state.binding,targets.map(t=>t.identity));accountKey=keys.accountKey;
     if((await session.run(s=>ports.snapshot(s))).stamp!==state.stamp)fail('STALE_CONTEXT');
-    const claim=await session.run(s=>deps.cache.claim({...keys,maxRequests:input.provider==='meta_ads'?targets.length*2:targets.length+NAVER_HISTORY_REQUESTS},s));
+    const claim=await session.run(s=>deps.cache.claim({...keys,maxRequests:input.provider==='meta_ads'?targets.length*2:1+NAVER_HISTORY_REQUESTS},s));
     if(!['hit','leader','busy','cooldown','budget'].includes(claim.status)||!Array.isArray(claim.entries))fail('INVALID_CONTEXT');
     const cached=new Set<string>();
     for(const e of claim.entries){
@@ -65,15 +65,30 @@ export async function hydrateViewMetadata(input:ViewRequest,ports:HydrationViewP
     const accepted:{key:string;metadata:Metadata}[]=[];
     const notFound:typeof missing=[];
     let rateLimited=false;
+    // NAVER supports an explicit IDs batch. Account and ad IDs are validated before
+    // any response enters normalization; omitted IDs use the historical fallback.
+    const naverAds=new Map<string,unknown>();
+    let naverStatus=200;
+    if(secrets.provider==='naver_searchad'&&missing.length){
+      const path='/ncc/ads',now=String(Date.now());
+      const batch=await requestJson(session,deps.fetch,'metadata',`https://api.searchad.naver.com${path}?ids=${encodeURIComponent(missing.map(x=>x.target.identity.entityId).join(','))}`,
+        {method:'GET',headers:{Accept:'application/json','X-Timestamp':now,'X-API-KEY':secrets.accessLicense,'X-Customer':secrets.customerId,
+          'X-Signature':await signNaver(now,path,secrets.secretKey)}});
+      naverStatus=batch.status;count(`batch_http_${batch.status}`);
+      if(batch.status===200){
+        if(!Array.isArray(batch.body)||batch.body.length>missing.length)fail('INVALID_RESPONSE');
+        for(const raw of batch.body){const ad=record(raw),entityId=id(ad.nccAdId);
+          if(!entityId||naverAds.has(entityId)||id(ad.customerId)!==input.externalAccountId||!missing.some(x=>x.target.identity.entityId===entityId))fail('SCOPE_MISMATCH');
+          naverAds.set(entityId,raw);
+        }
+      }
+    }
     for(let start=0;start<missing.length;start+=4){
       const wave=await Promise.allSettled(missing.slice(start,start+4).map(async({target,key})=>{
         const observation={revision:crypto.randomUUID(),fetchedAt:new Date().toISOString()};
         let response;
         if(secrets.provider==='naver_searchad'){
-          const path=`/ncc/ads/${target.identity.entityId}`,now=String(Date.now());
-          response=await requestJson(session,deps.fetch,'metadata',`https://api.searchad.naver.com${path}`,{method:'GET',headers:{
-            Accept:'application/json','X-Timestamp':now,'X-API-KEY':secrets.accessLicense,'X-Customer':secrets.customerId,
-            'X-Signature':await signNaver(now,path,secrets.secretKey)}});
+          response={status:naverStatus!==200?naverStatus:naverAds.has(target.identity.entityId)?200:404,body:naverAds.get(target.identity.entityId)??null};
         }else{
           response=await requestJson(session,deps.fetch,'metadata',
             `https://graph.facebook.com/v26.0/${target.identity.entityId}?fields=${encodeURIComponent(META_CREATIVE_FIELDS)}`,

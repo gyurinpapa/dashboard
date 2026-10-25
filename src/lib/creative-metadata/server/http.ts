@@ -89,11 +89,12 @@ export async function requestJson(session:Session,fetchPort:FetchPort,kind:'oaut
   (url===`${url.split('?')[0]}?fields=${encodeURIComponent(META_CREATIVE_FIELDS)}`||url===`${url.split('?')[0]}?${META_CREATIVE_DETAIL_QUERY}`);
  const masterUrl=(init.method==='GET'&&/^https:\/\/api\.searchad\.naver\.com\/master-reports(?:\/[a-zA-Z0-9-]{1,100})?$/.test(url))||
   (init.method==='POST'&&url==='https://api.searchad.naver.com/master-reports'&&/^\{"item":"Ad","fromTime":"\d{4}-\d{2}-\d{2}T00:00:00\.000Z"\}$/.test(init.body??''));
+ const naverBatch=init.method==='GET'&&/^https:\/\/api\.searchad\.naver\.com\/ncc\/ads\?ids=nad-[a-zA-Z0-9-]{1,100}(?:%2Cnad-[a-zA-Z0-9-]{1,100}){0,19}$/.test(url);
  const allowed=kind==='oauth'
   ? url==='https://oauth2.googleapis.com/token'&&init.method==='POST'
   : /^https:\/\/api\.searchad\.naver\.com\/ncc\/ads\/nad-[a-zA-Z0-9-]{1,100}$/.test(url)&&init.method==='GET'||
     /^https:\/\/googleads\.googleapis\.com\/v25\/customers\/[0-9]{10}\/googleAds:search$/.test(url)&&init.method==='POST'||
-    metaUrl&&init.method==='GET'||masterUrl;
+    metaUrl&&init.method==='GET'||masterUrl||naverBatch;
  if(typeof window!=='undefined'||!allowed)fail('REQUEST_NOT_ALLOWED');
  return session.run(async signal=>{
   if(signal.aborted)fail('ABORTED');session.spend(kind);
@@ -102,7 +103,7 @@ export async function requestJson(session:Session,fetchPort:FetchPort,kind:'oaut
   catch{if(signal.aborted)fail('ABORTED');fail('TRANSPORT_ERROR');}
   if(signal.aborted){cancelBody(response);fail('ABORTED');}
   if(response.redirected||(response.url&&response.url!==url)||response.status>=300&&response.status<400){cancelBody(response);fail('REQUEST_NOT_ALLOWED');}
-  if(response.status!==200){cancelBody(response);return Object.freeze({status:response.status,body:null});}
+  if(response.status!==200&&!(masterUrl&&init.method==='POST'&&response.status===201)){cancelBody(response);return Object.freeze({status:response.status,body:null});}
   const body=await boundedJson(response,kind==='oauth'?65536:1048576,signal);
   return Object.freeze({status:response.status,body});
  },session.requestMs,extra);
