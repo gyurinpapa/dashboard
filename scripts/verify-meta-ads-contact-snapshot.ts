@@ -1,4 +1,5 @@
 import { normalizeCsvRows, summarize, groupBySource } from "../src/lib/report/aggregate";
+import { runMetaInstantFormChecks } from "./verify-meta-ads-instant-forms";
 import { runMetaDailyChecks } from "./verify-meta-ads-daily";
 import { runMetaOnboardingChecks } from "./verify-meta-ads-onboarding";
 import { isNaverMetaReportMeta, isNaverMetaSelection, toggleReportConnectionSelection } from "../src/lib/media-sync/naver-meta-report";
@@ -226,6 +227,7 @@ async function main() {
   await runCombinedChecks(db, validPayload, safeConnection, deps);
   await runMetaDailyChecks(db);
   await runMetaOnboardingChecks(db);
+  await runMetaInstantFormChecks(db);
   assert.equal(liveNetwork,0); await db.close();
   console.log(`META_CONTACT_SNAPSHOT: ${cases} cases PASS; MAX_2500_ROWS_MS=${bulkMs}; REAL_POSTGRES_ENGINE=17_WASM; LIVE_API=0; PRODUCTION_WRITES=0`);
 }

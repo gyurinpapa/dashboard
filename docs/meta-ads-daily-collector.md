@@ -104,3 +104,30 @@ worker and deploy its configuration. To pause one account, disable its enrollmen
 the existing Naver scheduler/worker. Review `meta_ads_daily_status` and the run table for
 last success, coverage and safe failure codes. A failed Naver report can leave mixed report
 projection waiting even when Meta account collection succeeds.
+
+### Instant Form conversions (2026-10-27)
+
+An account can explicitly opt into `meta_ads_reporting.instant_form =
+{"field":"actions","action_type":"onsite_conversion.lead_grouped"}`. This is the
+On-Facebook lead metric returned for the confirmed Instant Form campaigns. Website
+Contact (`conversions.contact_website`) remains a separate component. Report
+`conversions` is their sum; `lead`, `leadgen_grouped`, `contact_total`, custom-pixel
+and combined offsite/Meta-lead aliases are never added again. These are platform
+attributed conversion events, not deduplicated people across destinations. Confirm
+this account mapping before enabling it for campaigns with other lead destinations.
+
+The account total and complete paginated ad/day totals must match independently
+for website contacts and form submissions. Sparse values can become zero only
+within the complete matching dataset. Rows retain both component counts in
+`provider_meta`; SQL verifies each row sum and both account totals. Existing
+website-only policies continue unchanged. Changing the policy creates a fresh
+enrollment generation, recollects its covered history and rebuilds projections
+from the new partition hashes. Daily collection remains 05:00 Asia/Seoul with a
+seven-day correction window. Naver source data and published source pointers do
+not change.
+
+`check-meta-ads-instant-forms.ts CONNECTION_ID YYYY-MM-DD EXPECTED_FORMS` performs a
+read-only server check using stored credentials. Its output contains only scoped
+policy, totals, reconciliation proof and the connection timestamp; it never prints
+tokens, raw provider responses or lead personal information. Use the existing
+verified activation authority to apply a policy, not manual conversion increments.

@@ -53,7 +53,7 @@ export async function handleMetaAdsOnboarding(request: Request, advertiserId: st
       access.advertiserId === advertiserId && uuid(access.workspaceId) && uuid(access.userId), "FORBIDDEN", 403);
     input = await body(request);
     check(input.expectedWorkspaceId === access.workspaceId, "SCOPE_MISMATCH");
-    check(input.conversion === "website_contact" && input.confirmConversion === true, "META_SETUP_CONFIRM_CONVERSION", 400);
+    check(["website_contact", "website_contact_and_instant_form"].includes(String(input.conversion)) && input.confirmConversion === true, "META_SETUP_CONFIRM_CONVERSION", 400);
     const target = getPreviousCompletedSeoulCalendarDate(deps.now?.() ?? new Date());
     check(typeof input.startDate === "string" && isValidYmd(input.startDate) && input.startDate <= target &&
       input.startDate >= shiftMetaDay(target, -365), "META_SETUP_INVALID_RANGE", 400);
@@ -73,7 +73,9 @@ export async function handleMetaAdsOnboarding(request: Request, advertiserId: st
     const policy: MetaAdsContactPolicy = { contract: "meta_contact_snapshot_v1", enabled: true,
       external_account_id: record.external_account_id, currency: account.currency, time_zone: account.timeZone,
       conversion_field: "conversions", conversion_action_type: "contact_website", missing_conversion: "zero_after_complete_reconciliation",
-      revenue: "not_provided", attribution: "platform_default", report_type: "db" };
+      revenue: "not_provided", attribution: "platform_default", report_type: "db",
+      ...(input.conversion === "website_contact_and_instant_form"
+        ? { instant_form: { field: "actions", action_type: "onsite_conversion.lead_grouped" } as const } : {}) };
     const range = { dateFrom: input.startDate > shiftMetaDay(target, -6) ? input.startDate : shiftMetaDay(target, -6), dateTo: target };
     const query = { ...range, externalAccountId: record.external_account_id, accessToken: credentials.access_token };
     const aggregate = await readMetaAdsInsightsPreview(query, deps.fetchImpl);

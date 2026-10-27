@@ -1,8 +1,9 @@
 import { META_ADS_API_VERSION } from "./meta-ads-canonical-row";
 import type { MetaAdsInsightsPreview, MetaAdsPreviewRange } from "./meta-ads-insights-preview";
+import type { MetaAdsContactPolicy } from "./meta-ads-contact-policy";
 import { isValidYmd } from "./types";
 
-type Totals = { impressions: string; clicks: string; spend: string; reported_website_contacts: string };
+type Totals = { impressions: string; clicks: string; spend: string; reported_website_contacts: string; instant_form_submissions?: string; total_conversions?: string };
 type Group = Totals & { row_count: number; rows_without_contact_value: number };
 export type MetaAdsAdDailyCheck = Readonly<{
   status: "MATCH" | "MISMATCH" | "UNRESOLVED";
@@ -10,9 +11,9 @@ export type MetaAdsAdDailyCheck = Readonly<{
   level: "ad"; time_increment: 1; page_count: number; row_count: number; ad_count: number; day_count: number;
   conversion_field: "conversions"; conversion_action_type: "contact_website";
   attribution: "platform_default"; report_data_saved: false;
-  account: { impressions: string | null; clicks: string | null; spend: string | null; website_contacts: string | null };
+  account: { impressions: string | null; clicks: string | null; spend: string | null; website_contacts: string | null; instant_form_submissions?: string; total_conversions?: string };
   ad_daily_sum: Group;
-  matches: { impressions: boolean | null; clicks: boolean | null; spend: boolean | null; website_contacts: boolean | null };
+  matches: { impressions: boolean | null; clicks: boolean | null; spend: boolean | null; website_contacts: boolean | null; instant_form_submissions?: boolean };
   campaigns: readonly (Group & { campaign_id: string; campaign_name: string })[];
   days: readonly (Group & { date: string })[];
 }>;
@@ -41,7 +42,15 @@ function units(value: unknown, integer = false): bigint {
 function decimal(value: bigint): string {
   return `${value / SCALE}${value % SCALE ? `.${String(value % SCALE).padStart(6, "0").replace(/0+$/, "")}` : ""}`;
 }
-function contact(value: unknown): bigint | null {
+/** Keep decimal sums exact before converting to the report's JSON number representation. */
+export function sumMetaAdsConversionValues(website: number, forms: number): number {
+  const total = units(website) + units(forms);
+  check(total <= MAX);
+  const result = Number(decimal(total));
+  check(units(result) === total);
+  return result;
+}
+function contact(value: unknown, actionType = "contact_website"): bigint | null {
   if (value === undefined) return null;
   check(Array.isArray(value) && value.length <= 256);
   const seen = new Set<string>(); let selected: bigint | null = null;
@@ -49,21 +58,22 @@ function contact(value: unknown): bigint | null {
     const row = object(item), type = row.action_type;
     check(typeof type === "string" && /^[a-zA-Z0-9_.:-]{1,160}$/.test(type) && !seen.has(type));
     seen.add(type); const amount = units(row.value);
-    if (type === "contact_website") selected = amount;
+    if (type === actionType) selected = amount;
   }
   return selected;
 }
-type Accumulator = { impressions: bigint; clicks: bigint; spend: bigint; contacts: bigint; rows: number; missing: number };
-const empty = (): Accumulator => ({ impressions: ZERO, clicks: ZERO, spend: ZERO, contacts: ZERO, rows: 0, missing: 0 });
+type Accumulator = { impressions: bigint; clicks: bigint; spend: bigint; contacts: bigint; forms: bigint; rows: number; missing: number };
+const empty = (): Accumulator => ({ impressions: ZERO, clicks: ZERO, spend: ZERO, contacts: ZERO, forms: ZERO, rows: 0, missing: 0 });
 function add(target: Accumulator, value: Accumulator) {
-  for (const key of ["impressions", "clicks", "spend", "contacts"] as const) {
+  for (const key of ["impressions", "clicks", "spend", "contacts", "forms"] as const) {
     target[key] += value[key]; check(target[key] <= MAX);
   }
   target.rows += value.rows; target.missing += value.missing;
 }
-function group(value: Accumulator): Group {
+function group(value: Accumulator, includeForms = false): Group {
   return { impressions: decimal(value.impressions), clicks: decimal(value.clicks), spend: decimal(value.spend),
-    reported_website_contacts: decimal(value.contacts), row_count: value.rows, rows_without_contact_value: value.missing };
+    reported_website_contacts: decimal(value.contacts), row_count: value.rows, rows_without_contact_value: value.missing,
+    ...(includeForms ? { instant_form_submissions: decimal(value.forms), total_conversions: decimal(value.contacts + value.forms) } : {}) };
 }
 
 /** Diagnostic reconciliation only. Missing per-row values stay explicitly counted as missing;
@@ -71,7 +81,8 @@ function group(value: Accumulator): Group {
  * The caller supplies the independently fetched account aggregate from the same request scope.
  */
 export function reconcileMetaAdsAdDailyRows(records: readonly unknown[], accountId: string,
-  range: MetaAdsPreviewRange, account: MetaAdsInsightsPreview, pageCount: number): MetaAdsAdDailyCheck {
+  range: MetaAdsPreviewRange, account: MetaAdsInsightsPreview, pageCount: number, policy?: MetaAdsContactPolicy): MetaAdsAdDailyCheck {
+  const includeForms = Boolean(policy?.instant_form);
   check(Array.isArray(records) && records.length <= 2500 && Number.isInteger(pageCount) && pageCount >= 1 && pageCount <= 5);
   id(accountId);
   check(isValidYmd(range.dateFrom) && isValidYmd(range.dateTo) && range.dateFrom <= range.dateTo &&
@@ -88,19 +99,25 @@ export function reconcileMetaAdsAdDailyRows(records: readonly unknown[], account
     const name = row.campaign_name === undefined ? campaign : row.campaign_name;
     check(typeof name === "string" && name.length > 0 && name.length <= 2000 && !/[\x00-\x1f]/.test(name));
     const selected = contact(row.conversions);
+    const forms = includeForms ? contact(row.actions, "onsite_conversion.lead_grouped") ?? ZERO : ZERO;
+    check((selected ?? ZERO) + forms <= MAX);
     const values: Accumulator = { impressions: units(row.impressions, true), clicks: units(row.clicks, true),
-      spend: units(row.spend), contacts: selected ?? ZERO, rows: 1, missing: selected === null ? 1 : 0 };
+      spend: units(row.spend), contacts: selected ?? ZERO, forms, rows: 1, missing: selected === null ? 1 : 0 };
     add(total, values);
     if (!campaigns.has(campaign)) campaigns.set(campaign, { name, values: empty() });
     add(campaigns.get(campaign)!.values, values);
     if (!days.has(day)) days.set(day, empty()); add(days.get(day)!, values);
   }
-  const selected = account.has_data ? contact(account.conversions) : null;
+  const reportedContact = account.has_data ? contact(account.conversions) : null;
+  const selected = includeForms && account.has_data ? reportedContact ?? ZERO : reportedContact;
+  const forms = includeForms ? contact(account.actions, "onsite_conversion.lead_grouped") ?? ZERO : ZERO;
+  check((selected ?? ZERO) + forms <= MAX && total.contacts + total.forms <= MAX);
   const matches = {
     impressions: account.impressions === null ? null : units(account.impressions, true) === total.impressions,
     clicks: account.clicks === null ? null : units(account.clicks, true) === total.clicks,
     spend: account.spend === null ? null : units(account.spend) === total.spend,
     website_contacts: selected === null ? null : selected === total.contacts,
+    ...(includeForms ? { instant_form_submissions: forms === total.forms } : {}),
   };
   const checks = Object.values(matches);
   return { status: checks.includes(false) ? "MISMATCH" : checks.includes(null) ? "UNRESOLVED" : "MATCH",
@@ -108,11 +125,12 @@ export function reconcileMetaAdsAdDailyRows(records: readonly unknown[], account
     page_count: pageCount, row_count: records.length, ad_count: ads.size, day_count: days.size,
     conversion_field: "conversions", conversion_action_type: "contact_website", attribution: "platform_default",
     report_data_saved: false, account: { impressions: account.impressions, clicks: account.clicks,
-      spend: account.spend, website_contacts: selected === null ? null : decimal(selected) },
-    ad_daily_sum: group(total), matches,
+      spend: account.spend, website_contacts: selected === null ? null : decimal(selected),
+      ...(includeForms ? { instant_form_submissions: decimal(forms), total_conversions: decimal((selected ?? ZERO) + forms) } : {}) },
+    ad_daily_sum: group(total, includeForms), matches,
     campaigns: [...campaigns].sort(([a], [b]) => a.localeCompare(b)).map(([campaign_id, value]) =>
-      ({ campaign_id, campaign_name: value.name, ...group(value.values) })),
-    days: [...days].sort(([a], [b]) => a.localeCompare(b)).map(([date, value]) => ({ date, ...group(value) })),
+      ({ campaign_id, campaign_name: value.name, ...group(value.values, includeForms) })),
+    days: [...days].sort(([a], [b]) => a.localeCompare(b)).map(([date, value]) => ({ date, ...group(value, includeForms) })),
   };
 }
 
@@ -134,7 +152,7 @@ export async function readMetaAdsAdDailyDataset(input: MetaAdsPreviewRange & { e
   const timeoutMs = options.timeoutMs ?? 20000;
   check(Number.isInteger(timeoutMs) && timeoutMs > 0 && timeoutMs <= 20000);
   const url = new URL(`https://graph.facebook.com/${META_ADS_API_VERSION}/act_${input.externalAccountId}/insights`);
-  url.searchParams.set("fields", "account_id,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,date_start,date_stop,impressions,clicks,spend,conversions");
+  url.searchParams.set("fields", "account_id,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,date_start,date_stop,impressions,clicks,spend,conversions,actions");
   url.searchParams.set("level", "ad"); url.searchParams.set("time_increment", "1");
   url.searchParams.set("time_range", JSON.stringify({ since: input.dateFrom, until: input.dateTo }));
   url.searchParams.set("limit", "500");

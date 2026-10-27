@@ -30,12 +30,14 @@ export function normalizeMetaDailyWindow(records: readonly unknown[], account: M
   range: MetaAdsPreviewRange, policy: MetaAdsContactPolicy, pageCount: number) {
   check(readMetaAdsContactPolicy(policy, policy.external_account_id) && policy.currency === "KRW" && policy.time_zone === "Asia/Seoul",
     "META_CONTACT_POLICY_REQUIRED");
-  const original = reconcileMetaAdsAdDailyRows(records, policy.external_account_id, range, account, pageCount);
+  const original = reconcileMetaAdsAdDailyRows(records, policy.external_account_id, range, account, pageCount, policy);
   const selected = account.conversions.find(a => a.action_type === "contact_website");
+  const hasForm = policy.instant_form && account.actions.some(a => a.action_type === "onsite_conversion.lead_grouped");
   if (!account.has_data) {
     check(records.length === 0 && account.impressions === null && account.clicks === null && account.spend === null &&
-      account.conversions.length === 0, "META_CONTACT_RECONCILIATION_FAILED");
-    return { rows: [], totals: { impressions: "0", clicks: "0", spend: "0", website_contacts: "0" },
+      account.conversions.length === 0 && account.actions.length === 0, "META_CONTACT_RECONCILIATION_FAILED");
+    return { rows: [], totals: { impressions: "0", clicks: "0", spend: "0", website_contacts: "0",
+        ...(policy.instant_form ? { instant_form_submissions: "0", total_conversions: "0" } : {}) },
       evidence: "no_data" as const, page_count: pageCount };
   }
   if (!selected) check(original.matches.impressions === true && original.matches.clicks === true &&
@@ -43,9 +45,9 @@ export function normalizeMetaDailyWindow(records: readonly unknown[], account: M
     "META_CONTACT_RECONCILIATION_FAILED");
   const resolved = selected ? account : { ...account,
     conversions: [...account.conversions, { action_type: "contact_website", value: "0" }] };
-  const reconciled = reconcileMetaAdsAdDailyRows(records, policy.external_account_id, range, resolved, pageCount);
+  const reconciled = reconcileMetaAdsAdDailyRows(records, policy.external_account_id, range, resolved, pageCount, policy);
   check(reconciled.status === "MATCH", "META_CONTACT_RECONCILIATION_FAILED");
   const rows = records.length ? normalizeMetaAdsContactRows(records, resolved, range, policy, pageCount).rows : [];
-  return { rows, totals: reconciled.account, evidence: selected ? "reported" as const : "omitted_on_complete_insights" as const,
+  return { rows, totals: reconciled.account, evidence: selected || hasForm ? "reported" as const : "omitted_on_complete_insights" as const,
     page_count: pageCount };
 }

@@ -1,5 +1,5 @@
 "use client";
-import { isMetaAdsContactConnection } from "@/src/lib/media-sync/meta-ads-contact-policy";
+import { isMetaAdsContactConnection, readMetaAdsContactPolicy } from "@/src/lib/media-sync/meta-ads-contact-policy";
 import { metaAdsDailyStatusText, readMetaAdsDailyPolicy, metaAdsSetupDates } from "@/src/lib/media-sync/meta-ads-daily-policy";
 
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
@@ -38,6 +38,7 @@ export default function MetaAdsConnectionCard(props: Props) {
   const [editing, setEditing] = useState<MetaAdsConnectionSummary | null>(null);
   const dates = metaAdsSetupDates();
   const [startDate, setStartDate] = useState(dates.defaultStart);
+  const [includeForms, setIncludeForms] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const busy = useRef(false);
@@ -72,6 +73,7 @@ export default function MetaAdsConnectionCard(props: Props) {
 
   function openSetup(connection: MetaAdsConnectionSummary | null) {
     setEditing(connection);
+    setIncludeForms(connection ? Boolean(readMetaAdsContactPolicy(connection.meta?.meta_ads_reporting, connection.external_account_id)?.instant_form) : true);
     setStartDate(readMetaAdsDailyPolicy(connection?.meta?.meta_ads_daily)?.start_date ?? dates.defaultStart);
     setOpen(true); setError(""); setNotice("");
   }
@@ -121,7 +123,7 @@ export default function MetaAdsConnectionCard(props: Props) {
       }
       const response = await fetch(`/api/advertisers/${encodeURIComponent(props.advertiserId)}/media-connections/meta-ads/${encodeURIComponent(connection.id)}/setup`, {
         method: "POST", credentials: "include", signal: controller.signal, headers,
-        body: JSON.stringify({ expectedWorkspaceId: props.workspaceId, startDate, conversion: "website_contact", confirmConversion: true,
+        body: JSON.stringify({ expectedWorkspaceId: props.workspaceId, startDate, conversion: includeForms ? "website_contact_and_instant_form" : "website_contact", confirmConversion: true,
           credentials: accessToken ? { version: 1, access_token: accessToken } : null }),
       });
       accessToken = "";
@@ -205,8 +207,12 @@ export default function MetaAdsConnectionCard(props: Props) {
               min={dates.minDate} max={dates.maxDate} style={inputStyle} disabled={saving} />
           </label>
           <label style={{ display: "flex", alignItems: "flex-start", gap: 7, lineHeight: 1.6 }}>
+            <input name="includeInstantForms" type="checkbox" checked={includeForms} onChange={event => setIncludeForms(event.target.checked)} disabled={saving} />
+            <span>인스턴트 양식 제출도 전환에 포함</span>
+          </label>
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 7, lineHeight: 1.6 }}>
             <input name="confirmConversion" type="checkbox" required disabled={saving} style={{ marginTop: 3 }} />
-            <span>이 계정의 웹사이트 문의(Contact)를 ‘문의·상담 신청’ 전환으로 집계하고, 매일 새벽 5시 자동 수집을 시작합니다.</span>
+            <span>이 계정의 웹사이트 문의{includeForms ? "와 인스턴트 양식 제출을" : "를"} ‘문의·상담 신청’ 전환으로 집계하고, 매일 새벽 5시 자동 수집을 시작합니다.</span>
           </label>
           <div style={{ display: "flex", gap: 8 }}>
             <button type="submit" style={buttonStyle} disabled={saving}>{saving ? "계정·성과 확인 중…" : "검증하고 자동 수집 시작"}</button>

@@ -110,8 +110,10 @@ export async function handleMetaAdsContactSync(request: Request, access: Access,
       job.snapshot_ingestion_id === result.snapshot_ingestion_id && typeof job.id === "string", "META_CONTACT_SYNC_FAILED", 500);
     // The repository whitelists returned job fields; never return the collector or DB payload.
     return json(200, { ok: true, report_id: r.id, workspace_id: access.workspaceId, advertiser_id: access.advertiserId,
-      access_scope: access.accessScope, job, report_data_saved: true, conversion_mapping: "CONTACT_WEBSITE",
-      row_count: result.row_count ?? normalized.rows.length, website_contacts: normalized.check.account.website_contacts });
+      access_scope: access.accessScope, job, report_data_saved: true, conversion_mapping: policy.instant_form ? "CONTACT_WEBSITE_AND_INSTANT_FORM" : "CONTACT_WEBSITE",
+      row_count: result.row_count ?? normalized.rows.length, website_contacts: normalized.check.account.website_contacts,
+      ...(policy.instant_form ? { instant_form_submissions: normalized.check.account.instant_form_submissions,
+        total_conversions: normalized.check.account.total_conversions } : {}) });
   } catch (error) {
     if (error instanceof MetaAdsContactError) return json(error.status, { ok: false, error: error.code });
     if (error instanceof MetaAdsInsightsPreviewError && error.code === "INVALID_RANGE")

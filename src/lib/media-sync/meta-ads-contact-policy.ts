@@ -14,20 +14,25 @@ export type MetaAdsContactPolicy = Readonly<{
   revenue: "not_provided";
   attribution: "platform_default";
   report_type: "db";
+  instant_form?: Readonly<{ field: "actions"; action_type: "onsite_conversion.lead_grouped" }>;
 }>;
 export function readMetaAdsContactPolicy(value: unknown, accountId: string): MetaAdsContactPolicy | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const p = value as Record<string, unknown>;
+  const instant = p.instant_form as Record<string, unknown> | undefined;
+  if (Object.hasOwn(p, "instant_form") && (!instant || typeof instant !== "object" || Array.isArray(instant) ||
+    instant.field !== "actions" || instant.action_type !== "onsite_conversion.lead_grouped" || Object.keys(instant).length !== 2)) return null;
   if (p.contract !== META_ADS_CONTACT_CONTRACT || p.enabled !== true || p.external_account_id !== accountId ||
       !/^[1-9][0-9]{0,29}$/.test(accountId) || typeof p.currency !== "string" || !/^[A-Z]{3}$/.test(p.currency) ||
       typeof p.time_zone !== "string" || p.time_zone.length > 100 ||
       p.conversion_field !== "conversions" || p.conversion_action_type !== "contact_website" ||
       p.missing_conversion !== "zero_after_complete_reconciliation" || p.revenue !== "not_provided" ||
-      p.attribution !== "platform_default" || p.report_type !== "db" || Object.keys(p).length !== 11) return null;
+      p.attribution !== "platform_default" || p.report_type !== "db" || Object.keys(p).length !== (instant ? 12 : 11)) return null;
   try { new Intl.DateTimeFormat("en", { timeZone: p.time_zone }); } catch { return null; }
   return { contract: META_ADS_CONTACT_CONTRACT, enabled: true, external_account_id: accountId,
     currency: p.currency, time_zone: p.time_zone, conversion_field: "conversions", conversion_action_type: "contact_website",
-    missing_conversion: "zero_after_complete_reconciliation", revenue: "not_provided", attribution: "platform_default", report_type: "db" };
+    missing_conversion: "zero_after_complete_reconciliation", revenue: "not_provided", attribution: "platform_default", report_type: "db",
+    ...(instant ? { instant_form: { field: "actions", action_type: "onsite_conversion.lead_grouped" } as const } : {}) };
 }
 export function isMetaAdsContactConnection(value: { provider: string; status: string; has_credentials: boolean;
   last_verified_at: string | null; external_account_id: string; meta: Record<string, unknown> }): boolean {
