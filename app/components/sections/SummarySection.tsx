@@ -163,7 +163,7 @@ function getSummaryCopy(reportType?: ReportType): SummaryCopy {
       monthTitle: "월별 성과",
       monthDescription: "기간 내 월별 유입 성과를 비교합니다.",
       weeklyTitle: "주차별 성과",
-      weeklyDescription: "기간 내 주차별 유입 흐름과 전주 대비 변화량을 빠르게 확인합니다.",
+      weeklyDescription: "기간 내 주차별 유입 흐름과 표시된 최근 두 주차 간 변화량을 빠르게 확인합니다.",
       chartTitle: "주차별 추이",
       chartDescription:
         "유입 중심 핵심 성과 흐름을 시각적으로 비교해 변화 구간을 빠르게 파악합니다.",
@@ -185,7 +185,7 @@ function getSummaryCopy(reportType?: ReportType): SummaryCopy {
       monthDescription: "기간 내 월별 DB 확보·리드 확보 성과를 비교합니다.",
       weeklyTitle: "주차별 DB 확보 성과",
       weeklyDescription:
-        "기간 내 주차별 전환 흐름과 전주 대비 변화량을 빠르게 확인합니다.",
+        "기간 내 주차별 전환 흐름과 표시된 최근 두 주차 간 변화량을 빠르게 확인합니다.",
       chartTitle: "주차별 전환 추이",
       chartDescription:
         "전환·CPA 중심 핵심 성과 흐름을 시각적으로 비교해 변화 구간을 빠르게 파악합니다.",
@@ -204,7 +204,7 @@ function getSummaryCopy(reportType?: ReportType): SummaryCopy {
     monthTitle: "월별 성과",
     monthDescription: "기간 내 월별 핵심 성과를 비교합니다.",
     weeklyTitle: "주차별 성과",
-    weeklyDescription: "기간 내 주차 흐름과 전주 대비 변화량을 빠르게 확인합니다.",
+    weeklyDescription: "기간 내 주차 흐름과 표시된 최근 두 주차 간 변화량을 빠르게 확인합니다.",
     chartTitle: "주차별 추이",
     chartDescription:
       "핵심 성과 흐름을 시각적으로 비교해 변화 구간을 빠르게 파악합니다.",
@@ -603,7 +603,12 @@ const WeeklyDeltaRow = memo(function WeeklyDeltaRow({
 
   return (
     <tr className="border-b border-[var(--nature-border-blue)]/55 bg-[var(--nature-cream)]/72 font-medium text-slate-800">
-      <td className={`${SLIDE2_FIRST_TD_CLASS} truncate`}>증감(최근주-전주)</td>
+      <td
+        className={`${SLIDE2_FIRST_TD_CLASS} truncate`}
+        title={`${prevRow.label ?? prevRow.weekKey} → ${lastRow.label ?? lastRow.weekKey}`}
+      >
+        증감(최근 두 주차)
+      </td>
 
       <td className={SLIDE2_TD_CLASS}>
         <TrendCell
