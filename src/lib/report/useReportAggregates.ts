@@ -10,6 +10,7 @@ import {
   buildWeekOptions,
   filterRows,
   getCurrentMonthKeyByData,
+  getRowSource,
   groupByMonthRecent3,
   groupBySource,
   groupByCampaign,
@@ -387,7 +388,7 @@ function filterRowsFinalFast(args: {
     }
 
     if (selectedSource !== "all") {
-      if (!matchesFilterValue(selectedSource, asStr(r?.source))) return false;
+      if (!matchesFilterValue(selectedSource, getRowSource(r))) return false;
     }
 
     if (selectedProduct !== "all") {
@@ -713,7 +714,7 @@ export function useReportAggregates({
       selectedSource === "all"
         ? (baseFilteredRows as any[])
         : (baseFilteredRows as any[]).filter(
-            (r) => matchesFilterValue(selectedSource, asStr(r?.source)),
+            (r) => matchesFilterValue(selectedSource, getRowSource(r)),
           );
 
     return applyProductFilter(sourceFilteredRows, selectedProduct);
@@ -771,7 +772,7 @@ export function useReportAggregates({
 
       return (
         selectedSource === "all" ||
-        matchesFilterValue(selectedSource, asStr(r?.source))
+        matchesFilterValue(selectedSource, getRowSource(r))
       );
     });
   }, [needOptions, needByMonth, baseFilteredRows, selectedChannel, selectedSource]);
@@ -816,7 +817,7 @@ export function useReportAggregates({
 
             return (
               selectedSource === "all" ||
-              matchesFilterValue(selectedSource, asStr(r?.source))
+              matchesFilterValue(selectedSource, getRowSource(r))
             );
           });
 
