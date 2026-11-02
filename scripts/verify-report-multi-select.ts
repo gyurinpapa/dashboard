@@ -67,4 +67,6 @@ assert.deepEqual(filterRows({ ...defaults, selectedMonth: ["2026-09", "2026-10"]
 assert.equal(periodText({ rows, selectedMonth: ["2026-09", "2026-11"], selectedWeek: "all" }), "2026.09.01 ~ 2026.09.30, 2026.11.01 ~ 2026.11.30");
 assert.equal(periodText({ rows, selectedMonth: ["2026-09", "2026-10"], selectedWeek: "all" }), "2026.09.01 ~ 2026.10.31");
 assert.equal(periodText({ rows, selectedMonth: "2026-10", selectedWeek: ["2026-09-28", "2026-10-05"] }), "2026.10.01 ~ 2026.10.11");
+assert.deepEqual(run({ selectedWeek: ["2026-08-31", "2026-10-05"] }).byWeekOnly.map((week) => week.weekKey), ["2026-10-05", "2026-08-31"]);
+assert(!run({ selectedMonth: ["2026-09", "2026-11"] }).byWeekOnly.some((week) => week.weekKey === "2026-10-05"));
 console.log("PASS: six multi-select filters, combined intersections, normal/fast aggregate parity, totals, month/week boundaries, removal, reset and disjoint periods");

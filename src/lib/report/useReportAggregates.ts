@@ -20,7 +20,7 @@ import {
   summarize,
 } from "./aggregate";
 
-import { monthKeyOfDate, parseDateLoose, startOfWeekMonday, toYMDLocal } from "./date";
+import { addDays, monthKeyOfDate, parseDateLoose, startOfWeekMonday, toYMDLocal } from "./date";
 
 type Args = {
   rows: Row[];
@@ -1144,8 +1144,21 @@ export function useReportAggregates({
 
   const byWeek = useMemo(() => {
     if (!needByWeek) return EMPTY_LIST;
-    return groupByWeekRecent5(filteredRows as any);
-  }, [needByWeek, filteredRows]);
+    const grouped = groupByWeekRecent5(filteredRows as any);
+    // Keep legacy zero-filled timelines for scalar selections. For multiple
+    // periods, exclude gap weeks that the user did not select.
+    if (typeof selectedMonth === "string" && typeof selectedWeek === "string") return grouped;
+    return grouped.filter((week) => {
+      if (!matchesFilterValue(selectedWeek, week.weekKey)) return false;
+      if (selectedMonth === "all") return true;
+      const start = parseDateLoose(week.weekKey);
+      if (!start) return false;
+      for (let day = 0; day < 7; day++) {
+        if (matchesFilterValue(selectedMonth, monthKeyOfDate(addDays(start, day)))) return true;
+      }
+      return false;
+    });
+  }, [needByWeek, filteredRows, selectedMonth, selectedWeek]);
 
   const byWeekOnly = useMemo(() => {
     if (!needByWeek) return EMPTY_LIST;
