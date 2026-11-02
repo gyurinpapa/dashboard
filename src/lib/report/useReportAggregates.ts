@@ -2,14 +2,8 @@
 
 import { useEffect, useMemo } from "react";
 
-import type {
-  ChannelKey,
-  DeviceKey,
-  GoalState,
-  MonthKey,
-  Row,
-  WeekKey,
-} from "./types";
+import type { GoalState, MonthKey, Row } from "./types";
+import { matchesFilterValue, selectedFilterValues, type FilterSelection } from "./filter-selection";
 
 import {
   buildOptions,
@@ -31,12 +25,12 @@ import { monthKeyOfDate, parseDateLoose, startOfWeekMonday, toYMDLocal } from ".
 type Args = {
   rows: Row[];
 
-  selectedMonth: MonthKey;
-  selectedWeek: WeekKey;
-  selectedDevice: DeviceKey;
-  selectedChannel: ChannelKey;
-  selectedSource?: string | "all";
-  selectedProduct?: string | "all";
+  selectedMonth: FilterSelection;
+  selectedWeek: FilterSelection;
+  selectedDevice: FilterSelection;
+  selectedChannel: FilterSelection;
+  selectedSource?: FilterSelection;
+  selectedProduct?: FilterSelection;
 
   monthGoal: GoalState;
   onInvalidWeek?: () => void;
@@ -228,7 +222,7 @@ function normalizeReportingChannelValue(r: any) {
 
 function applyReportingChannelFilter(
   rows: any[],
-  selectedChannel: string | "all" = "all",
+  selectedChannel: FilterSelection = "all",
 ) {
   if (selectedChannel === "all") {
     return rows ?? [];
@@ -236,8 +230,7 @@ function applyReportingChannelFilter(
 
   return (rows ?? []).filter(
     (r) =>
-      normalizeReportingChannelValue(r) ===
-      String(selectedChannel),
+      matchesFilterValue(selectedChannel, normalizeReportingChannelValue(r)),
   );
 }
 
@@ -333,21 +326,21 @@ function normalizeProductValue(r: any) {
   );
 }
 
-function applyProductFilter(rows: any[], selectedProduct: string | "all" = "all") {
+function applyProductFilter(rows: any[], selectedProduct: FilterSelection = "all") {
   if (selectedProduct === "all") return rows ?? [];
   return (rows ?? []).filter(
-    (r) => normalizeProductValue(r) === String(selectedProduct)
+    (r) => matchesFilterValue(selectedProduct, normalizeProductValue(r))
   );
 }
 
 function filterRowsFinalFast(args: {
   rows: any[];
-  selectedMonth: MonthKey;
-  selectedWeek: WeekKey;
-  selectedDevice: DeviceKey;
-  selectedChannel: ChannelKey;
-  selectedSource: string | "all";
-  selectedProduct: string | "all";
+  selectedMonth: FilterSelection;
+  selectedWeek: FilterSelection;
+  selectedDevice: FilterSelection;
+  selectedChannel: FilterSelection;
+  selectedSource: FilterSelection;
+  selectedProduct: FilterSelection;
 }) {
   const {
     rows,
@@ -372,34 +365,33 @@ function filterRowsFinalFast(args: {
 
     if (!d) return false;
 
-    if (selectedMonth !== "all" && monthKeyOfDate(d) !== selectedMonth) {
+    if (selectedMonth !== "all" && !matchesFilterValue(selectedMonth, monthKeyOfDate(d))) {
       return false;
     }
 
     if (selectedWeek !== "all") {
       const wk = toYMDLocal(startOfWeekMonday(d));
-      if (wk !== selectedWeek) return false;
+      if (!matchesFilterValue(selectedWeek, wk)) return false;
     }
 
     if (selectedDevice !== "all") {
-      if (asStr(r?.device ?? r?.device_type) !== selectedDevice) return false;
+      if (!matchesFilterValue(selectedDevice, asStr(r?.device ?? r?.device_type))) return false;
     }
 
     if (selectedChannel !== "all") {
       if (
-        normalizeReportingChannelValue(r) !==
-        String(selectedChannel)
+        !matchesFilterValue(selectedChannel, normalizeReportingChannelValue(r))
       ) {
         return false;
       }
     }
 
     if (selectedSource !== "all") {
-      if (asStr(r?.source) !== String(selectedSource)) return false;
+      if (!matchesFilterValue(selectedSource, asStr(r?.source))) return false;
     }
 
     if (selectedProduct !== "all") {
-      if (normalizeProductValue(r) !== String(selectedProduct)) return false;
+      if (!matchesFilterValue(selectedProduct, normalizeProductValue(r))) return false;
     }
 
     return true;
@@ -665,62 +657,25 @@ export function useReportAggregates({
     return buildWeekOptions(normalizedRows as any, selectedMonth);
   }, [needOptions, normalizedRows, selectedMonth]);
 
-  const selectedWeekMonthKey = useMemo(
-    () => (selectedWeek === "all" ? "" : String(selectedWeek).slice(0, 7)),
-    [selectedWeek]
-  );
-
+  // A selected option must not hide its peers. Week keys come from the
+  // selected months' actual rows, including weeks that cross month boundaries.
   const enabledWeekKeySet = useMemo(() => {
     if (!needOptions) return EMPTY_SET_RESULT;
-
-    const set = new Set<string>();
-
-    weekOptions.forEach((w: any) => {
-      const wk = w.weekKey;
-      if (!wk) return;
-
-      if (selectedMonth !== "all") {
-        if (String(wk).slice(0, 7) === selectedMonth) set.add(wk);
-        return;
-      }
-
-      if (selectedWeek !== "all") {
-        if (String(wk).slice(0, 7) === selectedWeekMonthKey) set.add(wk);
-        return;
-      }
-
-      set.add(wk);
-    });
-
-    return set;
-  }, [needOptions, weekOptions, selectedMonth, selectedWeek, selectedWeekMonthKey]);
+    return new Set<string>(weekOptions.map((w: any) => w.weekKey));
+  }, [needOptions, weekOptions]);
 
   const enabledMonthKeySet = useMemo(() => {
     if (!needOptions) return EMPTY_SET_RESULT;
-
-    const set = new Set<string>();
-
-    if (selectedMonth !== "all") {
-      set.add(selectedMonth);
-      return set;
-    }
-
-    if (selectedWeek !== "all" && selectedWeekMonthKey) {
-      set.add(selectedWeekMonthKey);
-      return set;
-    }
-
-    monthOptions.forEach((m: any) => set.add(m));
-    return set;
-  }, [needOptions, monthOptions, selectedMonth, selectedWeek, selectedWeekMonthKey]);
+    return new Set<string>(monthOptions);
+  }, [needOptions, monthOptions]);
 
   useEffect(() => {
     if (!needOptions) return;
     if (!onInvalidWeek) return;
     if (selectedWeek === "all") return;
-    const exists = weekOptions.some((w: any) => w.weekKey === selectedWeek);
+    const exists = selectedFilterValues(selectedWeek).some((week) => enabledWeekKeySet.has(week));
     if (!exists) onInvalidWeek();
-  }, [needOptions, onInvalidWeek, selectedMonth, weekOptions, selectedWeek]);
+  }, [needOptions, onInvalidWeek, enabledWeekKeySet, selectedWeek]);
 
   // ============================================================
   // 공통 base filtered rows
@@ -758,7 +713,7 @@ export function useReportAggregates({
       selectedSource === "all"
         ? (baseFilteredRows as any[])
         : (baseFilteredRows as any[]).filter(
-            (r) => asStr(r?.source) === String(selectedSource),
+            (r) => matchesFilterValue(selectedSource, asStr(r?.source)),
           );
 
     return applyProductFilter(sourceFilteredRows, selectedProduct);
@@ -811,12 +766,12 @@ export function useReportAggregates({
     return (baseFilteredRows as any[]).filter((r) => {
       const channelOk =
         selectedChannel === "all" ||
-        normalizeReportingChannelValue(r) === String(selectedChannel);
+        matchesFilterValue(selectedChannel, normalizeReportingChannelValue(r));
       if (!channelOk) return false;
 
       return (
         selectedSource === "all" ||
-        asStr(r?.source) === String(selectedSource)
+        matchesFilterValue(selectedSource, asStr(r?.source))
       );
     });
   }, [needOptions, needByMonth, baseFilteredRows, selectedChannel, selectedSource]);
@@ -856,12 +811,12 @@ export function useReportAggregates({
         : (baseFilteredRows as any[]).filter((r) => {
             const channelOk =
               selectedChannel === "all" ||
-              normalizeReportingChannelValue(r) === String(selectedChannel);
+              matchesFilterValue(selectedChannel, normalizeReportingChannelValue(r));
             if (!channelOk) return false;
 
             return (
               selectedSource === "all" ||
-              asStr(r?.source) === String(selectedSource)
+              matchesFilterValue(selectedSource, asStr(r?.source))
             );
           });
 

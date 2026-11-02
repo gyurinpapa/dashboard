@@ -27,6 +27,7 @@ import {
 
 import { monthLabelOf } from "../../../src/lib/report/date";
 import FilterBtn from "../ui/FilterBtn";
+import { isFilterSelected, toggleFilterSelection, type FilterSelection } from "../../../src/lib/report/filter-selection";
 
 type WeekOption = { weekKey: WeekKey; label: string };
 type SourceKey = string;
@@ -40,23 +41,23 @@ type Props = {
   filterKey: HeaderFilterKey;
   setFilterKey: (k: HeaderFilterKey) => void;
 
-  selectedMonth: MonthKey;
-  setSelectedMonth: (m: MonthKey) => void;
+  selectedMonth: FilterSelection;
+  setSelectedMonth: (m: FilterSelection) => void;
 
-  selectedWeek: WeekKey;
-  setSelectedWeek: (w: WeekKey) => void;
+  selectedWeek: FilterSelection;
+  setSelectedWeek: (w: FilterSelection) => void;
 
-  selectedDevice: DeviceKey;
-  setSelectedDevice: (d: DeviceKey) => void;
+  selectedDevice: FilterSelection;
+  setSelectedDevice: (d: FilterSelection) => void;
 
-  selectedChannel: ChannelKey;
-  setSelectedChannel: (c: ChannelKey) => void;
+  selectedChannel: FilterSelection;
+  setSelectedChannel: (c: FilterSelection) => void;
 
-  selectedSource?: SourceKey;
-  setSelectedSource?: (s: SourceKey) => void;
+  selectedSource?: FilterSelection;
+  setSelectedSource?: (s: FilterSelection) => void;
 
-  selectedProduct?: ProductKey;
-  setSelectedProduct?: (p: ProductKey) => void;
+  selectedProduct?: FilterSelection;
+  setSelectedProduct?: (p: FilterSelection) => void;
 
   monthOptions: MonthKey[];
   weekOptions: WeekOption[];
@@ -627,7 +628,7 @@ const OptionPopover = memo(function OptionPopover({
         visibility: position ? "visible" : "hidden",
       }}
     >
-      <div className="mb-2 text-xs font-semibold text-slate-800">{title}</div>
+      <div className="mb-2 text-xs font-semibold text-slate-800">{title}<span className="ml-2 font-normal text-slate-500">복수 선택 가능</span></div>
 
       <div className="flex max-h-[220px] flex-wrap gap-2 overflow-auto">
         {children}
@@ -683,10 +684,6 @@ function EditorHeaderBar(props: Props) {
 
   const hasSourceOptions = sourceOptions.length > 0;
   const hasProductOptions = productOptions.length > 0;
-
-  const closeFilter = useCallback(() => {
-    if (filterKey !== null) setFilterKey(null);
-  }, [filterKey, setFilterKey]);
 
   const toggleFilter = useCallback(
     (k: Exclude<HeaderFilterKey, null>) => {
@@ -855,22 +852,21 @@ function EditorHeaderBar(props: Props) {
 
   const handleSelectMonthAll = useCallback(() => {
     setSelectedMonth("all");
-    closeFilter();
-  }, [setSelectedMonth, closeFilter]);
+  }, [setSelectedMonth]);
 
   const monthOptionNodes = useMemo(() => {
     return monthOptions.map((m) => {
       const dim = !enabledMonthKeySet.has(m);
-      const isActive = selectedMonth === m;
+      const isActive = isFilterSelected(selectedMonth, m);
 
       return (
         <button
           key={m}
           type="button"
           onClick={() => {
-            setSelectedMonth(m);
-            closeFilter();
+            setSelectedMonth(toggleFilterSelection(selectedMonth, m));
           }}
+          aria-pressed={isActive}
           className={optionBtnClass(isActive, dim)}
         >
           {monthLabelOf(m)}
@@ -882,28 +878,26 @@ function EditorHeaderBar(props: Props) {
     enabledMonthKeySet,
     selectedMonth,
     setSelectedMonth,
-    closeFilter,
   ]);
 
   const handleSelectWeekAll = useCallback(() => {
     setSelectedWeek("all");
-    closeFilter();
-  }, [setSelectedWeek, closeFilter]);
+  }, [setSelectedWeek]);
 
   const weekOptionNodes = useMemo(() => {
     return weekOptions.map((w) => {
       const wk = w.weekKey;
       const dim = !enabledWeekKeySet.has(wk);
-      const isActive = selectedWeek === wk;
+      const isActive = isFilterSelected(selectedWeek, wk);
 
       return (
         <button
           key={wk}
           type="button"
           onClick={() => {
-            setSelectedWeek(wk);
-            closeFilter();
+            setSelectedWeek(toggleFilterSelection(selectedWeek, wk));
           }}
+          aria-pressed={isActive}
           className={optionBtnClass(isActive, dim)}
         >
           {w.label}
@@ -915,38 +909,35 @@ function EditorHeaderBar(props: Props) {
     enabledWeekKeySet,
     selectedWeek,
     setSelectedWeek,
-    closeFilter,
   ]);
 
   const handleSelectDeviceAll = useCallback(() => {
     setSelectedDevice("all");
-    closeFilter();
-  }, [setSelectedDevice, closeFilter]);
+  }, [setSelectedDevice]);
 
   const deviceOptionNodes = useMemo(() => {
     return deviceOptions.map((d) => {
-      const isActive = selectedDevice === d;
+      const isActive = isFilterSelected(selectedDevice, d);
 
       return (
         <button
           key={d}
           type="button"
           onClick={() => {
-            setSelectedDevice(d);
-            closeFilter();
+            setSelectedDevice(toggleFilterSelection(selectedDevice, d));
           }}
+          aria-pressed={isActive}
           className={optionBtnClass(isActive)}
         >
           {d}
         </button>
       );
     });
-  }, [deviceOptions, selectedDevice, setSelectedDevice, closeFilter]);
+  }, [deviceOptions, selectedDevice, setSelectedDevice]);
 
   const handleSelectChannelAll = useCallback(() => {
     setSelectedChannel("all");
-    closeFilter();
-  }, [setSelectedChannel, closeFilter]);
+  }, [setSelectedChannel]);
 
   const channelOptionNodes = useMemo(() => {
     return channelOptions.map((c) => {
@@ -970,7 +961,7 @@ function EditorHeaderBar(props: Props) {
         isDisplay;
 
       const isActive =
-        selectedChannel === c;
+        isFilterSelected(selectedChannel, c);
 
       return (
         <button
@@ -979,14 +970,14 @@ function EditorHeaderBar(props: Props) {
           disabled={disabled}
           onClick={() => {
             if (disabled) return;
-            setSelectedChannel(c);
-            closeFilter();
+            setSelectedChannel(toggleFilterSelection(selectedChannel, c));
           }}
           title={
             disabled
               ? "키워드 탭에서는 배너 채널을 선택할 수 없습니다."
               : label
           }
+          aria-pressed={isActive}
           className={optionBtnClass(isActive, false, disabled)}
         >
           {label}
@@ -998,38 +989,35 @@ function EditorHeaderBar(props: Props) {
     disableDisplayChannel,
     selectedChannel,
     setSelectedChannel,
-    closeFilter,
   ]);
 
   const handleSelectSourceAll = useCallback(() => {
     setSelectedSource("all");
-    closeFilter();
-  }, [setSelectedSource, closeFilter]);
+  }, [setSelectedSource]);
 
   const sourceOptionNodes = useMemo(() => {
     return sourceOptions.map((s) => {
-      const isActive = selectedSource === s;
+      const isActive = isFilterSelected(selectedSource, s);
 
       return (
         <button
           key={s}
           type="button"
           onClick={() => {
-            setSelectedSource(s);
-            closeFilter();
+            setSelectedSource(toggleFilterSelection(selectedSource, s));
           }}
+          aria-pressed={isActive}
           className={optionBtnClass(isActive)}
         >
           {s}
         </button>
       );
     });
-  }, [sourceOptions, selectedSource, setSelectedSource, closeFilter]);
+  }, [sourceOptions, selectedSource, setSelectedSource]);
 
   const handleSelectProductAll = useCallback(() => {
     setSelectedProduct("all");
-    closeFilter();
-  }, [setSelectedProduct, closeFilter]);
+  }, [setSelectedProduct]);
 
   const productOptionGroups = useMemo(() => {
     const grouped = new Map<
@@ -1188,6 +1176,7 @@ function EditorHeaderBar(props: Props) {
           <button
             type="button"
             onClick={handleSelectMonthAll}
+            aria-pressed={selectedMonth === "all"}
             className={optionBtnClass(selectedMonth === "all")}
           >
             전체
@@ -1201,6 +1190,7 @@ function EditorHeaderBar(props: Props) {
           <button
             type="button"
             onClick={handleSelectWeekAll}
+            aria-pressed={selectedWeek === "all"}
             className={optionBtnClass(selectedWeek === "all")}
           >
             전체
@@ -1214,6 +1204,7 @@ function EditorHeaderBar(props: Props) {
           <button
             type="button"
             onClick={handleSelectDeviceAll}
+            aria-pressed={selectedDevice === "all"}
             className={optionBtnClass(selectedDevice === "all")}
           >
             전체
@@ -1227,6 +1218,7 @@ function EditorHeaderBar(props: Props) {
           <button
             type="button"
             onClick={handleSelectChannelAll}
+            aria-pressed={selectedChannel === "all"}
             className={optionBtnClass(selectedChannel === "all")}
           >
             전체
@@ -1240,6 +1232,7 @@ function EditorHeaderBar(props: Props) {
           <button
             type="button"
             onClick={handleSelectSourceAll}
+            aria-pressed={selectedSource === "all"}
             className={optionBtnClass(selectedSource === "all")}
           >
             전체
@@ -1255,6 +1248,7 @@ function EditorHeaderBar(props: Props) {
               <button
                 type="button"
                 onClick={handleSelectProductAll}
+                aria-pressed={selectedProduct === "all"}
                 className={optionBtnClass(selectedProduct === "all")}
               >
                 전체
@@ -1274,16 +1268,16 @@ function EditorHeaderBar(props: Props) {
                   <div className="flex flex-wrap gap-2">
                     {group.options.map((option) => {
                       const isActive =
-                        selectedProduct === option.key;
+                        isFilterSelected(selectedProduct, option.key);
 
                       return (
                         <button
                           key={option.key}
                           type="button"
                           onClick={() => {
-                            setSelectedProduct(option.key);
-                            closeFilter();
+                            setSelectedProduct(toggleFilterSelection(selectedProduct, option.key));
                           }}
+                          aria-pressed={isActive}
                           className={optionBtnClass(isActive)}
                         >
                           {option.label}

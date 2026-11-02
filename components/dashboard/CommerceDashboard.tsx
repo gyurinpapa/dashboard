@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import type { FilterSelection } from "../../src/lib/report/filter-selection";
 import { parseDateLoose } from "../../src/lib/report/date";
 
 import type {
@@ -229,16 +230,16 @@ export default function CommerceDashboard({
   const [tab, setTab] = useState<TabKey>(init?.tab ?? "summary");
 
   const [filterKey, setFilterKey] = useState<FilterKey>(null);
-  const [selectedMonth, setSelectedMonth] = useState<MonthKey>(
+  const [selectedMonth, setSelectedMonth] = useState<FilterSelection>(
     init?.selectedMonth ?? "all"
   );
-  const [selectedWeek, setSelectedWeek] = useState<WeekKey>(
+  const [selectedWeek, setSelectedWeek] = useState<FilterSelection>(
     init?.selectedWeek ?? "all"
   );
-  const [selectedDevice, setSelectedDevice] = useState<DeviceKey>(
+  const [selectedDevice, setSelectedDevice] = useState<FilterSelection>(
     init?.selectedDevice ?? "all"
   );
-  const [selectedChannel, setSelectedChannel] = useState<ChannelKey>(
+  const [selectedChannel, setSelectedChannel] = useState<FilterSelection>(
     init?.selectedChannel ?? "all"
   );
 

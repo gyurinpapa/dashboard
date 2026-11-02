@@ -28,6 +28,8 @@ import type {
   WeekKey,
 } from "@/src/lib/report/types";
 
+import { matchesFilterValue, retainFilterSelection, selectedFilterValues, type FilterSelection } from "@/src/lib/report/filter-selection";
+
 import type { ReportPeriod } from "@/src/lib/report/period";
 import { filterRowsByReportPeriod } from "@/src/lib/report/period";
 
@@ -3343,12 +3345,12 @@ export default function ReportTemplate({
   }, []);
 
   const [filterKey, setFilterKey] = useState<ReportFilterKey>(null);
-  const [selectedMonth, setSelectedMonth] = useState<MonthKey>("all");
-  const [selectedWeek, setSelectedWeek] = useState<WeekKey>("all");
-  const [selectedDevice, setSelectedDevice] = useState<DeviceKey>("all");
-  const [selectedChannel, setSelectedChannel] = useState<ChannelKey>("all");
-  const [selectedSource, setSelectedSource] = useState<string>("all");
-  const [selectedProduct, setSelectedProduct] = useState<string>("all");
+  const [selectedMonth, setSelectedMonth] = useState<FilterSelection>("all");
+  const [selectedWeek, setSelectedWeek] = useState<FilterSelection>("all");
+  const [selectedDevice, setSelectedDevice] = useState<FilterSelection>("all");
+  const [selectedChannel, setSelectedChannel] = useState<FilterSelection>("all");
+  const [selectedSource, setSelectedSource] = useState<FilterSelection>("all");
+  const [selectedProduct, setSelectedProduct] = useState<FilterSelection>("all");
 
   const deferredTab = useDeferredValue(tab);
   const deferredSelectedMonth = useDeferredValue(selectedMonth);
@@ -3610,8 +3612,9 @@ export default function ReportTemplate({
     if (readOnlyHeader) return;
     if (tab !== "keyword" && tab !== "keywordDetail") return;
 
-    if (selectedChannel === ("display" as ChannelKey)) {
-      setSelectedChannel("search" as ChannelKey);
+    if (selectedChannel !== "all" && matchesFilterValue(selectedChannel, "display")) {
+      const allowed = new Set(selectedFilterValues(selectedChannel).filter((value) => value !== "display"));
+      setSelectedChannel(allowed.size ? retainFilterSelection(selectedChannel, allowed) : "search");
     }
   }, [tab, selectedChannel, readOnlyHeader]);
 
@@ -3664,8 +3667,8 @@ export default function ReportTemplate({
   }, [needCreativeRows, normalizedRows]);
 
   const handleInvalidWeek = useCallback(() => {
-    setSelectedWeek("all");
-  }, []);
+    setSelectedWeek((current) => current === deferredSelectedWeek ? "all" : current);
+  }, [deferredSelectedWeek]);
 
   const noopInvalidWeek = useCallback(() => {}, []);
 
@@ -3946,62 +3949,44 @@ export default function ReportTemplate({
 
   useEffect(() => {
     if (readOnlyHeader) return;
-    if (
-      deferredSelectedMonth !== "all" &&
-      !stableEnabledMonthKeySet.has(deferredSelectedMonth)
-    ) {
-      setSelectedMonth("all");
-    }
+    // Do not replace a newer click with validation of deferred filter options.
+    setSelectedMonth((current) => current === deferredSelectedMonth
+      ? retainFilterSelection(current, stableEnabledMonthKeySet) : current);
   }, [deferredSelectedMonth, stableEnabledMonthKeySet, readOnlyHeader]);
 
   useEffect(() => {
     if (readOnlyHeader) return;
-    if (
-      deferredSelectedWeek !== "all" &&
-      !stableEnabledWeekKeySet.has(deferredSelectedWeek)
-    ) {
-      setSelectedWeek("all");
-    }
+    // Do not replace a newer click with validation of deferred filter options.
+    setSelectedWeek((current) => current === deferredSelectedWeek
+      ? retainFilterSelection(current, stableEnabledWeekKeySet) : current);
   }, [deferredSelectedWeek, stableEnabledWeekKeySet, readOnlyHeader]);
 
   useEffect(() => {
     if (readOnlyHeader) return;
-    if (
-      deferredSelectedDevice !== "all" &&
-      !allowedDeviceSet.has(String(deferredSelectedDevice))
-    ) {
-      setSelectedDevice("all");
-    }
+    // Do not replace a newer click with validation of deferred filter options.
+    setSelectedDevice((current) => current === deferredSelectedDevice
+      ? retainFilterSelection(current, allowedDeviceSet) : current);
   }, [deferredSelectedDevice, allowedDeviceSet, readOnlyHeader]);
 
   useEffect(() => {
     if (readOnlyHeader) return;
-    if (
-      deferredSelectedChannel !== "all" &&
-      !allowedChannelSet.has(String(deferredSelectedChannel))
-    ) {
-      setSelectedChannel("all");
-    }
+    // Do not replace a newer click with validation of deferred filter options.
+    setSelectedChannel((current) => current === deferredSelectedChannel
+      ? retainFilterSelection(current, allowedChannelSet) : current);
   }, [deferredSelectedChannel, allowedChannelSet, readOnlyHeader]);
 
   useEffect(() => {
     if (readOnlyHeader) return;
-    if (
-      deferredSelectedSource !== "all" &&
-      !allowedSourceSet.has(String(deferredSelectedSource))
-    ) {
-      setSelectedSource("all");
-    }
+    // Do not replace a newer click with validation of deferred filter options.
+    setSelectedSource((current) => current === deferredSelectedSource
+      ? retainFilterSelection(current, allowedSourceSet) : current);
   }, [deferredSelectedSource, allowedSourceSet, readOnlyHeader]);
 
   useEffect(() => {
     if (readOnlyHeader) return;
-    if (
-      deferredSelectedProduct !== "all" &&
-      !allowedProductSet.has(String(deferredSelectedProduct))
-    ) {
-      setSelectedProduct("all");
-    }
+    // Do not replace a newer click with validation of deferred filter options.
+    setSelectedProduct((current) => current === deferredSelectedProduct
+      ? retainFilterSelection(current, allowedProductSet) : current);
   }, [deferredSelectedProduct, allowedProductSet, readOnlyHeader]);
 
   const fullPeriod = useMemo(() => {
@@ -4012,11 +3997,12 @@ export default function ReportTemplate({
   }, [normalizedRows]);
 
   const periodFixed = useMemo(() => {
+    if (typeof deferredSelectedMonth !== "string" || typeof deferredSelectedWeek !== "string") return period;
     if (!(summaryFilteredRows as any[])?.length) return period;
     const mm = minMaxYmd(summaryFilteredRows as any[]);
     if (!mm.min || !mm.max) return period;
     return `${formatYmd(mm.min)} ~ ${formatYmd(mm.max)}`;
-  }, [summaryFilteredRows, period]);
+  }, [summaryFilteredRows, period, deferredSelectedMonth, deferredSelectedWeek]);
 
   const stableFullPeriod = useStableShallowValue(fullPeriod);
   const stablePeriodFixed = useStableShallowValue(periodFixed);

@@ -1,3 +1,4 @@
+import { matchesFilterValue, selectedFilterValues, type FilterSelection } from "./filter-selection";
 import type { Row } from "./types";
 import { safeDiv } from "./format";
 import {
@@ -398,7 +399,7 @@ export function buildOptions(rows: Row[]) {
   };
 }
 
-export function buildWeekOptions(rows: Row[], selectedMonth: string | "all") {
+export function buildWeekOptions(rows: Row[], selectedMonth: FilterSelection) {
   const scope =
     selectedMonth === "all"
       ? rows
@@ -410,7 +411,7 @@ export function buildWeekOptions(rows: Row[], selectedMonth: string | "all") {
               (r as any)?.ymd ??
               (r as any)?.dt
           );
-          return d ? monthKeyOfDate(d) === selectedMonth : false;
+          return d ? matchesFilterValue(selectedMonth, monthKeyOfDate(d)) : false;
         });
 
   const valid = (scope ?? [])
@@ -446,11 +447,11 @@ export function buildWeekOptions(rows: Row[], selectedMonth: string | "all") {
 
 export function filterRows(args: {
   rows: Row[];
-  selectedMonth: string | "all";
-  selectedWeek: string | "all";
-  selectedDevice: string | "all";
-  selectedChannel: string | "all";
-  selectedSource?: string | "all";
+  selectedMonth: FilterSelection;
+  selectedWeek: FilterSelection;
+  selectedDevice: FilterSelection;
+  selectedChannel: FilterSelection;
+  selectedSource?: FilterSelection;
 }) {
   const {
     rows,
@@ -473,25 +474,25 @@ export function filterRows(args: {
     );
     if (!d) return false;
 
-    if (selectedMonth !== "all" && monthKeyOfDate(d) !== selectedMonth)
+    if (selectedMonth !== "all" && !matchesFilterValue(selectedMonth, monthKeyOfDate(d)))
       return false;
 
     if (selectedWeek !== "all") {
       const wk = toYMDLocal(startOfWeekMonday(d));
-      if (wk !== selectedWeek) return false;
+      if (!matchesFilterValue(selectedWeek, wk)) return false;
     }
 
     if (selectedDevice !== "all") {
-      if (asStr(r?.device ?? r?.device_type) !== selectedDevice) return false;
+      if (!matchesFilterValue(selectedDevice, asStr(r?.device ?? r?.device_type))) return false;
     }
 
     if (selectedChannel !== "all") {
-      if (asStr(r?.channel ?? r?.media ?? r?.ad_channel) !== selectedChannel)
+      if (!matchesFilterValue(selectedChannel, asStr(r?.channel ?? r?.media ?? r?.ad_channel)))
         return false;
     }
 
     if (selectedSource !== "all") {
-      if (getRowSource(r) !== selectedSource) return false;
+      if (!matchesFilterValue(selectedSource, getRowSource(r))) return false;
     }
 
     return true;
@@ -604,23 +605,28 @@ export function groupByWeekRecent5(filteredRows: Row[]) {
 
 export function groupByMonthRecent3(args: {
   rows: Row[];
-  selectedMonth: string | "all";
-  selectedDevice: string | "all";
-  selectedChannel: string | "all";
+  selectedMonth: FilterSelection;
+  selectedDevice: FilterSelection;
+  selectedChannel: FilterSelection;
 }) {
   const { rows, selectedMonth, selectedDevice, selectedChannel } = args;
 
   const baseRows = (rows ?? []).filter((r: any) => {
-    if (selectedDevice !== "all" && asStr(r?.device) !== selectedDevice)
+    if (selectedDevice !== "all" && !matchesFilterValue(selectedDevice, asStr(r?.device)))
       return false;
-    if (selectedChannel !== "all" && asStr(r?.channel) !== selectedChannel)
+    if (selectedChannel !== "all" && !matchesFilterValue(selectedChannel, asStr(r?.channel)))
       return false;
     return true;
   });
 
   let scope = baseRows;
 
-  if (selectedMonth !== "all") {
+  if (typeof selectedMonth !== "string") {
+    scope = baseRows.filter((r) => {
+      const d = parseDateLoose(r?.date ?? r?.report_date ?? r?.day ?? r?.ymd ?? r?.dt);
+      return d ? matchesFilterValue(selectedMonth, monthKeyOfDate(d)) : false;
+    });
+  } else if (selectedMonth !== "all") {
     const [yy, mm] = selectedMonth.split("-").map(Number);
     const start = new Date(yy, mm - 1 - 2, 1);
     const end = new Date(yy, mm, 1);
@@ -682,8 +688,8 @@ export function diffPct(a: number, b: number) {
 
 export function periodText(args: {
   rows: Row[];
-  selectedMonth: string | "all";
-  selectedWeek: string | "all";
+  selectedMonth: FilterSelection;
+  selectedWeek: FilterSelection;
 }) {
   const { rows, selectedMonth, selectedWeek } = args;
   if (!rows.length) return "";
@@ -692,6 +698,32 @@ export function periodText(args: {
     `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(
       d.getDate()
     ).padStart(2, "0")}`;
+
+  if (typeof selectedMonth !== "string" || typeof selectedWeek !== "string") {
+    const months = selectedFilterValues(selectedMonth).map((month) => {
+      const [year, number] = month.split("-").map(Number);
+      return [new Date(year, number - 1, 1), new Date(year, number, 0)] as const;
+    });
+    const weeks = selectedFilterValues(selectedWeek).map((week) => {
+      const start = new Date(week + "T00:00:00");
+      return [start, addDays(start, 6)] as const;
+    });
+    const ranges = (months.length && weeks.length
+      ? months.flatMap(([ms, me]) => weeks.map(([ws, we]) => [
+          new Date(Math.max(ms.getTime(), ws.getTime())),
+          new Date(Math.min(me.getTime(), we.getTime())),
+        ] as const))
+      : weeks.length ? weeks : months
+    ).filter(([start, end]) => start <= end).sort((a, b) => a[0].getTime() - b[0].getTime());
+    const merged: [Date, Date][] = [];
+    for (const [start, end] of ranges) {
+      const last = merged[merged.length - 1];
+      if (last && start <= addDays(last[1], 1)) {
+        if (end > last[1]) last[1] = end;
+      } else merged.push([start, end]);
+    }
+    return merged.map(([start, end]) => `${fmt(start)} ~ ${fmt(end)}`).join(", ");
+  }
 
   if (selectedWeek !== "all") {
     const ws = new Date(selectedWeek + "T00:00:00");
