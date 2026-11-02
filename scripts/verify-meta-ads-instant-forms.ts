@@ -121,5 +121,65 @@ export async function runMetaInstantFormChecks(db: DB) {
   assert.deepEqual((await db.query("select current_ingestion_id,published_ingestion_id from reports where id=$1",[nr])).rows[0],{current_ingestion_id:source,published_ingestion_id:source}); cases++;
   assert.deepEqual((await db.query("select row from report_rows where ingestion_id=$1",[source])).rows[0].row,naver); cases++;
   assert.equal((await rpc("resolve_daily_report_meta_snapshot_v1",[nr,source],["uuid","uuid"])).snapshot_ingestion_id,projected.snapshot_ingestion_id); cases++;
+  // Reproduce the production manual-sync failure with SELECT-only canonical facts.
+  const mixedReport=id(920), mixedMeta={url_contract_version:2,
+    data_source:{kind:"api",mode:"snapshot_replace",data_level:"mixed",providers:["meta_ads","naver_searchad"],aggregation_contract:"naver_meta_contact_v1"},
+    media_sync:{date_from:date,date_to:date,data_level:"mixed",mode:"snapshot_replace"}};
+  await db.query(`insert into reports(id,workspace_id,advertiser_id,tenant_id,report_type_id,status,updated_at,meta,created_by,published_ingestion_id)
+    values($1,$2,$3,$4,$5,'draft',now(),$6,$7,$8)`,[mixedReport,workspace,advertiser,tenant,id(8),mixedMeta,id(1),id(921)]);
+  await db.query(`insert into manual_report_media_connections(tenant_id,workspace_id,advertiser_id,report_id,connection_id)
+    values($1,$2,$3,$4,$5),($1,$2,$3,$4,$6)`,[tenant,workspace,advertiser,mixedReport,c,nc]);
+  await db.exec("reset role");
+  await db.query(`insert into media_sync_fact_partitions(workspace_id,advertiser_id,provider,external_account_id,date,source_connection_id,source_job_id,row_count)
+    values($1,$2,'naver_searchad','N1',$3,$4,$5,1)`,[workspace,advertiser,date,nc,id(922)]);
+  const fact={...naver,external_account_id:"N1",impressions:700,clicks:70,revenue:0,row_level:"keyword"};
+  await db.query(`insert into media_sync_fact_rows values($1,$2,'naver_searchad','N1',$3,$4,$5,'readonly-fixture',$6,'검색광고','','네이버 검색광고')`,
+    [workspace,advertiser,date,nc,id(922),fact]);
+  await db.exec("revoke insert,update,delete on media_sync_fact_partitions,media_sync_fact_rows from service_role; set role service_role");
+  const beforeFacts=(await db.query(`select row_to_json(f) value from media_sync_fact_rows f where source_connection_id=$1
+    union all select row_to_json(p) from media_sync_fact_partitions p where source_connection_id=$1`,[nc])).rows;
+  const freshPayload=async()=>{
+    const s=(await db.query(`select r.updated_at::text report_updated,r.current_ingestion_id,c.updated_at::text connection_updated,c.last_verified_at::text verified
+      from reports r,media_connections c where r.id=$1 and c.id=$2`,[mixedReport,c])).rows[0];
+    return {...manual,report_id:mixedReport,expected_report_updated_at:s.report_updated,expected_current_ingestion_id:s.current_ingestion_id,
+      expected_connection_updated_at:s.connection_updated,expected_last_verified_at:s.verified};
+  };
+  const saveMixed=async()=>rpc("save_meta_ads_contact_snapshot_v1",[await freshPayload()],["jsonb"]);
+  await assert.rejects(saveMixed(),(error:unknown)=>error instanceof Error && "code" in error && error.code==="42501"); cases++;
+  const definition=async()=>(await db.query(`select pg_get_functiondef(oid) body,prosecdef,proacl::text acl,proconfig
+    from pg_proc where oid='public.save_meta_ads_contact_snapshot_v1(jsonb)'::regprocedure`)).rows[0];
+  const beforeDefinition=await definition();
+  await db.exec("reset role");
+  await db.exec(readFileSync("supabase/migrations/20261102014027_fix_naver_meta_readonly_fact_snapshot.sql","utf8"));
+  await db.exec("set role service_role");
+  assert.deepEqual(await definition(),{...beforeDefinition,body:beforeDefinition.body.replace("and date=v_date for share;","and date=v_date;")}); cases++;
+  for(const table of ["media_sync_fact_partitions","media_sync_fact_rows"]){
+    assert.deepEqual((await db.query(`select has_table_privilege(current_user,$1,'SELECT') readable,
+      has_table_privilege(current_user,$1,'INSERT,UPDATE,DELETE') writable`,[table])).rows[0],{readable:true,writable:false}); cases++;
+  }
+  for(const role of ["anon","authenticated"]){
+    await db.exec(`reset role; set role ${role}`);
+    await assert.rejects(rpc("save_meta_ads_contact_snapshot_v1",[{}],["jsonb"]),/permission denied/); cases++;
+  }
+  // A late write failure still rolls back both providers, jobs, and report pointers.
+  await db.exec(`reset role; alter table media_sync_jobs add constraint readonly_late_failure check(report_id<>'${mixedReport}' or provider<>'meta_ads'); set role service_role`);
+  await assert.rejects(saveMixed(),/readonly_late_failure/); cases++;
+  assert.deepEqual((await db.query(`select current_ingestion_id,published_ingestion_id,
+    (select count(*)::integer from report_rows where report_id=$1) rows,
+    (select count(*)::integer from media_sync_jobs where report_id=$1) jobs,
+    (select count(*)::integer from report_ingestions where report_id=$1) ingestions from reports where id=$1`,[mixedReport])).rows[0],
+    {current_ingestion_id:null,published_ingestion_id:id(921),rows:0,jobs:0,ingestions:0}); cases++;
+  await db.exec("reset role; alter table media_sync_jobs drop constraint readonly_late_failure; set role service_role");
+  const mixedSaved=await saveMixed();
+  assert.equal(mixedSaved.row_count,3); assert.equal(mixedSaved.job.inserted_rows,2); cases++;
+  const mixedState=async()=>(await db.query(`select count(*)::integer rows,sum((rr.row->>'cost')::numeric)::text cost,
+    sum((rr.row->>'conversions')::numeric)::text conversions from report_rows rr join reports r
+    on r.id=rr.report_id and r.current_ingestion_id=rr.ingestion_id where r.id=$1`,[mixedReport])).rows[0];
+  assert.deepEqual(await mixedState(),{rows:3,cost:"1000",conversions:"10"}); cases++;
+  await saveMixed(); assert.deepEqual(await mixedState(),{rows:3,cost:"1000",conversions:"10"}); cases++;
+  assert.equal((await db.query("select count(*)::integer rows from report_rows where report_id=$1",[mixedReport])).rows[0].rows,6); cases++;
+  assert.equal((await db.query("select published_ingestion_id from reports where id=$1",[mixedReport])).rows[0].published_ingestion_id,id(921)); cases++;
+  assert.deepEqual((await db.query(`select row_to_json(f) value from media_sync_fact_rows f where source_connection_id=$1
+    union all select row_to_json(p) from media_sync_fact_partitions p where source_connection_id=$1`,[nc])).rows,beforeFacts); cases++;
   console.log(JSON.stringify({suite:"meta_instant_forms",cases,status:"PASS",live_api:0}));
 }
