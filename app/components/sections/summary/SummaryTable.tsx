@@ -468,7 +468,7 @@ function SummaryTableComponent({ reportType = "commerce", byMonth }: Props) {
     }
 
     return {
-      label: "증감(최근월-전월)",
+      label: "증감(최근 두 개월)",
       items,
     };
   }, [mode, lastMonth, prevMonth]);
