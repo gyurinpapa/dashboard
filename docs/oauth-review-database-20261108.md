@@ -9,6 +9,15 @@ It creates 49 empty tables, 88 application functions, constraints, indexes, poli
 
 Existing table and function grants are preserved explicitly. RLS is enabled on every application table. Tables that previously exposed SELECT through anon/authenticated retain that read visibility through explicit SELECT policies. Previously server-only tables remain server-only. Functions with no fixed search path are pinned to public and pg_catalog. No security-definer function grants access to PUBLIC or anon.
 
+## Applied state on 2026-11-08
+
+- Vercel review environment: SUPABASE_SERVICE_ROLE_KEY saved as Secret for Production; public URL and publishable key also configured.
+- Applied: oauth_review_empty_tables_locked (49 tables), oauth_review_functions_01 (11 functions), and owner-trigger search-path pinning.
+- Verified: all 49 tables are empty and RLS-enabled; all 11 installed functions deny anonymous execution.
+- Not applied: remaining functions, constraints, indexes, policies, application triggers and grants. The connector's additional confirmation repeatedly returned status expired, including when retried after notifying the user. This is not a database SQL error and no completion is claimed.
+- Do not reapply the empty-database baseline to this partial state. After reviewing and approving, use scripts/sql/oauth-review-complete-baseline.sql to finish the schema in one transaction. It contains CREATE OR REPLACE FUNCTION definitions and does not invoke those functions.
+- No review app deployment has occurred; automatic builds remain disabled.
+
 ## Remaining deployment work
 
 - Apply and verify the migration on the isolated database.
