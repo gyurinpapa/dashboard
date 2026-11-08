@@ -29,3 +29,13 @@ Existing table and function grants are preserved explicitly. RLS is enabled on e
 - Demonstrate the real English Google OAuth grant flow and functionality using Google Ads test account 381-339-6758 under test manager 930-429-2762.
 
 Production configuration is outside this baseline's scope.
+
+## Resume checkpoint (2026-11-09, Asia/Seoul)
+
+- Reopened the actual blank browser tab at the review Vercel project; overview rendered and still showed No Production Deployment.
+- Confirmed Supabase is ACTIVE_HEALTHY and the locked tables still exist.
+- Added 8 function definitions through three smaller migrations: oauth_review_functions_02a_locked, oauth_review_functions_remaining_01_locked, oauth_review_functions_remaining_02_locked.
+- Verified 19 application functions now exist and 0 are executable by anon. All function execution grants remain locked pending final schema completion.
+- The next batch, oauth_review_functions_remaining_03_locked, returned status expired / INVALID_ARGUMENT from the connector confirmation. It did not succeed. No retry was issued.
+- 69 function definitions plus constraints, indexes, policies, triggers and final grants remain. The complete-baseline SQL remains suitable because it replaces definitions without invoking them; do not use the empty-database bootstrap on this partially applied database.
+- No app source changes, credential changes, production changes, or deployments were made during this resume.
