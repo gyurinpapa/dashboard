@@ -172,7 +172,7 @@ function verifyRequest(): void {
     request.headers[
       "developer-token"
     ],
-    "fixture-developer",
+    undefined,
   );
 
   assert.equal(

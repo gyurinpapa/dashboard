@@ -12,7 +12,6 @@ export const GOOGLE_ADS_ACCOUNT_VERIFICATION_TIMEOUT_MS = 10_000;
 
 const GOOGLE_ADS_API_BASE_URL = "https://googleads.googleapis.com";
 const MAX_ACCESS_TOKEN_LENGTH = 20_000;
-const MAX_DEVELOPER_TOKEN_LENGTH = 10_000;
 const MAX_EXTERNAL_ACCOUNT_NAME_LENGTH = 500;
 const GOOGLE_ADS_ACCOUNT_VERIFICATION_QUERY =
   "SELECT customer.resource_name, customer.id, customer.descriptive_name FROM customer LIMIT 1";
@@ -273,11 +272,6 @@ export function buildGoogleAdsAccountVerificationRequest(
     "accessToken",
     MAX_ACCESS_TOKEN_LENGTH,
   );
-  const developerToken = normalizeRequiredString(
-    input.developerToken,
-    "developerToken",
-    MAX_DEVELOPER_TOKEN_LENGTH,
-  );
 
   let targetCustomerId: string;
   let loginCustomerId: string | null;
@@ -303,7 +297,6 @@ export function buildGoogleAdsAccountVerificationRequest(
     Accept: "application/json",
     Authorization: `Bearer ${accessToken}`,
     "Content-Type": "application/json",
-    "developer-token": developerToken,
   };
 
   if (loginCustomerId) {

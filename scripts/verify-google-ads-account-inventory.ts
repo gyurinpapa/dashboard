@@ -428,7 +428,7 @@ function verifyRequestBuilder(): void {
 
   assert.equal(
     first.headers["developer-token"],
-    "fixture-developer-token",
+    undefined,
   );
 
   assert.equal(

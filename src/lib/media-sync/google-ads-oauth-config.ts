@@ -179,10 +179,8 @@ export function readGoogleAdsOAuthConfig(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): GoogleAdsOAuthConfig {
   return {
-    developerToken: normalizeRequiredConfigValue(
-      env[GOOGLE_ADS_DEVELOPER_TOKEN_ENV],
-      GOOGLE_ADS_DEVELOPER_TOKEN_ENV,
-    ),
+    // Legacy compatibility field only. Cloud projects now govern Ads API access.
+    developerToken: env[GOOGLE_ADS_DEVELOPER_TOKEN_ENV]?.trim() ?? "",
     clientId: normalizeRequiredConfigValue(
       env[GOOGLE_ADS_OAUTH_CLIENT_ID_ENV],
       GOOGLE_ADS_OAUTH_CLIENT_ID_ENV,

@@ -73,8 +73,6 @@ async function main(): Promise<void> {
     Buffer.alloc(32, 7).toString("base64");
 
   const config = readGoogleAdsOAuthConfig({
-    GOOGLE_ADS_DEVELOPER_TOKEN:
-      "test-developer-token",
     GOOGLE_ADS_OAUTH_CLIENT_ID:
       "test-client.apps.googleusercontent.com",
     GOOGLE_ADS_OAUTH_CLIENT_SECRET:

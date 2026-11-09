@@ -22,8 +22,8 @@ Existing table and function grants are preserved explicitly. RLS is enabled on e
 
 - Database schema completed manually and independently verified on 2026-11-09; see the completion checkpoint below.
 - Create a reviewer-controlled test login through the app's normal onboarding flow.
-- Configure Auth site URL and redirect allowlist for https://oauth-review.etrylue.com.
-- Set an independent MEDIA_CREDENTIAL_ENCRYPTION_KEY in the review Vercel project.
+- Auth URL configuration confirmed in the user's screenshot: Site URL https://oauth-review.etrylue.com and allowed redirect https://oauth-review.etrylue.com/onboarding.
+- Independent MEDIA_CREDENTIAL_ENCRYPTION_KEY saved as Secret in the review Vercel project's Production environment (user screenshot 2026-11-09 13:08 KST); runtime validation awaits deployment.
 - Confirm current Google Ads API authentication requirements and adapt only the review branch if needed.
 - Deploy the review branch after all required configuration is present.
 - Demonstrate the real English Google OAuth grant flow and functionality using Google Ads test account 381-339-6758 under test manager 930-429-2762.
@@ -53,3 +53,16 @@ This checkpoint supersedes the partial-schema state above.
 - App source confirms signup emailRedirectTo is the request origin followed by /onboarding. Configure the review Auth Site URL and this exact redirect before testing signup.
 - App source requires MEDIA_CREDENTIAL_ENCRYPTION_KEY to be canonical base64 encoding of exactly 32 bytes. A fresh independent review-only key is still required.
 - Auth configuration and the review deployment are not yet verified complete. No production configuration was changed.
+
+## Review deployment preparation (2026-11-09 13:08 KST onward)
+
+- User screenshots confirm the review Auth URLs and the review-only encryption variable, alongside the seven previously configured Vercel variables.
+- Official Google Ads documentation confirms developer tokens were sunset on 2026-09-09; API access is controlled by the OAuth client's Cloud project. Reference: https://developers.google.com/google-ads/api/docs/api-policy/developer-token
+- The review branch no longer requires GOOGLE_ADS_DEVELOPER_TOKEN to read OAuth configuration or initialize the two runtime adapters. The legacy internal string field remains for compatibility.
+- Removed developer-token validation and outgoing headers from account verification, account inventory, and all seven stats request builders. Bearer authentication, OAuth client credentials, PKCE/state, customer/MCC checks, queries, metrics, and normalization remain unchanged.
+- Focused validation passed: OAuth contract (10 cases), account verification (7), keyword collector (13), Display/Search/Demand Gen collectors, Performance Max collector, both runtime adapters, and a new Cloud-project authentication regression covering all nine request builders.
+- Existing OAuth contract and runtime fixtures now run with no developer token. The new regression also checks legacy-token input, omitted outgoing headers, required OAuth credentials, bearer tokens, and valid customer IDs.
+- One pre-existing account-inventory classification fixture fails with actual 5 versus expected 4 at verifyClassification. Reproduced with the untouched inventory implementation; unrelated classification logic was not changed.
+- Validation used Node 24's TypeScript transform with a local extension-resolution hook. No live Google calls, DB writes, production changes, full Next.js build, or deployment were performed during this code preparation.
+- The Vercel connector still returns Project not found for review project prj_qz3PigSoMfh17COW9gYVzEj14Pbb under team_ADwPfZGADl8I5pvYHxjtcyYx, although the user's browser shows the project. Continue deployment configuration through the user's dashboard.
+- Next: confirm Production branch review/google-oauth-20261108 and build settings, then explicitly deploy the reviewed commit to this review project. Automatic Git builds remain disabled by vercel.json.

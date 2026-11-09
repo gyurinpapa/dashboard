@@ -386,7 +386,7 @@ function createCommonDependencies(
 
         return {
           developerToken:
-            "fixture-developer-token",
+            "",
 
           clientId:
             "fixture-client-id",

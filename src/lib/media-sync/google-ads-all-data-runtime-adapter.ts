@@ -630,12 +630,8 @@ function assertOAuthConfig(
     GoogleAdsAllDataRuntimeOAuthConfig,
 ): GoogleAdsAllDataRuntimeOAuthConfig {
   return Object.freeze({
-    developerToken:
-      requireExactNonEmptyString(
-        config?.developerToken,
-        "INVALID_OAUTH_CONFIG",
-        "Google Ads developer token configuration",
-      ),
+    // Kept for compatibility with existing internal call signatures.
+    developerToken: config?.developerToken ?? "",
 
     clientId:
       requireExactNonEmptyString(

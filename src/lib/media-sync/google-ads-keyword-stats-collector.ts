@@ -21,7 +21,6 @@ const GOOGLE_ADS_API_BASE_URL =
   "https://googleads.googleapis.com";
 
 const MAX_ACCESS_TOKEN_LENGTH = 20_000;
-const MAX_DEVELOPER_TOKEN_LENGTH = 10_000;
 const MAX_NAME_LENGTH = 2_000;
 const MAX_KEYWORD_LENGTH = 2_000;
 const MAX_PAGE_TOKEN_LENGTH = 20_000;
@@ -989,13 +988,6 @@ export function buildGoogleAdsKeywordStatsSearchRequest(
       MAX_ACCESS_TOKEN_LENGTH,
     );
 
-  const developerToken =
-    normalizeRequiredString(
-      input.developerToken,
-      "developerToken",
-      MAX_DEVELOPER_TOKEN_LENGTH,
-    );
-
   const {
     targetCustomerId,
     loginCustomerId,
@@ -1034,8 +1026,6 @@ export function buildGoogleAdsKeywordStatsSearchRequest(
         `Bearer ${accessToken}`,
       "Content-Type":
         "application/json",
-      "developer-token":
-        developerToken,
     };
 
   if (loginCustomerId) {

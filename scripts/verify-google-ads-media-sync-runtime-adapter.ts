@@ -373,7 +373,7 @@ function createHarness(
 
           return {
             developerToken:
-              DEVELOPER_TOKEN_SENTINEL,
+              "",
 
             clientId:
               CLIENT_ID_SENTINEL,
@@ -581,7 +581,7 @@ async function main():
         accessToken:
           ACCESS_TOKEN_SENTINEL,
         developerToken:
-          DEVELOPER_TOKEN_SENTINEL,
+          "",
         loginCustomerId:
           LOGIN_CUSTOMER_ID,
         dateWindowIndex:

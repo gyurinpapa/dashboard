@@ -316,7 +316,7 @@ async function main(): Promise<void> {
       request.headers[
         "developer-token"
       ],
-      DEVELOPER_TOKEN,
+      undefined,
     );
 
     assert.equal(
@@ -426,7 +426,7 @@ async function main(): Promise<void> {
                 headers.get(
                   "developer-token",
                 ),
-                DEVELOPER_TOKEN,
+                null,
               );
 
               assert.equal(

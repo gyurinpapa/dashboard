@@ -101,7 +101,7 @@ async function main(): Promise<void> {
         );
         assert(
           request.headers["developer-token"] ===
-            DEVELOPER_TOKEN,
+            undefined,
           "developer-token header is incorrect.",
         );
         assert(
@@ -146,7 +146,7 @@ async function main(): Promise<void> {
           );
           assert(
             headers.get("developer-token") ===
-              DEVELOPER_TOKEN,
+              null,
             "Fixture developer-token header is incorrect.",
           );
           assert(

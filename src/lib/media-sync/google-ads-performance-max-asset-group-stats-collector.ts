@@ -22,8 +22,6 @@ const GOOGLE_ADS_API_BASE_URL =
 const MAX_ACCESS_TOKEN_LENGTH =
   20_000;
 
-const MAX_DEVELOPER_TOKEN_LENGTH =
-  10_000;
 
 const MAX_PAGE_TOKEN_LENGTH =
   20_000;
@@ -638,13 +636,6 @@ export function buildGoogleAdsPerformanceMaxAssetGroupStatsSearchRequest(
       MAX_ACCESS_TOKEN_LENGTH,
     );
 
-  const developerToken =
-    normalizeRequiredString(
-      input.developerToken,
-      "developerToken",
-      MAX_DEVELOPER_TOKEN_LENGTH,
-    );
-
   const {
     targetCustomerId,
     loginCustomerId,
@@ -676,8 +667,6 @@ export function buildGoogleAdsPerformanceMaxAssetGroupStatsSearchRequest(
     Record<string, string> = {
       Authorization:
         `Bearer ${accessToken}`,
-      "developer-token":
-        developerToken,
       "content-type":
         "application/json",
     };
