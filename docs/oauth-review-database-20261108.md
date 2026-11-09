@@ -20,7 +20,7 @@ Existing table and function grants are preserved explicitly. RLS is enabled on e
 
 ## Remaining deployment work
 
-- Apply and verify the migration on the isolated database.
+- Database schema completed manually and independently verified on 2026-11-09; see the completion checkpoint below.
 - Create a reviewer-controlled test login through the app's normal onboarding flow.
 - Configure Auth site URL and redirect allowlist for https://oauth-review.etrylue.com.
 - Set an independent MEDIA_CREDENTIAL_ENCRYPTION_KEY in the review Vercel project.
@@ -39,3 +39,17 @@ Production configuration is outside this baseline's scope.
 - The next batch, oauth_review_functions_remaining_03_locked, returned status expired / INVALID_ARGUMENT from the connector confirmation. It did not succeed. No retry was issued.
 - 69 function definitions plus constraints, indexes, policies, triggers and final grants remain. The complete-baseline SQL remains suitable because it replaces definitions without invoking them; do not use the empty-database bootstrap on this partially applied database.
 - No app source changes, credential changes, production changes, or deployments were made during this resume.
+
+## Manual completion verified (2026-11-09, Asia/Seoul)
+
+This checkpoint supersedes the partial-schema state above.
+
+- The user executed the guarded one-time completion script in the Supabase SQL Editor for review project nzudapumgzscfklgvsxw. The screenshot shows a successful result row.
+- Independent read-only catalog checks confirmed 49 tables, 88 application functions, 202 constraints, 31 policies, and 22 application triggers.
+- All 49 application tables have RLS enabled. No application SECURITY DEFINER function is executable by anon. There are 0 Auth users.
+- Security advisors returned only informational rls_enabled_no_policy notices for 33 tables, and no warnings or errors. Server-only tables intentionally have no client policies.
+- This manual SQL execution did not add a Supabase migration-history row. Do not replay either the empty-database bootstrap or the one-time completion script against the completed schema.
+- The manual script SHA-256 is e6908f424d4642e5c705551b4cf4efab7d35fd0d905cb3d23586d8925d1df47e. It includes preflight checks, a single transaction, final catalog checks, and the OAUTH_REVIEW_DB_READY result.
+- App source confirms signup emailRedirectTo is the request origin followed by /onboarding. Configure the review Auth Site URL and this exact redirect before testing signup.
+- App source requires MEDIA_CREDENTIAL_ENCRYPTION_KEY to be canonical base64 encoding of exactly 32 bytes. A fresh independent review-only key is still required.
+- Auth configuration and the review deployment are not yet verified complete. No production configuration was changed.
