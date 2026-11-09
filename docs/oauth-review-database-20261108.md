@@ -66,3 +66,20 @@ This checkpoint supersedes the partial-schema state above.
 - Validation used Node 24's TypeScript transform with a local extension-resolution hook. No live Google calls, DB writes, production changes, full Next.js build, or deployment were performed during this code preparation.
 - The Vercel connector still returns Project not found for review project prj_qz3PigSoMfh17COW9gYVzEj14Pbb under team_ADwPfZGADl8I5pvYHxjtcyYx, although the user's browser shows the project. Continue deployment configuration through the user's dashboard.
 - Next: confirm Production branch review/google-oauth-20261108 and build settings, then explicitly deploy the reviewed commit to this review project. Automatic Git builds remain disabled by vercel.json.
+
+## Signup repair (2026-11-10, Asia/Seoul)
+
+This checkpoint supersedes the earlier not-deployed status.
+
+- User screenshot confirms commit 34fbebac5269d80013cfb6c9590805316cc3daf9 deployed Ready to the review project's Production environment (52-second build).
+- User screenshot of https://oauth-review.etrylue.com/signup?next=%2Faccount confirms the site renders, but shows the signup-disabled notice instead of the form.
+- Source diagnosis: signup requires CUSTOMER_ONBOARDING_ENABLED=true and an allowed CUSTOMER_ONBOARDING_ORIGIN. The previous origin allowlist rejected the review custom domain even if these values were supplied. The signup API also requires CUSTOMER_ONBOARDING_DATABASE_URL to equal NEXT_PUBLIC_SUPABASE_URL.
+- The review branch now permits exactly https://oauth-review.etrylue.com only when both database URL settings equal https://nzudapumgzscfklgvsxw.supabase.co. Existing production/preview/local origin behavior and same-origin request checks are unchanged.
+- Regression reproduced the origin rejection before the fix. All five origin-boundary test groups pass after the fix, including missing/other/production database rejection, opt-in flag enforcement, non-canonical and lookalike URL rejection, and unchanged production/preview/local behavior.
+- Add these Config variables to the review Vercel project's Production environment only:
+  - CUSTOMER_ONBOARDING_ENABLED=true
+  - CUSTOMER_ONBOARDING_ORIGIN=https://oauth-review.etrylue.com
+  - CUSTOMER_ONBOARDING_DATABASE_URL=https://nzudapumgzscfklgvsxw.supabase.co
+- Then create a deployment from the updated review/google-oauth-20261108 branch. Redeploying the old 34fbeba commit alone cannot include this source fix.
+- Vercel connector access remains unavailable (the previous deployment fetch returned 403); configuration and deployment continue through the user's dashboard. No Vercel variables were changed by this repair.
+- Actual signup email delivery, verified account provisioning, Google OAuth connection, and report sync still require end-to-end validation. No user was created, email sent, DB changed, production branch updated, or deployment triggered during this repair.

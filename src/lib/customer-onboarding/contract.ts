@@ -8,9 +8,13 @@ export function onboardingOrigin(env: Record<string,string|undefined> = process.
   let url: URL;
   try { url = new URL(raw); } catch { throw new CustomerError('ONBOARDING_UNAVAILABLE', 503); }
   const production = raw === 'https://app.etrylue.com';
+  // The OAuth review deployment must use its isolated database, even on Vercel Production.
+  const review = raw === 'https://oauth-review.etrylue.com'
+    && env.NEXT_PUBLIC_SUPABASE_URL === 'https://nzudapumgzscfklgvsxw.supabase.co'
+    && env.CUSTOMER_ONBOARDING_DATABASE_URL === env.NEXT_PUBLIC_SUPABASE_URL;
   const preview = env.VERCEL_ENV !== 'production' && url.protocol === 'https:' && url.hostname.endsWith('.vercel.app');
   const local = env.VERCEL_ENV !== 'production' && raw === 'http://localhost:3000';
-  if (url.origin !== raw || !(production || preview || local)) throw new CustomerError('ONBOARDING_UNAVAILABLE', 503);
+  if (url.origin !== raw || !(production || review || preview || local)) throw new CustomerError('ONBOARDING_UNAVAILABLE', 503);
   return raw;
 }
 export function registrationInput(value: unknown) {
